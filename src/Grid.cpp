@@ -215,13 +215,18 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
         // New active cell
         bit::set_new(cellArr(i, j, k));
+      });
 
-        if (!cGridsOld.empty()) {
-          if (cGridsOld[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-            bit::set_not_new(cellArr(i, j, k));
+      if (!cGridsOld.empty()) {
+        for (int b = 0, nb = cGridsOld[iLev].size(); b < nb; ++b) {
+          const Box isect = box & cGridsOld[iLev][b];
+          if (isect.ok()) {
+            ParallelFor(isect, [&](int i, int j, int k) noexcept {
+              bit::set_not_new(cellArr(i, j, k));
+            });
           }
         }
-      });
+      }
     }
 
     // Set the 'refined' status
@@ -259,42 +264,29 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
 
-    // Set the edge cells.
-    // Q: But what is the edge cell?
-    // A: It is a physical cell that has one or more neighbor cells are
-    // boundary cell.
+    // Set edge cells and find cells with 'is_refined' neighbors
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
-        Box subBox(ijk - 1, ijk + 1);
+        const int kmin = nDim > 2 ? k - 1 : k;
+        const int kmax = nDim > 2 ? k + 1 : k;
+        const bool notRefined = !bit::is_refined(cellArr(i, j, k));
 
-        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
-          if (bit::is_lev_boundary(cellArr(ii, jj, kk))) {
-            bit::set_lev_edge(cellArr(i, j, k));
+        for (int kk = kmin; kk <= kmax; ++kk) {
+          for (int jj = j - 1; jj <= j + 1; ++jj) {
+            for (int ii = i - 1; ii <= i + 1; ++ii) {
+              const int neighbor = cellArr(ii, jj, kk);
+              if (bit::is_lev_boundary(neighbor)) {
+                bit::set_lev_edge(cellArr(i, j, k));
 
-            if (bit::is_domain_boundary(cellArr(ii, jj, kk))) {
-              bit::set_domain_edge(cellArr(i, j, k));
-            }
-          }
-        });
-      });
-    }
+                if (bit::is_domain_boundary(neighbor)) {
+                  bit::set_domain_edge(cellArr(i, j, k));
+                }
+              }
 
-    // Find cells with 'is_refined' neighbors
-    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const auto& status = cellStatus[iLev][mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
-        int kmin = nDim > 2 ? k - 1 : k;
-        int kmax = nDim > 2 ? k + 1 : k;
-        for (int ii = i - 1; ii <= i + 1; ii++) {
-          for (int jj = j - 1; jj <= j + 1; jj++) {
-            for (int kk = kmin; kk <= kmax; kk++) {
-              if (bit::is_refined(status(ii, jj, kk)) &&
-                  !bit::is_refined(status(i, j, k))) {
-                bit::set_refined_neighbour(status(i, j, k));
+              if (notRefined && bit::is_refined(neighbor)) {
+                bit::set_refined_neighbour(cellArr(i, j, k));
               }
             }
           }
@@ -354,13 +346,18 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
 
         // New active cell
         bit::set_new(nodeArr(i, j, k));
+      });
 
-        if (!nodeBAOld.empty()) {
-          if (nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-            bit::set_not_new(nodeArr(i, j, k));
+      if (!nodeBAOld.empty()) {
+        for (int b = 0, nb = nodeBAOld.size(); b < nb; ++b) {
+          const Box isect = box & nodeBAOld[b];
+          if (isect.ok()) {
+            ParallelFor(isect, [&](int i, int j, int k) noexcept {
+              bit::set_not_new(nodeArr(i, j, k));
+            });
           }
         }
-      });
+      }
     }
 
     nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -436,33 +433,38 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       // Set the 'edge' status
       // Q: But what is the edge node?
       // A: It is a node at the boundary of a level.
-
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
-        Box subBox(ijk - 1, ijk + 1);
+        const int kmin = nDim > 2 ? k - 1 : k;
+        const int kmax = nDim > 2 ? k + 1 : k;
 
-        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
-          if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
-            bit::set_lev_edge(nodeArr(i, j, k));
+        for (int kk = kmin; kk <= kmax; ++kk) {
+          for (int jj = j - 1; jj <= j + 1; ++jj) {
+            for (int ii = i - 1; ii <= i + 1; ++ii) {
+              if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
+                bit::set_lev_edge(nodeArr(i, j, k));
 
-            if (bit::is_domain_boundary(nodeArr(ii, jj, kk))) {
-              bit::set_domain_edge(nodeArr(i, j, k));
+                if (bit::is_domain_boundary(nodeArr(ii, jj, kk))) {
+                  bit::set_domain_edge(nodeArr(i, j, k));
+                }
+              }
             }
           }
-        });
+        }
       });
 
       // Set the 'refined' status for nodes
       const auto& cell = cellStatus[iLev][mfi].array();
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
-        Box subBox(ijk - 1, ijk);
-
-        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
-          if (bit::is_refined(cell(ii, jj, kk))) {
-            bit::set_refined(nodeArr(i, j, k));
+        const int kmin = nDim > 2 ? k - 1 : k;
+        for (int kk = kmin; kk <= k; ++kk) {
+          for (int jj = j - 1; jj <= j; ++jj) {
+            for (int ii = i - 1; ii <= i; ++ii) {
+              if (bit::is_refined(cell(ii, jj, kk))) {
+                bit::set_refined(nodeArr(i, j, k));
+              }
+            }
           }
-        });
+        }
       });
     }
   }

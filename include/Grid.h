@@ -245,7 +245,7 @@ public:
   }
 
   // Find the finest level that contains the cell xyz.
-  inline int get_finest_lev(amrex::RealVect xyz) const {
+  inline int get_finest_lev(const amrex::RealVect& xyz) const {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
       auto idx = Geom(iLev).CellIndex(xyz.begin());
       if (cGrids[iLev].contains(idx)) {
@@ -257,19 +257,24 @@ public:
   }
 
   //===========================================================================
-  inline int find_mpi_rank_from_coord(const amrex::RealVect xyz) const {
-    int iLev = get_finest_lev(xyz);
+  inline int find_mpi_rank_from_coord(const amrex::RealVect& xyz) const {
+    for (int iLev = finest_level; iLev >= 0; iLev--) {
+      const auto idx = Geom(iLev).CellIndex(xyz.begin());
+      for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
+        if (cGrids[iLev][ii].contains(idx)) {
+          return DistributionMap(iLev)[ii];
+        }
+      }
+    }
 
-    auto idx = Geom(iLev).CellIndex(xyz.begin());
-
-    int rank = find_mpi_rank_from_cell_index(iLev, idx);
-
-    return rank;
+    amrex::AllPrint() << "xyz = " << xyz << std::endl;
+    amrex::Abort("Error: can not find this cell!");
+    return -1;
   }
 
   //===========================================================================
   inline int find_mpi_rank_from_cell_index(int const iLev,
-                                           const amrex::IntVect ijk) const {
+                                           const amrex::IntVect& ijk) const {
     for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
       const amrex::Box& bx = cGrids[iLev][ii];
       if (bx.contains(ijk))
