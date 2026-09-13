@@ -2,6 +2,12 @@ name: PARAM.XML PDF Manual
 
 on:
   pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'PARAM.XML'
+      - 'Doc/**'
+      - 'Makefile'
+      - '.github/workflows/pdf_manual.yml'
 
 jobs:
   pdf-manual:

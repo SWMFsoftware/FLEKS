@@ -4,8 +4,20 @@ name: Format Check and Build
 on:
   push:
     branches: [ "master" ]
+    paths:
+      - '**.cpp'
+      - '**.h'
+      - '**.H'
+      - '**.f90'
+      - '**.F90'
   pull_request:
     branches: [ "master" ]
+    paths:
+      - '**.cpp'
+      - '**.h'
+      - '**.H'
+      - '**.f90'
+      - '**.F90'
 
 jobs:
   style:

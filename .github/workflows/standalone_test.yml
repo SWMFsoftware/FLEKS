@@ -3,6 +3,12 @@ name: Standalone Test
 on:
   pull_request:
     branches: [ "master" ]
+    paths-ignore:
+      - 'tests/performance/**'
+      - 'tests/validate_performance.py'
+      - '.github/workflows/performance_test.yml'
+      - '**.md'
+      - 'Doc/**'
 
 jobs:
   # Standalone job building against the 3D AMReX library (-amrex3d).

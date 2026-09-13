@@ -3,6 +3,18 @@ name: SWMF OH-PT Integration Test
 on:
   pull_request:
     branches: [ "master" ]
+    paths:
+      - 'src/**'
+      - '!src/main.cpp'
+      - '!src/Converter.cpp'
+      - 'srcInterface/**'
+      - 'include/**'
+      - 'userfiles/**'
+      - 'Config.pl'
+      - 'Makefile'
+      - 'Makefile.*'
+      - '.github/workflows/swmf_ohpt_test.yml'
+      - '.github/actions/setup-swmf/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

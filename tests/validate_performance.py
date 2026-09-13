@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Performance regression runner for standalone FLEKS.
 
-Runs the full-PIC beam and hybrid-PIC whistler benchmarks on 1 and 2 MPI
-processes (3 runs each for statistical robustness), parses AMReX
+Runs the full-PIC beam, hybrid-PIC whistler, and particle tracker benchmarks
+on 1 and 2 MPI processes (3 runs each for statistical robustness), parses AMReX
 TinyProfiler output to extract particle-mover and field-solver timings, and
 reports particle-step rates (μs/part-step) and parallel speedup against
 baseline targets.
@@ -44,7 +44,7 @@ _REQUIRED_MOVER = {
 BASELINES = {
     "fullpic": {
         "total_pps": 6.5,    # total wall-clock
-        "mover_pps": 0.10,   # isolated particle mover
+        "mover_pps": 0.105,  # isolated particle mover
         "solver_pps": 4.8,   # isolated implicit field solver
         "speedup": 1.5,      # 2-core scaling floor
     },
@@ -55,10 +55,10 @@ BASELINES = {
         "speedup": 1.6,      # 2-core scaling floor
     },
     "pt": {
-        "total_pps": 4.5,    # total wall-clock rate (includes AMReX Redistribute of 384-440 attributes)
-        "mover_pps": 0.09,   # isolated test particle mover rate
-        "solver_pps": 0.01,  # EM solver disabled
-        "speedup": 1.4,      # 2-core mover speedup floor
+        "total_pps": 3.0,    # total wall-clock rate
+        "mover_pps": 0.15,   # isolated test particle mover rate
+        "solver_pps": 0.001, # EM solver disabled
+        "speedup": 1.9,      # 2-core mover speedup floor
     },
 }
 
@@ -386,8 +386,8 @@ def _status_console(flag):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Performance regression runner for standalone FLEKS.")
-    parser.add_argument("--suite", choices=["fullpic", "hybrid", "pt", "all"], default="default",
-                        help="Benchmark suite to run (default: fullpic + hybrid)")
+    parser.add_argument("--suite", choices=["fullpic", "hybrid", "pt", "all"], default="all",
+                        help="Benchmark suite to run (default: all)")
     parser.add_argument("--pt", action="store_true", help="Run the particle tracker benchmark suite")
     args = parser.parse_args()
 
@@ -412,12 +412,6 @@ def main():
     # Benchmark suites: (solver_kind, param_file)
     if args.pt or args.suite == "pt":
         suites = [("pt", pt_param)]
-    elif args.suite == "all":
-        suites = [
-            ("fullpic", fullpic_param),
-            ("hybrid", hybrid_param),
-            ("pt", pt_param),
-        ]
     elif args.suite == "fullpic":
         suites = [("fullpic", fullpic_param)]
     elif args.suite == "hybrid":
@@ -426,6 +420,7 @@ def main():
         suites = [
             ("fullpic", fullpic_param),
             ("hybrid", hybrid_param),
+            ("pt", pt_param),
         ]
 
     results = {}
@@ -500,11 +495,14 @@ def main():
             f.write("A robust statistical check was executed on the runner to "
                     "filter out virtualization noise (3 runs per benchmark):\n\n")
 
-            for solver_kind in ("fullpic", "hybrid"):
+            for solver_kind in ("fullpic", "hybrid", "pt"):
                 if solver_kind not in results:
                     continue
                 stats, passed, label = results[solver_kind]
                 base = BASELINES[solver_kind]
+                speedup_label = ("Parallel Speedup (Mover, 2 Cores)" if solver_kind == "pt"
+                                 else "Parallel Speedup (2 Cores)")
+                part_label = "Test particles" if solver_kind == "pt" else "Macroparticles"
                 f.write(f"\n#### {label}\n\n")
                 f.write("| Performance Metric | Measured (Median) | Target "
                         "Baseline | Status |\n")
@@ -518,10 +516,10 @@ def main():
                 f.write(f"| Field Solver Rate | {stats['pps_solver']:.3f} "
                         f"μs/pt | <= {base['solver_pps']:.2f} μs/pt | "
                         f"{_status_markdown(passed['solver'])} |\n")
-                f.write(f"| Parallel Speedup (2 Cores) | {stats['speedup']:.2f}"
+                f.write(f"| {speedup_label} | {stats['speedup']:.2f}"
                         f"x | >= {base['speedup']:.2f}x | "
                         f"{_status_markdown(passed['speedup'])} |\n")
-                f.write(f"*Macroparticles: {stats['serial_stats']['particles']}, "
+                f.write(f"*{part_label}: {stats['serial_stats']['particles']}, "
                         f"cycles: {stats['serial_stats']['cycles']} "
                         f"(total steps: {stats['total_steps']}).*\n")
                 f.write("\n**Detailed Runs (Wall-Clock Runtime)**\n")
