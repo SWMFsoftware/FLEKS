@@ -345,12 +345,13 @@ To assist with common tasks, specialized instructions (skills) are defined in `.
 
 | Skill             | Description                                          | Path                                           |
 |-------------------|------------------------------------------------------|------------------------------------------------|
+| **FLEKS Expert**  | Architecture, layout, testing and coupling knowledge base (references loaded on demand) | `.agent/skills/fleks-expert/SKILL.md` |
 | **Build FLEKS**   | Compile project and regenerate compile_commands.json | `.agent/skills/build-fleks/SKILL.md`           |
 | **Add New Source**| Create new `.cpp`/`.h` files following conventions   | `.agent/skills/add-new-source/SKILL.md`        |
 | **Code Cleanup**  | Formatting, unused variables, standard checks        | `.agent/skills/code-cleanup/SKILL.md`          |
 | **Debug Session** | Setup and launch a debug session (lldb / VS Code)    | `.agent/skills/debug-session/SKILL.md`         |
 | **Generate Docs** | Build HTML/PDF documentation                         | `.agent/skills/generate-docs/SKILL.md`         |
-| **Run Test**      | Run regression tests via SWMF test infrastructure    | `.agent/skills/run-test/SKILL.md`              |
+| **Run Test**      | Run regression tests via SWMF test infrastructure    | `.agent/workflows/run-test.md`                 |
 
 ## Agent Workflows
 
