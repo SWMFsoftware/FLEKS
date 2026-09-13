@@ -1,11 +1,14 @@
 ---
+name: add-coupling-var
 description: How to add a new GM↔PC exchange variable for SWMF coupling
 ---
 
 # Add a New Coupling Variable
 
 This workflow adds a new variable to the data exchanged between
-GM (BATS-R-US) and PC (FLEKS) during SWMF coupling.
+GM (BATS-R-US) and PC (FLEKS) during SWMF coupling. For the interface layer
+itself (entry points, wrapper subroutines, Fortran/C++ pitfalls) see
+`.agent/skills/fleks-expert/references/coupling.md`.
 
 ## Overview
 

@@ -14,7 +14,8 @@ This skill helps set up and run debugging sessions for FLEKS.
 - Optimization level set to `-O0` for best debuggability (check
   `OPT0`–`OPT4` in `Makefile.conf`)
 - For VS Code: C/C++ extension (cppdbg) installed
-- For command line: `lldb` (macOS default)
+- For command line: `gdb` on Linux, `lldb` on macOS (the commands below use
+  `lldb`; substitute `gdb` with `break`/`run`/`print`/`bt` as needed)
 
 ## VS Code Debugging
 

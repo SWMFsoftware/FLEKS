@@ -1,4 +1,5 @@
 ---
+name: add-param
 description: How to add a new PARAM.XML command end-to-end
 ---
 

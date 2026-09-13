@@ -6,6 +6,8 @@ description: Compile FLEKS standalone or as an SWMF component, build the convert
 # Build FLEKS
 
 This skill compiles the FLEKS project and ensures IntelliSense stays up to date.
+For architecture, file-layout and testing context beyond the build itself, see
+`.agent/skills/fleks-expert/references/`.
 
 ## Prerequisites
 
