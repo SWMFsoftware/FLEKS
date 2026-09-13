@@ -644,12 +644,12 @@ public:
       // tallying the lost charge/mass per face.
       if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
           p.pos(d) < plo[d]) {
-        absorb_tally(2 * d, p.rdata(iwp_));
+        absorb_tally(2 * d, p.rdata(iqp_));
         return true;
       }
       if ((bcHi == ParticleBC::absorb || bcHi == ParticleBC::inflow) &&
           p.pos(d) > phi[d]) {
-        absorb_tally(2 * d + 1, p.rdata(iwp_));
+        absorb_tally(2 * d + 1, p.rdata(iqp_));
         return true;
       }
       // Specular reflection: mirror position and normal velocity.

@@ -16,7 +16,8 @@ void matvec_divE_accurate(const double *vecIn, double *vecOut, int iLev) {
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double *rhs, double *xLeft,
-                         MATVEC fMatvec, int iLev, bool doReport) {
+                         MATVEC fMatvec, int iLev, bool doReport,
+                         GmresWorkspace *work) {
 
   int nJ = 1, nK = 1, nBlock = 1;
   double precond_matrix_II[1][1];
@@ -28,7 +29,8 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
     PrecondType TypePrecond = NONE;
     linear_solver_wrapper_hy(fMatvec, iLev, GMRES, tolerance, nIteration,
                              nVarSolve, nDim, nGrid, nJ, nK, nBlock, iComm, rhs,
-                             xLeft, TypePrecond, precond_matrix_II[0], lTest);
+                             xLeft, TypePrecond, precond_matrix_II[0], lTest,
+                             work);
   } else { // Fortran solver
     /*
     // The shared library matvec requires non-const vecIn due to compatibility
@@ -63,7 +65,7 @@ void linear_solver_wrapper_hy(
     const PrecondType typePrecond, // Parameter for the preconditioner
     double *precondMatrix_II, // Diagonal and super/sub diagonal elements from
                               // the matrix A, which is in the equation Ax = b
-    const int lTest) {
+    const int lTest, GmresWorkspace *work) {
   struct LinearSolverParam param;
 
   param.typePrecond = typePrecond;
@@ -115,7 +117,7 @@ void linear_solver_wrapper_hy(
     case GMRES:
       gmres(matvec, iLev, rhs_I, x_I, param.useInitialGuess, nImpl,
             param.nKrylovVector, param.error, param.typeStop, param.nMatvec,
-            DoTest, iComm);
+            DoTest, iComm, work);
       break;
     case BICGSTAB:
       // bicgstab(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
@@ -154,8 +156,8 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
           const StopType typeStop, // Determine stopping criterion
           int &nIter,              // Maximum/actual number of iterations
           const bool doTest,       // Write debug info if true
-          MPI_Comm iComm = MPI_COMM_SELF) // MPI communicator
-{
+          MPI_Comm iComm,          // MPI communicator
+          GmresWorkspace *work) {
   int info = -1;
   // gives reason for returning:
   //    abs(info)=  0: solution found satisfying given tolerance.
@@ -175,11 +177,33 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
 #endif
 
   int nKrylov1 = nKrylov + 1;
-  std::vector<double> c(nKrylov);
-  std::vector<double> s(nKrylov);
-  std::vector<double> rs(nKrylov1);
-  std::vector<double> krylovBuffer(n * (nKrylov + 2));
-  std::vector<double> hhBuffer(nKrylov1 * nKrylov);
+  const size_t krylovSize = static_cast<size_t>(n) * (nKrylov + 2);
+  const size_t hhSize = static_cast<size_t>(nKrylov1) * nKrylov;
+
+  std::vector<double> cFallback;
+  std::vector<double> sFallback;
+  std::vector<double> rsFallback;
+  std::vector<double> krylovFallback;
+  std::vector<double> hhFallback;
+
+  std::vector<double> &c = work ? work->c : cFallback;
+  std::vector<double> &s = work ? work->s : sFallback;
+  std::vector<double> &rs = work ? work->rs : rsFallback;
+  std::vector<double> &krylovBuffer =
+      work ? work->krylovBuffer : krylovFallback;
+  std::vector<double> &hhBuffer = work ? work->hhBuffer : hhFallback;
+
+  if (c.size() < static_cast<size_t>(nKrylov))
+    c.resize(nKrylov);
+  if (s.size() < static_cast<size_t>(nKrylov))
+    s.resize(nKrylov);
+  if (rs.size() < static_cast<size_t>(nKrylov1))
+    rs.resize(nKrylov1);
+  if (krylovBuffer.size() < krylovSize)
+    krylovBuffer.resize(krylovSize);
+  if (hhBuffer.size() < hhSize)
+    hhBuffer.resize(hhSize);
+
   auto *Krylov_II = krylovBuffer.data();
   auto *hh = hhBuffer.data();
 

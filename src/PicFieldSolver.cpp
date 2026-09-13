@@ -182,18 +182,25 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
   zero_array(vecOut, eSolver.get_nSolve());
 
-  MultiFab vecMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  if (solverVecMF[iLev].empty()) {
+    distribute_FabArray(solverVecMF[iLev], nGrids[iLev], DistributionMap(iLev),
+                        3, nGst);
+    distribute_FabArray(solverMatvecMF[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, 1);
+    distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, nGst);
+    distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+                        DistributionMap(iLev), 3, 1);
+  }
+
+  MultiFab& vecMF = solverVecMF[iLev];
   vecMF.setVal(0.0);
 
-  MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
+  MultiFab& matvecMF = solverMatvecMF[iLev];
   matvecMF.setVal(0.0);
 
-  MultiFab tempCenter3(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-
-  MultiFab tempNode3(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  MultiFab& tempNode3 = solverTempNode3[iLev];
   tempNode3.setVal(0.0);
-
-  MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
   convert_1d_to_3d(vecIn, vecMF, iLev);
 
@@ -226,7 +233,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     }
   }
 
-  lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev));
+  lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
+                   &solverCenterLapMF[iLev]);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -294,6 +302,17 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
 
     if (fsolver.coefDiff > 0) {
+      if (solverTempCenter3[iLev].empty()) {
+        distribute_FabArray(solverTempCenter3[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 3, nGst);
+        distribute_FabArray(solverTempCenter1[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst);
+      }
+      MultiFab& tempCenter3 = solverTempCenter3[iLev];
+      MultiFab& tempCenter1 = solverTempCenter1[iLev];
+      tempCenter3.setVal(0.0);
+      tempCenter1.setVal(0.0);
+
       // Calculate cell center E for center-to-center divE.
       // The outmost boundary layer of tempCenter3 is not accurate.
       average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
@@ -360,24 +379,29 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
       auto& data0 = mmArr(ijk);
 
-      Box subBox(ijk - 1, ijk + 1);
+      const int kMin2 = nDim > 2 ? k - 1 : k;
+      const int kMax2 = nDim > 2 ? k + 1 : k;
 
-      ParallelFor(subBox, [&](int i2, int j2, int k2) {
-        const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
-        const int idx0 = gp * 9;
+      for (int k2 = kMin2; k2 <= kMax2; ++k2) {
+        for (int j2 = j - 1; j2 <= j + 1; ++j2) {
+          for (int i2 = i - 1; i2 <= i + 1; ++i2) {
+            const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
+            const int idx0 = gp * 9;
 
-        Real* const M_I = &(data0[idx0]);
+            const Real* const M_I = &(data0[idx0]);
 
-        const double& vctX = inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
-        const double& vctY = inArr(i2, j2, k2, iy_);
-        const double& vctZ = inArr(i2, j2, k2, iz_);
-        outArr(i, j, k, ix_) +=
-            (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-        outArr(i, j, k, iy_) +=
-            (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-        outArr(i, j, k, iz_) +=
-            (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
-      });
+            const double vctX = inArr(i2, j2, k2, ix_);
+            const double vctY = inArr(i2, j2, k2, iy_);
+            const double vctZ = inArr(i2, j2, k2, iz_);
+            outArr(i, j, k, ix_) +=
+                (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+            outArr(i, j, k, iy_) +=
+                (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+            outArr(i, j, k, iz_) +=
+                (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+          }
+        }
+      }
     });
   }
 
@@ -393,9 +417,16 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
-  MultiFab tempNode(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  if (solverRhsNode1[iLev].empty()) {
+    distribute_FabArray(solverRhsNode1[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, nGst);
+    distribute_FabArray(solverRhsNode2[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, nGst);
+  }
+
+  MultiFab& tempNode = solverRhsNode1[iLev];
   tempNode.setVal(0.0);
-  MultiFab temp2Node(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  MultiFab& temp2Node = solverRhsNode2[iLev];
   temp2Node.setVal(0.0);
 
   if (iLev == 0) {
@@ -491,7 +522,11 @@ void Pic::update_B() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+    if (centerDB[iLev].empty()) {
+      distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
+                          nDim3, nGst);
+    }
+    MultiFab& dB = centerDB[iLev];
     curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
 
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
@@ -596,8 +631,12 @@ void Pic::correct_B(int iLev) {
     return;
   }
 
-  MultiFab centerDB(cGrids[iLev], DistributionMap(iLev), nDim3, nGst);
-  centerDB.setVal(0.0);
+  if (centerDB[iLev].empty()) {
+    distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
+                        nDim3, nGst);
+  }
+  MultiFab& cDB = centerDB[iLev];
+  cDB.setVal(0.0);
 
   if (useUpwindB) {
     Real coef[nDim3];
@@ -610,7 +649,7 @@ void Pic::correct_B(int iLev) {
 
       const Array4<Real>& cB = centerB[iLev][mfi].array();
       const Array4<Real const>& nU = uBg[iLev][mfi].array();
-      const Array4<Real>& dB = centerDB[mfi].array();
+      const Array4<Real>& dB = cDB[mfi].array();
       const auto& status = cellStatus[iLev][mfi].array();
 
       // Get the face along the direction iDir for the cell (i,j,k) for the iVar
@@ -749,12 +788,18 @@ void Pic::correct_B(int iLev) {
   } // end useUpwindB
 
   if (useHyperbolicCleaning) {
-    MultiFab gradPhi(cGrids[iLev], DistributionMap(iLev), nDim3, 0);
+    if (solverCenterLapMF[iLev].empty()) {
+      distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, 1);
+      distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
+                          DistributionMap(iLev), 3, nGst);
+    }
+    MultiFab& gradPhi = solverCenterLapMF[iLev];
     gradPhi.setVal(0.0);
 
     solve_hyp_phi(iLev);
 
-    MultiFab gradPhiNode(nGrids[iLev], DistributionMap(iLev), nDim3, 0);
+    MultiFab& gradPhiNode = solverTempNode3[iLev];
     gradPhiNode.setVal(0.0);
 
     grad_center_to_node(hypPhi[iLev], gradPhiNode, Geom(iLev).InvCellSize());
@@ -765,7 +810,7 @@ void Pic::correct_B(int iLev) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.validbox();
 
-      const Array4<Real>& dB = centerDB[mfi].array();
+      const Array4<Real>& dB = cDB[mfi].array();
       const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
 
       ParallelFor(box, [&](int i, int j, int k) {
@@ -777,7 +822,7 @@ void Pic::correct_B(int iLev) {
     } // end MFIter
   } // end useHyperbolicCleaning
 
-  MultiFab::Add(centerB[iLev], centerDB, 0, 0, nDim3, 0);
+  MultiFab::Add(centerB[iLev], cDB, 0, 0, nDim3, 0);
 
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 }
@@ -787,7 +832,16 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
   std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
 
-  MultiFab mfOld(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
+  if (smoothScratchMF[iLev].empty() ||
+      smoothScratchMF[iLev].boxArray() != mf.boxArray() ||
+      smoothScratchMF[iLev].DistributionMap() != mf.DistributionMap() ||
+      smoothScratchMF[iLev].nComp() != mf.nComp() ||
+      smoothScratchMF[iLev].nGrow() != mf.nGrow()) {
+    smoothScratchMF[iLev].define(mf.boxArray(), mf.DistributionMap(),
+                                 mf.nComp(), mf.nGrow());
+  }
+
+  MultiFab& mfOld = smoothScratchMF[iLev];
 
   auto smooth_dir = [&](int iDir) {
     int dIdx[3] = { 0, 0, 0 };
@@ -838,7 +892,13 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
 void Pic::project_down_E() {
   if (finest_level > 0) {
     for (int iLev = finest_level; iLev > 0; iLev--) {
-      amrex::MultiFab tmp(nGrids[iLev], DistributionMap(iLev), 3, 0);
+      if (projectScratchMF[iLev].empty() ||
+          projectScratchMF[iLev].boxArray() != nGrids[iLev] ||
+          projectScratchMF[iLev].DistributionMap() != DistributionMap(iLev)) {
+        distribute_FabArray(projectScratchMF[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, 0);
+      }
+      amrex::MultiFab& tmp = projectScratchMF[iLev];
       tmp.setVal(0.0);
       for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
@@ -894,13 +954,16 @@ Real Pic::calc_E_field_energy() {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
         if (!bit::is_refined(status(ijk))) {
-          Box subBox(ijk, ijk + 1);
-          ParallelFor(subBox, [&](int ii, int jj, int kk) {
-            IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
-            sumLoc += arr(ijk0, ix_) * arr(ijk0, ix_) +
-                      arr(ijk0, iy_) * arr(ijk0, iy_) +
-                      arr(ijk0, iz_) * arr(ijk0, iz_);
-          });
+          const int kMax = nDim > 2 ? k + 1 : k;
+          for (int kk = k; kk <= kMax; ++kk) {
+            for (int jj = j; jj <= j + 1; ++jj) {
+              for (int ii = i; ii <= i + 1; ++ii) {
+                sumLoc += arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
+                          arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
+                          arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
+              }
+            }
+          }
         }
       });
 

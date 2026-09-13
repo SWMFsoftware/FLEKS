@@ -7,14 +7,17 @@
 using namespace amrex;
 
 void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
-                      const DistributionMapping dm, const Geometry& gm) {
+                      const DistributionMapping dm, const Geometry& gm,
+                      MultiFab* scratchCenterMF) {
   const Real* invDx = gm.InvCellSize();
 
-  BoxArray centerBA =
-      convert(srcMF.boxArray(), IntVect{ AMREX_D_DECL(0, 0, 0) });
-
-  // Need and just need 1 ghost cell layer.
-  MultiFab centerMF(centerBA, dm, 3, 1);
+  MultiFab localCenterMF;
+  MultiFab& centerMF = scratchCenterMF ? *scratchCenterMF : localCenterMF;
+  if (!scratchCenterMF) {
+    BoxArray centerBA =
+        convert(srcMF.boxArray(), IntVect{ AMREX_D_DECL(0, 0, 0) });
+    localCenterMF.define(centerBA, dm, 3, 1);
+  }
   centerMF.setVal(0.0);
 
   for (int i = 0; i < srcMF.nComp(); ++i) {
