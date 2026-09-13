@@ -31,8 +31,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 MAX_AGENT_MD_LINES = 150
 DOC_EXTENSIONS = {".md", ".tex", ".py", ".sh", ".xml", ".yml", ".yaml", ".in"}
+PATH_EXTENSIONS = DOC_EXTENSIONS | {
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".f90",
+    ".F90",
+    ".pdf",
+    ".txt",
+    ".json",
+}
 SCAN_DIRS = ["doc", ".agent"]
-SCAN_FILES = ["AGENT.md", "README.md", "CONTRIBUTING.md"]
+SCAN_FILES = ["AGENT.md", "README.md", "CONTRIBUTING.md", "PARAM.XML"]
+SCAN_GLOBS = ["tests/*/README.md"]
 
 CANONICAL_FILES = [
     "doc/DEVELOPING.md",
@@ -69,6 +80,16 @@ GENERATED_PATHS = {
     "GM/BATSRUS/srcInterface/ModGridDescriptor.f90",
 }
 
+# Files that live in the parent SWMF/BATSRUS tree, and filename patterns used
+# in recipes (they are real names but not paths inside this repository).
+EXTERNAL_PATHS = {
+    "Source.h",
+    "GM_couple_pc.f90",
+    "GM_wrapper.f90",
+    "ModUserMars.f90",
+    "PC_wrapper.f90",
+}
+
 # Placeholders used in "how to add a file" recipes.
 PLACEHOLDERS = ("NewFeature", "NewSource", "MyIC", "New")
 UPPER_DOC_RE = re.compile(r"(?<![\w-])Doc/")
@@ -85,7 +106,9 @@ def markdown_files() -> list[Path]:
         base = REPO_ROOT / directory
         if base.is_dir():
             files.extend(sorted(base.rglob("*.md")))
-    return files
+    for pattern in SCAN_GLOBS:
+        files.extend(sorted(REPO_ROOT.glob(pattern)))
+    return sorted(set(files))
 
 
 def frontmatter(text: str) -> dict[str, str]:
@@ -109,7 +132,8 @@ def resolve(candidate: str, source: Path) -> bool:
     (``validate.py``).
     """
     path = candidate.rstrip("/")
-    if not path or path in GENERATED_PATHS or candidate in GENERATED_PATHS:
+    allowed = GENERATED_PATHS | EXTERNAL_PATHS
+    if not path or path in allowed or candidate in allowed:
         return True
     for base in (source.parent, REPO_ROOT):
         if (base / path).exists():
@@ -127,8 +151,11 @@ def looks_like_path(candidate: str) -> bool:
         return False
     if any(holder in candidate for holder in PLACEHOLDERS):
         return False
-    suffix = Path(candidate).suffix
-    return "/" in candidate or suffix in DOC_EXTENSIONS
+    if candidate.endswith("/"):
+        return True
+    # Anything else must name a file with a recognized extension, so that
+    # inline math such as `5/3` or `dAy/dt` is not mistaken for a path.
+    return Path(candidate).suffix in PATH_EXTENSIONS
 
 
 def check_agent_md(errors: list[str]) -> None:

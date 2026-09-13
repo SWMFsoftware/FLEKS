@@ -1874,7 +1874,7 @@ its own keeps the default `coupled`.
 Field-domain spellings (`conducting`, `fixed`, `wave`) are not
 particle boundary conditions.  They are still accepted for backward
 compatibility, mapped to the nearest particle value, and reported as
-deprecated.  See `#FIELDBOXBOUNDARY` and `doc/Boundary_Conditions.md`.
+deprecated.  See `#FIELDBOXBOUNDARY`.
 </command>
 
 <command name="FIELDBOXBOUNDARY" alias="FIELDBOXBOUNDARY_FLEKS0,FIELDBOXBOUNDARY_FLEKS1,FIELDBOXBOUNDARY_FLEKS2" multiple="F">
@@ -1948,8 +1948,7 @@ The same value means slightly different things in the two field solvers:
   are well defined) -- it is not an independent constraint.
 
 The particle-domain spelling `reflect` is accepted for backward compatibility,
-mapped to `conducting`, and reported as deprecated.  See
-`doc/Boundary_Conditions.md`.
+mapped to `conducting`, and reported as deprecated.
 
 `#BFIELDBOXBOUNDARY` is deprecated in favor of this command.
 </command>
@@ -1963,7 +1962,7 @@ mapped to `conducting`, and reported as deprecated.  See
 This command tunes the absorbing field boundary condition (`#FIELDBOXBOUNDARY
 ... absorb ...`).  `charSpeed` sets the characteristic speed used in the
 matched-impedance blend; the default `0.0` means auto (light speed, `c = 1` in
-FLEKS code units).  See `doc/Boundary_Conditions.md`.
+FLEKS code units).
 </command>
 
 <command name="INFLOW" alias="INFLOW_FLEKS" multiple="F">

@@ -112,6 +112,3 @@ To run a **single variant**, append its token to the test name:
 python3 tests/validate_tests.py --test=reconnection_amr.full     # full PIC only
 python3 tests/validate_tests.py --test=reconnection_amr.hybrid   # hybrid only
 ```
-
-See `doc/AMR_hybrid_implementation_plan.md` for the full analysis of the AMR +
-hybrid integration, including the cell-centred AMR method adaptation plan.

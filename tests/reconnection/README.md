@@ -1,8 +1,8 @@
 # Magnetic Reconnection Standalone Test
 
 This test demonstrates **magnetic reconnection** in FLEKS, reproducing the
-physics of the Hybrid-VPIC *"islands"* force-free Fadeev current-sheet example
-(`examples/islands/`).  It runs under **two field solvers**:
+physics of the Hybrid-VPIC *"islands"* force-free Fadeev current-sheet example.
+It runs under **two field solvers**:
 
 - **`PARAM.in.hybrid`** — the hybrid solver (kinetic ions + massless fluid
   electrons, generalized Ohm's law).
@@ -10,7 +10,8 @@ physics of the Hybrid-VPIC *"islands"* force-free Fadeev current-sheet example
   `m_i/m_e = 25`, standard Maxwell/GMRES EM solve).
 
 Both share the same `FadeevIC` initial condition (`#TESTCASE fadeev`,
-`src/ic/FadeevIC.h/.cpp`), which seeds the Fadeev equilibrium fields and the
+`src/ic/FadeevIC.h` and `src/ic/FadeevIC.cpp`), which seeds the Fadeev
+equilibrium fields and the
 island density profile, plus the m=1 perturbation that drives the reconnection.
 
 ## Coordinate mapping
