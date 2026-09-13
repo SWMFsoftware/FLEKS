@@ -27,7 +27,7 @@ void curl_center_to_center(const amrex::MultiFab& centerInMF,
                            const amrex::Real* invDx);
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
-                      const amrex::DistributionMapping dm,
+                      const amrex::DistributionMapping& dm,
                       const amrex::Geometry& gm,
                       amrex::MultiFab* scratchCenterMF = nullptr);
 
@@ -61,17 +61,17 @@ void average_center_to_node(const amrex::MultiFab& centerMF,
 void average_node_to_center(const amrex::MultiFab& nodeMF,
                             amrex::MultiFab& centerMF);
 
-void print_MultiFab(const amrex::iMultiFab& data, std::string tag,
+void print_MultiFab(const amrex::iMultiFab& data, const std::string& tag,
                     int nshift = 0);
 
-void print_MultiFab(const amrex::MultiFab& data, std::string tag,
+void print_MultiFab(const amrex::MultiFab& data, const std::string& tag,
                     const int iVarStart, const int iVarEnd, int nshift = 0);
 
-void print_MultiFab(const amrex::MultiFab& data, std::string tag,
+void print_MultiFab(const amrex::MultiFab& data, const std::string& tag,
                     amrex::Geometry& gm, int nshift = 0);
 
 template <class FAB>
-void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
+void print_fab(const amrex::FabArray<FAB>& mf, const std::string& tag,
                const int iStart, const int nComp, int nshift = 0) {
   amrex::AllPrint() << "-----" << tag << " begin-----" << std::endl;
   amrex::Real sum = 0;
@@ -109,10 +109,7 @@ inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
   int nTotal = 0;
   if (!MF.empty())
     for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.validbox();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-      nTotal += (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+      nTotal += mfi.validbox().numPts();
     }
   return nTotal;
 }
@@ -157,11 +154,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
     const amrex::RealVect& xyz, const amrex::Real* const plo,
     const amrex::Real* const invDx, amrex::IntVect& loIdx,
     amrex::RealVect& dShift) {
-  for (int i = 0; i < nDim; ++i) {
-    dShift[i] = (xyz[i] - plo[i]) * invDx[i];
-    loIdx[i] = fastfloor(dShift[i]);
-    dShift[i] = dShift[i] - loIdx[i];
-  }
+  find_node_index(xyz, plo, invDx, loIdx, dShift);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
@@ -202,7 +195,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
 }
 
 inline bool skip_particle_for_dive_cleaning(
-    amrex::RealVect xyz, amrex::Geometry Geom, int iLev,
+    const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
     const amrex::Array4<int const>& status) {
 
   bool skip = false;
@@ -356,7 +349,8 @@ public:
 };
 
 template <class FAB>
-void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
+void distribute_FabArray(amrex::FabArray<FAB>& fa,
+                         const amrex::BoxArray& baNew,
                          const amrex::DistributionMapping& dm, int nComp,
                          int nGst, bool doCopy = true,
                          amrex::Real initVal = cUninitialized) {
@@ -384,7 +378,8 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
 }
 
 template <class FAB>
-void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
+void distribute_FabArray(amrex::FabArray<FAB>& fa,
+                         const amrex::BoxArray& baNew,
                          const amrex::DistributionMapping& dm,
                          bool doCopy = true) {
 
@@ -462,67 +457,55 @@ template <class FAB>
 void fill_lev_bny_from_value(amrex::FabArray<FAB>& dst,
                              const amrex::iMultiFab& fstatus,
                              amrex::Real value) {
-
+  const int nComp = dst.nComp();
   for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-    FAB& fab = dst[mfi];
     const auto& box = mfi.fabbox();
-    const auto& data = fab.array();
+    auto data = dst[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
 
-    const auto& statusArr = fstatus[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < dst.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_boundary(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = value;
-            }
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      if (bit::is_lev_boundary(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          data(i, j, k, iVar) = value;
+        }
+      }
+    });
   }
 }
 
 template <class FAB>
 void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
                                 const amrex::iMultiFab& fstatus, int iLev) {
+  const int nComp = dst.nComp();
   if (iLev > 0) {
     for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-      FAB& fab = dst[mfi];
       const auto& box = mfi.fabbox();
-      const auto& data = fab.array();
-      const auto& statusArr = fstatus[mfi].array();
-      const auto lo = amrex::lbound(box);
-      const auto hi = amrex::ubound(box);
-      for (int iVar = 0; iVar < dst.nComp(); iVar++)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (bit::is_lev_boundary(statusArr(i, j, k)) ||
-                  bit::is_refined(statusArr(i, j, k))) {
-                data(i, j, k, iVar) = 0.0;
-              }
-            }
+      auto data = dst[mfi].array();
+      const auto statusArr = fstatus[mfi].array();
+
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+        if (bit::is_lev_boundary(statusArr(i, j, k)) ||
+            bit::is_refined(statusArr(i, j, k))) {
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            data(i, j, k, iVar) = 0.0;
+          }
+        }
+      });
     }
-  }
-  if (iLev == 0) {
+  } else if (iLev == 0) {
     for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-      FAB& fab = dst[mfi];
       const auto& box = mfi.fabbox();
-      const auto& data = fab.array();
-      const auto& statusArr = fstatus[mfi].array();
-      const auto lo = amrex::lbound(box);
-      const auto hi = amrex::ubound(box);
-      for (int iVar = 0; iVar < dst.nComp(); iVar++)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (bit::is_lev_edge(statusArr(i, j, k)) ||
-                  bit::is_refined(statusArr(i, j, k))) {
-                data(i, j, k, iVar) = 0.0;
-              }
-            }
+      auto data = dst[mfi].array();
+      const auto statusArr = fstatus[mfi].array();
+
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+        if (bit::is_lev_edge(statusArr(i, j, k)) ||
+            bit::is_refined(statusArr(i, j, k))) {
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            data(i, j, k, iVar) = 0.0;
+          }
+        }
+      });
     }
   }
 }
@@ -534,18 +517,14 @@ void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
     stopvar = dst.nComp() - 1;
   }
   for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-    FAB& fab = dst[mfi];
     const auto& box = mfi.fabbox();
-    const auto& data = fab.array();
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
+    auto data = dst[mfi].array();
 
-    for (int iVar = startvar; iVar <= stopvar; iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            data(i, j, k, iVar) = value;
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      for (int iVar = startvar; iVar <= stopvar; ++iVar) {
+        data(i, j, k, iVar) = value;
+      }
+    });
   }
 }
 
@@ -569,25 +548,20 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper,
                              f.nGrow());
 
+  const int numComp = f.nComp();
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
     const auto& box = mfi.fabbox();
-    const auto& data = fab.array();
+    auto data = f[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+    const auto tmp = ftmp[mfi].array();
 
-    const auto& statusArr = fstatus[mfi].array();
-    const auto& tmp = ftmp[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_boundary(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-            }
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      if (bit::is_lev_boundary(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -611,25 +585,20 @@ void fill_fine_lev_new_from_coarse(amrex::FabArray<FAB>& coarse,
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper,
                              f.nGrow());
 
+  const int numComp = f.nComp();
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
     const auto& box = mfi.validbox();
-    const auto& data = fab.array();
+    auto data = f[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+    const auto tmp = ftmp[mfi].array();
 
-    const auto& statusArr = fstatus[mfi].array();
-    const auto& tmp = ftmp[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_new(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-            }
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      if (bit::is_new(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -651,25 +620,20 @@ void fill_fine_lev_edge_from_coarse(
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper,
                              f.nGrow());
 
+  const int numComp = f.nComp();
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
     const auto& box = mfi.fabbox();
-    const auto& data = fab.array();
+    auto data = f[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+    const auto tmp = ftmp[mfi].array();
 
-    const auto& statusArr = fstatus[mfi].array();
-    const auto& tmp = ftmp[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_edge(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-            }
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      if (bit::is_lev_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -692,23 +656,17 @@ void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper,
                              f.nGrow());
 
+  const int numComp = f.nComp();
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
     const auto& box = mfi.fabbox();
-    const auto& data = fab.array();
+    auto data = f[mfi].array();
+    const auto tmp = ftmp[mfi].array();
 
-    const auto& tmp = ftmp[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-
-            data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      for (int iVar = 0; iVar < numComp; ++iVar) {
+        data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
+      }
+    });
   }
   fine.FillBoundary();
 }
@@ -734,25 +692,20 @@ void sum_coarse_to_fine_lev_bny_node(
     interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
   }
 
+  const int numComp = f.nComp();
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
     const auto& box = mfi.validbox();
-    const auto& data = fab.array();
+    auto data = f[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+    const auto tmp = ftmp[mfi].array();
 
-    const auto& statusArr = fstatus[mfi].array();
-    const auto& tmp = ftmp[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_edge(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = tmp(i, j, k, iVar);
-            }
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      if (bit::is_lev_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -798,25 +751,20 @@ void sum_coarse_to_fine_lev_bny_cell(
 
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
 
+  const int numComp = f.nComp();
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
     const auto& box = mfi.validbox();
-    const auto& data = fab.array();
+    auto data = f[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+    const auto tmp = ftmp[mfi].array();
 
-    const auto& statusArr = fstatus[mfi].array();
-    const auto& tmp = ftmp[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_edge(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = tmp(i, j, k, iVar);
-            }
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      if (bit::is_lev_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -851,25 +799,20 @@ void interp_from_coarse_to_fine_for_domain_edge(
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
                              &amrex::node_bilinear_interp);
 
+  const int numComp = f.nComp();
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
     const auto& box = mfi.validbox();
-    const auto& data = fab.array();
+    auto data = f[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+    const auto tmp = ftmp[mfi].array();
 
-    const auto& statusArr = fstatus[mfi].array();
-    const auto& tmp = ftmp[mfi].array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_domain_edge(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = tmp(i, j, k, iVar);
-            }
-          }
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      if (bit::is_domain_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 

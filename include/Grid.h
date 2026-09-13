@@ -11,7 +11,6 @@
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_MultiFabUtil.H>
-#include <AMReX_PlotFileUtil.H>
 #include <AMReX_Print.H>
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
@@ -136,7 +135,9 @@ public:
     return vol;
   }
 
-  amrex::Vector<Regions> get_refine_regions() const { return refineRegions; }
+  const amrex::Vector<Regions>& get_refine_regions() const {
+    return refineRegions;
+  }
 
   void set_refine_regions(const amrex::Vector<Regions>& in) {
     refineRegions = in;
@@ -193,7 +194,7 @@ public:
     refineRegions = in;
   }
 
-  bool is_inside_domain(amrex::Real* loc) const {
+  bool is_inside_domain(const amrex::Real* loc) const {
     for (const auto& rb : domainRange) {
       if (rb.contains(loc))
         return true;
@@ -243,7 +244,7 @@ public:
   }
 
   // Find the finest level that contains the cell xyz.
-  inline int get_finest_lev(amrex::RealVect xyz) const {
+  inline int get_finest_lev(const amrex::RealVect& xyz) const {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
       auto idx = Geom(iLev).CellIndex(xyz.begin());
       if (cGrids[iLev].contains(idx)) {
@@ -255,19 +256,24 @@ public:
   }
 
   //===========================================================================
-  inline int find_mpi_rank_from_coord(const amrex::RealVect xyz) const {
-    int iLev = get_finest_lev(xyz);
+  inline int find_mpi_rank_from_coord(const amrex::RealVect& xyz) const {
+    for (int iLev = finest_level; iLev >= 0; iLev--) {
+      const auto idx = Geom(iLev).CellIndex(xyz.begin());
+      for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
+        if (cGrids[iLev][ii].contains(idx)) {
+          return DistributionMap(iLev)[ii];
+        }
+      }
+    }
 
-    auto idx = Geom(iLev).CellIndex(xyz.begin());
-
-    int rank = find_mpi_rank_from_cell_index(iLev, idx);
-
-    return rank;
+    amrex::AllPrint() << "xyz = " << xyz << std::endl;
+    amrex::Abort("Error: can not find this cell!");
+    return -1;
   }
 
   //===========================================================================
   inline int find_mpi_rank_from_cell_index(int const iLev,
-                                           const amrex::IntVect ijk) const {
+                                           const amrex::IntVect& ijk) const {
     for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
       const amrex::Box& bx = cGrids[iLev][ii];
       if (bx.contains(ijk))
@@ -373,7 +379,7 @@ public:
             for (int il = n_lev_max() - 2; il >= iLev; il--)
               if (refineRegions[il].is_inside(xyz)) {
                 tagArr(i, j, k) = amrex::TagBox::SET;
-                continue;
+                break;
               }
           }
     }
@@ -390,275 +396,39 @@ public:
 
   void WriteMFseries(amrex::Vector<amrex::MultiFab>& MF, TimeCtr tc, int nstep,
                      int nlev = 0, std::string st = "WriteMF",
-                     amrex::Vector<std::string> var = {}) {
-    int cycle = tc.get_cycle();
-    std::string st2 = std::to_string(cycle);
-    amrex::Real time = tc.get_time();
-    std::string st3 = std::to_string(time);
-
-    st = st + "_" + st2 + "_" + st3;
-    if (cycle % nstep == 0) {
-      WriteMF(MF, nlev, st, var);
-    }
-  };
+                     amrex::Vector<std::string> var = {});
 
   void WriteMF(NodeMMFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {}) {
-
-    amrex::Vector<amrex::MultiFab> tmf;
-
-    tmf.push_back(nodeMMtoMF(MF));
-    int nlev = 0;
-    WriteMF(tmf, nlev, st, var);
-  }
+               amrex::Vector<std::string> var = {});
 
   void WriteMF(CenterMMFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {}) {
-
-    amrex::Vector<amrex::MultiFab> tmf;
-
-    tmf.push_back(centerMMtoMF(MF));
-    int nlev = 0;
-    WriteMF(tmf, nlev, st, var);
-  }
+               amrex::Vector<std::string> var = {});
 
   void WriteMF(amrex::iMultiFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {}) {
-
-    amrex::Vector<amrex::iMultiFab> tmf;
-    tmf.resize(1);
-    tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
-    amrex::iMultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
-    int nlev = 0;
-    WriteMF(tmf, nlev, st, var);
-  }
+               amrex::Vector<std::string> var = {});
 
   void WriteMF(amrex::MultiFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {}) {
-
-    amrex::Vector<amrex::MultiFab> tmf;
-    tmf.resize(1);
-    tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
-    amrex::MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
-    int nlev = 0;
-    WriteMF(tmf, nlev, st, var);
-  }
+               amrex::Vector<std::string> var = {});
 
   void WriteMF(amrex::Vector<amrex::iMultiFab>& MF, int nlev = -1,
                std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {}) {
-
-    amrex::Vector<amrex::MultiFab> tmf;
-    tmf.resize(MF.size());
-    for (int iLev = 0; iLev < MF.size(); iLev++) {
-
-      tmf[iLev].define(MF[iLev].boxArray(), MF[iLev].DistributionMap(),
-                       MF[iLev].nComp(), MF[iLev].nGrow());
-
-      for (amrex::MFIter mfi(MF[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box& box = mfi.fabbox();
-        const amrex::Array4<int>& fab = MF[iLev][mfi].array();
-        const amrex::Array4<amrex::Real>& fab2 = tmf[iLev][mfi].array();
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              fab2(i, j, k) = fab(i, j, k);
-            }
-      }
-    }
-    WriteMF(tmf, nlev, st, var);
-  }
+               amrex::Vector<std::string> var = {});
 
   void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = -1,
                std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {}) {
-    if (nlev == -1) {
-      nlev = finest_level + 1;
-    } else {
-      nlev = nlev + 1;
-    }
-    amrex::Vector<const amrex::MultiFab*> tMF;
-    for (int i = 0; i < nlev; ++i) {
-      tMF.push_back(&MF[i]);
-    }
-    amrex::Vector<int> tmpVint;
-    if (var.empty()) {
-      for (int i = 0; i < MF[0].nComp(); ++i) {
-        var.push_back(std::to_string(i + 1));
-      }
-    }
-    for (int i = 0; i <= nlev; ++i) {
-      tmpVint.push_back(0);
-    }
-    amrex::WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
-                                   ref_ratio);
-  };
+               amrex::Vector<std::string> var = {});
 
-  amrex::MultiFab centerMMtoMF(CenterMMFab& MFin) {
-    amrex::MultiFab MFout;
-    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 27, MFin.nGrow());
-    for (amrex::MFIter mfi(MFout); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.fabbox();
-      const amrex::Array4<RealCMM>& fab = MFin[mfi].array();
-      const amrex::Array4<amrex::Real>& fab2 = MFout[mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+  amrex::MultiFab centerMMtoMF(CenterMMFab& MFin);
 
-      for (int k = lo.z; k <= hi.z; ++k) {
-        for (int j = lo.y; j <= hi.y; ++j) {
-          for (int i = lo.x; i <= hi.x; ++i) {
-            for (int nvar = 0; nvar < 27; ++nvar) {
-              fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
-            }
-          }
-        }
-      }
-    }
-    return MFout;
-  };
+  CenterMMFab MFtocenterMM(amrex::MultiFab& MFin);
 
-  CenterMMFab MFtocenterMM(amrex::MultiFab& MFin) {
-    CenterMMFab MFout;
-    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
-    for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.fabbox();
-      const amrex::Array4<RealCMM>& fab2 = MFout[mfi].array();
-      const amrex::Array4<amrex::Real>& fab = MFin[mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+  amrex::MultiFab nodeMMtoMF(NodeMMFab& MFin);
 
-      for (int k = lo.z; k <= hi.z; ++k) {
-        for (int j = lo.y; j <= hi.y; ++j) {
-          for (int i = lo.x; i <= hi.x; ++i) {
-            for (int nvar = 0; nvar < 27; ++nvar) {
-              fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
-            }
-          }
-        }
-      }
-    }
-    return MFout;
-  };
+  NodeMMFab MFtonodeMM(amrex::MultiFab& MFin);
 
-  amrex::MultiFab nodeMMtoMF(NodeMMFab& MFin) {
-    amrex::MultiFab MFout;
-    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 243, MFin.nGrow());
-    for (amrex::MFIter mfi(MFout); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.fabbox();
-      const amrex::Array4<RealMM>& fab = MFin[mfi].array();
-      const amrex::Array4<amrex::Real>& fab2 = MFout[mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k) {
-        for (int j = lo.y; j <= hi.y; ++j) {
-          for (int i = lo.x; i <= hi.x; ++i) {
-            for (int nvar = 0; nvar < 243; ++nvar) {
-              fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
-            }
-          }
-        }
-      }
-    }
-    return MFout;
-  };
-
-  NodeMMFab MFtonodeMM(amrex::MultiFab& MFin) {
-    NodeMMFab MFout;
-    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
-    for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.fabbox();
-      const amrex::Array4<RealMM>& fab2 = MFout[mfi].array();
-      const amrex::Array4<amrex::Real>& fab = MFin[mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k) {
-        for (int j = lo.y; j <= hi.y; ++j) {
-          for (int i = lo.x; i <= hi.x; ++i) {
-            for (int nvar = 0; nvar < 243; ++nvar) {
-              fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
-            }
-          }
-        }
-      }
-    }
-    return MFout;
-  };
   void WriteMFtoTXT(amrex::Vector<amrex::MultiFab>& MF, int nLev = 0,
-                    int WriteGhost = 0) {
+                    int WriteGhost = 0);
 
-    int ngst = MF[0].nGrow() * WriteGhost;
-    int ncomp = MF[0].nComp();
-
-    amrex::Vector<amrex::MultiFab> tmf;
-    tmf.resize(nLev + 1);
-    for (int n = 0; n <= nLev; n++) {
-
-      amrex::DistributionMapping dm(MF[n].boxArray(), 1);
-      amrex::MultiFab ttmf;
-      ttmf.define(MF[n].boxArray(), dm, MF[n].nComp(), MF[n].nGrow());
-
-      ttmf.ParallelCopy(MF[n], 0, 0, MF[n].nComp(), MF[n].nGrow(),
-                        MF[n].nGrow());
-
-      tmf[n] = std::move(ttmf);
-
-      MF[n].FillBoundary();
-      tmf[n].FillBoundary();
-    }
-    std::ofstream myfile;
-    myfile.open("MF_Header.txt");
-    myfile << nLev << " "
-           << "nLev"
-           << "\n";
-    myfile << ncomp << " "
-           << "ncomp"
-           << "\n";
-    myfile << ngst << " "
-           << "ngst"
-           << "\n";
-    myfile.close();
-
-    for (int n = 0; n <= nLev; n++) {
-      std::ofstream myfile;
-      myfile.open("MF_" + std::to_string(n) + ".txt");
-      for (amrex::MFIter mfi(tmf[n]); mfi.isValid(); ++mfi) {
-
-        const amrex::Box& box = mfi.validbox();
-        const amrex::Array4<amrex::Real>& fab = tmf[n][mfi].array();
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
-
-        for (int k = lo.z - ngst; k <= hi.z + ngst; ++k)
-          for (int j = lo.y - ngst; j <= hi.y + ngst; ++j)
-            for (int i = lo.x - ngst; i <= hi.x + ngst; ++i) {
-
-              myfile << i << " " << j << " " << k << " "
-                     << i * Geom(n).CellSizeArray()[0] << " "
-                     << j * Geom(n).CellSizeArray()[1] << " "
-                     << k * Geom(n).CellSizeArray()[2] << " " << 2455.0 << " ";
-
-              for (int l = 0; l < ncomp; ++l) {
-                myfile << fab(i, j, k, l) << " ";
-              }
-
-              myfile << "\n";
-            }
-      }
-      myfile.close();
-    }
-  };
-  void WriteMFtoTXT(amrex::MultiFab& MF, int WriteGhost = 0) {
-    amrex::Vector<amrex::MultiFab> tmf;
-    tmf.resize(1);
-    tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
-    amrex::MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
-    int nlev = 0;
-    WriteMFtoTXT(tmf, nlev, WriteGhost);
-  };
+  void WriteMFtoTXT(amrex::MultiFab& MF, int WriteGhost = 0);
 };
 #endif

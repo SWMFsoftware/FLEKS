@@ -1,3 +1,6 @@
+#include <fstream>
+#include <AMReX_PlotFileUtil.H>
+
 #include "Bit.h"
 #include "FleksDistributionMap.h"
 #include "Grid.h"
@@ -10,14 +13,6 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
 
   Vector<DistributionMapping> dmap(n_lev_max());
 
-  Vector<MultiFab> cost(n_lev_max());
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    distribute_FabArray(cost[iLev], cGrids[iLev], DistributionMap(iLev), 1, 0,
-                        false);
-    MultiFab::Copy(cost[iLev], cellCost[iLev], 0, 0, 1, 0);
-  }
-
   Vector<int> rankStart(n_lev(), 0);
   Vector<int> nProcEachLev(n_lev(), ParallelDescriptor::NProcs());
 
@@ -26,7 +21,7 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
     Vector<Real> levCost(n_lev());
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      levCost[iLev] = cost[iLev].sum();
+      levCost[iLev] = cellCost[iLev].sum();
       totalCost += levCost[iLev];
     }
 
@@ -49,9 +44,6 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
     }
   }
 
-  // Real localProcCost = 0;
-  // Vector<Real> pcost(ParallelDescriptor::NProcs(), 0);
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     Vector<int> ord(ParallelDescriptor::NProcs());
     for (int i = 0; i < nProcEachLev[iLev]; ++i) {
@@ -60,41 +52,7 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
 
     Real eff;
     dmap[iLev] = FleksDistributionMap::make_balanced_map(
-        BalanceMethod::SFC, cost[iLev], nProcEachLev[iLev], ord, eff);
-    // Print() << printPrefix << " iLev = " << iLev
-    //         << " load balance efficiency = " << std::setw(10) << eff
-    //         << std::endl;
-
-    distribute_FabArray(cost[iLev], cGrids[iLev], dmap[iLev], 1, 0, true);
-
-    //   for (MFIter mfi(cost[iLev]); mfi.isValid(); ++mfi) {
-    //     localProcCost += cost[iLev][mfi].sum<RunOn::Device>(mfi.validbox(),
-    //     0);
-    //   }
-
-    //   ParallelDescriptor::Gather(&localProcCost, 1, pcost.data(), 1,
-    //                              ParallelDescriptor::IOProcessorNumber());
-
-    //   ParallelDescriptor::Bcast(pcost.data(), pcost.size(),
-    //                             ParallelDescriptor::IOProcessorNumber());
-
-    //   using LIpair = std::pair<Long, int>;
-
-    //   Vector<LIpair> pair;
-    //   pair.reserve(ParallelDescriptor::NProcs());
-
-    //   for (int i = 0; i < ParallelDescriptor::NProcs(); ++i) {
-    //     pair.push_back(LIpair(pcost[i], i));
-    //   }
-
-    //   std::sort(pair.begin(), pair.end(),
-    //             [](const LIpair& lhs, const LIpair& rhs) {
-    //               return lhs.first > rhs.first;
-    //             });
-
-    //   for (int i = 0; i < pcost.size(); ++i) {
-    //     ord[i] = pair[i].second;
-    //   }
+        BalanceMethod::SFC, cellCost[iLev], nProcEachLev[iLev], ord, eff);
   }
 
   return dmap;
@@ -260,13 +218,18 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
         // New active cell
         bit::set_new(cellArr(i, j, k));
+      });
 
-        if (!cGridsOld.empty()) {
-          if (cGridsOld[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-            bit::set_not_new(cellArr(i, j, k));
+      if (!cGridsOld.empty()) {
+        for (int b = 0, nb = cGridsOld[iLev].size(); b < nb; ++b) {
+          const Box isect = box & cGridsOld[iLev][b];
+          if (isect.ok()) {
+            ParallelFor(isect, [&](int i, int j, int k) noexcept {
+              bit::set_not_new(cellArr(i, j, k));
+            });
           }
         }
-      });
+      }
     }
 
     // Set the 'refined' status
@@ -304,42 +267,29 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
 
-    // Set the edge cells.
-    // Q: But what is the edge cell?
-    // A: It is a physical cell that has one or more neighbor cells are
-    // boundary cell.
+    // Set edge cells and find cells with 'is_refined' neighbors
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
-        Box subBox(ijk - 1, ijk + 1);
+        const int kmin = nDim > 2 ? k - 1 : k;
+        const int kmax = nDim > 2 ? k + 1 : k;
+        const bool notRefined = !bit::is_refined(cellArr(i, j, k));
 
-        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
-          if (bit::is_lev_boundary(cellArr(ii, jj, kk))) {
-            bit::set_lev_edge(cellArr(i, j, k));
+        for (int kk = kmin; kk <= kmax; ++kk) {
+          for (int jj = j - 1; jj <= j + 1; ++jj) {
+            for (int ii = i - 1; ii <= i + 1; ++ii) {
+              const int neighbor = cellArr(ii, jj, kk);
+              if (bit::is_lev_boundary(neighbor)) {
+                bit::set_lev_edge(cellArr(i, j, k));
 
-            if (bit::is_domain_boundary(cellArr(ii, jj, kk))) {
-              bit::set_domain_edge(cellArr(i, j, k));
-            }
-          }
-        });
-      });
-    }
+                if (bit::is_domain_boundary(neighbor)) {
+                  bit::set_domain_edge(cellArr(i, j, k));
+                }
+              }
 
-    // Find cells with 'is_refined' neighbors
-    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const auto& status = cellStatus[iLev][mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
-        int kmin = nDim > 2 ? k - 1 : k;
-        int kmax = nDim > 2 ? k + 1 : k;
-        for (int ii = i - 1; ii <= i + 1; ii++) {
-          for (int jj = j - 1; jj <= j + 1; jj++) {
-            for (int kk = kmin; kk <= kmax; kk++) {
-              if (bit::is_refined(status(ii, jj, kk)) &&
-                  !bit::is_refined(status(i, j, k))) {
-                bit::set_refined_neighbour(status(i, j, k));
+              if (notRefined && bit::is_refined(neighbor)) {
+                bit::set_refined_neighbour(cellArr(i, j, k));
               }
             }
           }
@@ -399,13 +349,18 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
 
         // New active cell
         bit::set_new(nodeArr(i, j, k));
+      });
 
-        if (!nodeBAOld.empty()) {
-          if (nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-            bit::set_not_new(nodeArr(i, j, k));
+      if (!nodeBAOld.empty()) {
+        for (int b = 0, nb = nodeBAOld.size(); b < nb; ++b) {
+          const Box isect = box & nodeBAOld[b];
+          if (isect.ok()) {
+            ParallelFor(isect, [&](int i, int j, int k) noexcept {
+              bit::set_not_new(nodeArr(i, j, k));
+            });
           }
         }
-      });
+      }
     }
 
     nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -481,34 +436,304 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       // Set the 'edge' status
       // Q: But what is the edge node?
       // A: It is a node at the boundary of a level.
-
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
-        Box subBox(ijk - 1, ijk + 1);
+        const int kmin = nDim > 2 ? k - 1 : k;
+        const int kmax = nDim > 2 ? k + 1 : k;
 
-        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
-          if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
-            bit::set_lev_edge(nodeArr(i, j, k));
+        for (int kk = kmin; kk <= kmax; ++kk) {
+          for (int jj = j - 1; jj <= j + 1; ++jj) {
+            for (int ii = i - 1; ii <= i + 1; ++ii) {
+              if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
+                bit::set_lev_edge(nodeArr(i, j, k));
 
-            if (bit::is_domain_boundary(nodeArr(ii, jj, kk))) {
-              bit::set_domain_edge(nodeArr(i, j, k));
+                if (bit::is_domain_boundary(nodeArr(ii, jj, kk))) {
+                  bit::set_domain_edge(nodeArr(i, j, k));
+                }
+              }
             }
           }
-        });
+        }
       });
 
       // Set the 'refined' status for nodes
       const auto& cell = cellStatus[iLev][mfi].array();
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
-        Box subBox(ijk - 1, ijk);
-
-        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
-          if (bit::is_refined(cell(ii, jj, kk))) {
-            bit::set_refined(nodeArr(i, j, k));
+        const int kmin = nDim > 2 ? k - 1 : k;
+        for (int kk = kmin; kk <= k; ++kk) {
+          for (int jj = j - 1; jj <= j; ++jj) {
+            for (int ii = i - 1; ii <= i; ++ii) {
+              if (bit::is_refined(cell(ii, jj, kk))) {
+                bit::set_refined(nodeArr(i, j, k));
+              }
+            }
           }
-        });
+        }
       });
     }
   }
+}
+
+void Grid::WriteMFseries(Vector<MultiFab>& MF, TimeCtr tc, int nstep,
+                         int nlev, std::string st,
+                         Vector<std::string> var) {
+  int cycle = tc.get_cycle();
+  std::string st2 = std::to_string(cycle);
+  Real time = tc.get_time();
+  std::string st3 = std::to_string(time);
+
+  st = st + "_" + st2 + "_" + st3;
+  if (cycle % nstep == 0) {
+    WriteMF(MF, nlev, st, var);
+  }
+}
+
+void Grid::WriteMF(NodeMMFab& MF, std::string st,
+                   Vector<std::string> var) {
+  Vector<MultiFab> tmf;
+  tmf.push_back(nodeMMtoMF(MF));
+  int nlev = 0;
+  WriteMF(tmf, nlev, st, var);
+}
+
+void Grid::WriteMF(CenterMMFab& MF, std::string st,
+                   Vector<std::string> var) {
+  Vector<MultiFab> tmf;
+  tmf.push_back(centerMMtoMF(MF));
+  int nlev = 0;
+  WriteMF(tmf, nlev, st, var);
+}
+
+void Grid::WriteMF(iMultiFab& MF, std::string st,
+                   Vector<std::string> var) {
+  Vector<iMultiFab> tmf;
+  tmf.resize(1);
+  tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
+  iMultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+  int nlev = 0;
+  WriteMF(tmf, nlev, st, var);
+}
+
+void Grid::WriteMF(MultiFab& MF, std::string st,
+                   Vector<std::string> var) {
+  Vector<MultiFab> tmf;
+  tmf.resize(1);
+  tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
+  MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+  int nlev = 0;
+  WriteMF(tmf, nlev, st, var);
+}
+
+void Grid::WriteMF(Vector<iMultiFab>& MF, int nlev,
+                   std::string st,
+                   Vector<std::string> var) {
+  Vector<MultiFab> tmf;
+  tmf.resize(MF.size());
+  for (int iLev = 0; iLev < MF.size(); iLev++) {
+    tmf[iLev].define(MF[iLev].boxArray(), MF[iLev].DistributionMap(),
+                     MF[iLev].nComp(), MF[iLev].nGrow());
+
+    for (MFIter mfi(MF[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.fabbox();
+      const Array4<int>& fab = MF[iLev][mfi].array();
+      const Array4<Real>& fab2 = tmf[iLev][mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            fab2(i, j, k) = fab(i, j, k);
+          }
+    }
+  }
+  WriteMF(tmf, nlev, st, var);
+}
+
+void Grid::WriteMF(Vector<MultiFab>& MF, int nlev,
+                   std::string st,
+                   Vector<std::string> var) {
+  if (nlev == -1) {
+    nlev = finest_level + 1;
+  } else {
+    nlev = nlev + 1;
+  }
+  Vector<const MultiFab*> tMF;
+  for (int i = 0; i < nlev; ++i) {
+    tMF.push_back(&MF[i]);
+  }
+  Vector<int> tmpVint;
+  if (var.empty()) {
+    for (int i = 0; i < MF[0].nComp(); ++i) {
+      var.push_back(std::to_string(i + 1));
+    }
+  }
+  for (int i = 0; i <= nlev; ++i) {
+    tmpVint.push_back(0);
+  }
+  WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
+                          ref_ratio);
+}
+
+MultiFab Grid::centerMMtoMF(CenterMMFab& MFin) {
+  MultiFab MFout;
+  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 27, MFin.nGrow());
+  for (MFIter mfi(MFout); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    const Array4<RealCMM>& fab = MFin[mfi].array();
+    const Array4<Real>& fab2 = MFout[mfi].array();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k) {
+      for (int j = lo.y; j <= hi.y; ++j) {
+        for (int i = lo.x; i <= hi.x; ++i) {
+          for (int nvar = 0; nvar < 27; ++nvar) {
+            fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
+          }
+        }
+      }
+    }
+  }
+  return MFout;
+}
+
+CenterMMFab Grid::MFtocenterMM(MultiFab& MFin) {
+  CenterMMFab MFout;
+  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
+  for (MFIter mfi(MFin); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    const Array4<RealCMM>& fab2 = MFout[mfi].array();
+    const Array4<Real>& fab = MFin[mfi].array();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k) {
+      for (int j = lo.y; j <= hi.y; ++j) {
+        for (int i = lo.x; i <= hi.x; ++i) {
+          for (int nvar = 0; nvar < 27; ++nvar) {
+            fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
+          }
+        }
+      }
+    }
+  }
+  return MFout;
+}
+
+MultiFab Grid::nodeMMtoMF(NodeMMFab& MFin) {
+  MultiFab MFout;
+  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 243, MFin.nGrow());
+  for (MFIter mfi(MFout); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    const Array4<RealMM>& fab = MFin[mfi].array();
+    const Array4<Real>& fab2 = MFout[mfi].array();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k) {
+      for (int j = lo.y; j <= hi.y; ++j) {
+        for (int i = lo.x; i <= hi.x; ++i) {
+          for (int nvar = 0; nvar < 243; ++nvar) {
+            fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
+          }
+        }
+      }
+    }
+  }
+  return MFout;
+}
+
+NodeMMFab Grid::MFtonodeMM(MultiFab& MFin) {
+  NodeMMFab MFout;
+  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
+  for (MFIter mfi(MFin); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    const Array4<RealMM>& fab2 = MFout[mfi].array();
+    const Array4<Real>& fab = MFin[mfi].array();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k) {
+      for (int j = lo.y; j <= hi.y; ++j) {
+        for (int i = lo.x; i <= hi.x; ++i) {
+          for (int nvar = 0; nvar < 243; ++nvar) {
+            fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
+          }
+        }
+      }
+    }
+  }
+  return MFout;
+}
+
+void Grid::WriteMFtoTXT(Vector<MultiFab>& MF, int nLev,
+                        int WriteGhost) {
+  int ngst = MF[0].nGrow() * WriteGhost;
+  int ncomp = MF[0].nComp();
+
+  Vector<MultiFab> tmf;
+  tmf.resize(nLev + 1);
+  for (int n = 0; n <= nLev; n++) {
+    DistributionMapping dm(MF[n].boxArray(), 1);
+    MultiFab ttmf;
+    ttmf.define(MF[n].boxArray(), dm, MF[n].nComp(), MF[n].nGrow());
+
+    ttmf.ParallelCopy(MF[n], 0, 0, MF[n].nComp(), MF[n].nGrow(),
+                      MF[n].nGrow());
+
+    tmf[n] = std::move(ttmf);
+
+    MF[n].FillBoundary();
+    tmf[n].FillBoundary();
+  }
+  if (ParallelDescriptor::IOProcessor()) {
+    std::ofstream myfile;
+    myfile.open("MF_Header.txt");
+    myfile << nLev << " "
+           << "nLev"
+           << "\n";
+    myfile << ncomp << " "
+           << "ncomp"
+           << "\n";
+    myfile << ngst << " "
+           << "ngst"
+           << "\n";
+    myfile.close();
+
+    for (int n = 0; n <= nLev; n++) {
+      std::ofstream myfile;
+      myfile.open("MF_" + std::to_string(n) + ".txt");
+      for (MFIter mfi(tmf[n]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& fab = tmf[n][mfi].array();
+        const auto lo = lbound(box);
+        const auto hi = ubound(box);
+
+        for (int k = lo.z - ngst; k <= hi.z + ngst; ++k)
+          for (int j = lo.y - ngst; j <= hi.y + ngst; ++j)
+            for (int i = lo.x - ngst; i <= hi.x + ngst; ++i) {
+              myfile << i << " " << j << " " << k << " "
+                     << i * Geom(n).CellSizeArray()[0] << " "
+                     << j * Geom(n).CellSizeArray()[1] << " "
+                     << k * Geom(n).CellSizeArray()[2] << " " << 2455.0 << " ";
+
+              for (int l = 0; l < ncomp; ++l) {
+                myfile << fab(i, j, k, l) << " ";
+              }
+
+              myfile << "\n";
+            }
+      }
+      myfile.close();
+    }
+  }
+}
+
+void Grid::WriteMFtoTXT(MultiFab& MF, int WriteGhost) {
+  Vector<MultiFab> tmf;
+  tmf.resize(1);
+  tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
+  MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+  int nlev = 0;
+  WriteMFtoTXT(tmf, nlev, WriteGhost);
 }
