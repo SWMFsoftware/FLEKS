@@ -117,6 +117,7 @@ summary table (e.g. `BEAM` and `BEAM (HYBRID)`).
 python3 tests/validate_performance.py
 ```
 
-The script benchmarks both the full-PIC beam test (`performance/PARAM.in`) and
-the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and writes the
-results to `tests/performance_summary.md`.
+The script benchmarks the full-PIC beam test (`performance/PARAM.in`),
+the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and the
+particle tracker test (`performance/PARAM.in.pt`), and writes the results to
+`tests/performance_summary.md`.

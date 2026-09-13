@@ -46,7 +46,7 @@ jobs:
         run: |
           ls -lh ../bin/FLEKS.exe
           ldd ../bin/FLEKS.exe
-          python3 validate_performance.py
+          python3 validate_performance.py --suite all
 
       - name: Write Job Summary
         if: always()
