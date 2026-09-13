@@ -44,7 +44,7 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real>& center = centerMF[mfi].array();
     const Array4<Real const>& node = nodeMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       center(i, j, k, ix_) =
           0.25 * invDx_x *
@@ -82,7 +82,7 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real>& node = nodeMF[mfi].array();
     const Array4<Real const>& center = centerMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
 
       node(i, j, k, ix_) = 0.25 * invDx_x *
@@ -130,7 +130,7 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real const>& center = centerMF[mfi].array();
     const Array4<Real>& node = nodeMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real compX =
           0.25 * invDx_x *
@@ -171,7 +171,7 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real const>& node = nodeMF[mfi].array();
     const Array4<Real>& center = centerMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
 
       const Real compX =
@@ -214,7 +214,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
     const Array4<Real const>& srcArr = srcMF[mfi].array();
     const Array4<Real>& dstArr = dstMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       int kp1 = nDim > 2 ? k + 1 : k;
       Real compX = 0;
@@ -250,8 +250,8 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
   }
 }
 
-void print_MultiFab(const MultiFab& data, const std::string& tag,
-                    Geometry& gm, int nshift) {
+void print_MultiFab(const MultiFab& data, const std::string& tag, Geometry& gm,
+                    int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;
@@ -406,7 +406,7 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real cZDY =
           0.25 * invDx_y *
@@ -476,7 +476,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       const Real cZDY =
           0.25 * invDx_y *
@@ -553,7 +553,7 @@ void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
     const Array4<Real>& outArr = centerOutMF[mfi].array();
     const Array4<Real const>& inArr = centerInMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       // curl X: (dBz/dy - dBy/dz)
       const Real dBz_dy =
           (inArr(i, j + 1, k, iz_) - inArr(i, j - 1, k, iz_)) * dyInv;
@@ -591,17 +591,18 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
-    ParallelFor(box, centerMF.nComp(),
-                [=] AMREX_GPU_DEVICE (int i, int j, int k, int iVar) noexcept {
-      int km1 = nDim > 2 ? k - 1 : k;
-      nodeArr(i, j, k, iVar) =
-          0.125 *
-          (centerArr(i - 1, j - 1, km1, iVar) +
-           centerArr(i - 1, j - 1, k, iVar) + centerArr(i - 1, j, km1, iVar) +
-           centerArr(i - 1, j, k, iVar) + centerArr(i, j - 1, km1, iVar) +
-           centerArr(i, j - 1, k, iVar) + centerArr(i, j, km1, iVar) +
-           centerArr(i, j, k, iVar));
-    });
+    ParallelFor(
+        box, centerMF.nComp(),
+        [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
+          int km1 = nDim > 2 ? k - 1 : k;
+          nodeArr(i, j, k, iVar) =
+              0.125 *
+              (centerArr(i - 1, j - 1, km1, iVar) +
+               centerArr(i - 1, j - 1, k, iVar) +
+               centerArr(i - 1, j, km1, iVar) + centerArr(i - 1, j, k, iVar) +
+               centerArr(i, j - 1, km1, iVar) + centerArr(i, j - 1, k, iVar) +
+               centerArr(i, j, km1, iVar) + centerArr(i, j, k, iVar));
+        });
   }
 }
 
@@ -619,23 +620,24 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
-    ParallelFor(box, centerMF.nComp(),
-                [=] AMREX_GPU_DEVICE (int i, int j, int k, int iVar) noexcept {
-      if (nDim > 2) {
-        centerArr(i, j, k, iVar) =
-            inv2d *
-            (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
-             nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar) +
-             nodeArr(i, j, k + 1, iVar) + nodeArr(i + 1, j, k + 1, iVar) +
-             nodeArr(i, j + 1, k + 1, iVar) +
-             nodeArr(i + 1, j + 1, k + 1, iVar));
-      } else {
-        centerArr(i, j, k, iVar) =
-            inv2d *
-            (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
-             nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar));
-      }
-    });
+    ParallelFor(
+        box, centerMF.nComp(),
+        [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
+          if (nDim > 2) {
+            centerArr(i, j, k, iVar) =
+                inv2d *
+                (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
+                 nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar) +
+                 nodeArr(i, j, k + 1, iVar) + nodeArr(i + 1, j, k + 1, iVar) +
+                 nodeArr(i, j + 1, k + 1, iVar) +
+                 nodeArr(i + 1, j + 1, k + 1, iVar));
+          } else {
+            centerArr(i, j, k, iVar) =
+                inv2d *
+                (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
+                 nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar));
+          }
+        });
   }
 }
 
@@ -646,24 +648,28 @@ void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
   const Real iz2 = (nDim > 2) ? invDx[iz_] * invDx[iz_] : 0.0;
 
   for (MFIter mfi(centerMFout, doTiling); mfi.isValid(); ++mfi) {
-    const int ng = std::min(centerMFout.nGrow(), std::max(0, centerMF.nGrow() - 1));
+    const int ng =
+        std::min(centerMFout.nGrow(), std::max(0, centerMF.nGrow() - 1));
     Box box = mfi.validbox();
     box.grow(ng);
 
     const Array4<Real>& outArr = centerMFout[mfi].array();
     const Array4<Real const>& inArr = centerMF[mfi].array();
 
-    ParallelFor(box, centerMF.nComp(),
-                [=] AMREX_GPU_DEVICE (int i, int j, int k, int iVar) noexcept {
-      Real lap = ix2 * (inArr(i + 1, j, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
-                        inArr(i - 1, j, k, iVar)) +
-                 iy2 * (inArr(i, j + 1, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
-                        inArr(i, j - 1, k, iVar));
-      if (nDim > 2) {
-        lap += iz2 * (inArr(i, j, k + 1, iVar) - 2.0 * inArr(i, j, k, iVar) +
-                      inArr(i, j, k - 1, iVar));
-      }
-      outArr(i, j, k, iVar) = lap;
-    });
+    ParallelFor(
+        box, centerMF.nComp(),
+        [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
+          Real lap =
+              ix2 * (inArr(i + 1, j, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                     inArr(i - 1, j, k, iVar)) +
+              iy2 * (inArr(i, j + 1, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                     inArr(i, j - 1, k, iVar));
+          if (nDim > 2) {
+            lap +=
+                iz2 * (inArr(i, j, k + 1, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                       inArr(i, j, k - 1, iVar));
+          }
+          outArr(i, j, k, iVar) = lap;
+        });
   }
 }

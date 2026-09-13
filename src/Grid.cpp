@@ -1,4 +1,5 @@
 #include <fstream>
+
 #include <AMReX_PlotFileUtil.H>
 
 #include "Bit.h"
@@ -473,9 +474,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
   }
 }
 
-void Grid::WriteMFseries(Vector<MultiFab>& MF, TimeCtr tc, int nstep,
-                         int nlev, std::string st,
-                         Vector<std::string> var) {
+void Grid::WriteMFseries(Vector<MultiFab>& MF, TimeCtr tc, int nstep, int nlev,
+                         std::string st, Vector<std::string> var) {
   int cycle = tc.get_cycle();
   std::string st2 = std::to_string(cycle);
   Real time = tc.get_time();
@@ -487,24 +487,21 @@ void Grid::WriteMFseries(Vector<MultiFab>& MF, TimeCtr tc, int nstep,
   }
 }
 
-void Grid::WriteMF(NodeMMFab& MF, std::string st,
-                   Vector<std::string> var) {
+void Grid::WriteMF(NodeMMFab& MF, std::string st, Vector<std::string> var) {
   Vector<MultiFab> tmf;
   tmf.push_back(nodeMMtoMF(MF));
   int nlev = 0;
   WriteMF(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(CenterMMFab& MF, std::string st,
-                   Vector<std::string> var) {
+void Grid::WriteMF(CenterMMFab& MF, std::string st, Vector<std::string> var) {
   Vector<MultiFab> tmf;
   tmf.push_back(centerMMtoMF(MF));
   int nlev = 0;
   WriteMF(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(iMultiFab& MF, std::string st,
-                   Vector<std::string> var) {
+void Grid::WriteMF(iMultiFab& MF, std::string st, Vector<std::string> var) {
   Vector<iMultiFab> tmf;
   tmf.resize(1);
   tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
@@ -513,8 +510,7 @@ void Grid::WriteMF(iMultiFab& MF, std::string st,
   WriteMF(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(MultiFab& MF, std::string st,
-                   Vector<std::string> var) {
+void Grid::WriteMF(MultiFab& MF, std::string st, Vector<std::string> var) {
   Vector<MultiFab> tmf;
   tmf.resize(1);
   tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
@@ -523,8 +519,7 @@ void Grid::WriteMF(MultiFab& MF, std::string st,
   WriteMF(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(Vector<iMultiFab>& MF, int nlev,
-                   std::string st,
+void Grid::WriteMF(Vector<iMultiFab>& MF, int nlev, std::string st,
                    Vector<std::string> var) {
   Vector<MultiFab> tmf;
   tmf.resize(MF.size());
@@ -549,8 +544,7 @@ void Grid::WriteMF(Vector<iMultiFab>& MF, int nlev,
   WriteMF(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(Vector<MultiFab>& MF, int nlev,
-                   std::string st,
+void Grid::WriteMF(Vector<MultiFab>& MF, int nlev, std::string st,
                    Vector<std::string> var) {
   if (nlev == -1) {
     nlev = finest_level + 1;
@@ -570,8 +564,7 @@ void Grid::WriteMF(Vector<MultiFab>& MF, int nlev,
   for (int i = 0; i <= nlev; ++i) {
     tmpVint.push_back(0);
   }
-  WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
-                          ref_ratio);
+  WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint, ref_ratio);
 }
 
 MultiFab Grid::centerMMtoMF(CenterMMFab& MFin) {
@@ -666,8 +659,7 @@ NodeMMFab Grid::MFtonodeMM(MultiFab& MFin) {
   return MFout;
 }
 
-void Grid::WriteMFtoTXT(Vector<MultiFab>& MF, int nLev,
-                        int WriteGhost) {
+void Grid::WriteMFtoTXT(Vector<MultiFab>& MF, int nLev, int WriteGhost) {
   int ngst = MF[0].nGrow() * WriteGhost;
   int ncomp = MF[0].nComp();
 
@@ -678,8 +670,7 @@ void Grid::WriteMFtoTXT(Vector<MultiFab>& MF, int nLev,
     MultiFab ttmf;
     ttmf.define(MF[n].boxArray(), dm, MF[n].nComp(), MF[n].nGrow());
 
-    ttmf.ParallelCopy(MF[n], 0, 0, MF[n].nComp(), MF[n].nGrow(),
-                      MF[n].nGrow());
+    ttmf.ParallelCopy(MF[n], 0, 0, MF[n].nComp(), MF[n].nGrow(), MF[n].nGrow());
 
     tmf[n] = std::move(ttmf);
 

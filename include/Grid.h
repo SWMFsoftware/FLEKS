@@ -411,12 +411,10 @@ public:
                amrex::Vector<std::string> var = {});
 
   void WriteMF(amrex::Vector<amrex::iMultiFab>& MF, int nlev = -1,
-               std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
+               std::string st = "WriteMF", amrex::Vector<std::string> var = {});
 
   void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = -1,
-               std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
+               std::string st = "WriteMF", amrex::Vector<std::string> var = {});
 
   amrex::MultiFab centerMMtoMF(CenterMMFab& MFin);
 
