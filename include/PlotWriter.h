@@ -100,6 +100,13 @@ private:
   int particleSpecies;
 
   int iLevSave;
+
+  // Helper methods for IDL output formatting and writing
+  std::string get_idl_filename(double const timeNow, int const iCycle) const;
+  void write_binary_idl(double const timeNow, int const iCycle,
+                        MDArray<double>& value_II, double const dx);
+  void write_ascii_idl(double const timeNow, int const iCycle,
+                       MDArray<double>& value_II, double const dx);
   //-----------------------------------------------------------------
 
 public:
