@@ -24,6 +24,7 @@ Exits with status 1 and a list of problems when a check fails.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -56,16 +57,25 @@ CANONICAL_FILES = [
 PATH_SKIP_CHARS = set("#$*()=<>|& \t{}")
 PATH_RE = re.compile(r"`([^`\n]+)`")
 
-# Paths that only exist after a build, a run, or in a parent SWMF tree.
+# Paths that only exist after a build, a run, or in a parent SWMF tree. They
+# are absent from a fresh checkout, so the check must not require them.
 GENERATED_PATHS = {
     "doc/USERMANUAL.pdf",
     "doc/Algorithm.pdf",
+    "bin",
     "bin/FLEKS.exe",
     "bin/converter.exe",
     "./FLEKS.exe",
     "src/libFLEKS.a",
     "compile_commands.json",
+    "include/Constants.h",
+    "include/UserSource.h",
     "include/show_git_info.h",
+    "libSHARE.a",
+    "con_comp_param.mod",
+    "util/AMREX/InstallDir/",
+    "share/Scripts/",
+    "share/Library",
     "html/index.html",
     "SWMF/PC/FLEKS",
     "../../util/AMREX/InstallDir/",
@@ -122,13 +132,63 @@ def frontmatter(text: str) -> dict[str, str]:
     return fields
 
 
+IGNORED_PATHS: set[str] | None = None
+
+
+def ignored_paths() -> set[str]:
+    """Paths git ignores (build output, generated headers, fetched deps).
+
+    Those exist in a developer's working tree but not in a fresh checkout, so
+    referencing them is fine. Computed once; empty when git is unavailable.
+    """
+    global IGNORED_PATHS
+    if IGNORED_PATHS is None:
+        IGNORED_PATHS = set()
+        try:
+            result = subprocess.run(
+                ["git", "ls-files", "--others", "--ignored", "--exclude-standard"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return IGNORED_PATHS
+        if result.returncode == 0:
+            IGNORED_PATHS = {
+                line.strip().rstrip("/")
+                for line in result.stdout.splitlines()
+                if line.strip()
+            }
+    return IGNORED_PATHS
+
+
+def is_ignored(candidate: str, source: Path) -> bool:
+    ignored = ignored_paths()
+    if not ignored:
+        return False
+    forms = {candidate.rstrip("/")}
+    try:
+        forms.add((source.parent / candidate).relative_to(REPO_ROOT).as_posix())
+    except ValueError:
+        pass
+    for form in forms:
+        form = form.rstrip("/")
+        if form in ignored:
+            return True
+        if any(form.startswith(f"{entry}/") for entry in ignored):
+            return True
+    return False
+
+
 def resolve(candidate: str, source: Path) -> bool:
     """True when a backticked candidate points at something that exists.
 
     A path may be written relative to the file that mentions it
     (``references/standards.md``), relative to the repository root
     (``.agent/skills/...``) or as a bare name resolved by search
-    (``validate.py``).
+    (``validate.py``). Build output and generated headers count as existing,
+    because a fresh checkout does not contain them.
     """
     path = candidate.rstrip("/")
     allowed = GENERATED_PATHS | EXTERNAL_PATHS
@@ -137,6 +197,8 @@ def resolve(candidate: str, source: Path) -> bool:
     for base in (source.parent, REPO_ROOT):
         if (base / path).exists():
             return True
+    if is_ignored(candidate, source):
+        return True
     name = Path(path).name
     if any(REPO_ROOT.glob(f"**/{name}")):
         return True
