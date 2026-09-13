@@ -515,7 +515,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
       const Real cYDX =
           0.25 * invDx_x *
           (nodeArr(i + 1, j, k, iy_) - nodeArr(i, j, k, iy_) +
-           nodeArr(i + 1, j, kp1, iy_) - nodeArr(i + 1, j, kp1, iy_) +
+           nodeArr(i + 1, j, kp1, iy_) - nodeArr(i, j, kp1, iy_) +
            nodeArr(i + 1, j + 1, k, iy_) - nodeArr(i, j + 1, k, iy_) +
            nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i, j + 1, kp1, iy_));
 
