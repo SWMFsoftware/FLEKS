@@ -637,7 +637,7 @@ public:
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                         const int iStart, const int nComp, const int iLev,
                         const BoxBC<FieldBC::Type> &bc, int iField,
-                        amrex::Real t);
+                        amrex::Real t, GETVALUE func = nullptr);
 
   // Compute wave velocity perturbation for particle injection.
   void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,

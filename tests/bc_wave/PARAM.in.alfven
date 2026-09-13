@@ -29,7 +29,7 @@ T                       isPeriodicZ
 
 #FIELDBOXBOUNDARY
 wave                    fieldBoxBoundaryLo
-outflow                 fieldBoxBoundaryHi
+absorb                  fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
@@ -37,8 +37,8 @@ periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
 0                       iSpecies
-coupled                 particleBoxBoundaryLo
-coupled                 particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo
@@ -148,9 +148,9 @@ T                       useFixedDt
 #SAVEPLOT
 1                       nPlot
 z=0 var ascii pic       plotString
--1                      dn
-1.0                     dt
-1                       dx
+-1                      dnSavePlot
+1.0                     dtSavePlot
+-1                      dxSavePlot
 rhoS0 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0   plotVar
 
 #STOP

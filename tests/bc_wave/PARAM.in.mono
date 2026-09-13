@@ -69,20 +69,22 @@ T                       solveEM
 1.0                     lNormSI
 1.0                     uNormSI
 
-#TESTCASE
-lightwave               testCase
+#PARTICLES
+0                       nParticle
+0                       nParticle
+0                       nParticle
 
 #WAVEBC
 1                       nWaveFace
 0                       direction
 lo                      side
-1                       nComp
+2                       nComp
 0                       iField
 -1                      iSpecies
 0                       profile
-1.0e-4                  amplitude
-0.10                    frequency
-0.0                     waveLength
+1.0e-3                  amplitude
+0.20                    frequency
+31.41592653589793       waveLength
 0.0                     phase
 1.0                     dir_x
 0.0                     dir_y
@@ -92,7 +94,25 @@ lo                      side
 1.0                     pol_z
 0.0                     tStart
 -1.0                    tEnd
-0.0                     rampTime
+5.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+1                       iField
+-1                      iSpecies
+0                       profile
+1.0e-3                  amplitude
+0.20                    frequency
+31.41592653589793       waveLength
+0.0                     phase
+1.0                     dir_x
+0.0                     dir_y
+0.0                     dir_z
+0.0                     pol_x
+1.0                     pol_y
+0.0                     pol_z
+0.0                     tStart
+-1.0                    tEnd
+5.0                     rampTime
 0.0                     tCenter
 1.0                     tWidth
 
@@ -134,12 +154,12 @@ F                       doReSampling
 1                       nPlot
 z=0 var ascii planet    plotString
 -1                      dnSavePlot
-10.0                    dtSavePlot
+40.0                    dtSavePlot
 -1                      dxSavePlot
 Ex Ey Ez Bx By Bz       plotVar
 
 #STOP
 -1                      MaxIter
-10.0                    TimeMax
+40.0                    TimeMax
 
 #RUN

@@ -86,7 +86,8 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   // Wave boundary condition overwrites faces where active.
   if (waveBC.active) {
     const Real t = tc ? tc->get_time() : 0.0;
-    apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t);
+    apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t,
+                     func);
   }
 }
 
@@ -505,20 +506,50 @@ void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            const int iStart, const int nComp, const int iLev,
-                           const BoxBC<FieldBC::Type>& bc, int iField, Real t) {
-  (void)bc;
-  bool hasField = false;
+                           const BoxBC<FieldBC::Type>& bc, int iField, Real t,
+                           GETVALUE func) {
+  // Pre-filter components active at time t for iField.
+  // Hoisting envelope and time-phase evaluation out of the cell loops.
+  struct ActiveComp {
+    int dir;
+    int side;
+    Real effAmp;
+    Real omega_t;
+    Real k_vec[3];
+    Real pol[3];
+    int profile;
+    Real tCenter;
+    Real tInvWidth;
+    const WaveComponent* orig;
+  };
+
+  std::vector<ActiveComp> activeComps;
   for (const auto& f : waveBC.faces) {
+    if (f.direction >= nDim)
+      continue;
     for (const auto& c : f.comps) {
-      if (c.iField == iField) {
-        hasField = true;
-        break;
+      if (c.iField != iField || c.amplitude == 0.0)
+        continue;
+      const Real env = waveBC.envelope(c, t);
+      if (env <= 0.0)
+        continue;
+      ActiveComp ac;
+      ac.dir = f.direction;
+      ac.side = f.side;
+      ac.effAmp = c.amplitude * env;
+      ac.omega_t = c.frequency * t - c.phase;
+      for (int d = 0; d < 3; ++d) {
+        ac.k_vec[d] = c.k_vec[d];
+        ac.pol[d] = c.pol[d];
       }
+      ac.profile = c.profile;
+      ac.tCenter = c.tCenter;
+      ac.tInvWidth = (c.tWidth > 0.0) ? (1.0 / c.tWidth) : 1.0;
+      ac.orig = &c;
+      activeComps.push_back(ac);
     }
-    if (hasField)
-      break;
   }
-  if (!hasField)
+  if (activeComps.empty())
     return;
 
   std::string nameFunc = "Pic::apply_wave_field";
@@ -526,7 +557,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
-  const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType());
+  const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   const Real* plo = Geom(iLev).ProbLo();
   const Real* dx = Geom(iLev).CellSize();
@@ -539,12 +570,39 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
     if (ba.contains(bxFab))
       continue;
 
+    // Box culling: check if this FAB touches any face active for wave
+    // injection.
+    bool boxTouchesWaveFace = false;
+    for (const auto& ac : activeComps) {
+      const int d = ac.dir;
+      const int side = ac.side;
+      if (side == 0) {
+        if (bxFab.smallEnd(d) < bxValid.smallEnd(d) ||
+            (bnd.isNode[d] && bxFab.smallEnd(d) <= bnd.loBnd[d])) {
+          boxTouchesWaveFace = true;
+          break;
+        }
+      } else {
+        if (bxFab.bigEnd(d) > bxValid.bigEnd(d) ||
+            (bnd.isNode[d] && bxFab.bigEnd(d) >= bnd.hiBnd[d])) {
+          boxTouchesWaveFace = true;
+          break;
+        }
+      }
+    }
+    if (!boxTouchesWaveFace)
+      continue;
+
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
+    const Dim3 vLo = bxValid.smallEnd().dim3();
+    const Dim3 vHi = bxValid.bigEnd().dim3();
+    const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+    const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
     ParallelFor(bxFab, [&](int i, int j, int k) {
-      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
-        return;
+      const int ijk[3] = { i, j, k };
+      const bool isGhost = bit::is_lev_boundary(statusArr(i, j, k, 0));
 
       Real pos[3] = { plo[0] + dx[0] * (i + offset[0]),
                       plo[1] + dx[1] * (j + offset[1]),
@@ -552,40 +610,88 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
       Real waveVal[3] = { 0.0, 0.0, 0.0 };
       bool hasWave = false;
+      bool isBndNode = false;
 
-      for (const auto& f : waveBC.faces) {
-        const int d = f.direction;
-        const int side = f.side;
-        if (d >= nDim)
-          continue;
-        const int idx = (d == 0) ? i : (d == 1) ? j : k;
-        bool onFace = (side == 0 && idx < bxValid.smallEnd(d)) ||
-                      (side == 1 && idx > bxValid.bigEnd(d));
-        if (!onFace)
-          continue;
+      for (const auto& ac : activeComps) {
+        const int d = ac.dir;
+        const int side = ac.side;
+        const int idx = ijk[d];
+        const bool onGhostFace =
+            isGhost && ((side == 0 && idx < bxValid.smallEnd(d)) ||
+                        (side == 1 && idx > bxValid.bigEnd(d)));
 
-        for (const auto& c : f.comps) {
-          if (c.iField != iField)
-            continue;
-          hasWave = true;
-          const Real val = waveBC.value(c, t, pos);
-          if (iField == 0 || iField == 1) {
-            for (int iVar = 0; iVar < std::min(nComp, 3); ++iVar) {
-              waveVal[iVar] += val * c.pol[iVar];
+        // Boundary node on physical wall (node-centred only).
+        bool onNodeWall = false;
+        if (bnd.isNode[d]) {
+          const bool onLoNode = (side == 0 && idx == bnd.loBnd[d]);
+          const bool onHiNode = (side == 1 && idx == bnd.hiBnd[d]);
+          if (onLoNode || onHiNode) {
+            bool inTangential = true;
+            for (int od = 0; od < nDim; ++od) {
+              if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+                inTangential = false;
+                break;
+              }
             }
-          } else {
-            waveVal[0] += val;
+            if (inTangential)
+              onNodeWall = true;
           }
+        }
+
+        if (!onGhostFace && !onNodeWall)
+          continue;
+
+        if (onNodeWall)
+          isBndNode = true;
+
+        // Evaluate wave profile value with precomputed parameters.
+        Real val = 0.0;
+        if (ac.profile == WaveComponent::kCustom && ac.orig &&
+            ac.orig->custom) {
+          val = ac.orig->custom(*ac.orig, t, pos) *
+                (ac.effAmp / ac.orig->amplitude);
+        } else {
+          const Real kdotx = ac.k_vec[0] * pos[0] + ac.k_vec[1] * pos[1] +
+                             ac.k_vec[2] * pos[2];
+          val = ac.effAmp * std::sin(kdotx - ac.omega_t);
+          if (ac.profile == WaveComponent::kPacket) {
+            const Real tau = (t - ac.tCenter) * ac.tInvWidth;
+            val *= std::exp(-tau * tau);
+          }
+        }
+
+        if (val == 0.0)
+          continue;
+
+        hasWave = true;
+        if (iField == 0 || iField == 1) {
+          for (int iVar = 0; iVar < std::min(nComp, 3); ++iVar) {
+            waveVal[iVar] += val * ac.pol[iVar];
+          }
+        } else {
+          waveVal[0] += val;
         }
       }
 
       if (hasWave) {
-        if (iField == 0 || iField == 1) {
+        if (isBndNode && func) {
+          // Reset nodal physical boundary from base state before superimposing
+          // wave.
           for (int iVar = 0; iVar < nComp; ++iVar) {
-            arr(i, j, k, iStart + iVar) = waveVal[iVar % 3];
+            const Real baseVal = (this->*func)(
+                mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+            arr(i, j, k, iStart + iVar) = baseVal + waveVal[iVar % 3];
           }
-        } else if (nComp > 0) {
-          arr(i, j, k, iStart) = waveVal[0];
+        } else {
+          // Ghost cells already contain base state from apply_BC(); add wave
+          // perturbation.
+          if (iField == 0 || iField == 1) {
+            for (int iVar = 0; iVar < nComp; ++iVar) {
+              arr(i, j, k, iStart + iVar) += waveVal[iVar % 3];
+            }
+          } else if (nComp > 0) {
+            arr(i, j, k, iStart) += waveVal[0];
+          }
         }
       }
     });
@@ -600,9 +706,11 @@ void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
     return;
   for (const auto& f : waveBC.faces) {
     for (const auto& c : f.comps) {
-      if (c.iField != 2) // velocity kick
+      if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
         continue;
       const Real val = waveBC.value(c, t, pos);
+      if (val == 0.0)
+        continue;
       dvx += val * c.pol[0];
       dvy += val * c.pol[1];
       dvz += val * c.pol[2];

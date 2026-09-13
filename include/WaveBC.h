@@ -51,7 +51,8 @@ struct WaveComponent {
                             const amrex::Real*)>
       custom = nullptr; // kCustom
 
-  amrex::Real pol[3] = { 0, 1, 0 }; // polarisation vector
+  amrex::Real pol[3] = { 0, 1, 0 };   // polarisation vector
+  amrex::Real k_vec[3] = { 0, 0, 0 }; // precomputed (2*pi/waveLength) * dir
 };
 
 // Per-face emitter stack.
@@ -106,11 +107,10 @@ public:
   void clear();
   void add_component(int direction, int side, const WaveComponent& c);
 
+  amrex::Real envelope(const WaveComponent& c, amrex::Real t) const;
+
   bool siInput = true;
   amrex::Real maxAmplitude = 0.0; // 0 => amplitude guard disabled
-
-private:
-  amrex::Real envelope(const WaveComponent& c, amrex::Real t) const;
 };
 
 #endif // FLEKS_WAVEBC_H

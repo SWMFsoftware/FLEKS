@@ -49,11 +49,8 @@ amrex::Real MonoWave::value(const WaveComponent& c, amrex::Real t,
                             const amrex::Real* pos) const {
   if (c.amplitude == 0.0)
     return 0.0;
-  amrex::Real kdotx = 0.0;
-  if (c.waveLength > 0.0) {
-    const amrex::Real k = cTwoPi / c.waveLength;
-    kdotx = k * (c.dir[0] * pos[0] + c.dir[1] * pos[1] + c.dir[2] * pos[2]);
-  }
+  const amrex::Real kdotx =
+      c.k_vec[0] * pos[0] + c.k_vec[1] * pos[1] + c.k_vec[2] * pos[2];
   const amrex::Real arg = kdotx - c.frequency * t + c.phase;
   return c.amplitude * std::sin(arg);
 }
@@ -111,10 +108,19 @@ WaveFace& WaveBoundaryManager::face(int direction, int side) {
 
 void WaveBoundaryManager::add_component(int direction, int side,
                                         const WaveComponent& c) {
-  face(direction, side).comps.push_back(c);
+  WaveComponent comp = c;
+  if (comp.waveLength > 0.0) {
+    const amrex::Real k = cTwoPi / comp.waveLength;
+    for (int d = 0; d < 3; ++d)
+      comp.k_vec[d] = k * comp.dir[d];
+  } else {
+    for (int d = 0; d < 3; ++d)
+      comp.k_vec[d] = 0.0;
+  }
+  face(direction, side).comps.push_back(comp);
 }
 
-// cos^2 ramp-in, then cut off at tEnd.
+// cos^2 ramp-in, and smooth ramp-out before tEnd if rampTime > 0.
 amrex::Real WaveBoundaryManager::envelope(const WaveComponent& c,
                                           amrex::Real t) const {
   if (t < c.tStart)
@@ -123,9 +129,13 @@ amrex::Real WaveBoundaryManager::envelope(const WaveComponent& c,
     return 0.0;
   amrex::Real ramp = 1.0;
   if (c.rampTime > 0.0) {
-    amrex::Real f = (t - c.tStart) / c.rampTime;
-    if (f < 1.0)
+    if (t < c.tStart + c.rampTime) {
+      amrex::Real f = (t - c.tStart) / c.rampTime;
       ramp = 0.5 * (1.0 - std::cos(dPI * f));
+    } else if (c.tEnd > 0.0 && t > c.tEnd - c.rampTime) {
+      amrex::Real f = (c.tEnd - t) / c.rampTime;
+      ramp = 0.5 * (1.0 - std::cos(dPI * f));
+    }
   }
   return ramp;
 }
@@ -199,6 +209,14 @@ void WaveBoundaryManager::read_param(ReadParam& param,
           c.dir[d] /= dirNorm;
       }
 
+      // Normalize polarization vector if non-zero.
+      const amrex::Real polNorm = std::sqrt(
+          c.pol[0] * c.pol[0] + c.pol[1] * c.pol[1] + c.pol[2] * c.pol[2]);
+      if (polNorm > 0.0) {
+        for (int d = 0; d < 3; ++d)
+          c.pol[d] /= polNorm;
+      }
+
       // SI -> code conversion (unless the block was marked 'code').
       if (siInput && fi) {
         const amrex::Real f_si2no = si2no(fi, c.iField);
@@ -217,6 +235,16 @@ void WaveBoundaryManager::read_param(ReadParam& param,
           c.tCenter *= si2noT;
           c.tWidth *= si2noT;
         }
+      }
+
+      // Precompute wave vector k_vec = (2*pi/lambda) * dir.
+      if (c.waveLength > 0.0) {
+        const amrex::Real k = cTwoPi / c.waveLength;
+        for (int d = 0; d < 3; ++d)
+          c.k_vec[d] = k * c.dir[d];
+      } else {
+        for (int d = 0; d < 3; ++d)
+          c.k_vec[d] = 0.0;
       }
 
       // Amplitude guard: reject nonlinear/unstable injection.
