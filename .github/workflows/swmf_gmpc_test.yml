@@ -3,6 +3,12 @@ name: SWMF GM-PC Integration Test
 on:
   pull_request:
     branches: [ "master" ]
+    paths-ignore:
+      - 'tests/performance/**'
+      - 'tests/validate_performance.py'
+      - '.github/workflows/performance_test.yml'
+      - '**.md'
+      - 'Doc/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

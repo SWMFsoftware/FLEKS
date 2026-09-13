@@ -3,6 +3,10 @@ name: Performance Test
 on:
   pull_request:
     branches: [ "master" ]
+    paths-ignore:
+      - 'Doc/**'
+      - 'PARAM.XML'
+      - '**.md'
   workflow_dispatch:
 
 jobs:
