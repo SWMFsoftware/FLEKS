@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <numeric>
+
 #include "Bit.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
@@ -539,7 +542,7 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
   const RealBox& range = Geom(0).ProbDomain();
   const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int i = 0; i < nPoint; ++i) {
-    RealVect xyz;
+    RealVect xyz(0.0);
     for (int iDim = 0; iDim < nDimGM; iDim++) {
       xyz[iDim] = xyz_I[i * nDimGM + iDim] * si2nol;
     }
@@ -564,8 +567,7 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
 int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
                                       const double* const data,
                                       const int* const index) {
-  std::string funcName = "FI::loop_through_node";
-  timing_func(funcName);
+  timing_func("FI::loop_through_node");
 
   bool doCount = false;
   bool doGetLoc = false;
@@ -605,46 +607,53 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const Array4<Real>& arr = fluid[mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
-          // If this node is the boundary or inside the valid box.
+      const auto lo = box.smallEnd();
+      const auto hi = box.bigEnd();
 
-          if (doCount) {
-            nCount++;
-          } else if (doGetLoc) {
-            for (int iDim = 0; iDim < nDim; iDim++) {
-              if (Geom(iLev).isPeriodic(iDim)) {
-                ijk[iDim] = shift_periodic_index(ijk[iDim], gbx.smallEnd(iDim),
-                                                 gbx.bigEnd(iDim));
+      for (int k = lo[2]; k <= hi[2]; ++k) {
+        for (int j = lo[1]; j <= hi[1]; ++j) {
+          for (int i = lo[0]; i <= hi[0]; ++i) {
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
+              // If this node is the boundary or inside the valid box.
+              if (doCount) {
+                nCount++;
+              } else if (doGetLoc) {
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  if (Geom(iLev).isPeriodic(iDim)) {
+                    ijk[iDim] = shift_periodic_index(
+                        ijk[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
+                  }
+                }
+
+                for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
+                  pos_DI[nCount++] =
+                      (ijk[iDim] * dx[iDim] + plo[iDim]) * no2siL;
+                }
+              } else if (doFill) {
+                // For the point not found by the source component (index < 1),
+                // keep the previous value.
+                if (index[nIdxCount] >= 1) {
+                  for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                    int idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+                    arr(ijk, iVar) = data[idx];
+                  }
+                }
+                nIdxCount++;
               }
             }
-
-            for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
-              pos_DI[nCount++] = (ijk[iDim] * dx[iDim] + plo[iDim]) * no2siL;
-            }
-          } else if (doFill) {
-            // For the point not found by the source component (index < 1),
-            // keep the previous value.
-            if (index[nIdxCount] >= 1) {
-              for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                int idx;
-                idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-                arr(ijk, iVar) = data[idx];
-              }
-            }
-            nIdxCount++;
           }
         }
-      });
+      }
     }
 
-    fluid.FillBoundary(Geom(iLev).periodicity());
-    if (isFake2D) {
-      // Make sure there is no variation in the z-direction.
-      Periodicity period(IntVect(AMREX_D_DECL(0, 0, 1)));
-
-      fluid.FillBoundary(period);
+    if (doFill) {
+      fluid.FillBoundary(Geom(iLev).periodicity());
+      if (isFake2D) {
+        // Make sure there is no variation in the z-direction.
+        Periodicity period(IntVect(AMREX_D_DECL(0, 0, 1)));
+        fluid.FillBoundary(period);
+      }
     }
   }
 
@@ -662,8 +671,7 @@ void FluidInterface::get_couple_node_loc(double* const pos_DI) {
 void FluidInterface::set_node_fluid(const double* const data,
                                     const int* const index,
                                     const std::vector<std::string>& names) {
-  std::string funcName = "FI::set_node_fluid";
-  timing_func(funcName);
+  timing_func("FI::set_node_fluid");
 
   if (isGridEmpty)
     return;
@@ -698,8 +706,7 @@ void FluidInterface::set_node_fluid(const double* const data,
 }
 
 void FluidInterface::set_node_fluid() {
-  std::string funcName = "FI::set_node_fluid_1";
-  timing_func(funcName);
+  timing_func("FI::set_node_fluid_1");
 
   if (isGridEmpty)
     return;
@@ -737,15 +744,13 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
 }
 
 void FluidInterface::calc_current() {
-  std::string funcName = "FI::calc_current";
-
   if (isGridEmpty)
     return;
 
   if (!useCurrent)
     return;
 
-  timing_func(funcName);
+  timing_func("FI::calc_current");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     // All centerB, including all ghost cells are accurate.
@@ -788,8 +793,8 @@ void FluidInterface::calc_current() {
 void FluidInterface::normalize_fluid_variables() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nodeFluid[iLev].nComp(); ++i) {
-      MultiFab tmpMF(nodeFluid[iLev], make_alias, i, 1);
-      tmpMF.mult(normParams->Si2No_V[i], tmpMF.nGrow());
+      nodeFluid[iLev].mult(normParams->Si2No_V[i], i, 1,
+                           nodeFluid[iLev].nGrow());
     }
 
     centerB[iLev].mult(normParams->Si2NoB, centerB[iLev].nGrow());
@@ -797,8 +802,15 @@ void FluidInterface::normalize_fluid_variables() {
 }
 
 void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
-  std::string funcName = "FI::convert_moment_to_velocity";
-  timing_func(funcName);
+  timing_func("FI::convert_moment_to_velocity");
+
+  Vector<Real> speciesMassFactor;
+  if (useMultiSpecies) {
+    speciesMassFactor.resize(nIon);
+    for (int iIon = 0; iIon < nIon; ++iIon) {
+      speciesMassFactor[iIon] = 1.0 + MoMi_S[0] / MoMi_S[iIon + 1];
+    }
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++)
     for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
@@ -807,30 +819,33 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
         box = mfi.validbox();
 
       const Array4<Real>& arr = nodeFluid[iLev][mfi].array();
+      const Real* pMassFactor =
+          useMultiSpecies ? speciesMassFactor.data() : nullptr;
 
-      ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [=](int i, int j, int k) noexcept {
         if (useMultiSpecies) {
           double Rhot = 0;
           for (int iIon = 0; iIon < nIon; ++iIon) {
             // Rho = sum(Rhoi) + Rhoe;
-            Rhot +=
-                arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
+            Rhot += arr(i, j, k, iRho_I[iIon]) * pMassFactor[iIon];
           } // iIon
 
           // Nodes that were not filled by the coupler keep a zero density.
           // (e.g. nodes inside the body of the source component)
           if (Rhot > 0) {
-            arr(i, j, k, iUx_I[0]) /= Rhot;
-            arr(i, j, k, iUy_I[0]) /= Rhot;
-            arr(i, j, k, iUz_I[0]) /= Rhot;
+            const double invRhot = 1.0 / Rhot;
+            arr(i, j, k, iUx_I[0]) *= invRhot;
+            arr(i, j, k, iUy_I[0]) *= invRhot;
+            arr(i, j, k, iUz_I[0]) *= invRhot;
           }
         } else {
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const double& rho = arr(i, j, k, iRho_I[iFluid]);
             if (rho > 0) {
-              arr(i, j, k, iUx_I[iFluid]) /= rho;
-              arr(i, j, k, iUy_I[iFluid]) /= rho;
-              arr(i, j, k, iUz_I[iFluid]) /= rho;
+              const double invRho = 1.0 / rho;
+              arr(i, j, k, iUx_I[iFluid]) *= invRho;
+              arr(i, j, k, iUy_I[iFluid]) *= invRho;
+              arr(i, j, k, iUz_I[iFluid]) *= invRho;
             } else {
               const Real* dx = Geom(iLev).CellSize();
               const auto plo = Geom(iLev).ProbLo();
@@ -1020,55 +1035,43 @@ void NormalizationParams::calc_normalization_units(double lNormSI,
 }
 //-------------------------------------------------------------------------
 
-/** Get nomal and pendicular vector to magnetic field */
-void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
-                                          const double Bz,
-                                          MDArray<double>& norm_DD) const {
-  double inv;
-  int Norm_, Perp1_, Perp2_, X_, Y_, Z_;
-  Norm_ = 0;
-  Perp1_ = 1;
-  Perp2_ = 2;
-  X_ = 0;
-  Y_ = 1;
-  Z_ = 2;
+/** Get normal and perpendicular unit vectors relative to magnetic field */
+void FluidInterface::calc_mag_base_vector(const amrex::Real Bx,
+                                          const amrex::Real By,
+                                          const amrex::Real Bz,
+                                          Basis3x3& norm_DD) const {
+  enum { Norm_ = 0, Perp1_ = 1, Perp2_ = 2, X_ = 0, Y_ = 1, Z_ = 2 };
 
-  inv = 1.0 / sqrt(Bx * Bx + By * By + Bz * Bz);
-  norm_DD(Norm_, X_) = Bx * inv;
-  norm_DD(Norm_, Y_) = By * inv;
-  norm_DD(Norm_, Z_) = Bz * inv;
+  amrex::Real inv = 1.0 / sqrt(Bx * Bx + By * By + Bz * Bz);
+  norm_DD[Norm_][X_] = Bx * inv;
+  norm_DD[Norm_][Y_] = By * inv;
+  norm_DD[Norm_][Z_] = Bz * inv;
 
-  if (norm_DD(Norm_, Z_) < 0.5) {
-    norm_DD(Perp1_, X_) = norm_DD(Norm_, Y_);
-    norm_DD(Perp1_, Y_) = -norm_DD(Norm_, X_);
-    norm_DD(Perp1_, Z_) = 0.0;
-    norm_DD(Perp2_, X_) = norm_DD(Norm_, Z_) * norm_DD(Norm_, X_);
-    norm_DD(Perp2_, Y_) = norm_DD(Norm_, Z_) * norm_DD(Norm_, Y_);
-    norm_DD(Perp2_, Z_) = -norm_DD(Norm_, X_) * norm_DD(Norm_, X_) -
-                          norm_DD(Norm_, Y_) * norm_DD(Norm_, Y_);
+  if (norm_DD[Norm_][Z_] < 0.5) {
+    norm_DD[Perp1_][X_] = norm_DD[Norm_][Y_];
+    norm_DD[Perp1_][Y_] = -norm_DD[Norm_][X_];
+    norm_DD[Perp1_][Z_] = 0.0;
   } else {
-    norm_DD(Perp1_, X_) = 0.0;
-    norm_DD(Perp1_, Y_) = norm_DD(Norm_, Z_);
-    norm_DD(Perp1_, Z_) = -norm_DD(Norm_, Y_);
-    norm_DD(Perp2_, X_) = -norm_DD(Norm_, Y_) * norm_DD(Norm_, Y_) -
-                          norm_DD(Norm_, Z_) * norm_DD(Norm_, Z_);
-    norm_DD(Perp2_, Y_) = norm_DD(Norm_, Y_) * norm_DD(Norm_, X_);
-    norm_DD(Perp2_, Z_) = norm_DD(Norm_, Z_) * norm_DD(Norm_, X_);
+    norm_DD[Perp1_][X_] = 0.0;
+    norm_DD[Perp1_][Y_] = norm_DD[Norm_][Z_];
+    norm_DD[Perp1_][Z_] = -norm_DD[Norm_][Y_];
   }
 
-  inv = 1.0 / sqrt(norm_DD(Perp1_, X_) * norm_DD(Perp1_, X_) +
-                   norm_DD(Perp1_, Y_) * norm_DD(Perp1_, Y_) +
-                   norm_DD(Perp1_, Z_) * norm_DD(Perp1_, Z_));
-  norm_DD(Perp1_, X_) *= inv;
-  norm_DD(Perp1_, Y_) *= inv;
-  norm_DD(Perp1_, Z_) *= inv;
+  inv = 1.0 / sqrt(norm_DD[Perp1_][X_] * norm_DD[Perp1_][X_] +
+                   norm_DD[Perp1_][Y_] * norm_DD[Perp1_][Y_] +
+                   norm_DD[Perp1_][Z_] * norm_DD[Perp1_][Z_]);
+  norm_DD[Perp1_][X_] *= inv;
+  norm_DD[Perp1_][Y_] *= inv;
+  norm_DD[Perp1_][Z_] *= inv;
 
-  inv = 1.0 / sqrt(norm_DD(Perp2_, X_) * norm_DD(Perp2_, X_) +
-                   norm_DD(Perp2_, Y_) * norm_DD(Perp2_, Y_) +
-                   norm_DD(Perp2_, Z_) * norm_DD(Perp2_, Z_));
-  norm_DD(Perp2_, X_) *= inv;
-  norm_DD(Perp2_, Y_) *= inv;
-  norm_DD(Perp2_, Z_) *= inv;
+  // Perp2 = Norm x Perp1 (cross product of orthonormal unit vectors is already
+  // unit length)
+  norm_DD[Perp2_][X_] = norm_DD[Norm_][Y_] * norm_DD[Perp1_][Z_] -
+                        norm_DD[Norm_][Z_] * norm_DD[Perp1_][Y_];
+  norm_DD[Perp2_][Y_] = norm_DD[Norm_][Z_] * norm_DD[Perp1_][X_] -
+                        norm_DD[Norm_][X_] * norm_DD[Perp1_][Z_];
+  norm_DD[Perp2_][Z_] = norm_DD[Norm_][X_] * norm_DD[Perp1_][Y_] -
+                        norm_DD[Norm_][Y_] * norm_DD[Perp1_][X_];
 }
 
 /** print info for coupling */
@@ -1231,12 +1234,7 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   int iBxPIC = nS * nVarSpecies, iByPIC = iBxPIC + 1, iBzPIC = iByPIC + 1,
       iExPIC = iBzPIC + 1, iEyPIC = iExPIC + 1, iEzPIC = iEyPIC + 1;
 
-  for (int i = 0; i < nVarFluid; ++i) {
-    // The variable for hyperbolic clean, is not known by iPIC3D,
-    // but it is needed to be passed back. So data_I need to be
-    // initilized.
-    data_I[i] = 0;
-  }
+  std::fill_n(data_I, nVarFluid, 0.0);
 
   BX = dataPIC_I[iBxPIC];
   BY = dataPIC_I[iByPIC];
@@ -1245,6 +1243,8 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   data_I[iBx] = BX;
   data_I[iBy] = BY;
   data_I[iBz] = BZ;
+
+  const double invB2 = 1.0 / (BX * BX + BY * BY + BZ * BZ + 1e-40);
 
   if (useElectronFluid) {
 
@@ -1278,8 +1278,8 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
         data_I[iPpar_I[iFluid]] =
             (BX * PiXX * BX + BY * PiYY * BY + BZ * PiZZ * BZ +
              2.0 * BX * PiXY * BY + 2.0 * BX * PiXZ * BZ +
-             2.0 * BY * PiYZ * BZ) /
-            (BX * BX + BY * BY + BZ * BZ + 1e-40);
+             2.0 * BY * PiYZ * BZ) *
+            invB2;
       }
     }
   } else {
@@ -1294,25 +1294,21 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
     Mx = 0;
     My = 0;
     Mz = 0;
-    for (int iSpecies = 0; iSpecies < nS; iSpecies++) {
-      int iMHD = iSpecies;
-      if (iMHD == 0) {
-        // Electron
+    if (nS > 0) {
+      // Electron (species 0)
+      Rhoe = dataPIC_I[iRhoPIC];
+      Mx = dataPIC_I[iMxPIC];
+      My = dataPIC_I[iMyPIC];
+      Mz = dataPIC_I[iMzPIC];
 
-        Rhoe += dataPIC_I[iRhoPIC + iSpecies * nVarSpecies];
-        Mx += dataPIC_I[iMxPIC + iSpecies * nVarSpecies];
-        My += dataPIC_I[iMyPIC + iSpecies * nVarSpecies];
-        Mz += dataPIC_I[iMzPIC + iSpecies * nVarSpecies];
+      PeXX = dataPIC_I[iPxxPIC];
+      PeYY = dataPIC_I[iPyyPIC];
+      PeZZ = dataPIC_I[iPzzPIC];
 
-        PeXX += dataPIC_I[iPxxPIC + iSpecies * nVarSpecies];
-        PeYY += dataPIC_I[iPyyPIC + iSpecies * nVarSpecies];
-        PeZZ += dataPIC_I[iPzzPIC + iSpecies * nVarSpecies];
-
-        PeXY += dataPIC_I[iPxyPIC + iSpecies * nVarSpecies];
-        PeXZ += dataPIC_I[iPxzPIC + iSpecies * nVarSpecies];
-        PeYZ += dataPIC_I[iPyzPIC + iSpecies * nVarSpecies];
-      }
-    } // iSpecies
+      PeXY = dataPIC_I[iPxyPIC];
+      PeXZ = dataPIC_I[iPxzPIC];
+      PeYZ = dataPIC_I[iPyzPIC];
+    }
 
     if (useMhdPe)
       data_I[iPe] = (PeXX + PeYY + PeZZ) / 3.0;
@@ -1325,61 +1321,55 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
     PtXZ = PeXZ;
     PtYZ = PeYZ;
 
-    for (int iSpecies = 0; iSpecies < nS; ++iSpecies) {
-      int iIon;
-      iIon = iSpecies - 1; // The first species is electron;
+    for (int iSpecies = 1; iSpecies < nS; ++iSpecies) {
+      int iIon = iSpecies - 1;
 
-      if (iIon >= 0) {
-        Rhoi = dataPIC_I[iRhoPIC + iSpecies * nVarSpecies];
-        Mix = dataPIC_I[iMxPIC + iSpecies * nVarSpecies];
-        Miy = dataPIC_I[iMyPIC + iSpecies * nVarSpecies];
-        Miz = dataPIC_I[iMzPIC + iSpecies * nVarSpecies];
+      Rhoi = dataPIC_I[iRhoPIC + iSpecies * nVarSpecies];
+      Mix = dataPIC_I[iMxPIC + iSpecies * nVarSpecies];
+      Miy = dataPIC_I[iMyPIC + iSpecies * nVarSpecies];
+      Miz = dataPIC_I[iMzPIC + iSpecies * nVarSpecies];
 
-        PiXX = dataPIC_I[iPxxPIC + iSpecies * nVarSpecies];
-        PiYY = dataPIC_I[iPyyPIC + iSpecies * nVarSpecies];
-        PiZZ = dataPIC_I[iPzzPIC + iSpecies * nVarSpecies];
-        PiXY = dataPIC_I[iPxyPIC + iSpecies * nVarSpecies];
-        PiXZ = dataPIC_I[iPxzPIC + iSpecies * nVarSpecies];
-        PiYZ = dataPIC_I[iPyzPIC + iSpecies * nVarSpecies];
+      PiXX = dataPIC_I[iPxxPIC + iSpecies * nVarSpecies];
+      PiYY = dataPIC_I[iPyyPIC + iSpecies * nVarSpecies];
+      PiZZ = dataPIC_I[iPzzPIC + iSpecies * nVarSpecies];
+      PiXY = dataPIC_I[iPxyPIC + iSpecies * nVarSpecies];
+      PiXZ = dataPIC_I[iPxzPIC + iSpecies * nVarSpecies];
+      PiYZ = dataPIC_I[iPyzPIC + iSpecies * nVarSpecies];
 
-        // Sum to total density/pressure.
-        Rho += Rhoi;
-        Mx += Mix;
-        My += Miy;
-        Mz += Miz;
+      // Sum to total density/pressure.
+      Rho += Rhoi;
+      Mx += Mix;
+      My += Miy;
+      Mz += Miz;
 
-        PtXX += PiXX;
-        PtYY += PiYY;
-        PtZZ += PiZZ;
-        PtXY += PiXY;
-        PtXZ += PiXZ;
-        PtYZ += PiYZ;
+      PtXX += PiXX;
+      PtYY += PiYY;
+      PtZZ += PiZZ;
+      PtXY += PiXY;
+      PtXZ += PiXZ;
+      PtYZ += PiYZ;
 
-        // Density
-        if (useMultiFluid || useMultiSpecies) {
-          data_I[iRho_I[iIon]] += Rhoi;
+      // Density
+      if (useMultiFluid || useMultiSpecies) {
+        data_I[iRho_I[iIon]] += Rhoi;
+      }
+
+      // Pressure.
+      if (useMultiFluid) {
+        // ONLY works for iso pressure so far!!!!!
+        data_I[iP_I[iIon]] += (PiXX + PiYY + PiZZ) / 3.0;
+        if (useAnisoP) {
+          amrex::Abort(
+              "Multi-fluid model can not work with aniso pressure now!!");
         }
+      }
 
-        // Pressure.
-        if (useMultiFluid) {
-          // ONLY works for iso pressure so far!!!!!
-          data_I[iP_I[iIon]] += (PiXX + PiYY + PiZZ) / 3;
-          if (useAnisoP) {
-            std::cout << printPrefix
-                      << "Multi-fluid model can not work with aniso pressure "
-                         "now!!"
-                      << std::endl;
-            abort();
-          }
-        }
-
-        // Momentum.
-        if (useMultiFluid) {
-          data_I[iRhoUx_I[iIon]] += Mix;
-          data_I[iRhoUy_I[iIon]] += Miy;
-          data_I[iRhoUz_I[iIon]] += Miz;
-        }
-      } // if(iIon > 0)
+      // Momentum.
+      if (useMultiFluid) {
+        data_I[iRhoUx_I[iIon]] += Mix;
+        data_I[iRhoUy_I[iIon]] += Miy;
+        data_I[iRhoUz_I[iIon]] += Miz;
+      }
     } // iSpecies
 
     if (!(useMultiFluid || useMultiSpecies)) {
@@ -1417,20 +1407,20 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
         if (useMhdPe)
           data_I[iPpar_I[0]] = (BX * PitXX * BX + BY * PitYY * BY +
                                 BZ * PitZZ * BZ + 2.0 * BX * PitXY * BY +
-                                2.0 * BX * PitXZ * BZ + 2.0 * BY * PitYZ * BZ) /
-                               (BX * BX + BY * BY + BZ * BZ + 1e-40);
+                                2.0 * BX * PitXZ * BZ + 2.0 * BY * PitYZ * BZ) *
+                               invB2;
         else
           data_I[iPpar_I[0]] = (BX * PtXX * BX + BY * PtYY * BY +
                                 BZ * PtZZ * BZ + 2.0 * BX * PtXY * BY +
-                                2.0 * BX * PtXZ * BZ + 2.0 * BY * PtYZ * BZ) /
-                               (BX * BX + BY * BY + BZ * BZ + 1e-40);
+                                2.0 * BX * PtXZ * BZ + 2.0 * BY * PtYZ * BZ) *
+                               invB2;
       } // useAnisoP
 
       // Isotropic Pressure.
       if (useMhdPe)
-        data_I[iP_I[0]] = (PitXX + PitYY + PitZZ) / 3;
+        data_I[iP_I[0]] = (PitXX + PitYY + PitZZ) / 3.0;
       else
-        data_I[iP_I[0]] = (PtXX + PtYY + PtZZ) / 3;
+        data_I[iP_I[0]] = (PtXX + PtYY + PtZZ) / 3.0;
     }
   } // useElectronFluid is true or false
 
@@ -1444,61 +1434,108 @@ void FluidInterface::save_amrex_file() {
   std::string filename = component + "/plots/" + tag;
   Print() << "Writing FluidInterface file " << filename << std::endl;
 
-  // for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
-  //   Real no2out = No2Si_V[i];
-  //   // nodeFluid[0].mult(no2out, i, 1, nodeFluid[0].nGrow());
-  // }
-
-  if (varNames.size() != nodeFluid[0].nComp()) {
-    varNames.clear();
+  Vector<std::string> plotNames = varNames;
+  if (plotNames.size() != nodeFluid[0].nComp()) {
+    plotNames.clear();
   }
 
-  if (varNames.empty()) {
+  if (plotNames.empty()) {
     for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
-      varNames.push_back("var" + std::to_string(i));
+      plotNames.push_back("var" + std::to_string(i));
     }
   }
-  // WriteSingleLevelPlotfile(filename, nodeFluid[0], varNames, Geom(0), 0, 0);
 
   WriteMultiLevelPlotfile(filename, n_lev(), GetVecOfConstPtrs(nodeFluid),
-                          varNames, geom, 0.0, Vector<int>(n_lev(), 0),
+                          plotNames, geom, 0.0, Vector<int>(n_lev(), 0),
                           refRatio());
-
-  // for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
-  //   Real out2no = Si2No_V[i];
-  //   // nodeFluid[0].mult(out2no, i, 1, nodeFluid[0].nGrow());
-  // }
 }
 
 void FluidInterface::get_for_points(const int nDim, const int nPoint,
                                     const double* const xyz_I,
                                     double* const data_I, const int nVar,
-                                    const double coef, Vector<int> idxMap) {
-  std::string nameFunc = "FI::get_for_points";
+                                    const double coef,
+                                    const Vector<int>& idxMap) {
+  timing_func("FI::get_for_points");
+
+  Vector<int> localIdxMap;
+  const Vector<int>* pIdxMap = &idxMap;
+  if (idxMap.empty()) {
+    localIdxMap.resize(nVar);
+    std::iota(localIdxMap.begin(), localIdxMap.end(), 0);
+    pIdxMap = &localIdxMap;
+  }
+  const auto& map = *pIdxMap;
 
   const RealBox& range = Geom(0).ProbDomain();
   const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
+  const Real si2noL = get_Si2NoL();
+
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
     for (int iDim = 0; iDim < nDim; iDim++) {
-      xyz[iDim] = xyz_I[iPoint * nDim + iDim] * get_Si2NoL();
+      xyz[iDim] = xyz_I[iPoint * nDim + iDim] * si2noL;
     }
 
     // Check if this point is inside this FLEKS domain.
     if (!range.contains(xyz, eps))
       continue;
 
-    if (idxMap.size() == 0) {
-      for (int i = 0; i < nVar; ++i)
-        idxMap.push_back(i);
+    const int iLev = get_finest_lev(xyz);
+    const auto& gm = Geom(iLev);
+    const auto& mf = nodeFluid[iLev];
+
+    IntVect loIdx;
+    RealVect dx;
+    find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
+
+    const Real interpX[2] = { dx[0], 1.0 - dx[0] };
+    const Real interpY[2] = { dx[1], 1.0 - dx[1] };
+    const Real interpZ[2] = { nDim > 2 ? dx[2] : 1.0,
+                              nDim > 2 ? 1.0 - dx[2] : 1.0 };
+
+    auto cellIdx = gm.CellIndex(xyz.begin());
+    bool found = false;
+    const int iStart = iPoint * nVar;
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bx = convert(mfi.validbox(), { AMREX_D_DECL(0, 0, 0) });
+      if (bx.contains(cellIdx)) {
+        const auto& arr = mf.array(mfi);
+        const int loZ = nDim > 2 ? loIdx[iz_] : 0;
+        const int hiZ = nDim > 2 ? loIdx[iz_] + 1 : 0;
+
+        for (int iVar = 0; iVar < nVar; iVar++) {
+          const int varIdx = map[iVar];
+          Real c000 = arr(loIdx[ix_], loIdx[iy_], loZ, varIdx);
+          Real c100 = arr(loIdx[ix_] + 1, loIdx[iy_], loZ, varIdx);
+          Real c010 = arr(loIdx[ix_], loIdx[iy_] + 1, loZ, varIdx);
+          Real c110 = arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loZ, varIdx);
+          Real c001 = nDim > 2 ? arr(loIdx[ix_], loIdx[iy_], hiZ, varIdx) : 0.0;
+          Real c101 =
+              nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_], hiZ, varIdx) : 0.0;
+          Real c011 =
+              nDim > 2 ? arr(loIdx[ix_], loIdx[iy_] + 1, hiZ, varIdx) : 0.0;
+          Real c111 =
+              nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, hiZ, varIdx) : 0.0;
+
+          Real c00 = c000 * interpX[1] + c100 * interpX[0];
+          Real c01 = c010 * interpX[1] + c110 * interpX[0];
+          Real c10 = c001 * interpX[1] + c101 * interpX[0];
+          Real c11 = c011 * interpX[1] + c111 * interpX[0];
+
+          Real c0 = c00 * interpY[1] + c01 * interpY[0];
+          Real c1 = c10 * interpY[1] + c11 * interpY[0];
+
+          data_I[iStart + iVar] = (c0 * interpZ[1] + c1 * interpZ[0]) * coef;
+        }
+        found = true;
+        break;
+      }
     }
 
-    int iLev = get_finest_lev(xyz);
-    const int iStart = iPoint * nVar;
-    for (int iVar = 0; iVar < nVar; iVar++) {
-      data_I[iStart + iVar] =
-          get_value_at_loc(nodeFluid[iLev], Geom(iLev), xyz, idxMap[iVar]) *
-          coef;
+    if (!found) {
+      AllPrint() << "xyz = " << xyz << std::endl;
+      Abort("Error: can not find this point!");
     }
   }
 }
