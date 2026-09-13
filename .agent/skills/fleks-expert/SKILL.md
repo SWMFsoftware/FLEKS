@@ -28,9 +28,8 @@ variant):
 | Test catalogue & runner options | `tests/README.md` |
 | Task recipes | `.agent/workflows/`, `.agent/skills/*/SKILL.md` |
 
-The root `AGENT.md` is only a **router** to these files. Per-directory
-`AGENT.md` files are being consolidated into `Doc/` — do not add new ones;
-update `Doc/` instead.
+The root `AGENT.md` is only a **router** to these files; there are no
+per-directory `AGENT.md` files. Extend `Doc/` instead of adding new ones.
 
 ## Commands
 
