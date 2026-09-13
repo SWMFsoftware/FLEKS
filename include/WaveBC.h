@@ -51,7 +51,8 @@ struct WaveComponent {
                             const amrex::Real*)>
       custom = nullptr; // kCustom
 
-  amrex::Real pol[3] = { 0, 1, 0 }; // polarisation vector
+  amrex::Real pol[3] = { 0, 1, 0 };   // polarisation vector
+  amrex::Real k_vec[3] = { 0, 0, 0 }; // precomputed (2*pi/waveLength) * dir
 };
 
 // Per-face emitter stack.
