@@ -70,8 +70,9 @@ Violating any of these gives silently wrong results or link errors:
 `.agent/` is versioned with the code; install it with
 `tools/install_skill.sh` (symlinks into the CodeBuddy skills directory).
 
-| Skill / workflow | Use it for |
+| Entry point | Use it for |
 |---|---|
+| `agents/fleks.md` | Dedicated agent for context-heavy work (multi-file changes, long build/test loops) — it reads the docs for you and reports a short summary |
 | `skills/fleks-expert/` | Knowledge base — architecture, file layout, standards, testing, coupling (references loaded on demand) |
 | `skills/build-fleks/` | Compiling and `compile_commands.json` |
 | `skills/add-new-source/` | New `.cpp`/`.h` or user-source templates |

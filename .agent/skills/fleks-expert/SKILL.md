@@ -73,6 +73,7 @@ Violating any of these gives silently wrong results or link errors:
 
 | Task | Go to |
 |---|---|
+| Multi-file change or long build/test loop | spawn the `fleks` agent (`.agent/agents/fleks.md`) |
 | Build / compile / link errors | `.agent/skills/build-fleks/SKILL.md` |
 | New `.cpp`/`.h` or user source | `.agent/skills/add-new-source/SKILL.md` |
 | Formatting, cleanup, conventions | `.agent/skills/code-cleanup/SKILL.md` |

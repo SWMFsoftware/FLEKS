@@ -9,6 +9,7 @@ the local CodeBuddy installation is derived from it with
 
 | Path | Contents |
 |---|---|
+| `agents/fleks.md` | The dedicated implementation agent: context-heavy exploration and long build/test loops, reporting concise summaries. |
 | `skills/fleks-expert/` | Knowledge base: `SKILL.md` router + `references/` loaded on demand (architecture, file layout, standards, testing, coupling). |
 | `skills/build-fleks/`, `add-new-source/`, `code-cleanup/`, `debug-session/`, `generate-docs/` | Task recipes — one skill per recurring activity. |
 | `workflows/` | Multi-step guides meant to be invoked explicitly (`add-param`, `add-coupling-var`, `run-test`). |
