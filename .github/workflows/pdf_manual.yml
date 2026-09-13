@@ -9,6 +9,10 @@ on:
       - 'Makefile'
       - '.github/workflows/pdf_manual.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pdf-manual:
     runs-on: ubuntu-latest

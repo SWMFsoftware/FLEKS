@@ -9,6 +9,8 @@ on:
       - 'CONTRIBUTING.md'
       - 'doc/**'
       - '.agent/**'
+      - 'PARAM.XML'
+      - 'tests/**/README.md'
       - 'tools/check_docs.py'
       - '.github/workflows/docs_check.yml'
   pull_request:
@@ -19,8 +21,14 @@ on:
       - 'CONTRIBUTING.md'
       - 'doc/**'
       - '.agent/**'
+      - 'PARAM.XML'
+      - 'tests/**/README.md'
       - 'tools/check_docs.py'
       - '.github/workflows/docs_check.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   docs-check:
