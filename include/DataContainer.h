@@ -629,14 +629,16 @@ public:
   int read() override;
 
   size_t count_cell() override {
-    if (nCell > 0) return nCell;
+    if (nCell > 0)
+      return nCell;
     amrex::Vector<float> vars;
     nCell = loop_cell(false, vars);
     return nCell;
   }
 
   size_t count_zone() override {
-    if (nBrick > 0) return nBrick;
+    if (nBrick > 0)
+      return nBrick;
     amrex::Vector<size_t> zones;
     nBrick = loop_zone(false, zones);
     return nBrick;

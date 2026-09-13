@@ -110,7 +110,8 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
   if (doStore) {
     vars.clear();
     if (nCell > 0) {
-      vars.reserve(nCell * (doStoreLoc ? 3 : (n_lev() > 0 ? mf[0].nComp() : 1)));
+      vars.reserve(nCell *
+                   (doStoreLoc ? 3 : (n_lev() > 0 ? mf[0].nComp() : 1)));
     }
   }
 
@@ -297,9 +298,8 @@ void AMReXDataContainer::smooth(int nSmooth) {
                 }
 
                 for (int iVar = 0; iVar < ncomp; ++iVar) {
-                  const Real neiSum =
-                      tmp(i - di, j - dj, k - dk, iVar) +
-                      tmp(i + di, j + dj, k + dk, iVar);
+                  const Real neiSum = tmp(i - di, j - dj, k - dk, iVar) +
+                                      tmp(i + di, j + dj, k + dk, iVar);
                   arr(i, j, k, iVar) =
                       weightSelf * arr(i, j, k, iVar) + weightNei * neiSum;
                 }
