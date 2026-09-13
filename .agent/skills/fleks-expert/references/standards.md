@@ -1,8 +1,7 @@
 # FLEKS Coding Standards Reference
 
-> Canonical: `doc/Coding_standards.md` plus `doc/DEVELOPING.md` §3
-> (Coding conventions). This page adds the FLEKS-specific rules that are not in
-> the generic style guide.
+> Canonical: `doc/Coding_standards.md`. This page adds the FLEKS-specific rules
+> that are not in the generic style guide.
 
 Full text for humans: `doc/Coding_standards.md`. Summary below.
 

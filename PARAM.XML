@@ -1249,8 +1249,7 @@ test case: the name is resolved by the InitialCondition registry (case-insensiti
 and an unknown name aborts listing the registered names. Wave / sinusoidal tests
 are all ONE parameterized plug-in (WaveIC) registered as lightwave, hybridwave,
 convectionwave, ionacousticwave and a generic waveic; non-wave tests have
-dedicated plug-ins (beam, tophat). See the "Add a test case / initial
-condition" section of doc/DEVELOPING.md.
+dedicated plug-ins (beam, tophat).
 </command>
 
 <command name="WAVEIC" alias="WAVEIC_FLEKS0,WAVEIC_FLEKS1,WAVEIC_FLEKS2" multiple="T">

@@ -20,7 +20,7 @@ Two field solvers, selected per run:
 | Content | Location |
 |---|---|
 | Human overview / quick start | `README.md` |
-| Build, layout, entry points, extension recipes | `doc/DEVELOPING.md` |
+| Build, layout, parameters, tools, extension recipes | `.agent/skills/fleks-expert/references/` |
 | Coding standards | `doc/Coding_standards.md` |
 | Algorithms and math | `doc/Algorithm.tex` |
 | Parameter reference | `PARAM.XML` (`make PDF` → `doc/USERMANUAL.pdf`) |
@@ -30,7 +30,7 @@ Two field solvers, selected per run:
 | Multi-step guides | `.agent/workflows/` |
 | Submission rules (formatting, commits) | `CONTRIBUTING.md` |
 
-Do **not** add per-directory `AGENT.md` files — extend `doc/DEVELOPING.md`
+Do **not** add per-directory `AGENT.md` files — extend the skill references
 instead.
 
 ## Commands

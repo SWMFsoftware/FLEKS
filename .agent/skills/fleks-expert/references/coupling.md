@@ -1,8 +1,8 @@
 # FLEKS ↔ SWMF Coupling Reference
 
-> Canonical: `doc/DEVELOPING.md` §4 (Modify the SWMF interface) and
-> `.agent/workflows/add-coupling-var.md`. This page owns the full entry-point
-> tables and the Fortran/C++ interoperability pitfalls.
+> This page owns the full entry-point tables and the Fortran/C++
+> interoperability pitfalls; adding an exchanged variable is
+> `.agent/workflows/add-coupling-var.md`.
 
 ## Three-layer pattern
 

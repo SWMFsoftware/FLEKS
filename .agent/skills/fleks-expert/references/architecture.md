@@ -1,7 +1,7 @@
 # FLEKS Architecture Reference
 
-> Canonical: `doc/DEVELOPING.md` §3 (class hierarchy, entry points) and
-> `doc/Algorithm.tex` (mathematics). This page adds the solver comparison that
+> Canonical: `doc/Algorithm.tex` (mathematics); the class hierarchy is mirrored
+> in `references/file-layout.md`. This page adds the solver comparison that
 > decides which path a run takes.
 
 ## Class hierarchy

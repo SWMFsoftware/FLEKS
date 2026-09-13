@@ -65,7 +65,7 @@ make -C doc/Tex cleanpdf
 ```
 
 * **Algorithms & Physics:** Please see `doc/Algorithm.tex` for the mathematical foundations of the simulation engine.
-* **Developer Guide:** `doc/DEVELOPING.md` covers the repository layout, build system, code entry points, coding invariants and how to extend FLEKS (sources, parameters, initial conditions, user sources, SWMF interface).
+* **Development & Agent Knowledge:** `.agent/skills/fleks-expert/` (with `references/`) covers the repository layout, build system, code entry points, coding invariants and how to extend FLEKS (sources, parameters, initial conditions, user sources, SWMF interface).
 * **Coding Standards & Contributing:** See `CONTRIBUTING.md` before making a pull request.
 
 ## Data Processing

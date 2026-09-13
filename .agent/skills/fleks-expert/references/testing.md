@@ -1,8 +1,8 @@
 # FLEKS Testing Reference
 
-> Canonical: `tests/README.md` (catalogue and runner options) and
-> `doc/DEVELOPING.md` §6. This page is the agent-oriented summary, including
-> the build configurations each test needs.
+> Canonical: `tests/README.md` (catalogue and runner options). This page is the
+> agent-oriented summary, including the build configurations each test needs and
+> how to add a test case.
 
 FLEKS has two independent test systems: **standalone tests** (no SWMF, under
 `tests/`) and **SWMF coupled tests** (GM-PC / MHD-AEPIC, run from the SWMF

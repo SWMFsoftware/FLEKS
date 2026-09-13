@@ -46,7 +46,6 @@ SCAN_FILES = ["AGENT.md", "README.md", "CONTRIBUTING.md", "PARAM.XML"]
 SCAN_GLOBS = ["tests/*/README.md"]
 
 CANONICAL_FILES = [
-    "doc/DEVELOPING.md",
     "doc/Coding_standards.md",
     "doc/Algorithm.tex",
     "tests/README.md",
@@ -167,7 +166,8 @@ def check_agent_md(errors: list[str]) -> None:
     if len(lines) > MAX_AGENT_MD_LINES:
         errors.append(
             f"AGENT.md is {len(lines)} lines; it must stay a router "
-            f"(<= {MAX_AGENT_MD_LINES}). Move detail into doc/DEVELOPING.md."
+            f"(<= {MAX_AGENT_MD_LINES}). Move detail into the skill "
+            "references under .agent/skills/fleks-expert/."
         )
     for stray in sorted(REPO_ROOT.rglob("AGENT.md")):
         if stray != root:
