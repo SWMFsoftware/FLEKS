@@ -22,14 +22,14 @@ variant):
 | Content | Location |
 |---|---|
 | Human overview / quick start | `README.md` |
-| Build, layout and extension points | `Doc/DEVELOPING.md`; math in `Doc/Algorithm.tex` |
-| Coding standards | `Doc/Coding_standards.md` |
-| Parameter reference | `PARAM.XML` (`make PDF` → `Doc/USERMANUAL.pdf`) |
+| Build, layout and extension points | `doc/DEVELOPING.md`; math in `doc/Algorithm.tex` |
+| Coding standards | `doc/Coding_standards.md` |
+| Parameter reference | `PARAM.XML` (`make PDF` → `doc/USERMANUAL.pdf`) |
 | Test catalogue & runner options | `tests/README.md` |
 | Task recipes | `.agent/workflows/`, `.agent/skills/*/SKILL.md` |
 
 The root `AGENT.md` is only a **router** to these files; there are no
-per-directory `AGENT.md` files. Extend `Doc/` instead of adding new ones.
+per-directory `AGENT.md` files. Extend `doc/` instead of adding new ones.
 
 ## Commands
 
@@ -91,8 +91,8 @@ Violating any of these gives silently wrong results or link errors:
 ## References
 
 Load only what the current task needs. Each page is a condensed, agent-oriented
-view whose header names the canonical document (`Doc/DEVELOPING.md`,
-`Doc/Coding_standards.md`, `tests/README.md`) — open the canonical one when the
+view whose header names the canonical document (`doc/DEVELOPING.md`,
+`doc/Coding_standards.md`, `tests/README.md`) — open the canonical one when the
 task needs the full detail:
 
 - `references/architecture.md` — class hierarchy, full vs hybrid solver, time

@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ "master" ]
     paths-ignore:
-      - 'Doc/**'
+      - 'doc/**'
       - 'PARAM.XML'
       - '**.md'
   workflow_dispatch:

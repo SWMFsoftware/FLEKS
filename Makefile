@@ -13,7 +13,7 @@ help:
 	@echo 'make FLEKS                  - same as make EXE'
 	@echo 'make LIB                    - compile libPC.a for SWMF'
 	@echo 'make PIDL                   - compile PostIDL.exe for post-processing'
-	@echo 'make PDF                    - build Doc/USERMANUAL.pdf from PARAM.XML'
+	@echo 'make PDF                    - build doc/USERMANUAL.pdf from PARAM.XML'
 	@echo 'make clean                  - remove object files'
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
@@ -90,8 +90,8 @@ PIDL:
 	@echo ' '
 
 PDF:
-	$(MAKE) -C Doc/Tex cleanpdf
-	$(MAKE) -C Doc/Tex PDF
+	$(MAKE) -C doc/Tex cleanpdf
+	$(MAKE) -C doc/Tex PDF
 
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
@@ -115,7 +115,7 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
-	-@$(MAKE) -C Doc/Tex cleanpdf
+	-@$(MAKE) -C doc/Tex cleanpdf
 	-@rm -rf *~ ./bin lib ${TESTDIR} include/Constants.h
 	-@rm -f test*.diff
 

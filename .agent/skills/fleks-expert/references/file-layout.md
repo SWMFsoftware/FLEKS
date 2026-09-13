@@ -1,6 +1,6 @@
 # FLEKS File Layout
 
-> Canonical: `Doc/DEVELOPING.md` §1 (Repository Layout) and §3 (Code Layout and
+> Canonical: `doc/DEVELOPING.md` §1 (Repository Layout) and §3 (Code Layout and
 > Entry Points). Open the doc for the full tables — this reference only holds
 > the shortcuts and the rules that are easy to get wrong.
 

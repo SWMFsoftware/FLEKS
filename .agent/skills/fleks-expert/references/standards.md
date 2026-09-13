@@ -1,10 +1,10 @@
 # FLEKS Coding Standards Reference
 
-> Canonical: `Doc/Coding_standards.md` plus `Doc/DEVELOPING.md` §3
+> Canonical: `doc/Coding_standards.md` plus `doc/DEVELOPING.md` §3
 > (Coding conventions). This page adds the FLEKS-specific rules that are not in
 > the generic style guide.
 
-Full text for humans: `Doc/Coding_standards.md`. Summary below.
+Full text for humans: `doc/Coding_standards.md`. Summary below.
 
 ## Naming
 

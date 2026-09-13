@@ -28,7 +28,7 @@ FLEKS/
 │   └── ic/            Initial-condition plug-ins (private headers live here)
 ├── srcInterface/      SWMF coupling layer: PC_wrapper.f90, PT_wrapper.f90,
 │                      FleksInterface.cpp
-├── Doc/               Algorithm.tex, Coding_standards.md, DEVELOPING.md, Tex/
+├── doc/               Algorithm.tex, Coding_standards.md, DEVELOPING.md, Tex/
 ├── tools/             Post-processing, conversion and formatting scripts
 ├── tests/             Standalone test suite (one directory per scenario)
 ├── userfiles/         Selectable user-source templates (*Source.h)
@@ -67,7 +67,7 @@ a pure FLEKS checkout it can clone or use local dependencies.
 | `make CONVERTER` | `bin/converter.exe` |
 | `make compile_commands` | regenerate `compile_commands.json` (IDE index) |
 | `make clean` / `make distclean` | object files / full reset |
-| `make PDF` | `Doc/USERMANUAL.pdf` (needs `pdflatex`, `makeindex`, `fvextra`) |
+| `make PDF` | `doc/USERMANUAL.pdf` (needs `pdflatex`, `makeindex`, `fvextra`) |
 
 `make LIB` is only valid inside a built SWMF tree (needs `libSHARE.a` and
 `con_comp_param.mod`); use `make EXE` for standalone work. `EXE`, `FLEKS` and
@@ -246,7 +246,7 @@ restarts under `FLEKS1/`) and need `#INITFROMSWMF F` plus `#NORMALIZATION`,
 ## 5. Parameters
 
 All input commands are documented in `PARAM.XML`; `make PDF` renders
-`Doc/USERMANUAL.pdf`. Major groups:
+`doc/USERMANUAL.pdf`. Major groups:
 
 | Group | Commands |
 |---|---|
@@ -297,9 +297,9 @@ block boundaries better with the BATSRUSReader plugin from `flekspy`.
 
 | File | Build |
 |---|---|
-| `Doc/Algorithm.tex` | `cd Doc && pdflatex Algorithm.tex` (twice for references) |
-| `PARAM.XML` | `make PDF` → `Doc/USERMANUAL.pdf` |
-| `Doc/DEVELOPING.md` | this file |
+| `doc/Algorithm.tex` | `cd doc && pdflatex Algorithm.tex` (twice for references) |
+| `PARAM.XML` | `make PDF` → `doc/USERMANUAL.pdf` |
+| `doc/DEVELOPING.md` | this file |
 
-Keep `Doc/Coding_standards.md` and this file in sync with structural changes:
+Keep `doc/Coding_standards.md` and this file in sync with structural changes:
 new directories, new generated files, new extension points.

@@ -1,7 +1,7 @@
 # FLEKS Testing Reference
 
 > Canonical: `tests/README.md` (catalogue and runner options) and
-> `Doc/DEVELOPING.md` §6. This page is the agent-oriented summary, including
+> `doc/DEVELOPING.md` §6. This page is the agent-oriented summary, including
 > the build configurations each test needs.
 
 FLEKS has two independent test systems: **standalone tests** (no SWMF, under

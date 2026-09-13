@@ -1,7 +1,7 @@
 # FLEKS Architecture Reference
 
-> Canonical: `Doc/DEVELOPING.md` §3 (class hierarchy, entry points) and
-> `Doc/Algorithm.tex` (mathematics). This page adds the solver comparison that
+> Canonical: `doc/DEVELOPING.md` §3 (class hierarchy, entry points) and
+> `doc/Algorithm.tex` (mathematics). This page adds the solver comparison that
 > decides which path a run takes.
 
 ## Class hierarchy
@@ -79,4 +79,4 @@ uncluttered.
   `FleksDistributionMap`.
 - **Coupling:** bi-directional GM↔PC exchange (MHD-AEPIC); see
   `references/coupling.md`.
-- Mathematical foundations for both solvers: `Doc/Algorithm.tex`.
+- Mathematical foundations for both solvers: `doc/Algorithm.tex`.

@@ -14,8 +14,8 @@ The checks encode the rules agreed for the documentation layout:
 3. Every reference file under ``skills/fleks-expert/references/`` is reachable
    from its ``SKILL.md``.
 4. Backticked repository paths in the agent docs resolve to something real
-   (catches the ``docs/`` vs ``Doc/`` class of drift).
-5. No lowercase ``docs/`` paths remain in the agent docs.
+   (catches the ``Doc/`` vs ``doc/`` class of drift).
+5. Documentation paths use the lowercase ``doc/`` directory.
 6. The canonical documents exist.
 
 Exits with status 1 and a list of problems when a check fails.
@@ -31,13 +31,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 MAX_AGENT_MD_LINES = 150
 DOC_EXTENSIONS = {".md", ".tex", ".py", ".sh", ".xml", ".yml", ".yaml", ".in"}
-SCAN_DIRS = ["Doc", ".agent"]
+SCAN_DIRS = ["doc", ".agent"]
 SCAN_FILES = ["AGENT.md", "README.md", "CONTRIBUTING.md"]
 
 CANONICAL_FILES = [
-    "Doc/DEVELOPING.md",
-    "Doc/Coding_standards.md",
-    "Doc/Algorithm.tex",
+    "doc/DEVELOPING.md",
+    "doc/Coding_standards.md",
+    "doc/Algorithm.tex",
     "tests/README.md",
     "PARAM.XML",
 ]
@@ -48,8 +48,8 @@ PATH_RE = re.compile(r"`([^`\n]+)`")
 
 # Paths that only exist after a build, a run, or in a parent SWMF tree.
 GENERATED_PATHS = {
-    "Doc/USERMANUAL.pdf",
-    "Doc/Algorithm.pdf",
+    "doc/USERMANUAL.pdf",
+    "doc/Algorithm.pdf",
     "bin/FLEKS.exe",
     "bin/converter.exe",
     "./FLEKS.exe",
@@ -71,7 +71,7 @@ GENERATED_PATHS = {
 
 # Placeholders used in "how to add a file" recipes.
 PLACEHOLDERS = ("NewFeature", "NewSource", "MyIC", "New")
-LOWER_DOCS_RE = re.compile(r"(?<![\w-])docs/")
+UPPER_DOC_RE = re.compile(r"(?<![\w-])Doc/")
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
 
@@ -140,7 +140,7 @@ def check_agent_md(errors: list[str]) -> None:
     if len(lines) > MAX_AGENT_MD_LINES:
         errors.append(
             f"AGENT.md is {len(lines)} lines; it must stay a router "
-            f"(<= {MAX_AGENT_MD_LINES}). Move detail into Doc/DEVELOPING.md."
+            f"(<= {MAX_AGENT_MD_LINES}). Move detail into doc/DEVELOPING.md."
         )
     for stray in sorted(REPO_ROOT.rglob("AGENT.md")):
         if stray != root:
@@ -191,9 +191,9 @@ def check_paths(errors: list[str]) -> None:
     for path in markdown_files():
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(REPO_ROOT)
-        for match in LOWER_DOCS_RE.finditer(text):
+        for match in UPPER_DOC_RE.finditer(text):
             line = text[: match.start()].count("\n") + 1
-            errors.append(f"{rel}:{line}: lowercase 'docs/' — use 'Doc/'")
+            errors.append(f"{rel}:{line}: use the lowercase 'doc/' directory")
         for candidate in PATH_RE.findall(text):
             if not looks_like_path(candidate):
                 continue

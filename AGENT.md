@@ -12,7 +12,7 @@ Two field solvers, selected per run:
   law, explicit Faraday advance (`#HYBRIDPIC`).
 
 > This file is a **router**, not a manual. It is the only `AGENT.md` in the
-> repository; detailed content belongs in `Doc/` or in `.agent/`, so agents pay
+> repository; detailed content belongs in `doc/` or in `.agent/`, so agents pay
 > for it only when they need it.
 
 ## Single source of truth
@@ -20,17 +20,17 @@ Two field solvers, selected per run:
 | Content | Location |
 |---|---|
 | Human overview / quick start | `README.md` |
-| Build, layout, entry points, extension recipes | `Doc/DEVELOPING.md` |
-| Coding standards | `Doc/Coding_standards.md` |
-| Algorithms and math | `Doc/Algorithm.tex` |
-| Parameter reference | `PARAM.XML` (`make PDF` → `Doc/USERMANUAL.pdf`) |
+| Build, layout, entry points, extension recipes | `doc/DEVELOPING.md` |
+| Coding standards | `doc/Coding_standards.md` |
+| Algorithms and math | `doc/Algorithm.tex` |
+| Parameter reference | `PARAM.XML` (`make PDF` → `doc/USERMANUAL.pdf`) |
 | Standalone test catalogue & runner | `tests/README.md` |
 | Agent knowledge base | `.agent/skills/fleks-expert/` (+ `references/`) |
 | Task recipes | `.agent/skills/*/SKILL.md` |
 | Multi-step guides | `.agent/workflows/` |
 | Submission rules (formatting, commits) | `CONTRIBUTING.md` |
 
-Do **not** add per-directory `AGENT.md` files — extend `Doc/DEVELOPING.md`
+Do **not** add per-directory `AGENT.md` files — extend `doc/DEVELOPING.md`
 instead.
 
 ## Commands

@@ -34,10 +34,10 @@ Symlinks are the default so the installed copy cannot drift from this one.
    says *when* to use the skill.
 3. **Keep `SKILL.md` short** (≤ ~120 lines). Anything not needed on every
    invocation goes into `references/`.
-4. **Human-facing docs live in `Doc/` and `README.md`**, not here. If something
-   is useful to both audiences, write it once in `Doc/` and link to it.
+4. **Human-facing docs live in `doc/` and `README.md`**, not here. If something
+   is useful to both audiences, write it once in `doc/` and link to it.
 5. **No per-directory `AGENT.md` files.** The root `AGENT.md` is a router;
-   detailed content belongs in `Doc/` or in a reference here.
+   detailed content belongs in `doc/` or in a reference here.
 
 Run `python3 tools/check_docs.py` (also in CI) after doc changes: it enforces
 the single-root `AGENT.md` rule, skill/workflow frontmatter, that every

@@ -5,7 +5,7 @@ on:
     branches: [ "master" ]
     paths:
       - 'PARAM.XML'
-      - 'Doc/**'
+      - 'doc/**'
       - 'Makefile'
       - '.github/workflows/pdf_manual.yml'
 
@@ -34,4 +34,4 @@ jobs:
       - name: Build PARAM.XML PDF manual
         run: |
           make PDF
-          test -s Doc/USERMANUAL.pdf
+          test -s doc/USERMANUAL.pdf

@@ -26,7 +26,7 @@ done directly.
 1. `AGENT.md` at the repository root — the router (it is short on purpose).
 2. `.agent/skills/fleks-expert/SKILL.md`, then **only the one** `references/*.md`
    the task needs (architecture, file-layout, standards, testing, coupling).
-3. The canonical section of `Doc/DEVELOPING.md` named in that reference's
+3. The canonical section of `doc/DEVELOPING.md` named in that reference's
    header, when the task needs the full tables.
 4. Source code, via semantic navigation (`documentSymbol`, `findReferences`,
    `goToDefinition`) rather than broad greps over the whole tree.
@@ -43,13 +43,13 @@ done directly.
 - Code guarded by `_PC_COMPONENT_` / `_PT_COMPONENT_` must compile both ways.
 - Ionization data belongs in `SourceInterface`/`UserSource`, not
   `FluidInterface`.
-- Do not create per-directory `AGENT.md` files; extend `Doc/DEVELOPING.md`.
+- Do not create per-directory `AGENT.md` files; extend `doc/DEVELOPING.md`.
 - Format before finishing: `python3 tools/format_all.py`.
 
 ## Working loop
 
 1. **Locate** — find the owning class/file and every call site before editing.
-2. **Implement** — follow the recipes in `Doc/DEVELOPING.md` §4 and, for
+2. **Implement** — follow the recipes in `doc/DEVELOPING.md` §4 and, for
    parameters and coupling variables, `.agent/workflows/`.
 3. **Validate** — `make LIB -j8` (component) or `make EXE -j8` (standalone);
    then the narrowest relevant test (`python3 tests/validate_tests.py
