@@ -22,7 +22,7 @@ variant):
 | Content | Location |
 |---|---|
 | Human overview / quick start | `README.md` |
-| Architecture & algorithms | `Doc/ARCHITECTURE.md`; math in `Doc/Algorithm.tex` |
+| Build, layout and extension points | `Doc/DEVELOPING.md`; math in `Doc/Algorithm.tex` |
 | Coding standards | `Doc/Coding_standards.md` |
 | Parameter reference | `PARAM.XML` (`make PDF` → `Doc/USERMANUAL.pdf`) |
 | Test catalogue & runner options | `tests/README.md` |
