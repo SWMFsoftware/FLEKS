@@ -22,12 +22,12 @@ variant):
 | Content | Location |
 |---|---|
 | Human overview / quick start | `README.md` |
-| Build, layout, parameters, tools, extension recipes | `.agent/skills/fleks-expert/references/` |
+| Build, layout, parameters, tools, extension recipes | `.agents/skills/fleks-expert/references/` |
 | Algorithms and math | `doc/Algorithm.tex` |
 | Coding standards | `doc/Coding_standards.md` |
 | Parameter reference | `PARAM.XML` (`make PDF` → `doc/USERMANUAL.pdf`) |
 | Test catalogue & runner options | `tests/README.md` |
-| Task recipes | `.agent/workflows/`, `.agent/skills/*/SKILL.md` |
+| Task recipes | `.agents/workflows/`, `.agents/skills/*/SKILL.md` |
 
 The root `AGENT.md` is only a **router** to these files; there are no
 per-directory `AGENT.md` files. Extend the files listed above instead of adding
@@ -75,18 +75,18 @@ Violating any of these gives silently wrong results or link errors:
 
 | Task | Go to |
 |---|---|
-| Multi-file change or long build/test loop | spawn the `fleks` agent (`.agent/agents/fleks.md`) |
-| Build / compile / link errors | `.agent/skills/build-fleks/SKILL.md` |
+| Multi-file change or long build/test loop | spawn the `fleks` agent (`.agents/agents/fleks.md`) |
+| Build / compile / link errors | `.agents/skills/build-fleks/SKILL.md` |
 | Build configuration, targets, Makefile | `references/build.md` |
 | Parameter groups / command lookup | `references/parameters.md` |
 | Post-processing / conversion tools | `references/tools.md` |
-| New `.cpp`/`.h` or user source | `.agent/skills/add-new-source/SKILL.md` |
-| Formatting, cleanup, conventions | `.agent/skills/code-cleanup/SKILL.md` |
-| Debugger session (gdb/lldb) | `.agent/skills/debug-session/SKILL.md` |
-| LaTeX / Doxygen / PARAM.XML docs | `.agent/skills/generate-docs/SKILL.md` |
-| Add a new `#COMMAND` | `.agent/workflows/add-param.md` |
-| Add a GM↔PC coupling variable | `.agent/workflows/add-coupling-var.md` |
-| Run the GM-PC regression | `.agent/workflows/run-test.md` |
+| New `.cpp`/`.h` or user source | `.agents/skills/add-new-source/SKILL.md` |
+| Formatting, cleanup, conventions | `.agents/skills/code-cleanup/SKILL.md` |
+| Debugger session (gdb/lldb) | `.agents/skills/debug-session/SKILL.md` |
+| LaTeX / Doxygen / PARAM.XML docs | `.agents/skills/generate-docs/SKILL.md` |
+| Add a new `#COMMAND` | `.agents/workflows/add-param.md` |
+| Add a GM↔PC coupling variable | `.agents/workflows/add-coupling-var.md` |
+| Run the GM-PC regression | `.agents/workflows/run-test.md` |
 | Standalone test catalogue | `references/testing.md`, `tests/README.md` |
 | Which class / file to edit | `references/file-layout.md` |
 | Solver & physics details | `references/architecture.md` |

@@ -1,9 +1,8 @@
-# .agent/ — Agent Skills, Workflows and Knowledge Base
+# .agents/ — Agent Skills, Workflows and Knowledge Base
 
 This directory holds the machine-facing documentation for FLEKS. It is
 versioned with the code: **the repository is the single source of truth**, and
-the local CodeBuddy installation is derived from it with
-`tools/install_skill.sh`.
+every tool either reads it directly or links to it (see *Using these skills*).
 
 ## Layout
 
@@ -14,16 +13,31 @@ the local CodeBuddy installation is derived from it with
 | `skills/build-fleks/`, `add-new-source/`, `code-cleanup/`, `debug-session/`, `generate-docs/` | Task recipes — one skill per recurring activity. |
 | `workflows/` | Multi-step guides meant to be invoked explicitly (`add-param`, `add-coupling-var`, `run-test`). |
 
-## Install into CodeBuddy
+## Using these skills
+
+`SKILL.md` (YAML frontmatter + progressive disclosure) is an open format, but
+each tool looks for skills in its own place:
+
+| Tool | Discovery | What to do |
+|---|---|---|
+| Antigravity | `.agents/skills/` in the workspace | nothing — this is the native layout |
+| Claude Code | `.claude/skills/` (project) or `~/.claude/skills/` | link the skills you want |
+| CodeBuddy | `~/.codebuddy/skills/` | link the skills you want |
+| Codex | project instructions file (AGENTS.md by convention) | add a pointer to `AGENT.md` and `.agents/` |
+
+Linking is a single command per skill; symlinks keep the installed copy from
+drifting out of the repository:
 
 ```bash
-tools/install_skill.sh                 # symlink into ~/.codebuddy/skills
-tools/install_skill.sh --copy          # copy instead (if symlinks are not followed)
-tools/install_skill.sh --force         # replace already installed skills
-tools/install_skill.sh --dest /path/to/skills
+# Claude Code (project-level)
+mkdir -p .claude/skills
+for s in .agents/skills/*/; do ln -sfn "$PWD/$s" ".claude/skills/$(basename "$s")"; done
+
+# CodeBuddy (user-level)
+for s in .agents/skills/*/; do ln -sfn "$PWD/$s" "$HOME/.codebuddy/skills/$(basename "$s")"; done
 ```
 
-Symlinks are the default so the installed copy cannot drift from this one.
+Use copies instead if a tool does not follow symlinks.
 
 ## Authoring rules
 

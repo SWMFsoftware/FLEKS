@@ -23,7 +23,7 @@ reusable user source implementations under `userfiles/` and select them with
 
 ## Naming Conventions
 
-See `.agent/skills/fleks-expert/references/standards.md`: `PascalCase` for
+See `.agents/skills/fleks-expert/references/standards.md`: `PascalCase` for
 files and classes, `camelCase` for variables and members, `snake_case` for
 functions.
 
@@ -190,7 +190,7 @@ PT builds enable source use by default unless `#SOURCE` sets it to false.
 ## Header Order Standard
 
 std → AMReX → project headers (full example in
-`.agent/skills/fleks-expert/references/standards.md`).
+`.agents/skills/fleks-expert/references/standards.md`).
 
 ## Key Reminders
 
@@ -198,7 +198,7 @@ std → AMReX → project headers (full example in
    auto-discovered, and a missing entry is only noticed at link time.
 2. **No `using namespace`** in header files.
 3. The remaining conventions (`nullptr`, smart pointers, `const`, 80 columns)
-   live in `.agent/skills/fleks-expert/references/standards.md`; format with
+   live in `.agents/skills/fleks-expert/references/standards.md`; format with
    `python3 tools/format_all.py` before committing.
 
 ## Integrating with Existing Classes

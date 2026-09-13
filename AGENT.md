@@ -12,7 +12,7 @@ Two field solvers, selected per run:
   law, explicit Faraday advance (`#HYBRIDPIC`).
 
 > This file is a **router**, not a manual. It is the only `AGENT.md` in the
-> repository; detailed content belongs in `doc/` or in `.agent/`, so agents pay
+> repository; detailed content belongs in `doc/` or in `.agents/`, so agents pay
 > for it only when they need it.
 
 ## Single source of truth
@@ -20,14 +20,14 @@ Two field solvers, selected per run:
 | Content | Location |
 |---|---|
 | Human overview / quick start | `README.md` |
-| Build, layout, parameters, tools, extension recipes | `.agent/skills/fleks-expert/references/` |
+| Build, layout, parameters, tools, extension recipes | `.agents/skills/fleks-expert/references/` |
 | Coding standards | `doc/Coding_standards.md` |
 | Algorithms and math | `doc/Algorithm.tex` |
 | Parameter reference | `PARAM.XML` (`make PDF` → `doc/USERMANUAL.pdf`) |
 | Standalone test catalogue & runner | `tests/README.md` |
-| Agent knowledge base | `.agent/skills/fleks-expert/` (+ `references/`) |
-| Task recipes | `.agent/skills/*/SKILL.md` |
-| Multi-step guides | `.agent/workflows/` |
+| Agent knowledge base | `.agents/skills/fleks-expert/` (+ `references/`) |
+| Task recipes | `.agents/skills/*/SKILL.md` |
+| Multi-step guides | `.agents/workflows/` |
 | Submission rules (formatting, commits) | `CONTRIBUTING.md` |
 
 Do **not** add per-directory `AGENT.md` files — extend the skill references
@@ -67,8 +67,9 @@ Violating any of these gives silently wrong results or link errors:
 
 ## Agent skills and workflows
 
-`.agent/` is versioned with the code; install it with
-`tools/install_skill.sh` (symlinks into the CodeBuddy skills directory).
+`.agents/` is versioned with the code. Antigravity discovers `skills/` there
+natively; other tools need a symlink into their own skills directory — see
+`.agents/README.md`.
 
 | Entry point | Use it for |
 |---|---|

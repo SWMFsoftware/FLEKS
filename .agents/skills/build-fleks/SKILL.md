@@ -7,7 +7,7 @@ description: Compile FLEKS standalone or as an SWMF component, build the convert
 
 This skill compiles the FLEKS project and ensures IntelliSense stays up to date.
 For architecture, file-layout and testing context beyond the build itself, see
-`.agent/skills/fleks-expert/references/`.
+`.agents/skills/fleks-expert/references/`.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ For architecture, file-layout and testing context beyond the build itself, see
 ### 1. Working Directory
 
 All commands should be run from the FLEKS project root (i.e., the
-directory containing this `.agent/` folder).
+directory containing this `.agents/` folder).
 
 ### 2. Clean Build (Optional)
 

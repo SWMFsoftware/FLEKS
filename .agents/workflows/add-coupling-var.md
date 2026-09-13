@@ -8,7 +8,7 @@ description: How to add a new GM↔PC exchange variable for SWMF coupling
 This workflow adds a new variable to the data exchanged between
 GM (BATS-R-US) and PC (FLEKS) during SWMF coupling. For the interface layer
 itself (entry points, wrapper subroutines, Fortran/C++ pitfalls) see
-`.agent/skills/fleks-expert/references/coupling.md`.
+`.agents/skills/fleks-expert/references/coupling.md`.
 
 ## Overview
 

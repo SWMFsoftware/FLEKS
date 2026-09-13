@@ -24,7 +24,7 @@ done directly.
 ## Load order (progressive disclosure)
 
 1. `AGENT.md` at the repository root — the router (it is short on purpose).
-2. `.agent/skills/fleks-expert/SKILL.md`, then **only the one** `references/*.md`
+2. `.agents/skills/fleks-expert/SKILL.md`, then **only the one** `references/*.md`
    the task needs (architecture, file-layout, standards, testing, coupling).
 3. The canonical source named in that reference's header (`PARAM.XML`,
    `doc/Coding_standards.md`, `tests/README.md`), when the task needs the full
@@ -53,7 +53,7 @@ done directly.
 1. **Locate** — find the owning class/file and every call site before editing.
 2. **Implement** — follow the recipes in the skill references (`build.md`,
    `file-layout.md`, `parameters.md`, `testing.md`, `coupling.md`) and, for
-   parameters and coupling variables, `.agent/workflows/`.
+   parameters and coupling variables, `.agents/workflows/`.
 3. **Validate** — `make LIB -j8` (component) or `make EXE -j8` (standalone);
    then the narrowest relevant test (`python3 tests/validate_tests.py
    --test=<name>`, or `make test16_3d` from the SWMF root for interface

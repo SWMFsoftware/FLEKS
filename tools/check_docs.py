@@ -42,7 +42,7 @@ PATH_EXTENSIONS = DOC_EXTENSIONS | {
     ".txt",
     ".json",
 }
-SCAN_DIRS = ["doc", ".agent"]
+SCAN_DIRS = ["doc", ".agents"]
 SCAN_FILES = ["AGENT.md", "README.md", "CONTRIBUTING.md", "PARAM.XML"]
 SCAN_GLOBS = ["tests/*/README.md"]
 
@@ -186,7 +186,7 @@ def resolve(candidate: str, source: Path) -> bool:
 
     A path may be written relative to the file that mentions it
     (``references/standards.md``), relative to the repository root
-    (``.agent/skills/...``) or as a bare name resolved by search
+    (``.agents/skills/...``) or as a bare name resolved by search
     (``validate.py``). Build output and generated headers count as existing,
     because a fresh checkout does not contain them.
     """
@@ -229,7 +229,7 @@ def check_agent_md(errors: list[str]) -> None:
         errors.append(
             f"AGENT.md is {len(lines)} lines; it must stay a router "
             f"(<= {MAX_AGENT_MD_LINES}). Move detail into the skill "
-            "references under .agent/skills/fleks-expert/."
+            "references under .agents/skills/fleks-expert/."
         )
     for stray in sorted(REPO_ROOT.rglob("AGENT.md")):
         if stray != root:
@@ -240,9 +240,9 @@ def check_agent_md(errors: list[str]) -> None:
 
 
 def check_skills(errors: list[str]) -> None:
-    skills_dir = REPO_ROOT / ".agent" / "skills"
+    skills_dir = REPO_ROOT / ".agents" / "skills"
     if not skills_dir.is_dir():
-        errors.append(".agent/skills/ is missing")
+        errors.append(".agents/skills/ is missing")
         return
     for skill in sorted(skills_dir.iterdir()):
         if not skill.is_dir():
@@ -256,14 +256,14 @@ def check_skills(errors: list[str]) -> None:
             if not fields.get(key):
                 errors.append(f"{skill.name}/SKILL.md: frontmatter lacks '{key}'")
 
-    workflows_dir = REPO_ROOT / ".agent" / "workflows"
+    workflows_dir = REPO_ROOT / ".agents" / "workflows"
     for workflow in sorted(workflows_dir.glob("*.md")) if workflows_dir.is_dir() else []:
         if not frontmatter(workflow.read_text(encoding="utf-8")).get("description"):
             errors.append(f"workflows/{workflow.name}: frontmatter lacks 'description'")
 
 
 def check_references(errors: list[str]) -> None:
-    skill_md = REPO_ROOT / ".agent" / "skills" / "fleks-expert" / "SKILL.md"
+    skill_md = REPO_ROOT / ".agents" / "skills" / "fleks-expert" / "SKILL.md"
     refs_dir = skill_md.parent / "references"
     if not skill_md.is_file() or not refs_dir.is_dir():
         return

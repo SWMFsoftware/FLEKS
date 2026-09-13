@@ -2,7 +2,7 @@
 
 > This page owns the full entry-point tables and the Fortran/C++
 > interoperability pitfalls; adding an exchanged variable is
-> `.agent/workflows/add-coupling-var.md`.
+> `.agents/workflows/add-coupling-var.md`.
 
 ## Three-layer pattern
 
@@ -104,5 +104,5 @@ GM → PC carries the MHD state (B, E, rho, u, p); PC → GM carries PIC moments
 4. Rebuild (`make LIB -j8`) and validate with `make test16_3d` from the SWMF
    root.
 
-See also `.agent/workflows/add-coupling-var.md` for adding an exchanged
+See also `.agents/workflows/add-coupling-var.md` for adding an exchanged
 variable end-to-end.

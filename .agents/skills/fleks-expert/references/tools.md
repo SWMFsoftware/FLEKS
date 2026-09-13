@@ -11,7 +11,6 @@
 | `tools/clean_dat.py` | clean up `.dat` output |
 | `tools/format_all.py` | bulk reformat (C++ + Fortran), required before a PR |
 | `tools/generate_compile_commands.py` | regenerate `compile_commands.json` |
-| `tools/install_skill.sh` | install `.agent/skills/*` into CodeBuddy |
 | `tools/check_docs.py` | verify the agent documentation tree — runs in CI |
 
 ## Reading output

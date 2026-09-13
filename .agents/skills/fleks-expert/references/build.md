@@ -1,7 +1,7 @@
 # FLEKS Build Reference
 
 > The actionable recipe (compile, diagnose, verify) is
-> `.agent/skills/build-fleks/SKILL.md`; this page holds the configuration
+> `.agents/skills/build-fleks/SKILL.md`; this page holds the configuration
 > surface: what `Config.pl` can set, which target produces what, and how
 > `src/Makefile` is wired.
 

@@ -10,7 +10,7 @@ This skill performs code cleanup tasks following FLEKS coding standards.
 ## Coding Standards Reference
 
 The canonical list is `doc/Coding_standards.md`, summarized for agents in
-`.agent/skills/fleks-expert/references/standards.md`. Load that reference
+`.agents/skills/fleks-expert/references/standards.md`. Load that reference
 instead of relying on memory; the essentials are: smart pointers over raw
 `new`, `PascalCase` files/classes, `camelCase` variables, `snake_case`
 functions, `using namespace amrex` only in `.cpp`, header order

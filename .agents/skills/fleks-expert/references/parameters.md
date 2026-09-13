@@ -21,4 +21,4 @@
   aliases.
 - Do not use `#` to reference a command inside a `PARAM.in` comment — it is
   parsed as a command.
-- Adding a new command end-to-end: `.agent/workflows/add-param.md`.
+- Adding a new command end-to-end: `.agents/workflows/add-param.md`.

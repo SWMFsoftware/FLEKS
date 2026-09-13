@@ -17,7 +17,7 @@ FLEKS/
 ├── tools/             Post-processing, conversion and formatting scripts
 ├── tests/             Standalone test suite (one directory per scenario)
 ├── userfiles/         Selectable user-source templates (*Source.h)
-├── .agent/            Agent skills, workflows and knowledge base
+├── .agents/            Agent skills, workflows and knowledge base
 ├── Config.pl          Perl configuration (AMReX, AMR levels, user source, …)
 ├── Makefile           Top-level makefile
 ├── Makefile.def.FLEKS Default FLEKS makefile definitions
