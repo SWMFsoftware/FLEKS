@@ -38,3 +38,8 @@ Symlinks are the default so the installed copy cannot drift from this one.
    is useful to both audiences, write it once in `Doc/` and link to it.
 5. **No per-directory `AGENT.md` files.** The root `AGENT.md` is a router;
    detailed content belongs in `Doc/` or in a reference here.
+
+Run `python3 tools/check_docs.py` (also in CI) after doc changes: it enforces
+the single-root `AGENT.md` rule, skill/workflow frontmatter, that every
+reference is linked from `SKILL.md`, and that backticked repository paths
+resolve.

@@ -1,0 +1,33 @@
+name: Docs Consistency Check
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'AGENT.md'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'Doc/**'
+      - '.agent/**'
+      - 'tools/check_docs.py'
+      - '.github/workflows/docs_check.yml'
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'AGENT.md'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'Doc/**'
+      - '.agent/**'
+      - 'tools/check_docs.py'
+      - '.github/workflows/docs_check.yml'
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run docs consistency check
+        run: python3 tools/check_docs.py

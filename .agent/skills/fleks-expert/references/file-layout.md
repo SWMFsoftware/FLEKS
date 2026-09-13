@@ -13,7 +13,7 @@
 | Field boundary conditions | `src/PicBC.cpp`, `include/BC.h` |
 | Full-PIC field solve / div(E) | `src/PicFieldSolver.cpp`, `src/PicDivE.cpp` |
 | Hybrid solver | `src/PicHybrid.cpp` |
-| Particles | `src/Particles.cpp` + `src/Particles{Init,BC,Moments,MassMatrix,Mover,Resample,Reactions}.cpp` |
+| Particles | `src/Particles.cpp` plus the `src/Particles*.cpp` split files |
 | Fluid / coupling state | `src/FluidInterface.cpp` |
 | Output | `src/PlotWriter.cpp`, `src/PicIO.cpp` |
 | AMR grid / load balancing | `src/Grid.cpp`, `src/FleksDistributionMap.cpp` |

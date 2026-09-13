@@ -110,7 +110,7 @@ semantic navigation; the table below lists the stable entry points.
 | Field boundary conditions | `src/PicBC.cpp` | `include/BC.h`, `src/BC.cpp` |
 | Full-PIC field solve | `src/PicFieldSolver.cpp` | `src/PicDivE.cpp` (div E cleaning) |
 | Hybrid solver | `src/PicHybrid.cpp` | `include/Pic.h` |
-| Particles | `src/Particles.cpp` | `ParticlesInit/BC/Moments/MassMatrix/Mover/Resample/Reactions.cpp` |
+| Particles | `src/Particles.cpp` | `src/ParticlesInit.cpp`, `src/ParticlesBC.cpp`, `src/ParticlesMoments.cpp`, `src/ParticlesMassMatrix.cpp`, `src/ParticlesMover.cpp`, `src/ParticlesResample.cpp`, `src/ParticlesReactions.cpp` |
 | Fluid / coupling state | `src/FluidInterface.cpp` | `include/FluidInterface.h` |
 | Output | `src/PlotWriter.cpp` | `src/PicIO.cpp`, `src/DataContainer.cpp` |
 | Linear algebra | `src/LinearSolver.cpp` | `include/LinearSolver.h` |
@@ -286,6 +286,7 @@ sources); use coupled tests for interface changes (`FleksInterface.cpp`,
 | `tools/format_all.py` | bulk reformat (C++ + Fortran), required before a PR |
 | `tools/generate_compile_commands.py` | regenerate `compile_commands.json` |
 | `tools/install_skill.sh` | install `.agent/skills/*` into CodeBuddy |
+| `tools/check_docs.py` | verify the agent documentation tree (single `AGENT.md`, skill frontmatter, resolvable paths, canonical docs) — runs in CI |
 
 Output is AMReX block-structured (plus IDL/`.h` for SWMF post-processing); do
 not use generic NetCDF loaders. Use `flekspy` (`pip install flekspy`) in Python
