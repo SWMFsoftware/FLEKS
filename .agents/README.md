@@ -15,29 +15,15 @@ every tool either reads it directly or links to it (see *Using these skills*).
 
 ## Using these skills
 
-`SKILL.md` (YAML frontmatter + progressive disclosure) is an open format, but
-each tool looks for skills in its own place:
+`SKILL.md` (YAML frontmatter + progressive disclosure) is an open standard, so
+this tree needs no tool-specific interface: a tool that follows the standard
+discovers `skills/` here directly, and a tool that keeps its skills elsewhere
+can symlink this directory into its own location — symlinks keep the linked
+copy from drifting out of the repository, so no per-tool file is maintained
+here.
 
-| Tool | Discovery | What to do |
-|---|---|---|
-| Antigravity | `.agents/skills/` in the workspace | nothing — this is the native layout |
-| Claude Code | `.claude/skills/` (project) or `~/.claude/skills/` | link the skills you want |
-| CodeBuddy | `~/.codebuddy/skills/` | link the skills you want |
-| Codex | project instructions file (AGENTS.md by convention) | add a pointer to `AGENT.md` and `.agents/` |
-
-Linking is a single command per skill; symlinks keep the installed copy from
-drifting out of the repository:
-
-```bash
-# Claude Code (project-level)
-mkdir -p .claude/skills
-for s in .agents/skills/*/; do ln -sfn "$PWD/$s" ".claude/skills/$(basename "$s")"; done
-
-# CodeBuddy (user-level)
-for s in .agents/skills/*/; do ln -sfn "$PWD/$s" "$HOME/.codebuddy/skills/$(basename "$s")"; done
-```
-
-Use copies instead if a tool does not follow symlinks.
+The entry point for a session is the root `AGENT.md`, which routes to
+`skills/fleks-expert/`.
 
 ## Authoring rules
 
