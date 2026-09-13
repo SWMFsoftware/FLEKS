@@ -141,8 +141,8 @@ protected:
   std::string filename;
   FileType dataType;
 
-  size_t nCell;
-  size_t nBrick;
+  size_t nCell = 0;
+  size_t nBrick = 0;
   int nVar;
   int nDim;
   int iter;
@@ -590,6 +590,8 @@ private:
   amrex::RealBox domain;
   amrex::Box cellBox;
 
+  bool isCellNumbered = false;
+
 public:
   AMReXDataContainer(const std::string& in, const amrex::Geometry& gm,
                      const amrex::AmrInfo& amrInfo)
@@ -602,7 +604,7 @@ public:
   }
   ~AMReXDataContainer() {};
 
-  static void read_header(std::string& headerName, int& nVar, int& nDim,
+  static void read_header(const std::string& headerName, int& nVar, int& nDim,
                           amrex::Real& time, int& finest_level,
                           amrex::RealBox& domain, amrex::Box& cellBox,
                           amrex::Vector<std::string>& varNames);
@@ -619,18 +621,25 @@ public:
     }
 
     update_cell_status(cGridsOld);
+    isCellNumbered = false;
+    nCell = 0;
+    nBrick = 0;
   }
 
   int read() override;
 
   size_t count_cell() override {
+    if (nCell > 0) return nCell;
     amrex::Vector<float> vars;
-    return loop_cell(false, vars);
+    nCell = loop_cell(false, vars);
+    return nCell;
   }
 
   size_t count_zone() override {
+    if (nBrick > 0) return nBrick;
     amrex::Vector<size_t> zones;
-    return loop_zone(false, zones);
+    nBrick = loop_zone(false, zones);
+    return nBrick;
   }
 
   void get_cell(amrex::Vector<float>& vars) override { loop_cell(true, vars); }
