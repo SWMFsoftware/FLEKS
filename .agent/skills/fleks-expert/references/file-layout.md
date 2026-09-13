@@ -1,8 +1,29 @@
 # FLEKS File Layout
 
-> Canonical: `doc/DEVELOPING.md` §1 (Repository Layout) and §3 (Code Layout and
-> Entry Points). Open the doc for the full tables — this reference only holds
-> the shortcuts and the rules that are easy to get wrong.
+> Navigation aid for the source tree. Pair it with `references/build.md` (how
+> the tree is built), `references/architecture.md` (what the classes do) and
+> `references/tools.md` (post-processing).
+
+## Repository layout
+
+```
+FLEKS/
+├── include/           Public headers (.h)
+├── src/               C++ sources (.cpp), src/Makefile (SRCS list), main.cpp
+│   └── ic/            Initial-condition plug-ins (private headers live here)
+├── srcInterface/      SWMF coupling layer: PC_wrapper.f90, PT_wrapper.f90,
+│                      FleksInterface.cpp
+├── doc/               Algorithm.tex, Coding_standards.md, Tex/
+├── tools/             Post-processing, conversion and formatting scripts
+├── tests/             Standalone test suite (one directory per scenario)
+├── userfiles/         Selectable user-source templates (*Source.h)
+├── .agent/            Agent skills, workflows and knowledge base
+├── Config.pl          Perl configuration (AMReX, AMR levels, user source, …)
+├── Makefile           Top-level makefile
+├── Makefile.def.FLEKS Default FLEKS makefile definitions
+├── PARAM.XML          Parameter command reference (source of the user manual)
+└── .clang-format      Mozilla-based style, 80 columns, 2-space indent
+```
 
 ## Where to look
 

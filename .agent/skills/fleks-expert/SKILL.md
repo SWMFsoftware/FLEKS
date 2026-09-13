@@ -22,14 +22,16 @@ variant):
 | Content | Location |
 |---|---|
 | Human overview / quick start | `README.md` |
-| Build, layout and extension points | `doc/DEVELOPING.md`; math in `doc/Algorithm.tex` |
+| Build, layout, parameters, tools, extension recipes | `.agent/skills/fleks-expert/references/` |
+| Algorithms and math | `doc/Algorithm.tex` |
 | Coding standards | `doc/Coding_standards.md` |
 | Parameter reference | `PARAM.XML` (`make PDF` → `doc/USERMANUAL.pdf`) |
 | Test catalogue & runner options | `tests/README.md` |
 | Task recipes | `.agent/workflows/`, `.agent/skills/*/SKILL.md` |
 
 The root `AGENT.md` is only a **router** to these files; there are no
-per-directory `AGENT.md` files. Extend `doc/` instead of adding new ones.
+per-directory `AGENT.md` files. Extend the files listed above instead of adding
+new ones.
 
 ## Commands
 
@@ -75,6 +77,9 @@ Violating any of these gives silently wrong results or link errors:
 |---|---|
 | Multi-file change or long build/test loop | spawn the `fleks` agent (`.agent/agents/fleks.md`) |
 | Build / compile / link errors | `.agent/skills/build-fleks/SKILL.md` |
+| Build configuration, targets, Makefile | `references/build.md` |
+| Parameter groups / command lookup | `references/parameters.md` |
+| Post-processing / conversion tools | `references/tools.md` |
 | New `.cpp`/`.h` or user source | `.agent/skills/add-new-source/SKILL.md` |
 | Formatting, cleanup, conventions | `.agent/skills/code-cleanup/SKILL.md` |
 | Debugger session (gdb/lldb) | `.agent/skills/debug-session/SKILL.md` |
@@ -90,16 +95,20 @@ Violating any of these gives silently wrong results or link errors:
 
 ## References
 
-Load only what the current task needs. Each page is a condensed, agent-oriented
-view whose header names the canonical document (`doc/DEVELOPING.md`,
-`doc/Coding_standards.md`, `tests/README.md`) — open the canonical one when the
-task needs the full detail:
+Load only what the current task needs. Each page names the canonical source it
+summarizes (`PARAM.XML`, `doc/Coding_standards.md`, `tests/README.md`) — open
+that source when the task needs the full detail:
 
 - `references/architecture.md` — class hierarchy, full vs hybrid solver, time
   stepping, divergence cleaning.
-- `references/file-layout.md` — directory map and where to look for what.
+- `references/file-layout.md` — repository layout and where to look for what.
+- `references/build.md` — `Config.pl` options, make targets, dependencies,
+  `src/Makefile`, standalone runs.
+- `references/parameters.md` — command groups and `PARAM.XML` conventions.
+- `references/tools.md` — scripts and reading FLEKS output.
 - `references/standards.md` — naming, style, SWMF interface patterns.
-- `references/testing.md` — standalone and coupled test suites.
+- `references/testing.md` — standalone and coupled test suites, adding a test
+  case or initial condition.
 - `references/coupling.md` — `srcInterface/` layer, entry-point tables,
   Fortran/C++ interoperability pitfalls.
 

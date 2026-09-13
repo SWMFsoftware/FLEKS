@@ -89,6 +89,29 @@ Architecture note: these parameters are stored in `SourceInterface` and read by
 commands to the source object, keeping `FluidInterface` free of
 ionization-specific data.
 
+## Adding a test case / initial condition
+
+Initial conditions are plug-ins resolved by name from `#TESTCASE` through the
+`ICRegistry` (`include/InitialCondition.h`, `src/ic/RegisterAll.cpp`). An
+unknown `#TESTCASE` name aborts loudly listing the registered names, so a typo
+can never silently fall back to a uniform plasma.
+
+Each test directory ships a `PARAM.in`, a `README.md` and (for most tests) its
+own `validate.py`; the runner loads only that module for the test it runs.
+
+- **Wave / sinusoidal tests need no C++.** All transverse and sinusoidal seeds
+  are one parameterized plug-in (`WaveIC`), registered under the aliases
+  `lightwave`, `hybridwave`, `convectionwave`, `ionacousticwave` and a generic
+  `waveic`. Add a `#TESTCASE waveic` plus a `#WAVEIC` block in the test's
+  `PARAM.in`; sub-parameters (`seedE`, `seedB`, `seedWeight`, `oblique`, `dir`,
+  `waveLength`, `guideField`, `velKick`, `frac`, `pert`, `waveMode`) are all
+  optional via `read_optional`.
+- **Non-wave tests** (beam, tophat, fadeev) keep dedicated plug-ins: subclass
+  `InitialCondition` (override `read_param`, `set_fields`, and the per-particle
+  `modify_particle_weight` / `modify_particle_velocity` hooks, plus `name()`),
+  register it in `src/ic/RegisterAll.cpp`, and add the `.cpp` to `SRCS` in
+  `src/Makefile`.
+
 ## SWMF coupled tests (GM-PC / MHD-AEPIC)
 
 Run from the **SWMF root**:

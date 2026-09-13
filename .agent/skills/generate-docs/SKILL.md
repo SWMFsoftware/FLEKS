@@ -17,6 +17,7 @@ This skill handles documentation generation for FLEKS.
 | User source templates | `userfiles/*Source.h` and `Config.pl -u` |
 | Agent knowledge base | `.agent/skills/fleks-expert/` (+ `references/`) |
 | Root agent router | `AGENT.md` |
+| User manual (PDF) | built from `PARAM.XML` by `make PDF` into `doc/USERMANUAL.pdf`; `make -C doc/Tex clean` keeps the PDF, `cleanpdf` removes it |
 
 ## LaTeX Documentation
 
