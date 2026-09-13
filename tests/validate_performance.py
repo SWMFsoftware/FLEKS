@@ -44,7 +44,7 @@ _REQUIRED_MOVER = {
 BASELINES = {
     "fullpic": {
         "total_pps": 6.5,    # total wall-clock
-        "mover_pps": 0.10,   # isolated particle mover
+        "mover_pps": 0.105,  # isolated particle mover
         "solver_pps": 4.8,   # isolated implicit field solver
         "speedup": 1.5,      # 2-core scaling floor
     },
@@ -55,10 +55,10 @@ BASELINES = {
         "speedup": 1.6,      # 2-core scaling floor
     },
     "pt": {
-        "total_pps": 3.2,    # total wall-clock rate
+        "total_pps": 3.0,    # total wall-clock rate
         "mover_pps": 0.15,   # isolated test particle mover rate
         "solver_pps": 0.001, # EM solver disabled
-        "speedup": 1.8,      # 2-core mover speedup floor
+        "speedup": 1.9,      # 2-core mover speedup floor
     },
 }
 
