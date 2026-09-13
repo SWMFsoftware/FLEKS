@@ -1,8 +1,11 @@
 #include <cctype>
 #include <climits>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 
 #include <AMReX_ParallelDescriptor.H>
@@ -519,7 +522,7 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 #endif
     outFile << name << " ";
   }
-  for (std::string& sTmp : scalarName_I)
+  for (const std::string& sTmp : scalarName_I)
     outFile << sTmp << " ";
   outFile << " \n";
   outFile << outputUnit << "\n";
@@ -629,176 +632,185 @@ double PlotWriter::No2OutTable(std::string_view var) const {
   return value;
 }
 
+std::string PlotWriter::get_idl_filename(double const timeNow,
+                                         int const iCycle) const {
+  int nLength = 4;
+  if (nProcs > 100000) {
+    nLength = 6;
+  } else if (nProcs > 10000) {
+    nLength = 5;
+  }
+
+  std::stringstream ss;
+  ss << "_pe" << std::setfill('0') << std::setw(nLength)
+     << (useMpiIO ? 0 : rank) << ".idl";
+  return get_filename(timeNow, iCycle) + ss.str();
+}
+
+void PlotWriter::write_ascii_idl(double const timeNow, int const iCycle,
+                                 MDArray<double>& value_II, double const dx) {
+  std::string const filename = get_idl_filename(timeNow, iCycle);
+
+  std::ofstream outFile;
+  // 64 KB user buffer for higher stream I/O throughput
+  std::vector<char> fileBuffer(65536);
+  outFile.rdbuf()->pubsetbuf(fileBuffer.data(), fileBuffer.size());
+  outFile.open(filename.c_str(), std::fstream::out | std::fstream::trunc);
+  outFile << std::scientific;
+  outFile.precision(7);
+
+  int const nVar = static_cast<int>(var_I.size());
+  long const nPoint = value_II.get_nSize(0);
+
+  for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
+    const double* const valRow = &value_II(iPoint, 0);
+    outFile << dx;
+    for (int iVar = 0; iVar < nVar; ++iVar) {
+      outFile << "\t" << valRow[iVar];
+    }
+    outFile << "\n";
+  }
+}
+
+void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
+                                  MDArray<double>& value_II, double const dx) {
+  int const nVar = static_cast<int>(var_I.size());
+  long const nPoint = value_II.get_nSize(0);
+  int32_t const nSizeInt = sizeof(int32_t);
+
+  long long int nSize = 0;
+  std::unique_ptr<char[]> buffer;
+
+  if (outputFormat == "real4") {
+    int32_t const nSizeFloat = sizeof(float);
+    int32_t const nRecord = static_cast<int32_t>((nVar + 1) * nSizeFloat);
+    long long int const pointBytes = 2 * nSizeInt + (nVar + 1) * nSizeFloat;
+    nSize = static_cast<long long int>(nPoint) * pointBytes;
+
+    // Use default-initialization (new char[]) to avoid zero-filling the buffer
+    buffer = std::unique_ptr<char[]>(new char[nSize]);
+    char* pos = buffer.get();
+    float const dx_f = static_cast<float>(dx);
+
+    for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
+      const double* const valRow = &value_II(iPoint, 0);
+
+      std::memcpy(pos, &nRecord, nSizeInt);
+      pos += nSizeInt;
+
+      std::memcpy(pos, &dx_f, nSizeFloat);
+      pos += nSizeFloat;
+
+      // pos is guaranteed 4-byte aligned for float; write directly without
+      // temporary vector
+      float* const outVals = reinterpret_cast<float*>(pos);
+      for (int iVar = 0; iVar < nVar; ++iVar) {
+        outVals[iVar] = static_cast<float>(valRow[iVar]);
+      }
+      pos += nSizeFloat * nVar;
+
+      std::memcpy(pos, &nRecord, nSizeInt);
+      pos += nSizeInt;
+    }
+  } else { // for "real8"
+    int32_t const nSizeDouble = sizeof(double);
+    int32_t const nRecord = static_cast<int32_t>((nVar + 1) * nSizeDouble);
+    long long int const pointBytes = 2 * nSizeInt + (nVar + 1) * nSizeDouble;
+    nSize = static_cast<long long int>(nPoint) * pointBytes;
+
+    // Use default-initialization (new char[]) to avoid zero-filling the buffer
+    buffer = std::unique_ptr<char[]>(new char[nSize]);
+    char* pos = buffer.get();
+
+    for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
+      const double* const valRow = &value_II(iPoint, 0);
+
+      std::memcpy(pos, &nRecord, nSizeInt);
+      pos += nSizeInt;
+
+      std::memcpy(pos, &dx, nSizeDouble);
+      pos += nSizeDouble;
+
+      std::memcpy(pos, valRow, nSizeDouble * nVar);
+      pos += nSizeDouble * nVar;
+
+      std::memcpy(pos, &nRecord, nSizeInt);
+      pos += nSizeInt;
+    }
+  }
+
+  MPI_Offset offset = 0;
+  MPI_Comm iCommWrite = useMpiIO ? iComm : MPI_COMM_SELF;
+
+  if (useMpiIO && nProcs > 1) {
+    long long int ahead = 0;
+    MPI_Exscan(&nSize, &ahead, 1,
+               ParallelDescriptor::Mpi_typemap<long long int>::type(), MPI_SUM,
+               iComm);
+    if (rank == 0) {
+      ahead = 0;
+    }
+    offset = ahead;
+  }
+
+  std::string const filename = get_idl_filename(timeNow, iCycle);
+
+  MPI_File fh;
+  MPI_Status status;
+
+  MPI_File_open(iCommWrite, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                MPI_INFO_NULL, &fh);
+  MPI_File_set_size(fh, 0);
+
+  // The 'count' parameter in MPI_File_write_at is an 'int' with maximum
+  // value of INT_MAX (2^31-1 ≈ 2GB)
+  const long long int maxChunk = static_cast<long long int>(INT_MAX);
+  long long int remainingSize = nSize;
+  long long int currentOffset = offset;
+  char* currentPos = buffer.get();
+
+  while (remainingSize > 0) {
+    int const chunkSize = static_cast<int>(std::min(remainingSize, maxChunk));
+
+    MPI_File_write_at(fh, static_cast<MPI_Offset>(currentOffset), currentPos,
+                      chunkSize, MPI_CHAR, &status);
+
+    remainingSize -= chunkSize;
+    currentOffset += chunkSize;
+    currentPos += chunkSize;
+  }
+
+  MPI_File_close(&fh);
+}
+
 /*This method calls function get_var to obtain the variables var_I
  at position pointList_II, and write the data to *.idl file. */
 void PlotWriter::write_field(double const timeNow, int const iCycle,
                              VectorPointList const& pointList_II,
                              FuncGetField get_var) {
-
   //------------Get values begin-----------------------
-  int nVar = var_I.size();
-  long nPoint = pointList_II.size();
+  int const nVar = static_cast<int>(var_I.size());
+  long const nPoint = static_cast<long>(pointList_II.size());
   // 2D array.
   MDArray<double> value_II(nPoint, nVar);
   get_var(pointList_II, var_I, value_II);
 
-  for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
+  // Vectorized row normalization avoiding MDArray operator() overhead
+  for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
+    double* const valRow = &value_II(iPoint, 0);
     for (int iVar = 0; iVar < nVar; ++iVar) {
-      value_II(iPoint, iVar) *= No2Out_I[iVar];
+      valRow[iVar] *= No2Out_I[iVar];
     }
   }
 
   const double dx = dx_D[x_] * No2OutL;
   //------------Get values end-----------------------
 
-  int nLength;
-  if (nProcs > 100000) {
-    nLength = 6;
-  } else if (nProcs > 10000) {
-    nLength = 5;
-  } else {
-    nLength = 4;
-  }
-
-  std::stringstream ss;
-  ss << "_pe" << std::setfill('0') << std::setw(nLength)
-     << (useMpiIO ? 0 : rank) << ".idl";
-  std::string filename = get_filename(timeNow, iCycle) + ss.str();
-
-  std::ofstream outFile;
-
   if (doSaveBinary) {
-    long long int nSize;
-    Vector<char> buffer;
-
-    if (outputFormat == "real4") {
-      int nRecord, nSizeFloat, nSizeInt;
-      nSizeInt = sizeof(int);
-      assert(nSizeInt == 4);
-      nSizeFloat = sizeof(float);
-      // nVar + dx. nVar already includes X/Y/Z.
-      nRecord = (nVar + 1) * nSizeFloat;
-
-      nSize = nPoint * (nSizeInt * 2 + (nVar + 1) * nSizeFloat);
-
-      buffer.resize(nSize);
-      char* pos = buffer.data();
-      Vector<float> value_f(nVar);
-
-      for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
-        memcpy(pos, &nRecord, nSizeInt);
-        pos += nSizeInt;
-
-        const float dx_f = dx;
-        memcpy(pos, &dx_f, nSizeFloat);
-        pos += nSizeFloat;
-
-        for (int iVar = 0; iVar < nVar; ++iVar) {
-          value_f[iVar] = static_cast<float>(value_II(iPoint, iVar));
-        }
-        memcpy(pos, value_f.data(), nSizeFloat * nVar);
-        pos += nSizeFloat * nVar;
-
-        memcpy(pos, &nRecord, nSizeInt);
-        pos += nSizeInt;
-      }
-
-    } else { // for "real8"
-      int nRecord, nSizeDouble, nSizeInt;
-      nSizeInt = sizeof(int);
-      assert(nSizeInt == 4);
-      nSizeDouble = sizeof(double);
-      // nVar + dx. nVar already includes X/Y/Z.
-      nRecord = (nVar + 1) * nSizeDouble;
-
-      nSize = nPoint * (nSizeInt * 2 + nSizeDouble * (nVar + 1));
-
-      buffer.resize(nSize);
-      char* pos = buffer.data();
-      for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
-        // The PostIDL.f90 was originally designed for Fortran output. In order
-        // to use PostIDL.f90, we should follow the format of Fortran binary
-        // output. Each line is a record. Before and after each record, use 4
-        // byte (nSizeInt)  to save the length of this record.
-
-        memcpy(pos, &nRecord, nSizeInt);
-        pos += nSizeInt;
-
-        memcpy(pos, &dx, nSizeDouble);
-        pos += nSizeDouble;
-
-        memcpy(pos, &value_II(iPoint, 0), nSizeDouble * nVar);
-        pos += nSizeDouble * nVar;
-
-        memcpy(pos, &nRecord, nSizeInt);
-        pos += nSizeInt;
-      }
-    }
-
-    MPI_Offset offset = 0;
-    MPI_Comm iCommWrite = useMpiIO ? iComm : MPI_COMM_SELF;
-
-    if (useMpiIO) {
-      Vector<long long int> perProc, accumulated;
-      perProc.resize(nProcs, 0);
-      accumulated.resize(nProcs, 0);
-
-      long long int ahead;
-      ParallelDescriptor::Gather(&nSize, 1, &perProc[0], 1,
-                                 ParallelDescriptor::IOProcessorNumber());
-
-      if (ParallelDescriptor::IOProcessor()) {
-        for (int i = 1; i < accumulated.size(); ++i) {
-          accumulated[i] = accumulated[i - 1] + perProc[i - 1];
-        }
-      }
-
-      ParallelDescriptor::Scatter(&ahead, 1, &accumulated[0], 1,
-                                  ParallelDescriptor::IOProcessorNumber());
-      offset = ahead;
-    }
-
-    MPI_File fh;
-    MPI_Status status;
-
-    MPI_File_open(iCommWrite, filename.c_str(),
-                  MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fh);
-
-    // The 'count' parameter in MPI_File_write_at is an 'int' with maximum
-    // value of INT_MAX (2^31-1 ≈ 2GB)
-    const long long int maxChunk = static_cast<long long int>(INT_MAX);
-    long long int remainingSize = nSize;
-    long long int currentOffset = offset;
-    char* currentPos = buffer.data();
-
-    while (remainingSize > 0) {
-      // Calculate chunk size ensuring it fits in an int
-      int chunkSize = static_cast<int>(std::min(remainingSize, maxChunk));
-
-      MPI_File_write_at(fh, static_cast<MPI_Offset>(currentOffset), currentPos,
-                        chunkSize, MPI_CHAR, &status);
-
-      remainingSize -= chunkSize;
-      currentOffset += chunkSize;
-      currentPos += chunkSize;
-    }
-
-    MPI_File_close(&fh);
-
+    write_binary_idl(timeNow, iCycle, value_II, dx);
   } else {
-
-    outFile.open(filename.c_str(), std::fstream::out | std::fstream::trunc);
-    outFile << std::scientific;
-    outFile.precision(7);
-    for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
-      outFile << dx;
-      for (int iVar = 0; iVar < nVar; ++iVar) {
-        outFile << "\t" << value_II(iPoint, iVar);
-      }
-      outFile << "\n";
-    }
-
-  } // doSaveBinary:else
+    write_ascii_idl(timeNow, iCycle, value_II, dx);
+  }
 }
 
 int PlotWriter::get_time_digits(double second) const {
