@@ -463,6 +463,7 @@ public:
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
+  void sum_boundary_node_mm(int iLev);
 
   void update_part_loc_to_half_stage();
 

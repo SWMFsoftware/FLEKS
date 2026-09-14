@@ -657,6 +657,20 @@ void Pic::particle_mover() {
 }
 
 //==========================================================
+void Pic::sum_boundary_node_mm(int iLev) {
+  BL_PROFILE("Pic::nodeMM_SumBoundary");
+  NodeMMFab tmp(nodeMM[iLev].boxArray(), nodeMM[iLev].DistributionMap(), 1,
+                nodeMM[iLev].nGrowVect());
+  amrex::Copy(tmp, nodeMM[iLev], 0, 0, 1, nodeMM[iLev].nGrowVect());
+  nodeMM[iLev].setVal(RealMM(0.0), 0, 1, IntVect(0));
+  nodeMM[iLev].ParallelAdd(tmp, 0, 0, 1, nodeMM[iLev].nGrowVect(), IntVect(0),
+                           Geom(iLev).periodicity());
+#if defined(__linux__)
+  malloc_trim(0);
+#endif
+}
+
+//==========================================================
 void Pic::calc_mass_matrix() {
   std::string nameFunc = "Pic::calc_mass_matrix";
 
@@ -704,8 +718,7 @@ void Pic::calc_mass_matrix() {
     }
 
     if (!useExplicitPIC) {
-      BL_PROFILE("Pic::nodeMM_SumBoundary");
-      nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+      sum_boundary_node_mm(iLev);
     }
   }
 
@@ -782,10 +795,7 @@ void Pic::calc_mass_matrix_amr() {
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
-    {
-      BL_PROFILE("Pic::nodeMM_SumBoundary");
-      nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
-    }
+    sum_boundary_node_mm(iLev);
   }
   Vector<Real> invVol(n_lev());
   for (int iLev = 0; iLev < n_lev(); iLev++) {
