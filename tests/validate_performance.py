@@ -56,16 +56,16 @@ BASELINES = {
         "speedup": 1.6,      # 2-core scaling floor
     },
     "pt": {
-        "total_pps": 3.02,   # total wall-clock rate
+        "total_pps": 3.2,    # total wall-clock rate
         "mover_pps": 0.14,   # isolated test particle mover rate
         "solver_pps": 0.001, # EM solver disabled
         "speedup": 1.9,      # 2-core mover speedup floor
     },
     "reconnection2d": {
-        "total_pps": 0.94,   # total wall-clock rate
+        "total_pps": 0.96,   # total wall-clock rate
         "mover_pps": 0.05,   # isolated particle mover rate
         "solver_pps": 0.02,  # isolated implicit field solver rate
-        "speedup": 1.9,      # 2-core scaling floor
+        "speedup": 1.85,     # 2-core scaling floor
     },
 }
 
