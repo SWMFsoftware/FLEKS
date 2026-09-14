@@ -3,7 +3,7 @@
 ## Description
 
 This test is a standalone migration of the coupled SWMF test
-`Param/PARAM.in.test.FLEKS.AMR.LightWave.3D` (SWMF `Makefile.test` **test25**).
+`PARAM.in.test.FLEKS.AMR.LightWave.3D` (SWMF `Makefile.test` **test25**).
 
 In the coupled run the GM/MHD component only supplied a uniform background
 state and the PIC region; the PC component then initialised a transverse

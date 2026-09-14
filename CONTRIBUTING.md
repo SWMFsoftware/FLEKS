@@ -4,7 +4,10 @@ Thank you for contributing to FLEKS! Because FLEKS is a complex C++ project embe
 
 ## Coding Standards
 
-Please read the extensive guidelines in `Doc/Coding_standards.md` before starting development. Key takeaways:
+For the repository layout, build system and extension recipes see the agent
+knowledge base under `.agents/skills/fleks-expert/references/`. Please read the
+extensive guidelines in `doc/Coding_standards.md` before starting development.
+Key takeaways:
 1. **Pointers:** Use `nullptr`. NEVER use C-style `NULL`. Use standard smart pointers (`std::shared_ptr`, `std::unique_ptr`) instead of raw `new`.
 2. **Namespaces:** Never use `using namespace` in `.h` header files.
 3. **Naming Conventions:**
@@ -37,4 +40,4 @@ Our continuous integration (CI) pipelines actively reject pull requests that fai
 
 ## Workflow Extensions Workflow
 
-If you are developing a new mathematical scheme, parameter, or interface variable, please consult the agent workflows inside `.agent/workflows/` and `.agent/skills/`. We maintain rigorous documentation detailing *exactly* how to add new commands to `PARAM.XML` and `FleksInterface.cpp`.
+If you are developing a new mathematical scheme, parameter, or interface variable, please consult the agent workflows inside `.agents/workflows/` and `.agents/skills/`. We maintain rigorous documentation detailing *exactly* how to add new commands to `PARAM.XML` and `FleksInterface.cpp`.

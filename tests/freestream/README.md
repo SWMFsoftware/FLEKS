@@ -36,7 +36,8 @@ step.
 ## Relationship to other tests
 
 - `whistler/`, `ohm/` — seeded wave tests built on the same equilibrium.
-- `whistler_solveem/` — full-PIC *wave* test.
+  `whistler/PARAM.in` is the full-PIC variant, `whistler/PARAM.in.hybrid` the
+  hybrid one.
 
 ## Running
 

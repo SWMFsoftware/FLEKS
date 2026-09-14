@@ -3,11 +3,25 @@ name: Performance Test
 on:
   pull_request:
     branches: [ "master" ]
-    paths-ignore:
-      - 'Doc/**'
-      - 'PARAM.XML'
-      - '**.md'
+    # Allowlist: only solver, build and benchmark inputs can change timings.
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'srcInterface/**'
+      - 'userfiles/**'
+      - 'tests/performance/**'
+      - 'tests/_shared/**'
+      - 'tests/validate_performance.py'
+      - 'Config.pl'
+      - 'Makefile'
+      - 'Makefile.*'
+      - '.github/actions/**'
+      - '.github/workflows/performance_test.yml'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   performance-check:

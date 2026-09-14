@@ -3,12 +3,25 @@ name: Standalone Test
 on:
   pull_request:
     branches: [ "master" ]
-    paths-ignore:
-      - 'tests/performance/**'
-      - 'tests/validate_performance.py'
-      - '.github/workflows/performance_test.yml'
-      - '**.md'
-      - 'Doc/**'
+    # Allowlist: a blacklist made every new path (docs, tooling, other
+    # workflows) trigger the full 2D/3D test matrix.
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'srcInterface/**'
+      - 'userfiles/**'
+      - 'tests/**'
+      - '!tests/performance/**'
+      - '!tests/validate_performance.py'
+      - 'Config.pl'
+      - 'Makefile'
+      - 'Makefile.*'
+      - '.github/actions/**'
+      - '.github/workflows/standalone_test.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Standalone job building against the 3D AMReX library (-amrex3d).

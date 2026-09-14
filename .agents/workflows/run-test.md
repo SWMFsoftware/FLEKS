@@ -1,4 +1,5 @@
 ---
+name: run-test
 description: How to run the most common FLEKS test (test16_3d) via SWMF
 ---
 

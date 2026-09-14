@@ -5,9 +5,13 @@ on:
     branches: [ "master" ]
     paths:
       - 'PARAM.XML'
-      - 'Doc/**'
+      - 'doc/**'
       - 'Makefile'
       - '.github/workflows/pdf_manual.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pdf-manual:
@@ -34,4 +38,4 @@ jobs:
       - name: Build PARAM.XML PDF manual
         run: |
           make PDF
-          test -s Doc/USERMANUAL.pdf
+          test -s doc/USERMANUAL.pdf

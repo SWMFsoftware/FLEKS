@@ -23,11 +23,9 @@ reusable user source implementations under `userfiles/` and select them with
 
 ## Naming Conventions
 
-- **File names**: `PascalCase` (e.g., `FluidInterface.cpp`, `GridUtility.h`)
-- **Class names**: `PascalCase` (e.g., `class FluidInterface`)
-- **Function names**: `snake_case` (e.g., `void apply_float_boundary()`)
-- **Variable names**: `camelCase` (e.g., `int nCellPerPatch`)
-- **Private members**: `camelCase` (e.g., `bool doRestart`)
+See `.agents/skills/fleks-expert/references/standards.md`: `PascalCase` for
+files and classes, `camelCase` for variables and members, `snake_case` for
+functions.
 
 ## Header File Template
 
@@ -191,30 +189,17 @@ PT builds enable source use by default unless `#SOURCE` sets it to false.
 
 ## Header Order Standard
 
-Always order includes as:
-
-```cpp
-// 1. Standard library headers
-#include <algorithm>
-#include <memory>
-#include <vector>
-
-// 2. AMReX headers
-#include <AMReX.H>
-#include <AMReX_MultiFab.H>
-
-// 3. Project headers
-#include "Grid.h"
-#include "Utility.h"
-```
+std → AMReX → project headers (full example in
+`.agents/skills/fleks-expert/references/standards.md`).
 
 ## Key Reminders
 
-1. **Use `nullptr`** instead of `NULL`
-2. **Use smart pointers** (`unique_ptr`, `shared_ptr`) for ownership
-3. **Use `const`** wherever possible
-4. **No `using namespace`** in header files
-5. **80-column limit** (enforced by `.clang-format`)
+1. **Register the file in `SRCS`** (`src/Makefile`) — nothing is
+   auto-discovered, and a missing entry is only noticed at link time.
+2. **No `using namespace`** in header files.
+3. The remaining conventions (`nullptr`, smart pointers, `const`, 80 columns)
+   live in `.agents/skills/fleks-expert/references/standards.md`; format with
+   `python3 tools/format_all.py` before committing.
 
 ## Integrating with Existing Classes
 
@@ -229,13 +214,9 @@ If your new class needs to work with existing code:
 
 ## Verification Checklist
 
-- [ ] Header has include guards (`#ifndef _FILENAME_H_`)
-- [ ] File names follow `PascalCase`
-- [ ] Class name matches file name
-- [ ] Header order is correct (std → AMReX → user)
-- [ ] No `using namespace` in header
-- [ ] `const` used where applicable
-- [ ] Smart pointers for ownership
+- [ ] Conventions from `references/standards.md` hold (include guards,
+      `PascalCase`, header order std → AMReX → project, no `using namespace`
+      in headers, `const`, smart pointers)
 - [ ] **File added to `SRCS` in `src/Makefile`**
 - [ ] Code compiles without warnings
 - [ ] `compile_commands.json` updated

@@ -9,20 +9,13 @@ This skill performs code cleanup tasks following FLEKS coding standards.
 
 ## Coding Standards Reference
 
-From `docs/Coding_standards.md`:
-
-1. **Memory Management**: Use `shared_ptr` or `unique_ptr`, avoid raw `new`
-2. **Naming Conventions**:
-   - Files: `PascalCase` (e.g., `GridUtility.cpp`)
-   - Classes: `PascalCase` (e.g., `FluidInterface`)
-   - Variables: `camelCase` (e.g., `nCellPerPatch`)
-   - Functions: `snake_case` (e.g., `apply_float_boundary`)
-3. **Namespace**: `using namespace amrex` allowed only in `.cpp` files
-4. **Header Order**: std headers → AMReX headers → user headers
-5. **Pointers**: Use `nullptr`, not `NULL`
-6. **Const**: Always use `const` when possible
-7. **Lambdas**: Prefer regular functions for universal or long functions
-8. **Commits**: Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+The canonical list is `doc/Coding_standards.md`, summarized for agents in
+`.agents/skills/fleks-expert/references/standards.md`. Load that reference
+instead of relying on memory; the essentials are: smart pointers over raw
+`new`, `PascalCase` files/classes, `camelCase` variables, `snake_case`
+functions, `using namespace amrex` only in `.cpp`, header order
+std → AMReX → project, `nullptr`, `const`-everywhere, and Conventional
+Commits.
 
 ## Clang-Format (C++ files)
 
