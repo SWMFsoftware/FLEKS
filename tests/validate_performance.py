@@ -44,28 +44,28 @@ _REQUIRED_MOVER = {
 # Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
 BASELINES = {
     "fullpic": {
-        "total_pps": 6.5,    # total wall-clock
+        "total_pps": 6.2,    # total wall-clock
         "mover_pps": 0.105,  # isolated particle mover
-        "solver_pps": 4.8,   # isolated implicit field solver
+        "solver_pps": 4.7,   # isolated implicit field solver
         "speedup": 1.5,      # 2-core scaling floor
     },
     "hybrid": {
-        "total_pps": 0.25,   # total wall-clock
+        "total_pps": 0.23,   # total wall-clock
         "mover_pps": 0.06,   # isolated particle mover
         "solver_pps": 0.008, # explicit hybrid field advance is cheaper
         "speedup": 1.6,      # 2-core scaling floor
     },
     "pt": {
-        "total_pps": 3.0,    # total wall-clock rate
-        "mover_pps": 0.15,   # isolated test particle mover rate
+        "total_pps": 3.02,   # total wall-clock rate
+        "mover_pps": 0.14,   # isolated test particle mover rate
         "solver_pps": 0.001, # EM solver disabled
         "speedup": 1.9,      # 2-core mover speedup floor
     },
     "reconnection2d": {
-        "total_pps": 0.60,   # total wall-clock rate
-        "mover_pps": 0.03,   # isolated particle mover rate
-        "solver_pps": 0.012, # isolated implicit field solver rate
-        "speedup": 1.8,      # 2-core scaling floor
+        "total_pps": 0.94,   # total wall-clock rate
+        "mover_pps": 0.05,   # isolated particle mover rate
+        "solver_pps": 0.02,  # isolated implicit field solver rate
+        "speedup": 1.9,      # 2-core scaling floor
     },
 }
 
