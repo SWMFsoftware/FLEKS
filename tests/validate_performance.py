@@ -38,6 +38,7 @@ _REQUIRED_MOVER = {
     "fullpic": "Pts::charged_particle_mover",
     "hybrid":  "Pts::charged_particle_mover_cell_centered",
     "pt":      "TestParticles::move_charged_particles",
+    "reconnection2d": "Pts::charged_particle_mover",
 }
 
 # Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
@@ -59,6 +60,12 @@ BASELINES = {
         "mover_pps": 0.15,   # isolated test particle mover rate
         "solver_pps": 0.001, # EM solver disabled
         "speedup": 1.9,      # 2-core mover speedup floor
+    },
+    "reconnection2d": {
+        "total_pps": 0.60,   # total wall-clock rate
+        "mover_pps": 0.03,   # isolated particle mover rate
+        "solver_pps": 0.012, # isolated implicit field solver rate
+        "speedup": 1.8,      # 2-core scaling floor
     },
 }
 
@@ -106,17 +113,19 @@ def _read_param_block(param_file, command):
 
 
 def count_particles_from_param(param_file):
-    """Total seeded macroparticles = prod(nCell_d * nPartPerCell_d) from the
-    #NCELL and #PARTICLES (or #TPPARTICLES) blocks.  FLEKS seeds exactly
-    nPartPerCell particles per cell, so this is exact for benchmarks.
+    """Total seeded macroparticles = prod(nCell_d * nPartPerCell_d) * nSpecies
+    from the #NCELL, #PARTICLES (or #TPPARTICLES), and #PLASMA blocks.  FLEKS seeds
+    nPartPerCell particles per cell for each species, so this is exact for benchmarks.
     Returns None if the blocks are missing/malformed."""
+    plasma = _read_param_block(param_file, "#PLASMA")
+    ns = int(_param_float(plasma, 0)) if plasma else 1
     ncell = _read_param_block(param_file, "#NCELL")
     ppc = _read_param_block(param_file, "#PARTICLES")
     if not ppc:
         ppc = _read_param_block(param_file, "#TPPARTICLES")
     if len(ncell) < 3 or len(ppc) < 3:
         return None
-    total = 1
+    total = ns
     for d in range(3):
         nc = _param_float(ncell, d)
         np = _param_float(ppc, d)
@@ -321,6 +330,8 @@ def _evaluate_solver(solver_kind, param_file, serial_dir, parallel_dir, count=3)
         label = "FULL PIC"
     elif solver_kind == "hybrid":
         label = "HYBRID PIC"
+    elif solver_kind == "reconnection2d":
+        label = "2D RECONNECTION (FULL PIC)"
     else:
         label = "PARTICLE TRACKER"
 
@@ -386,8 +397,10 @@ def _status_console(flag):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Performance regression runner for standalone FLEKS.")
-    parser.add_argument("--suite", choices=["fullpic", "hybrid", "pt", "all"], default="all",
+    parser.add_argument("--suite", choices=["fullpic", "hybrid", "pt", "reconnection2d", "all"], default="all",
                         help="Benchmark suite to run (default: all)")
+    parser.add_argument("--count", type=int, default=3,
+                        help="Number of runs per process configuration (default: 3)")
     parser.add_argument("--pt", action="store_true", help="Run the particle tracker benchmark suite")
     args = parser.parse_args()
 
@@ -405,8 +418,12 @@ def main():
     fullpic_param = os.path.join("performance", "PARAM.in")
     hybrid_param = os.path.join("performance", "PARAM.in.hybrid")
     pt_param = os.path.join("performance", "PARAM.in.pt")
+    reconnection_param = os.path.join("performance", "PARAM.in.reconnection2d")
     if not os.path.exists(hybrid_param):
         print(f"Error: Hybrid benchmark config {hybrid_param} not found.")
+        sys.exit(1)
+    if not os.path.exists(reconnection_param):
+        print(f"Error: Reconnection benchmark config {reconnection_param} not found.")
         sys.exit(1)
 
     # Benchmark suites: (solver_kind, param_file)
@@ -416,21 +433,29 @@ def main():
         suites = [("fullpic", fullpic_param)]
     elif args.suite == "hybrid":
         suites = [("hybrid", hybrid_param)]
+    elif args.suite == "reconnection2d":
+        suites = [("reconnection2d", reconnection_param)]
     else:
         suites = [
             ("fullpic", fullpic_param),
             ("hybrid", hybrid_param),
             ("pt", pt_param),
+            ("reconnection2d", reconnection_param),
         ]
 
     results = {}
     all_passed = True
     for solver_kind, param_file in suites:
+        solver_title = ("FULL PIC" if solver_kind == "fullpic"
+                        else ("HYBRID PIC" if solver_kind == "hybrid"
+                        else ("2D RECONNECTION (FULL PIC)" if solver_kind == "reconnection2d"
+                        else "PARTICLE TRACKER")))
         print("\n" + "#" * 85)
-        print(f"#  SOLVER: {'FULL PIC' if solver_kind == 'fullpic' else ('HYBRID PIC' if solver_kind == 'hybrid' else 'PARTICLE TRACKER')}")
+        print(f"#  SOLVER: {solver_title}")
         print("#" * 85)
         stats, passed, label = _evaluate_solver(
-            solver_kind, param_file, "run_perf_serial", "run_perf_parallel")
+            solver_kind, param_file, "run_perf_serial", "run_perf_parallel",
+            count=args.count)
         if stats is None:
             all_passed = False
             continue
@@ -495,7 +520,7 @@ def main():
             f.write("A robust statistical check was executed on the runner to "
                     "filter out virtualization noise (3 runs per benchmark):\n\n")
 
-            for solver_kind in ("fullpic", "hybrid", "pt"):
+            for solver_kind in ("fullpic", "hybrid", "pt", "reconnection2d"):
                 if solver_kind not in results:
                     continue
                 stats, passed, label = results[solver_kind]
@@ -523,19 +548,21 @@ def main():
                         f"cycles: {stats['serial_stats']['cycles']} "
                         f"(total steps: {stats['total_steps']}).*\n")
                 f.write("\n**Detailed Runs (Wall-Clock Runtime)**\n")
-                f.write("| Process Count | Run 1 | Run 2 | Run 3 | Median | "
-                        "Minimum |\n")
-                f.write("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
                 s_runs = [f"{r['duration']:.3f}s"
                           for r in stats["serial_stats"]["runs"]]
                 p_runs = [f"{r['duration']:.3f}s"
                           for r in stats["parallel_stats"]["runs"]]
-                f.write(f"| 1 MPI Process (Serial) | {s_runs[0]} | {s_runs[1]} "
-                        f"| {s_runs[2]} | "
+                n_runs = len(s_runs)
+                run_cols = " | ".join([f"Run {k+1}" for k in range(n_runs)])
+                run_sep = " | ".join([":---" for _ in range(n_runs)])
+                f.write(f"| Process Count | {run_cols} | Median | Minimum |\n")
+                f.write(f"| :--- | {run_sep} | :--- | :--- |\n")
+                s_cells = " | ".join(s_runs)
+                p_cells = " | ".join(p_runs)
+                f.write(f"| 1 MPI Process (Serial) | {s_cells} | "
                         f"{stats['serial_stats']['duration_median']:.3f}s | "
                         f"{stats['serial_stats']['duration_min']:.3f}s |\n")
-                f.write(f"| 2 MPI Processes (Parallel) | {p_runs[0]} | "
-                        f"{p_runs[1]} | {p_runs[2]} | "
+                f.write(f"| 2 MPI Processes (Parallel) | {p_cells} | "
                         f"{stats['parallel_stats']['duration_median']:.3f}s | "
                         f"{stats['parallel_stats']['duration_min']:.3f}s |\n")
             f.write("\n*Note: Benchmark ran on virtualized runner.*\n")

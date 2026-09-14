@@ -19,6 +19,8 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   Real dtLoc = 0.5 * dt;
 
   const int iLev = 0;
+  const Real* const ploLoc = plo[iLev].begin();
+  const Real* const phiLoc = phi[iLev].begin();
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     AoS& particles = pti.GetArrayOfStructs();
 
@@ -37,7 +39,8 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       }
 
       // Mark for deletion
-      if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev)) {
+      if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev,
+                                     ploLoc, phiLoc)) {
         p.id() = -1;
       }
     } // for p
@@ -89,6 +92,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
   Real dtLoc = 0.5 * (dt + dtNext);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const Real* const ploLoc = plo[iLev].begin();
+    const Real* const phiLoc = phi[iLev].begin();
+    const Real* const invDxLoc = invDx[iLev].begin();
+
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
       const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
@@ -119,8 +126,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         IntVect loIdx;
         RealVect dShift;
 
-        find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                        loIdx, dShift);
+        find_node_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
 
         Real coef[2][2][2];
         linear_interpolation_coef(dShift, coef);
@@ -185,7 +191,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
         if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
-                                       iLev)) {
+                                       iLev, ploLoc, phiLoc)) {
           p.id() = -1;
         }
       } // for p
@@ -208,6 +214,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
   Real dtLoc = 0.5 * (dt + dtNext);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const Real* const ploLoc = plo[iLev].begin();
+    const Real* const phiLoc = phi[iLev].begin();
+    const Real* const invDxLoc = invDx[iLev].begin();
+
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real const>& centerEArr = centerE[iLev][pti].array();
       const Array4<Real const>& centerBArr = centerB[iLev][pti].array();
@@ -237,8 +247,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
-        find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                        loIdx, dShift);
+        find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
 
         // Plain cell-centred trilinear gather. The linear weights couple cells
         // loIdx and loIdx+1 (offsets 0 and 1); the 3x3x3 coef array is zero for
@@ -312,7 +321,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
         if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
-                                       iLev)) {
+                                       iLev, ploLoc, phiLoc)) {
           p.id() = -1;
         }
       } // for p
@@ -327,6 +336,9 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
   timing_func("Pts::neutral_mover");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const Real* const ploLoc = plo[iLev].begin();
+    const Real* const phiLoc = phi[iLev].begin();
+
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
 
@@ -352,7 +364,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
         if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
-                                       iLev)) {
+                                       iLev, ploLoc, phiLoc)) {
           p.id() = -1;
         }
       } // for p
@@ -370,6 +382,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   const Real sign = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
+
+  const Real* const ploLoc = plo[iLev].begin();
+  const Real* const invDxLoc = invDx[iLev].begin();
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
@@ -395,8 +410,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
       IntVect loIdx;
       RealVect dShift;
-      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
+      find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
 
       // Since the boundary condition for solving phi is not perfect,
       // correcting particles that are close to the boundaries may produce
