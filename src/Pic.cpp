@@ -665,9 +665,6 @@ void Pic::sum_boundary_node_mm(int iLev) {
   nodeMM[iLev].setVal(RealMM(0.0), 0, 1, IntVect(0));
   nodeMM[iLev].ParallelAdd(tmp, 0, 0, 1, nodeMM[iLev].nGrowVect(), IntVect(0),
                            Geom(iLev).periodicity());
-#if defined(__linux__)
-  malloc_trim(0);
-#endif
 }
 
 //==========================================================
