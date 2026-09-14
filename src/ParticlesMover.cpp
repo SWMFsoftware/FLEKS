@@ -190,8 +190,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.pos(iz_) = zp + wnp1 * dtLoc;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
-                                       iLev, ploLoc, phiLoc)) {
+        if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev,
+                                       ploLoc, phiLoc)) {
           p.id() = -1;
         }
       } // for p
@@ -320,8 +320,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
           p.pos(iz_) = zp + wnp1 * dtLoc;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
-                                       iLev, ploLoc, phiLoc)) {
+        if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev,
+                                       ploLoc, phiLoc)) {
           p.id() = -1;
         }
       } // for p
@@ -363,8 +363,8 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         p.pos(iz_) = zp + wp * dt;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
-                                       iLev, ploLoc, phiLoc)) {
+        if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev,
+                                       ploLoc, phiLoc)) {
           p.id() = -1;
         }
       } // for p

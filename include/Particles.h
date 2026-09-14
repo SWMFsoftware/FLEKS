@@ -628,10 +628,12 @@ public:
 
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
   // tallies; `reflect` mirrors.  Only acts at iLev == 0.
-  inline bool reflect_or_delete_particle(
-      ParticleType& p, amrex::Array4<int const> const& status,
-      const amrex::IntVect& low, const amrex::IntVect& high, int iLev,
-      const amrex::Real* const ploLoc, const amrex::Real* const phiLoc) {
+  inline bool reflect_or_delete_particle(ParticleType& p,
+                                         amrex::Array4<int const> const& status,
+                                         const amrex::IntVect& low,
+                                         const amrex::IntVect& high, int iLev,
+                                         const amrex::Real* const ploLoc,
+                                         const amrex::Real* const phiLoc) {
     if (iLev > 0)
       return is_outside_active_region(p, status, low, high, iLev);
 
