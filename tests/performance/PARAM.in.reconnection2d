@@ -1,0 +1,120 @@
+#DESCRIPTION
+2D Magnetic Reconnection Performance Benchmark Test (Fadeev current-sheet)
+Full PIC electromagnetic solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons.
+Non-periodic (outflow) Y boundary condition exercising reflect_or_delete_particle.
+Sized to complete one serial run in ~30 seconds (64x32 grid, 10x10 PPC = 409.6k particles, 150 steps).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-31.4                   xMin  [code units; Lx = 2*pi*L*num_islands ~ 62.8 d_i]
+ 31.4                   xMax
+-15.7                   yMin  [code units; Ly = Lx/2 ~ 31.4 d_i]
+ 15.7                   yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+32                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo  (y)
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+outflow                 particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons (1/25)
+-1.0                    charge
+
+#UNIFORMSTATE
+12.5                    rho [amu/cc]   Species 0: ions
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K]
+0.5                     rho [amu/cc]   Species 1: electrons
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+fadeev
+
+#FADEEVIC
+5.0                     L        (current-sheet half-thickness / d_i)
+0.4                     eps      (island size ratio)
+2                       numIslands
+1.0                     b0       (reference field, code units)
+0.0                     bg       (guide-field ratio; 0 = anti-parallel)
+-0.05                   perturb  (m=1 seed amplitude)
+0.2                     nb       (background/peak density ratio)
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+150                     dnReport
+
+#SAVELOG
+150                     dnSavePic
+150                     dnSavePT
+
+#PARTICLES
+10                      nParticle per cell in X
+10                      nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+0                       nPlot
+
+#STOP
+150                     MaxIter
+-1.0                    TimeMax
+
+#RUN

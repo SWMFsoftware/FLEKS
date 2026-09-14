@@ -628,36 +628,34 @@ public:
 
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
   // tallies; `reflect` mirrors.  Only acts at iLev == 0.
-  inline bool reflect_or_delete_particle(ParticleType& p,
-                                         amrex::Array4<int const> const& status,
-                                         const amrex::IntVect& low,
-                                         const amrex::IntVect& high, int iLev) {
+  inline bool reflect_or_delete_particle(
+      ParticleType& p, amrex::Array4<int const> const& status,
+      const amrex::IntVect& low, const amrex::IntVect& high, int iLev,
+      const amrex::Real* const ploLoc, const amrex::Real* const phiLoc) {
     if (iLev > 0)
       return is_outside_active_region(p, status, low, high, iLev);
 
-    const amrex::Real* plo = Geom(iLev).ProbLo();
-    const amrex::Real* phi = Geom(iLev).ProbHi();
     for (int d = 0; d < nDim; ++d) {
       const int bcLo = bc.lo[d];
       const int bcHi = bc.hi[d];
       // Absorbing and inflow faces remove particles that cross outward,
       // tallying the lost charge/mass per face.
       if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
-          p.pos(d) < plo[d]) {
+          p.pos(d) < ploLoc[d]) {
         absorb_tally(2 * d, p.rdata(iqp_));
         return true;
       }
       if ((bcHi == ParticleBC::absorb || bcHi == ParticleBC::inflow) &&
-          p.pos(d) > phi[d]) {
+          p.pos(d) > phiLoc[d]) {
         absorb_tally(2 * d + 1, p.rdata(iqp_));
         return true;
       }
       // Specular reflection: mirror position and normal velocity.
-      if (bcLo == ParticleBC::reflect && p.pos(d) < plo[d]) {
-        p.pos(d) = 2.0 * plo[d] - p.pos(d);
+      if (bcLo == ParticleBC::reflect && p.pos(d) < ploLoc[d]) {
+        p.pos(d) = 2.0 * ploLoc[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-      } else if (bcHi == ParticleBC::reflect && p.pos(d) > phi[d]) {
-        p.pos(d) = 2.0 * phi[d] - p.pos(d);
+      } else if (bcHi == ParticleBC::reflect && p.pos(d) > phiLoc[d]) {
+        p.pos(d) = 2.0 * phiLoc[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
       }
     }
