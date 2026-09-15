@@ -91,8 +91,7 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
           for (int j2 = jMin; j2 <= jMax; j2++) {
             int jp = j2 - j1 + 1;
             const int gp = ip * 3 + jp;
-            const Real(&wg1_D)[nDim3] =
-                weights_IIID[i2 - iMin][j2 - jMin][0];
+            const Real(&wg1_D)[nDim3] = weights_IIID[i2 - iMin][j2 - jMin][0];
             for (int iDim = 0; iDim < nDim; iDim++) {
               data[gp] += wg_D[iDim] * wg1_D[iDim];
             }

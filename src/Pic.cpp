@@ -655,7 +655,8 @@ inline void pack_node_mm_box(const Array4Type& src, const amrex::Box& box,
   const auto lo = amrex::lbound(box);
   const auto hi = amrex::ubound(box);
   const int len_x = hi.x - lo.x + 1;
-  const std::size_t row_bytes = static_cast<std::size_t>(len_x) * sizeof(RealMM);
+  const std::size_t row_bytes =
+      static_cast<std::size_t>(len_x) * sizeof(RealMM);
   std::size_t p = 0;
   for (int k = lo.z; k <= hi.z; ++k) {
     for (int j = lo.y; j <= hi.y; ++j) {
@@ -704,9 +705,9 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
   cd.sends.clear();
   cd.recvs.clear();
 
-  const auto& TheFB = nodeMM[iLev].getFB(
-      amrex::IntVect(0), Geom(iLev).periodicity(), false, false, false,
-      nodeMM[iLev].nGrowVect());
+  const auto& TheFB =
+      nodeMM[iLev].getFB(amrex::IntVect(0), Geom(iLev).periodicity(), false,
+                         false, false, nodeMM[iLev].nGrowVect());
 
   if (TheFB.m_LocTags) {
     const auto& loc_tags = *TheFB.m_LocTags;
@@ -716,7 +717,8 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
     std::size_t total_loc_pts = 0;
     for (int i = 0; i < n_loc; ++i) {
       const auto& tag = loc_tags[i];
-      cd.loc_tags[i] = {tag.srcIndex, tag.dstIndex, tag.sbox, tag.dbox, total_loc_pts};
+      cd.loc_tags[i] = { tag.srcIndex, tag.dstIndex, tag.sbox, tag.dbox,
+                         total_loc_pts };
       total_loc_pts += tag.sbox.numPts();
     }
     cd.local_buf.resize(total_loc_pts);
@@ -737,13 +739,14 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
     for (const auto& kv : *TheFB.m_SndTags) {
       int dst_rank = kv.first;
       const auto& tags = kv.second;
-      if (tags.empty()) continue;
+      if (tags.empty())
+        continue;
       NodeMMCommData::PeerComm peer;
       peer.rank = dst_rank;
       peer.tags.reserve(tags.size());
       std::size_t offset = 0;
       for (const auto& tag : tags) {
-        peer.tags.push_back({tag.srcIndex, tag.sbox, offset});
+        peer.tags.push_back({ tag.srcIndex, tag.sbox, offset });
         offset += tag.sbox.numPts();
       }
       peer.totalPts = offset;
@@ -757,13 +760,14 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
     for (const auto& kv : *TheFB.m_RcvTags) {
       int src_rank = kv.first;
       const auto& tags = kv.second;
-      if (tags.empty()) continue;
+      if (tags.empty())
+        continue;
       NodeMMCommData::PeerComm peer;
       peer.rank = src_rank;
       peer.tags.reserve(tags.size());
       std::size_t offset = 0;
       for (const auto& tag : tags) {
-        peer.tags.push_back({tag.dstIndex, tag.dbox, offset});
+        peer.tags.push_back({ tag.dstIndex, tag.dbox, offset });
         offset += tag.dbox.numPts();
       }
       peer.totalPts = offset;
@@ -801,8 +805,8 @@ void Pic::sum_boundary_node_mm(int iLev) {
     auto& peer = cd.recvs[r];
     if (peer.totalPts > 0) {
       MPI_Irecv(reinterpret_cast<void*>(peer.buf.data()),
-                peer.totalPts * sizeof(RealMM), MPI_BYTE,
-                peer.rank, seq_num, comm, &cd.recv_reqs[r]);
+                peer.totalPts * sizeof(RealMM), MPI_BYTE, peer.rank, seq_num,
+                comm, &cd.recv_reqs[r]);
     }
   }
 
@@ -815,8 +819,8 @@ void Pic::sum_boundary_node_mm(int iLev) {
     }
     if (peer.totalPts > 0) {
       MPI_Isend(reinterpret_cast<const void*>(peer.buf.data()),
-                peer.totalPts * sizeof(RealMM), MPI_BYTE,
-                peer.rank, seq_num, comm, &cd.send_reqs[s]);
+                peer.totalPts * sizeof(RealMM), MPI_BYTE, peer.rank, seq_num,
+                comm, &cd.send_reqs[s]);
     }
   }
 #endif
@@ -839,7 +843,8 @@ void Pic::sum_boundary_node_mm(int iLev) {
 #endif
   for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
     const auto& tag_indices = cd.box_to_loc_tags[localDst];
-    if (tag_indices.empty()) continue;
+    if (tag_indices.empty())
+      continue;
 
     auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
     for (int tag_idx : tag_indices) {
