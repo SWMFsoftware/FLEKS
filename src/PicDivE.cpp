@@ -103,8 +103,6 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
 #endif
 #if AMREX_SPACEDIM > 2
   constexpr int kMin = -1, kMax = 1;
-#else
-  constexpr int kMin = 0, kMax = 0;
 #endif
 
   for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
