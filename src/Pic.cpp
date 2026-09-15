@@ -677,7 +677,6 @@ inline void accumulate_node_mm_box(const RealMM* __restrict__ buf,
     for (int j = lo.y; j <= hi.y; ++j) {
       amrex::Real* __restrict__ dst_ptr = dst(lo.x, j, k).data;
       const amrex::Real* __restrict__ src_ptr = buf[p].data;
-#pragma omp simd
       for (std::size_t d = 0; d < n_doubles; ++d) {
         dst_ptr[d] += src_ptr[d];
       }
