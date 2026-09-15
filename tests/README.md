@@ -121,3 +121,78 @@ The script benchmarks the full-PIC beam test (`performance/PARAM.in`),
 the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and the
 particle tracker test (`performance/PARAM.in.pt`), and writes the results to
 `tests/performance_summary.md`.
+
+### Profiler Regression (timing + memory, master vs PR)
+
+Every standalone run already ends with the AMReX TinyProfiler report: per-region
+timings plus, for each profiled arena, the **allocation count and peak bytes
+attributed to the enclosing `BL_PROFILE` region** — that is, per FLEKS
+function. Three scripts turn that into a regression check:
+
+| Script | Purpose |
+|---|---|
+| `tests/profiler.py` | parses the TinyProfiler report into a comparable dict |
+| `tests/profile_tests.py` | runs a selection of tests and captures one JSON |
+| `tests/compare_profiles.py` | diffs two captures and flags regressions |
+
+```bash
+# Capture a profile of the current working tree (~25 s here).
+python3 tests/profile_tests.py --out profile_pr.json
+
+# Capture the reference, e.g. from a master worktree.
+python3 tests/profile_tests.py --out profile_master.json --ref master
+
+# Diff them. Non-zero exit on a memory regression.
+python3 tests/compare_profiles.py profile_master.json profile_pr.json --out diff.md
+
+# Is memory deterministic on this machine? (decides strict gating vs warn-only)
+python3 tests/profile_tests.py --verify
+
+# Inspect a single report
+python3 tests/profiler.py prof.txt --top 10
+python3 tests/profiler.py --self-test
+```
+
+The captured selection is deliberately small — it has to run twice inside one CI
+job — and covers the dominant cost centres:
+
+| Entry | Covers |
+|---|---|
+| `beam.n1` | full PIC: particle mover, implicit E solve, GMRES |
+| `performance.hybrid.n1` | hybrid: Ohm assembly + Faraday advance |
+| `reconnection.n1` | 2D moment deposition and current calculation |
+| `shock.n1` | boundary injection + mover |
+| `beam.n2` | 2 ranks, so MPI-related allocations are covered |
+
+`profile_tests.py --list` shows the current selection; `--test beam` restricts
+to a single entry.
+
+**Gating policy.** Memory is gated strictly, because allocation counts and peak
+bytes are exact integers for a fixed problem, rank count and RNG seed —
+`--verify` confirmed they are bit-identical across repeated runs here:
+
+* `nalloc` — normalised per call when the call count changed, so an extra
+  allocation *inside* a function is flagged rather than the function merely
+  being called more often;
+* `maxmem_max` — peak bytes held by the region (an extra temporary `MultiFab`
+  shows up here);
+* `curmem_max` — anything still allocated at finalize, i.e. a leak.
+
+Timing is **warning-only** by default: two runs of identical code already show
+individual regions moving by −32 %…+30 % on an otherwise idle machine. Use
+`--gate-timing` to make it fail. Regions added or removed by a refactor, and
+regions whose call count changed, are reported as informational and never fail.
+
+The runner passes `tiny_profiler.print_threshold=0` (the 1 % AMReX default folds
+small regions into `Other`, hiding exactly the regressions we look for) and
+`tiny_profiler.output_file` so the report is parsed from a file rather than
+scraped out of the physics log.
+
+**Known blind spot:** the arena profiler only sees `MultiFab` / `FArrayBox` /
+particle-tile traffic. A `std::vector` or `new` added to a hot loop is invisible
+to it; catching that needs either `#MEMORY` (RSS, per-rank, currently unused by
+every deck) or a unit-test-level `operator new` counter.
+
+A captured `beam` report is checked in as
+`tests/profiler_samples/tinyprofiler_beam.txt` and is used by
+`python3 tests/profiler.py --self-test`.
