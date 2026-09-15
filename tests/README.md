@@ -196,3 +196,12 @@ every deck) or a unit-test-level `operator new` counter.
 A captured `beam` report is checked in as
 `tests/profiler_samples/tinyprofiler_beam.txt` and is used by
 `python3 tests/profiler.py --self-test`.
+
+**In CI** this runs as the *Profiler Regression* workflow
+(`.github/workflows/profile_test.yml`). Because GitHub-hosted runners are not
+reproducible across machines, the reference and the candidate are captured back
+to back **in the same job on the same runner**. To keep that affordable, only
+the reference is cached, under a key derived from the merge-base SHA — so it is
+built once per master commit and reused by every PR against that base. To relax
+a noisy run, add `--warn-only` to the compare step; to make timing gate too, add
+`--gate-timing`.

@@ -1,0 +1,196 @@
+name: Profiler Regression
+
+# Time + memory regression check for the standalone tests. Every standalone
+# FLEKS run already ends with the AMReX TinyProfiler report, which includes
+# per-region allocation counts and peak bytes (see tests/profiler.py). This
+# workflow captures that report on the merge base and on the PR head, inside
+# one job on one runner, and diffs them.
+#
+# Building twice is the expensive part, so the master profile is cached under
+# a key derived from the merge base SHA: it only ever has to be produced once
+# per master commit and is then reused by every PR against that base.
+#
+# Note on why master and PR run in the SAME job rather than in parallel jobs:
+# GitHub-hosted runners differ enough between machines that timings (and to a
+# lesser extent allocator behaviour) are not comparable across jobs. Running
+# them back to back on one runner keeps the comparison meaningful. Even so,
+# timing is reported as a warning and only allocation counts / peak bytes are
+# gated -- see tests/compare_profiles.py.
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'srcInterface/**'
+      - 'userfiles/**'
+      - 'tests/**'
+      - '!tests/performance/**'
+      - '!tests/validate_performance.py'
+      - 'Config.pl'
+      - 'Makefile'
+      - 'Makefile.*'
+      - '.github/actions/**'
+      - '.github/workflows/profile_test.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  profile-compare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout FLEKS (for local composite actions)
+        uses: actions/checkout@v6
+
+      - name: Setup SWMF dependency tree
+        id: setup
+        uses: ./.github/actions/setup-swmf
+        with:
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          amrex-cache-suffix: 3d
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'true'
+
+      # -------------------------------------------------------------------
+      # Reference profile (merge base)
+      # -------------------------------------------------------------------
+      - name: Restore cached reference profile
+        id: cache-profile
+        uses: actions/cache@v5
+        with:
+          path: SWMF/PC/FLEKS/profile_master.json
+          key: profile-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+
+      - name: Build reference (merge base)
+        if: steps.cache-profile.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+          git checkout FETCH_HEAD
+          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
+          make EXE -j$(nproc)
+
+      - name: Capture reference profile
+        if: steps.cache-profile.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          python3 tests/profile_tests.py --out profile_master.json --ref master
+
+      # -------------------------------------------------------------------
+      # Candidate profile (PR head)
+      # -------------------------------------------------------------------
+      - name: Build candidate (PR head)
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout "${{ github.event.pull_request.head.sha }}"
+          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
+          # Incremental: only files that differ from the merge base recompile.
+          make EXE -j$(nproc)
+
+      - name: Capture candidate profile
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          python3 tests/profile_tests.py --out profile_pr.json
+
+      # -------------------------------------------------------------------
+      # Compare
+      # -------------------------------------------------------------------
+      # Exit status: 1 if an allocation count, peak bytes or unfreed-memory
+      # regression was found. Timing regressions only warn; pass
+      # --gate-timing to make them fail, or --warn-only to never fail.
+      - name: Compare profiles
+        id: compare
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          # '+e' so the report/log always reach GITHUB_OUTPUT before the step
+          # fails; the workflow is meant to go red on a regression, but the PR
+          # comment still has to be posted.
+          set +e
+          python3 tests/compare_profiles.py \
+            profile_master.json profile_pr.json \
+            --out profile_diff.md --json profile_diff.json \
+            --title "🔬 Profiler regression report" > profile_diff_stdout.txt
+          status=$?
+          cat profile_diff_stdout.txt
+          echo "status=$status" >> $GITHUB_OUTPUT
+          exit $status
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            if [ -f SWMF/PC/FLEKS/profile_diff.md ]; then
+              cat SWMF/PC/FLEKS/profile_diff.md
+            else
+              echo "### 🔬 Profiler regression report"
+              echo ""
+              echo "No comparison was produced."
+            fi
+            echo ""
+            echo "<details><summary>raw report log</summary>"
+            echo ""
+            echo '```'
+            cat SWMF/PC/FLEKS/profile_diff_stdout.txt 2>/dev/null || true
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Post PR comment
+        if: always() && github.event.pull_request && (github.event_name == 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'SWMF/PC/FLEKS/profile_diff.md';
+            const failed = '${{ steps.compare.outputs.status }}' === '1';
+            let body = '';
+            if (fs.existsSync(path)) {
+              body += fs.readFileSync(path, 'utf8') + '\n';
+            } else {
+              body += '### 🔬 Profiler regression report\n\nNo comparison was produced.\n';
+            }
+            body += failed
+              ? '\n> Allocation/peak-memory regressions above need review. If the extra '
+                + 'allocations are intentional, please say so in the PR description.\n'
+              : '\n> Timing changes are informational only; only allocation counts and '
+                + 'peak bytes are gated.\n';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes('### 🔬 Profiler regression report'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
