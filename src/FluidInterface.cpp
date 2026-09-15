@@ -609,12 +609,12 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const Array4<Real>& arr = fluid[mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
-      const auto lo = box.smallEnd();
-      const auto hi = box.bigEnd();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-      for (int k = lo[2]; k <= hi[2]; ++k) {
-        for (int j = lo[1]; j <= hi[1]; ++j) {
-          for (int i = lo[0]; i <= hi[0]; ++i) {
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
             IntVect ijk = { AMREX_D_DECL(i, j, k) };
             if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
               // If this node is the boundary or inside the valid box.

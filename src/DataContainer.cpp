@@ -134,7 +134,11 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
       const auto hi = ubound(box);
 
       for (int k = lo.z; k <= hi.z; ++k) {
+#if AMREX_SPACEDIM > 2
         const float z = static_cast<float>(probLo[iz_] + (k + 0.5) * dx[iz_]);
+#else
+        constexpr float z = 0.0f;
+#endif
         for (int j = lo.y; j <= hi.y; ++j) {
           const float y = static_cast<float>(probLo[iy_] + (j + 0.5) * dx[iy_]);
           for (int i = lo.x; i <= hi.x; ++i) {
