@@ -379,6 +379,26 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
       auto& data0 = mmArr(ijk);
 
+#if (AMREX_SPACEDIM == 2)
+      for (int j2 = j - 1; j2 <= j + 1; ++j2) {
+        for (int i2 = i - 1; i2 <= i + 1; ++i2) {
+          const int gp = (j2 - j + 1) * 3 + i2 - i + 1;
+          const int idx0 = gp * 9;
+
+          const Real* const M_I = &(data0[idx0]);
+
+          const double vctX = inArr(i2, j2, 0, ix_);
+          const double vctY = inArr(i2, j2, 0, iy_);
+          const double vctZ = inArr(i2, j2, 0, iz_);
+          outArr(i, j, 0, ix_) +=
+              (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+          outArr(i, j, 0, iy_) +=
+              (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+          outArr(i, j, 0, iz_) +=
+              (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+        }
+      }
+#else
       const int kMin2 = nDim > 2 ? k - 1 : k;
       const int kMax2 = nDim > 2 ? k + 1 : k;
 
@@ -402,6 +422,7 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
           }
         }
       }
+#endif
     });
   }
 

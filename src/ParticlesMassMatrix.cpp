@@ -87,6 +87,17 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
         // Real weights[27] = { 0 };
         for (int i2 = iMin; i2 <= iMax; i2++) {
           int ip = i2 - i1 + 1;
+#if (AMREX_SPACEDIM == 2)
+          for (int j2 = jMin; j2 <= jMax; j2++) {
+            int jp = j2 - j1 + 1;
+            const int gp = ip * 3 + jp;
+            const Real(&wg1_D)[nDim3] =
+                weights_IIID[i2 - iMin][j2 - jMin][0];
+            for (int iDim = 0; iDim < nDim; iDim++) {
+              data[gp] += wg_D[iDim] * wg1_D[iDim];
+            }
+          }
+#else
           const int gp0 = ip * 9;
           for (int j2 = jMin; j2 <= jMax; j2++) {
             int jp = j2 - j1 + 1;
@@ -102,6 +113,7 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
               }
             }
           }
+#endif
         }
       }
 }
@@ -242,7 +254,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                   for (int i2 = iMin; i2 <= iMax; i2++) {
                     const Real weight =
                         wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
+#if (AMREX_SPACEDIM == 2)
+                    const int idx0 = jp * 27 + (i2 - i1 + 1) * 9;
+#else
                     const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+#endif
 
                     Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
@@ -260,6 +276,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     } // for p
   }
 
+#if (AMREX_SPACEDIM != 2)
   for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
     // Finalize the mass matrix calculation.
     const Box box = mfi.validbox();
@@ -305,6 +322,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           } // jp
         } // k1
   }
+#endif
 }
 //==========================================================
 
@@ -478,7 +496,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
                     for (int i2 = iMin; i2 <= iMax; i2++) {
                       const Real weight =
                           wg * coef[i][i2 - iMin][j2 - jMin][k2 - kMin];
+#if (AMREX_SPACEDIM == 2)
+                      const int idx0 = jp * 27 + (i2 - i1 + 1) * 9;
+#else
                       const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+#endif
 
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {

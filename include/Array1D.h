@@ -64,8 +64,16 @@ inline Arr1D<T, n> operator*(U b, Arr1D<T, n> a) {
   return a;
 }
 
-using RealMM = Arr1D<amrex::Real, 243>;
-using RealCMM = Arr1D<amrex::Real, 27>;
+#if (AMREX_SPACEDIM == 2)
+constexpr int nMMComponents = 81;
+constexpr int nCMMComponents = 9;
+#else
+constexpr int nMMComponents = 243;
+constexpr int nCMMComponents = 27;
+#endif
+
+using RealMM = Arr1D<amrex::Real, nMMComponents>;
+using RealCMM = Arr1D<amrex::Real, nCMMComponents>;
 
 using NodeMMFab = amrex::FabArray<amrex::BaseFab<RealMM> >;
 using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM> >;
