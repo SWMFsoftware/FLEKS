@@ -75,6 +75,11 @@ struct NodeMMCommData {
 
   std::vector<PeerComm> sends;
   std::vector<PeerComm> recvs;
+
+#ifdef BL_USE_MPI
+  std::vector<MPI_Request> recv_reqs;
+  std::vector<MPI_Request> send_reqs;
+#endif
 };
 
 // The grid is defined in DomainGrid. This class contains the data on the grid.
