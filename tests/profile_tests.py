@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""Capture AMReX TinyProfiler profiles for a selected set of standalone tests.
+
+Every standalone FLEKS run already ends with the AMReX TinyProfiler report:
+per-region timings and, for each profiled arena, per-region allocation counts
+and peak bytes (see ``tests/profiler.py``).  This runner executes a curated
+selection of the standalone tests with the profiler switched fully on and
+writes one JSON file that can be diffed against another run -- typically
+master vs. a pull request -- with ``tests/compare_profiles.py``.
+
+Only a selection is used, not the whole suite: the point is regression
+detection over the dominant cost centres, and keeping the run short enough to
+execute twice (master + PR) inside one CI job.
+
+Usage::
+
+    python3 tests/profile_tests.py --out profile_pr.json
+    python3 tests/profile_tests.py --out profile_master.json --ref master
+    python3 tests/profile_tests.py --verify      # check memory determinism
+    python3 tests/profile_tests.py --list        # show the selection
+"""
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from tests import profiler  # noqa: E402
+from tests import validate_tests  # noqa: E402
+
+# The profiling selection: (test directory, PARAM.in suffix or None, nprocs).
+#
+# Chosen to cover the dominant cost centres of both field solvers while
+# staying short: full-PIC implicit E solve + particle mover (beam), hybrid
+# Ohm assembly + Faraday advance (performance/PARAM.in.hybrid), 2D moment
+# deposition and current calculation (reconnection), boundary injection
+# (shock), and one 2-rank entry so MPI-related allocations are covered too.
+PROFILE_TESTS = [
+    ("beam", None, 1),
+    ("performance", "hybrid", 1),
+    ("reconnection", None, 1),
+    ("shock", None, 1),
+    ("beam", None, 2),
+]
+
+DEFAULT_RUN_DIR = "run_test_prof"
+
+# Force the profiler to report every region instead of folding the small ones
+# into "Other" (AMReX default print_threshold is 1 %), and to write the
+# report to a file so it does not have to be scraped out of the physics log.
+PROFILER_ARGS = ["tiny_profiler.output_file=prof.txt",
+                 "tiny_profiler.print_threshold=0"]
+
+
+def git(*args):
+    """Return git output from the repository root, or '' on failure."""
+    try:
+        out = subprocess.run(("git",) + args, cwd=REPO_ROOT,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        return out.stdout.decode("utf-8", "replace").strip()
+    except OSError:
+        return ""
+
+
+def param_path(test, variant):
+    name = "PARAM.in" + ("." + variant if variant else "")
+    return os.path.join(REPO_ROOT, "tests", test, name)
+
+
+def test_key(test, variant, nprocs):
+    return f"{test}{'.' + variant if variant else ''}.n{nprocs}"
+
+
+def prepare_run_dir(run_dir):
+    """Minimal run-directory setup: no PostIDL / PostProc needed for profiling."""
+    os.makedirs(run_dir, exist_ok=True)
+    exe = os.path.join(run_dir, "FLEKS.exe")
+    if os.path.lexists(exe):
+        os.remove(exe)
+    os.symlink(os.path.join("..", "bin", "FLEKS.exe"), exe)
+
+
+def clean_output(run_dir):
+    """Drop plot/restart output between runs, keeping the directory skeleton."""
+    for sub in (os.path.join(run_dir, "PC", "plots"),
+                os.path.join(run_dir, "PC", "restartOUT")):
+        if not os.path.isdir(sub):
+            continue
+        for entry in os.listdir(sub):
+            path = os.path.join(sub, entry)
+            try:
+                shutil.rmtree(path) if os.path.isdir(path) and not \
+                    os.path.islink(path) else os.remove(path)
+            except OSError:
+                pass
+
+
+def run_one(test, variant, nprocs, run_dir, keep_prof=False):
+    """Run one entry and return its profile record."""
+    prepare_run_dir(run_dir)
+    clean_output(run_dir)
+
+    source = param_path(test, variant)
+    with open(source) as handle:
+        param_text = handle.read()
+    with open(os.path.join(run_dir, "PARAM.in"), "w") as handle:
+        handle.write(param_text)
+
+    if nprocs > 1:
+        cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"] + PROFILER_ARGS
+    else:
+        cmd = ["./FLEKS.exe"] + PROFILER_ARGS
+
+    env = dict(os.environ, OMP_NUM_THREADS="1")
+    start = time.monotonic()
+    result = subprocess.run(cmd, cwd=run_dir, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    wall_s = time.monotonic() - start
+    result.stdout = (result.stdout or b"").decode("utf-8", "replace")
+
+    prof_file = os.path.join(run_dir, "prof.txt")
+    record = {
+        "test": test,
+        "variant": variant,
+        "nprocs": nprocs,
+        "param": os.path.relpath(source, REPO_ROOT),
+        "wall_s": round(wall_s, 4),
+        "exit_code": result.returncode,
+        "profile": {},
+    }
+
+    if result.returncode != 0:
+        record["error"] = result.stdout[-4000:]
+        return record
+
+    if os.path.isfile(prof_file):
+        with open(prof_file) as handle:
+            record["profile"] = profiler.parse_tinyprofiler(handle.read())
+        if not keep_prof:
+            os.remove(prof_file)
+    else:
+        record["error"] = "no TinyProfiler output; is AMREX_TINY_PROFILING on?"
+
+    return record
+
+
+def capture(selection, run_dir, verbose=False, keep_prof=False):
+    """Run every entry in *selection* and return the full profile document."""
+    os.makedirs(run_dir, exist_ok=True)
+    tests = {}
+    for test, variant, nprocs in selection:
+        ok, reason, _skip = validate_tests.preflight_check(test)
+        if not ok:
+            print(f"  SKIP {test_key(test, variant, nprocs)}: {reason}")
+            continue
+        if not os.path.isfile(param_path(test, variant)):
+            print(f"  SKIP {test_key(test, variant, nprocs)}: "
+                  f"missing {param_path(test, variant)}")
+            continue
+
+        key = test_key(test, variant, nprocs)
+        print(f"  RUN  {key} ...", flush=True)
+        record = run_one(test, variant, nprocs, run_dir, keep_prof=keep_prof)
+        tests[key] = record
+        if "error" in record:
+            print(f"       FAILED (exit {record['exit_code']})")
+        elif verbose:
+            print(profiler.format_summary(record["profile"], top=5))
+
+    return {
+        "meta": {
+            "ref": git("rev-parse", "--abbrev-ref", "HEAD"),
+            "commit": git("rev-parse", "HEAD"),
+            "commit_subject": git("log", "-1", "--format=%s"),
+            "dirty": bool(git("status", "--porcelain")),
+            "amrex_dim": validate_tests.configured_amrex_dim(),
+            "nlevmax": validate_tests.configured_nlevmax(),
+            "exo_source": validate_tests.configured_user_source_is_exo(),
+            "omp_num_threads": os.environ.get("OMP_NUM_THREADS", "1"),
+            "date": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "profiler_args": PROFILER_ARGS,
+        },
+        "tests": tests,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Determinism check
+# ---------------------------------------------------------------------------
+def _memory_index(profile):
+    """Flat {arena.region: {nalloc, maxmem_max, curmem_max}} for comparisons."""
+    out = {}
+    for arena, regions in (profile.get("memory") or {}).items():
+        for region, values in regions.items():
+            out[f"{arena}::{region}"] = {
+                k: values.get(k) for k in ("nalloc", "maxmem_max", "curmem_max")
+            }
+    return out
+
+
+def verify(selection, run_dir, repeats=2):
+    """Run the selection twice and report non-deterministic memory values.
+
+    Allocation counts and peak bytes are exact integers for a fixed problem,
+    rank count and RNG seed.  If they are not reproducible the memory checks
+    in compare_profiles.py can only be used as warnings, not as a gate.
+    """
+    runs = []
+    for i in range(repeats):
+        print(f"run {i + 1}/{repeats}")
+        runs.append(capture(selection, run_dir))
+
+    baseline = runs[0]
+    problems = []
+    for key, record in baseline["tests"].items():
+        if "error" in record:
+            problems.append(f"{key}: run 1 failed")
+            continue
+        reference = _memory_index(record["profile"])
+        for i, other in enumerate(runs[1:], start=2):
+            candidate = other.get("tests", {}).get(key, {})
+            if "error" in candidate:
+                problems.append(f"{key}: run {i} failed")
+                continue
+            current = _memory_index(candidate["profile"])
+            for name, values in reference.items():
+                got = current.get(name)
+                if got != values:
+                    problems.append(
+                        f"{key}: {name} differs between run 1 and run {i}: "
+                        f"{values} vs {got}")
+
+    if problems:
+        print("\nNOT DETERMINISTIC:")
+        for problem in problems:
+            print(f"  {problem}")
+        print("\nMemory checks must be treated as warnings on this setup.")
+        return 1
+
+    print("\nMemory (nalloc / maxmem_max / curmem_max) is deterministic "
+          f"across {repeats} runs -- memory can be gated strictly.")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Capture TinyProfiler profiles for selected standalone tests.")
+    parser.add_argument("--out", help="write the profile document as JSON")
+    parser.add_argument("--ref", help="label recorded in meta['ref']")
+    parser.add_argument("--run-dir", default=DEFAULT_RUN_DIR,
+                        help=f"run directory (default: {DEFAULT_RUN_DIR})")
+    parser.add_argument("--test", action="append",
+                        help="restrict to test[.variant][:nprocs]; repeatable")
+    parser.add_argument("--list", action="store_true", help="show the selection")
+    parser.add_argument("--verify", action="store_true",
+                        help="run twice and check memory determinism")
+    parser.add_argument("--repeats", type=int, default=2, help="--verify runs")
+    parser.add_argument("--keep-prof", action="store_true",
+                        help="keep the raw prof.txt of the last test")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
+
+    os.chdir(REPO_ROOT)
+
+    if args.list:
+        for test, variant, nprocs in PROFILE_TESTS:
+            print(f"  {test_key(test, variant, nprocs):<28} "
+                  f"{os.path.relpath(param_path(test, variant), REPO_ROOT)}")
+        return 0
+
+    selection = PROFILE_TESTS
+    if args.test:
+        wanted = set()
+        for item in args.test:
+            name, _, nproc = item.partition(":")
+            wanted.add((name, int(nproc) if nproc else None))
+        selection = [e for e in PROFILE_TESTS
+                     if (e[0] if not e[1] else f"{e[0]}.{e[1]}", None) in wanted
+                     or any(w[0] in (e[0], f"{e[0]}.{e[1]}") and
+                            (w[1] is None or w[1] == e[2]) for w in wanted)]
+        if not selection:
+            print(f"no selection matches {args.test}; see --list")
+            return 1
+
+    if args.verify:
+        return verify(selection, args.run_dir, repeats=args.repeats)
+
+    print("Capturing profiles:")
+    document = capture(selection, args.run_dir, verbose=args.verbose,
+                       keep_prof=args.keep_prof)
+    if args.ref:
+        document["meta"]["ref"] = args.ref
+
+    if args.out:
+        with open(args.out, "w") as handle:
+            json.dump(document, handle, indent=2, sort_keys=True)
+        print(f"wrote {args.out}")
+    else:
+        print(json.dumps(document, indent=2, sort_keys=True))
+
+    failed = [k for k, v in document["tests"].items() if "error" in v]
+    if failed:
+        print(f"\n{len(failed)} test(s) produced no profile: {', '.join(failed)}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
