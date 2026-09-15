@@ -44,6 +44,39 @@ typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, amrex::IntVect ijk,
 typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
                                    const std::string varName);
 
+struct NodeMMCommData {
+  struct LocTagEntry {
+    int srcIndex;
+    int dstIndex;
+    amrex::Box sbox;
+    amrex::Box dbox;
+    std::size_t bufOffset;
+  };
+
+  struct RemoteTagEntry {
+    int boxIndex;
+    amrex::Box box;
+    std::size_t bufOffset;
+  };
+
+  struct PeerComm {
+    int rank;
+    std::vector<RemoteTagEntry> tags;
+    std::vector<RealMM> buf;
+    std::size_t totalPts = 0;
+  };
+
+  bool is_initialized = false;
+  amrex::FabArrayBase::BDKey bdkey;
+
+  std::vector<LocTagEntry> loc_tags;
+  std::vector<RealMM> local_buf;
+  std::vector<std::vector<int> > box_to_loc_tags;
+
+  std::vector<PeerComm> sends;
+  std::vector<PeerComm> recvs;
+};
+
 // The grid is defined in DomainGrid. This class contains the data on the grid.
 class Pic : public Grid {
   friend PlotWriter;
@@ -144,6 +177,7 @@ private:
   amrex::Vector<amrex::MultiFab> mMach;
 
   amrex::Vector<NodeMMFab> nodeMM;
+  amrex::Vector<NodeMMCommData> nodeMM_comm_data;
 
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
@@ -463,6 +497,7 @@ public:
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
+  void init_boundary_node_mm_comm(int iLev);
   void sum_boundary_node_mm(int iLev);
 
   void update_part_loc_to_half_stage();

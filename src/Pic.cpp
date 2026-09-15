@@ -145,6 +145,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       if (!useExplicitPIC) {
         distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
                             1, 1, doMoveData);
+        if (nodeMM_comm_data.size() != n_lev()) {
+          nodeMM_comm_data.resize(n_lev());
+        }
+        nodeMM_comm_data[iLev].is_initialized = false;
         distribute_FabArray(solverVecMF[iLev], nGrids[iLev],
                             DistributionMap(iLev), 3, nGst, doMoveData);
         distribute_FabArray(solverMatvecMF[iLev], nGrids[iLev],
@@ -657,14 +661,231 @@ void Pic::particle_mover() {
 }
 
 //==========================================================
+void Pic::init_boundary_node_mm_comm(int iLev) {
+  if (nodeMM_comm_data.size() != n_lev()) {
+    nodeMM_comm_data.resize(n_lev());
+  }
+
+  auto& cd = nodeMM_comm_data[iLev];
+  if (cd.is_initialized && cd.bdkey == nodeMM[iLev].getBDKey()) {
+    return;
+  }
+
+  cd.loc_tags.clear();
+  cd.local_buf.clear();
+  cd.box_to_loc_tags.clear();
+  cd.sends.clear();
+  cd.recvs.clear();
+
+  const auto& TheFB = nodeMM[iLev].getFB(
+      amrex::IntVect(0), Geom(iLev).periodicity(), false, false, false,
+      amrex::IntVect(0));
+
+  if (TheFB.m_LocTags) {
+    const auto& loc_tags = *TheFB.m_LocTags;
+    const int n_loc = static_cast<int>(loc_tags.size());
+    cd.loc_tags.resize(n_loc);
+
+    std::size_t total_loc_pts = 0;
+    for (int i = 0; i < n_loc; ++i) {
+      const auto& tag = loc_tags[i];
+      cd.loc_tags[i].srcIndex = tag.srcIndex;
+      cd.loc_tags[i].dstIndex = tag.dstIndex;
+      cd.loc_tags[i].sbox = tag.sbox;
+      cd.loc_tags[i].dbox = tag.dbox;
+      cd.loc_tags[i].bufOffset = total_loc_pts;
+      total_loc_pts += tag.sbox.numPts();
+    }
+    cd.local_buf.resize(total_loc_pts);
+
+    const int nLocalBoxes = nodeMM[iLev].size();
+    cd.box_to_loc_tags.resize(nLocalBoxes);
+    for (int i = 0; i < n_loc; ++i) {
+      int localDst = nodeMM[iLev].localindex(cd.loc_tags[i].dstIndex);
+      if (localDst >= 0 && localDst < nLocalBoxes) {
+        cd.box_to_loc_tags[localDst].push_back(i);
+      }
+    }
+  }
+
+#ifdef BL_USE_MPI
+  if (TheFB.m_SndTags) {
+    for (const auto& kv : *TheFB.m_SndTags) {
+      int dst_rank = kv.first;
+      const auto& tags = kv.second;
+      if (tags.empty()) continue;
+      NodeMMCommData::PeerComm peer;
+      peer.rank = dst_rank;
+      std::size_t offset = 0;
+      for (const auto& tag : tags) {
+        NodeMMCommData::RemoteTagEntry rt;
+        rt.boxIndex = tag.srcIndex;
+        rt.box = tag.sbox;
+        rt.bufOffset = offset;
+        offset += tag.sbox.numPts();
+        peer.tags.push_back(rt);
+      }
+      peer.totalPts = offset;
+      peer.buf.resize(offset);
+      cd.sends.push_back(std::move(peer));
+    }
+  }
+
+  if (TheFB.m_RcvTags) {
+    for (const auto& kv : *TheFB.m_RcvTags) {
+      int src_rank = kv.first;
+      const auto& tags = kv.second;
+      if (tags.empty()) continue;
+      NodeMMCommData::PeerComm peer;
+      peer.rank = src_rank;
+      std::size_t offset = 0;
+      for (const auto& tag : tags) {
+        NodeMMCommData::RemoteTagEntry rt;
+        rt.boxIndex = tag.dstIndex;
+        rt.box = tag.dbox;
+        rt.bufOffset = offset;
+        offset += tag.dbox.numPts();
+        peer.tags.push_back(rt);
+      }
+      peer.totalPts = offset;
+      peer.buf.resize(offset);
+      cd.recvs.push_back(std::move(peer));
+    }
+  }
+#endif
+
+  cd.bdkey = nodeMM[iLev].getBDKey();
+  cd.is_initialized = true;
+}
+
+//==========================================================
 void Pic::sum_boundary_node_mm(int iLev) {
   BL_PROFILE("Pic::nodeMM_SumBoundary");
-  NodeMMFab tmp(nodeMM[iLev].boxArray(), nodeMM[iLev].DistributionMap(), 1,
-                nodeMM[iLev].nGrowVect());
-  amrex::Copy(tmp, nodeMM[iLev], 0, 0, 1, nodeMM[iLev].nGrowVect());
-  nodeMM[iLev].setVal(RealMM(0.0), 0, 1, IntVect(0));
-  nodeMM[iLev].ParallelAdd(tmp, 0, 0, 1, nodeMM[iLev].nGrowVect(), IntVect(0),
-                           Geom(iLev).periodicity());
+
+  init_boundary_node_mm_comm(iLev);
+  auto& cd = nodeMM_comm_data[iLev];
+
+#ifdef BL_USE_MPI
+  const int seq_num = amrex::ParallelDescriptor::SeqNum();
+  const MPI_Comm comm = amrex::ParallelDescriptor::Communicator();
+  const int n_recvs = static_cast<int>(cd.recvs.size());
+  const int n_sends = static_cast<int>(cd.sends.size());
+
+  std::vector<MPI_Request> recv_reqs(n_recvs, MPI_REQUEST_NULL);
+  std::vector<MPI_Request> send_reqs(n_sends, MPI_REQUEST_NULL);
+
+  // 1. Post non-blocking receives
+  for (int r = 0; r < n_recvs; ++r) {
+    auto& peer = cd.recvs[r];
+    if (peer.totalPts > 0) {
+      MPI_Irecv(reinterpret_cast<void*>(peer.buf.data()),
+                peer.totalPts * sizeof(RealMM), MPI_BYTE,
+                peer.rank, seq_num, comm, &recv_reqs[r]);
+    }
+  }
+
+  // 2. Pack and post non-blocking sends
+  for (int s = 0; s < n_sends; ++s) {
+    auto& peer = cd.sends[s];
+    for (const auto& rt : peer.tags) {
+      const auto src_arr = nodeMM[iLev].array(rt.boxIndex);
+      RealMM* pbuf = &peer.buf[rt.bufOffset];
+      const auto lo = amrex::lbound(rt.box);
+      const auto hi = amrex::ubound(rt.box);
+      int p = 0;
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            pbuf[p++] = src_arr(i, j, k);
+          }
+        }
+      }
+    }
+    if (peer.totalPts > 0) {
+      MPI_Isend(reinterpret_cast<const void*>(peer.buf.data()),
+                peer.totalPts * sizeof(RealMM), MPI_BYTE,
+                peer.rank, seq_num, comm, &send_reqs[s]);
+    }
+  }
+#endif
+
+  // 3. Snapshot local tags into local_buf (Phase 1)
+  const int n_loc = static_cast<int>(cd.loc_tags.size());
+#ifdef AMREX_USE_OMP
+#pragma omp parallel for schedule(static)
+#endif
+  for (int i = 0; i < n_loc; ++i) {
+    const auto& tag = cd.loc_tags[i];
+    const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
+    RealMM* pbuf = &cd.local_buf[tag.bufOffset];
+    const auto lo = amrex::lbound(tag.sbox);
+    const auto hi = amrex::ubound(tag.sbox);
+    int p = 0;
+    for (int k = lo.z; k <= hi.z; ++k) {
+      for (int j = lo.y; j <= hi.y; ++j) {
+        for (int i = lo.x; i <= hi.x; ++i) {
+          pbuf[p++] = src_arr(i, j, k);
+        }
+      }
+    }
+  }
+
+  // 4. Accumulate local tags into destination boxes (Phase 2)
+  const int nLocalBoxes = nodeMM[iLev].size();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+  for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
+    const auto& tag_indices = cd.box_to_loc_tags[localDst];
+    if (tag_indices.empty()) continue;
+
+    const int globalDst = cd.loc_tags[tag_indices[0]].dstIndex;
+    auto dst_arr = nodeMM[iLev].array(globalDst);
+
+    for (int tag_idx : tag_indices) {
+      const auto& tag = cd.loc_tags[tag_idx];
+      const RealMM* pbuf = &cd.local_buf[tag.bufOffset];
+      const auto lo = amrex::lbound(tag.dbox);
+      const auto hi = amrex::ubound(tag.dbox);
+      int p = 0;
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            dst_arr(i, j, k) += pbuf[p++];
+          }
+        }
+      }
+    }
+  }
+
+#ifdef BL_USE_MPI
+  // 5. Wait for MPI receives and unpack/accumulate
+  if (n_recvs > 0) {
+    MPI_Waitall(n_recvs, recv_reqs.data(), MPI_STATUSES_IGNORE);
+    for (int r = 0; r < n_recvs; ++r) {
+      const auto& peer = cd.recvs[r];
+      for (const auto& rt : peer.tags) {
+        auto dst_arr = nodeMM[iLev].array(rt.boxIndex);
+        const RealMM* pbuf = &peer.buf[rt.bufOffset];
+        const auto lo = amrex::lbound(rt.box);
+        const auto hi = amrex::ubound(rt.box);
+        int p = 0;
+        for (int k = lo.z; k <= hi.z; ++k) {
+          for (int j = lo.y; j <= hi.y; ++j) {
+            for (int i = lo.x; i <= hi.x; ++i) {
+              dst_arr(i, j, k) += pbuf[p++];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 6. Wait for MPI sends to finish
+  if (n_sends > 0) {
+    MPI_Waitall(n_sends, send_reqs.data(), MPI_STATUSES_IGNORE);
+  }
+#endif
 }
 
 //==========================================================
