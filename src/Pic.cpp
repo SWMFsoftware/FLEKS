@@ -679,7 +679,7 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
 
   const auto& TheFB = nodeMM[iLev].getFB(
       amrex::IntVect(0), Geom(iLev).periodicity(), false, false, false,
-      amrex::IntVect(0));
+      nodeMM[iLev].nGrowVect());
 
   if (TheFB.m_LocTags) {
     const auto& loc_tags = *TheFB.m_LocTags;
