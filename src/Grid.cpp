@@ -569,7 +569,8 @@ void Grid::WriteMF(Vector<MultiFab>& MF, int nlev, std::string st,
 
 MultiFab Grid::centerMMtoMF(CenterMMFab& MFin) {
   MultiFab MFout;
-  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 27, MFin.nGrow());
+  MFout.define(MFin.boxArray(), MFin.DistributionMap(), nCMMComponents,
+               MFin.nGrow());
   for (MFIter mfi(MFout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     const Array4<RealCMM>& fab = MFin[mfi].array();
@@ -580,7 +581,7 @@ MultiFab Grid::centerMMtoMF(CenterMMFab& MFin) {
     for (int k = lo.z; k <= hi.z; ++k) {
       for (int j = lo.y; j <= hi.y; ++j) {
         for (int i = lo.x; i <= hi.x; ++i) {
-          for (int nvar = 0; nvar < 27; ++nvar) {
+          for (int nvar = 0; nvar < nCMMComponents; ++nvar) {
             fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
           }
         }
@@ -603,7 +604,7 @@ CenterMMFab Grid::MFtocenterMM(MultiFab& MFin) {
     for (int k = lo.z; k <= hi.z; ++k) {
       for (int j = lo.y; j <= hi.y; ++j) {
         for (int i = lo.x; i <= hi.x; ++i) {
-          for (int nvar = 0; nvar < 27; ++nvar) {
+          for (int nvar = 0; nvar < nCMMComponents; ++nvar) {
             fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
           }
         }
@@ -615,7 +616,8 @@ CenterMMFab Grid::MFtocenterMM(MultiFab& MFin) {
 
 MultiFab Grid::nodeMMtoMF(NodeMMFab& MFin) {
   MultiFab MFout;
-  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 243, MFin.nGrow());
+  MFout.define(MFin.boxArray(), MFin.DistributionMap(), nMMComponents,
+               MFin.nGrow());
   for (MFIter mfi(MFout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     const Array4<RealMM>& fab = MFin[mfi].array();
@@ -626,7 +628,7 @@ MultiFab Grid::nodeMMtoMF(NodeMMFab& MFin) {
     for (int k = lo.z; k <= hi.z; ++k) {
       for (int j = lo.y; j <= hi.y; ++j) {
         for (int i = lo.x; i <= hi.x; ++i) {
-          for (int nvar = 0; nvar < 243; ++nvar) {
+          for (int nvar = 0; nvar < nMMComponents; ++nvar) {
             fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
           }
         }
@@ -649,7 +651,7 @@ NodeMMFab Grid::MFtonodeMM(MultiFab& MFin) {
     for (int k = lo.z; k <= hi.z; ++k) {
       for (int j = lo.y; j <= hi.y; ++j) {
         for (int i = lo.x; i <= hi.x; ++i) {
-          for (int nvar = 0; nvar < 243; ++nvar) {
+          for (int nvar = 0; nvar < nMMComponents; ++nvar) {
             fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
           }
         }

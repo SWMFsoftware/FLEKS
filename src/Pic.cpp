@@ -145,6 +145,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       if (!useExplicitPIC) {
         distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
                             1, 1, doMoveData);
+        if (nodeMM_comm_data.size() != n_lev()) {
+          nodeMM_comm_data.resize(n_lev());
+        }
+        nodeMM_comm_data[iLev].is_initialized = false;
         distribute_FabArray(solverVecMF[iLev], nGrids[iLev],
                             DistributionMap(iLev), 3, nGst, doMoveData);
         distribute_FabArray(solverMatvecMF[iLev], nGrids[iLev],
@@ -618,19 +622,6 @@ void Pic::particle_mover() {
 
   timing_func(nameFunc);
 
-  // if (useExplicitPIC) {
-
-  // MultiFab tmpE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-  // // nodeE/nodeEth is at t_n/t_{n+1}, tmpE is at t_{n+0.5}
-  // MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev], 0, 0,
-  //                   nodeE[iLev].nComp(), nodeE[iLev].nGrow());
-  // for (int i = 0; i < nSpecies; ++i) {
-  //   parts[i]->mover(tmpE, nodeB[iLev], iLev, tc->get_dt(),
-  //                   tc->get_next_dt());
-  // }
-
-  // } else {
-
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
@@ -654,6 +645,227 @@ void Pic::particle_mover() {
   for (int i : kineticSpecies_) {
     parts[i]->redistribute_particles();
   }
+}
+
+namespace {
+
+template <typename Array4Type>
+inline void pack_node_mm_box(const Array4Type& src, const amrex::Box& box,
+                             RealMM* __restrict__ buf) {
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+  const int len_x = hi.x - lo.x + 1;
+  const std::size_t row_bytes = static_cast<std::size_t>(len_x) * sizeof(RealMM);
+  std::size_t p = 0;
+  for (int k = lo.z; k <= hi.z; ++k) {
+    for (int j = lo.y; j <= hi.y; ++j) {
+      std::memcpy(&buf[p], &src(lo.x, j, k), row_bytes);
+      p += len_x;
+    }
+  }
+}
+
+inline void accumulate_node_mm_box(const RealMM* __restrict__ buf,
+                                   const amrex::Box& box,
+                                   const amrex::Array4<RealMM>& dst) {
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+  const int len_x = hi.x - lo.x + 1;
+  const std::size_t n_doubles = static_cast<std::size_t>(len_x) * nMMComponents;
+  std::size_t p = 0;
+  for (int k = lo.z; k <= hi.z; ++k) {
+    for (int j = lo.y; j <= hi.y; ++j) {
+      amrex::Real* __restrict__ dst_ptr = dst(lo.x, j, k).data;
+      const amrex::Real* __restrict__ src_ptr = buf[p].data;
+      for (std::size_t d = 0; d < n_doubles; ++d) {
+        dst_ptr[d] += src_ptr[d];
+      }
+      p += len_x;
+    }
+  }
+}
+
+} // anonymous namespace
+
+//==========================================================
+void Pic::init_boundary_node_mm_comm(int iLev) {
+  if (nodeMM_comm_data.size() != n_lev()) {
+    nodeMM_comm_data.resize(n_lev());
+  }
+
+  auto& cd = nodeMM_comm_data[iLev];
+  if (cd.is_initialized && cd.bdkey == nodeMM[iLev].getBDKey()) {
+    return;
+  }
+
+  cd.loc_tags.clear();
+  cd.local_buf.clear();
+  cd.box_to_loc_tags.clear();
+  cd.sends.clear();
+  cd.recvs.clear();
+
+  const auto& TheFB = nodeMM[iLev].getFB(
+      amrex::IntVect(0), Geom(iLev).periodicity(), false, false, false,
+      nodeMM[iLev].nGrowVect());
+
+  if (TheFB.m_LocTags) {
+    const auto& loc_tags = *TheFB.m_LocTags;
+    const int n_loc = static_cast<int>(loc_tags.size());
+    cd.loc_tags.resize(n_loc);
+
+    std::size_t total_loc_pts = 0;
+    for (int i = 0; i < n_loc; ++i) {
+      const auto& tag = loc_tags[i];
+      cd.loc_tags[i] = {tag.srcIndex, tag.dstIndex, tag.sbox, tag.dbox, total_loc_pts};
+      total_loc_pts += tag.sbox.numPts();
+    }
+    cd.local_buf.resize(total_loc_pts);
+
+    const int nLocalBoxes = nodeMM[iLev].size();
+    cd.box_to_loc_tags.resize(nLocalBoxes);
+    for (int i = 0; i < n_loc; ++i) {
+      int localDst = nodeMM[iLev].localindex(cd.loc_tags[i].dstIndex);
+      if (localDst >= 0 && localDst < nLocalBoxes) {
+        cd.box_to_loc_tags[localDst].push_back(i);
+      }
+    }
+  }
+
+#ifdef BL_USE_MPI
+  if (TheFB.m_SndTags) {
+    cd.sends.reserve(TheFB.m_SndTags->size());
+    for (const auto& kv : *TheFB.m_SndTags) {
+      int dst_rank = kv.first;
+      const auto& tags = kv.second;
+      if (tags.empty()) continue;
+      NodeMMCommData::PeerComm peer;
+      peer.rank = dst_rank;
+      peer.tags.reserve(tags.size());
+      std::size_t offset = 0;
+      for (const auto& tag : tags) {
+        peer.tags.push_back({tag.srcIndex, tag.sbox, offset});
+        offset += tag.sbox.numPts();
+      }
+      peer.totalPts = offset;
+      peer.buf.resize(offset);
+      cd.sends.push_back(std::move(peer));
+    }
+  }
+
+  if (TheFB.m_RcvTags) {
+    cd.recvs.reserve(TheFB.m_RcvTags->size());
+    for (const auto& kv : *TheFB.m_RcvTags) {
+      int src_rank = kv.first;
+      const auto& tags = kv.second;
+      if (tags.empty()) continue;
+      NodeMMCommData::PeerComm peer;
+      peer.rank = src_rank;
+      peer.tags.reserve(tags.size());
+      std::size_t offset = 0;
+      for (const auto& tag : tags) {
+        peer.tags.push_back({tag.dstIndex, tag.dbox, offset});
+        offset += tag.dbox.numPts();
+      }
+      peer.totalPts = offset;
+      peer.buf.resize(offset);
+      cd.recvs.push_back(std::move(peer));
+    }
+  }
+
+  cd.recv_reqs.assign(cd.recvs.size(), MPI_REQUEST_NULL);
+  cd.send_reqs.assign(cd.sends.size(), MPI_REQUEST_NULL);
+#endif
+
+  cd.bdkey = nodeMM[iLev].getBDKey();
+  cd.is_initialized = true;
+}
+
+//==========================================================
+void Pic::sum_boundary_node_mm(int iLev) {
+  BL_PROFILE("Pic::nodeMM_SumBoundary");
+
+  init_boundary_node_mm_comm(iLev);
+  auto& cd = nodeMM_comm_data[iLev];
+
+#ifdef BL_USE_MPI
+  const int seq_num = amrex::ParallelDescriptor::SeqNum();
+  const MPI_Comm comm = amrex::ParallelDescriptor::Communicator();
+  const int n_recvs = static_cast<int>(cd.recvs.size());
+  const int n_sends = static_cast<int>(cd.sends.size());
+
+  cd.recv_reqs.assign(n_recvs, MPI_REQUEST_NULL);
+  cd.send_reqs.assign(n_sends, MPI_REQUEST_NULL);
+
+  // 1. Post non-blocking receives
+  for (int r = 0; r < n_recvs; ++r) {
+    auto& peer = cd.recvs[r];
+    if (peer.totalPts > 0) {
+      MPI_Irecv(reinterpret_cast<void*>(peer.buf.data()),
+                peer.totalPts * sizeof(RealMM), MPI_BYTE,
+                peer.rank, seq_num, comm, &cd.recv_reqs[r]);
+    }
+  }
+
+  // 2. Pack and post non-blocking sends
+  for (int s = 0; s < n_sends; ++s) {
+    auto& peer = cd.sends[s];
+    for (const auto& rt : peer.tags) {
+      const auto src_arr = nodeMM[iLev].array(rt.boxIndex);
+      pack_node_mm_box(src_arr, rt.box, &peer.buf[rt.bufOffset]);
+    }
+    if (peer.totalPts > 0) {
+      MPI_Isend(reinterpret_cast<const void*>(peer.buf.data()),
+                peer.totalPts * sizeof(RealMM), MPI_BYTE,
+                peer.rank, seq_num, comm, &cd.send_reqs[s]);
+    }
+  }
+#endif
+
+  // 3. Snapshot local tags into local_buf (Phase 1)
+  const int n_loc = static_cast<int>(cd.loc_tags.size());
+#ifdef AMREX_USE_OMP
+#pragma omp parallel for schedule(static)
+#endif
+  for (int i = 0; i < n_loc; ++i) {
+    const auto& tag = cd.loc_tags[i];
+    const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
+    pack_node_mm_box(src_arr, tag.sbox, &cd.local_buf[tag.bufOffset]);
+  }
+
+  // 4. Accumulate local tags into destination boxes (Phase 2)
+  const int nLocalBoxes = nodeMM[iLev].size();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+  for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
+    const auto& tag_indices = cd.box_to_loc_tags[localDst];
+    if (tag_indices.empty()) continue;
+
+    auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
+    for (int tag_idx : tag_indices) {
+      const auto& tag = cd.loc_tags[tag_idx];
+      accumulate_node_mm_box(&cd.local_buf[tag.bufOffset], tag.dbox, dst_arr);
+    }
+  }
+
+#ifdef BL_USE_MPI
+  // 5. Wait for MPI receives and unpack/accumulate
+  if (n_recvs > 0) {
+    MPI_Waitall(n_recvs, cd.recv_reqs.data(), MPI_STATUSES_IGNORE);
+    for (int r = 0; r < n_recvs; ++r) {
+      const auto& peer = cd.recvs[r];
+      for (const auto& rt : peer.tags) {
+        auto dst_arr = nodeMM[iLev].array(rt.boxIndex);
+        accumulate_node_mm_box(&peer.buf[rt.bufOffset], rt.box, dst_arr);
+      }
+    }
+  }
+
+  // 6. Wait for MPI sends to finish
+  if (n_sends > 0) {
+    MPI_Waitall(n_sends, cd.send_reqs.data(), MPI_STATUSES_IGNORE);
+  }
+#endif
 }
 
 //==========================================================
@@ -704,8 +916,7 @@ void Pic::calc_mass_matrix() {
     }
 
     if (!useExplicitPIC) {
-      BL_PROFILE("Pic::nodeMM_SumBoundary");
-      nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+      sum_boundary_node_mm(iLev);
     }
   }
 
@@ -782,10 +993,7 @@ void Pic::calc_mass_matrix_amr() {
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
-    {
-      BL_PROFILE("Pic::nodeMM_SumBoundary");
-      nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
-    }
+    sum_boundary_node_mm(iLev);
   }
   Vector<Real> invVol(n_lev());
   for (int iLev = 0; iLev < n_lev(); iLev++) {

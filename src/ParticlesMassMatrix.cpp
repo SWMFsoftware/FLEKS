@@ -87,6 +87,17 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
         // Real weights[27] = { 0 };
         for (int i2 = iMin; i2 <= iMax; i2++) {
           int ip = i2 - i1 + 1;
+#if (AMREX_SPACEDIM == 2)
+          for (int j2 = jMin; j2 <= jMax; j2++) {
+            int jp = j2 - j1 + 1;
+            const int gp = ip * 3 + jp;
+            const Real(&wg1_D)[nDim3] =
+                weights_IIID[i2 - iMin][j2 - jMin][0];
+            for (int iDim = 0; iDim < nDim; iDim++) {
+              data[gp] += wg_D[iDim] * wg1_D[iDim];
+            }
+          }
+#else
           const int gp0 = ip * 9;
           for (int j2 = jMin; j2 <= jMax; j2++) {
             int jp = j2 - j1 + 1;
@@ -102,6 +113,7 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
               }
             }
           }
+#endif
         }
       }
 }
@@ -242,7 +254,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                   for (int i2 = iMin; i2 <= iMax; i2++) {
                     const Real weight =
                         wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
+#if (AMREX_SPACEDIM == 2)
+                    const int idx0 = jp * 27 + (i2 - i1 + 1) * 9;
+#else
                     const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+#endif
 
                     Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
@@ -260,6 +276,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     } // for p
   }
 
+#if (AMREX_SPACEDIM != 2)
   for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
     // Finalize the mass matrix calculation.
     const Box box = mfi.validbox();
@@ -305,6 +322,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           } // jp
         } // k1
   }
+#endif
 }
 //==========================================================
 
@@ -470,7 +488,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
               const Real wg = coef[i][i1 - iMin][j1 - jMin][k1 - kMin];
               auto& data0 = mmArrt[i](i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
+#if (AMREX_SPACEDIM == 3)
                 const int kp = k2 - k1 + 1;
+#endif
                 // if (kp > 0)
                 if (true) {
                   for (int j2 = jMin; j2 <= jMax; j2++) {
@@ -478,7 +498,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
                     for (int i2 = iMin; i2 <= iMax; i2++) {
                       const Real weight =
                           wg * coef[i][i2 - iMin][j2 - jMin][k2 - kMin];
+#if (AMREX_SPACEDIM == 2)
+                      const int idx0 = jp * 27 + (i2 - i1 + 1) * 9;
+#else
                       const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+#endif
 
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
@@ -493,54 +517,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       }
     } // for p
   }
-
-  // for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
-  //   // Finalize the mass matrix calculation.
-  //   const Box box = mfi.validbox();
-  //   const auto lo = lbound(box);
-  //   const auto hi = ubound(box);
-
-  //   Array4<RealMM> const& mmArr = nodeMM[mfi].array();
-
-  //   // We only need the mass matrix on the physical nodes. But the first
-  //   // layer
-  //   // of the ghost nodes may contributes to the physical nodes below (ghost
-  //   // node constributes as a sender). So, we need the '-1' and '+1' staff.
-  //   const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 :
-  //   0; const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1
-  //   : 0;
-
-  //   int gps, gpr; // gp_send, gp_receive
-  //   for (int k1 = kMin; k1 <= kMax; k1++)
-  //     for (int j1 = jMin; j1 <= jMax; j1++)
-  //       for (int i1 = iMin; i1 <= iMax; i1++) {
-  //         const int kp = 2;
-  //         const int kr = nDim > 2 ? k1 + kp - 1 : 0;
-  //         if (kr > kMax || kr < kMin)
-  //           continue;
-  //         auto& datas0 = mmArr(i1, j1, k1);
-  //         for (int jp = 0; jp < 3; jp++) {
-  //           const int jr = j1 + jp - 1;
-  //           if (jr > jMax || jr < jMin)
-  //             continue;
-  //           const int jpr = 2 - jp;
-  //           for (int ip = 0; ip < 3; ip++) {
-  //             const int ir = i1 + ip - 1;
-  //             if (ir > iMax || ir < iMin)
-  //               continue;
-  //             const int ipr = 2 - ip;
-  //             gpr = jpr * 3 + ipr;
-  //             gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
-
-  //             Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
-  //             const Real* const datas = &(datas0[gps * 9]);
-  //             for (int idx = 0; idx < 9; idx++) {
-  //               datar[idx] = datas[idx];
-  //             } // idx
-  //           } // kp
-  //         } // jp
-  //       } // k1
-  // }
 }
 //==========================================================
 

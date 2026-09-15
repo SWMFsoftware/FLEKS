@@ -103,8 +103,6 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
 #endif
 #if AMREX_SPACEDIM > 2
   constexpr int kMin = -1, kMax = 1;
-#else
-  constexpr int kMin = 0, kMax = 0;
 #endif
 
   for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
@@ -116,6 +114,14 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       Real sum = 0.0;
+#if (AMREX_SPACEDIM == 2)
+      for (int di = -1; di <= 1; ++di) {
+        for (int dj = jMin; dj <= jMax; ++dj) {
+          const int gp = (di + 1) * 3 + (dj + 1);
+          sum += rArr(i + di, j + dj, 0) * mmArr(i, j, 0)[gp];
+        }
+      }
+#else
       for (int di = -1; di <= 1; ++di) {
         for (int dj = jMin; dj <= jMax; ++dj) {
           for (int dk = kMin; dk <= kMax; ++dk) {
@@ -124,6 +130,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
           }
         }
       }
+#endif
       lArr(i, j, k) = sum * factor;
     });
   }
