@@ -152,11 +152,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       IntVect loIdx;
       RealVect dShift;
 
-      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
+      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
       //-----calculate interpolate coef end-------------
 
       //----- Mass matrix calculation begin--------------
@@ -394,10 +392,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
       //-----calculate interpolate coef begin-------------
       for (int i = 0; i < nCoef; i++) {
-        find_node_index(p.pos(), Geom(i).ProbLo(), Geom(i).InvCellSize(),
-                        loIdx[i], dShift[i]);
-
-        linear_interpolation_coef(dShift[i], coef[i]);
+        find_node_interpolation(p.pos(), Geom(i).ProbLo(), Geom(i).InvCellSize(),
+                                loIdx[i], dShift[i], coef[i]);
       }
 
       //-----calculate interpolate coef end-------------
@@ -547,11 +543,9 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       IntVect loIdx;
       RealVect dShift;
 
-      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
+      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
       //-----calculate interpolate coef end-------------
 
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];

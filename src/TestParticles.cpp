@@ -265,11 +265,9 @@ void TestParticles::move_and_save_charged_particles(
       //-----calculate interpolation coef begin-----------
       IntVect loIdx;
       RealVect dShift;
-      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
+      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
       //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };
@@ -479,11 +477,10 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
       //-----calculate interpolation coef begin-----------
       IntVect loIdx;
       RealVect dShift;
-      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coefLin[2][2][2];
-      linear_interpolation_coef(dShift, coefLin);
+      find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift,
+                              coefLin);
       //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };
@@ -572,10 +569,10 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
         if (ptRecordSize > 13 && hasJacB) {
           IntVect nodeLoIdx;
           RealVect nodeDShift;
-          find_node_index(p.pos(), Geom(iLev).ProbLo(),
-                          Geom(iLev).InvCellSize(), nodeLoIdx, nodeDShift);
           Real nodeCoef[2][2][2];
-          linear_interpolation_coef(nodeDShift, nodeCoef);
+          find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                  Geom(iLev).InvCellSize(), nodeLoIdx,
+                                  nodeDShift, nodeCoef);
           interpolate_jacobian_matrix(nodeJacBArr, nodeLoIdx, nodeCoef, lo, hi,
                                       gradB);
         }

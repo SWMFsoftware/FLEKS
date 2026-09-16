@@ -157,6 +157,22 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
   find_node_index(xyz, plo, invDx, loIdx, dShift);
 }
 
+inline void find_node_interpolation(
+    const amrex::RealVect& xyz, const amrex::Real* const plo,
+    const amrex::Real* const invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
+  find_node_index(xyz, plo, invDx, loIdx, dShift);
+  linear_interpolation_coef(dShift, coef);
+}
+
+inline void find_cell_interpolation(
+    const amrex::RealVect& xyz, const amrex::Real* const plo,
+    const amrex::Real* const invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
+  find_cell_index(xyz, plo, invDx, loIdx, dShift);
+  linear_interpolation_coef(dShift, coef);
+}
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
     bool b[3][3][3], amrex::IntVect iv, const amrex::Array4<int const> status) {
 

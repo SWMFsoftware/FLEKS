@@ -126,10 +126,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         IntVect loIdx;
         RealVect dShift;
 
-        find_node_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
-
         Real coef[2][2][2];
-        linear_interpolation_coef(dShift, coef);
+        find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
         //-----calculate interpolate coef end-------------
 
         Real bp[3] = { 0, 0, 0 };
@@ -247,14 +245,13 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
-        find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
-
         // Plain cell-centred trilinear gather. The linear weights couple cells
         // loIdx and loIdx+1 (offsets 0 and 1); the 3x3x3 coef array is zero for
         // the unused offset-2 entry.
         Real coef[3][3][3];
         Real coefLin[2][2][2];
-        linear_interpolation_coef(dShift, coefLin);
+        find_cell_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift,
+                                coefLin);
         for (int k = 0; k <= 2; ++k)
           for (int j = 0; j <= 2; ++j)
             for (int i = 0; i <= 2; ++i)
