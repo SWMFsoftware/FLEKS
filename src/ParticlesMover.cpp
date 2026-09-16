@@ -145,22 +145,19 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const Real omz = qdto2mc * bp[iz_];
 
         // end interpolation
-        const Real omsq = (omx * omx + omy * omy + omz * omz);
-        const Real denom = 1.0 / (1.0 + omsq);
-        // solve the position equation
+        const Real velocity[3] = { up, vp, wp };
         const Real ut = up + qdto2mc * ep[ix_];
         const Real vt = vp + qdto2mc * ep[iy_];
         const Real wt = wp + qdto2mc * ep[iz_];
-        // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
-        const Real udotOm = ut * omx + vt * omy + wt * omz;
-        // solve the velocity equation
-        const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
-        const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
-        const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+        const Real electricVelocity[3] = { ut, vt, wt };
+        const Real omega[3] = { omx, omy, omz };
+        Real updatedVelocity[3];
+        boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                   updatedVelocity);
 
-        Real unp1 = 2.0 * uavg - up + u0p[ix_];
-        Real vnp1 = 2.0 * vavg - vp + u0p[iy_];
-        Real wnp1 = 2.0 * wavg - wp + u0p[iz_];
+        const Real unp1 = updatedVelocity[ix_] + u0p[ix_];
+        const Real vnp1 = updatedVelocity[iy_] + u0p[iy_];
+        const Real wnp1 = updatedVelocity[iz_] + u0p[iz_];
 
         p.rdata(iup_) = unp1;
         p.rdata(ivp_) = vnp1;
@@ -264,22 +261,19 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
         const Real omz = qdto2mc * bp[iz_];
 
         // end interpolation
-        const Real omsq = (omx * omx + omy * omy + omz * omz);
-        const Real denom = 1.0 / (1.0 + omsq);
-        // solve the position equation
+        const Real velocity[3] = { up, vp, wp };
         const Real ut = up + qdto2mc * ep[ix_];
         const Real vt = vp + qdto2mc * ep[iy_];
         const Real wt = wp + qdto2mc * ep[iz_];
-        // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
-        const Real udotOm = ut * omx + vt * omy + wt * omz;
-        // solve the velocity equation
-        const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
-        const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
-        const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+        const Real electricVelocity[3] = { ut, vt, wt };
+        const Real omega[3] = { omx, omy, omz };
+        Real updatedVelocity[3];
+        boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                   updatedVelocity);
 
-        Real unp1 = 2.0 * uavg - up + u0p[ix_];
-        Real vnp1 = 2.0 * vavg - vp + u0p[iy_];
-        Real wnp1 = 2.0 * wavg - wp + u0p[iz_];
+        const Real unp1 = updatedVelocity[ix_] + u0p[ix_];
+        const Real vnp1 = updatedVelocity[iy_] + u0p[iy_];
+        const Real wnp1 = updatedVelocity[iz_] + u0p[iz_];
 
         p.rdata(iup_) = unp1;
         p.rdata(ivp_) = vnp1;

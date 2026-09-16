@@ -199,6 +199,38 @@ inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
   coef[1][1][1] = xy[0][0] * interpZ[0];
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void boris_push_nonrelativistic(
+    const amrex::Real (&velocity)[3],
+    const amrex::Real (&electric_velocity)[3],
+    const amrex::Real (&omega)[3], amrex::Real (&updated_velocity)[3]) {
+  const amrex::Real omsq =
+      omega[0] * omega[0] + omega[1] * omega[1] + omega[2] * omega[2];
+  const amrex::Real denom = 1.0 / (1.0 + omsq);
+  const amrex::Real udotOm = electric_velocity[0] * omega[0] +
+                             electric_velocity[1] * omega[1] +
+                             electric_velocity[2] * omega[2];
+
+  const amrex::Real uavg =
+      (electric_velocity[0] +
+       (electric_velocity[1] * omega[2] - electric_velocity[2] * omega[1] +
+        udotOm * omega[0])) *
+      denom;
+  const amrex::Real vavg =
+      (electric_velocity[1] +
+       (electric_velocity[2] * omega[0] - electric_velocity[0] * omega[2] +
+        udotOm * omega[1])) *
+      denom;
+  const amrex::Real wavg =
+      (electric_velocity[2] +
+       (electric_velocity[0] * omega[1] - electric_velocity[1] * omega[0] +
+        udotOm * omega[2])) *
+      denom;
+
+  updated_velocity[ix_] = 2.0 * uavg - velocity[ix_];
+  updated_velocity[iy_] = 2.0 * vavg - velocity[iy_];
+  updated_velocity[iz_] = 2.0 * wavg - velocity[iz_];
+}
+
 template <typename T, int nRow, int nCol>
 bool linear_solver_Gauss_Elimination(
     int m, int n, amrex::Array2D<T, 0, nRow - 1, 0, nCol - 1>& a,

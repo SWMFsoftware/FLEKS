@@ -1,6 +1,7 @@
 #include <AMReX_Utility.H>
 
 #include "TestParticles.h"
+#include "Utility.h"
 
 using namespace amrex;
 
@@ -306,16 +307,16 @@ void TestParticles::move_and_save_charged_particles(
       const Real omy = qdto2mc * bp[iy_] * invGamma;
       const Real omz = qdto2mc * bp[iz_] * invGamma;
 
-      const Real denom = 1.0 / (1.0 + omx * omx + omy * omy + omz * omz);
-      const Real udotOm = ut * omx + vt * omy + wt * omz;
-      // Solve the velocity equation
-      const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
-      const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
-      const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+      const Real velocity[3] = { up, vp, wp };
+      const Real electricVelocity[3] = { ut, vt, wt };
+      const Real omega[3] = { omx, omy, omz };
+      Real updatedVelocity[3];
+      boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                 updatedVelocity);
 
-      Real unp1 = 2.0 * uavg - up;
-      Real vnp1 = 2.0 * vavg - vp;
-      Real wnp1 = 2.0 * wavg - wp;
+      Real unp1 = updatedVelocity[ix_];
+      Real vnp1 = updatedVelocity[iy_];
+      Real wnp1 = updatedVelocity[iz_];
 
       if (isRelativistic) {
         // Convert: gamma*vel -> vel
@@ -511,16 +512,16 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
       const Real omy = qdto2mc * bp[iy_] * invGamma;
       const Real omz = qdto2mc * bp[iz_] * invGamma;
 
-      const Real denom = 1.0 / (1.0 + omx * omx + omy * omy + omz * omz);
-      const Real udotOm = ut * omx + vt * omy + wt * omz;
-      // Solve the velocity equation
-      const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
-      const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
-      const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+      const Real velocity[3] = { up, vp, wp };
+      const Real electricVelocity[3] = { ut, vt, wt };
+      const Real omega[3] = { omx, omy, omz };
+      Real updatedVelocity[3];
+      boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                 updatedVelocity);
 
-      Real unp1 = 2.0 * uavg - up;
-      Real vnp1 = 2.0 * vavg - vp;
-      Real wnp1 = 2.0 * wavg - wp;
+      Real unp1 = updatedVelocity[ix_];
+      Real vnp1 = updatedVelocity[iy_];
+      Real wnp1 = updatedVelocity[iz_];
 
       if (isRelativistic) {
         // Convert: gamma*vel -> vel
