@@ -1,29 +1,15 @@
 name: Memory Regression
 
-# Memory regression check for the standalone tests. Every standalone FLEKS run
-# already produces the AMReX TinyProfiler report (per-region allocation counts
-# and peak bytes) and the FLEKS load-balance report (RSS). This workflow builds
-# the merge base and the PR head, runs the same capture script against both
-# binaries, and diffs the result.
+# Builds the merge base and the PR head, runs the same capture script against
+# both binaries, and diffs the result.
 #
-# Both binaries are built and stashed first, then the PR tree is restored before
-# anything is captured. That order matters: the capture scripts live in tests/
-# and only exist on the PR branch, so a reference capture run against a checked
-# out merge base would not find them at all. Only the binary has to come from
-# the base.
+# Both builds are in this job because allocator behaviour is not comparable
+# across runners. The reference capture is cached on the merge-base SHA, so it
+# is produced once per master commit and reused by every PR against that base.
 #
-# Building twice is the expensive part, so the reference capture is cached under
-# a key derived from the merge base SHA: it only ever has to be produced once
-# per master commit and is then reused by every PR against that base.
-#
-# Note on why both builds happen in the SAME job rather than in parallel jobs:
-# GitHub-hosted runners differ enough between machines that allocator behaviour
-# is not comparable across jobs, and the reference has to be built in-tree
-# anyway (the gitignored util/AMReX dependency tree is not in a fresh worktree).
-#
-# Only memory is compared -- timings are captured in the same document but not
-# gated, because two runs of identical code already move individual regions by
-# tens of percent. See tests/compare_memory.py.
+# Only the binary comes from the base: the capture scripts live in tests/ and do
+# not exist on the merge base, so the PR tree must be checked out while
+# capturing. Only memory is compared; see tests/compare_memory.py.
 
 on:
   pull_request:
@@ -75,9 +61,6 @@ jobs:
           path: SWMF/PC/FLEKS/memory_master.json
           key: memory-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
 
-      # -------------------------------------------------------------------
-      # Build both binaries, keeping the PR tree checked out at the end.
-      # -------------------------------------------------------------------
       - name: Build candidate (PR head)
         working-directory: SWMF/PC/FLEKS
         shell: bash
@@ -105,9 +88,6 @@ jobs:
           # Back to the PR tree, whose tests/ holds the capture scripts.
           git checkout "${{ github.event.pull_request.head.sha }}"
 
-      # -------------------------------------------------------------------
-      # Capture: same scripts, different binaries.
-      # -------------------------------------------------------------------
       - name: Capture reference memory
         if: steps.cache-reference.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
@@ -125,11 +105,6 @@ jobs:
             --exe "$RUNNER_TEMP/FLEKS_pr.exe" \
             --out memory_pr.json
 
-      # -------------------------------------------------------------------
-      # Compare
-      # -------------------------------------------------------------------
-      # Exit status: 1 if an allocation count, peak bytes, unfreed memory or
-      # RSS regression was found.
       - name: Compare memory
         id: compare
         working-directory: SWMF/PC/FLEKS
