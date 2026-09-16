@@ -14,7 +14,13 @@ import os
 from tests._shared import run_dir as _run_dir
 
 logger = logging.getLogger(__name__)
-set_run_dir = _run_dir.set_run_dir
+RUN_DIR = _run_dir.RUN_DIR
+
+
+def set_run_dir(run_dir):
+    """Point the plot helpers at the current run directory."""
+    _run_dir.set_run_dir(run_dir)
+    globals()["RUN_DIR"] = run_dir
 
 
 def validate_hybrid(pic_diags=None, test_name=None):
