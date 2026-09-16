@@ -272,16 +272,8 @@ void TestParticles::move_and_save_charged_particles(
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                         loIdx[iz_] + k) };
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += nodeBArr(ijk, iDim) * coef[i][j][k];
-              ep[iDim] += nodeEArr(ijk, iDim) * coef[i][j][k];
-            }
-          }
+      interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
+      interpolate_vector_field(nodeEArr, loIdx, coef, lo, hi, ep);
 
       Real gamma = 1;
       Real invGamma = 1. / gamma;
@@ -485,17 +477,8 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                         loIdx[iz_] + k) };
-            const Real c0 = coefLin[i][j][k];
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += centerBArr(ijk, iDim) * c0;
-              ep[iDim] += centerEArr(ijk, iDim) * c0;
-            }
-          }
+      interpolate_vector_field(centerBArr, loIdx, coefLin, lo, hi, bp);
+      interpolate_vector_field(centerEArr, loIdx, coefLin, lo, hi, ep);
 
       Real gamma = 1;
       Real invGamma = 1. / gamma;

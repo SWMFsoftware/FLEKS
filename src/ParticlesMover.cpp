@@ -133,18 +133,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         Real bp[3] = { 0, 0, 0 };
         Real ep[3] = { 0, 0, 0 };
         Real u0p[3] = { 0, 0, 0 };
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                           loIdx[iz_] + k) };
-
-              const Real& c0 = coef[i][j][k];
-              for (int iDim = 0; iDim < nDim3; iDim++) {
-                bp[iDim] += nodeBArr(ijk, iDim) * c0;
-                ep[iDim] += nodeEArr(ijk, iDim) * c0;
-              }
-            }
+        interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
+        interpolate_vector_field(nodeEArr, loIdx, coef, lo, hi, ep);
 
         up = up - u0p[ix_];
         vp = vp - u0p[iy_];
@@ -262,18 +252,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
         Real bp[3] = { 0, 0, 0 };
         Real ep[3] = { 0, 0, 0 };
         Real u0p[3] = { 0, 0, 0 };
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                           loIdx[iz_] + k) };
-
-              const Real& c0 = coef[i - lo.x][j - lo.y][k - lo.z];
-              for (int iDim = 0; iDim < nDim3; iDim++) {
-                bp[iDim] += centerBArr(ijk, iDim) * c0;
-                ep[iDim] += centerEArr(ijk, iDim) * c0;
-              }
-            }
+        interpolate_vector_field(centerBArr, loIdx, coef, lo, hi, bp);
+        interpolate_vector_field(centerEArr, loIdx, coef, lo, hi, ep);
 
         up = up - u0p[ix_];
         vp = vp - u0p[iy_];
