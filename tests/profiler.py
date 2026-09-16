@@ -362,22 +362,62 @@ def format_load_balance(tables, step=1):
 
 
 # ---------------------------------------------------------------------------
-# Self-test against the bundled sample
+# Self-test
+#
+# A miniature run report covering the report variants that matter: the two
+# timing tables, a memory table with unit suffixes, a single-rank load-balance
+# table, a multi-rank one where min/avg/max differ, and one with the optional
+# Nfree/CurrentMem columns.
 # ---------------------------------------------------------------------------
-_SAMPLE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "profiler_samples", "tinyprofiler_beam.txt")
-_SAMPLE_LOAD_BALANCE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "profiler_samples", "load_balance_beam.txt")
+_SELF_TEST_REPORT = """\
+TinyProfiler total time across processes [min...avg...max]: 0.5 ... 0.5 ... 0.5
+
+-------------------------------------------------------------------------------------------
+Name                                        NCalls  Excl. Min  Excl. Avg  Excl. Max   Max %
+-------------------------------------------------------------------------------------------
+Pts::calc_mass_matrix                          126    0.07161    0.07161    0.07161  18.43%
+Pts::charged_particle_mover                    126    0.01967    0.01967    0.01967   5.06%
+-------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------
+Name                                        NCalls  Incl. Min  Incl. Avg  Incl. Max   Max %
+-------------------------------------------------------------------------------------------
+Pts::calc_mass_matrix                          126     0.0717     0.0717     0.0717  18.43%
+-------------------------------------------------------------------------------------------
+
+Cpu Memory Usage:
+---------------------------------------------------
+Name                     Nalloc    AvgMem    MaxMem
+---------------------------------------------------
+Grid::regrid_base            50  4755 KiB  4859 KiB
+Pic::calculate_phi           63     0   B   512   B
+---------------------------------------------------
+
+Async Memory Usage:
+-------------------------------------------------------------------------
+Name      Nalloc  Nfree  AvgMem min  AvgMem avg  AvgMem max  CurrentMem max
+-------------------------------------------------------------------------
+Pts::merge    4      3       1 MiB       2 MiB       3 MiB          64 KiB
+-------------------------------------------------------------------------
+
+==== FLEKS1:  Cycle 1 ====
+
+===============================Load balance report=============================
+|     Value          |      Min      |     Avg      |      Max     |where(max)|
+|Cells  # of all levs|          64.0 |         64.0 |         64.0 |         0|
+|Memory(MB)          |          54.4 |         54.4 |         54.4 |         0|
+===============================================================================
+
+===============================Load balance report=============================
+|     Value          |      Min      |     Avg      |      Max     |where(max)|
+|Cells  # of all levs|           0.0 |         32.0 |         64.0 |         0|
+|Memory(MB)          |          42.2 |         48.5 |         54.7 |         0|
+===============================================================================
+"""
 
 
 def self_test():
-    """Parse the bundled beam sample and check a few known values."""
-    if not os.path.isfile(_SAMPLE):
-        print(f"sample not found: {_SAMPLE}")
-        return 1
-
-    profile = parse_tinyprofiler_file(_SAMPLE)
+    """Parse _SELF_TEST_REPORT and check the values it encodes."""
     checks, failures = [], []
 
     def check(label, ok, detail=""):
@@ -385,57 +425,53 @@ def self_test():
         if not ok:
             failures.append(f"{label}: {detail}")
 
+    profile = parse_tinyprofiler(_SELF_TEST_REPORT)
     total = profile.get("total_time_s", {})
-    check("total time parsed", total.get("max", 0) > 0, f"got {total}")
+    check("total time", total.get("max") == 0.5, f"got {total}")
 
     timing = profile.get("timing", {})
-    check("timing regions parsed", len(timing) > 50, f"got {len(timing)}")
-    mover = timing.get("Pts::charged_particle_mover")
-    check("mover region present", mover is not None, "missing")
-    if mover:
-        check("mover ncalls == 126", int(mover.get("ncalls", -1)) == 126,
-              f"got {mover.get('ncalls')}")
-        check("mover has excl and incl",
-              "excl_max" in mover and "incl_max" in mover, f"got {mover}")
+    mover = timing.get("Pts::charged_particle_mover", {})
+    check("timing ncalls", mover.get("ncalls") == 126, f"got {mover.get('ncalls')}")
+    check("timing excl and incl merged",
+          mover.get("excl_max") == 0.01967 and mover.get("incl_max") is None,
+          f"got {mover}")
+    check("max_pct without the % sign",
+          timing.get("Pts::calc_mass_matrix", {}).get("max_pct") == 18.43,
+          f"got {timing.get('Pts::calc_mass_matrix')}")
+    check("inclusive table merged into the same region",
+          timing.get("Pts::calc_mass_matrix", {}).get("incl_max") == 0.0717,
+          f"got {timing.get('Pts::calc_mass_matrix')}")
 
-    memory = profile.get("memory", {})
-    check("Cpu Memory arena present", "Cpu Memory" in memory,
-          f"got {sorted(memory)}")
-    cpu = memory.get("Cpu Memory", {})
-    regrid = cpu.get("Grid::regrid_base")
-    check("Grid::regrid_base present", regrid is not None, "missing")
-    if regrid:
-        check("regrid nalloc == 50", int(regrid.get("nalloc", -1)) == 50,
-              f"got {regrid.get('nalloc')}")
-        # 4859 KiB, as printed by AMReX.
-        check("regrid maxmem in bytes",
-              regrid.get("maxmem_max", 0) == 4859 * 1024,
-              f"got {regrid.get('maxmem_max')}")
+    cpu = profile.get("memory", {}).get("Cpu Memory", {})
+    regrid = cpu.get("Grid::regrid_base", {})
+    # 4859 KiB, as AMReX prints it.  Name and unit are two tokens.
+    check("KiB converted to bytes",
+          regrid.get("maxmem_max") == 4859 * 1024, f"got {regrid}")
+    phi = cpu.get("Pic::calculate_phi", {})
+    # Columns are assigned right-to-left, so the trailing "512   B" must land
+    # on MaxMem and the "0   B" before it on AvgMem.
+    check("trailing columns assigned in order",
+          (phi.get("nalloc"), phi.get("avgmem_max"), phi.get("maxmem_max"))
+          == (63, 0, 512), f"got {phi}")
+    check("Nfree absent unless reported", "nfree" not in phi, f"got {phi}")
 
-    # --- load-balance report (RSS) ---
-    if not os.path.isfile(_SAMPLE_LOAD_BALANCE):
-        print(f"sample not found: {_SAMPLE_LOAD_BALANCE}")
-        return 1
-    tables = parse_load_balance_file(_SAMPLE_LOAD_BALANCE)
-    check("3 load-balance tables parsed", len(tables) == 3, f"got {len(tables)}")
-    if len(tables) == 3:
-        first, last, two_rank = tables
-        check("first report RSS max == 54.4",
-              first.get("Memory(MB)", {}).get("max") == 54.4,
-              f"got {first.get('Memory(MB)')}")
-        check("last report RSS max == 54.6",
-              last.get("Memory(MB)", {}).get("max") == 54.6,
-              f"got {last.get('Memory(MB)')}")
-        check("labels normalised",
-              "Blocks # of lev 0" in first and "Cells # of all levs" in first,
-              f"got {sorted(first)}")
-        check("cells/parts parsed",
-              first.get("Cells # of all levs", {}).get("max") == 64.0
-              and first.get("Parts # of all levs", {}).get("max") == 12800.0,
-              f"got {first.get('Cells # of all levs')}")
-        # 2 ranks: the three columns must stay distinct.
-        rss = two_rank.get("Memory(MB)", {})
-        check("2-rank RSS min/avg/max == 42.2/48.5/54.7",
+    async_ = profile.get("memory", {}).get("Async Memory", {})
+    merge = async_.get("Pts::merge", {})
+    check("multi-column memory table",
+          (merge.get("nalloc"), merge.get("nfree"), merge.get("curmem_max"))
+          == (4, 3, 64 * 1024), f"got {merge}")
+    check("AvgMem max column", merge.get("avgmem_max") == 3 * 1024**2, f"got {merge}")
+
+    tables = parse_load_balance(_SELF_TEST_REPORT)
+    check("load-balance table count", len(tables) == 2, f"got {len(tables)}")
+    if len(tables) == 2:
+        check("1-rank RSS", tables[0].get("Memory(MB)", {}).get("max") == 54.4,
+              f"got {tables[0].get('Memory(MB)')}")
+        check("label normalised",
+              tables[0].get("Cells # of all levs", {}).get("max") == 64.0,
+              f"got {sorted(tables[0])}")
+        rss = tables[1].get("Memory(MB)", {})
+        check("2-rank RSS min/avg/max distinct",
               (rss.get("min"), rss.get("avg"), rss.get("max")) == (42.2, 48.5, 54.7),
               f"got {rss}")
 
@@ -447,8 +483,7 @@ def self_test():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("input", nargs="?", default=_SAMPLE,
-                        help="TinyProfiler output file (default: bundled sample)")
+    parser.add_argument("input", nargs="?", help="run report / prof.txt to parse")
     parser.add_argument("-o", "--output", help="write the parsed profile as JSON")
     parser.add_argument("--top", type=int, help="show only the N largest entries")
     parser.add_argument("--memory-only", action="store_true",
@@ -463,6 +498,9 @@ def main(argv=None):
 
     if args.self_test:
         return self_test()
+
+    if not args.input:
+        parser.error("an input file is required (or use --self-test)")
 
     if args.load_balance:
         print(format_load_balance(parse_load_balance_file(args.input),
