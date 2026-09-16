@@ -1,9 +1,28 @@
 #!/usr/bin/env python3
-"""Parser for AMReX TinyProfiler output (timing + per-region memory).
+"""Parsers for the standalone run report.
 
-FLEKS prints the AMReX TinyProfiler report at the end of every standalone run
-(``amrex::Finalize()`` -> ``BL_TINY_PROFILE_FINALIZE()`` and
-``BL_TINY_PROFILE_MEMORYFINALIZE()``).  It contains
+Two independent reports are parsed from a standalone run:
+
+* the **AMReX TinyProfiler** report (``parse_tinyprofiler``), printed at
+  ``amrex::Finalize()``, giving per-region timings and per-region allocation
+  counts / peak bytes;
+* the **FLEKS load-balance report** (``parse_load_balance``), printed by
+  ``Pic::report_load_balance()`` whenever ``doReport`` is set, giving blocks /
+  cells / particles per level and the **resident set size (RSS) in MB** as a
+  min/avg/max across MPI ranks.
+
+The two are complementary: the arena profiler attributes allocations to a
+FLEKS function but only sees ``MultiFab``/``FArrayBox``/particle-tile traffic,
+while RSS covers the whole process -- including ``std::vector`` and plain
+``operator new`` traffic -- but cannot attribute it to a region.
+
+See ``parse_load_balance`` for why ``#MEMORY`` must *not* be used to obtain the
+RSS series.
+
+TinyProfiler report
+-------------------
+
+It contains
 
 * a total wall-clock line,
 * two timing tables (exclusive, then inclusive) with columns
@@ -29,7 +48,8 @@ Usage::
 
     python3 tests/profiler.py prof.txt              # human-readable summary
     python3 tests/profiler.py prof.txt -o prof.json # write JSON
-    python3 tests/profiler.py --self-test           # parse the bundled sample
+    python3 tests/profiler.py run.log --load-balance --step 10   # RSS series
+    python3 tests/profiler.py --self-test           # parse the bundled samples
 """
 import argparse
 import json
@@ -211,6 +231,69 @@ def parse_tinyprofiler_file(path):
 
 
 # ---------------------------------------------------------------------------
+# FLEKS load-balance report (RSS)
+# ---------------------------------------------------------------------------
+_LOAD_BALANCE_START = re.compile(r"^=+\s*Load balance report\s*=+\s*$")
+_RULE_RE = re.compile(r"^[-=]+\s*$")
+
+
+def parse_load_balance(text):
+    """Parse every FLEKS load-balance table in a run log.
+
+    ``Pic::report_load_balance()`` prints one table per report step::
+
+        ===============================Load balance report=============================
+        |     Value          |      Min      |     Avg      |      Max     |where(max)|
+        |Cells  # of all levs|          64.0 |         64.0 |         64.0 |         0|
+        |Memory(MB)          |          54.4 |         54.4 |         54.4 |         0|
+        ===============================================================================
+
+    Returns a list of ``{label: {"min", "avg", "max", "where"}}`` in order of
+    appearance; ``Memory(MB)`` is the resident set size of each rank in MB and
+    the three columns are min/avg/max across MPI ranks.
+
+    Note that the RSS series must **not** be obtained by enabling ``#MEMORY``:
+    that command frees arena memory, flushes the tile cache, calls
+    ``ShrinkToFit()`` on every particle container and ``malloc_trim(0)`` every
+    ``dnMemory`` cycles (``Pic::free_memory()``), which perturbs both the RSS
+    trajectory and the allocation counts we are measuring.  The report is
+    printed anyway whenever ``doReport`` is set, so no parameter is needed.
+    """
+    tables, current = [], None
+    for line in text.splitlines():
+        if _LOAD_BALANCE_START.match(line):
+            current = {}
+            continue
+        if current is None:
+            continue
+        if _RULE_RE.match(line) and "=" in line:
+            # The closing "===" line terminates the table; the "-" rules
+            # between sections are just visual separators.
+            tables.append(current)
+            current = None
+            continue
+        if _RULE_RE.match(line) or "|" not in line:
+            continue
+
+        fields = [f.strip() for f in line.strip().strip("|").split("|")]
+        if len(fields) < 5 or fields[0] == "Value":
+            continue
+        label = re.sub(r"\s+", " ", fields[0])
+        try:
+            current[label] = {"min": float(fields[1]), "avg": float(fields[2]),
+                              "max": float(fields[3]), "where": int(fields[4])}
+        except ValueError:
+            continue
+
+    return tables
+
+
+def parse_load_balance_file(path):
+    with open(path, "r") as handle:
+        return parse_load_balance(handle.read())
+
+
+# ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
 def _fmt_bytes(nbytes):
@@ -259,11 +342,33 @@ def format_summary(profile, top=None, memory_only=False):
     return "\n".join(out)
 
 
+def format_load_balance(tables, step=1):
+    """Render a list of load-balance tables as a plain-text report."""
+    if not tables:
+        return "no load-balance report found"
+    out = [f"{len(tables)} load-balance report(s)",
+           f"  {'report':>6} {'RSS min':>9} {'RSS avg':>9} {'RSS max':>9} "
+           f"{'cells':>10} {'parts':>12}"]
+    for i, table in enumerate(tables):
+        if i % step and i != len(tables) - 1:
+            continue
+        rss = table.get("Memory(MB)", {})
+        cells = table.get("Cells # of all levs", {})
+        parts = table.get("Parts # of all levs", {})
+        out.append(f"  {i:>6} {rss.get('min', 0):>9.1f} {rss.get('avg', 0):>9.1f} "
+                   f"{rss.get('max', 0):>9.1f} {cells.get('max', 0):>10.1f} "
+                   f"{parts.get('max', 0):>12.1f}")
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------------------
 # Self-test against the bundled sample
 # ---------------------------------------------------------------------------
 _SAMPLE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "profiler_samples", "tinyprofiler_beam.txt")
+_SAMPLE_LOAD_BALANCE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "profiler_samples", "load_balance_beam.txt")
 
 
 def self_test():
@@ -307,6 +412,33 @@ def self_test():
               regrid.get("maxmem_max", 0) == 4859 * 1024,
               f"got {regrid.get('maxmem_max')}")
 
+    # --- load-balance report (RSS) ---
+    if not os.path.isfile(_SAMPLE_LOAD_BALANCE):
+        print(f"sample not found: {_SAMPLE_LOAD_BALANCE}")
+        return 1
+    tables = parse_load_balance_file(_SAMPLE_LOAD_BALANCE)
+    check("3 load-balance tables parsed", len(tables) == 3, f"got {len(tables)}")
+    if len(tables) == 3:
+        first, last, two_rank = tables
+        check("first report RSS max == 54.4",
+              first.get("Memory(MB)", {}).get("max") == 54.4,
+              f"got {first.get('Memory(MB)')}")
+        check("last report RSS max == 54.6",
+              last.get("Memory(MB)", {}).get("max") == 54.6,
+              f"got {last.get('Memory(MB)')}")
+        check("labels normalised",
+              "Blocks # of lev 0" in first and "Cells # of all levs" in first,
+              f"got {sorted(first)}")
+        check("cells/parts parsed",
+              first.get("Cells # of all levs", {}).get("max") == 64.0
+              and first.get("Parts # of all levs", {}).get("max") == 12800.0,
+              f"got {first.get('Cells # of all levs')}")
+        # 2 ranks: the three columns must stay distinct.
+        rss = two_rank.get("Memory(MB)", {})
+        check("2-rank RSS min/avg/max == 42.2/48.5/54.7",
+              (rss.get("min"), rss.get("avg"), rss.get("max")) == (42.2, 48.5, 54.7),
+              f"got {rss}")
+
     for label, ok, detail in checks:
         print(f"  [{'ok' if ok else 'FAIL'}] {label}" + (f" ({detail})" if not ok else ""))
     print(f"\n{len(checks) - len(failures)}/{len(checks)} checks passed")
@@ -321,12 +453,21 @@ def main(argv=None):
     parser.add_argument("--top", type=int, help="show only the N largest entries")
     parser.add_argument("--memory-only", action="store_true",
                         help="report only the memory tables")
+    parser.add_argument("--load-balance", action="store_true",
+                        help="parse the FLEKS load-balance (RSS) reports instead")
+    parser.add_argument("--step", type=int, default=1,
+                        help="with --load-balance, print every Nth report")
     parser.add_argument("--self-test", action="store_true",
                         help="parse the bundled sample and verify known values")
     args = parser.parse_args(argv)
 
     if args.self_test:
         return self_test()
+
+    if args.load_balance:
+        print(format_load_balance(parse_load_balance_file(args.input),
+                                  step=max(1, args.step)))
+        return 0
 
     profile = parse_tinyprofiler_file(args.input)
     if args.output:
