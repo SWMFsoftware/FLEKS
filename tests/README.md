@@ -122,119 +122,46 @@ the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and the
 particle tracker test (`performance/PARAM.in.pt`), and writes the results to
 `tests/performance_summary.md`.
 
-### Profiler Regression (memory, master vs PR)
+### Memory Regression (master vs PR)
 
-Every standalone run already ends with the AMReX TinyProfiler report: per-region
-timings plus, for each profiled arena, the **allocation count and peak bytes
-attributed to the enclosing `BL_PROFILE` region** — that is, per FLEKS
-function. The same run also prints the FLEKS load-balance report, which carries
-**RSS**. Three scripts turn those into a memory regression check:
-
-| Script | Purpose |
-|---|---|
-| `tests/profiler.py` | parses the run report into a comparable dict |
-| `tests/profile_tests.py` | runs a selection of tests and captures one JSON |
-| `tests/compare_profiles.py` | diffs two captures and flags memory regressions |
+Every standalone run already reports memory, so no new instrumentation is
+needed: the AMReX TinyProfiler report gives the allocation count and peak bytes
+per `BL_PROFILE` region, and the FLEKS load-balance report gives process RSS.
+Two scripts capture and compare them — timings are not compared:
 
 ```bash
-# Capture the memory of the current working tree (~25 s here).
-python3 tests/profile_tests.py --out profile_pr.json
+python3 tests/capture_memory.py --out mine.json                # step 1: your tree
+python3 tests/capture_memory.py --out base.json --ref master   # step 1: reference
+python3 tests/compare_memory.py base.json mine.json            # step 2: compare
+```
 
-# Capture the reference, e.g. from a master worktree.
-python3 tests/profile_tests.py --out profile_master.json --ref master
+`compare_memory.py` prints a table and exits non-zero on a regression. Run
+either script with `--help` for the options; the ones worth knowing are
+`capture_memory.py --list` (which decks are captured — beam, performance.hybrid,
+reconnection, shock and 2-rank beam, ~25 s in total) and `--verify`, which
+reports how reproducible memory is on your machine and is what `--rss-tol`
+should be tuned from.
 
-# Diff them. Only memory is compared; non-zero exit on a regression.
-python3 tests/compare_profiles.py profile_master.json profile_pr.json
-python3 tests/compare_profiles.py profile_master.json profile_pr.json --out diff.md
+Arena counts and peak bytes are exact integers across runs, so any increase
+fails. RSS drifts by up to 0.4 MB between runs, so it gets a tolerance
+(`--rss-tol`, default 2 MB) and only the per-rank maximum is gated.
 
-# How reproducible is memory on this machine? (tune --rss-tol from it)
-python3 tests/profile_tests.py --verify
+CI runs both steps on the same runner and comments on the PR:
+`.github/workflows/memory_test.yml`.
 
-# Inspect a single run report
+Two notes:
+
+* Do **not** enable `#MEMORY` to obtain the RSS series — it is not a reporting
+  switch. Every `dnMemory` cycles it also calls `Pic::free_memory()`, which runs
+  `CArena::freeUnused()`, `ShrinkToFit()` on every particle container and
+  `malloc_trim(0)`, perturbing exactly what is being measured. The report is
+  printed anyway whenever `doReport` is set.
+* The arena profiler only sees `MultiFab`/`FArrayBox`/particle-tile traffic. RSS
+  covers the rest (`std::vector`, `new`) but cannot attribute it to a function.
+
+To inspect a single run report outside the regression workflow:
+
+```bash
 python3 tests/profiler.py prof.txt --top 10          # timing + arena memory
 python3 tests/profiler.py run.log --load-balance     # RSS series
-python3 tests/profiler.py --self-test
 ```
-
-The captured selection is deliberately small — it has to run twice inside one CI
-job — and covers the dominant cost centres:
-
-| Entry | Covers |
-|---|---|
-| `beam.n1` | full PIC: particle mover, implicit E solve, GMRES |
-| `performance.hybrid.n1` | hybrid: Ohm assembly + Faraday advance |
-| `reconnection.n1` | 2D moment deposition and current calculation |
-| `shock.n1` | boundary injection + mover |
-| `beam.n2` | 2 ranks, so MPI-related allocations are covered |
-
-`profile_tests.py --list` shows the current selection; `--test beam` restricts
-to a single entry.
-
-**Gating policy.** Two memory families are compared. Timings are deliberately
-**not** gated — two runs of identical code already move individual regions by
-tens of percent, so `tests/validate_performance.py` is the tool for tracking
-speed and this one is only about memory.
-
-*Arena allocations — exact.* Counts and peak bytes are exact integers for a
-fixed problem, rank count and RNG seed; `--verify` confirms they are
-bit-identical across repeated runs here:
-
-* `nalloc` — normalised per call when the call count changed, so an extra
-  allocation *inside* a function is flagged rather than the function merely
-  being called more often;
-* `maxmem_max` — peak bytes held by the region (an extra temporary `MultiFab`
-  shows up here);
-* `curmem_max` — anything still allocated at finalize, i.e. a leak. A missing
-  column counts as zero, so a leak newly introduced by the PR is caught even
-  though the baseline has no column for it.
-
-*RSS — tolerance.* `Memory(MB)` from the load-balance report covers the whole
-process, including the `std::vector` / `operator new` traffic the arena tables
-cannot see, but it is **not** bit-identical between runs: on an idle machine
-`--verify` shows individual values moving by up to 0.4 MB. `--rss-tol`
-(default 2 MB) is the allowed growth, and it is the only knob that normally
-needs tuning — re-run `--verify` after moving to a new machine, it prints the
-measured spread and a suggested value. Only the per-rank maximum column is
-gated; `min`/`avg` are context. The `Cells`/`Parts` counts are compared too, so
-a change in problem size (which would explain an RSS move) is flagged rather
-than silently compared.
-
-Regions added or removed, fewer allocations, and other non-regressions are
-listed under "Other changes" and never fail.
-
-The runner passes `tiny_profiler.print_threshold=0` (the 1 % AMReX default folds
-small regions into `Other`, hiding exactly the regressions we look for) and
-`tiny_profiler.output_file` so the report is parsed from a file rather than
-scraped out of the physics log.
-
-**Do not enable `#MEMORY` to get the RSS series.** It is not a reporting switch:
-every `dnMemory` cycles it also calls `Pic::free_memory()`, which runs
-`CArena::freeUnused()` on `The_Arena` and `The_Pinned_Arena`, flushes the tile
-array cache, calls `ShrinkToFit()` on every particle container and
-`malloc_trim(0)` — perturbing the RSS trajectory, the allocation counts and the
-particle capacities being compared. The report is printed anyway whenever
-`doReport` is set. To inspect a captured log directly:
-
-```bash
-python3 tests/profiler.py run.log --load-balance --step 10
-```
-
-**Known blind spot:** the arena profiler only sees `MultiFab` / `FArrayBox` /
-particle-tile traffic. A `std::vector` or `new` added to a hot loop is invisible
-to it. RSS closes that gap at *process* granularity — it catches the growth,
-just not which function caused it. Attributing it needs a unit-test-level
-`operator new` counter (see the unit-test plan), which is a different tool.
-
-Two captures are checked in under `tests/profiler_samples/` and are used by
-`python3 tests/profiler.py --self-test`: `tinyprofiler_beam.txt` (timing and
-per-region memory) and `load_balance_beam.txt` (RSS, including a 2-rank report
-where min/avg/max differ).
-
-**In CI** this runs as the *Profiler Memory* workflow
-(`.github/workflows/profile_test.yml`). Because GitHub-hosted runners are not
-reproducible across machines, the reference and the candidate are captured back
-to back **in the same job on the same runner**. To keep that affordable, only
-the reference is cached, under a key derived from the merge-base SHA — so it is
-built once per master commit and reused by every PR against that base. The job
-goes red on a memory regression; to relax it, raise `--rss-tol` in the compare
-step.

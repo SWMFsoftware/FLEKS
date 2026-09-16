@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
-"""Capture AMReX TinyProfiler profiles for a selected set of standalone tests.
+"""Memory regression, step 1 of 2: capture a memory profile.
 
-Every standalone FLEKS run already ends with the AMReX TinyProfiler report:
-per-region timings and, for each profiled arena, per-region allocation counts
-and peak bytes (see ``tests/profiler.py``).  This runner executes a curated
-selection of the standalone tests with the profiler switched fully on and
-writes one JSON file that can be diffed against another run -- typically
-master vs. a pull request -- with ``tests/compare_profiles.py``.
+To check whether your changes regress memory, run this and then
+``tests/compare_memory.py`` (step 2 of 2), which does the comparison::
 
-Only a selection is used, not the whole suite: the point is regression
-detection over the dominant cost centres, and keeping the run short enough to
-execute twice (master + PR) inside one CI job.
+    python3 tests/capture_memory.py --out mine.json    # where you are now
+    python3 tests/capture_memory.py --out base.json --ref master   # reference
+    python3 tests/compare_memory.py base.json mine.json
 
-Usage::
+In CI ``.github/workflows/memory_test.yml`` runs both for you on the same
+runner and posts the result on the PR.
 
-    python3 tests/profile_tests.py --out profile_pr.json
-    python3 tests/profile_tests.py --out profile_master.json --ref master
-    python3 tests/profile_tests.py --verify      # check memory determinism
-    python3 tests/profile_tests.py --list        # show the selection
+Every standalone FLEKS run already ends with the AMReX TinyProfiler report and
+the FLEKS load-balance report; this script just runs a curated selection of the
+standalone tests with the profiler switched fully on and writes one JSON file
+holding the per-region allocation counts / peak bytes plus the RSS.  The
+selection is deliberately small: it has to run twice (reference + candidate)
+inside one CI job.
+
+Other options::
+
+    --verify    run twice and report how reproducible memory is here, which is
+                what --rss-tol in step 2 should be tuned from
+    --list      show the captured selection
+    --test X    restrict to one entry of the selection
 """
 import argparse
 import json
@@ -248,7 +254,7 @@ def verify(selection, run_dir, repeats=2):
 
     Allocation counts and peak bytes are exact integers for a fixed problem,
     rank count and RNG seed.  If they are not reproducible the memory checks
-    in compare_profiles.py can only be used as warnings, not as a gate.
+    in compare_memory.py can only be used as warnings, not as a gate.
     """
     runs = []
     for i in range(repeats):
@@ -289,7 +295,7 @@ def verify(selection, run_dir, repeats=2):
         print("\nARENA MEMORY IS NOT DETERMINISTIC:")
         for problem in problems:
             print(f"  {problem}")
-        print("\nThe allocation checks in compare_profiles.py must be treated "
+        print("\nThe allocation checks in compare_memory.py must be treated "
               "as warnings on this setup.")
         return 1
 
@@ -315,7 +321,7 @@ def verify(selection, run_dir, repeats=2):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Capture TinyProfiler profiles for selected standalone tests.")
+        description="Memory regression step 1 of 2: capture a memory profile.")
     parser.add_argument("--out", help="write the profile document as JSON")
     parser.add_argument("--ref", help="label recorded in meta['ref']")
     parser.add_argument("--run-dir", default=DEFAULT_RUN_DIR,

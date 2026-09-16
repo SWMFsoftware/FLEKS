@@ -1,4 +1,4 @@
-name: Profiler Memory
+name: Memory Regression
 
 # Memory regression check for the standalone tests. Every standalone FLEKS run
 # already produces the AMReX TinyProfiler report (per-region allocation counts
@@ -6,7 +6,7 @@ name: Profiler Memory
 # captures both on the merge base and on the PR head, inside one job on one
 # runner, and diffs them.
 #
-# Building twice is the expensive part, so the master profile is cached under
+# Building twice is the expensive part, so the master capture is cached under
 # a key derived from the merge base SHA: it only ever has to be produced once
 # per master commit and is then reused by every PR against that base.
 #
@@ -18,7 +18,7 @@ name: Profiler Memory
 #
 # Only memory is compared -- timings are captured in the same document but not
 # gated, because two runs of identical code already move individual regions by
-# tens of percent. See tests/compare_profiles.py.
+# tens of percent. See tests/compare_memory.py.
 
 on:
   pull_request:
@@ -35,14 +35,14 @@ on:
       - 'Makefile'
       - 'Makefile.*'
       - '.github/actions/**'
-      - '.github/workflows/profile_test.yml'
+      - '.github/workflows/memory_test.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  profile-compare:
+  memory-compare:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,15 +66,15 @@ jobs:
       # -------------------------------------------------------------------
       # Reference profile (merge base)
       # -------------------------------------------------------------------
-      - name: Restore cached reference profile
-        id: cache-profile
+      - name: Restore cached reference capture
+        id: cache-reference
         uses: actions/cache@v5
         with:
-          path: SWMF/PC/FLEKS/profile_master.json
+          path: SWMF/PC/FLEKS/memory_master.json
           key: profile-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
 
       - name: Build reference (merge base)
-        if: steps.cache-profile.outputs.cache-hit != 'true'
+        if: steps.cache-reference.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
@@ -84,12 +84,12 @@ jobs:
           ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
           make EXE -j$(nproc)
 
-      - name: Capture reference profile
-        if: steps.cache-profile.outputs.cache-hit != 'true'
+      - name: Capture reference memory
+        if: steps.cache-reference.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
-          python3 tests/profile_tests.py --out profile_master.json --ref master
+          python3 tests/capture_memory.py --out memory_master.json --ref master
 
       # -------------------------------------------------------------------
       # Candidate profile (PR head)
@@ -104,11 +104,11 @@ jobs:
           # Incremental: only files that differ from the merge base recompile.
           make EXE -j$(nproc)
 
-      - name: Capture candidate profile
+      - name: Capture candidate memory
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
-          python3 tests/profile_tests.py --out profile_pr.json
+          python3 tests/capture_memory.py --out memory_pr.json
 
       # -------------------------------------------------------------------
       # Compare
@@ -116,7 +116,7 @@ jobs:
       # Exit status: 1 if an allocation count, peak bytes, unfreed memory or
       # RSS regression was found. Only memory is compared; timings are not
       # reproducible enough on shared runners to gate on.
-      - name: Compare profiles
+      - name: Compare memory
         id: compare
         working-directory: SWMF/PC/FLEKS
         shell: bash
@@ -125,11 +125,11 @@ jobs:
           # fails; the workflow is meant to go red on a regression, but the PR
           # comment still has to be posted.
           set +e
-          python3 tests/compare_profiles.py \
-            profile_master.json profile_pr.json \
-            --out profile_diff.md > profile_diff_stdout.txt
+          python3 tests/compare_memory.py \
+            memory_master.json memory_pr.json \
+            --out memory_diff.md > memory_diff_stdout.txt
           status=$?
-          cat profile_diff_stdout.txt
+          cat memory_diff_stdout.txt
           echo "status=$status" >> $GITHUB_OUTPUT
           exit $status
 
@@ -138,10 +138,10 @@ jobs:
         shell: bash
         run: |
           {
-            if [ -f SWMF/PC/FLEKS/profile_diff.md ]; then
-              cat SWMF/PC/FLEKS/profile_diff.md
+            if [ -f SWMF/PC/FLEKS/memory_diff.md ]; then
+              cat SWMF/PC/FLEKS/memory_diff.md
             else
-              echo "### 🔬 Profiler memory report"
+              echo "### 🔬 Memory regression report"
               echo ""
               echo "No comparison was produced."
             fi
@@ -149,7 +149,7 @@ jobs:
             echo "<details><summary>raw report log</summary>"
             echo ""
             echo '```'
-            cat SWMF/PC/FLEKS/profile_diff_stdout.txt 2>/dev/null || true
+            cat SWMF/PC/FLEKS/memory_diff_stdout.txt 2>/dev/null || true
             echo '```'
             echo ""
             echo "</details>"
@@ -161,13 +161,13 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const path = 'SWMF/PC/FLEKS/profile_diff.md';
+            const path = 'SWMF/PC/FLEKS/memory_diff.md';
             const failed = '${{ steps.compare.outputs.status }}' === '1';
             let body = '';
             if (fs.existsSync(path)) {
               body += fs.readFileSync(path, 'utf8') + '\n';
             } else {
-              body += '### 🔬 Profiler memory report\n\nNo comparison was produced.\n';
+              body += '### 🔬 Memory regression report\n\nNo comparison was produced.\n';
             }
             if (failed) {
               body += '\n> Memory regressions above need review. If the extra allocations '
@@ -179,7 +179,7 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            const existing = comments.find(c => c.body.includes('### 🔬 Profiler memory report'));
+            const existing = comments.find(c => c.body.includes('### 🔬 Memory regression report'));
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,

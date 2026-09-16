@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""Diff the memory captured by two ``tests/profile_tests.py`` runs.
+"""Memory regression, step 2 of 2: compare two memory profiles.
+
+Run ``tests/capture_memory.py`` (step 1 of 2) first; it produces the JSON this
+script takes as input::
+
+    python3 tests/capture_memory.py --out mine.json    # where you are now
+    python3 tests/capture_memory.py --out base.json --ref master   # reference
+    python3 tests/compare_memory.py base.json mine.json
+
+It prints a markdown report and exits non-zero if memory regressed.  In CI
+``.github/workflows/memory_test.yml`` runs both for you on the same runner.
 
 Two families are compared, both from the same profile document:
 
 * **Arena allocations**, per ``BL_PROFILE`` region: the allocation count, the
   peak bytes held and anything left allocated at finalize.  These are exact
   integers for a fixed problem, rank count and RNG seed, so any increase is a
-  real regression (``profile_tests.py --verify`` checks that they are
+  real regression (``capture_memory.py --verify`` checks that they are
   bit-identical across runs).
 * **RSS** from the FLEKS load-balance report: covers the whole process,
   including the ``std::vector`` / ``operator new`` traffic the arena tables
@@ -20,9 +30,9 @@ gate; ``tests/validate_performance.py`` is the tool for tracking speed.
 
 Usage::
 
-    python3 tests/compare_profiles.py master.json pr.json
-    python3 tests/compare_profiles.py master.json pr.json --out diff.md
-    python3 tests/compare_profiles.py master.json pr.json --rss-tol 5
+    python3 tests/compare_memory.py master.json pr.json
+    python3 tests/compare_memory.py master.json pr.json --out diff.md
+    python3 tests/compare_memory.py master.json pr.json --rss-tol 5
 """
 import argparse
 import json
@@ -31,7 +41,7 @@ import sys
 FAIL = "FAIL"
 INFO = "INFO"
 
-REPORT_TITLE = "🔬 Profiler memory report"
+REPORT_TITLE = "🔬 Memory regression report"
 
 
 def _fmt_bytes(value):
@@ -155,7 +165,7 @@ def _compare_rss(base, cand, key, cfg, findings):
 
     RSS is gated with an absolute tolerance in MB (``--rss-tol``) rather than an
     equality check: it is not bit-identical between runs (page granularity and
-    allocator behaviour).  Measure the spread with ``profile_tests.py --verify``
+    allocator behaviour).  Measure the spread with ``capture_memory.py --verify``
     and keep the tolerance comfortably above it.  Only the per-rank maximum is
     gated; min/avg are reported as context.
     """
@@ -296,13 +306,13 @@ def format_markdown(baseline, candidate, findings):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Diff the memory captured by two profile_tests.py runs.")
+        description="Memory regression step 2 of 2: compare two captures from capture_memory.py.")
     parser.add_argument("baseline", help="reference profile JSON (master)")
     parser.add_argument("candidate", help="candidate profile JSON (PR)")
     parser.add_argument("--out", help="write the markdown report to this file")
     parser.add_argument("--rss-tol", type=float, default=2.0,
                         help="allowed RSS growth in MB (default 2.0); re-tune "
-                             "with 'profile_tests.py --verify'")
+                             "with 'capture_memory.py --verify'")
     args = parser.parse_args()
 
     with open(args.baseline) as handle:
