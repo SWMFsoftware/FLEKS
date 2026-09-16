@@ -122,34 +122,37 @@ the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and the
 particle tracker test (`performance/PARAM.in.pt`), and writes the results to
 `tests/performance_summary.md`.
 
-### Profiler Regression (timing + memory, master vs PR)
+### Profiler Regression (memory, master vs PR)
 
 Every standalone run already ends with the AMReX TinyProfiler report: per-region
 timings plus, for each profiled arena, the **allocation count and peak bytes
 attributed to the enclosing `BL_PROFILE` region** — that is, per FLEKS
-function. Three scripts turn that into a regression check:
+function. The same run also prints the FLEKS load-balance report, which carries
+**RSS**. Three scripts turn those into a memory regression check:
 
 | Script | Purpose |
 |---|---|
-| `tests/profiler.py` | parses the TinyProfiler report into a comparable dict |
+| `tests/profiler.py` | parses the run report into a comparable dict |
 | `tests/profile_tests.py` | runs a selection of tests and captures one JSON |
-| `tests/compare_profiles.py` | diffs two captures and flags regressions |
+| `tests/compare_profiles.py` | diffs two captures and flags memory regressions |
 
 ```bash
-# Capture a profile of the current working tree (~25 s here).
+# Capture the memory of the current working tree (~25 s here).
 python3 tests/profile_tests.py --out profile_pr.json
 
 # Capture the reference, e.g. from a master worktree.
 python3 tests/profile_tests.py --out profile_master.json --ref master
 
-# Diff them. Non-zero exit on a memory regression.
+# Diff them. Only memory is compared; non-zero exit on a regression.
+python3 tests/compare_profiles.py profile_master.json profile_pr.json
 python3 tests/compare_profiles.py profile_master.json profile_pr.json --out diff.md
 
-# Is memory deterministic on this machine? (decides strict gating vs warn-only)
+# How reproducible is memory on this machine? (tune --rss-tol from it)
 python3 tests/profile_tests.py --verify
 
-# Inspect a single report
-python3 tests/profiler.py prof.txt --top 10
+# Inspect a single run report
+python3 tests/profiler.py prof.txt --top 10          # timing + arena memory
+python3 tests/profiler.py run.log --load-balance     # RSS series
 python3 tests/profiler.py --self-test
 ```
 
@@ -167,10 +170,13 @@ job — and covers the dominant cost centres:
 `profile_tests.py --list` shows the current selection; `--test beam` restricts
 to a single entry.
 
-**Gating policy.** Three families are reported, with different treatments.
+**Gating policy.** Two memory families are compared. Timings are deliberately
+**not** gated — two runs of identical code already move individual regions by
+tens of percent, so `tests/validate_performance.py` is the tool for tracking
+speed and this one is only about memory.
 
-*Arena allocations — gated strictly.* Counts and peak bytes are exact integers
-for a fixed problem, rank count and RNG seed; `--verify` confirms they are
+*Arena allocations — exact.* Counts and peak bytes are exact integers for a
+fixed problem, rank count and RNG seed; `--verify` confirms they are
 bit-identical across repeated runs here:
 
 * `nalloc` — normalised per call when the call count changed, so an extra
@@ -178,24 +184,23 @@ bit-identical across repeated runs here:
   being called more often;
 * `maxmem_max` — peak bytes held by the region (an extra temporary `MultiFab`
   shows up here);
-* `curmem_max` — anything still allocated at finalize, i.e. a leak.
+* `curmem_max` — anything still allocated at finalize, i.e. a leak. A missing
+  column counts as zero, so a leak newly introduced by the PR is caught even
+  though the baseline has no column for it.
 
-*RSS — gated with a tolerance band.* `Memory(MB)` from the load-balance report
-covers the whole process, including the `std::vector` / `operator new` traffic
-the arena tables cannot see, but it is **not** bit-identical between runs: on
-an idle machine `--verify` shows individual values moving by up to 0.4 MB
-(0.6 %). The allowed change is `max(--rss-abs-tol, --rss-tol × baseline)`
-(defaults 2 MB and 2 %, i.e. comfortably above the observed noise); only the
-per-rank maximum column is gated, `min`/`avg` are context. Re-run `--verify`
-after moving to a new machine — it prints the measured spread and a suggested
-tolerance. The `Cells`/`Parts` counts are reported alongside, so a change in
-problem size (which would explain an RSS move) is flagged rather than silently
-compared.
+*RSS — tolerance.* `Memory(MB)` from the load-balance report covers the whole
+process, including the `std::vector` / `operator new` traffic the arena tables
+cannot see, but it is **not** bit-identical between runs: on an idle machine
+`--verify` shows individual values moving by up to 0.4 MB. `--rss-tol`
+(default 2 MB) is the allowed growth, and it is the only knob that normally
+needs tuning — re-run `--verify` after moving to a new machine, it prints the
+measured spread and a suggested value. Only the per-rank maximum column is
+gated; `min`/`avg` are context. The `Cells`/`Parts` counts are compared too, so
+a change in problem size (which would explain an RSS move) is flagged rather
+than silently compared.
 
-*Timing — warning only.* Two runs of identical code already show individual
-regions moving by −32 %…+30 % on an otherwise idle machine. Use
-`--gate-timing` to make it fail. Regions added or removed by a refactor, and
-regions whose call count changed, are reported as informational and never fail.
+Regions added or removed, fewer allocations, and other non-regressions are
+listed under "Other changes" and never fail.
 
 The runner passes `tiny_profiler.print_threshold=0` (the 1 % AMReX default folds
 small regions into `Other`, hiding exactly the regressions we look for) and
@@ -225,11 +230,11 @@ Two captures are checked in under `tests/profiler_samples/` and are used by
 per-region memory) and `load_balance_beam.txt` (RSS, including a 2-rank report
 where min/avg/max differ).
 
-**In CI** this runs as the *Profiler Regression* workflow
+**In CI** this runs as the *Profiler Memory* workflow
 (`.github/workflows/profile_test.yml`). Because GitHub-hosted runners are not
 reproducible across machines, the reference and the candidate are captured back
 to back **in the same job on the same runner**. To keep that affordable, only
 the reference is cached, under a key derived from the merge-base SHA — so it is
-built once per master commit and reused by every PR against that base. To relax
-a noisy run, add `--warn-only` to the compare step; to make timing gate too, add
-`--gate-timing`.
+built once per master commit and reused by every PR against that base. The job
+goes red on a memory regression; to relax it, raise `--rss-tol` in the compare
+step.

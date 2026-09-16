@@ -1,21 +1,24 @@
-name: Profiler Regression
+name: Profiler Memory
 
-# Time + memory regression check for the standalone tests. Every standalone
-# FLEKS run already ends with the AMReX TinyProfiler report, which includes
-# per-region allocation counts and peak bytes (see tests/profiler.py). This
-# workflow captures that report on the merge base and on the PR head, inside
-# one job on one runner, and diffs them.
+# Memory regression check for the standalone tests. Every standalone FLEKS run
+# already produces the AMReX TinyProfiler report (per-region allocation counts
+# and peak bytes) and the FLEKS load-balance report (RSS). This workflow
+# captures both on the merge base and on the PR head, inside one job on one
+# runner, and diffs them.
 #
 # Building twice is the expensive part, so the master profile is cached under
 # a key derived from the merge base SHA: it only ever has to be produced once
 # per master commit and is then reused by every PR against that base.
 #
 # Note on why master and PR run in the SAME job rather than in parallel jobs:
-# GitHub-hosted runners differ enough between machines that timings (and to a
-# lesser extent allocator behaviour) are not comparable across jobs. Running
-# them back to back on one runner keeps the comparison meaningful. Even so,
-# timing is reported as a warning and only allocation counts / peak bytes are
-# gated -- see tests/compare_profiles.py.
+# GitHub-hosted runners differ enough between machines that allocator behaviour
+# is not comparable across jobs, and the reference has to be built in-tree
+# anyway (the gitignored util/AMREX dependency tree is not in a fresh
+# worktree).
+#
+# Only memory is compared -- timings are captured in the same document but not
+# gated, because two runs of identical code already move individual regions by
+# tens of percent. See tests/compare_profiles.py.
 
 on:
   pull_request:
@@ -110,9 +113,9 @@ jobs:
       # -------------------------------------------------------------------
       # Compare
       # -------------------------------------------------------------------
-      # Exit status: 1 if an allocation count, peak bytes or unfreed-memory
-      # regression was found. Timing regressions only warn; pass
-      # --gate-timing to make them fail, or --warn-only to never fail.
+      # Exit status: 1 if an allocation count, peak bytes, unfreed memory or
+      # RSS regression was found. Only memory is compared; timings are not
+      # reproducible enough on shared runners to gate on.
       - name: Compare profiles
         id: compare
         working-directory: SWMF/PC/FLEKS
@@ -124,8 +127,7 @@ jobs:
           set +e
           python3 tests/compare_profiles.py \
             profile_master.json profile_pr.json \
-            --out profile_diff.md --json profile_diff.json \
-            --title "🔬 Profiler regression report" > profile_diff_stdout.txt
+            --out profile_diff.md > profile_diff_stdout.txt
           status=$?
           cat profile_diff_stdout.txt
           echo "status=$status" >> $GITHUB_OUTPUT
@@ -139,7 +141,7 @@ jobs:
             if [ -f SWMF/PC/FLEKS/profile_diff.md ]; then
               cat SWMF/PC/FLEKS/profile_diff.md
             else
-              echo "### 🔬 Profiler regression report"
+              echo "### 🔬 Profiler memory report"
               echo ""
               echo "No comparison was produced."
             fi
@@ -165,20 +167,19 @@ jobs:
             if (fs.existsSync(path)) {
               body += fs.readFileSync(path, 'utf8') + '\n';
             } else {
-              body += '### 🔬 Profiler regression report\n\nNo comparison was produced.\n';
+              body += '### 🔬 Profiler memory report\n\nNo comparison was produced.\n';
             }
-            body += failed
-              ? '\n> Allocation/peak-memory regressions above need review. If the extra '
-                + 'allocations are intentional, please say so in the PR description.\n'
-              : '\n> Timing changes are informational only; only allocation counts and '
-                + 'peak bytes are gated.\n';
+            if (failed) {
+              body += '\n> Memory regressions above need review. If the extra allocations '
+                    + 'are intentional, please say so in the PR description.\n';
+            }
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            const existing = comments.find(c => c.body.includes('### 🔬 Profiler regression report'));
+            const existing = comments.find(c => c.body.includes('### 🔬 Profiler memory report'));
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,

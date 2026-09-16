@@ -309,8 +309,7 @@ def verify(selection, run_dir, repeats=2):
           f"({worst[0]} {worst[1]}: {worst[2]:.1f} -> {worst[3]:.1f})")
     print(f"  largest relative change: {100 * worst_rel:.1f} %")
     print(f"  -> gate with a tolerance well above that, e.g. "
-          f"--rss-abs-tol {max(1.0, round(3 * worst_abs, 1)):g} "
-          f"--rss-tol {max(0.02, round(3 * worst_rel, 2)):g}")
+          f"--rss-tol {max(1.0, round(3 * worst_abs, 1)):g}")
     return 0
 
 
