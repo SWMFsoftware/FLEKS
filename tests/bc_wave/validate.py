@@ -8,23 +8,24 @@ Two variants are discovered from this directory:
 The single validate_log/validate_plot here branch on the variant's base_name
 and apply variant-appropriate checks.
 """
-import glob
 import logging
 import math
 import os
 
+import tests._shared.hybrid as _hyb
+from tests._shared import run_dir as _run_dir
+
 logger = logging.getLogger(__name__)
 
-import tests._shared.hybrid as _hyb
-
-RUN_DIR = "run_test"
+RUN_DIR = _run_dir.RUN_DIR
 
 
 def set_run_dir(run_dir):
-    """Point the plot helpers at the current run directory."""
-    global RUN_DIR
-    RUN_DIR = run_dir
+    """Point all shared helpers at the current run directory."""
+    _run_dir.set_run_dir(run_dir)
     _hyb.set_run_dir(run_dir)
+    globals()["RUN_DIR"] = run_dir
+
 
 DB_OVER_B_MAX = 0.10   # linear shear-Alfven: dB/B must stay small
 
@@ -67,24 +68,7 @@ def validate_log(pic_diags=None, test_name=None):
 # Plot checks
 # ---------------------------------------------------------------------------
 def _read_plot():
-    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
-    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
-    if not out_files:
-        return None, None
-    out_file = out_files[-1]
-    with open(out_file, "r") as f:
-        lines = f.readlines()
-    if len(lines) < 6:
-        return None, None
-    vidx = {v.upper(): i for i, v in enumerate(lines[4].split())}
-    rows = []
-    for line in lines[5:]:
-        cols = line.split()
-        try:
-            rows.append([float(c) for c in cols])
-        except ValueError:
-            continue
-    return vidx, rows
+    return _run_dir.load_last_out(run_dir=RUN_DIR)
 
 
 def _interior_max(vidx, rows, name, x_name="X"):

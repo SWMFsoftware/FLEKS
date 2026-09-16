@@ -10,18 +10,19 @@ import glob
 import logging
 import os
 
+import tests._shared.hybrid as _hyb
+from tests._shared import run_dir as _run_dir
+
 logger = logging.getLogger(__name__)
 
-import tests._shared.hybrid as _hyb
-
-RUN_DIR = "run_test"
+RUN_DIR = _run_dir.RUN_DIR
 
 
 def set_run_dir(run_dir):
-    """Point the plot helpers at the current run directory."""
-    global RUN_DIR
-    RUN_DIR = run_dir
+    """Point all shared helpers at the current run directory."""
+    _run_dir.set_run_dir(run_dir)
     _hyb.set_run_dir(run_dir)
+    globals()["RUN_DIR"] = run_dir
 
 
 def validate_log(pic_diags=None, test_name=None):
