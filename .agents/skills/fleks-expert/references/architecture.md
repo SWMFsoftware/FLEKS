@@ -37,7 +37,7 @@ uncluttered.
 | `LinearSolver` | `LinearSolver.h` | GMRES Krylov solver for the implicit E field |
 | `TimeCtr` | `TimeCtr.h` | Time step management, CFL, event scheduling |
 | `PlotWriter` | `PlotWriter.h` | Output formatting (IDL, AMReX, HDF5, VTK, Tecplot) |
-| `DataContainer` | `DataContainer.h` | Data reading (IDL, AMReX formats) |
+| `DataContainer` | `Converter/DataContainer.h` | Data reading (IDL, AMReX formats) — converter only, not used by the solver |
 | `GridUtility` | `GridUtility.h` | Discrete operators (curl, div, grad, averaging) |
 | `BC` | `BC.h` | Boundary condition types |
 

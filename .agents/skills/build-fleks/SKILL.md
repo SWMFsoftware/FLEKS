@@ -1,6 +1,6 @@
 ---
 name: build-fleks
-description: Compile FLEKS standalone or as an SWMF component, build the converter, and regenerate compile_commands.json
+description: Compile FLEKS standalone or as an SWMF component, build the separate Converter/ tool, and regenerate compile_commands.json
 ---
 
 # Build FLEKS
@@ -65,8 +65,10 @@ bring `bin/converter.exe` up to date.
 - Common issues:
   - Missing headers → Check include paths in `src/Makefile` (`SEARCH_C`)
     and generated values in `Makefile.conf` / `Makefile.def`
-  - Undefined symbols → Check if all required `.cpp` files are listed in
-    the `SRCS` variable in `src/Makefile`
+  - Undefined symbols → `src/Makefile` auto-discovers `src/*.cpp` and
+    `src/ic/*.cpp` with a wildcard; a missing symbol usually means the file
+    is not in `src/` at all (e.g. it belongs to `Converter/`, which is a
+    separate program with its own `Makefile`)
   - `make LIB` errors outside SWMF -> Use `make EXE`, or build/configure the
     parent SWMF tree first
   - AMReX errors -> Verify AMReX installation paths exposed through
@@ -88,7 +90,7 @@ This file is used by VS Code's C/C++ IntelliSense.
 | `make` / `make EXE` | Build standalone executable (`bin/FLEKS.exe`) |
 | `make FLEKS` | Alias for `make EXE` |
 | `make LIB` | Build library for SWMF integration (`src/libFLEKS.a`) |
-| `make CONVERTER` | Build converter tool (`bin/converter.exe`) |
+| `make CONVERTER` | Build the converter tool (`bin/converter.exe`) — delegates to `Converter/` |
 | `make install` | Create `bin/` and `include/Constants.h` |
 | `make clean` | Remove object files |
 | `make distclean` | Remove all generated files |
@@ -113,4 +115,5 @@ To enable a debug build, ensure `OPT3` is set to `-O0` in the SWMF
 - `bin/FLEKS.exe` is updated for `make EXE` / `make FLEKS`
 - `src/libFLEKS.a` is updated for `make LIB`
 - `bin/converter.exe` is updated by `EXE`, `FLEKS`, `LIB`, or `CONVERTER`
+  (built from `Converter/`, independent of `libFLEKS.a`)
 - `compile_commands.json` is present and current

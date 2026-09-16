@@ -30,8 +30,9 @@ Two field solvers, selected per run:
 
 ```bash
 ./Config.pl -lev=2 -u=Exo       # configure a standalone build
-make EXE -j8                    # standalone bin/FLEKS.exe
+make EXE -j8                    # standalone bin/FLEKS.exe (+ Converter/)
 make LIB -j8                    # SWMF component library src/libFLEKS.a
+make CONVERTER                  # only bin/converter.exe (make -C Converter)
 python3 tests/validate_tests.py [--test=beam] [-n 2] [--verbose]
 make test16_3d                  # GM-PC regression — from the SWMF root
 python3 tools/format_all.py     # CI-enforced formatting (C++ + Fortran)
@@ -54,9 +55,11 @@ Violating any of these gives silently wrong results or link errors:
 5. Standalone runs use domain name `FLEKS1` and require `#INITFROMSWMF F` plus
    `#NORMALIZATION` / `#PLASMA` / `#UNIFORMSTATE`.
 6. `src/Makefile` picks up every `.cpp` in `src/` and `src/ic/` with a
-   wildcard; only `main.cpp` and `Converter.cpp` are excluded (each has its
-   own `main()`). A new file needs no Makefile edit — but it will be compiled,
-   so do not leave scratch `.cpp` files in `src/`.
+   wildcard; only `src/main.cpp` is excluded (it has its own `main()`). A new
+   FLEKS source needs no Makefile edit — but it will be compiled, so do not
+   leave scratch `.cpp` files in `src/`.
+   The format converter is **not** part of the library: it lives in
+   `Converter/` with its own `Makefile` and its own `main()`.
 7. Formatting is CI-enforced (`python3 tools/format_all.py`).
 8. Ionization parameters belong in `SourceInterface` / `UserSource`, not in
    `FluidInterface`.

@@ -21,16 +21,8 @@ SRCS := $(sort $(filter-out main.cpp Converter.cpp, \
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
-# Keep converter independent of libFLEKS.a: the full archive includes PT/OH
-# coupling objects that require SWMF-only OH symbols.
-CONVERTER_OBJECTS = \
-	Converter.o \
-	DataContainer.o \
-	Grid.o \
-	VisitWriter.o \
-	FleksDistributionMap.o
-
-CONVERTEREXE = ../bin/converter.exe
+# The AMReX/IDL -> VTK/TEC format converter is no longer part of this library;
+# it is built from ../Converter with its own Makefile.
 
 default: EXE
 
@@ -41,16 +33,8 @@ EXE:
 	${LINK.f90} -o ../bin/FLEKS.exe main.o \
 		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
 
-CONVERTER:	${CONVERTER_OBJECTS}
-	${LINK.f90} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
-
-	@echo
-	@echo ${CONVERTEREXE} has been brought up to date.
-	@echo
-
 DEPEND:
-	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} main.o ${CONVERTER_OBJECTS}
+	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} main.o
 
 LIB: DEPEND
 	$(MAKE) ${LIBFLEKS}
@@ -63,7 +47,6 @@ ${LIBFLEKS}:${OBJECTS}
 
 clean:
 	-@(rm -f ${OBJECTS} main.o ${LIBFLEKS})
-	-@(rm -rf ${CONVERTEREXE} ${CONVERTER_OBJECTS})
 	-@(rm -rf .d)
 
 distclean: clean
