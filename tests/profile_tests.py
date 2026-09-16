@@ -57,6 +57,12 @@ DEFAULT_RUN_DIR = "run_test_prof"
 PROFILER_ARGS = ["tiny_profiler.output_file=prof.txt",
                  "tiny_profiler.print_threshold=0"]
 
+# Which of the periodic RSS reports to keep. A run emits one table per report
+# step (63 of them for the beam deck); storing the whole series per test would
+# bloat the profile document for no benefit, and the two ends are what carry
+# the signal: the first shows the settled baseline, the last the end state.
+LOAD_BALANCE_KEEP = ("first", "last")
+
 
 def git(*args):
     """Return git output from the repository root, or '' on failure."""
@@ -101,7 +107,7 @@ def clean_output(run_dir):
                 pass
 
 
-def run_one(test, variant, nprocs, run_dir, keep_prof=False):
+def run_one(test, variant, nprocs, run_dir, keep_prof=False, keep_log=False):
     """Run one entry and return its profile record."""
     prepare_run_dir(run_dir)
     clean_output(run_dir)
@@ -122,7 +128,8 @@ def run_one(test, variant, nprocs, run_dir, keep_prof=False):
     result = subprocess.run(cmd, cwd=run_dir, env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     wall_s = time.monotonic() - start
-    result.stdout = (result.stdout or b"").decode("utf-8", "replace")
+    log = (result.stdout or b"").decode("utf-8", "replace")
+    result.stdout = log
 
     prof_file = os.path.join(run_dir, "prof.txt")
     record = {
@@ -133,10 +140,15 @@ def run_one(test, variant, nprocs, run_dir, keep_prof=False):
         "wall_s": round(wall_s, 4),
         "exit_code": result.returncode,
         "profile": {},
+        "load_balance": {},
     }
 
+    if keep_log:
+        with open(os.path.join(run_dir, "run.log"), "w") as handle:
+            handle.write(log)
+
     if result.returncode != 0:
-        record["error"] = result.stdout[-4000:]
+        record["error"] = log[-4000:]
         return record
 
     if os.path.isfile(prof_file):
@@ -147,10 +159,20 @@ def run_one(test, variant, nprocs, run_dir, keep_prof=False):
     else:
         record["error"] = "no TinyProfiler output; is AMREX_TINY_PROFILING on?"
 
+    # RSS. Pic::report_load_balance() prints one table per report step; keeping
+    # every one would bloat the document for no benefit, so only the first and
+    # the last are retained (see LOAD_BALANCE_KEEP).
+    tables = profiler.parse_load_balance(log)
+    if tables:
+        record["load_balance"] = {"n_tables": len(tables)}
+        for name in LOAD_BALANCE_KEEP:
+            index = 0 if name == "first" else len(tables) - 1
+            record["load_balance"][name] = tables[index]
+
     return record
 
 
-def capture(selection, run_dir, verbose=False, keep_prof=False):
+def capture(selection, run_dir, verbose=False, keep_prof=False, keep_log=False):
     """Run every entry in *selection* and return the full profile document."""
     os.makedirs(run_dir, exist_ok=True)
     tests = {}
@@ -166,12 +188,17 @@ def capture(selection, run_dir, verbose=False, keep_prof=False):
 
         key = test_key(test, variant, nprocs)
         print(f"  RUN  {key} ...", flush=True)
-        record = run_one(test, variant, nprocs, run_dir, keep_prof=keep_prof)
+        record = run_one(test, variant, nprocs, run_dir, keep_prof=keep_prof,
+                         keep_log=keep_log)
         tests[key] = record
         if "error" in record:
             print(f"       FAILED (exit {record['exit_code']})")
         elif verbose:
             print(profiler.format_summary(record["profile"], top=5))
+            rss = record.get("load_balance", {}).get("last", {}).get("Memory(MB)")
+            if rss:
+                print(f"       RSS last report (MB): min {rss['min']:.1f} "
+                      f"avg {rss['avg']:.1f} max {rss['max']:.1f}")
 
     return {
         "meta": {
@@ -204,6 +231,18 @@ def _memory_index(profile):
     return out
 
 
+def _rss_index(record):
+    """Flat {rss.<first|last>.<min|avg|max>: MB} for the determinism check."""
+    out = {}
+    for name, table in (record.get("load_balance") or {}).items():
+        if name == "n_tables" or not isinstance(table, dict):
+            continue
+        rss = table.get("Memory(MB)")
+        if rss:
+            out[f"rss.{name}"] = (rss["min"], rss["avg"], rss["max"])
+    return out
+
+
 def verify(selection, run_dir, repeats=2):
     """Run the selection twice and report non-deterministic memory values.
 
@@ -217,12 +256,13 @@ def verify(selection, run_dir, repeats=2):
         runs.append(capture(selection, run_dir))
 
     baseline = runs[0]
-    problems = []
+    problems, rss_spread = [], []
     for key, record in baseline["tests"].items():
         if "error" in record:
             problems.append(f"{key}: run 1 failed")
             continue
         reference = _memory_index(record["profile"])
+        rss_reference = _rss_index(record)
         for i, other in enumerate(runs[1:], start=2):
             candidate = other.get("tests", {}).get(key, {})
             if "error" in candidate:
@@ -235,16 +275,42 @@ def verify(selection, run_dir, repeats=2):
                     problems.append(
                         f"{key}: {name} differs between run 1 and run {i}: "
                         f"{values} vs {got}")
+            for name, values in rss_reference.items():
+                got = _rss_index(candidate).get(name)
+                if got is None:
+                    continue
+                for column, base, cand in zip(("min", "avg", "max"), values, got):
+                    if base != cand:
+                        rss_spread.append((key, f"{name}.{column}", base, cand,
+                                           abs(cand - base),
+                                           abs(cand - base) / base if base else 0))
 
     if problems:
-        print("\nNOT DETERMINISTIC:")
+        print("\nARENA MEMORY IS NOT DETERMINISTIC:")
         for problem in problems:
             print(f"  {problem}")
-        print("\nMemory checks must be treated as warnings on this setup.")
+        print("\nThe allocation checks in compare_profiles.py must be treated "
+              "as warnings on this setup.")
         return 1
 
-    print("\nMemory (nalloc / maxmem_max / curmem_max) is deterministic "
-          f"across {repeats} runs -- memory can be gated strictly.")
+    print("\nArena memory (nalloc / maxmem_max / curmem_max) is bit-identical "
+          f"across {repeats} runs -- it can be gated strictly.")
+
+    if not rss_spread:
+        print("RSS is bit-identical too.")
+        return 0
+
+    worst_abs = max(r[4] for r in rss_spread)
+    worst_rel = max(r[5] for r in rss_spread)
+    worst = max(rss_spread, key=lambda r: r[4])
+    print(f"RSS is not bit-identical: {len(rss_spread)} of "
+          f"{len(rss_spread) + 0} compared values moved between runs.")
+    print(f"  largest absolute change: {worst_abs:.1f} MB "
+          f"({worst[0]} {worst[1]}: {worst[2]:.1f} -> {worst[3]:.1f})")
+    print(f"  largest relative change: {100 * worst_rel:.1f} %")
+    print(f"  -> gate with a tolerance well above that, e.g. "
+          f"--rss-abs-tol {max(1.0, round(3 * worst_abs, 1)):g} "
+          f"--rss-tol {max(0.02, round(3 * worst_rel, 2)):g}")
     return 0
 
 
@@ -263,6 +329,8 @@ def main():
     parser.add_argument("--repeats", type=int, default=2, help="--verify runs")
     parser.add_argument("--keep-prof", action="store_true",
                         help="keep the raw prof.txt of the last test")
+    parser.add_argument("--keep-log", action="store_true",
+                        help="keep the raw run.log of the last test")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -293,7 +361,7 @@ def main():
 
     print("Capturing profiles:")
     document = capture(selection, args.run_dir, verbose=args.verbose,
-                       keep_prof=args.keep_prof)
+                       keep_prof=args.keep_prof, keep_log=args.keep_log)
     if args.ref:
         document["meta"]["ref"] = args.ref
 
