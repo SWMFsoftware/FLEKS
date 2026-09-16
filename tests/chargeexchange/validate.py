@@ -10,19 +10,11 @@ import glob
 import logging
 import os
 
-import tests._shared.hybrid as _hyb
 from tests._shared import run_dir as _run_dir
 
 logger = logging.getLogger(__name__)
 
-RUN_DIR = _run_dir.RUN_DIR
-
-
-def set_run_dir(run_dir):
-    """Point all shared helpers at the current run directory."""
-    _run_dir.set_run_dir(run_dir)
-    _hyb.set_run_dir(run_dir)
-    globals()["RUN_DIR"] = run_dir
+set_run_dir = _run_dir.set_run_dir
 
 
 def validate_log(pic_diags=None, test_name=None):
@@ -127,7 +119,7 @@ def _check_charge_exchange_source_profile():
       2. O+ density is much smaller in the deep planetary interior (< 0.1 * surface).
       3. Boundary smoothness: no 2x artificial jump across block interfaces.
     """
-    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
+    plots_dir = os.path.join(_run_dir.RUN_DIR, "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
     if not out_files:
         logger.debug("    [CX] No .out files found (PostProc.pl not run?).")
@@ -161,7 +153,7 @@ def _check_charge_exchange_source_profile():
     Rp_si = 3.0e6
     lNormSI = 1000.0
     try:
-        with open(os.path.join(RUN_DIR, "PARAM.in"), "r") as pf:
+        with open(os.path.join(_run_dir.RUN_DIR, "PARAM.in"), "r") as pf:
             section = None
             norm_idx = 0
             for line in pf:

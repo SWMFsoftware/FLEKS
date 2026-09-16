@@ -12,19 +12,11 @@ import logging
 import math
 import os
 
-import tests._shared.hybrid as _hyb
 from tests._shared import run_dir as _run_dir
 
 logger = logging.getLogger(__name__)
 
-RUN_DIR = _run_dir.RUN_DIR
-
-
-def set_run_dir(run_dir):
-    """Point all shared helpers at the current run directory."""
-    _run_dir.set_run_dir(run_dir)
-    _hyb.set_run_dir(run_dir)
-    globals()["RUN_DIR"] = run_dir
+set_run_dir = _run_dir.set_run_dir
 
 
 DB_OVER_B_MAX = 0.10   # linear shear-Alfven: dB/B must stay small
@@ -68,7 +60,7 @@ def validate_log(pic_diags=None, test_name=None):
 # Plot checks
 # ---------------------------------------------------------------------------
 def _read_plot():
-    return _run_dir.load_last_out(run_dir=RUN_DIR)
+    return _run_dir.load_last_out()
 
 
 def _interior_max(vidx, rows, name, x_name="X"):
