@@ -212,14 +212,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
               (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
         }
 
-        for (int iVar = 0; iVar < 3; iVar++)
-          for (int kk = lo.z; kk <= hi.z; ++kk)
-            for (int jj = lo.y; jj <= hi.y; ++jj)
-              for (int ii = lo.x; ii <= hi.x; ++ii) {
-                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                             loIdx[iz_] + kk) };
-                jArr(ijk, iVar) += coef[ii][jj][kk] * currents[iVar];
-              }
+        deposit_vector_field(jArr, loIdx, coef, lo, hi, currents, 3);
       }
 
       const int iMin = loIdx[ix_];
@@ -438,17 +431,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       currents[iy_] = (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
       currents[iz_] = (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
 
-      for (int iVar = 0; iVar < 3; iVar++)
-        for (int kk = lo.z; kk <= hi.z; ++kk)
-          for (int jj = lo.y; jj <= hi.y; ++jj)
-            for (int ii = lo.x; ii <= hi.x; ++ii) {
-              for (int i = 0; i < nCoef; i++) {
-                IntVect ijk = { AMREX_D_DECL(loIdx[i][ix_] + ii,
-                                             loIdx[i][iy_] + jj,
-                                             loIdx[i][iz_] + kk) };
-                jArrt[i](ijk, iVar) += coef[i][ii][jj][kk] * currents[iVar];
-              }
-            }
+      for (int i = 0; i < nCoef; ++i)
+        deposit_vector_field(jArrt[i], loIdx[i], coef[i], lo, hi, currents,
+                             3);
 
       for (int i = 0; i < nCoef; i++) {
         const int iMin = loIdx[i][ix_];
@@ -565,13 +550,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
           currents[iz_] = (wp + (up * omy - vp * omx + udotOm * omz)) * coef1;
         }
 
-        for (int iVar = 0; iVar < nDim; iVar++)
-          for (int kk = 0; kk < 2; ++kk)
-            for (int jj = 0; jj < 2; ++jj)
-              for (int ii = 0; ii < 2; ++ii) {
-                jArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk, iVar) +=
-                    coef[ii][jj][kk] * currents[iVar];
-              }
+        deposit_vector_field(jArr, loIdx, coef, init_dim3(0), init_dim3(1),
+                             currents, nDim);
       }
 
     } // for p

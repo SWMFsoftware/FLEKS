@@ -194,6 +194,23 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_field(
       }
 }
 
+template <int NCoef>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
+    const amrex::Array4<amrex::Real>& field,
+    const amrex::IntVect& loIdx,
+    const amrex::Real (&coef)[NCoef][NCoef][NCoef],
+    const amrex::Dim3& lo, const amrex::Dim3& hi,
+    const amrex::Real* value, int nComp) {
+  for (int k = lo.z; k <= hi.z; ++k)
+    for (int j = lo.y; j <= hi.y; ++j)
+      for (int i = lo.x; i <= hi.x; ++i) {
+        const amrex::IntVect ijk = { AMREX_D_DECL(
+            loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
+        for (int iDim = 0; iDim < nComp; ++iDim)
+          field(ijk, iDim) += coef[i][j][k] * value[iDim];
+      }
+}
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
     bool b[3][3][3], amrex::IntVect iv, const amrex::Array4<int const> status) {
 
