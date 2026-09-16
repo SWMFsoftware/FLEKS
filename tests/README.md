@@ -121,3 +121,47 @@ The script benchmarks the full-PIC beam test (`performance/PARAM.in`),
 the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and the
 particle tracker test (`performance/PARAM.in.pt`), and writes the results to
 `tests/performance_summary.md`.
+
+### Memory Regression (master vs PR)
+
+Every standalone run already reports memory, so no new instrumentation is
+needed: the AMReX TinyProfiler report gives the allocation count and peak bytes
+per `BL_PROFILE` region, and the FLEKS load-balance report gives process RSS.
+Two scripts capture and compare them — timings are not compared:
+
+```bash
+python3 tests/capture_memory.py --out mine.json                # step 1: your tree
+python3 tests/capture_memory.py --out base.json --ref master   # step 1: reference
+python3 tests/compare_memory.py base.json mine.json            # step 2: compare
+```
+
+`compare_memory.py` prints a table and exits non-zero on a regression. Run
+either script with `--help` for the options; the ones worth knowing are
+`capture_memory.py --list` (which decks are captured — beam, performance.hybrid,
+reconnection, shock and 2-rank beam, ~25 s in total) and `--verify`, which
+reports how reproducible memory is on your machine and is what `--rss-tol`
+should be tuned from.
+
+Arena counts and peak bytes are exact integers across runs, so any increase
+fails. RSS drifts by up to 0.4 MB between runs, so it gets a tolerance
+(`--rss-tol`, default 2 MB) and only the per-rank maximum is gated.
+
+CI runs both steps on the same runner and comments on the PR:
+`.github/workflows/memory_test.yml`.
+
+Two notes:
+
+* Do **not** enable `#MEMORY` to obtain the RSS series — it is not a reporting
+  switch. Every `dnMemory` cycles it also calls `Pic::free_memory()`, which runs
+  `CArena::freeUnused()`, `ShrinkToFit()` on every particle container and
+  `malloc_trim(0)`, perturbing exactly what is being measured. The report is
+  printed anyway whenever `doReport` is set.
+* The arena profiler only sees `MultiFab`/`FArrayBox`/particle-tile traffic. RSS
+  covers the rest (`std::vector`, `new`) but cannot attribute it to a function.
+
+To inspect a single run report outside the regression workflow:
+
+```bash
+python3 tests/profiler.py prof.txt --top 10          # timing + arena memory
+python3 tests/profiler.py run.log --load-balance     # RSS series
+```

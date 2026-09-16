@@ -1,0 +1,186 @@
+name: Memory Regression
+
+# Builds the merge base and the PR head, runs the same capture script against
+# both binaries, and diffs the result.
+#
+# Both builds are in this job because allocator behaviour is not comparable
+# across runners. The reference capture is cached on the merge-base SHA, so it
+# is produced once per master commit and reused by every PR against that base.
+#
+# Only the binary comes from the base: the capture scripts live in tests/ and do
+# not exist on the merge base, so the PR tree must be checked out while
+# capturing. Only memory is compared; see tests/compare_memory.py.
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'srcInterface/**'
+      - 'userfiles/**'
+      - 'tests/**'
+      - '!tests/performance/**'
+      - '!tests/validate_performance.py'
+      - 'Config.pl'
+      - 'Makefile'
+      - 'Makefile.*'
+      - '.github/actions/**'
+      - '.github/workflows/memory_test.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  memory-compare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout FLEKS (for local composite actions)
+        uses: actions/checkout@v6
+
+      - name: Setup SWMF dependency tree
+        id: setup
+        uses: ./.github/actions/setup-swmf
+        with:
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          amrex-cache-suffix: 3d
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'true'
+
+      - name: Restore cached reference capture
+        id: cache-reference
+        uses: actions/cache@v5
+        with:
+          path: SWMF/PC/FLEKS/memory_master.json
+          key: memory-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+
+      - name: Build candidate (PR head)
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
+          make EXE -j$(nproc)
+          cp bin/FLEKS.exe "$RUNNER_TEMP/FLEKS_pr.exe"
+
+      - name: Build reference (merge base)
+        if: steps.cache-reference.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fetch both commits explicitly: a shallow checkout of the pull
+          # request merge ref does not necessarily contain them.
+          git fetch --no-tags --depth=1 origin \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
+          git checkout "${{ github.event.pull_request.base.sha }}"
+          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
+          make EXE -j$(nproc)
+          cp bin/FLEKS.exe "$RUNNER_TEMP/FLEKS_base.exe"
+          # Back to the PR tree, whose tests/ holds the capture scripts.
+          git checkout "${{ github.event.pull_request.head.sha }}"
+
+      - name: Capture reference memory
+        if: steps.cache-reference.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          python3 tests/capture_memory.py \
+            --exe "$RUNNER_TEMP/FLEKS_base.exe" \
+            --out memory_master.json --ref master
+
+      - name: Capture candidate memory
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          python3 tests/capture_memory.py \
+            --exe "$RUNNER_TEMP/FLEKS_pr.exe" \
+            --out memory_pr.json
+
+      - name: Compare memory
+        id: compare
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          # '+e' so the report/log always reach GITHUB_OUTPUT before the step
+          # fails; the workflow is meant to go red on a regression, but the PR
+          # comment still has to be posted.
+          set +e
+          python3 tests/compare_memory.py \
+            memory_master.json memory_pr.json \
+            --out memory_diff.md > memory_diff_stdout.txt
+          status=$?
+          cat memory_diff_stdout.txt
+          echo "status=$status" >> $GITHUB_OUTPUT
+          exit $status
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            if [ -f SWMF/PC/FLEKS/memory_diff.md ]; then
+              cat SWMF/PC/FLEKS/memory_diff.md
+            else
+              echo "### 🔬 Memory regression report"
+              echo ""
+              echo "No comparison was produced."
+            fi
+            echo ""
+            echo "<details><summary>raw report log</summary>"
+            echo ""
+            echo '```'
+            cat SWMF/PC/FLEKS/memory_diff_stdout.txt 2>/dev/null || true
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Post PR comment
+        if: always() && github.event.pull_request && (github.event_name == 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'SWMF/PC/FLEKS/memory_diff.md';
+            const failed = '${{ steps.compare.outputs.status }}' === '1';
+            let body = '';
+            if (fs.existsSync(path)) {
+              body += fs.readFileSync(path, 'utf8') + '\n';
+            } else {
+              body += '### 🔬 Memory regression report\n\nNo comparison was produced.\n';
+            }
+            if (failed) {
+              body += '\n> Memory regressions above need review. If the extra allocations '
+                    + 'are intentional, please say so in the PR description.\n';
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes('### 🔬 Memory regression report'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
