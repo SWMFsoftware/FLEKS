@@ -53,7 +53,10 @@ Violating any of these gives silently wrong results or link errors:
    valid for both.
 5. Standalone runs use domain name `FLEKS1` and require `#INITFROMSWMF F` plus
    `#NORMALIZATION` / `#PLASMA` / `#UNIFORMSTATE`.
-6. New `.cpp` files must be listed in `SRCS` in `src/Makefile`.
+6. `src/Makefile` picks up every `.cpp` in `src/` and `src/ic/` with a
+   wildcard; only `main.cpp` and `Converter.cpp` are excluded (each has its
+   own `main()`). A new file needs no Makefile edit — but it will be compiled,
+   so do not leave scratch `.cpp` files in `src/`.
 7. Formatting is CI-enforced (`python3 tools/format_all.py`).
 8. Ionization parameters belong in `SourceInterface` / `UserSource`, not in
    `FluidInterface`.
