@@ -161,18 +161,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      for (int kk = lo.z; kk <= hi.z; ++kk)
-        for (int jj = lo.y; jj <= hi.y; ++jj)
-          for (int ii = lo.x; ii <= hi.x; ++ii) {
-            const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                               loIdx[iz_] + kk) };
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += nodeBArr(ijk, iDim) * coef[ii][jj][kk];
-
-              if (solveInCoMov)
-                u0[iDim] += u0Arr(ijk, iDim) * coef[ii][jj][kk];
-            }
-          }
+      interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
+      if (solveInCoMov)
+        interpolate_vector_field(u0Arr, loIdx, coef, lo, hi, u0);
 
       const Real omx = qdto2mc * bp[ix_];
       const Real omy = qdto2mc * bp[iy_];
@@ -402,19 +393,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      for (int kk = lo.z; kk <= hi.z; ++kk)
-        for (int jj = lo.y; jj <= hi.y; ++jj)
-          for (int ii = lo.x; ii <= hi.x; ++ii) {
-            const IntVect ijk = { AMREX_D_DECL(loIdx[iLev][ix_] + ii,
-                                               loIdx[iLev][iy_] + jj,
-                                               loIdx[iLev][iz_] + kk) };
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += nodeBArr(ijk, iDim) * coef[iLev][ii][jj][kk];
-
-              if (solveInCoMov)
-                u0[iDim] += u0Arr(ijk, iDim) * coef[iLev][ii][jj][kk];
-            }
-          }
+      interpolate_vector_field(nodeBArr, loIdx[iLev], coef[iLev], lo, hi, bp);
+      if (solveInCoMov)
+        interpolate_vector_field(u0Arr, loIdx[iLev], coef[iLev], lo, hi, u0);
 
       const Real omx = qdto2mc * bp[ix_];
       const Real omy = qdto2mc * bp[iy_];
