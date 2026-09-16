@@ -1,55 +1,27 @@
 #!/usr/bin/env python3
-"""Parsers for the standalone run report.
+"""Parsers for the FLEKS standalone run report.
 
-Two independent reports are parsed from a standalone run:
+Two independent reports are parsed:
 
 * the **AMReX TinyProfiler** report (``parse_tinyprofiler``), printed at
-  ``amrex::Finalize()``, giving per-region timings and per-region allocation
-  counts / peak bytes;
+  ``amrex::Finalize()``: per-region timings, plus allocation count and peak
+  bytes per region for each profiled arena;
 * the **FLEKS load-balance report** (``parse_load_balance``), printed by
-  ``Pic::report_load_balance()`` whenever ``doReport`` is set, giving blocks /
-  cells / particles per level and the **resident set size (RSS) in MB** as a
-  min/avg/max across MPI ranks.
+  ``Pic::report_load_balance()``: blocks / cells / particles per level and the
+  resident set size (RSS) in MB as a min/avg/max across ranks.
 
-The two are complementary: the arena profiler attributes allocations to a
-FLEKS function but only sees ``MultiFab``/``FArrayBox``/particle-tile traffic,
-while RSS covers the whole process -- including ``std::vector`` and plain
-``operator new`` traffic -- but cannot attribute it to a region.
-
-See ``parse_load_balance`` for why ``#MEMORY`` must *not* be used to obtain the
-RSS series.
-
-TinyProfiler report
--------------------
-
-It contains
-
-* a total wall-clock line,
-* two timing tables (exclusive, then inclusive) with columns
-  ``Name NCalls Excl. Min Excl. Avg Excl. Max Max %``,
-* one ``<Arena> Usage:`` table per profiled AMReX arena -- ``Cpu Memory`` on a
-  CPU build -- with columns
-  ``Name Nalloc [Nfree] AvgMem[...] MaxMem[...] [CurrentMem[...]]``
-  where ``Name`` is the *enclosing* ``BL_PROFILE`` / ``timing_func`` region,
-  i.e. the FLEKS function that made the allocation.
-
-Two properties make positional parsing unsafe:
-
-* the column set depends on the run -- single-rank runs print one value per
-  metric instead of ``min``/``avg``/``max``, and ``Nfree`` / ``CurrentMem``
-  only appear when memory is still allocated at finalize;
-* memory values carry a unit suffix (``42   B``, ``4755 KiB``, ``19 MiB``)
-  and are therefore two whitespace-separated tokens.
-
-So every table is parsed **by header**, and values are consumed
-right-to-left so that region names may contain spaces.
+Tables are parsed by header rather than by column position, and values are
+consumed right-to-left: the column set varies with the run (single-rank runs
+print one value per metric, ``Nfree``/``CurrentMem`` only appear when memory is
+still allocated at finalize) and memory values are two tokens (``4755 KiB``),
+so region names must be allowed to contain spaces.
 
 Usage::
 
-    python3 tests/profiler.py prof.txt              # human-readable summary
+    python3 tests/profiler.py prof.txt              # timing + arena memory
     python3 tests/profiler.py prof.txt -o prof.json # write JSON
     python3 tests/profiler.py run.log --load-balance --step 10   # RSS series
-    python3 tests/profiler.py --self-test           # parse the bundled samples
+    python3 tests/profiler.py --self-test           # check the parsers
 """
 import argparse
 import json

@@ -23,11 +23,6 @@ Two families are compared, both from the same profile document:
   cannot attribute, but it moves by a few tenths of a MB between runs of the
   same binary, so it gets a tolerance (``--rss-tol``).
 
-Timing is deliberately **not** compared here.  It is captured in the same
-document (``tests/profiler.py`` can show it) but two runs of identical code
-already move individual regions by tens of percent, so it is not a useful
-gate; ``tests/validate_performance.py`` is the tool for tracking speed.
-
 Usage::
 
     python3 tests/compare_memory.py master.json pr.json
@@ -96,6 +91,7 @@ class Findings:
 
 
 def _ncalls(document, region):
+    """Call count of a region; the only thing read from the timing table."""
     return (document.get("timing") or {}).get(region, {}).get("ncalls")
 
 
