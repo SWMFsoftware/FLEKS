@@ -167,9 +167,11 @@ job — and covers the dominant cost centres:
 `profile_tests.py --list` shows the current selection; `--test beam` restricts
 to a single entry.
 
-**Gating policy.** Memory is gated strictly, because allocation counts and peak
-bytes are exact integers for a fixed problem, rank count and RNG seed —
-`--verify` confirmed they are bit-identical across repeated runs here:
+**Gating policy.** Three families are reported, with different treatments.
+
+*Arena allocations — gated strictly.* Counts and peak bytes are exact integers
+for a fixed problem, rank count and RNG seed; `--verify` confirms they are
+bit-identical across repeated runs here:
 
 * `nalloc` — normalised per call when the call count changed, so an extra
   allocation *inside* a function is flagged rather than the function merely
@@ -178,8 +180,20 @@ bytes are exact integers for a fixed problem, rank count and RNG seed —
   shows up here);
 * `curmem_max` — anything still allocated at finalize, i.e. a leak.
 
-Timing is **warning-only** by default: two runs of identical code already show
-individual regions moving by −32 %…+30 % on an otherwise idle machine. Use
+*RSS — gated with a tolerance band.* `Memory(MB)` from the load-balance report
+covers the whole process, including the `std::vector` / `operator new` traffic
+the arena tables cannot see, but it is **not** bit-identical between runs: on
+an idle machine `--verify` shows individual values moving by up to 0.4 MB
+(0.6 %). The allowed change is `max(--rss-abs-tol, --rss-tol × baseline)`
+(defaults 2 MB and 2 %, i.e. comfortably above the observed noise); only the
+per-rank maximum column is gated, `min`/`avg` are context. Re-run `--verify`
+after moving to a new machine — it prints the measured spread and a suggested
+tolerance. The `Cells`/`Parts` counts are reported alongside, so a change in
+problem size (which would explain an RSS move) is flagged rather than silently
+compared.
+
+*Timing — warning only.* Two runs of identical code already show individual
+regions moving by −32 %…+30 % on an otherwise idle machine. Use
 `--gate-timing` to make it fail. Regions added or removed by a refactor, and
 regions whose call count changed, are reported as informational and never fail.
 
@@ -188,14 +202,28 @@ small regions into `Other`, hiding exactly the regressions we look for) and
 `tiny_profiler.output_file` so the report is parsed from a file rather than
 scraped out of the physics log.
 
+**Do not enable `#MEMORY` to get the RSS series.** It is not a reporting switch:
+every `dnMemory` cycles it also calls `Pic::free_memory()`, which runs
+`CArena::freeUnused()` on `The_Arena` and `The_Pinned_Arena`, flushes the tile
+array cache, calls `ShrinkToFit()` on every particle container and
+`malloc_trim(0)` — perturbing the RSS trajectory, the allocation counts and the
+particle capacities being compared. The report is printed anyway whenever
+`doReport` is set. To inspect a captured log directly:
+
+```bash
+python3 tests/profiler.py run.log --load-balance --step 10
+```
+
 **Known blind spot:** the arena profiler only sees `MultiFab` / `FArrayBox` /
 particle-tile traffic. A `std::vector` or `new` added to a hot loop is invisible
-to it; catching that needs either `#MEMORY` (RSS, per-rank, currently unused by
-every deck) or a unit-test-level `operator new` counter.
+to it. RSS closes that gap at *process* granularity — it catches the growth,
+just not which function caused it. Attributing it needs a unit-test-level
+`operator new` counter (see the unit-test plan), which is a different tool.
 
-A captured `beam` report is checked in as
-`tests/profiler_samples/tinyprofiler_beam.txt` and is used by
-`python3 tests/profiler.py --self-test`.
+Two captures are checked in under `tests/profiler_samples/` and are used by
+`python3 tests/profiler.py --self-test`: `tinyprofiler_beam.txt` (timing and
+per-region memory) and `load_balance_beam.txt` (RSS, including a 2-rank report
+where min/avg/max differ).
 
 **In CI** this runs as the *Profiler Regression* workflow
 (`.github/workflows/profile_test.yml`). Because GitHub-hosted runners are not

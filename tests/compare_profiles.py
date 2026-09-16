@@ -2,11 +2,17 @@
 """Diff two TinyProfiler captures (master vs PR) and flag regressions.
 
 Reads two documents produced by ``tests/profile_tests.py`` and compares them
-region by region.  Allocation counts and peak bytes reported by the AMReX
-arena profiler are exact integers for a fixed problem, rank count and RNG seed
-(``profile_tests.py --verify`` checks this), so they are gated strictly.
-Wall-clock timings are not reproducible on shared machines, so they are
-reported as warnings unless ``--gate-timing`` is passed.
+region by region.  Three families are reported:
+
+* **arena allocation counts and peak bytes** -- exact integers for a fixed
+  problem, rank count and RNG seed (``profile_tests.py --verify`` checks this),
+  so they are gated strictly;
+* **RSS** from the FLEKS load-balance report -- covers the whole process
+  including ``std::vector`` / ``operator new`` traffic the arena profiler
+  cannot see, but is not bit-identical between runs, so it is gated with a
+  tolerance band (``--rss-tol`` / ``--rss-abs-tol``);
+* **wall-clock timings** -- not reproducible on shared machines, so reported
+  as warnings unless ``--gate-timing`` is passed.
 
 Usage::
 
@@ -77,6 +83,57 @@ class Findings:
 
 def _ncalls(profile, region):
     return (profile.get("timing") or {}).get(region, {}).get("ncalls")
+
+
+def _compare_load_balance(base, cand, key, cfg, findings):
+    """Compare the RSS reports recorded in the test records.
+
+    RSS is gated with a tolerance band rather than for equality: unlike the
+    arena counters it is not bit-identical between runs (page granularity and
+    allocator behaviour), by up to ~0.5 MB on the decks used here.  Measure the
+    spread with ``profile_tests.py --verify`` and tune --rss-tol /
+    --rss-abs-tol from it.  The allowed change is
+    ``max(abs_tol, rel_tol * baseline)``, so the absolute floor keeps the
+    tolerance from collapsing to nothing on small baselines.
+    """
+    bl_b = base.get("load_balance") or {}
+    bl_c = cand.get("load_balance") or {}
+    if not bl_b and not bl_c:
+        return
+
+    if bl_b.get("n_tables") != bl_c.get("n_tables"):
+        findings.add(INFO, key, "-", "reports", bl_b.get("n_tables"),
+                     bl_c.get("n_tables"), "number of RSS reports changed",
+                     arena="RSS")
+
+    for name in ("first", "last"):
+        tb, tc = bl_b.get(name), bl_c.get(name)
+        if not isinstance(tb, dict) or not isinstance(tc, dict):
+            continue
+
+        rss_b, rss_c = tb.get("Memory(MB)") or {}, tc.get("Memory(MB)") or {}
+        for column in ("min", "avg", "max"):
+            vb, vc = rss_b.get(column), rss_c.get(column)
+            if vb is None or vc is None:
+                continue
+            allowed = max(cfg.rss_abs_tol, cfg.rss_tol * abs(vb))
+            # Only the per-rank maximum is gated; min/avg are context.
+            severity = FAIL if column == "max" else INFO
+            if vc > vb + allowed:
+                findings.add(severity, key, f"Memory(MB) [{name}]", f"rss_{column}",
+                             vb, vc, "RSS grew", arena="RSS", unit="MB")
+            elif vc < vb - allowed:
+                findings.add(INFO, key, f"Memory(MB) [{name}]", f"rss_{column}",
+                             vb, vc, "RSS shrank", arena="RSS", unit="MB")
+
+        # Problem size, as context: a grid/particle change explains an RSS move
+        # and means the two runs are not measuring the same thing.
+        for label in ("Cells # of all levs", "Parts # of all levs"):
+            vb = (tb.get(label) or {}).get("max")
+            vc = (tc.get(label) or {}).get("max")
+            if vb is not None and vc is not None and vb != vc:
+                findings.add(INFO, key, label, "problem size", vb, vc,
+                             "problem size changed", arena="RSS")
 
 
 def _compare_timing(base, cand, key, cfg, findings):
@@ -197,6 +254,7 @@ def compare(baseline, candidate, cfg):
 
         _compare_timing(rb["profile"], rc["profile"], key, cfg, findings)
         _compare_memory(rb["profile"], rc["profile"], key, cfg, findings)
+        _compare_load_balance(rb, rc, key, cfg, findings)
 
     return findings
 
@@ -221,6 +279,10 @@ def _table(rows, show_arena=False):
             cells.append(_fmt_bytes(row["base"]))
             cells.append(_fmt_bytes(row["cand"]))
             cells.append(_fmt_bytes(row["delta"]) if row["delta"] else "-")
+        elif row.get("unit") == "MB":
+            cells.append(_fmt(row["base"], " MB"))
+            cells.append(_fmt(row["cand"], " MB"))
+            cells.append(f"{row['delta']:+,.1f} MB" if row["delta"] else "-")
         else:
             unit = row.get("unit", "")
             cells.append(_fmt(row["base"], unit))
@@ -251,7 +313,7 @@ def format_markdown(baseline, candidate, findings, title):
                    f"across {len(set(i['test'] for i in findings.items))} tests.")
 
     if failures:
-        out += ["", "#### 🔴 Regressions (allocation counts / peak bytes)",
+        out += ["", "#### 🔴 Regressions (allocations, peak bytes, RSS)",
                 "", _table(failures, show_arena=True)]
     if warnings:
         out += ["", "#### 🟡 Warnings (timing, not gated)", "",
@@ -263,10 +325,11 @@ def format_markdown(baseline, candidate, findings, title):
                 _table(sorted(improvements, key=lambda r: r["delta"] or 0)[:10])]
     structural = [i for i in infos if i["note"] in
                   ("region added", "region removed", "test added",
-                   "test not run", "call count changed; timings not comparable")]
+                   "test not run", "call count changed; timings not comparable",
+                   "number of RSS reports changed", "problem size changed")]
     if structural:
         out += ["", "#### ⚪ Added / removed / not comparable", "",
-                _table(structural[:40])]
+                _table(structural[:40], show_arena=True)]
     out.append("")
     return "\n".join(out)
 
@@ -280,6 +343,11 @@ def main():
     parser.add_argument("--json", dest="json_out", help="write findings as JSON")
     parser.add_argument("--mem-tol", type=float, default=0.02,
                         help="allowed relative growth of peak bytes (default 0.02)")
+    parser.add_argument("--rss-tol", type=float, default=0.02,
+                        help="allowed relative growth of RSS (default 0.02)")
+    parser.add_argument("--rss-abs-tol", type=float, default=2.0,
+                        help="allowed absolute RSS growth in MB; overrides "
+                             "--rss-tol for small baselines (default 2.0)")
     parser.add_argument("--alloc-tol", type=float, default=0.0,
                         help="allowed relative growth of allocations per call "
                              "(default 0.0 = any increase fails)")
