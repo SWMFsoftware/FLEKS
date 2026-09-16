@@ -2,19 +2,24 @@ name: Memory Regression
 
 # Memory regression check for the standalone tests. Every standalone FLEKS run
 # already produces the AMReX TinyProfiler report (per-region allocation counts
-# and peak bytes) and the FLEKS load-balance report (RSS). This workflow
-# captures both on the merge base and on the PR head, inside one job on one
-# runner, and diffs them.
+# and peak bytes) and the FLEKS load-balance report (RSS). This workflow builds
+# the merge base and the PR head, runs the same capture script against both
+# binaries, and diffs the result.
 #
-# Building twice is the expensive part, so the master capture is cached under
+# Both binaries are built and stashed first, then the PR tree is restored before
+# anything is captured. That order matters: the capture scripts live in tests/
+# and only exist on the PR branch, so a reference capture run against a checked
+# out merge base would not find them at all. Only the binary has to come from
+# the base.
+#
+# Building twice is the expensive part, so the reference capture is cached under
 # a key derived from the merge base SHA: it only ever has to be produced once
 # per master commit and is then reused by every PR against that base.
 #
-# Note on why master and PR run in the SAME job rather than in parallel jobs:
+# Note on why both builds happen in the SAME job rather than in parallel jobs:
 # GitHub-hosted runners differ enough between machines that allocator behaviour
 # is not comparable across jobs, and the reference has to be built in-tree
-# anyway (the gitignored util/AMREX dependency tree is not in a fresh
-# worktree).
+# anyway (the gitignored util/AMReX dependency tree is not in a fresh worktree).
 #
 # Only memory is compared -- timings are captured in the same document but not
 # gated, because two runs of identical code already move individual regions by
@@ -63,15 +68,24 @@ jobs:
           config-components: PC/FLEKS,GM/BATSRUS
           verify-amrex: 'true'
 
-      # -------------------------------------------------------------------
-      # Reference profile (merge base)
-      # -------------------------------------------------------------------
       - name: Restore cached reference capture
         id: cache-reference
         uses: actions/cache@v5
         with:
           path: SWMF/PC/FLEKS/memory_master.json
-          key: profile-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+          key: memory-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+
+      # -------------------------------------------------------------------
+      # Build both binaries, keeping the PR tree checked out at the end.
+      # -------------------------------------------------------------------
+      - name: Build candidate (PR head)
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
+          make EXE -j$(nproc)
+          cp bin/FLEKS.exe "$RUNNER_TEMP/FLEKS_pr.exe"
 
       - name: Build reference (merge base)
         if: steps.cache-reference.outputs.cache-hit != 'true'
@@ -79,43 +93,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
-          git checkout FETCH_HEAD
+          # Fetch both commits explicitly: a shallow checkout of the pull
+          # request merge ref does not necessarily contain them.
+          git fetch --no-tags --depth=1 origin \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
+          git checkout "${{ github.event.pull_request.base.sha }}"
           ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
           make EXE -j$(nproc)
+          cp bin/FLEKS.exe "$RUNNER_TEMP/FLEKS_base.exe"
+          # Back to the PR tree, whose tests/ holds the capture scripts.
+          git checkout "${{ github.event.pull_request.head.sha }}"
 
+      # -------------------------------------------------------------------
+      # Capture: same scripts, different binaries.
+      # -------------------------------------------------------------------
       - name: Capture reference memory
         if: steps.cache-reference.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
-          python3 tests/capture_memory.py --out memory_master.json --ref master
-
-      # -------------------------------------------------------------------
-      # Candidate profile (PR head)
-      # -------------------------------------------------------------------
-      - name: Build candidate (PR head)
-        working-directory: SWMF/PC/FLEKS
-        shell: bash
-        run: |
-          set -euo pipefail
-          git checkout "${{ github.event.pull_request.head.sha }}"
-          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
-          # Incremental: only files that differ from the merge base recompile.
-          make EXE -j$(nproc)
+          python3 tests/capture_memory.py \
+            --exe "$RUNNER_TEMP/FLEKS_base.exe" \
+            --out memory_master.json --ref master
 
       - name: Capture candidate memory
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
-          python3 tests/capture_memory.py --out memory_pr.json
+          python3 tests/capture_memory.py \
+            --exe "$RUNNER_TEMP/FLEKS_pr.exe" \
+            --out memory_pr.json
 
       # -------------------------------------------------------------------
       # Compare
       # -------------------------------------------------------------------
       # Exit status: 1 if an allocation count, peak bytes, unfreed memory or
-      # RSS regression was found. Only memory is compared; timings are not
-      # reproducible enough on shared runners to gate on.
+      # RSS regression was found.
       - name: Compare memory
         id: compare
         working-directory: SWMF/PC/FLEKS

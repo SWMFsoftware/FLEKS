@@ -89,13 +89,13 @@ def test_key(test, variant, nprocs):
     return f"{test}{'.' + variant if variant else ''}.n{nprocs}"
 
 
-def prepare_run_dir(run_dir):
+def prepare_run_dir(run_dir, exe):
     """Minimal run-directory setup: no PostIDL / PostProc needed for profiling."""
     os.makedirs(run_dir, exist_ok=True)
-    exe = os.path.join(run_dir, "FLEKS.exe")
-    if os.path.lexists(exe):
-        os.remove(exe)
-    os.symlink(os.path.join("..", "bin", "FLEKS.exe"), exe)
+    link = os.path.join(run_dir, "FLEKS.exe")
+    if os.path.lexists(link):
+        os.remove(link)
+    os.symlink(os.path.abspath(exe), link)
 
 
 def clean_output(run_dir):
@@ -113,9 +113,10 @@ def clean_output(run_dir):
                 pass
 
 
-def run_one(test, variant, nprocs, run_dir, keep_prof=False, keep_log=False):
+def run_one(test, variant, nprocs, run_dir, exe, keep_prof=False,
+            keep_log=False):
     """Run one entry and return its profile record."""
-    prepare_run_dir(run_dir)
+    prepare_run_dir(run_dir, exe)
     clean_output(run_dir)
 
     source = param_path(test, variant)
@@ -178,8 +179,15 @@ def run_one(test, variant, nprocs, run_dir, keep_prof=False, keep_log=False):
     return record
 
 
-def capture(selection, run_dir, verbose=False, keep_prof=False, keep_log=False):
+def capture(selection, run_dir, exe, verbose=False, keep_prof=False,
+            keep_log=False):
     """Run every entry in *selection* and return the full profile document."""
+    if not os.path.isfile(exe):
+        print(f"error: executable not found: {exe}\n"
+              f"  build it first, or pass --exe with the path to one.",
+              file=sys.stderr)
+        sys.exit(2)
+
     os.makedirs(run_dir, exist_ok=True)
     tests = {}
     for test, variant, nprocs in selection:
@@ -194,8 +202,8 @@ def capture(selection, run_dir, verbose=False, keep_prof=False, keep_log=False):
 
         key = test_key(test, variant, nprocs)
         print(f"  RUN  {key} ...", flush=True)
-        record = run_one(test, variant, nprocs, run_dir, keep_prof=keep_prof,
-                         keep_log=keep_log)
+        record = run_one(test, variant, nprocs, run_dir, exe,
+                         keep_prof=keep_prof, keep_log=keep_log)
         tests[key] = record
         if "error" in record:
             print(f"       FAILED (exit {record['exit_code']})")
@@ -218,6 +226,7 @@ def capture(selection, run_dir, verbose=False, keep_prof=False, keep_log=False):
             "omp_num_threads": os.environ.get("OMP_NUM_THREADS", "1"),
             "date": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "profiler_args": PROFILER_ARGS,
+            "exe": os.path.relpath(exe, REPO_ROOT),
         },
         "tests": tests,
     }
@@ -249,7 +258,7 @@ def _rss_index(record):
     return out
 
 
-def verify(selection, run_dir, repeats=2):
+def verify(selection, run_dir, exe, repeats=2):
     """Run the selection twice and report non-deterministic memory values.
 
     Allocation counts and peak bytes are exact integers for a fixed problem,
@@ -259,7 +268,7 @@ def verify(selection, run_dir, repeats=2):
     runs = []
     for i in range(repeats):
         print(f"run {i + 1}/{repeats}")
-        runs.append(capture(selection, run_dir))
+        runs.append(capture(selection, run_dir, exe))
 
     baseline = runs[0]
     problems, rss_spread = [], []
@@ -326,6 +335,10 @@ def main():
     parser.add_argument("--ref", help="label recorded in meta['ref']")
     parser.add_argument("--run-dir", default=DEFAULT_RUN_DIR,
                         help=f"run directory (default: {DEFAULT_RUN_DIR})")
+    parser.add_argument("--exe", default=os.path.join("bin", "FLEKS.exe"),
+                        help="FLEKS executable to measure (default bin/FLEKS.exe); "
+                             "use this to compare against a binary built from a "
+                             "different commit without rebuilding it")
     parser.add_argument("--test", action="append",
                         help="restrict to test[.variant][:nprocs]; repeatable")
     parser.add_argument("--list", action="store_true", help="show the selection")
@@ -361,11 +374,13 @@ def main():
             print(f"no selection matches {args.test}; see --list")
             return 1
 
+    exe = args.exe if os.path.isabs(args.exe) else os.path.join(REPO_ROOT, args.exe)
+
     if args.verify:
-        return verify(selection, args.run_dir, repeats=args.repeats)
+        return verify(selection, args.run_dir, exe, repeats=args.repeats)
 
     print("Capturing profiles:")
-    document = capture(selection, args.run_dir, verbose=args.verbose,
+    document = capture(selection, args.run_dir, exe, verbose=args.verbose,
                        keep_prof=args.keep_prof, keep_log=args.keep_log)
     if args.ref:
         document["meta"]["ref"] = args.ref
