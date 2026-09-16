@@ -11,10 +11,6 @@ Two field solvers, selected per run:
 - **Hybrid PIC** — kinetic ions + massless fluid electrons, generalized Ohm's
   law, explicit Faraday advance (`#HYBRIDPIC`).
 
-> This file is a **router**, not a manual. It is the only `AGENT.md` in the
-> repository; detailed content belongs in `doc/` or in `.agents/`, so agents pay
-> for it only when they need it.
-
 ## Single source of truth
 
 | Content | Location |
@@ -29,9 +25,6 @@ Two field solvers, selected per run:
 | Task recipes | `.agents/skills/*/SKILL.md` |
 | Multi-step guides | `.agents/workflows/` |
 | Submission rules (formatting, commits) | `CONTRIBUTING.md` |
-
-Do **not** add per-directory `AGENT.md` files — extend the skill references
-instead.
 
 ## Commands
 
