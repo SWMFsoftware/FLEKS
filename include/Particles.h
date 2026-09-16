@@ -292,35 +292,11 @@ public:
   using amrex::ParIter<NStructReal, NStructInt>::ParIter;
 };
 
-/*
-Q: How it the Grid* gridIn variable used inside the particle container?
-A: The following codes show how gridIn is passed into the particle container.
-
-  1.
-    AmrParticleContainer (AmrCore* amr_core)
-        : ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt,
-Allocator>(amr_core->GetParGDB()){ }
-
-  2.
-      ParticleContainer (ParGDBBase* gdb):
-        ParticleContainerBase(gdb)
-
-  3.
-      ParticleContainerBase (ParGDBBase* gdb)
-        :
-        m_verbose(0),
-        m_gdb(gdb)
-    {}
-
-But, what is amr_core->GetParGDB()? It returns a AmrParGDB pointer that is
-pointing to AmrCore::m_gdb. AmrParGDB class (object AmrCore::m_gdb) contains a
-member variable  AmrCore* m_amrcore, which is a copy of amr_core pointer. So,
-the Geometries, DistributionMaps and BoxArrays of Grid can be accessed by the
-particle container through m_gdb pointer.
-
-In short, once the grids or distributions maps of Pic or ParticleTracker change,
-the particle contains aware of the changes through the m_gdb pointer.
-*/
+// The Grid (an amrex::AmrCore) handed to the constructor is forwarded to
+// AmrParticleContainer, which keeps it as its AmrParGDB. Geometries,
+// DistributionMaps and BoxArrays are therefore read through that pointer: when
+// the PIC or ParticleTracker grids change, the container sees the new grids
+// without being told to refresh. The container must not cache them itself.
 
 // Forward declaration.
 template <int NStructReal, int NStructInt> class Particles;
@@ -612,6 +588,17 @@ public:
       const amrex::Vector<amrex::MultiFab>& eBg,
       const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
       amrex::Real dtNext);
+
+  // Where the fields are sampled for the Boris push.
+  enum class FieldSampling { Node, CellCentered };
+
+  // Shared implementation of the two charged-particle movers above; they
+  // differ only in where E and B are sampled. eBg and uBg belong to the public
+  // mover signatures but are not needed here.
+  void charged_particle_mover_impl(const amrex::Vector<amrex::MultiFab>& EGrid,
+                                   const amrex::Vector<amrex::MultiFab>& BGrid,
+                                   amrex::Real dt, amrex::Real dtNext,
+                                   FieldSampling sampling);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);

@@ -273,8 +273,9 @@ void TestParticles::move_and_save_charged_particles(
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };
-      interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
-      interpolate_vector_field(nodeEArr, loIdx, coef, lo, hi, ep);
+      const Array4<Real const> fields[2] = { nodeBArr, nodeEArr };
+      Real* values[2] = { bp, ep };
+      interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
 
       Real gamma = 1;
       Real invGamma = 1. / gamma;
@@ -478,8 +479,9 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };
-      interpolate_vector_field(centerBArr, loIdx, coefLin, lo, hi, bp);
-      interpolate_vector_field(centerEArr, loIdx, coefLin, lo, hi, ep);
+      const Array4<Real const> fields[2] = { centerBArr, centerEArr };
+      Real* values[2] = { bp, ep };
+      interpolate_vector_fields(fields, loIdx, coefLin, lo, hi, values);
 
       Real gamma = 1;
       Real invGamma = 1. / gamma;

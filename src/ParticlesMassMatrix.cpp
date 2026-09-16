@@ -161,9 +161,13 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
-      if (solveInCoMov)
-        interpolate_vector_field(u0Arr, loIdx, coef, lo, hi, u0);
+      if (solveInCoMov) {
+        const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
+        Real* values[2] = { bp, u0 };
+        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+      } else {
+        interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
+      }
 
       const Real omx = qdto2mc * bp[ix_];
       const Real omy = qdto2mc * bp[iy_];
@@ -386,9 +390,14 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      interpolate_vector_field(nodeBArr, loIdx[iLev], coef[iLev], lo, hi, bp);
-      if (solveInCoMov)
-        interpolate_vector_field(u0Arr, loIdx[iLev], coef[iLev], lo, hi, u0);
+      if (solveInCoMov) {
+        const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
+        Real* values[2] = { bp, u0 };
+        interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
+                                  values);
+      } else {
+        interpolate_vector_field(nodeBArr, loIdx[iLev], coef[iLev], lo, hi, bp);
+      }
 
       const Real omx = qdto2mc * bp[ix_];
       const Real omy = qdto2mc * bp[iy_];
