@@ -10,42 +10,14 @@ FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 LIBFLEKS = libFLEKS.a
 
 # source files
-SRCS := \
-	Domain.cpp \
-	ParticleTracker.cpp \
-	Particles.cpp \
-	ParticlesInit.cpp \
-	ParticlesBC.cpp \
-	ParticlesMoments.cpp \
-	ParticlesMassMatrix.cpp \
-	ParticlesMover.cpp \
-	ParticlesResample.cpp \
-	ParticlesReactions.cpp \
-	TestParticles.cpp \
-	LinearSolver.cpp \
-	GridUtility.cpp \
-	PlotWriter.cpp \
-	TimeCtr.cpp \
-	BC.cpp \
-	WaveBC.cpp \
-	FluidInterface.cpp \
-	Pic.cpp \
-	PicParam.cpp \
-	PicBC.cpp \
-	PicHybrid.cpp \
-	PicFieldSolver.cpp \
-	PicDivE.cpp \
-	PicIO.cpp \
-	Grid.cpp  \
-	DataContainer.cpp \
-	VisitWriter.cpp  \
-	FleksDistributionMap.cpp \
-	InitialCondition.cpp \
-	ic/WaveIC.cpp \
-	ic/BeamIC.cpp \
-	ic/TopHatIC.cpp \
-	ic/FadeevIC.cpp \
-	ic/RegisterAll.cpp
+#
+# Everything in this directory and in ic/ belongs to libFLEKS.a, except the two
+# translation units that carry their own main() and are linked separately:
+# main.cpp into ../bin/FLEKS.exe, Converter.cpp into ../bin/converter.exe.
+# $(sort) fixes the archive member order: $(wildcard) returns directory order,
+# which is not reproducible across machines.
+SRCS := $(sort $(filter-out main.cpp Converter.cpp, \
+                 $(wildcard *.cpp) $(wildcard ic/*.cpp)))
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
