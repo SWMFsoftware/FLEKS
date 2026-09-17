@@ -22,6 +22,45 @@ public:
     commands.push_back("#CHEMISTRY");
   }
 
+  // ---- Species <-> nodeFluid slot mapping ----
+  // The mapping depends on how FLEKS was initialized:
+  //  * useElectronFluid == true (standalone runs, or an MHD equation with an
+  //    electron state variable): species 0 is the electron and owns
+  //    iRho_I[0], so species iSp maps to iRho_I[iSp].
+  //  * useElectronFluid == false (coupled to a multi-species or multi-fluid
+  //    MHD equation without an electron state variable, e.g. MhdMars):
+  //    species 0 is the quasi-neutral electron and has NO slot of its own,
+  //    iRho_I[0..nIon-1] hold ion species 1..nIon, and all ion species share
+  //    one momentum slot (iUx_I[0]) and one pressure slot (iP_I[0]).
+  // get_number_density(), get_p() and convert_moment_to_velocity() already
+  // follow this convention, so every direct nodeFluid access in this file has
+  // to go through the helpers below.
+  bool has_electron_species() const {
+    return (nS > 0 && QoQi_S[0] < 0.0);
+  }
+
+  // True when the electron has its own density/momentum/pressure slots.
+  bool electron_has_state_slot() const { return useElectronFluid; }
+
+  // True when all ion species share one momentum and one pressure slot.
+  bool shared_ion_state() const { return !electron_has_state_slot(); }
+
+  // nodeFluid slot holding the mass density of species iSp, or -1 when the
+  // species has no state slot of its own (quasi-neutral electron).
+  int node_rho_slot(const int iSp) const {
+    if (iSp < 0 || iSp >= nS) return -1;
+    if (iSp == 0) return (electron_has_state_slot() ? iRho_I[0] : -1);
+    return (electron_has_state_slot() ? iRho_I[iSp] : iRho_I[iSp - 1]);
+  }
+
+  // get_p() returns (1 - PeRatio)*iP_I[0] for the ions when the electron
+  // pressure is not a separate MHD state variable.  The ion pressure written
+  // into the shared slot therefore has to be pre-divided by (1 - PeRatio).
+  amrex::Real ion_pressure_factor() const {
+    if (useMhdPe) return 1.0;
+    return (PeRatio < 1.0 ? 1.0 / (1.0 - PeRatio) : 1.0);
+  }
+
   // ---- Exosphere density profiles ----
 
   amrex::Real get_exosphere_density(amrex::Real r) const override {
@@ -243,10 +282,13 @@ public:
         amrex::Abort(printPrefix + "Error: #RECOMBINATION requires "
                      + "plasma species. Use #PLASMA to set species.");
       }
-      if (!useElectronFluid) {
-        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires "
-                     + "useElectronFluid = true (species 0 must be the "
-                     + "electron). Set #PLASMA with an electron species.");
+      if (!has_electron_species()) {
+        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires species 0 "
+                     + "to be the electron (negative charge). Reorder "
+                     + "#PLASMA so that the electron comes first. The "
+                     + "electron may be quasi-neutral "
+                     + "(useElectronFluid = false), which is the case for "
+                     + "GM-coupled multi-species runs.");
       }
       const int nIonS = nS - 1;
       for (int i = 0; i < static_cast<int>(recombIonIndex.size()); ++i) {
@@ -324,10 +366,14 @@ public:
         amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with neutralComp >= 0 "
                      + "require #EXOSPHERE with nComponent > 0 to be specified.");
       }
-      if (needsElectron && !useElectronFluid) {
-        amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with recombination "
-                     + "or temperature dependence require useElectronFluid = true. "
-                     + "Set #PLASMA with an electron species.");
+      if (needsElectron && !has_electron_species()) {
+        amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with "
+                     + "recombination or temperature dependence require "
+                     + "species 0 to be the electron (negative charge). "
+                     + "Reorder #PLASMA so that the electron comes first. "
+                     + "The electron may be quasi-neutral "
+                     + "(useElectronFluid = false), which is the case for "
+                     + "GM-coupled multi-species runs.");
       }
     }
 
@@ -421,8 +467,10 @@ public:
     if (rxn.reactantIon > 0 && rxn.reactantIon <= nIonS) {
       // Cross-species CX: product inherits reactant velocity and temperature.
       int iSpReac = rxn.reactantIon;
+      const int iRhoReac = node_rho_slot(iSpReac);
+      if (iRhoReac < 0) return;
       amrex::Real rho_reac_norm =
-          other.get_value(mfi, idx, iRho_I[iSpReac], iLev);
+          other.get_value(mfi, idx, iRhoReac, iLev);
       if (rho_reac_norm <= 0.0) return;
 
       amrex::Real mass_reac = get_species_mass(iSpReac);
@@ -441,8 +489,10 @@ public:
       srcRhoUy[iSpProd] += srcRho_si * uy_reac;
       srcRhoUz[iSpProd] += srcRho_si * uz_reac;
 
-      amrex::Real p_reac_norm =
-          other.get_value(mfi, idx, iP_I[iSpReac], iLev);
+      // get_p() applies the (1 - PeRatio) ion share and the multi-species
+      // number-density split, i.e. it returns the pressure of species
+      // iSpReac itself instead of the total pressure.
+      amrex::Real p_reac_norm = other.get_p(mfi, idx, iSpReac, iLev);
       amrex::Real p_reac_si = p_reac_norm / get_Si2NoP();
       srcP[iSpProd] += rate * p_reac_si;
     } else {
@@ -476,8 +526,10 @@ public:
     if (rxn.reactantIon <= 0 || rxn.reactantIon > nIonS) return;
 
     int iSpReac = rxn.reactantIon;
+    const int iRhoReac = node_rho_slot(iSpReac);
+    if (iRhoReac < 0) return;
     amrex::Real rho_reac_norm =
-        other.get_value(mfi, idx, iRho_I[iSpReac], iLev);
+        other.get_value(mfi, idx, iRhoReac, iLev);
     if (rho_reac_norm <= 0.0) return;
 
     amrex::Real lossRho_norm = rate * rho_reac_norm / get_Si2NoT();
@@ -509,8 +561,10 @@ public:
         k_si *= pow(recombRefTemp[iR] / Te_K, recombTempExp[iR]);
       }
 
+      const int iRhoIon = node_rho_slot(iSp);
+      if (iRhoIon < 0) continue;
       amrex::Real rho_ion_norm =
-          other.get_value(mfi, idx, iRho_I[iSp], iLev);
+          other.get_value(mfi, idx, iRhoIon, iLev);
       if (rho_ion_norm <= 0.0) continue;
 
       amrex::Real lossRho_norm = k_si * ne * rho_ion_norm /
@@ -661,6 +715,10 @@ public:
                 }
 
                 // Write accumulated sources to nodeFluid.
+                // set_node_fluid(other) copied the MHD state into nodeFluid,
+                // so every slot that may hold a source has to be zeroed
+                // first; otherwise a node without a source would re-inject
+                // the ambient MHD density as a source.
                 for (int iFluid = 0; iFluid < nFluid; iFluid++) {
                   arr(i, j, k, iRho_I[iFluid]) = 0;
                   arr(i, j, k, iUx_I[iFluid]) = 0;
@@ -669,31 +727,70 @@ public:
                   arr(i, j, k, iP_I[iFluid]) = 0;
                 }
 
-                bool anySource = false;
-                if (nS > 0 && iRho_I[0] >= 0 && srcRho[0] > 0) {
-                  arr(i, j, k, iRho_I[0]) = srcRho[0] * rhoNormPerT;
+                const bool sharedState = shared_ion_state();
+                if (sharedState) {
+                  // nFluid is 1 for a multi-species MHD state while the ion
+                  // species occupy nIon separate density slots.
+                  for (int iIon = 0; iIon < nIon; ++iIon)
+                    arr(i, j, k, iRho_I[iIon]) = 0;
+                }
+
+                // Electron source.  The electron only has a state slot of its
+                // own when it is a fluid.  In a GM-coupled quasi-neutral run
+                // the electrons are created implicitly with the ions, so
+                // nothing is written for species 0 (its pressure is implied
+                // by the PeRatio split of the shared pressure slot).
+                const int iRhoElectron = node_rho_slot(0);
+                if (iRhoElectron >= 0 && srcRho[0] > 0) {
+                  arr(i, j, k, iRhoElectron) = srcRho[0] * rhoNormPerT;
                   arr(i, j, k, iP_I[0]) = srcP[0] * pNormPerT;
                   arr(i, j, k, iUx_I[0]) = 0.0;
                   arr(i, j, k, iUy_I[0]) = 0.0;
                   arr(i, j, k, iUz_I[0]) = 0.0;
                 }
+
+                bool anySource = false;
+                amrex::Real sumRhoUx = 0.0, sumRhoUy = 0.0, sumRhoUz = 0.0;
+                amrex::Real sumP = 0.0;
                 for (int iSp = 1; iSp <= nIonS; ++iSp) {
                   if (srcRho[iSp] > 0) {
                     anySource = true;
-                    amrex::Real rho_norm = srcRho[iSp] * rhoNormPerT;
-                    arr(i, j, k, iRho_I[iSp]) = rho_norm;
-                    arr(i, j, k, iUx_I[iSp]) = srcRhoUx[iSp] * rhoNormPerT;
-                    arr(i, j, k, iUy_I[iSp]) = srcRhoUy[iSp] * rhoNormPerT;
-                    arr(i, j, k, iUz_I[iSp]) = srcRhoUz[iSp] * rhoNormPerT;
-                    arr(i, j, k, iP_I[iSp]) = srcP[iSp] * pNormPerT;
+                    const int iRhoSp = node_rho_slot(iSp);
+                    if (iRhoSp >= 0)
+                      arr(i, j, k, iRhoSp) = srcRho[iSp] * rhoNormPerT;
+                    sumRhoUx += srcRhoUx[iSp];
+                    sumRhoUy += srcRhoUy[iSp];
+                    sumRhoUz += srcRhoUz[iSp];
+                    sumP += srcP[iSp];
+                    if (!sharedState) {
+                      arr(i, j, k, iUx_I[iSp]) = srcRhoUx[iSp] * rhoNormPerT;
+                      arr(i, j, k, iUy_I[iSp]) = srcRhoUy[iSp] * rhoNormPerT;
+                      arr(i, j, k, iUz_I[iSp]) = srcRhoUz[iSp] * rhoNormPerT;
+                      arr(i, j, k, iP_I[iSp]) = srcP[iSp] * pNormPerT;
+                    }
                   }
                 }
-                if (anySource && iPe >= 0) {
-                  amrex::Real srcPe = 0.0;
-                  for (int iSp = 1; iSp <= nIonS; ++iSp)
-                    srcPe += srcP[iSp];
-                  arr(i, j, k, iPe) = srcPe * pNormPerT;
+
+                if (sharedState && anySource) {
+                  // All ion species share one momentum and one pressure slot,
+                  // so the per-species sources have to be accumulated instead
+                  // of overwriting each other.  A single shared slot can only
+                  // carry one ion temperature, so the newly created ions end
+                  // up with the number-density weighted mean source
+                  // temperature.
+                  arr(i, j, k, iUx_I[0]) = sumRhoUx * rhoNormPerT;
+                  arr(i, j, k, iUy_I[0]) = sumRhoUy * rhoNormPerT;
+                  arr(i, j, k, iUz_I[0]) = sumRhoUz * rhoNormPerT;
+                  arr(i, j, k, iP_I[0]) =
+                      sumP * ion_pressure_factor() * pNormPerT;
                 }
+
+                // Electron pressure source.  Only written when the MHD state
+                // carries a separate electron pressure variable: iPe == 0 is
+                // the BATSRUS sentinel for "no Pe variable" (Pe_ = 1) and
+                // would alias the total density slot.
+                if (useMhdPe && iPe > 0 && srcP[0] > 0)
+                  arr(i, j, k, iPe) = srcP[0] * pNormPerT;
 
                 // Loss terms.
                 if (doRecomb) {
