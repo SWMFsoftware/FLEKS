@@ -12,6 +12,16 @@ public:
     useFluidSource = true;
   }
 
+  void register_parameter_commands(
+      std::vector<std::string>& commands) const override {
+    commands.push_back("#PHOTOIONIZATION");
+    commands.push_back("#ELECTRONIMPACT");
+    commands.push_back("#CHARGEEXCHANGE");
+    commands.push_back("#SHADOWCYLINDER");
+    commands.push_back("#RECOMBINATION");
+    commands.push_back("#CHEMISTRY");
+  }
+
   // ---- Exosphere density profiles ----
 
   amrex::Real get_exosphere_density(amrex::Real r) const override {

@@ -48,6 +48,9 @@ Violating any of these gives silently wrong results or link errors:
    instantiation belongs only in `src/Particles.cpp`.
 2. `include/Constants.h` and `include/UserSource.h` are **generated** (from
    `Constants.h.orig` and `userfiles/*Source.h`). Edit the sources.
+   Sync `include/Constants.h` via `Config.pl` or `make install`. Sync `include/UserSource.h`
+   via `./Config.pl -u=<Name>`. Custom source commands must be registered via
+   `register_parameter_commands()` and documented in `PARAM.XML`.
 3. FLEKS is always 3D internally; 2D is one cell in z ("fake 2D"). A true-2D
    AMReX build needs `./Config.pl -amrex2d`.
 4. Builds define `_PC_COMPONENT_` / `_PT_COMPONENT_`; guarded code must stay

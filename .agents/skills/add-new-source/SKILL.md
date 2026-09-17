@@ -145,9 +145,21 @@ selection name is the prefix before `Source.h` (`New` in this example).
 class UserSource : public SourceInterface {
 public:
   UserSource(const FluidInterface& other, int id, std::string tag,
-             FluidType typeIn = SourceFluid)
-      : SourceInterface(other, id, tag, typeIn) {
+             FluidType typeIn, const DomainParameters& dp)
+      : SourceInterface(other, id, tag, typeIn, dp) {
     info = "New Source";
+  }
+
+  void register_parameter_commands(
+      std::vector<std::string>& commands) const override {
+    // Register commands handled by this source's read_param()
+    commands.push_back("#NEWSOURCECOMMAND");
+  }
+
+  void read_param(const std::string& command, ReadParam& param) override {
+    if (command == "#NEWSOURCECOMMAND") {
+      // parse parameters
+    }
   }
 };
 
@@ -161,6 +173,13 @@ constructor and override `set_source(const FluidInterface& other)`. Override
 `sum_to_single_source()` only when the source needs post-processing before
 particle injection (e.g., region-split mode with `_PT_COMPONENT_`).
 
+If your source defines custom `PARAM.in` commands:
+1. Override `register_parameter_commands()` so the domain routes those commands
+   to your source.
+2. Implement parsing in `read_param(const std::string& command, ReadParam& param)`.
+3. Add the command definitions to `PARAM.XML` so `python3 tools/check_parameter_registry.py`
+   passes.
+
 ### 3. Select and Inspect the Source
 
 List available templates:
@@ -173,9 +192,11 @@ Select one template:
 ./Config.pl -u=New
 ```
 
-This copies `userfiles/NewSource.h` to `include/UserSource.h`. A plain install
-seeds `include/UserSource.h` from `userfiles/DefaultSource.h` when no selected
-copy exists.
+This copies `userfiles/NewSource.h` to `include/UserSource.h` (analogous to how
+`include/Constants.h` is generated from `Constants.h.orig`). Whenever you modify
+a template in `userfiles/*Source.h`, you **must re-run** `./Config.pl -u=<Name>`
+to update `include/UserSource.h`. A plain install seeds `include/UserSource.h`
+from `userfiles/DefaultSource.h` when no selected copy exists.
 
 ### 4. Enable the Source in Parameters
 

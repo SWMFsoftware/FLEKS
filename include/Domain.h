@@ -1,6 +1,11 @@
 #ifndef _DOMAIN_H_
 #define _DOMAIN_H_
 
+#include <cstddef>
+#include <map>
+#include <string>
+#include <vector>
+
 #include "DomainGrid.h"
 #include "DomainParameters.h"
 #include "OHInterface.h"
@@ -9,15 +14,28 @@
 #include "ReadParam.h"
 #include "SourceInterface.h"
 
+struct ParameterCommandLocation {
+  std::size_t line = 0;
+  std::size_t column = 0;
+};
+
+enum class ParameterOwner { Pic, ParticleTracker, Source, FluidInterface };
+
 class Domain : public DomainGrid {
 private:
   DomainParameters domainParameters;
 
   ReadParam readParam;
+  std::string parameterText;
+  std::map<std::string, ParameterCommandLocation> parameterCommandLocations;
+  std::vector<std::string> sourceParameterCommands;
 
   ParticleTrackerInfo ptInfo;
 
   bool isTCInitialized = false;
+
+  bool find_parameter_owner(const std::string &command,
+                            ParameterOwner &owner) const;
 
 public:
   std::unique_ptr<TimeCtr> tc;
@@ -89,6 +107,7 @@ public:
 
   // Parse Domain-level switches before constructing children, then roll back.
   void read_domain_parameters(ReadParam &param);
+  void validate_configuration() const;
   void save_restart(std::string restartOutDir);
   void save_restart_header();
   void save_restart_data();

@@ -1,6 +1,8 @@
 #ifndef _DOMAINPARAMETERS_H_
 #define _DOMAINPARAMETERS_H_
 
+#include <string>
+
 #include "FleksDistributionMap.h"
 
 // Configuration for a FLEKS Domain, owned by Domain and shared
@@ -27,6 +29,18 @@ struct DomainParameters {
   // Load-balancing strategy.
   BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
   int cellWeight = 10;
+
+  // Return the first invalid domain-level combination, or an empty string.
+  // Parsing and application remain separate from semantic validation.
+  std::string validation_error() const {
+    if (nFileField < 1 || nFileParticle < 1)
+      return "nFileField and nFileParticle must be positive.";
+    if (cellWeight < 1)
+      return "cellWeight must be positive.";
+    if (doRestart && receiveICOnly)
+      return "#RESTART and #RECEIVEICONLY cannot both be enabled.";
+    return {};
+  }
 };
 
 #endif // _DOMAINPARAMETERS_H_

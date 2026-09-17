@@ -1,9 +1,210 @@
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstring>
+#include <map>
+
 #include "Domain.h"
 #include "GridUtility.h"
 #include "Shape.h"
 #include "UserSource.h"
 
 using namespace amrex;
+
+namespace {
+
+struct ParameterCommand {
+  const char *name;
+  ParameterOwner owner;
+};
+
+static const ParameterCommand parameter_registry[] = {
+  { "#ABSORB", ParameterOwner::Pic },
+  { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
+  { "#AVGFIELDB", ParameterOwner::Pic },
+  { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
+  { "#BODYSIZE", ParameterOwner::FluidInterface },
+  { "#BSUBCYCLE", ParameterOwner::Pic },
+  { "#CMAXE", ParameterOwner::Pic },
+  { "#COMOVING", ParameterOwner::Pic },
+  { "#CONSTANTPPV", ParameterOwner::Pic },
+  { "#DISCRETIZATION", ParameterOwner::Pic },
+  { "#DISCRETIZE", ParameterOwner::Pic },
+  { "#DIVB", ParameterOwner::Pic },
+  { "#DIVE", ParameterOwner::Pic },
+  { "#EFIELDSOLVER", ParameterOwner::Pic },
+  { "#ELECTRON", ParameterOwner::Pic },
+  { "#ELECTRONTEMPERATURE", ParameterOwner::Pic },
+  { "#EXOSPHERE", ParameterOwner::FluidInterface },
+  { "#EXPLICITPIC", ParameterOwner::Pic },
+  { "#FADEEVIC", ParameterOwner::Pic },
+  { "#FASTMERGE", ParameterOwner::Pic },
+  { "#FIELDBOXBOUNDARY", ParameterOwner::Pic },
+  { "#FIELDINTEGRATOR", ParameterOwner::Pic },
+  { "#FIXEDUMAX", ParameterOwner::Pic },
+  { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
+  { "#HALLTERM", ParameterOwner::Pic },
+  { "#HYBRIDPIC", ParameterOwner::Pic },
+  { "#HYPERRESISTIVITY", ParameterOwner::Pic },
+  { "#INFLOW", ParameterOwner::Pic },
+  { "#KINETICSOURCE", ParameterOwner::Pic },
+  { "#LAGGEDLIMITER", ParameterOwner::Pic },
+  { "#MAXCHARGEEXCHANGERATE", ParameterOwner::Pic },
+  { "#MEMORY", ParameterOwner::Pic },
+  { "#MERGELIGHT", ParameterOwner::Pic },
+  { "#MINIMUMDENSITY", ParameterOwner::Pic },
+  { "#NORMALIZATION", ParameterOwner::FluidInterface },
+  { "#OHION", ParameterOwner::Pic },
+  { "#PARTICLEBOXBOUNDARY", ParameterOwner::Pic },
+  { "#PARTICLELEVRATIO", ParameterOwner::Pic },
+  { "#PARTICLES", ParameterOwner::Pic },
+  { "#PARTMODE", ParameterOwner::Pic },
+  { "#PIC", ParameterOwner::Pic },
+  { "#PLASMA", ParameterOwner::FluidInterface },
+  { "#PRESPLITTING", ParameterOwner::Pic },
+  { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
+  { "#RESAMPLING", ParameterOwner::Pic },
+  { "#RESISTIVITY", ParameterOwner::Pic },
+  { "#SCALINGFACTOR", ParameterOwner::FluidInterface },
+  { "#SELECTPARTICLE", ParameterOwner::Pic },
+  { "#SMOOTHE", ParameterOwner::Pic },
+  { "#SMOOTHJ", ParameterOwner::Pic },
+  { "#SMOOTHMOMENTS", ParameterOwner::Pic },
+  { "#SOLVEEM", ParameterOwner::Pic },
+  { "#SOURCEPARTICLES", ParameterOwner::Pic },
+  { "#SUPID", ParameterOwner::Pic },
+  { "#TESTCASE", ParameterOwner::Pic },
+  { "#TESTPARTICLENUMBER", ParameterOwner::ParticleTracker },
+  { "#TPCELLINTERVAL", ParameterOwner::ParticleTracker },
+  { "#TPINITFROMPIC", ParameterOwner::ParticleTracker },
+  { "#TPPARTICLES", ParameterOwner::ParticleTracker },
+  { "#TPREGION", ParameterOwner::ParticleTracker },
+  { "#TPRELATIVISTIC", ParameterOwner::ParticleTracker },
+  { "#TPSAVE", ParameterOwner::ParticleTracker },
+  { "#TPSAVEAT", ParameterOwner::ParticleTracker },
+  { "#TPSTATESI", ParameterOwner::ParticleTracker },
+  { "#UNIFORMSTATE", ParameterOwner::FluidInterface },
+  { "#UPWINDB", ParameterOwner::Pic },
+  { "#UPWINDE", ParameterOwner::Pic },
+  { "#VACUUM", ParameterOwner::Pic },
+  { "#WAVE", ParameterOwner::FluidInterface },
+  { "#WAVEBC", ParameterOwner::Pic },
+  { "#WAVEIC", ParameterOwner::Pic }
+};
+
+const ParameterCommand *find_parameter_command(const std::string &command) {
+  const auto it = std::lower_bound(
+      std::begin(parameter_registry), std::end(parameter_registry), command,
+      [](const ParameterCommand &entry, const std::string &value) {
+        return std::strcmp(entry.name, value.c_str()) < 0;
+      });
+  if (it != std::end(parameter_registry) && command == it->name)
+    return it;
+  return nullptr;
+}
+
+bool is_singleton_command(const std::string &command) {
+  static const char *const singletonCommands[] = { "#AVGFIELDB",
+                                                   "#BSUBCYCLE",
+                                                   "#DISCRETIZE",
+                                                   "#ELECTRONTEMPERATURE",
+                                                   "#FIELDBOXBOUNDARY",
+                                                   "#FIELDINTEGRATOR",
+                                                   "#GEOMETRY",
+                                                   "#HYBRIDPIC",
+                                                   "#HYPERRESISTIVITY",
+                                                   "#INITFROMSWMF",
+                                                   "#LOADBALANCE",
+                                                   "#MINIMUMDENSITY",
+                                                   "#NCELL",
+                                                   "#NOUTFILE",
+                                                   "#PARTICLETRACKER",
+                                                   "#PERIODICITY",
+                                                   "#RECEIVEICONLY",
+                                                   "#RESTART",
+                                                   "#SOURCE",
+                                                   "#TIMESTEP",
+                                                   "#TIMESTEPPING" };
+
+  for (const char *singleton : singletonCommands) {
+    if (command == singleton)
+      return true;
+  }
+  return false;
+}
+
+std::string canonical_command(const std::string &command) {
+  if (command == "#DISCRETIZATION")
+    return "#DISCRETIZE";
+  if (command == "#BFIELDBOXBOUNDARY")
+    return "#FIELDBOXBOUNDARY";
+  return command;
+}
+
+ParameterCommandLocation locate_command(const std::string &text,
+                                        const std::string &command,
+                                        std::size_t &searchPosition) {
+  std::size_t line = 1;
+  std::size_t lineStart = 0;
+  while (lineStart < text.size()) {
+    const std::size_t lineEnd = text.find('\n', lineStart);
+    const std::size_t end =
+        lineEnd == std::string::npos ? text.size() : lineEnd;
+    std::size_t first = lineStart;
+    while (first < end && (text[first] == ' ' || text[first] == '\t'))
+      ++first;
+    const std::size_t nextChar = first + command.size();
+    const bool isDelimiter = (nextChar >= end || text[nextChar] == ' ' ||
+                              text[nextChar] == '\t' || text[nextChar] == '\r');
+    if (text.compare(first, command.size(), command) == 0 && isDelimiter &&
+        first >= searchPosition) {
+      searchPosition = end;
+      return { line, first - lineStart + 1 };
+    }
+    if (lineEnd == std::string::npos)
+      break;
+    lineStart = lineEnd + 1;
+    ++line;
+  }
+  return {};
+}
+
+std::string format_location(const ParameterCommandLocation &location) {
+  if (location.line == 0)
+    return "unknown location";
+  return "line " + std::to_string(location.line) + ", column " +
+         std::to_string(location.column);
+}
+
+void reject_conflicting_commands(
+    const std::map<std::string, ParameterCommandLocation> &locations,
+    const DomainParameters &parameters) {
+  const auto restart = locations.find("#RESTART");
+  const auto receiveICOnly = locations.find("#RECEIVEICONLY");
+  if (parameters.doRestart && parameters.receiveICOnly &&
+      restart != locations.end() && receiveICOnly != locations.end())
+    Abort("Conflicting commands: #RESTART at " +
+          format_location(restart->second) + " and #RECEIVEICONLY at " +
+          format_location(receiveICOnly->second) +
+          " cannot be enabled together.");
+}
+
+} // namespace
+
+bool Domain::find_parameter_owner(const std::string &command,
+                                  ParameterOwner &owner) const {
+  if (const auto *core = find_parameter_command(command)) {
+    owner = core->owner;
+    return true;
+  }
+  for (const auto &registered : sourceParameterCommands) {
+    if (registered == command) {
+      owner = ParameterOwner::Source;
+      return true;
+    }
+  }
+  return false;
+}
 
 //========================================================
 void Domain::init(double time, const int iDomain,
@@ -32,6 +233,7 @@ void Domain::init(double time, const int iDomain,
   }
 
   readParam = paramString;
+  parameterText = paramString;
 
   if (!paramInt.empty())
     if (paramInt[0] == 2 && nDim == 3)
@@ -43,6 +245,7 @@ void Domain::init(double time, const int iDomain,
   {
     read_domain_parameters(readParam);
     readParam.roll_back();
+    validate_configuration();
   }
 
   refineRegionsStr.resize(amrInfo.max_level + 1);
@@ -81,6 +284,7 @@ void Domain::init(double time, const int iDomain,
   // can be dispatched to source->read_param().
   source = std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid,
                                         domainParameters);
+  source->register_parameter_commands(sourceParameterCommands);
 
   read_param(false);
 
@@ -254,6 +458,8 @@ void Domain::update() {
 //========================================================
 void Domain::update_param(const std::string &paramString) {
   readParam = paramString;
+  parameterText = paramString;
+  parameterCommandLocations.clear();
   read_param(false);
   init_time_ctr();
 };
@@ -889,8 +1095,14 @@ void Domain::read_domain_parameters(ReadParam &rp) {
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       rp.read_var("loadBalanceStrategy", strategy);
+      if (strategy.empty())
+        Abort("Invalid #LOADBALANCE: loadBalanceStrategy must not be empty.");
       strategy[0] = toupper(strategy[0]);
-      domainParameters.balanceStrategy = stringToBalanceStrategy.at(strategy);
+      const auto strategyIt = stringToBalanceStrategy.find(strategy);
+      if (strategyIt == stringToBalanceStrategy.end())
+        Abort("Invalid #LOADBALANCE strategy '" + strategy +
+              "'. Check the supported load-balance strategies.");
+      domainParameters.balanceStrategy = strategyIt->second;
 
       if (domainParameters.balanceStrategy == BalanceStrategy::Hybrid) {
         rp.read_var("cellWeight", domainParameters.cellWeight);
@@ -905,6 +1117,9 @@ void Domain::read_param(const bool readGridInfo) {
   // The default values shoudl be set in the constructor.
 
   std::string command;
+  std::size_t commandSearchPosition = 0;
+  if (readGridInfo)
+    parameterCommandLocations.clear();
 
   readParam.set_verbose(false);
   bool sourceParamsSynced = false;
@@ -933,64 +1148,56 @@ void Domain::read_param(const bool readGridInfo) {
     Print() << "\n"
             << component << ": " << command << " " << gridName << std::endl;
 
-    if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
-        command == "#RANDOMPARTICLESLOCATION" || command == "#CONSTANTPPV" ||
-        command == "#PRESPLITTING" || command == "#PARTICLES" ||
-        command == "#KINETICSOURCE" || command == "#SOURCEPARTICLES" ||
-        command == "#ELECTRON" || command == "#DISCRETIZE" ||
-        command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
-        command == "#SMOOTHE" || command == "#SMOOTHJ" ||
-        command == "#UPWINDB" || command == "#UPWINDE" ||
-        command == "#FIXEDUMAX" || command == "#LAGGEDLIMITER" ||
-        command == "#DIVB" || command == "#CMAXE" || command == "#TESTCASE" ||
-        command == "#WAVEIC" || command == "#FADEEVIC" ||
-        command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
-        command == "#MERGELIGHT" || command == "#VACUUM" ||
-        command == "#PARTICLELEVRATIO" || command == "#OHION" ||
-        command == "#PIC" || command == "#EXPLICITPIC" ||
-        command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
-        command == "#FIELDBOXBOUNDARY" || command == "#BFIELDBOXBOUNDARY" ||
-        command == "#SUPID" || command == "#SOLVEEM" ||
-        command == "#PARTMODE" || command == "#SELECTPARTICLE" ||
-        command == "#MAXCHARGEEXCHANGERATE" || command == "#HYBRIDPIC" ||
-        command == "#RESISTIVITY" || command == "#ELECTRONTEMPERATURE" ||
-        command == "#BSUBCYCLE" || command == "#HALLTERM" ||
-        command == "#HYPERRESISTIVITY" || command == "#MINIMUMDENSITY" ||
-        command == "#FIELDINTEGRATOR" || command == "#AVGFIELDB" ||
-        command == "#SMOOTHMOMENTS" || command == "#MEMORY" ||
-        command == "#WAVEBC" || command == "#ABSORB" || command == "#INFLOW") {
-      if (pic)
-        pic->read_param(command, readParam);
-    } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
-               command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
-               command == "#TPSAVE" || command == "#TPSAVEAT" ||
-               command == "#TPRELATIVISTIC" || command == "#TPINITFROMPIC" ||
-               command == "#TPSTATESI") {
-      ptInfo.read_param(command, readParam);
-    } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
-               command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||
-               command == "#RECOMBINATION" || command == "#CHEMISTRY") {
-      if (source) {
-        // Sync source's FluidInterfaceParameters from fi ONCE, just before the
-        // first ionization command. By convention #EXOSPHERE/#PLASMA precede
-        // the ionization commands, so fi's nExoComponent / nS are already
-        // final; SourceInterface members (e.g. cxSigma) are preserved.
-        if (!sourceParamsSynced) {
-          source->sync_fluid_interface_params(*fi);
-          sourceParamsSynced = true;
-        }
-        source->read_param(command, readParam);
+    {
+      const std::string key = canonical_command(command);
+      const ParameterCommandLocation location =
+          locate_command(parameterText, command, commandSearchPosition);
+      const auto previous = parameterCommandLocations.find(key);
+      if (previous != parameterCommandLocations.end() &&
+          is_singleton_command(key)) {
+        Abort("Duplicate command " + command + " at " +
+              format_location(location) + "; first occurrence was at " +
+              format_location(previous->second) + ".");
       }
-    } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
-               command == "#BODYSIZE" || command == "#EXOSPHERE" ||
-               command == "#PLASMA" || command == "#UNIFORMSTATE" ||
-               command == "#FLUIDVARNAMES" || command == "#WAVE") {
-      fi->read_param(command, readParam);
+      if (previous == parameterCommandLocations.end())
+        parameterCommandLocations.emplace(key, location);
+    }
+
+    ParameterOwner owner;
+    if (find_parameter_owner(command, owner)) {
+      switch (owner) {
+        case ParameterOwner::Pic:
+          if (pic)
+            pic->read_param(command, readParam);
+          break;
+        case ParameterOwner::ParticleTracker:
+          ptInfo.read_param(command, readParam);
+          break;
+        case ParameterOwner::Source:
+          if (source) {
+            // Sync source state once before the first source-specific command.
+            if (!sourceParamsSynced) {
+              source->sync_fluid_interface_params(*fi);
+              sourceParamsSynced = true;
+            }
+            source->read_param(command, readParam);
+          }
+          break;
+        case ParameterOwner::FluidInterface:
+          fi->read_param(command, readParam);
+          break;
+      }
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       readParam.read_var("loadBalanceStrategy", strategy);
+      if (strategy.empty())
+        Abort("Invalid #LOADBALANCE: loadBalanceStrategy must not be empty.");
       strategy[0] = toupper(strategy[0]);
-      domainParameters.balanceStrategy = stringToBalanceStrategy.at(strategy);
+      const auto strategyIt = stringToBalanceStrategy.find(strategy);
+      if (strategyIt == stringToBalanceStrategy.end())
+        Abort("Invalid #LOADBALANCE strategy '" + strategy +
+              "'. Check the supported load-balance strategies.");
+      domainParameters.balanceStrategy = strategyIt->second;
 
       if (domainParameters.balanceStrategy == BalanceStrategy::Hybrid) {
         readParam.read_var("cellWeight", domainParameters.cellWeight);
@@ -1288,6 +1495,8 @@ void Domain::read_param(const bool readGridInfo) {
 
   // Post processing
   if (!readGridInfo) {
+    validate_configuration();
+
     { //====== Post process refinement region====
       for (int i = 0; i < refineRegionsStr.size() - 1; ++i) {
         if (refineRegionsStr[i].size() > 0) {
@@ -1333,6 +1542,14 @@ void Domain::read_param(const bool readGridInfo) {
 
   ParmParse pp("particles");
   pp.add("particles_nfiles", domainParameters.nFileParticle);
+}
+
+void Domain::validate_configuration() const {
+  reject_conflicting_commands(parameterCommandLocations, domainParameters);
+
+  const std::string error = domainParameters.validation_error();
+  if (!error.empty())
+    Abort("Invalid domain configuration: " + error);
 }
 
 //========================================================

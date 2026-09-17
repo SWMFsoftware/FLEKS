@@ -1,6 +1,9 @@
 #ifndef _SOURCEINTERFACE_H_
 #define _SOURCEINTERFACE_H_
 
+#include <string>
+#include <vector>
+
 #include "FluidInterface.h"
 
 // An abstract class for source implementations.
@@ -73,6 +76,14 @@ public:
   virtual ~SourceInterface() = default;
 
   virtual std::string get_info() const { return info; }
+
+  // Register source-specific PARAM.in commands with the domain dispatcher.
+  // Implementations own the command list and may extend it without editing
+  // Domain.cpp.
+  virtual void register_parameter_commands(
+      std::vector<std::string>& commands) const {
+    (void)commands;
+  }
 
   virtual void sum_to_single_source() {
     amrex::Print()
