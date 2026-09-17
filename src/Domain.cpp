@@ -1084,15 +1084,6 @@ void Domain::read_domain_parameters(ReadParam &rp) {
       rp.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       rp.read_var("useSource", domainParameters.useSource);
-    } else if (source &&
-               is_registered_source_command(sourceParameterCommands,
-                                             command)) {
-      // Sync source state once before its first registered command.
-      if (!sourceParamsSynced) {
-        source->sync_fluid_interface_params(*fi);
-        sourceParamsSynced = true;
-      }
-      source->read_param(command, readParam);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       rp.read_var("loadBalanceStrategy", strategy);
@@ -1189,6 +1180,15 @@ void Domain::read_param(const bool readGridInfo) {
         fi->read_param(command, readParam);
         break;
       }
+    } else if (source &&
+               is_registered_source_command(sourceParameterCommands,
+                                             command)) {
+      // Sync source state once before its first registered command.
+      if (!sourceParamsSynced) {
+        source->sync_fluid_interface_params(*fi);
+        sourceParamsSynced = true;
+      }
+      source->read_param(command, readParam);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       readParam.read_var("loadBalanceStrategy", strategy);
