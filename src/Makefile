@@ -10,55 +10,19 @@ FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 LIBFLEKS = libFLEKS.a
 
 # source files
-SRCS := \
-	Domain.cpp \
-	ParticleTracker.cpp \
-	Particles.cpp \
-	ParticlesInit.cpp \
-	ParticlesBC.cpp \
-	ParticlesMoments.cpp \
-	ParticlesMassMatrix.cpp \
-	ParticlesMover.cpp \
-	ParticlesResample.cpp \
-	ParticlesReactions.cpp \
-	TestParticles.cpp \
-	LinearSolver.cpp \
-	GridUtility.cpp \
-	PlotWriter.cpp \
-	TimeCtr.cpp \
-	BC.cpp \
-	WaveBC.cpp \
-	FluidInterface.cpp \
-	Pic.cpp \
-	PicParam.cpp \
-	PicBC.cpp \
-	PicHybrid.cpp \
-	PicFieldSolver.cpp \
-	PicDivE.cpp \
-	PicIO.cpp \
-	Grid.cpp  \
-	DataContainer.cpp \
-	VisitWriter.cpp  \
-	FleksDistributionMap.cpp \
-	InitialCondition.cpp \
-	ic/WaveIC.cpp \
-	ic/BeamIC.cpp \
-	ic/TopHatIC.cpp \
-	ic/FadeevIC.cpp \
-	ic/RegisterAll.cpp
+#
+# Everything in this directory and in ic/ belongs to libFLEKS.a, except the two
+# translation units that carry their own main() and are linked separately:
+# main.cpp into ../bin/FLEKS.exe, Converter.cpp into ../bin/converter.exe.
+# $(sort) fixes the archive member order: $(wildcard) returns directory order,
+# which is not reproducible across machines.
+SRCS := $(sort $(filter-out main.cpp Converter.cpp, \
+                 $(wildcard *.cpp) $(wildcard ic/*.cpp)))
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
-# Keep converter independent of libFLEKS.a: the full archive includes PT/OH
-# coupling objects that require SWMF-only OH symbols.
-CONVERTER_OBJECTS = \
-	Converter.o \
-	DataContainer.o \
-	Grid.o \
-	VisitWriter.o \
-	FleksDistributionMap.o
-
-CONVERTEREXE = ../bin/converter.exe
+# The AMReX/IDL -> VTK/TEC format converter is no longer part of this library;
+# it is built from ../Converter with its own Makefile.
 
 default: EXE
 
@@ -69,16 +33,8 @@ EXE:
 	${LINK.f90} -o ../bin/FLEKS.exe main.o \
 		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
 
-CONVERTER:	${CONVERTER_OBJECTS}
-	${LINK.f90} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
-
-	@echo
-	@echo ${CONVERTEREXE} has been brought up to date.
-	@echo
-
 DEPEND:
-	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} main.o ${CONVERTER_OBJECTS}
+	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} main.o
 
 LIB: DEPEND
 	$(MAKE) ${LIBFLEKS}
@@ -91,7 +47,6 @@ ${LIBFLEKS}:${OBJECTS}
 
 clean:
 	-@(rm -f ${OBJECTS} main.o ${LIBFLEKS})
-	-@(rm -rf ${CONVERTEREXE} ${CONVERTER_OBJECTS})
 	-@(rm -rf .d)
 
 distclean: clean

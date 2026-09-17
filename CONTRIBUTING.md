@@ -36,8 +36,6 @@ Under the hood:
 * All Fortran SWMF wrappers (`.f90`, `.F90`) are swept by `findent -i3 -r2 -m2 -k5 -c3 -C2 -j2 -a2` mapped closely to the canonical Emacs `f90-mode` standard.
 * Extraneous whitespaces and non-compliant End-of-File line breaks are destroyed.
 
-Our continuous integration (CI) pipelines actively reject pull requests that fail formatting!
-
 ## Workflow Extensions Workflow
 
 If you are developing a new mathematical scheme, parameter, or interface variable, please consult the agent workflows inside `.agents/workflows/` and `.agents/skills/`. We maintain rigorous documentation detailing *exactly* how to add new commands to `PARAM.XML` and `FleksInterface.cpp`.

@@ -8,9 +8,11 @@
 
 ```
 FLEKS/
-├── include/           Public headers (.h)
-├── src/               C++ sources (.cpp), src/Makefile (SRCS list), main.cpp
+├── include/           Public headers (.h) — FLEKS only
+├── src/               C++ sources (.cpp), src/Makefile (wildcard SRCS), main.cpp
 │   └── ic/            Initial-condition plug-ins (private headers live here)
+├── Converter/         Standalone AMReX/IDL -> VTK/TEC converter: own sources,
+│                      own headers and own Makefile; not part of libFLEKS.a
 ├── srcInterface/      SWMF coupling layer: PC_wrapper.f90, PT_wrapper.f90,
 │                      FleksInterface.cpp
 ├── doc/               Algorithm.tex, Coding_standards.md, Tex/
@@ -49,8 +51,11 @@ FLEKS/
 2. **Generated files are not editable.** `include/Constants.h` ←
    `Constants.h.orig`; `include/UserSource.h` ← `userfiles/*Source.h`;
    `include/show_git_info.h` is created at build time.
-3. **New `.cpp` files must be added to `SRCS`** in `src/Makefile` — nothing is
-   auto-discovered, and the omission only surfaces at link time.
+3. **New `src/*.cpp` files are auto-discovered** by the wildcard in
+   `src/Makefile`, so no Makefile edit is needed. The flip side: a scratch
+   `.cpp` left in `src/` gets compiled into `libFLEKS.a`. Only `main.cpp` is
+   excluded (it carries `main()`); the converter in `Converter/` has its own
+   `Makefile` and is never part of the library.
 4. **Fake 2D** is one cell in z; a true-2D AMReX build needs
    `./Config.pl -amrex2d`.
 5. **Component macros** `_PC_COMPONENT_` / `_PT_COMPONENT_` — guarded code must

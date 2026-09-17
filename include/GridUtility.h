@@ -157,6 +157,98 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
   find_node_index(xyz, plo, invDx, loIdx, dShift);
 }
 
+inline void find_node_interpolation(
+    const amrex::RealVect& xyz, const amrex::Real* const plo,
+    const amrex::Real* const invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
+  find_node_index(xyz, plo, invDx, loIdx, dShift);
+  linear_interpolation_coef(dShift, coef);
+}
+
+inline void find_cell_interpolation(
+    const amrex::RealVect& xyz, const amrex::Real* const plo,
+    const amrex::Real* const invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
+  find_cell_index(xyz, plo, invDx, loIdx, dShift);
+  linear_interpolation_coef(dShift, coef);
+}
+
+/**
+ * Gather @c NField vector fields that share one set of interpolation weights.
+ *
+ * All fields must be defined on the same index space (they are in every
+ * current use: B and E of one grid level, or B and the co-moving background
+ * velocity), so that the stencil cell index and the interpolation weight are
+ * evaluated once per stencil cell instead of once per stencil cell per field.
+ * That is exactly the work a sequence of @c interpolate_vector_field calls
+ * would duplicate. The accumulation order per component is unchanged, so the
+ * result is bit-identical to gathering the fields one by one.
+ *
+ * @param fields Fields to gather, each with at least @c nDim3 components.
+ * @param loIdx  Lower corner of the interpolation stencil.
+ * @param coef   Trilinear interpolation weights.
+ * @param lo     First stencil offset @c coef is indexed with.
+ * @param hi     Last stencil offset @c coef is indexed with.
+ * @param values One output vector per field; overwritten, not accumulated into.
+ */
+template <int NCoef, int NField>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_fields(
+    const amrex::Array4<const amrex::Real> (&fields)[NField],
+    const amrex::IntVect& loIdx,
+    const amrex::Real (&coef)[NCoef][NCoef][NCoef],
+    const amrex::Dim3& lo, const amrex::Dim3& hi,
+    amrex::Real* (&values)[NField]) {
+  for (int iField = 0; iField < NField; ++iField)
+    for (int iDim = 0; iDim < nDim3; ++iDim)
+      values[iField][iDim] = 0.0;
+
+  for (int k = lo.z; k <= hi.z; ++k)
+    for (int j = lo.y; j <= hi.y; ++j)
+      for (int i = lo.x; i <= hi.x; ++i) {
+        const amrex::IntVect ijk = { AMREX_D_DECL(
+            loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
+        const amrex::Real c = coef[i][j][k];
+        for (int iField = 0; iField < NField; ++iField) {
+          const amrex::Array4<const amrex::Real>& field = fields[iField];
+          amrex::Real* AMREX_RESTRICT value = values[iField];
+          for (int iDim = 0; iDim < nDim3; ++iDim)
+            value[iDim] += field(ijk, iDim) * c;
+        }
+      }
+}
+
+/**
+ * Gather a single vector field. Thin wrapper over @c interpolate_vector_fields.
+ */
+template <int NCoef>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_field(
+    const amrex::Array4<const amrex::Real>& field,
+    const amrex::IntVect& loIdx,
+    const amrex::Real (&coef)[NCoef][NCoef][NCoef],
+    const amrex::Dim3& lo, const amrex::Dim3& hi,
+    amrex::Real (&value)[nDim3]) {
+  const amrex::Array4<const amrex::Real> fields[1] = { field };
+  amrex::Real* values[1] = { value };
+  interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+}
+
+template <int NCoef>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
+    const amrex::Array4<amrex::Real>& field,
+    const amrex::IntVect& loIdx,
+    const amrex::Real (&coef)[NCoef][NCoef][NCoef],
+    const amrex::Dim3& lo, const amrex::Dim3& hi,
+    const amrex::Real* value, int nComp) {
+  for (int k = lo.z; k <= hi.z; ++k)
+    for (int j = lo.y; j <= hi.y; ++j)
+      for (int i = lo.x; i <= hi.x; ++i) {
+        const amrex::IntVect ijk = { AMREX_D_DECL(
+            loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
+        for (int iDim = 0; iDim < nComp; ++iDim)
+          field(ijk, iDim) += coef[i][j][k] * value[iDim];
+      }
+}
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
     bool b[3][3][3], amrex::IntVect iv, const amrex::Array4<int const> status) {
 

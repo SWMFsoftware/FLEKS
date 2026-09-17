@@ -1,6 +1,7 @@
 #include <AMReX_Utility.H>
 
 #include "TestParticles.h"
+#include "Utility.h"
 
 using namespace amrex;
 
@@ -265,25 +266,16 @@ void TestParticles::move_and_save_charged_particles(
       //-----calculate interpolation coef begin-----------
       IntVect loIdx;
       RealVect dShift;
-      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
+      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
       //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                         loIdx[iz_] + k) };
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += nodeBArr(ijk, iDim) * coef[i][j][k];
-              ep[iDim] += nodeEArr(ijk, iDim) * coef[i][j][k];
-            }
-          }
+      const Array4<Real const> fields[2] = { nodeBArr, nodeEArr };
+      Real* values[2] = { bp, ep };
+      interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
 
       Real gamma = 1;
       Real invGamma = 1. / gamma;
@@ -316,16 +308,16 @@ void TestParticles::move_and_save_charged_particles(
       const Real omy = qdto2mc * bp[iy_] * invGamma;
       const Real omz = qdto2mc * bp[iz_] * invGamma;
 
-      const Real denom = 1.0 / (1.0 + omx * omx + omy * omy + omz * omz);
-      const Real udotOm = ut * omx + vt * omy + wt * omz;
-      // Solve the velocity equation
-      const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
-      const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
-      const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+      const Real velocity[3] = { up, vp, wp };
+      const Real electricVelocity[3] = { ut, vt, wt };
+      const Real omega[3] = { omx, omy, omz };
+      Real updatedVelocity[3];
+      boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                 updatedVelocity);
 
-      Real unp1 = 2.0 * uavg - up;
-      Real vnp1 = 2.0 * vavg - vp;
-      Real wnp1 = 2.0 * wavg - wp;
+      Real unp1 = updatedVelocity[ix_];
+      Real vnp1 = updatedVelocity[iy_];
+      Real wnp1 = updatedVelocity[iz_];
 
       if (isRelativistic) {
         // Convert: gamma*vel -> vel
@@ -479,26 +471,17 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
       //-----calculate interpolation coef begin-----------
       IntVect loIdx;
       RealVect dShift;
-      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coefLin[2][2][2];
-      linear_interpolation_coef(dShift, coefLin);
+      find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift,
+                              coefLin);
       //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                         loIdx[iz_] + k) };
-            const Real c0 = coefLin[i][j][k];
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += centerBArr(ijk, iDim) * c0;
-              ep[iDim] += centerEArr(ijk, iDim) * c0;
-            }
-          }
+      const Array4<Real const> fields[2] = { centerBArr, centerEArr };
+      Real* values[2] = { bp, ep };
+      interpolate_vector_fields(fields, loIdx, coefLin, lo, hi, values);
 
       Real gamma = 1;
       Real invGamma = 1. / gamma;
@@ -531,16 +514,16 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
       const Real omy = qdto2mc * bp[iy_] * invGamma;
       const Real omz = qdto2mc * bp[iz_] * invGamma;
 
-      const Real denom = 1.0 / (1.0 + omx * omx + omy * omy + omz * omz);
-      const Real udotOm = ut * omx + vt * omy + wt * omz;
-      // Solve the velocity equation
-      const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
-      const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
-      const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+      const Real velocity[3] = { up, vp, wp };
+      const Real electricVelocity[3] = { ut, vt, wt };
+      const Real omega[3] = { omx, omy, omz };
+      Real updatedVelocity[3];
+      boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                 updatedVelocity);
 
-      Real unp1 = 2.0 * uavg - up;
-      Real vnp1 = 2.0 * vavg - vp;
-      Real wnp1 = 2.0 * wavg - wp;
+      Real unp1 = updatedVelocity[ix_];
+      Real vnp1 = updatedVelocity[iy_];
+      Real wnp1 = updatedVelocity[iz_];
 
       if (isRelativistic) {
         // Convert: gamma*vel -> vel
@@ -572,10 +555,10 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
         if (ptRecordSize > 13 && hasJacB) {
           IntVect nodeLoIdx;
           RealVect nodeDShift;
-          find_node_index(p.pos(), Geom(iLev).ProbLo(),
-                          Geom(iLev).InvCellSize(), nodeLoIdx, nodeDShift);
           Real nodeCoef[2][2][2];
-          linear_interpolation_coef(nodeDShift, nodeCoef);
+          find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                  Geom(iLev).InvCellSize(), nodeLoIdx,
+                                  nodeDShift, nodeCoef);
           interpolate_jacobian_matrix(nodeJacBArr, nodeLoIdx, nodeCoef, lo, hi,
                                       gradB);
         }

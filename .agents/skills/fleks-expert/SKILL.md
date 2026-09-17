@@ -37,7 +37,8 @@ new ones.
 
 ```bash
 ./Config.pl -lev=2 -u=Exo       # configure a standalone build
-make EXE -j8                    # standalone bin/FLEKS.exe (+ converter, compile_commands)
+make EXE -j8                    # standalone bin/FLEKS.exe (+ Converter/, compile_commands)
+make CONVERTER                  # only bin/converter.exe (make -C Converter)
 make LIB -j8                    # SWMF component library src/libFLEKS.a
 python3 tests/validate_tests.py [--test=beam] [-n 2] [--verbose]
 make test16_3d                  # GM-PC regression — run from the SWMF root

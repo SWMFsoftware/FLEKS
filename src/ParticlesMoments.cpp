@@ -11,6 +11,22 @@
 
 using namespace amrex;
 
+namespace {
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_charge(
+    Array4<Real> const& chargeArr, const IntVect& loIdx,
+    const Real coef[2][2][2], Real charge, const Dim3& lo, const Dim3& hi) {
+  for (int kk = lo.z; kk <= hi.z; ++kk)
+    for (int jj = lo.y; jj <= hi.y; ++jj)
+      for (int ii = lo.x; ii <= hi.x; ++ii) {
+        const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                           loIdx[iz_] + kk) };
+        chargeArr(ijk) += coef[ii][jj][kk] * charge;
+      }
+}
+
+} // namespace
+
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
                                                        CenterMMFab& centerMM,
@@ -41,20 +57,13 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
-      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
       Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
+      find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
       //-----calculate interpolate coef end-------------
 
       const Real cTmp = qp * invVol[iLev];
-      for (int kk = lo.z; kk <= hi.z; ++kk)
-        for (int jj = lo.y; jj <= hi.y; ++jj)
-          for (int ii = lo.x; ii <= hi.x; ++ii) {
-            const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                               loIdx[iz_] + kk) };
-            chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
-          }
+      deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
 
       if (!doNetChargeOnly) {
         accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp, mmArr);
@@ -100,18 +109,12 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                               Geom(nLev).InvCellSize(), realIdx, tmprv);
           if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
                                bit::is_lev_edge(status(realIdx)))) {
-            find_cell_index(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), loIdx, dShift);
             Real coef[2][2][2];
-            linear_interpolation_coef(dShift, coef);
+            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                    Geom(iLev).InvCellSize(), loIdx, dShift,
+                                    coef);
             const Real cTmp = qp * invVol[iLev];
-            for (int kk = lo.z; kk <= hi.z; ++kk)
-              for (int jj = lo.y; jj <= hi.y; ++jj)
-                for (int ii = lo.x; ii <= hi.x; ++ii) {
-                  const IntVect ijk = { AMREX_D_DECL(
-                      loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-                  chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
-                }
+            deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
           }
 
           bool skipParticle = false;
@@ -142,19 +145,12 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                               Geom(nLev).InvCellSize(), realIdx, tmprv);
           if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
                                bit::is_lev_edge(status(realIdx)))) {
-            find_cell_index(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), loIdx, dShift);
             Real coef[2][2][2];
-            linear_interpolation_coef(dShift, coef);
+            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                    Geom(iLev).InvCellSize(), loIdx, dShift,
+                                    coef);
             const Real cTmp = qp * invVol[iLev];
-            for (int kk = lo.z; kk <= hi.z; ++kk)
-              for (int jj = lo.y; jj <= hi.y; ++jj)
-                for (int ii = lo.x; ii <= hi.x; ++ii) {
-                  const IntVect ijk = { AMREX_D_DECL(
-                      loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-
-                  chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
-                }
+            deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
           }
         }
       }
@@ -176,19 +172,12 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                               Geom(nLev).InvCellSize(), realIdx, tmprv);
           if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
                                bit::is_lev_edge(status(realIdx)))) {
-            find_cell_index(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), loIdx, dShift);
             Real coef[2][2][2];
-            linear_interpolation_coef(dShift, coef);
+            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                    Geom(iLev).InvCellSize(), loIdx, dShift,
+                                    coef);
             const Real cTmp = qp * invVol[iLev];
-            for (int kk = lo.z; kk <= hi.z; ++kk)
-              for (int jj = lo.y; jj <= hi.y; ++jj)
-                for (int ii = lo.x; ii <= hi.x; ++ii) {
-                  const IntVect ijk = { AMREX_D_DECL(
-                      loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-
-                  chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
-                }
+            deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
           }
         }
       }
@@ -272,10 +261,10 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
-        find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                        loIdx, dShift);
         Real coef[2][2][2];
-        linear_interpolation_coef(dShift, coef);
+        find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                Geom(iLev).InvCellSize(), loIdx, dShift,
+                                coef);
         //-----calculate interpolate coef end-------------
 
         //-------nodePlasma begin---------
@@ -497,10 +486,10 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
         RealVect dShift;
         // Cell-centred deposit: find the containing cell (find_cell_index) and
         // interpolate between its centre and the next cell centre (trilinear).
-        find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                        loIdx, dShift);
         Real coef[2][2][2];
-        linear_interpolation_coef(dShift, coef);
+        find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                Geom(iLev).InvCellSize(), loIdx, dShift,
+                                coef);
         //-----calculate interpolate coef end-------------
 
         //-------cell-centred moments begin---------

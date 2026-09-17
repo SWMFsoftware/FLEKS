@@ -152,29 +152,22 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       IntVect loIdx;
       RealVect dShift;
 
-      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
+      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
       //-----calculate interpolate coef end-------------
 
       //----- Mass matrix calculation begin--------------
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      for (int kk = lo.z; kk <= hi.z; ++kk)
-        for (int jj = lo.y; jj <= hi.y; ++jj)
-          for (int ii = lo.x; ii <= hi.x; ++ii) {
-            const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                               loIdx[iz_] + kk) };
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += nodeBArr(ijk, iDim) * coef[ii][jj][kk];
-
-              if (solveInCoMov)
-                u0[iDim] += u0Arr(ijk, iDim) * coef[ii][jj][kk];
-            }
-          }
+      if (solveInCoMov) {
+        const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
+        Real* values[2] = { bp, u0 };
+        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+      } else {
+        interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
+      }
 
       const Real omx = qdto2mc * bp[ix_];
       const Real omy = qdto2mc * bp[iy_];
@@ -223,14 +216,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
               (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
         }
 
-        for (int iVar = 0; iVar < 3; iVar++)
-          for (int kk = lo.z; kk <= hi.z; ++kk)
-            for (int jj = lo.y; jj <= hi.y; ++jj)
-              for (int ii = lo.x; ii <= hi.x; ++ii) {
-                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                             loIdx[iz_] + kk) };
-                jArr(ijk, iVar) += coef[ii][jj][kk] * currents[iVar];
-              }
+        deposit_vector_field(jArr, loIdx, coef, lo, hi, currents, 3);
       }
 
       const int iMin = loIdx[ix_];
@@ -394,10 +380,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
       //-----calculate interpolate coef begin-------------
       for (int i = 0; i < nCoef; i++) {
-        find_node_index(p.pos(), Geom(i).ProbLo(), Geom(i).InvCellSize(),
-                        loIdx[i], dShift[i]);
-
-        linear_interpolation_coef(dShift[i], coef[i]);
+        find_node_interpolation(p.pos(), Geom(i).ProbLo(), Geom(i).InvCellSize(),
+                                loIdx[i], dShift[i], coef[i]);
       }
 
       //-----calculate interpolate coef end-------------
@@ -406,19 +390,14 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      for (int kk = lo.z; kk <= hi.z; ++kk)
-        for (int jj = lo.y; jj <= hi.y; ++jj)
-          for (int ii = lo.x; ii <= hi.x; ++ii) {
-            const IntVect ijk = { AMREX_D_DECL(loIdx[iLev][ix_] + ii,
-                                               loIdx[iLev][iy_] + jj,
-                                               loIdx[iLev][iz_] + kk) };
-            for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += nodeBArr(ijk, iDim) * coef[iLev][ii][jj][kk];
-
-              if (solveInCoMov)
-                u0[iDim] += u0Arr(ijk, iDim) * coef[iLev][ii][jj][kk];
-            }
-          }
+      if (solveInCoMov) {
+        const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
+        Real* values[2] = { bp, u0 };
+        interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
+                                  values);
+      } else {
+        interpolate_vector_field(nodeBArr, loIdx[iLev], coef[iLev], lo, hi, bp);
+      }
 
       const Real omx = qdto2mc * bp[ix_];
       const Real omy = qdto2mc * bp[iy_];
@@ -461,17 +440,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       currents[iy_] = (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
       currents[iz_] = (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
 
-      for (int iVar = 0; iVar < 3; iVar++)
-        for (int kk = lo.z; kk <= hi.z; ++kk)
-          for (int jj = lo.y; jj <= hi.y; ++jj)
-            for (int ii = lo.x; ii <= hi.x; ++ii) {
-              for (int i = 0; i < nCoef; i++) {
-                IntVect ijk = { AMREX_D_DECL(loIdx[i][ix_] + ii,
-                                             loIdx[i][iy_] + jj,
-                                             loIdx[i][iz_] + kk) };
-                jArrt[i](ijk, iVar) += coef[i][ii][jj][kk] * currents[iVar];
-              }
-            }
+      for (int i = 0; i < nCoef; ++i)
+        deposit_vector_field(jArrt[i], loIdx[i], coef[i], lo, hi, currents,
+                             3);
 
       for (int i = 0; i < nCoef; i++) {
         const int iMin = loIdx[i][ix_];
@@ -547,11 +518,9 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       IntVect loIdx;
       RealVect dShift;
 
-      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-
       Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
+      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
       //-----calculate interpolate coef end-------------
 
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
@@ -590,13 +559,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
           currents[iz_] = (wp + (up * omy - vp * omx + udotOm * omz)) * coef1;
         }
 
-        for (int iVar = 0; iVar < nDim; iVar++)
-          for (int kk = 0; kk < 2; ++kk)
-            for (int jj = 0; jj < 2; ++jj)
-              for (int ii = 0; ii < 2; ++ii) {
-                jArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk, iVar) +=
-                    coef[ii][jj][kk] * currents[iVar];
-              }
+        deposit_vector_field(jArr, loIdx, coef, init_dim3(0), init_dim3(1),
+                             currents, nDim);
       }
 
     } // for p

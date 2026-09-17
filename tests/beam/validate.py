@@ -15,19 +15,12 @@ import logging
 import math
 import os
 
-logger = logging.getLogger(__name__)
-
-import tests._shared.hybrid as _hyb
+from tests._shared import run_dir as _run_dir
 from .._shared.hybrid import validate_hybrid
 
-RUN_DIR = "run_test"
+logger = logging.getLogger(__name__)
 
-
-def set_run_dir(run_dir):
-    """Point the plot helpers at the current run directory."""
-    global RUN_DIR
-    RUN_DIR = run_dir
-    _hyb.set_run_dir(run_dir)
+set_run_dir = _run_dir.set_run_dir
 
 # Particle-tracking tolerance passed to validate_test_particles() in the
 # common runner (validate_tests.py).
@@ -76,7 +69,7 @@ def _check_beam_transverse_wave():
 
     Returns (passed: bool, reason: str).
     """
-    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
+    plots_dir = os.path.join(_run_dir.RUN_DIR, "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
     if not out_files:
         logger.debug("    [FFT] No .out files found (PostProc.pl not run?).")

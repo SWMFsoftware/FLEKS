@@ -84,13 +84,16 @@ def generate():
                  f"-I{os.path.join(util_dir, 'AMREX/InstallDir/include')}"]
 
     base_cmd = " ".join([compiler] + includes + flags)
-    src_dir = os.path.join(root, "src")
-    
-    entries = [{
-        "directory": src_dir,
-        "command": f"{base_cmd} -c {os.path.basename(f)} -o {os.path.splitext(os.path.basename(f))[0]}.o",
-        "file": os.path.basename(f)
-    } for f in sorted(glob.glob(os.path.join(src_dir, "*.cpp")))]
+
+    # src/ holds the FLEKS library, Converter/ the standalone format converter.
+    # Both sit one level below the root, so -I../include is correct for either.
+    entries = []
+    for src_dir in (os.path.join(root, "src"), os.path.join(root, "Converter")):
+        entries += [{
+            "directory": src_dir,
+            "command": f"{base_cmd} -c {os.path.basename(f)} -o {os.path.splitext(os.path.basename(f))[0]}.o",
+            "file": os.path.basename(f)
+        } for f in sorted(glob.glob(os.path.join(src_dir, "*.cpp")))]
 
     with open(os.path.join(root, "compile_commands.json"), 'w') as f:
         json.dump(entries, f, indent=4)

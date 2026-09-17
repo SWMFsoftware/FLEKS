@@ -13,6 +13,23 @@
 | `tools/generate_compile_commands.py` | regenerate `compile_commands.json` |
 | `tools/check_docs.py` | verify the agent documentation tree — runs in CI |
 
+## Format converter
+
+`bin/converter.exe` converts AMReX or IDL output to VTK or Tecplot. It is a
+standalone program built from `Converter/` (own sources, own headers, own
+`Makefile`); it is **not** part of `libFLEKS.a` — see `references/build.md`.
+
+```bash
+make CONVERTER                              # or: make -C Converter CONVERTER
+bin/converter.exe -f 3d*_amrex -d VTK       # -d is required: VTK or TEC
+bin/converter.exe -f f.out -s IDL -d TEC -smooth 3
+```
+
+Format names are **uppercase** (`Converter/Converter.cpp` maps them through
+`stringToFileType`); a lowercase or unknown name aborts with `map::at`.
+Only the VTK writer is reachable at run time; `TECWriter` writes Tecplot, and
+the other `write_*_mesh` helpers in `Converter/VisitWriter.cpp` have no callers.
+
 ## Reading output
 
 FLEKS writes AMReX block-structured output (plus IDL/`.h` for SWMF

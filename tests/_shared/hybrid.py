@@ -11,16 +11,16 @@ import logging
 import math
 import os
 
-logger = logging.getLogger(__name__)
+from tests._shared import run_dir as _run_dir
 
-# Default run directory; can be overridden via set_run_dir() by the test runner.
-RUN_DIR = "run_test"
+logger = logging.getLogger(__name__)
+RUN_DIR = _run_dir.RUN_DIR
 
 
 def set_run_dir(run_dir):
     """Point the plot helpers at the current run directory."""
-    global RUN_DIR
-    RUN_DIR = run_dir
+    _run_dir.set_run_dir(run_dir)
+    globals()["RUN_DIR"] = run_dir
 
 
 def validate_hybrid(pic_diags=None, test_name=None):
@@ -140,7 +140,7 @@ def _hyb_param_path(test_name=None):
     repo_tests = os.path.abspath(os.path.join(script_dir, ".."))
 
     candidates = [
-        os.path.join(RUN_DIR, "PARAM.in"),
+        os.path.join(_run_dir.RUN_DIR, "PARAM.in"),
         os.path.join(repo_tests, base, "PARAM.in"),
         os.path.join("tests", base, "PARAM.in"),
         os.path.join(repo_tests, "whistler", "PARAM.in"),
@@ -302,7 +302,7 @@ def _hyb_whistler_dispersion(out_files, test_name=None):
 
 def _check_hybrid_wave_dispersion(test_name=None):
     """Verify transverse wave initialization, bounded amplitude, and dispersion."""
-    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
+    plots_dir = os.path.join(_run_dir.RUN_DIR, "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
     if not out_files:
         logger.debug("    [HYB] No .out files found (PostProc.pl not run?).")

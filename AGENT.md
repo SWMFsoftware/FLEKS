@@ -11,10 +11,6 @@ Two field solvers, selected per run:
 - **Hybrid PIC** — kinetic ions + massless fluid electrons, generalized Ohm's
   law, explicit Faraday advance (`#HYBRIDPIC`).
 
-> This file is a **router**, not a manual. It is the only `AGENT.md` in the
-> repository; detailed content belongs in `doc/` or in `.agents/`, so agents pay
-> for it only when they need it.
-
 ## Single source of truth
 
 | Content | Location |
@@ -30,15 +26,13 @@ Two field solvers, selected per run:
 | Multi-step guides | `.agents/workflows/` |
 | Submission rules (formatting, commits) | `CONTRIBUTING.md` |
 
-Do **not** add per-directory `AGENT.md` files — extend the skill references
-instead.
-
 ## Commands
 
 ```bash
 ./Config.pl -lev=2 -u=Exo       # configure a standalone build
-make EXE -j8                    # standalone bin/FLEKS.exe
+make EXE -j8                    # standalone bin/FLEKS.exe (+ Converter/)
 make LIB -j8                    # SWMF component library src/libFLEKS.a
+make CONVERTER                  # only bin/converter.exe (make -C Converter)
 python3 tests/validate_tests.py [--test=beam] [-n 2] [--verbose]
 make test16_3d                  # GM-PC regression — from the SWMF root
 python3 tools/format_all.py     # CI-enforced formatting (C++ + Fortran)
@@ -60,7 +54,12 @@ Violating any of these gives silently wrong results or link errors:
    valid for both.
 5. Standalone runs use domain name `FLEKS1` and require `#INITFROMSWMF F` plus
    `#NORMALIZATION` / `#PLASMA` / `#UNIFORMSTATE`.
-6. New `.cpp` files must be listed in `SRCS` in `src/Makefile`.
+6. `src/Makefile` picks up every `.cpp` in `src/` and `src/ic/` with a
+   wildcard; only `src/main.cpp` is excluded (it has its own `main()`). A new
+   FLEKS source needs no Makefile edit — but it will be compiled, so do not
+   leave scratch `.cpp` files in `src/`.
+   The format converter is **not** part of the library: it lives in
+   `Converter/` with its own `Makefile` and its own `main()`.
 7. Formatting is CI-enforced (`python3 tools/format_all.py`).
 8. Ionization parameters belong in `SourceInterface` / `UserSource`, not in
    `FluidInterface`.

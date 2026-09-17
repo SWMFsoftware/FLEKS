@@ -28,7 +28,7 @@ make test16_3d
 ```
 
 ### Standalone Tests
-FLEKS can also be built and run standalone (no SWMF) using the tests under `tests/`:
+FLEKS can also be built and run standalone (no SWMF):
 
 ```bash
 # From the FLEKS root directory
@@ -69,10 +69,7 @@ make -C doc/Tex cleanpdf
 * **Coding Standards & Contributing:** See `CONTRIBUTING.md` before making a pull request.
 
 ## Data Processing
-All outputs from FLEKS natively stream to AMReX block formats. Do not use generic NetCDF loaders. Please leverage the Python `flekspy` API via:
-```bash
-pip install flekspy
-```
+All outputs from FLEKS natively stream to AMReX block formats. Do not use generic NetCDF loaders. Please leverage the Python `flekspy` package or Julia `Batsrus.jl` package.
 
 ## License
 Apache 2.0 (University of Michigan)

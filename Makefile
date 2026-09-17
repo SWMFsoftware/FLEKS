@@ -79,9 +79,11 @@ LIB: bin include/Constants.h compile_commands
 	$(MAKE) -C srcInterface LIB
 	$(MAKE) CONVERTER
 
+# The format converter is a separate tool with its own main() and its own
+# Makefile (see Converter/); it is not part of libFLEKS.a.
 CONVERTER: bin
 	+$(call prepare_exe)
-	$(MAKE) -C src CONVERTER
+	$(MAKE) -C Converter CONVERTER
 
 PIDL:
 	cd ${SHAREDIR}; $(MAKE) PIDL
@@ -107,6 +109,7 @@ rundir:
 clean:
 	$(MAKE) -C src clean
 	$(MAKE) -C srcInterface clean
+	$(MAKE) -C Converter clean
 	rm -rf bin/*
 
 distclean:
@@ -115,6 +118,7 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
+	-@$(MAKE) -C Converter distclean
 	-@$(MAKE) -C doc/Tex cleanpdf
 	-@rm -rf *~ ./bin lib ${TESTDIR} include/Constants.h
 	-@rm -f test*.diff

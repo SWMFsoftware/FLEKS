@@ -27,7 +27,7 @@ a pure FLEKS checkout it can clone or use local dependencies.
 |---|---|
 | `make EXE -j8` (alias `make FLEKS`) | standalone `bin/FLEKS.exe` |
 | `make LIB -j8` | SWMF component library `src/libFLEKS.a` + wrappers |
-| `make CONVERTER` | `bin/converter.exe` |
+| `make CONVERTER` | `bin/converter.exe` (delegates to `make -C Converter`) |
 | `make compile_commands` | regenerate `compile_commands.json` (IDE index) |
 | `make clean` / `make distclean` | object files / full reset |
 | `make PDF` | `doc/USERMANUAL.pdf` (needs `pdflatex`, `makeindex`, `fvextra`) |
@@ -48,15 +48,42 @@ a pure FLEKS checkout it can clone or use local dependencies.
 
 ## src/Makefile
 
-Every `.cpp` must be listed in the `SRCS` variable — nothing is
-auto-discovered. Useful variables:
+`SRCS` is a wildcard over `src/*.cpp` and `src/ic/*.cpp`, minus `main.cpp`
+(which has its own `main()`), wrapped in `$(sort)` so the archive order is
+reproducible. A new FLEKS source needs no Makefile edit — and a stray `.cpp`
+in `src/` will be compiled. Useful variables:
 
 | Variable | Purpose |
 |---|---|
-| `SRCS` | sources compiled into `libFLEKS.a` |
+| `SRCS` | sources compiled into `libFLEKS.a` (auto-discovered) |
 | `SEARCH_C` | include search paths (e.g. `-I../include`) |
 | `FLAGC_EXTRA` | `-D_${COMPONENT}_COMPONENT_` |
 | `LIBFLEKS` | output library name |
+
+## Converter/Makefile
+
+The format converter is a separate program with its own `main()` and its own
+Makefile at `Converter/Makefile`; it is **not** part of `libFLEKS.a`.
+
+```bash
+make CONVERTER              # from the root (delegates to -C Converter)
+make -C Converter CONVERTER # directly, e.g. while iterating on the tool
+```
+
+| Variable | Purpose |
+|---|---|
+| `SRCS` | converter-only sources: `Converter.cpp`, `DataContainer.cpp`, `VisitWriter.cpp` |
+| `SHARED_SRCS` | `../src/Grid.cpp`, `../src/FleksDistributionMap.cpp` |
+
+`SHARED_SRCS` exist because `AMReXDataContainer` derives from `Grid`. They are
+compiled into `Converter/` rather than taken from `libFLEKS.a`: the full
+archive also holds the PT/OH coupling objects, which reference OH symbols that
+only exist inside SWMF. Their objects must stay local — do not let make write
+`../src/Grid.o`, it would clobber the library's own object.
+
+Gotcha: `default:` must be the first target in `Converter/Makefile`.
+`../Makefile.conf` defines a `cleanfiles:` target and `include` expands in
+place, so anything after the includes is no longer the default goal.
 
 Preprocessor flags: `_PC_COMPONENT_` (PIC build), `_PT_COMPONENT_` (particle
 tracker), `_USE_HDF5_` (HDF5 output).
