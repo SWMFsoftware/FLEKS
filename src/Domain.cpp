@@ -174,16 +174,6 @@ void reject_conflicting_commands(
           " cannot be enabled together.");
 }
 
-void validate_domain_parameters(const DomainParameters& parameters) {
-  if (parameters.nFileField < 1 || parameters.nFileParticle < 1)
-    Abort("Invalid #NOUTFILE: nFileField and nFileParticle must be positive.");
-  if (parameters.cellWeight < 1)
-    Abort("Invalid #LOADBALANCE: cellWeight must be positive.");
-  if (parameters.receiveICOnly && parameters.doRestart)
-    Abort("Invalid configuration: #RECEIVEICONLY and #RESTART cannot be "
-          "enabled together.");
-}
-
 } // namespace
 
 //========================================================
@@ -225,6 +215,7 @@ void Domain::init(double time, const int iDomain,
   {
     read_domain_parameters(readParam);
     readParam.roll_back();
+    validate_configuration();
   }
 
   refineRegionsStr.resize(amrInfo.max_level + 1);
@@ -1473,8 +1464,7 @@ void Domain::read_param(const bool readGridInfo) {
 
   // Post processing
   if (!readGridInfo) {
-    reject_conflicting_commands(parameterCommandLocations, domainParameters);
-    validate_domain_parameters(domainParameters);
+    validate_configuration();
 
     { //====== Post process refinement region====
       for (int i = 0; i < refineRegionsStr.size() - 1; ++i) {
@@ -1521,6 +1511,14 @@ void Domain::read_param(const bool readGridInfo) {
 
   ParmParse pp("particles");
   pp.add("particles_nfiles", domainParameters.nFileParticle);
+}
+
+void Domain::validate_configuration() const {
+  const std::string error = domainParameters.validation_error();
+  if (!error.empty())
+    Abort("Invalid domain configuration: " + error);
+
+  reject_conflicting_commands(parameterCommandLocations, domainParameters);
 }
 
 //========================================================

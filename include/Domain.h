@@ -100,6 +100,7 @@ public:
 
   // Parse Domain-level switches before constructing children, then roll back.
   void read_domain_parameters(ReadParam &param);
+  void validate_configuration() const;
   void save_restart(std::string restartOutDir);
   void save_restart_header();
   void save_restart_data();
