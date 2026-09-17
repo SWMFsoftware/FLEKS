@@ -34,7 +34,7 @@ a pure FLEKS checkout it can clone or use local dependencies.
 
 `make LIB` is only valid inside a built SWMF tree (needs `libSHARE.a` and
 `con_comp_param.mod`); use `make EXE` for standalone work. `EXE`, `FLEKS` and
-`LIB` all invoke `compile_commands` and `CONVERTER` automatically.
+`LIB` invoke `compile_commands` automatically. `CONVERTER` is built separately.
 
 ## Dependencies
 
