@@ -1478,12 +1478,14 @@ $$
   <parameter name="solarDirY" type="real"/>
   <parameter name="solarDirZ" type="real"/>
   <parameter name="radius" type="real"/>
+  <parameter name="halfHeight" type="real"/>
 
 #SHADOWCYLINDER
 1.0                     solarDirX
 0.0                     solarDirY
 0.0                     solarDirZ
 6.371e6                 radius [m]
+2.5484e7                halfHeight [m]  4*Earth radius
 
 This command defines a planetary shadow cylinder on the nightside
 (anti-sunward direction). Photoionization production is set to zero
@@ -1493,6 +1495,8 @@ solarDirX/Y/Z are the components of the unit vector pointing from
 the planet center toward the Sun. They will be normalized automatically.
 radius is the radius of the shadow cylinder [m], typically the
 planetary radius.
+halfHeight is the half-length of the cylinder on the anti-sunward side
+[m]. Points farther than halfHeight behind the planet are not shadowed.
 
 If this command is absent, photoionization is applied spherically
 symmetrically (no shadow).
