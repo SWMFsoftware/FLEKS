@@ -55,9 +55,9 @@ make LIB -j8
 Use `make EXE` for standalone validation. `make LIB` is only valid in a built
 SWMF tree where `libSHARE.a` and `con_comp_param.mod` already exist.
 
-Both `EXE`/`FLEKS` and `LIB` invoke `compile_commands` and `CONVERTER`
-automatically, so successful builds should refresh `compile_commands.json` and
-bring `bin/converter.exe` up to date.
+Both `EXE`/`FLEKS` and `LIB` invoke `compile_commands` automatically to
+refresh `compile_commands.json`. The converter is compiled separately via
+`make CONVERTER`.
 
 ### 4. Check for Errors
 
@@ -114,6 +114,6 @@ To enable a debug build, ensure `OPT3` is set to `-O0` in the SWMF
 - Build completes without errors
 - `bin/FLEKS.exe` is updated for `make EXE` / `make FLEKS`
 - `src/libFLEKS.a` is updated for `make LIB`
-- `bin/converter.exe` is updated by `EXE`, `FLEKS`, `LIB`, or `CONVERTER`
+- `bin/converter.exe` is updated by `make CONVERTER`
   (built from `Converter/`, independent of `libFLEKS.a`)
 - `compile_commands.json` is present and current

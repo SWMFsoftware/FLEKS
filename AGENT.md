@@ -30,9 +30,9 @@ Two field solvers, selected per run:
 
 ```bash
 ./Config.pl -lev=2 -u=Exo       # configure a standalone build
-make EXE -j8                    # standalone bin/FLEKS.exe (+ Converter/)
+make EXE -j8                    # standalone bin/FLEKS.exe
 make LIB -j8                    # SWMF component library src/libFLEKS.a
-make CONVERTER                  # only bin/converter.exe (make -C Converter)
+make CONVERTER                  # format converter bin/converter.exe
 python3 tests/validate_tests.py [--test=beam] [-n 2] [--verbose]
 make test16_3d                  # GM-PC regression — from the SWMF root
 python3 tools/format_all.py     # CI-enforced formatting (C++ + Fortran)

@@ -12,6 +12,7 @@ help:
 	@echo 'make EXE                    - compile standalone executable'
 	@echo 'make FLEKS                  - same as make EXE'
 	@echo 'make LIB                    - compile libPC.a for SWMF'
+	@echo 'make CONVERTER              - compile format converter (converter.exe)'
 	@echo 'make PIDL                   - compile PostIDL.exe for post-processing'
 	@echo 'make PDF                    - build doc/USERMANUAL.pdf from PARAM.XML'
 	@echo 'make clean                  - remove object files'
@@ -51,7 +52,6 @@ EXE: include/show_git_info.h compile_commands
 	+$(call prepare_exe)
 	$(MAKE) GITINFO
 	$(MAKE) -C src EXE
-	$(MAKE) CONVERTER
 
 FLEKS: EXE
 
@@ -77,7 +77,6 @@ LIB: bin include/Constants.h compile_commands
 	fi
 	$(MAKE) -C src LIB
 	$(MAKE) -C srcInterface LIB
-	$(MAKE) CONVERTER
 
 # The format converter is a separate tool with its own main() and its own
 # Makefile (see Converter/); it is not part of libFLEKS.a.
