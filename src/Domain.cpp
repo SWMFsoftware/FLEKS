@@ -81,12 +81,6 @@ static const ParameterCommand parameter_registry[] = {
     {"#TPRELATIVISTIC", ParameterOwner::ParticleTracker},
     {"#TPINITFROMPIC", ParameterOwner::ParticleTracker},
     {"#TPSTATESI", ParameterOwner::ParticleTracker},
-    {"#PHOTOIONIZATION", ParameterOwner::Source},
-    {"#ELECTRONIMPACT", ParameterOwner::Source},
-    {"#CHARGEEXCHANGE", ParameterOwner::Source},
-    {"#SHADOWCYLINDER", ParameterOwner::Source},
-    {"#RECOMBINATION", ParameterOwner::Source},
-    {"#CHEMISTRY", ParameterOwner::Source},
     {"#NORMALIZATION", ParameterOwner::FluidInterface},
     {"#SCALINGFACTOR", ParameterOwner::FluidInterface},
     {"#BODYSIZE", ParameterOwner::FluidInterface},
@@ -100,6 +94,15 @@ const ParameterCommand* find_parameter_command(const std::string& command) {
   for (const auto& entry : parameter_registry) {
     if (command == entry.name)
       return &entry;
+  }
+
+  bool is_registered_source_command(const std::vector<std::string>& commands,
+                                    const std::string& command) {
+    for (const auto& registered : commands) {
+      if (registered == command)
+        return true;
+    }
+    return false;
   }
   return nullptr;
 }
@@ -254,6 +257,7 @@ void Domain::init(double time, const int iDomain,
   // can be dispatched to source->read_param().
   source = std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid,
                                         domainParameters);
+  source->register_parameter_commands(sourceParameterCommands);
 
   read_param(false);
 
@@ -1060,6 +1064,15 @@ void Domain::read_domain_parameters(ReadParam &rp) {
       rp.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       rp.read_var("useSource", domainParameters.useSource);
+    } else if (source &&
+               is_registered_source_command(sourceParameterCommands,
+                                             command)) {
+      // Sync source state once before its first registered command.
+      if (!sourceParamsSynced) {
+        source->sync_fluid_interface_params(*fi);
+        sourceParamsSynced = true;
+      }
+      source->read_param(command, readParam);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       rp.read_var("loadBalanceStrategy", strategy);

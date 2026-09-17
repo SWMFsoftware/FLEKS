@@ -247,6 +247,31 @@ Number of files per AMREX format field or particle output.
 
 </command>
 
+<command name="FADEEVIC">
+#FADEEVIC
+
+Selects the Fadeev magnetic-reconnection initial condition. Use after
+#TESTCASE selects the fadeev initial-condition implementation.
+</command>
+
+<command name="WAVE">
+#WAVE
+
+Defines a wave/fluid state block consumed by the fluid interface.
+</command>
+
+<command name="TESTPARTICLENUMBER">
+#TESTPARTICLENUMBER
+
+Configures the number of test particles used by the particle tracker.
+</command>
+
+<command name="TPINITFROMPIC">
+#TPINITFROMPIC
+
+Initializes test particles from the PIC particle state.
+</command>
+
 </commandgroup>
 
 <commandgroup name="Scheme">

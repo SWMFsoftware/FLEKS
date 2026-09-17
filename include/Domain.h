@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <map>
 #include <string>
+#include <vector>
 
 struct ParameterCommandLocation {
   std::size_t line = 0;
@@ -25,6 +26,7 @@ private:
   ReadParam readParam;
   std::string parameterText;
   std::map<std::string, ParameterCommandLocation> parameterCommandLocations;
+  std::vector<std::string> sourceParameterCommands;
 
   ParticleTrackerInfo ptInfo;
 

@@ -10,8 +10,11 @@ on:
       - 'doc/**'
       - '.agents/**'
       - 'PARAM.XML'
+      - 'src/Domain.cpp'
+      - 'userfiles/ExoSource.h'
       - 'tests/**/README.md'
       - 'tools/check_docs.py'
+      - 'tools/check_parameter_registry.py'
       - '.github/workflows/docs_check.yml'
   pull_request:
     branches: [ "master" ]
@@ -22,8 +25,11 @@ on:
       - 'doc/**'
       - '.agents/**'
       - 'PARAM.XML'
+      - 'src/Domain.cpp'
+      - 'userfiles/ExoSource.h'
       - 'tests/**/README.md'
       - 'tools/check_docs.py'
+      - 'tools/check_parameter_registry.py'
       - '.github/workflows/docs_check.yml'
 
 concurrency:
@@ -39,3 +45,6 @@ jobs:
 
       - name: Run docs consistency check
         run: python3 tools/check_docs.py
+
+      - name: Verify parameter registry documentation
+        run: python3 tools/check_parameter_registry.py
