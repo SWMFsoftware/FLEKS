@@ -449,6 +449,35 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
 
 //==========================================================
 void Pic::post_process_param() {
+  // Validate raw user input before deriving defaults or converting units.
+  // These values are used in denominators and dispatch solver branches, so
+  // silently correcting them can produce a run with different physics than
+  // the input deck describes.
+  if (nBSubcycle < 1)
+    amrex::Abort("Invalid #BSUBCYCLE: nBSubcycle must be at least 1.");
+  if (electronGamma <= 0)
+    amrex::Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
+  if (electronDensity0In <= 0)
+    amrex::Abort(
+        "Invalid #ELECTRONTEMPERATURE: electronDensity0 must be > 0.");
+  if (etaHyperSI < 0)
+    amrex::Abort(
+        "Invalid #HYPERRESISTIVITY: etaHyperSI must be non-negative.");
+  if (etaHyperCh < 0)
+    amrex::Abort(
+        "Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
+  if (rhoMinOhm < 0)
+    amrex::Abort(
+        "Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+  if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3")
+    amrex::Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+                 "'. Expected 'rk4' or 'ssprk3'.");
+  if (etaHyperMode != "si" && etaHyperMode != "grid")
+    amrex::Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
+                 "'. Expected 'si' or 'grid'.");
+  if (nAvgFieldB < 1)
+    amrex::Abort("Invalid #AVGFIELDB: nAvgFieldB must be at least 1.");
+
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
   // Species without a #PARTICLEBOXBOUNDARY block keep the default (coupled),
@@ -495,17 +524,9 @@ void Pic::post_process_param() {
     // finalize_units_conversion().
 
     useRK4 = (fieldIntegrator == "rk4");
-    if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
-      amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '"
-                     << fieldIntegrator << "'; defaulting to 'rk4'\n";
-      fieldIntegrator = "rk4";
-      useRK4 = true;
-    }
     amrex::Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
     amrex::Print() << "  useAvgFieldB: " << useAvgFieldB
                    << "   nAvgFieldB: " << nAvgFieldB << "\n";
-    if (nAvgFieldB < 1)
-      nAvgFieldB = 1;
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       double unormSI = fi->get_unorm_si();
