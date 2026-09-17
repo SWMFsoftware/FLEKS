@@ -3,7 +3,10 @@
 #include "Shape.h"
 #include "UserSource.h"
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
+#include <cstring>
 #include <map>
 
 using namespace amrex;
@@ -91,20 +94,37 @@ static const ParameterCommand parameter_registry[] = {
     {"#WAVE", ParameterOwner::FluidInterface}};
 
 const ParameterCommand* find_parameter_command(const std::string& command) {
-  for (const auto& entry : parameter_registry) {
-    if (command == entry.name)
-      return &entry;
-  }
+  static const auto sortedRegistry = [] {
+    constexpr std::size_t registrySize =
+        sizeof(parameter_registry) / sizeof(parameter_registry[0]);
+    std::array<ParameterCommand, registrySize> sorted{};
+    std::copy(std::begin(parameter_registry), std::end(parameter_registry),
+              sorted.begin());
+    std::sort(
+        sorted.begin(), sorted.end(),
+        [](const ParameterCommand& lhs, const ParameterCommand& rhs) {
+          return std::strcmp(lhs.name, rhs.name) < 0;
+        });
+    return sorted;
+  }();
 
-  bool is_registered_source_command(const std::vector<std::string>& commands,
-                                    const std::string& command) {
-    for (const auto& registered : commands) {
-      if (registered == command)
-        return true;
-    }
-    return false;
-  }
+  const auto it = std::lower_bound(
+      sortedRegistry.begin(), sortedRegistry.end(), command,
+      [](const ParameterCommand& entry, const std::string& value) {
+        return std::strcmp(entry.name, value.c_str()) < 0;
+      });
+  if (it != sortedRegistry.end() && command == it->name)
+    return &*it;
   return nullptr;
+}
+
+bool is_registered_source_command(const std::vector<std::string>& commands,
+                                  const std::string& command) {
+  for (const auto& registered : commands) {
+    if (registered == command)
+      return true;
+  }
+  return false;
 }
 
 bool is_singleton_command(const std::string& command) {
