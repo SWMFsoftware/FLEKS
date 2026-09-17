@@ -263,8 +263,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         RealVect dShift;
         Real coef[2][2][2];
         find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                Geom(iLev).InvCellSize(), loIdx, dShift,
-                                coef);
+                                Geom(iLev).InvCellSize(), loIdx, dShift, coef);
         //-----calculate interpolate coef end-------------
 
         //-------nodePlasma begin---------
@@ -488,8 +487,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
         // interpolate between its centre and the next cell centre (trilinear).
         Real coef[2][2][2];
         find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                Geom(iLev).InvCellSize(), loIdx, dShift,
-                                coef);
+                                Geom(iLev).InvCellSize(), loIdx, dShift, coef);
         //-----calculate interpolate coef end-------------
 
         //-------cell-centred moments begin---------

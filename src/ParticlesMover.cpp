@@ -454,9 +454,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   template void T::charged_particle_mover_cell_centered(                       \
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
       const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
-  template void T::charged_particle_mover_impl(                                \
-      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real,            \
-      T::FieldSampling);                                                       \
+  template void T::charged_particle_mover_impl(const Vector<MultiFab>&,        \
+                                               const Vector<MultiFab>&, Real,  \
+                                               Real, T::FieldSampling);        \
   template void T::neutral_mover(Real);                                        \
   template void T::divE_correct_position(const Vector<MultiFab>&, int);
 

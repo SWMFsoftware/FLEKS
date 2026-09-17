@@ -473,8 +473,7 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
       RealVect dShift;
       Real coefLin[2][2][2];
       find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                              Geom(iLev).InvCellSize(), loIdx, dShift,
-                              coefLin);
+                              Geom(iLev).InvCellSize(), loIdx, dShift, coefLin);
       //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };

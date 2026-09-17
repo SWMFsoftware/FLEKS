@@ -380,8 +380,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
       //-----calculate interpolate coef begin-------------
       for (int i = 0; i < nCoef; i++) {
-        find_node_interpolation(p.pos(), Geom(i).ProbLo(), Geom(i).InvCellSize(),
-                                loIdx[i], dShift[i], coef[i]);
+        find_node_interpolation(p.pos(), Geom(i).ProbLo(),
+                                Geom(i).InvCellSize(), loIdx[i], dShift[i],
+                                coef[i]);
       }
 
       //-----calculate interpolate coef end-------------
@@ -441,8 +442,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       currents[iz_] = (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
 
       for (int i = 0; i < nCoef; ++i)
-        deposit_vector_field(jArrt[i], loIdx[i], coef[i], lo, hi, currents,
-                             3);
+        deposit_vector_field(jArrt[i], loIdx[i], coef[i], lo, hi, currents, 3);
 
       for (int i = 0; i < nCoef; i++) {
         const int iMin = loIdx[i][ix_];

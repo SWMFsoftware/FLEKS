@@ -200,8 +200,7 @@ inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void boris_push_nonrelativistic(
-    const amrex::Real (&velocity)[3],
-    const amrex::Real (&electric_velocity)[3],
+    const amrex::Real (&velocity)[3], const amrex::Real (&electric_velocity)[3],
     const amrex::Real (&omega)[3], amrex::Real (&updated_velocity)[3]) {
   const amrex::Real omsq =
       omega[0] * omega[0] + omega[1] * omega[1] + omega[2] * omega[2];

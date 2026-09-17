@@ -157,18 +157,22 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
   find_node_index(xyz, plo, invDx, loIdx, dShift);
 }
 
-inline void find_node_interpolation(
-    const amrex::RealVect& xyz, const amrex::Real* const plo,
-    const amrex::Real* const invDx, amrex::IntVect& loIdx,
-    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
+inline void find_node_interpolation(const amrex::RealVect& xyz,
+                                    const amrex::Real* const plo,
+                                    const amrex::Real* const invDx,
+                                    amrex::IntVect& loIdx,
+                                    amrex::RealVect& dShift,
+                                    amrex::Real (&coef)[2][2][2]) {
   find_node_index(xyz, plo, invDx, loIdx, dShift);
   linear_interpolation_coef(dShift, coef);
 }
 
-inline void find_cell_interpolation(
-    const amrex::RealVect& xyz, const amrex::Real* const plo,
-    const amrex::Real* const invDx, amrex::IntVect& loIdx,
-    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
+inline void find_cell_interpolation(const amrex::RealVect& xyz,
+                                    const amrex::Real* const plo,
+                                    const amrex::Real* const invDx,
+                                    amrex::IntVect& loIdx,
+                                    amrex::RealVect& dShift,
+                                    amrex::Real (&coef)[2][2][2]) {
   find_cell_index(xyz, plo, invDx, loIdx, dShift);
   linear_interpolation_coef(dShift, coef);
 }
@@ -194,8 +198,7 @@ inline void find_cell_interpolation(
 template <int NCoef, int NField>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_fields(
     const amrex::Array4<const amrex::Real> (&fields)[NField],
-    const amrex::IntVect& loIdx,
-    const amrex::Real (&coef)[NCoef][NCoef][NCoef],
+    const amrex::IntVect& loIdx, const amrex::Real (&coef)[NCoef][NCoef][NCoef],
     const amrex::Dim3& lo, const amrex::Dim3& hi,
     amrex::Real* (&values)[NField]) {
   for (int iField = 0; iField < NField; ++iField)
@@ -222,11 +225,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_fields(
  */
 template <int NCoef>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_field(
-    const amrex::Array4<const amrex::Real>& field,
-    const amrex::IntVect& loIdx,
-    const amrex::Real (&coef)[NCoef][NCoef][NCoef],
-    const amrex::Dim3& lo, const amrex::Dim3& hi,
-    amrex::Real (&value)[nDim3]) {
+    const amrex::Array4<const amrex::Real>& field, const amrex::IntVect& loIdx,
+    const amrex::Real (&coef)[NCoef][NCoef][NCoef], const amrex::Dim3& lo,
+    const amrex::Dim3& hi, amrex::Real (&value)[nDim3]) {
   const amrex::Array4<const amrex::Real> fields[1] = { field };
   amrex::Real* values[1] = { value };
   interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
@@ -234,11 +235,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_field(
 
 template <int NCoef>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
-    const amrex::Array4<amrex::Real>& field,
-    const amrex::IntVect& loIdx,
-    const amrex::Real (&coef)[NCoef][NCoef][NCoef],
-    const amrex::Dim3& lo, const amrex::Dim3& hi,
-    const amrex::Real* value, int nComp) {
+    const amrex::Array4<amrex::Real>& field, const amrex::IntVect& loIdx,
+    const amrex::Real (&coef)[NCoef][NCoef][NCoef], const amrex::Dim3& lo,
+    const amrex::Dim3& hi, const amrex::Real* value, int nComp) {
   for (int k = lo.z; k <= hi.z; ++k)
     for (int j = lo.y; j <= hi.y; ++j)
       for (int i = lo.x; i <= hi.x; ++i) {
