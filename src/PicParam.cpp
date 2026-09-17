@@ -458,17 +458,13 @@ void Pic::post_process_param() {
   if (electronGamma <= 0)
     amrex::Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
   if (electronDensity0In <= 0)
-    amrex::Abort(
-        "Invalid #ELECTRONTEMPERATURE: electronDensity0 must be > 0.");
+    amrex::Abort("Invalid #ELECTRONTEMPERATURE: electronDensity0 must be > 0.");
   if (etaHyperSI < 0)
-    amrex::Abort(
-        "Invalid #HYPERRESISTIVITY: etaHyperSI must be non-negative.");
+    amrex::Abort("Invalid #HYPERRESISTIVITY: etaHyperSI must be non-negative.");
   if (etaHyperCh < 0)
-    amrex::Abort(
-        "Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
+    amrex::Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
-    amrex::Abort(
-        "Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+    amrex::Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
   if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3")
     amrex::Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
                  "'. Expected 'rk4' or 'ssprk3'.");

@@ -1,150 +1,139 @@
-#include "Domain.h"
-#include "GridUtility.h"
-#include "Shape.h"
-#include "UserSource.h"
-
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstring>
 #include <map>
 
+#include "Domain.h"
+#include "GridUtility.h"
+#include "Shape.h"
+#include "UserSource.h"
+
 using namespace amrex;
 
 namespace {
 
-enum class ParameterOwner { Pic, ParticleTracker, Source, FluidInterface };
-
 struct ParameterCommand {
-  const char* name;
+  const char *name;
   ParameterOwner owner;
 };
 
 static const ParameterCommand parameter_registry[] = {
-    {"#DIVE", ParameterOwner::Pic},
-    {"#EFIELDSOLVER", ParameterOwner::Pic},
-    {"#RANDOMPARTICLESLOCATION", ParameterOwner::Pic},
-    {"#CONSTANTPPV", ParameterOwner::Pic},
-    {"#PRESPLITTING", ParameterOwner::Pic},
-    {"#PARTICLES", ParameterOwner::Pic},
-    {"#KINETICSOURCE", ParameterOwner::Pic},
-    {"#SOURCEPARTICLES", ParameterOwner::Pic},
-    {"#ELECTRON", ParameterOwner::Pic},
-    {"#DISCRETIZE", ParameterOwner::Pic},
-    {"#DISCRETIZATION", ParameterOwner::Pic},
-    {"#RESAMPLING", ParameterOwner::Pic},
-    {"#SMOOTHE", ParameterOwner::Pic},
-    {"#SMOOTHJ", ParameterOwner::Pic},
-    {"#SMOOTHMOMENTS", ParameterOwner::Pic},
-    {"#UPWINDB", ParameterOwner::Pic},
-    {"#UPWINDE", ParameterOwner::Pic},
-    {"#FIXEDUMAX", ParameterOwner::Pic},
-    {"#LAGGEDLIMITER", ParameterOwner::Pic},
-    {"#DIVB", ParameterOwner::Pic},
-    {"#CMAXE", ParameterOwner::Pic},
-    {"#TESTCASE", ParameterOwner::Pic},
-    {"#WAVEIC", ParameterOwner::Pic},
-    {"#FADEEVIC", ParameterOwner::Pic},
-    {"#FASTMERGE", ParameterOwner::Pic},
-    {"#ADAPTIVESOURCEPPC", ParameterOwner::Pic},
-    {"#MERGELIGHT", ParameterOwner::Pic},
-    {"#VACUUM", ParameterOwner::Pic},
-    {"#PARTICLELEVRATIO", ParameterOwner::Pic},
-    {"#OHION", ParameterOwner::Pic},
-    {"#PIC", ParameterOwner::Pic},
-    {"#EXPLICITPIC", ParameterOwner::Pic},
-    {"#COMOVING", ParameterOwner::Pic},
-    {"#PARTICLEBOXBOUNDARY", ParameterOwner::Pic},
-    {"#FIELDBOXBOUNDARY", ParameterOwner::Pic},
-    {"#BFIELDBOXBOUNDARY", ParameterOwner::Pic},
-    {"#SUPID", ParameterOwner::Pic},
-    {"#SOLVEEM", ParameterOwner::Pic},
-    {"#PARTMODE", ParameterOwner::Pic},
-    {"#SELECTPARTICLE", ParameterOwner::Pic},
-    {"#MAXCHARGEEXCHANGERATE", ParameterOwner::Pic},
-    {"#HYBRIDPIC", ParameterOwner::Pic},
-    {"#RESISTIVITY", ParameterOwner::Pic},
-    {"#ELECTRONTEMPERATURE", ParameterOwner::Pic},
-    {"#BSUBCYCLE", ParameterOwner::Pic},
-    {"#HALLTERM", ParameterOwner::Pic},
-    {"#HYPERRESISTIVITY", ParameterOwner::Pic},
-    {"#MINIMUMDENSITY", ParameterOwner::Pic},
-    {"#FIELDINTEGRATOR", ParameterOwner::Pic},
-    {"#AVGFIELDB", ParameterOwner::Pic},
-    {"#MEMORY", ParameterOwner::Pic},
-    {"#WAVEBC", ParameterOwner::Pic},
-    {"#ABSORB", ParameterOwner::Pic},
-    {"#INFLOW", ParameterOwner::Pic},
-    {"#TESTPARTICLENUMBER", ParameterOwner::ParticleTracker},
-    {"#TPPARTICLES", ParameterOwner::ParticleTracker},
-    {"#TPCELLINTERVAL", ParameterOwner::ParticleTracker},
-    {"#TPREGION", ParameterOwner::ParticleTracker},
-    {"#TPSAVE", ParameterOwner::ParticleTracker},
-    {"#TPSAVEAT", ParameterOwner::ParticleTracker},
-    {"#TPRELATIVISTIC", ParameterOwner::ParticleTracker},
-    {"#TPINITFROMPIC", ParameterOwner::ParticleTracker},
-    {"#TPSTATESI", ParameterOwner::ParticleTracker},
-    {"#NORMALIZATION", ParameterOwner::FluidInterface},
-    {"#SCALINGFACTOR", ParameterOwner::FluidInterface},
-    {"#BODYSIZE", ParameterOwner::FluidInterface},
-    {"#EXOSPHERE", ParameterOwner::FluidInterface},
-    {"#PLASMA", ParameterOwner::FluidInterface},
-    {"#UNIFORMSTATE", ParameterOwner::FluidInterface},
-    {"#FLUIDVARNAMES", ParameterOwner::FluidInterface},
-    {"#WAVE", ParameterOwner::FluidInterface}};
+  { "#ABSORB", ParameterOwner::Pic },
+  { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
+  { "#AVGFIELDB", ParameterOwner::Pic },
+  { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
+  { "#BODYSIZE", ParameterOwner::FluidInterface },
+  { "#BSUBCYCLE", ParameterOwner::Pic },
+  { "#CMAXE", ParameterOwner::Pic },
+  { "#COMOVING", ParameterOwner::Pic },
+  { "#CONSTANTPPV", ParameterOwner::Pic },
+  { "#DISCRETIZATION", ParameterOwner::Pic },
+  { "#DISCRETIZE", ParameterOwner::Pic },
+  { "#DIVB", ParameterOwner::Pic },
+  { "#DIVE", ParameterOwner::Pic },
+  { "#EFIELDSOLVER", ParameterOwner::Pic },
+  { "#ELECTRON", ParameterOwner::Pic },
+  { "#ELECTRONTEMPERATURE", ParameterOwner::Pic },
+  { "#EXOSPHERE", ParameterOwner::FluidInterface },
+  { "#EXPLICITPIC", ParameterOwner::Pic },
+  { "#FADEEVIC", ParameterOwner::Pic },
+  { "#FASTMERGE", ParameterOwner::Pic },
+  { "#FIELDBOXBOUNDARY", ParameterOwner::Pic },
+  { "#FIELDINTEGRATOR", ParameterOwner::Pic },
+  { "#FIXEDUMAX", ParameterOwner::Pic },
+  { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
+  { "#HALLTERM", ParameterOwner::Pic },
+  { "#HYBRIDPIC", ParameterOwner::Pic },
+  { "#HYPERRESISTIVITY", ParameterOwner::Pic },
+  { "#INFLOW", ParameterOwner::Pic },
+  { "#KINETICSOURCE", ParameterOwner::Pic },
+  { "#LAGGEDLIMITER", ParameterOwner::Pic },
+  { "#MAXCHARGEEXCHANGERATE", ParameterOwner::Pic },
+  { "#MEMORY", ParameterOwner::Pic },
+  { "#MERGELIGHT", ParameterOwner::Pic },
+  { "#MINIMUMDENSITY", ParameterOwner::Pic },
+  { "#NORMALIZATION", ParameterOwner::FluidInterface },
+  { "#OHION", ParameterOwner::Pic },
+  { "#PARTICLEBOXBOUNDARY", ParameterOwner::Pic },
+  { "#PARTICLELEVRATIO", ParameterOwner::Pic },
+  { "#PARTICLES", ParameterOwner::Pic },
+  { "#PARTMODE", ParameterOwner::Pic },
+  { "#PIC", ParameterOwner::Pic },
+  { "#PLASMA", ParameterOwner::FluidInterface },
+  { "#PRESPLITTING", ParameterOwner::Pic },
+  { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
+  { "#RESAMPLING", ParameterOwner::Pic },
+  { "#RESISTIVITY", ParameterOwner::Pic },
+  { "#SCALINGFACTOR", ParameterOwner::FluidInterface },
+  { "#SELECTPARTICLE", ParameterOwner::Pic },
+  { "#SMOOTHE", ParameterOwner::Pic },
+  { "#SMOOTHJ", ParameterOwner::Pic },
+  { "#SMOOTHMOMENTS", ParameterOwner::Pic },
+  { "#SOLVEEM", ParameterOwner::Pic },
+  { "#SOURCEPARTICLES", ParameterOwner::Pic },
+  { "#SUPID", ParameterOwner::Pic },
+  { "#TESTCASE", ParameterOwner::Pic },
+  { "#TESTPARTICLENUMBER", ParameterOwner::ParticleTracker },
+  { "#TPCELLINTERVAL", ParameterOwner::ParticleTracker },
+  { "#TPINITFROMPIC", ParameterOwner::ParticleTracker },
+  { "#TPPARTICLES", ParameterOwner::ParticleTracker },
+  { "#TPREGION", ParameterOwner::ParticleTracker },
+  { "#TPRELATIVISTIC", ParameterOwner::ParticleTracker },
+  { "#TPSAVE", ParameterOwner::ParticleTracker },
+  { "#TPSAVEAT", ParameterOwner::ParticleTracker },
+  { "#TPSTATESI", ParameterOwner::ParticleTracker },
+  { "#UNIFORMSTATE", ParameterOwner::FluidInterface },
+  { "#UPWINDB", ParameterOwner::Pic },
+  { "#UPWINDE", ParameterOwner::Pic },
+  { "#VACUUM", ParameterOwner::Pic },
+  { "#WAVE", ParameterOwner::FluidInterface },
+  { "#WAVEBC", ParameterOwner::Pic },
+  { "#WAVEIC", ParameterOwner::Pic }
+};
 
-const ParameterCommand* find_parameter_command(const std::string& command) {
-  static const auto sortedRegistry = [] {
-    constexpr std::size_t registrySize =
-        sizeof(parameter_registry) / sizeof(parameter_registry[0]);
-    std::array<ParameterCommand, registrySize> sorted{};
-    std::copy(std::begin(parameter_registry), std::end(parameter_registry),
-              sorted.begin());
-    std::sort(
-        sorted.begin(), sorted.end(),
-        [](const ParameterCommand& lhs, const ParameterCommand& rhs) {
-          return std::strcmp(lhs.name, rhs.name) < 0;
-        });
-    return sorted;
-  }();
-
+const ParameterCommand *find_parameter_command(const std::string &command) {
   const auto it = std::lower_bound(
-      sortedRegistry.begin(), sortedRegistry.end(), command,
-      [](const ParameterCommand& entry, const std::string& value) {
+      std::begin(parameter_registry), std::end(parameter_registry), command,
+      [](const ParameterCommand &entry, const std::string &value) {
         return std::strcmp(entry.name, value.c_str()) < 0;
       });
-  if (it != sortedRegistry.end() && command == it->name)
-    return &*it;
+  if (it != std::end(parameter_registry) && command == it->name)
+    return it;
   return nullptr;
 }
 
-bool is_registered_source_command(const std::vector<std::string>& commands,
-                                  const std::string& command) {
-  for (const auto& registered : commands) {
-    if (registered == command)
-      return true;
-  }
-  return false;
-}
+bool is_singleton_command(const std::string &command) {
+  static const char *const singletonCommands[] = { "#AVGFIELDB",
+                                                   "#BSUBCYCLE",
+                                                   "#DISCRETIZE",
+                                                   "#ELECTRONTEMPERATURE",
+                                                   "#FIELDBOXBOUNDARY",
+                                                   "#FIELDINTEGRATOR",
+                                                   "#GEOMETRY",
+                                                   "#HYBRIDPIC",
+                                                   "#HYPERRESISTIVITY",
+                                                   "#INITFROMSWMF",
+                                                   "#LOADBALANCE",
+                                                   "#MINIMUMDENSITY",
+                                                   "#NCELL",
+                                                   "#NOUTFILE",
+                                                   "#PARTICLETRACKER",
+                                                   "#PERIODICITY",
+                                                   "#RECEIVEICONLY",
+                                                   "#RESTART",
+                                                   "#SOURCE",
+                                                   "#TIMESTEP",
+                                                   "#TIMESTEPPING" };
 
-bool is_singleton_command(const std::string& command) {
-  static const char* const singletonCommands[] = {
-      "#AVGFIELDB",       "#BSUBCYCLE",       "#ELECTRONTEMPERATURE",
-      "#FIELDINTEGRATOR", "#GEOMETRY",        "#HYPERRESISTIVITY",
-      "#HYBRIDPIC",       "#INITFROMSWMF",    "#LOADBALANCE",
-      "#MINIMUMDENSITY",  "#NCELL",           "#NOUTFILE",
-      "#PARTICLETRACKER", "#PERIODICITY",     "#RECEIVEICONLY",
-      "#RESTART",         "#SOURCE",          "#TIMESTEPPING",
-      "#TIMESTEP",        "#DISCRETIZE",      "#FIELDBOXBOUNDARY"};
-
-  for (const char* singleton : singletonCommands) {
+  for (const char *singleton : singletonCommands) {
     if (command == singleton)
       return true;
   }
   return false;
 }
 
-std::string canonical_command(const std::string& command) {
+std::string canonical_command(const std::string &command) {
   if (command == "#DISCRETIZATION")
     return "#DISCRETIZE";
   if (command == "#BFIELDBOXBOUNDARY")
@@ -152,9 +141,9 @@ std::string canonical_command(const std::string& command) {
   return command;
 }
 
-ParameterCommandLocation locate_command(const std::string& text,
-                                        const std::string& command,
-                                        std::size_t& searchPosition) {
+ParameterCommandLocation locate_command(const std::string &text,
+                                        const std::string &command,
+                                        std::size_t &searchPosition) {
   std::size_t line = 1;
   std::size_t lineStart = 0;
   while (lineStart < text.size()) {
@@ -164,10 +153,13 @@ ParameterCommandLocation locate_command(const std::string& text,
     std::size_t first = lineStart;
     while (first < end && (text[first] == ' ' || text[first] == '\t'))
       ++first;
-    if (text.compare(first, command.size(), command) == 0 &&
+    const std::size_t nextChar = first + command.size();
+    const bool isDelimiter = (nextChar >= end || text[nextChar] == ' ' ||
+                              text[nextChar] == '\t' || text[nextChar] == '\r');
+    if (text.compare(first, command.size(), command) == 0 && isDelimiter &&
         first >= searchPosition) {
       searchPosition = end;
-      return {line, first - lineStart + 1};
+      return { line, first - lineStart + 1 };
     }
     if (lineEnd == std::string::npos)
       break;
@@ -177,7 +169,7 @@ ParameterCommandLocation locate_command(const std::string& text,
   return {};
 }
 
-std::string format_location(const ParameterCommandLocation& location) {
+std::string format_location(const ParameterCommandLocation &location) {
   if (location.line == 0)
     return "unknown location";
   return "line " + std::to_string(location.line) + ", column " +
@@ -185,8 +177,8 @@ std::string format_location(const ParameterCommandLocation& location) {
 }
 
 void reject_conflicting_commands(
-    const std::map<std::string, ParameterCommandLocation>& locations,
-    const DomainParameters& parameters) {
+    const std::map<std::string, ParameterCommandLocation> &locations,
+    const DomainParameters &parameters) {
   const auto restart = locations.find("#RESTART");
   const auto receiveICOnly = locations.find("#RECEIVEICONLY");
   if (parameters.doRestart && parameters.receiveICOnly &&
@@ -198,6 +190,21 @@ void reject_conflicting_commands(
 }
 
 } // namespace
+
+bool Domain::find_parameter_owner(const std::string &command,
+                                  ParameterOwner &owner) const {
+  if (const auto *core = find_parameter_command(command)) {
+    owner = core->owner;
+    return true;
+  }
+  for (const auto &registered : sourceParameterCommands) {
+    if (registered == command) {
+      owner = ParameterOwner::Source;
+      return true;
+    }
+  }
+  return false;
+}
 
 //========================================================
 void Domain::init(double time, const int iDomain,
@@ -452,6 +459,7 @@ void Domain::update() {
 void Domain::update_param(const std::string &paramString) {
   readParam = paramString;
   parameterText = paramString;
+  parameterCommandLocations.clear();
   read_param(false);
   init_time_ctr();
 };
@@ -1155,40 +1163,30 @@ void Domain::read_param(const bool readGridInfo) {
         parameterCommandLocations.emplace(key, location);
     }
 
-    const ParameterCommand* parameterCommand =
-        find_parameter_command(command);
-    if (parameterCommand != nullptr) {
-      switch (parameterCommand->owner) {
-      case ParameterOwner::Pic:
-        if (pic)
-          pic->read_param(command, readParam);
-        break;
-      case ParameterOwner::ParticleTracker:
-        ptInfo.read_param(command, readParam);
-        break;
-      case ParameterOwner::Source:
-        if (source) {
-          // Sync source state once before the first source-specific command.
-          if (!sourceParamsSynced) {
-            source->sync_fluid_interface_params(*fi);
-            sourceParamsSynced = true;
+    ParameterOwner owner;
+    if (find_parameter_owner(command, owner)) {
+      switch (owner) {
+        case ParameterOwner::Pic:
+          if (pic)
+            pic->read_param(command, readParam);
+          break;
+        case ParameterOwner::ParticleTracker:
+          ptInfo.read_param(command, readParam);
+          break;
+        case ParameterOwner::Source:
+          if (source) {
+            // Sync source state once before the first source-specific command.
+            if (!sourceParamsSynced) {
+              source->sync_fluid_interface_params(*fi);
+              sourceParamsSynced = true;
+            }
+            source->read_param(command, readParam);
           }
-          source->read_param(command, readParam);
-        }
-        break;
-      case ParameterOwner::FluidInterface:
-        fi->read_param(command, readParam);
-        break;
+          break;
+        case ParameterOwner::FluidInterface:
+          fi->read_param(command, readParam);
+          break;
       }
-    } else if (source &&
-               is_registered_source_command(sourceParameterCommands,
-                                             command)) {
-      // Sync source state once before its first registered command.
-      if (!sourceParamsSynced) {
-        source->sync_fluid_interface_params(*fi);
-        sourceParamsSynced = true;
-      }
-      source->read_param(command, readParam);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       readParam.read_var("loadBalanceStrategy", strategy);
@@ -1547,11 +1545,11 @@ void Domain::read_param(const bool readGridInfo) {
 }
 
 void Domain::validate_configuration() const {
+  reject_conflicting_commands(parameterCommandLocations, domainParameters);
+
   const std::string error = domainParameters.validation_error();
   if (!error.empty())
     Abort("Invalid domain configuration: " + error);
-
-  reject_conflicting_commands(parameterCommandLocations, domainParameters);
 }
 
 //========================================================

@@ -1,6 +1,11 @@
 #ifndef _DOMAIN_H_
 #define _DOMAIN_H_
 
+#include <cstddef>
+#include <map>
+#include <string>
+#include <vector>
+
 #include "DomainGrid.h"
 #include "DomainParameters.h"
 #include "OHInterface.h"
@@ -9,15 +14,12 @@
 #include "ReadParam.h"
 #include "SourceInterface.h"
 
-#include <cstddef>
-#include <map>
-#include <string>
-#include <vector>
-
 struct ParameterCommandLocation {
   std::size_t line = 0;
   std::size_t column = 0;
 };
+
+enum class ParameterOwner { Pic, ParticleTracker, Source, FluidInterface };
 
 class Domain : public DomainGrid {
 private:
@@ -31,6 +33,9 @@ private:
   ParticleTrackerInfo ptInfo;
 
   bool isTCInitialized = false;
+
+  bool find_parameter_owner(const std::string &command,
+                            ParameterOwner &owner) const;
 
 public:
   std::unique_ptr<TimeCtr> tc;

@@ -11,9 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def registered_commands() -> set[str]:
     domain = (ROOT / "src" / "Domain.cpp").read_text(encoding="utf-8")
-    source = (ROOT / "userfiles" / "ExoSource.h").read_text(encoding="utf-8")
-    commands = set(re.findall(r'\{"(#[A-Z0-9]+)",\s*ParameterOwner::', domain))
-    commands.update(re.findall(r'commands\.push_back\("(#[A-Z0-9]+)"\)', source))
+    commands = set(re.findall(r'\{\s*"(#[A-Z0-9_]+)",\s*ParameterOwner::', domain))
+    userfiles_dir = ROOT / "userfiles"
+    if userfiles_dir.is_dir():
+        for source_file in sorted(userfiles_dir.glob("*.h")):
+            text = source_file.read_text(encoding="utf-8")
+            commands.update(
+                re.findall(r'commands\.(?:push_back|emplace_back)\("(#[A-Z0-9_]+)"\)', text)
+            )
     return commands
 
 
