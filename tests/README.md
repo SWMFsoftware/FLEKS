@@ -31,10 +31,18 @@ Each test case is contained within its own dedicated subdirectory containing a
 
 Each ionization process is enabled via a dedicated command in PARAM.in:
 
-- **`#PHOTOIONIZATION`**: per-component rates at planet surface [s^-1],
-  diluted geometrically as `(rPlanet / r)^2`
+- **`#PHOTOIONIZATION`**: per-component unattenuated rates [s^-1]. The
+  production rate is `n_i(r) * nu0_i * A(r)`, where the attenuation `A(r)` is
+  the `#SHADOWCYLINDER` mask (0 inside the cylinder, 1 outside) by default, or
+  `exp(-tau/mu)` when `#OPTICALDEPTH` is used. The `nu0` values follow the
+  BATSRUS `ModUserMars` `Rate_I` convention.
 - **`#ELECTRONIMPACT`**: Voronov 1997 formula: `sigmav(T) = A*(T/EI)^K / [X+(T/EI)] * exp(-EI/T)` [cm^3/s], parameters per component
 - **`#CHARGEEXCHANGE`**: constant cross-section: `sigmav(u) = sigmaCX * |u_i|` [cm^3/s], cross-section matrix `sigmaCX(neutral, ion)` [cm^2]; each neutral component exchanges with all ion species and the frequency is summed over ions
+- **`#SHADOWCYLINDER`** / **`#OPTICALDEPTH`**: two mutually exclusive EUV
+  attenuation models (FLEKS aborts if both are present). `#OPTICALDEPTH`
+  implements the BATSRUS optical-depth model `exp(-tau/mu)` with
+  `tau = sum_c n_c * sigma_c * H_c`, optionally with the curved-atmosphere
+  Chapman function
 
 ## Architecture
 
