@@ -9,11 +9,22 @@
 #include "ReadParam.h"
 #include "SourceInterface.h"
 
+#include <cstddef>
+#include <map>
+#include <string>
+
+struct ParameterCommandLocation {
+  std::size_t line = 0;
+  std::size_t column = 0;
+};
+
 class Domain : public DomainGrid {
 private:
   DomainParameters domainParameters;
 
   ReadParam readParam;
+  std::string parameterText;
+  std::map<std::string, ParameterCommandLocation> parameterCommandLocations;
 
   ParticleTrackerInfo ptInfo;
 

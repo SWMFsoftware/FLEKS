@@ -4,6 +4,7 @@
 #include "UserSource.h"
 
 #include <cstddef>
+#include <map>
 
 using namespace amrex;
 
@@ -103,6 +104,76 @@ const ParameterCommand* find_parameter_command(const std::string& command) {
   return nullptr;
 }
 
+bool is_singleton_command(const std::string& command) {
+  static const char* const singletonCommands[] = {
+      "#AVGFIELDB",       "#BSUBCYCLE",       "#ELECTRONTEMPERATURE",
+      "#FIELDINTEGRATOR", "#GEOMETRY",        "#HYPERRESISTIVITY",
+      "#HYBRIDPIC",       "#INITFROMSWMF",    "#LOADBALANCE",
+      "#MINIMUMDENSITY",  "#NCELL",           "#NOUTFILE",
+      "#PARTICLETRACKER", "#PERIODICITY",     "#RECEIVEICONLY",
+      "#RESTART",         "#SOURCE",          "#TIMESTEPPING",
+      "#TIMESTEP",        "#DISCRETIZE",      "#FIELDBOXBOUNDARY"};
+
+  for (const char* singleton : singletonCommands) {
+    if (command == singleton)
+      return true;
+  }
+  return false;
+}
+
+std::string canonical_command(const std::string& command) {
+  if (command == "#DISCRETIZATION")
+    return "#DISCRETIZE";
+  if (command == "#BFIELDBOXBOUNDARY")
+    return "#FIELDBOXBOUNDARY";
+  return command;
+}
+
+ParameterCommandLocation locate_command(const std::string& text,
+                                        const std::string& command,
+                                        std::size_t& searchPosition) {
+  std::size_t line = 1;
+  std::size_t lineStart = 0;
+  while (lineStart < text.size()) {
+    const std::size_t lineEnd = text.find('\n', lineStart);
+    const std::size_t end =
+        lineEnd == std::string::npos ? text.size() : lineEnd;
+    std::size_t first = lineStart;
+    while (first < end && (text[first] == ' ' || text[first] == '\t'))
+      ++first;
+    if (text.compare(first, command.size(), command) == 0 &&
+        first >= searchPosition) {
+      searchPosition = end;
+      return {line, first - lineStart + 1};
+    }
+    if (lineEnd == std::string::npos)
+      break;
+    lineStart = lineEnd + 1;
+    ++line;
+  }
+  return {};
+}
+
+std::string format_location(const ParameterCommandLocation& location) {
+  if (location.line == 0)
+    return "unknown location";
+  return "line " + std::to_string(location.line) + ", column " +
+         std::to_string(location.column);
+}
+
+void reject_conflicting_commands(
+    const std::map<std::string, ParameterCommandLocation>& locations,
+    const DomainParameters& parameters) {
+  const auto restart = locations.find("#RESTART");
+  const auto receiveICOnly = locations.find("#RECEIVEICONLY");
+  if (parameters.doRestart && parameters.receiveICOnly &&
+      restart != locations.end() && receiveICOnly != locations.end())
+    Abort("Conflicting commands: #RESTART at " +
+          format_location(restart->second) + " and #RECEIVEICONLY at " +
+          format_location(receiveICOnly->second) +
+          " cannot be enabled together.");
+}
+
 void validate_domain_parameters(const DomainParameters& parameters) {
   if (parameters.nFileField < 1 || parameters.nFileParticle < 1)
     Abort("Invalid #NOUTFILE: nFileField and nFileParticle must be positive.");
@@ -142,6 +213,7 @@ void Domain::init(double time, const int iDomain,
   }
 
   readParam = paramString;
+  parameterText = paramString;
 
   if (!paramInt.empty())
     if (paramInt[0] == 2 && nDim == 3)
@@ -364,6 +436,7 @@ void Domain::update() {
 //========================================================
 void Domain::update_param(const std::string &paramString) {
   readParam = paramString;
+  parameterText = paramString;
   read_param(false);
   init_time_ctr();
 };
@@ -1021,6 +1094,9 @@ void Domain::read_param(const bool readGridInfo) {
   // The default values shoudl be set in the constructor.
 
   std::string command;
+  std::size_t commandSearchPosition = 0;
+  if (readGridInfo)
+    parameterCommandLocations.clear();
 
   readParam.set_verbose(false);
   bool sourceParamsSynced = false;
@@ -1048,6 +1124,21 @@ void Domain::read_param(const bool readGridInfo) {
     readParam.set_verbose(ParallelDescriptor::IOProcessor());
     Print() << "\n"
             << component << ": " << command << " " << gridName << std::endl;
+
+    {
+      const std::string key = canonical_command(command);
+      const ParameterCommandLocation location =
+          locate_command(parameterText, command, commandSearchPosition);
+      const auto previous = parameterCommandLocations.find(key);
+      if (previous != parameterCommandLocations.end() &&
+          is_singleton_command(key)) {
+        Abort("Duplicate command " + command + " at " +
+              format_location(location) + "; first occurrence was at " +
+              format_location(previous->second) + ".");
+      }
+      if (previous == parameterCommandLocations.end())
+        parameterCommandLocations.emplace(key, location);
+    }
 
     const ParameterCommand* parameterCommand =
         find_parameter_command(command);
@@ -1382,6 +1473,7 @@ void Domain::read_param(const bool readGridInfo) {
 
   // Post processing
   if (!readGridInfo) {
+    reject_conflicting_commands(parameterCommandLocations, domainParameters);
     validate_domain_parameters(domainParameters);
 
     { //====== Post process refinement region====
