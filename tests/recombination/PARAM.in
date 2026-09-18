@@ -5,12 +5,12 @@ Recombination Loss Test: O2+ + e- -> O + O with uniform plasma
 F                       initFromSWMF
 
 #GEOMETRY
--9.0e6                  xMin
- 9.0e6                  xMax
--1.0                    yMin
- 1.0                    yMax
--1.0                    zMin
- 1.0                    zMax
+-9.0e3                  xMin   [code units: 1 unit = lNormSI = 1000 m]
+ 9.0e3                  xMax
+-1.0e-3                 yMin   [one cell: the invariant direction]
+ 1.0e-3                 yMax
+-1.0e-3                 zMin
+ 1.0e-3                 zMax
 
 #NCELL
 32                      nCellX
