@@ -7,18 +7,12 @@ This directory contains standalone magnetic reconnection test suites in FLEKS ac
 3. **`PARAM.in.gem`** — **Classic GEM Challenge full-PIC**: The standard GEM reconnection benchmark (Birn et al. 2001) with a Harris current sheet, conducting walls in $y$, and a central magnetic perturbation.
 4. **`PARAM.in.asym`** — **Asymmetric full-PIC**: Double current sheet reconnection with asymmetric magnetic fields ($B_1 = 1.0, B_2 = 2.0$) and temperatures ($T_1 = 1.33, T_2 = 3.33$) in a periodic domain.
 
-All variants run in a few seconds each and the entire suite finishes in ~25 seconds in serial (well within the 1-minute CI ceiling).
-
----
-
 ## Coordinate Mapping
 
 FLEKS uses a fake-2D convention with 1 cell along $z$:
 - $x$: Reconnection outflow / periodic drive direction
 - $y$: Current-sheet normal direction
 - $z$: Out-of-plane / current / guide-field direction
-
----
 
 ## Physical Configurations
 
@@ -52,8 +46,6 @@ Uses `#TESTCASE gem` with `isAsymmetryReconnection = T`:
 - Asymmetric temperatures: $T_1 = 1.33$ and $T_2 = 3.33$
 - Localized Gaussian perturbation centered on the sheets
 
----
-
 ## Running
 
 Run all reconnection test variants together:
@@ -72,8 +64,6 @@ python3 tests/validate_tests.py --test=reconnection.hybrid   # Fadeev hybrid-PIC
 python3 tests/validate_tests.py --test=reconnection.gem      # Classic GEM challenge
 python3 tests/validate_tests.py --test=reconnection.asym     # Asymmetric reconnection
 ```
-
----
 
 ## Validation Checks (`validate.py`)
 
