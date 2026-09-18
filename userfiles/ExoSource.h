@@ -18,6 +18,7 @@ public:
     commands.push_back("#ELECTRONIMPACT");
     commands.push_back("#CHARGEEXCHANGE");
     commands.push_back("#SHADOWCYLINDER");
+    commands.push_back("#OPTICALDEPTH");
     commands.push_back("#RECOMBINATION");
     commands.push_back("#CHEMISTRY");
   }
@@ -59,6 +60,137 @@ public:
   amrex::Real ion_pressure_factor() const {
     if (useMhdPe) return 1.0;
     return (PeRatio < 1.0 ? 1.0 / (1.0 - PeRatio) : 1.0);
+  }
+
+  // ---- EUV attenuation (#OPTICALDEPTH) ----
+  // The default attenuation is the #SHADOWCYLINDER mask: 0 inside the
+  // cylinder and 1 outside.  With #OPTICALDEPTH the attenuation is exp(-tau/mu)
+  // with
+  //   tau = sum_c n_c(r) * sigma_c * H_c(r)     (vertical column)
+  //   mu  = max(proj/r, cosSzaFloor)            (cos of the solar zenith angle)
+  // i.e. the model of BATSRUS ModUserMars::set_neutral_density (UseChapman = F
+  // branch).  nu0 is the unattenuated rate, following the BATSRUS Rate_I
+  // convention (= RateDim_I of the selected solar condition, which matches the
+  // nuPhoto0 values of the Mars decks).
+  bool useOpticalDepth = false;
+  bool useChapmanFunction = false;
+  // Exosphere component used for the Chapman slant column; < 0 selects the
+  // component with the largest vertical optical depth (CO2 for Mars).
+  int chapmanComponent = -1;
+  amrex::Vector<amrex::Real> optCrossSection; // [m^2], per exosphere component
+  amrex::Vector<amrex::Real> optScaleHeight;  // [m]; < 0 -> from the profile
+  amrex::Real optSolarDir[3] = { 1.0, 0.0, 0.0 }; // unit vector toward the Sun
+  amrex::Real optMinProduction = 1.0e-5;   // attenuation floor
+  bool optMinProductionSet = false;        // user overrode optMinProduction
+  amrex::Real optTauFloor = 6.0e-3;        // floor on the vertical optical depth
+  amrex::Real optTauCutoff = 11.5;         // tau above which the floor is used
+  amrex::Real optCosSzaFloor = 5.0e-4;     // floor on mu
+  amrex::Real optChapmanTauMax = 13.8;     // Chapman branch: opaque threshold
+
+  // Local scale height [m] of exosphere component iC at radius r, i.e. the
+  // exact H = -1/(d ln n / dr) of the profile selected by #EXOSPHERE, unless
+  // #OPTICALDEPTH supplied an explicit value.
+  amrex::Real exosphere_scale_height(amrex::Real r, int iC) const {
+    if (iC < 0 || iC >= nExoComponent) return 0.0;
+    if (iC < static_cast<int>(optScaleHeight.size()) &&
+        optScaleHeight[iC] > 0.0)
+      return optScaleHeight[iC];
+    if (r <= 0.0) return 0.0;
+    if (exosphereType == "Exponential")
+      return (exoH0[iC] > 0.0 ? exoH0[iC] : 0.0);
+    if (exosphereType == "Chamberlain")
+      return (exoH0[iC] > 0.0 ? r * r / exoH0[iC] : 0.0);
+    if (exosphereType == "Power-Law")
+      return (exoK0[iC] > 0.0 ? r / exoK0[iC] : 0.0);
+    return 0.0;
+  }
+
+  // Vertical optical depth sum_c n_c sigma_c H_c.  With onlyComp >= 0 only
+  // that component contributes (the Chapman branch of BATSRUS uses CO2 only).
+  amrex::Real vertical_optical_depth(amrex::Real r, int onlyComp) const {
+    amrex::Real tau = 0.0;
+    for (int iC = 0; iC < nExoComponent; ++iC) {
+      if (onlyComp >= 0 && iC != onlyComp) continue;
+      const amrex::Real sigma = (iC < static_cast<int>(optCrossSection.size()))
+                                    ? optCrossSection[iC]
+                                    : 0.0;
+      if (sigma <= 0.0) continue;
+      const amrex::Real h = exosphere_scale_height(r, iC);
+      if (h <= 0.0) continue;
+      tau += get_exosphere_component_density(r, iC) * sigma * h;
+    }
+    return tau;
+  }
+
+  // Chapman function for a curved atmosphere (Smith & Smith 1972 fits, the
+  // same expressions as BATSRUS ModUserMars).  Xp = r/H.
+  static amrex::Real chapman_function(amrex::Real Xp, amrex::Real cosSZA) {
+    const amrex::Real chap_y = sqrt(0.5 * Xp) * std::abs(cosSZA);
+    if (cosSZA > 0.0) {
+      // SZA < 90 deg (equation 13)
+      if (chap_y < 8.0)
+        return sqrt(0.5 * M_PI * Xp) * (1.0606963 + 0.5564383 * chap_y) /
+               (1.0619896 + 1.7245609 * chap_y + chap_y * chap_y);
+      if (chap_y < 100.0)
+        return sqrt(0.5 * M_PI * Xp) * 0.56498823 / (0.6651874 + chap_y);
+      return 0.0;
+    }
+    // 180 > SZA > 90 deg (equation 15)
+    const amrex::Real sinSZA = sqrt(std::max(1.0 - cosSZA * cosSZA, 0.0));
+    if (chap_y < 8.0)
+      return sqrt(2.0 * M_PI * Xp) *
+             (sqrt(sinSZA) * exp(Xp * (1.0 - sinSZA)) -
+              0.5 * (1.0606963 + 0.5564383 * chap_y) /
+                  (1.0619896 + 1.7245609 * chap_y + chap_y * chap_y));
+    if (chap_y < 100.0)
+      return sqrt(2.0 * M_PI * Xp) *
+             (sqrt(sinSZA) * exp(std::min(100.0, Xp * (1.0 - sinSZA))) -
+              0.5 * 0.56498823 / (0.6651874 + chap_y));
+    return 0.0;
+  }
+
+  int chapman_component() const {
+    return (chapmanComponent >= 0 && chapmanComponent < nExoComponent)
+               ? chapmanComponent
+               : 0;
+  }
+
+  // Attenuation factor (0..1) applied to the unattenuated photoionization
+  // rate of a neutral species at position xyz (r = |xyz|).
+  amrex::Real photo_attenuation(const amrex::Real xyz[3], amrex::Real r) const {
+    if (!useOpticalDepth)
+      return is_in_shadow(xyz[0], xyz[1], xyz[2]) ? 0.0 : 1.0;
+
+    const amrex::Real r_safe = std::max(r, 1.0e-3);
+    const amrex::Real proj = xyz[0] * optSolarDir[0] +
+                             xyz[1] * optSolarDir[1] +
+                             xyz[2] * optSolarDir[2];
+    const amrex::Real cosSZA = proj / r_safe;
+    const amrex::Real mu = std::max(cosSZA, optCosSzaFloor);
+
+    if (useChapmanFunction) {
+      const int iC = chapman_component();
+      const amrex::Real tauV = vertical_optical_depth(r, iC);
+      if (tauV > optChapmanTauMax)
+        return optMinProduction * std::max(mu, optMinProduction);
+      const amrex::Real h = exosphere_scale_height(r, iC);
+      if (h <= 0.0) return optMinProduction;
+      const amrex::Real chap = chapman_function(r / h, cosSZA);
+      // The Smith & Smith fit turns negative deep on the nightside, where
+      // sin(SZA) -> 0 and the slant column is in fact optically thick, so
+      // exp(-tau*chap) would exceed unity (an unphysical flux *gain*).
+      // BATSRUS never evaluates it because its own tau exceeds 13.8 there;
+      // for a thin column that guard does not trigger, so treat the point as
+      // opaque explicitly.
+      if (chap <= 0.0)
+        return optMinProduction * std::max(mu, optMinProduction);
+      return std::max(exp(-tauV * chap), optMinProduction);
+    }
+
+    const amrex::Real tauV = vertical_optical_depth(r, -1);
+    const amrex::Real tau = std::max(tauV, optTauFloor) / mu;
+    if (tau >= optTauCutoff || proj <= 0.0) return optMinProduction;
+    return std::max(exp(-tau), optMinProduction);
   }
 
   // ---- Exosphere density profiles ----
@@ -135,17 +267,17 @@ public:
   }
 
   // Photoionization frequency [s^-1] for neutral component iC.
+  // 'attenuation' is the factor from photo_attenuation(); pass a negative
+  // value to have it computed from the position.
   amrex::Real photoionization_rate(const amrex::Real xyz[3], int iC,
-                                   amrex::Real photoDilution = -1.0) const {
-    if (photoDilution >= 0.0) {
-      return photoNu0[iC] * photoDilution;
+                                   amrex::Real attenuation = -1.0) const {
+    if (attenuation >= 0.0) {
+      return photoNu0[iC] * attenuation;
     }
-    if (is_in_shadow(xyz[0], xyz[1], xyz[2])) return 0.0;
     amrex::Real r2 = xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2];
     amrex::Real r_m = sqrt(r2);
     if (r_m <= 0.0) return 0.0;
-    amrex::Real ratio = get_rPlanet_SI() / r_m;
-    return photoNu0[iC] * ratio * ratio;
+    return photoNu0[iC] * photo_attenuation(xyz, r_m);
   }
 
   // Electron-impact ionization frequency [s^-1] for neutral component iC.
@@ -243,6 +375,50 @@ public:
         solarDir[1] /= norm;
         solarDir[2] /= norm;
       }
+    } else if (command == "#OPTICALDEPTH") {
+      useOpticalDepth = true;
+      // The neutral component count is inherited from #EXOSPHERE.
+      require_exosphere(command);
+      // Per-component EUV absorption cross section [m^2] and, right after,
+      // per-component scale height [m].  A negative scale height means "use
+      // the local scale height of the #EXOSPHERE profile".
+      optCrossSection.assign(nExoComponent, 0.0);
+      optScaleHeight.assign(nExoComponent, -1.0);
+      for (int i = 0; i < nExoComponent; ++i) {
+        param.read_var("crossSection", optCrossSection[i]);
+      }
+      for (int i = 0; i < nExoComponent; ++i) {
+        param.read_var("scaleHeight", optScaleHeight[i]);
+      }
+      // #OPTICALDEPTH carries its own solar direction [unit vector], kept
+      // separate from the #SHADOWCYLINDER one.
+      param.read_var("solarDirX", optSolarDir[0]);
+      param.read_var("solarDirY", optSolarDir[1]);
+      param.read_var("solarDirZ", optSolarDir[2]);
+      amrex::Real normOpt = sqrt(optSolarDir[0] * optSolarDir[0] +
+                                 optSolarDir[1] * optSolarDir[1] +
+                                 optSolarDir[2] * optSolarDir[2]);
+      if (normOpt > 0.0) {
+        optSolarDir[0] /= normOpt;
+        optSolarDir[1] /= normOpt;
+        optSolarDir[2] /= normOpt;
+      }
+      // The remaining parameters are individually optional and default to the
+      // BATSRUS values.  The T/F flag is read as a string because
+      // read_optional() parses numbers only.
+      std::string chapmanFlag;
+      if (param.read_optional("chapmanFunction", chapmanFlag)) {
+        useChapmanFunction = (chapmanFlag == "T" || chapmanFlag == "t" ||
+                              chapmanFlag == "true");
+      }
+      if (param.read_optional("minProduction", optMinProduction)) {
+        optMinProductionSet = true;
+      }
+      param.read_optional("tauFloor", optTauFloor);
+      param.read_optional("tauCutoff", optTauCutoff);
+      param.read_optional("cosSzaFloor", optCosSzaFloor);
+      param.read_optional("chapmanTauMax", optChapmanTauMax);
+      param.read_optional("chapmanComponent", chapmanComponent);
     } else if (command == "#RECOMBINATION") {
       useRecombination = true;
       int nRecomb;
@@ -276,6 +452,88 @@ public:
 
   // Validate consistency between exosphere and ionization commands.
   void post_process_param() override {
+    // Optical-depth attenuation validation.
+    if (useOpticalDepth) {
+      if (useShadowCylinder) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH and #SHADOWCYLINDER "
+                     + "describe two alternative models of the same physics "
+                     + "(EUV attenuation) and cannot be combined. Keep one.");
+      }
+      if (nExoComponent <= 0) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH requires #EXOSPHERE "
+                     + "with nComponent > 0 to be specified before it.");
+      }
+      const amrex::Real dirNorm =
+          sqrt(optSolarDir[0] * optSolarDir[0] +
+               optSolarDir[1] * optSolarDir[1] +
+               optSolarDir[2] * optSolarDir[2]);
+      if (dirNorm <= 0.0) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH requires a non-zero "
+                     + "solar direction (solarDirX, solarDirY, solarDirZ).");
+      }
+      if (optCosSzaFloor <= 0.0 || optCosSzaFloor >= 1.0) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH cosSzaFloor must be "
+                     + "in (0, 1). Got "
+                     + std::to_string(optCosSzaFloor) + ".");
+      }
+      if (optTauFloor < 0.0) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH tauFloor must be "
+                     + ">= 0. Got " + std::to_string(optTauFloor) + ".");
+      }
+      if (optTauCutoff <= 0.0) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH tauCutoff must be "
+                     + "> 0. Got " + std::to_string(optTauCutoff) + ".");
+      }
+      if (optMinProduction < 0.0 || optMinProduction > 1.0) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH minProduction must be "
+                     + "in [0, 1]. Got "
+                     + std::to_string(optMinProduction) + ".");
+      }
+      const amrex::Real rP = get_rPlanet_SI();
+      int nAbsorbing = 0;
+      for (int iC = 0; iC < nExoComponent; ++iC) {
+        if (optCrossSection[iC] < 0.0) {
+          amrex::Abort(printPrefix + "Error: #OPTICALDEPTH crossSection for "
+                       + "component " + std::to_string(iC)
+                       + " must be >= 0 [m^2]. Got "
+                       + std::to_string(optCrossSection[iC]) + ".");
+        }
+        if (optCrossSection[iC] <= 0.0) continue;
+        nAbsorbing++;
+        if (exosphere_scale_height(rP, iC) <= 0.0) {
+          amrex::Abort(printPrefix + "Error: #OPTICALDEPTH component "
+                       + std::to_string(iC) + " has a positive crossSection "
+                       + "but no usable scale height. Give an explicit "
+                       + "scaleHeight, or use an #EXOSPHERE profile that "
+                       + "defines one (Exponential with H0 > 0).");
+        }
+      }
+      if (nAbsorbing == 0) {
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH needs at least one "
+                     + "positive crossSection, otherwise the optical depth is "
+                     + "always the tauFloor.");
+      }
+      // BATSRUS uses a lower production floor with the Chapman function.
+      if (useChapmanFunction && !optMinProductionSet)
+        optMinProduction = 1.0e-6;
+      // Resolve the component carrying the Chapman slant column (the one with
+      // the largest vertical optical depth, CO2 for Mars).
+      if (useChapmanFunction && chapmanComponent < 0) {
+        amrex::Real bestTau = -1.0;
+        chapmanComponent = 0;
+        for (int iC = 0; iC < nExoComponent; ++iC) {
+          const amrex::Real h = exosphere_scale_height(rP, iC);
+          if (optCrossSection[iC] <= 0.0 || h <= 0.0) continue;
+          const amrex::Real tau =
+              get_exosphere_component_density(rP, iC) * optCrossSection[iC] * h;
+          if (tau > bestTau) {
+            bestTau = tau;
+            chapmanComponent = iC;
+          }
+        }
+      }
+    }
+
     // Recombination validation.
     if (useRecombination) {
       if (nS < 1) {
@@ -420,15 +678,13 @@ public:
   amrex::Real chem_reaction_rate(const ChemistryReaction& rxn,
                                  const amrex::Real xyz[3], amrex::Real r_val,
                                  amrex::Real ne, amrex::Real Te_eV,
-                                 amrex::Real photoDilution = -1.0) const {
+                                 amrex::Real attenuation = -1.0) const {
     if (rxn.rateType == 1) {
-      if (photoDilution >= 0.0) {
-        return rxn.rateCoef * photoDilution;
+      if (attenuation >= 0.0) {
+        return rxn.rateCoef * attenuation;
       }
-      if (is_in_shadow(xyz[0], xyz[1], xyz[2])) return 0.0;
       if (r_val <= 0.0) return 0.0;
-      amrex::Real ratio = get_rPlanet_SI() / r_val;
-      return rxn.rateCoef * ratio * ratio;
+      return rxn.rateCoef * photo_attenuation(xyz, r_val);
     }
 
     // Thermal rate coefficient k(Te) [cm^3/s] -> [m^3/s]
@@ -596,7 +852,6 @@ public:
 
     const amrex::Real rhoNormPerT = get_Si2NoRho() / get_Si2NoT();
     const amrex::Real pNormPerT = get_Si2NoP() / get_Si2NoT();
-    const amrex::Real rPlanet = get_rPlanet_SI();
     const int nIonS = nS - 1;
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -644,9 +899,11 @@ public:
                 }
                 r_val = sqrt(r_val);
 
-                const bool inShadow = is_in_shadow(xyz[0], xyz[1], xyz[2]);
-                const amrex::Real photoDilution =
-                    (inShadow || r_val <= 0.0) ? 0.0 : (rPlanet / r_val) * (rPlanet / r_val);
+                // Fraction of the unattenuated EUV flux reaching this point:
+                // the #SHADOWCYLINDER mask by default, exp(-tau/mu) with
+                // #OPTICALDEPTH.
+                const amrex::Real photoAttenuation =
+                    (r_val > 0.0) ? photo_attenuation(xyz, r_val) : 0.0;
 
                 amrex::Real ne = 0, pe = 0, Te_eV = 0;
                 bool plasmaFetched = false;
@@ -674,7 +931,7 @@ public:
 
                   amrex::Real nu_tot = 0.0;
                   if (doPhoto)
-                    nu_tot += photoNu0[iC] * photoDilution;
+                    nu_tot += photoNu0[iC] * photoAttenuation;
                   if (doImpact) {
                     fetch_electron_plasma();
                     nu_tot += impact_ionization_rate(ne, Te_eV, iC);
@@ -706,7 +963,7 @@ public:
                        iR < static_cast<int>(chemReactions.size()); ++iR) {
                     const auto& rxn = chemReactions[iR];
                     amrex::Real rate = chem_reaction_rate(rxn, xyz, r_val,
-                                                          ne, Te_eV, photoDilution);
+                                                          ne, Te_eV, photoAttenuation);
                     if (rate <= 0.0) continue;
                     chem_apply_source(rxn, rate, other, mfi, idx, iLev,
                                       nIonS, r_val, srcRho, srcP,
@@ -805,7 +1062,7 @@ public:
                        iR < static_cast<int>(chemReactions.size()); ++iR) {
                     const auto& rxn = chemReactions[iR];
                     amrex::Real rate = chem_reaction_rate(rxn, xyz, r_val,
-                                                          ne, Te_eV, photoDilution);
+                                                          ne, Te_eV, photoAttenuation);
                     if (rate <= 0.0) continue;
                     chem_apply_loss(rxn, rate, other, mfi, idx, iLev,
                                     nIonS, i, j, k, lossArr);

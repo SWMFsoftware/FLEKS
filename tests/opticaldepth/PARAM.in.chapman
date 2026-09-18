@@ -1,0 +1,165 @@
+#DESCRIPTION
+ 2D Optical-Depth Attenuation with the Chapman Function (curved atmosphere)
+The EUV attenuation is exp(-tau/mu) with tau = sum_c n_c(r) sigma_c H_c(r), the
+BATSRUS ModUserMars model.  The floors are
+disabled so that the attenuation is exactly exp(-tau/mu) on the dayside and
+exactly zero on the nightside, which lets the validator compare the produced
+ion density with the analytic profile.
+Two neutral components are used: H (transparent, sigma = 0) and O (absorbing).
+Because tau sums over ALL neutral components, the H photoionization is
+attenuated by the O column even though H itself does not absorb, and the
+validator checks both ion channels.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1.017e7                xMin
+ 1.017e7                xMax
+-1.017e7                yMin
+ 1.017e7                yMax
+-0.5                    zMin
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+64                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#PLASMA
+3                       nSpecies
+0.01                    mass        Species 0: electron
+-1.0                    charge
+1.0                     mass        Species 1: H+ (from neutral H)
+1.0                     charge
+16.0                    mass        Species 2: O+ (from neutral O)
+1.0                     charge
+
+#UNIFORMSTATE
+0.05                    rho [amu/cc]   Species 0: electron (quasi-neutral)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [amu/cc]   Species 1: H+ background
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0e-12                 rho [amu/cc]   Species 2: O+ background (tiny seed)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0e-9                  bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#SOURCE
+T                       useSource
+
+#BODYSIZE
+3.39e6                  radius        Mars radius, also the exosphere reference
+
+#EXOSPHERE
+Exponential             typeProfile
+2                       nComponent
+1.0e13                  n0 [m^-3]     component 0: H, transparent to EUV
+3.0e6                   H0 [m]
+300.0                   T0 [K]
+0.0                     k0
+1.0e14                  n0 [m^-3]     component 1: O, absorbing column
+1.2e6                   H0 [m]
+300.0                   T0 [K]
+0.0                     k0
+
+#PHOTOIONIZATION
+1.0e-4                  nuPhoto0      H  unattenuated rate
+1.0e-4                  nuPhoto0      O  unattenuated rate
+
+#OPTICALDEPTH
+0.0                     crossSection [m^2]  H  component 0, no absorption
+8.0e-21                 crossSection [m^2]  O  component 1
+-1                      scaleHeight [m]     -1 = use the profile H0
+-1                      scaleHeight [m]
+1.0                     solarDirX           Sun toward +x
+0.0                     solarDirY
+0.0                     solarDirZ
+T                       chapmanFunction     curved-atmosphere slant column
+1.0e-6                  minProduction       BATSRUS Chapman floor
+6.0e-3                  tauFloor            BATSRUS value
+11.5                    tauCutoff           unused by the Chapman branch
+5.0e-4                  cosSzaFloor         BATSRUS value
+13.8                    chapmanTauMax       opaque threshold
+1                       chapmanComponent    component 1 (O) carries the column
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#NORMALIZATION
+1000.0                  lNormSI
+1.0e6                   uNormSI
+
+#MONITOR
+1                       dnReport
+
+#PARTICLES
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+T                       solvePartInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterTheta
+
+#UPWINDB
+T                       doSmoothB
+1                       theta
+
+#SMOOTHJ
+T
+1
+0.5
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#DIVE
+T
+1
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+1.0                     dt
+1                       dx
+rhoS1 rhoS2 pS1 pS2     NameVars
+
+#STOP
+10                      MaxIter
+1.0                     TimeMax
+
+#RUN

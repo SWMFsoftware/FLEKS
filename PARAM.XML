@@ -1465,12 +1465,17 @@ commands are present, no ionization source is applied.
 This command enables photoionization as an exosphere source process.
 The number of neutral components is taken from #EXOSPHERE (nComponent);
 #EXOSPHERE must appear before #PHOTOIONIZATION in PARAM.in.
-nuPhoto0 is the photoionization rate [1/s] at the planet surface,
+nuPhoto0 is the unattenuated photoionization rate [1/s] of each component,
 specified as a multi-component array (one value per #EXOSPHERE component,
-in the same order). The rate at distance $r$ follows geometric dilution:
+in the same order). It follows the same convention as the BATSRUS ModUserMars
+Rate_I table, which lists these same numbers.
+The production rate of neutral component $i$ is
 $$
-  \nu(r) = \nu_{photo,0} \, (r_{planet} / r)^2
+  S_i(r) = n_i(r) \, \nu_{photo,0,i} \, A(r)
 $$
+where $A(r)$ is the attenuation factor. By default $A = 0$ inside the
+#SHADOWCYLINDER and $A = 1$ outside. If #OPTICALDEPTH is given instead, the
+attenuation becomes $\exp(-\tau/\mu)$ as described there.
 </command>
 
 <command name="SHADOWCYLINDER" alias="SHADOWCYLINDER_FLEKS0,SHADOWCYLINDER_FLEKS1,SHADOWCYLINDER_FLEKS2" multiple="T">
@@ -1500,6 +1505,91 @@ halfHeight is the half-length of the cylinder on the anti-sunward side
 
 If this command is absent, photoionization is applied spherically
 symmetrically (no shadow).
+</command>
+
+<command name="OPTICALDEPTH" alias="OPTICALDEPTH_FLEKS0,OPTICALDEPTH_FLEKS1,OPTICALDEPTH_FLEKS2" multiple="T">
+  <parameter name="crossSection" type="real"/>
+  <parameter name="scaleHeight" type="real"/>
+  <parameter name="solarDirX" type="real"/>
+  <parameter name="solarDirY" type="real"/>
+  <parameter name="solarDirZ" type="real"/>
+  <parameter name="chapmanFunction" type="logical"/>
+  <parameter name="minProduction" type="real"/>
+  <parameter name="tauFloor" type="real"/>
+  <parameter name="tauCutoff" type="real"/>
+  <parameter name="cosSzaFloor" type="real"/>
+  <parameter name="chapmanTauMax" type="real"/>
+  <parameter name="chapmanComponent" type="integer"/>
+
+#OPTICALDEPTH
+2.6e-21                 crossSection [m^2]  CO2 component (1st #EXOSPHERE entry)
+1.5e-21                 crossSection [m^2]  O   component
+0.0                     crossSection [m^2]  H   component
+-1                      scaleHeight [m]     -1 = use the #EXOSPHERE profile
+-1                      scaleHeight [m]
+-1                      scaleHeight [m]
+1.0                     solarDirX           Sun toward +x
+0.0                     solarDirY
+0.0                     solarDirZ
+F                       chapmanFunction
+1.0e-5                  minProduction       optional
+6.0e-3                  tauFloor            optional
+11.5                    tauCutoff           optional
+5.0e-4                  cosSzaFloor         optional
+13.8                    chapmanTauMax       optional
+-1                      chapmanComponent    optional, -1 = automatic
+
+This command enables the optical-depth attenuation of the photoionizing EUV
+flux as an alternative to #SHADOWCYLINDER. The two commands describe two
+models of the same physics and must not be used together: FLEKS aborts when
+both are present.
+
+The attenuation factor A(r) multiplies the unattenuated rate nuPhoto0 of
+#PHOTOIONIZATION (and the photoionization reactions, rateType = 1, of
+#CHEMISTRY). It follows BATSRUS ModUserMars::set_neutral_density.
+
+The vertical optical depth is the sum over the neutral components
+$$
+  \tau(r) = \sum_c n_c(r) \, \sigma_c \, H_c(r)
+$$
+that is, the local density times the local scale height (not an integrated
+column). Here $\mu = \max(\mathbf{x}\cdot\hat{s}/r, \mu_{min})$ is the cosine of
+the solar zenith angle, with $\hat{s}$ the solar direction and $\mu_{min}$ the
+cosSzaFloor parameter.
+
+Without the Chapman function the attenuation is
+$$
+  A = \max(\exp(-\tau/\mu), A_{min})
+$$
+while the point is on the dayside and $\tau/\mu$ stays below tauCutoff, and
+$$
+  A = A_{min}
+$$
+otherwise, with $\tau$ floored at tauFloor.
+
+With chapmanFunction = T only the component named by chapmanComponent
+contributes to $\tau$, which is then multiplied by the Chapman function
+(Smith and Smith 1972) to account for the curved-atmosphere slant path. This
+smooths the day/night transition and is the closer match to #SHADOWCYLINDER
+at the terminator.
+
+crossSection is the EUV absorption cross section [m$^2$] of each #EXOSPHERE
+component, in the same order. BATSRUS lists them in cm$^2$: multiply by 1e-4.
+scaleHeight is the neutral scale height [m] used for the column; a negative
+value means "use the exact local scale height of the #EXOSPHERE profile",
+which is H0 for Exponential, r$^2$/H0 for Chamberlain and r/k0 for Power-Law.
+solarDirX/Y/Z is this command's own solar direction and is independent of the
+one in #SHADOWCYLINDER; it is normalized automatically.
+
+The optional parameters default to the BATSRUS values. minProduction is the
+floor of the attenuation (1e-5, or 1e-6 when chapmanFunction = T), which
+keeps a small nightside production instead of exactly zero, as BATSRUS does.
+chapmanComponent is 0-based; -1 selects the component with the largest
+vertical optical depth (CO2 for Mars).
+
+Optional parameters may be omitted, but the ones that are present must be
+given in the order listed above (the parser scans the block line by line and
+skips a line only when it is the next expected parameter).
 </command>
 
 <command name="ELECTRONIMPACT" alias="ELECTRONIMPACT_FLEKS0,ELECTRONIMPACT_FLEKS1,ELECTRONIMPACT_FLEKS2" multiple="T">
@@ -1700,12 +1790,10 @@ The rate coefficient for thermal reactions (rateType = 0) is:
 $$
   k(T_e) = k_0 \, (T_{ref} / T_e)^{\alpha}
 $$
-For photoionization (rateType = 1), the rate follows geometric dilution:
-$$
-  \nu(r) = \nu_0 \, (r_{planet} / r)^2
-$$
-and is set to zero inside the shadow cylinder defined by #SHADOWCYLINDER
-(if present).
+For photoionization (rateType = 1) the rate is the unattenuated $\nu_0$
+multiplied by the same attenuation factor $A(r)$ as #PHOTOIONIZATION: the
+#SHADOWCYLINDER mask (zero inside the cylinder) by default, or
+$\exp(-\tau/\mu)$ when #OPTICALDEPTH is used.
 
 Three reaction categories are supported:
   1. Photoionization (reactantIon = 0, rateType = 1):
