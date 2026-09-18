@@ -43,6 +43,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#FIELDINTEGRATOR", ParameterOwner::Pic },
   { "#FIXEDUMAX", ParameterOwner::Pic },
   { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
+  { "#GEMIC", ParameterOwner::Pic },
   { "#HALLTERM", ParameterOwner::Pic },
   { "#HYBRIDPIC", ParameterOwner::Pic },
   { "#HYPERRESISTIVITY", ParameterOwner::Pic },

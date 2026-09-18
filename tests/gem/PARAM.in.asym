@@ -1,0 +1,137 @@
+#DESCRIPTION
+2D asymmetric magnetic reconnection benchmark with double current sheets
+in a periodic domain (B1 = 1.0, B2 = 2.0). Full-PIC EM solver
+(solveEM = T, Maxwell/GMRES) with kinetic ions and electrons.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-32.0                   xMin  [code units; Lx = WaveLengthX = 64]
+ 32.0                   xMax
+-14.0                   yMin  [code units; Ly = WaveLengthY = 28]
+ 14.0                   yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+28                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+14                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (y)
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+1                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons (mi/me = 25)
+-1.0                    charge
+
+#UNIFORMSTATE
+12.5                    rho [amu/cc]   Species 0: ions (nb = 0.2)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K]
+0.5                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+gem
+
+#GEMIC
+1.0                     b1
+2.0                     b2
+1.33                    t1
+3.33                    t2
+1.0                     lambda0
+1.0                     apert
+T                       isAsymmetryReconnection
+F                       useUniformPressure
+F                       useUniformIonPressure
+5.0                     gaussX
+5.0                     gaussY
+64.0                    waveLengthX
+28.0                    waveLengthY
+0.2                     nb
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.5                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+1.0                     TimeMax
+
+#RUN

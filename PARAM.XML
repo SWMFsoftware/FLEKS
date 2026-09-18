@@ -254,6 +254,32 @@ Selects the Fadeev magnetic-reconnection initial condition. Use after
 #TESTCASE selects the fadeev initial-condition implementation.
 </command>
 
+<command name="GEMIC">
+#GEMIC
+
+Configures parameters for the GEM challenge and asymmetric magnetic-reconnection
+initial conditions. Use after #TESTCASE selects the gem initial-condition
+implementation. Optional sub-parameters include:
+  b0                      Background magnetic field
+  b1, b2                  Asymmetric magnetic fields
+  tp (or t0)              Plasma temperature
+  t1, t2                  Asymmetric temperatures
+  lambda0                 Sheet thickness (alias: currentSheetThickness, currentSheetWidth)
+  apert                   Perturbation amplitude (alias: amplitude)
+  bg                      Guide field ratio
+  nb                      Background density ratio
+  teOverTi                Electron to ion temperature ratio
+  useDoubleCurrentSheet   Enable symmetric double current sheet (T/F)
+  isAsymmetryReconnection Enable asymmetric double current sheet (T/F)
+  useGEMReflected         Enable reflected GEM (T/F)
+  useStandardGem          Enable standard GEM mode (T/F)
+  useUniformPressure      Constant magnetic pressure via Bz (T/F)
+  useUniformIonPressure   Uniform ion pressure; electrons carry current (T/F)
+  gaussX, gaussY          Width of Gaussian perturbation
+  waveLengthX, waveLengthY Wavelengths / domain size for perturbation
+  pertType                Perturbation mode ("standard" or "gaussian")
+</command>
+
 <command name="WAVE">
 #WAVE
 

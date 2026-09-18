@@ -1,0 +1,131 @@
+#DESCRIPTION
+Classic GEM Challenge magnetic reconnection benchmark (Birn et al. 2001)
+with the FULL-PIC EM solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-12.8                   xMin  [code units; Lx = 25.6 di]
+ 12.8                   xMax
+-6.4                    yMin  [code units; Ly = 12.8 di]
+ 6.4                    yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+32                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+conducting              fieldBoxBoundaryLo  (y)
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+1                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons (mi/me = 25)
+-1.0                    charge
+
+#UNIFORMSTATE
+12.5                    rho [amu/cc]   Species 0: ions (nb = 0.2)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K]
+0.5                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+gem
+
+#GEMIC
+1.0                     b0
+1.0                     tp
+0.5                     lambda0
+0.1                     apert
+T                       useStandardGem
+F                       useUniformPressure
+F                       useUniformIonPressure
+0.2                     nb
+standard                pertType
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.5                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+1.0                     TimeMax
+
+#RUN
