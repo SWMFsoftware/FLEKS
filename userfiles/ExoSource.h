@@ -852,6 +852,9 @@ public:
 
     const amrex::Real rhoNormPerT = get_Si2NoRho() / get_Si2NoT();
     const amrex::Real pNormPerT = get_Si2NoP() / get_Si2NoT();
+    // [m] per FLEKS length unit: 1 for a stand-alone run (the grid is then
+    // given in metres) and one planetary radius for a GM-coupled run.
+    const amrex::Real no2SiL = get_No2SiL();
     const int nIonS = nS - 1;
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -888,9 +891,14 @@ public:
                         idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
                   }
                 }
+                // Geom() coordinates are in FLEKS code units, which for a
+                // GM-coupled run are the normalized lengths of the fluid
+                // component (1 = one planetary radius).  The exosphere
+                // profile, the scale heights, the EUV cross sections and the
+                // shadow cylinder radius are all in SI, so convert here.
                 amrex::Real xyz[3] = { 0, 0, 0 };
                 for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
-                  xyz[iDim] = idx[iDim] * dx[iDim] + plo[iDim];
+                  xyz[iDim] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2SiL;
                 }
 
                 amrex::Real r_val = 0.0;

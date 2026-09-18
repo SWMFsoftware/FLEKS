@@ -57,15 +57,21 @@ def validate_log(pic_diags=None, test_name=None):
     min_factor_o = 2.0   # O+ must at least double
     h_tolerance = 0.05   # H+ may decrease by up to 5% (numerical noise)
 
+    # Note: no absolute floor is applied to the O+ energy here.  Energies in
+    # the log are in code units, so their value tracks the code-unit cell
+    # volume and would have to be retuned whenever the grid of the deck is
+    # rewritten in different length units.  The physical magnitude of the
+    # source is checked instead in validate_plot(), where the ion density is
+    # written in amu/cc (a unit that does not depend on the grid scaling).
+    #
     # --- O+ (heaviest ion, source species) ---
     o_key = epart_keys[-1]  # e.g. "Epart2"
     e_o_initial = first.get(o_key, 0.0)
     e_o_final = last.get(o_key, 0.0)
     factor_o = e_o_final / max(e_o_initial, 1e-30)
-    min_e_o_abs = 1e-4  # O+ must reach physical level, catching missing unit conversion
-    logger.debug("    %s (O+): %s -> %s (factor %.3fx, threshold %dx, min_abs %.1e)",
+    logger.debug("    %s (O+): %s -> %s (factor %.3fx, threshold %dx)",
                  o_key, f"{e_o_initial:.6e}", f"{e_o_final:.6e}",
-                 factor_o, min_factor_o, min_e_o_abs)
+                 factor_o, min_factor_o)
     if e_o_initial <= 0:
         if e_o_final <= 0:
             logger.debug("    FAIL: %s (O+) energy is zero — source not active.", o_key)
@@ -78,11 +84,6 @@ def validate_log(pic_diags=None, test_name=None):
                      o_key, factor_o, min_factor_o)
         passed = False
         reasons.append(f"O+ growth factor {factor_o:.3f} < {min_factor_o}")
-    elif e_o_final < min_e_o_abs:
-        logger.debug("    FAIL: %s (O+) final energy %.3e < %.1e (unphysical / missing conversion)",
-                     o_key, e_o_final, min_e_o_abs)
-        passed = False
-        reasons.append(f"O+ final energy {e_o_final:.3e} < {min_e_o_abs} (unphysical source rate)")
     else:
         logger.debug("    SUCCESS: %s (O+) energy increased by %.1fx to %.3e.",
                      o_key, factor_o, e_o_final)
@@ -149,19 +150,15 @@ def _check_charge_exchange_source_profile():
         logger.debug("    [CX] rhoS2/rhoS1 not found in .out variables: %s", var_names)
         return True, "rhoS2/rhoS1 not in .out"
 
-    # Read planet radius and normalization from PARAM.in (plot coords = SI / lNormSI).
+    # Read the planet radius from PARAM.in (used only for the log below).
     Rp_si = 3.0e6
-    lNormSI = 1000.0
     try:
         with open(os.path.join(_run_dir.RUN_DIR, "PARAM.in"), "r") as pf:
             section = None
-            norm_idx = 0
             for line in pf:
                 line_s = line.strip()
                 if line_s.startswith("#"):
                     section = line_s
-                    if section == "#NORMALIZATION":
-                        norm_idx = 0
                     continue
                 if not line_s:
                     continue
@@ -171,17 +168,13 @@ def _check_charge_exchange_source_profile():
                         Rp_si = float(parts[0])
                     except ValueError:
                         pass
-                elif section == "#NORMALIZATION" and len(parts) >= 1:
-                    if norm_idx == 0:
-                        try:
-                            lNormSI = float(parts[0])
-                        except ValueError:
-                            pass
-                    norm_idx += 1
     except Exception:
         pass
 
-    Rp_plot = Rp_si / lNormSI
+    # The output unit is PLANETARY, so one plot unit is exactly one #BODYSIZE
+    # radius and the body radius sits at coordinate 1.
+    Rp_plot = 1.0
+    logger.debug("    [CX] rBody = %.3e m, Rp (plot coords) = %.1f", Rp_si, Rp_plot)
 
     # Parse data points: supports both 1D (x, rho) and 2D (x, y, rho).
     points = []

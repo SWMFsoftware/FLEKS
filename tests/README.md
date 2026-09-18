@@ -44,6 +44,26 @@ Each ionization process is enabled via a dedicated command in PARAM.in:
   `tau = sum_c n_c * sigma_c * H_c`, optionally with the curved-atmosphere
   Chapman function
 
+### Units in the ionization decks
+
+The two length conventions coexist and must not be mixed:
+
+- **grid** — `#GEOMETRY` (and any other grid-oriented command such as
+  `#REGION`) is in *code units*, i.e. multiples of `#NORMALIZATION lNormSI`
+  metres. Standalone, the numbers are used verbatim as AMReX coordinates.
+- **physics input** — `#BODYSIZE`, `#EXOSPHERE` (`n0`, `H0`, `T0`),
+  `#PHOTOIONIZATION`, `#ELECTRONIMPACT`, `#CHARGEEXCHANGE`,
+  `#SHADOWCYLINDER` and `#OPTICALDEPTH` are all **SI**.
+  `UserSource` converts the code-unit cell position to metres (`No2SiL`) before
+  it evaluates the neutral profile or the shadow/optical-depth geometry.
+
+This is also what a GM-coupled run looks like: there `No2SiL` is the length
+of one GM length unit (one planetary radius), so the deck of a coupled run and
+the deck of a standalone run describe the same setup as long as each keeps to
+its own convention. A validator must therefore use the plot unit of the
+`PLANETARY` output, namely one `#BODYSIZE` radius, to turn plot coordinates
+back into metres.
+
 ## Architecture
 
 Ionization parameters are stored in `SourceInterface` and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain routes specific commands to the source object rather than to `FluidInterface`. This keeps the MHD coupling layer uncluttered by ionization-specific data.

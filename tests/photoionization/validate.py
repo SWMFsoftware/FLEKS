@@ -91,13 +91,9 @@ def _read_shadow_params():
     """
     param_path = os.path.join(RUN_DIR, "PARAM.in")
     Rp_si = 3.0e6
-    lNormSI = 1.0
     halfH_si = 0.0
     shadowR_si = 0.0
     useShadow = False
-
-    # Track which line within #NORMALIZATION we're on.
-    norm_line_idx = 0
 
     try:
         with open(param_path, "r") as pf:
@@ -106,8 +102,6 @@ def _read_shadow_params():
                 line_s = line.strip()
                 if line_s.startswith("#"):
                     section = line_s
-                    if section == "#NORMALIZATION":
-                        norm_line_idx = 0
                     continue
                 if not line_s:
                     continue
@@ -117,14 +111,6 @@ def _read_shadow_params():
                         Rp_si = float(parts[0])
                     except ValueError:
                         pass
-                elif section == "#NORMALIZATION" and len(parts) >= 1:
-                    # First value is lNormSI, second is uNormSI.
-                    if norm_line_idx == 0:
-                        try:
-                            lNormSI = float(parts[0])
-                        except ValueError:
-                            pass
-                    norm_line_idx += 1
                 elif section == "#SHADOWCYLINDER":
                     useShadow = True
                     try:
@@ -141,8 +127,12 @@ def _read_shadow_params():
     if not useShadow:
         return None
 
-    # Plot coordinates = SI / lNormSI
-    return (Rp_si / lNormSI, halfH_si / lNormSI, shadowR_si / lNormSI)
+    # The output unit is PLANETARY: one plot unit is one #BODYSIZE radius
+    # (rPlanet), so the plot-coordinate value of any SI length is the length
+    # divided by the body radius.
+    per_body_radius = 1.0 / Rp_si
+    return (Rp_si * per_body_radius, halfH_si * per_body_radius,
+            shadowR_si * per_body_radius)
 
 
 def _load_idl_plot_asymmetry():
