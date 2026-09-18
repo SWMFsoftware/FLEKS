@@ -1,5 +1,6 @@
 #include "BeamIC.h"
 #include "FadeevIC.h"
+#include "GemIC.h"
 #include "InitialCondition.h"
 #include "TopHatIC.h"
 #include "WaveIC.h"
@@ -27,4 +28,10 @@ void register_all_initial_conditions() {
       "tophat", []() { return std::make_unique<TopHatIC>(); });
   ICRegistry::instance().register_ic(
       "fadeev", []() { return std::make_unique<FadeevIC>(); });
+  ICRegistry::instance().register_ic(
+      "gem", []() { return std::make_unique<GemIC>(); });
+  ICRegistry::instance().register_ic(
+      "gemreconnect", []() { return std::make_unique<GemIC>(); });
+  ICRegistry::instance().register_ic(
+      "gemchallenge", []() { return std::make_unique<GemIC>(); });
 }

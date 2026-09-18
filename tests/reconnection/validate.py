@@ -161,13 +161,25 @@ def _load_all_frames():
     return frames, None
 
 
-def validate_plot(test_name):
-    """Reconnection plot check: equilibrium init, perturbation growth, flux
-    (Ay) change at the X-point, and O-point motion."""
-    frames, err = _load_all_frames()
-    if err is not None:
-        return False, err
+def _check_charge_neutrality(frames, mass_ratio=MASS_RATIO):
+    """Quasi-neutrality check on initial frame: |rhoS0 - rhoS1*MASS_RATIO| / rho0_max < 0.5."""
+    if not frames:
+        return True, None
+    _, fr0 = frames[0]
+    _ux, _uy, _bx, _by, _bz, _rho, rhoS1 = fr0
+    if rhoS1 is None:
+        return True, None
+    denom = max(float(_rho.max()), 1e-9)
+    imb = float(np.abs(_rho - rhoS1 * mass_ratio).max() / denom)
+    logger.debug("    t=0 max charge imbalance: %.3f", imb)
+    if imb > 0.5:
+        return False, f"t=0 charge separation: max imbalance {imb:.2f} > 0.5"
+    return True, None
 
+
+def _validate_fadeev_plot(test_name, frames):
+    """Fadeev reconnection plot check: equilibrium init, perturbation growth,
+    flux (Ay) change at the X-point, and O-point motion."""
     # ---- (1) Equilibrium initialization at t=0 ----
     ux, uy, bx0, by0, bz0, rho0, rhoS1_0 = frames[0][1]
     dx = ux[1] - ux[0]
@@ -246,25 +258,132 @@ def validate_plot(test_name):
                      "may still be ongoing", motion)
 
     # ---- (5) Charge neutrality (full-PIC only) ----
-    # Quasi-neutral => rhoS0 ~ rhoS1*MASS_RATIO; skips hybrid (no rhoS1).
-    if rhoS1_0 is not None:
-        max_imbalance = 0.0
-        for _, fr in frames:
-            _ux, _uy, _bx, _by, _bz, _rho, rhoS1 = fr
-            if rhoS1 is None:
-                continue
-            denom = max(float(_rho.max()), 1e-9)  # normalise by ion density
-            imb = float(np.abs(_rho - rhoS1 * MASS_RATIO).max() / denom)
-            max_imbalance = max(max_imbalance, imb)
-        logger.debug("    charge imbalance max |rhoS0 - rhoS1*%.0f|/rho0 = %.3f",
-                     MASS_RATIO, max_imbalance)
-        if max_imbalance > 0.5:
-            return False, (
-                f"charge separation: |rhoS0 - rhoS1*{MASS_RATIO:.0f}|/rho0_max "
-                f"= {max_imbalance:.2f} (> 0.5); load not charge neutral")
+    ok_neutral, err_neutral = _check_charge_neutrality(frames)
+    if not ok_neutral:
+        return False, err_neutral
 
     msg = (f"reconnection: By perturbation {early_amp:.3f}->{late_amp:.3f}, "
            f"Ay span {ay_span:.3f}, O-points at "
            f"{[round(o,2) for o in outer]} d_i")
     logger.debug("    %s", msg)
     return True, msg
+
+
+def _validate_gem_plot(test_name, frames):
+    """GEM challenge reconnection plot checks (equilibrium, perturbation, flux, neutrality)."""
+    ux, uy, bx0, by0, bz0, rho0, rhoS1_0 = frames[0][1]
+    dx = ux[1] - ux[0]
+    j0 = int(np.argmin(np.abs(uy)))
+
+    # 1. Harris current sheet equilibrium at t=0
+    bx_top = float(bx0[-1, :].mean())
+    bx_bot = float(bx0[0, :].mean())
+    if bx_top < 0.5 or bx_bot > -0.5:
+        return False, f"t=0: Bx does not form Harris sheet (top={bx_top:.2f}, bot={bx_bot:.2f})"
+
+    # Midplane null in By at the central X-point (x ~ 0)
+    by_mid0 = by0[j0, :]
+    nulls = _null_crossings(ux, by_mid0)
+    if not any(abs(x) < 1.5 for x in nulls):
+        return False, f"t=0: central X-point null not found near x=0 (nulls={nulls})"
+
+    # Sheet density: peak near 0.7 (n0=0.5 + nb=0.2), background near 0.2
+    rho_peak = float(rho0.max())
+    rho_bg = float(rho0.min())
+    if not (0.5 < rho_peak < 1.0):
+        return False, f"t=0: peak density {rho_peak:.3f} not in expected range (0.5, 1.0)"
+    if rho_bg > 0.4:
+        return False, f"t=0: background density {rho_bg:.3f} too high (expected ~0.2)"
+
+    # 2. Perturbation and flux evolution
+    ix = int(np.argmin(np.abs(ux)))
+    ay_series = []
+    max_dby_series = []
+    for _, fr in frames:
+        ux2, uy2, bx, by, bz, rho, rhoS1 = fr
+        j = int(np.argmin(np.abs(uy2)))
+        dby = float(np.abs(by - by0).max())
+        max_dby_series.append(dby)
+        # In-plane flux function Ay(x, y) = -int By dx
+        ay = -np.cumsum(by[j]) * dx
+        ay_series.append(float(ay[ix]))
+
+    late_amp = max_dby_series[-1]
+    if late_amp < 0.02:
+        return False, f"late |delta By| = {late_amp:.3f} too small (no instability)"
+
+    ay_span = max(ay_series) - min(ay_series)
+    logger.debug("    GEM Ay span at X-point: %.4f over %d frames", ay_span, len(ay_series))
+
+    # 3. Quasi-neutrality (full-PIC)
+    ok_neutral, err_neutral = _check_charge_neutrality(frames)
+    if not ok_neutral:
+        return False, err_neutral
+
+    msg = f"GEM reconnection: By perturbation late={late_amp:.3f}, Ay span={ay_span:.4f}"
+    logger.debug("    %s", msg)
+    return True, msg
+
+
+def _validate_asym_plot(test_name, frames):
+    """Asymmetric double current-sheet reconnection plot checks."""
+    ux, uy, bx0, by0, bz0, rho0, rhoS1_0 = frames[0][1]
+    dx = ux[1] - ux[0]
+
+    # Current sheets are at y ~ +7.0 and y ~ -7.0
+    j_mid = int(np.argmin(np.abs(uy)))
+
+    # 1. Asymmetric field check at t=0
+    # Central region between sheets has Bx ~ +B1 = +1.0
+    bx_mid = float(bx0[j_mid, :].mean())
+    # Outer boundaries have Bx ~ -B2 = -2.0
+    bx_top_edge = float(bx0[-1, :].mean())
+    bx_bot_edge = float(bx0[0, :].mean())
+
+    if not (0.7 < bx_mid < 1.3):
+        return False, f"t=0: central Bx={bx_mid:.2f} expected ~ +1.0 (B1)"
+    if bx_top_edge > -1.5 or bx_bot_edge > -1.5:
+        return False, (f"t=0: outer Bx (top={bx_top_edge:.2f}, bot={bx_bot_edge:.2f}) "
+                      f"expected ~ -2.0 (-B2)")
+
+    # Check density: elevated at sheets
+    rho_peak = float(rho0.max())
+    rho_bg = float(rho0.min())
+    if not (0.5 < rho_peak < 1.6):
+        return False, f"t=0: peak density {rho_peak:.3f} not in range (0.5, 1.6)"
+    if rho_bg > 0.4:
+        return False, f"t=0: background density {rho_bg:.3f} too high (expected ~0.2)"
+
+    # 2. Perturbation evolution
+    max_dby_series = []
+    for _, fr in frames:
+        ux2, uy2, bx, by, bz, rho, rhoS1 = fr
+        dby = float(np.abs(by - by0).max())
+        max_dby_series.append(dby)
+
+    late_amp = max_dby_series[-1]
+    if late_amp < 0.02:
+        return False, f"late |delta By| = {late_amp:.3f} too small (no perturbation)"
+
+    # 3. Quasi-neutrality (full-PIC)
+    ok_neutral, err_neutral = _check_charge_neutrality(frames)
+    if not ok_neutral:
+        return False, err_neutral
+
+    msg = f"Asymmetric reconnection: Bx bounds [-2, 1], By perturbation late={late_amp:.3f}"
+    logger.debug("    %s", msg)
+    return True, msg
+
+
+def validate_plot(test_name):
+    """Reconnection plot check dispatcher: Fadeev, GEM, or Asymmetric."""
+    frames, err = _load_all_frames()
+    if err is not None:
+        return False, err
+
+    if "gem" in test_name:
+        return _validate_gem_plot(test_name, frames)
+    elif "asym" in test_name:
+        return _validate_asym_plot(test_name, frames)
+    else:
+        return _validate_fadeev_plot(test_name, frames)

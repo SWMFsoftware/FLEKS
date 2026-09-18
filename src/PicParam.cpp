@@ -236,6 +236,12 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
                    "the fadeev (magnetic reconnection) initial condition.");
     }
     ic_->read_param(param);
+  } else if (command == "#GEMIC") {
+    if (!ic_ || std::string(ic_->name()) != "gem") {
+      amrex::Abort("The #GEMIC block must follow a #TESTCASE that selects "
+                   "the gem initial condition.");
+    }
+    ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {
