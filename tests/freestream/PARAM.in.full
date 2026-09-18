@@ -1,0 +1,138 @@
+#DESCRIPTION
+Free-stream (uniform-equilibrium) regression test of the FULL PIC
+electromagnetic field solver using the ORIGINAL SEMI-IMPLICIT GMRES solver:
+solveEM=T, useHybridPIC=F, solveFieldInCoMov=F, useUpwindE=F, useUpwindB=F.
+
+The initial condition is a uniform plasma with two kinetic species (ions and
+electrons, m_e = 0.04 m_i), uniform bulk flow ux = 100 km/s (Mach 1, Alfven speed),
+a 3D oblique magnetic field (Bx, By, Bz), plasma beta ~ 1 (T = 314000 K), and the
+corresponding convective electric field E = -u x B.
+
+The electric field equation is solved via the standard semi-implicit GMRES scheme
+with Crank-Nicolson time discretization (theta = 0.5) without comoving frame
+transformation or artificial viscosity.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+Full PIC electromagnetic field solver ON
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#DIVE
+F                       doCorrectDivE
+3                       nDivECorrection
+
+#EFIELDSOLVER
+1.0e-8                  tol        GMRES relative tolerance
+30                      nIter      GMRES max iterations
+
+Field time-discretization for the implicit Maxwell solver (theta-scheme).
+theta = 1 is fully implicit, 0.5 is Crank-Nicolson. coefDiff is the
+diffusion coefficient (0 = none).
+#DISCRETIZATION
+0.5                     theta
+0.0                     coefDiff
+
+#COMOVING
+F                       solveFieldInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0                       limiterTheta
+
+#UPWINDB
+F                       doSmoothB
+0                       theta
+
+#SMOOTHJ
+F
+0
+0.0
+
+Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 0.04).
+#PLASMA
+2                       nS
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons (m_e = 0.04 m_i)
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions (n_i = 5 /cc)
+100.0                   ux [km/s]      fast bulk flow (u_code = 1.0 = v_A, Mach 1)
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]          ion temperature, beta_i ~ 0.5 (beta_total ~ 1.0)
+0.2                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i => n_e = 5 /cc, neutral)
+100.0                   ux [km/s]      electrons drift with ions (current-free equilibrium)
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]          electron temperature, beta_e ~ 0.5
+8.0e-9                  bx [T]         3D oblique magnetic field: Bx0 = 8 nT
+6.0e-9                  by [T]         By0 = 6 nT
+3.0e-9                  bz [T]         Bz0 = 3 nT (|B| = 10.44 nT)
+0.0                     ex [V/m]       convective field E = -u x B: Ex = 0
+3.0e-4                  ey [V/m]       Ey = -ux * (-Bz) = +3.0e-4 V/m
+-6.0e-4                 ez [V/m]       Ez = -ux * By    = -6.0e-4 V/m
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+2000                    npcelx
+1                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+10.0                    dt
+1                       dx
+Bx By Bz Ex Ey Ez RhoS0 UXS0 UYS0 UZS0 pS0 RhoS1 UXS1 UYS1 UZS1 pS1   varName
+
+#STOP
+-1                      MaxIter
+10.0                    TimeMax   crosses periodic box 1.56 times
+
+#RUN

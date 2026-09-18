@@ -2,8 +2,10 @@
 Free-stream (uniform-equilibrium) regression test of the FULL PIC
 electromagnetic field solver: solveEM=T, useHybridPIC=F.
 
-The initial condition is a perfectly uniform plasma with a uniform bulk flow
-ux = 10 km/s (parallel to the guide field Bx0).
+The initial condition is a uniform plasma with two kinetic species (ions and
+electrons, m_e = 0.04 m_i), uniform bulk flow ux = 100 km/s (Mach 1, Alfven speed),
+a 3D oblique magnetic field (Bx, By, Bz), plasma beta ~ 1 (T = 314000 K), and the
+corresponding convective electric field E = -u x B.
 
 The solver uses the comoving-frame current (CM=T, solveFieldInCoMov) plus the
 Lax-Friedrichs upwind scheme (UPWINDE/UPWINDB, minmod limiter theta=1) and
@@ -78,25 +80,31 @@ T
 1
 0.5
 
-Single kinetic ion species (q = m = 1); the electron is an implicit
-neutralizing massless fluid, so no electron particle species is present.
+Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 0.04).
 #PLASMA
-1                       nS
-1.0                     mass
+2                       nS
+1.0                     mass           Species 0: ions
 1.0                     charge
+0.04                    mass           Species 1: electrons
+-1.0                    charge
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
-20.0                    ux [km/s]      uniform bulk flow along guide field (U_code = 0.2)
+100.0                   ux [km/s]      fast bulk flow (U_code = 1.0 = v_A)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-10000.0                 T [K]
-1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
-0.0                     by [T]
-0.0                     bz [T]
-0.0                     ex [V/m]
-0.0                     ey [V/m]
-0.0                     ez [V/m]
+314000.0                T [K]          beta ~ 1 (T_code ~ 0.26)
+0.2                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i)
+100.0                   ux [km/s]      electrons comoving with ions (J = 0)
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]          thermal equilibrium (T_e = T_i)
+8.0e-9                  bx [T]         3D oblique magnetic field (|B| ~ 10.44 nT)
+6.0e-9                  by [T]
+3.0e-9                  bz [T]
+0.0                     ex [V/m]       convective electric field E = -u x B
+3.0e-4                  ey [V/m]       Ey = ux * Bz
+-6.0e-4                 ez [V/m]       Ez = -ux * By
 
 #TIMESTEPPING
 T                       useFixedDt

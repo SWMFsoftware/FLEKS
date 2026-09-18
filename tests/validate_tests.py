@@ -865,12 +865,14 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None):
         variants.append((pf, display_name, base_name))
 
     if name == "freestream":
-        # Preserve the free-stream test's established display names.
+        # Free-stream test variants: full (original GMRES), upwind, and hybrid.
         variants = [
-            (os.path.join(test_dir, "PARAM.in"), "FREESTREAM (FULL PIC)",
-             "freestream"),
+            (os.path.join(test_dir, "PARAM.in.full"),
+             "FREESTREAM (FULL PIC GMRES)", "freestream_full"),
+            (os.path.join(test_dir, "PARAM.in.upwind"),
+             "FREESTREAM (FULL PIC UPWIND)", "freestream_upwind"),
             (os.path.join(test_dir, "PARAM.in.hybrid"),
-             "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
+             "FREESTREAM (HYBRID HALL-OFF)", "freestream_hybrid"),
         ]
 
     # Restrict to a single PARAM variant when requested.  The variant token is
@@ -881,6 +883,9 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None):
     def _variant_token(pf):
         suffix = os.path.basename(pf)[len("PARAM.in"):].lstrip(".")
         return suffix or "full"
+
+    if name == "freestream" and variant_filter == "gmres":
+        variant_filter = "full"
 
     if name == "bc_reflecting" and variant_filter is not None:
         # Backward compatibility for legacy --test=bc_reflecting.full and .hybrid
