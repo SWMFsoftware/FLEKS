@@ -36,9 +36,7 @@ public:
   // get_number_density(), get_p() and convert_moment_to_velocity() already
   // follow this convention, so every direct nodeFluid access in this file has
   // to go through the helpers below.
-  bool has_electron_species() const {
-    return (nS > 0 && QoQi_S[0] < 0.0);
-  }
+  bool has_electron_species() const { return (nS > 0 && QoQi_S[0] < 0.0); }
 
   // True when the electron has its own density/momentum/pressure slots.
   bool electron_has_state_slot() const { return useElectronFluid; }
@@ -49,8 +47,10 @@ public:
   // nodeFluid slot holding the mass density of species iSp, or -1 when the
   // species has no state slot of its own (quasi-neutral electron).
   int node_rho_slot(const int iSp) const {
-    if (iSp < 0 || iSp >= nS) return -1;
-    if (iSp == 0) return (electron_has_state_slot() ? iRho_I[0] : -1);
+    if (iSp < 0 || iSp >= nS)
+      return -1;
+    if (iSp == 0)
+      return (electron_has_state_slot() ? iRho_I[0] : -1);
     return (electron_has_state_slot() ? iRho_I[iSp] : iRho_I[iSp - 1]);
   }
 
@@ -58,7 +58,8 @@ public:
   // pressure is not a separate MHD state variable.  The ion pressure written
   // into the shared slot therefore has to be pre-divided by (1 - PeRatio).
   amrex::Real ion_pressure_factor() const {
-    if (useMhdPe) return 1.0;
+    if (useMhdPe)
+      return 1.0;
     return (PeRatio < 1.0 ? 1.0 / (1.0 - PeRatio) : 1.0);
   }
 
@@ -80,22 +81,24 @@ public:
   amrex::Vector<amrex::Real> optCrossSection; // [m^2], per exosphere component
   amrex::Vector<amrex::Real> optScaleHeight;  // [m]; < 0 -> from the profile
   amrex::Real optSolarDir[3] = { 1.0, 0.0, 0.0 }; // unit vector toward the Sun
-  amrex::Real optMinProduction = 1.0e-5;   // attenuation floor
-  bool optMinProductionSet = false;        // user overrode optMinProduction
-  amrex::Real optTauFloor = 6.0e-3;        // floor on the vertical optical depth
-  amrex::Real optTauCutoff = 11.5;         // tau above which the floor is used
-  amrex::Real optCosSzaFloor = 5.0e-4;     // floor on mu
-  amrex::Real optChapmanTauMax = 13.8;     // Chapman branch: opaque threshold
+  amrex::Real optMinProduction = 1.0e-5;          // attenuation floor
+  bool optMinProductionSet = false;    // user overrode optMinProduction
+  amrex::Real optTauFloor = 6.0e-3;    // floor on the vertical optical depth
+  amrex::Real optTauCutoff = 11.5;     // tau above which the floor is used
+  amrex::Real optCosSzaFloor = 5.0e-4; // floor on mu
+  amrex::Real optChapmanTauMax = 13.8; // Chapman branch: opaque threshold
 
   // Local scale height [m] of exosphere component iC at radius r, i.e. the
   // exact H = -1/(d ln n / dr) of the profile selected by #EXOSPHERE, unless
   // #OPTICALDEPTH supplied an explicit value.
   amrex::Real exosphere_scale_height(amrex::Real r, int iC) const {
-    if (iC < 0 || iC >= nExoComponent) return 0.0;
+    if (iC < 0 || iC >= nExoComponent)
+      return 0.0;
     if (iC < static_cast<int>(optScaleHeight.size()) &&
         optScaleHeight[iC] > 0.0)
       return optScaleHeight[iC];
-    if (r <= 0.0) return 0.0;
+    if (r <= 0.0)
+      return 0.0;
     if (exosphereType == "Exponential")
       return (exoH0[iC] > 0.0 ? exoH0[iC] : 0.0);
     if (exosphereType == "Chamberlain")
@@ -110,13 +113,16 @@ public:
   amrex::Real vertical_optical_depth(amrex::Real r, int onlyComp) const {
     amrex::Real tau = 0.0;
     for (int iC = 0; iC < nExoComponent; ++iC) {
-      if (onlyComp >= 0 && iC != onlyComp) continue;
+      if (onlyComp >= 0 && iC != onlyComp)
+        continue;
       const amrex::Real sigma = (iC < static_cast<int>(optCrossSection.size()))
                                     ? optCrossSection[iC]
                                     : 0.0;
-      if (sigma <= 0.0) continue;
+      if (sigma <= 0.0)
+        continue;
       const amrex::Real h = exosphere_scale_height(r, iC);
-      if (h <= 0.0) continue;
+      if (h <= 0.0)
+        continue;
       tau += get_exosphere_component_density(r, iC) * sigma * h;
     }
     return tau;
@@ -162,8 +168,7 @@ public:
       return is_in_shadow(xyz[0], xyz[1], xyz[2]) ? 0.0 : 1.0;
 
     const amrex::Real r_safe = std::max(r, 1.0e-3);
-    const amrex::Real proj = xyz[0] * optSolarDir[0] +
-                             xyz[1] * optSolarDir[1] +
+    const amrex::Real proj = xyz[0] * optSolarDir[0] + xyz[1] * optSolarDir[1] +
                              xyz[2] * optSolarDir[2];
     const amrex::Real cosSZA = proj / r_safe;
     const amrex::Real mu = std::max(cosSZA, optCosSzaFloor);
@@ -174,7 +179,8 @@ public:
       if (tauV > optChapmanTauMax)
         return optMinProduction * std::max(mu, optMinProduction);
       const amrex::Real h = exosphere_scale_height(r, iC);
-      if (h <= 0.0) return optMinProduction;
+      if (h <= 0.0)
+        return optMinProduction;
       const amrex::Real chap = chapman_function(r / h, cosSZA);
       // The Smith & Smith fit turns negative deep on the nightside, where
       // sin(SZA) -> 0 and the slant column is in fact optically thick, so
@@ -189,15 +195,18 @@ public:
 
     const amrex::Real tauV = vertical_optical_depth(r, -1);
     const amrex::Real tau = std::max(tauV, optTauFloor) / mu;
-    if (tau >= optTauCutoff || proj <= 0.0) return optMinProduction;
+    if (tau >= optTauCutoff || proj <= 0.0)
+      return optMinProduction;
     return std::max(exp(-tau), optMinProduction);
   }
 
   // ---- Exosphere density profiles ----
 
   amrex::Real get_exosphere_density(amrex::Real r) const override {
-    if (exosphereType == "None") return 0.0;
-    if (r < get_rPlanet_SI()) return 0.0;
+    if (exosphereType == "None")
+      return 0.0;
+    if (r < get_rPlanet_SI())
+      return 0.0;
 
     amrex::Real sum = 0.0;
     if (exosphereType == "Exponential") {
@@ -224,9 +233,12 @@ public:
 
   amrex::Real get_exosphere_component_density(amrex::Real r,
                                               int iC) const override {
-    if (exosphereType == "None") return 0.0;
-    if (iC < 0 || iC >= nExoComponent) return 0.0;
-    if (r < get_rPlanet_SI()) return 0.0;
+    if (exosphereType == "None")
+      return 0.0;
+    if (iC < 0 || iC >= nExoComponent)
+      return 0.0;
+    if (r < get_rPlanet_SI())
+      return 0.0;
 
     if (exosphereType == "Exponential") {
       if (exoH0[iC] > 0.0) {
@@ -246,9 +258,11 @@ public:
 
   // Check whether (x, y, z) [m] relative to planet center is in shadow.
   bool is_in_shadow(amrex::Real x, amrex::Real y, amrex::Real z) const {
-    if (!useShadowCylinder) return false;
+    if (!useShadowCylinder)
+      return false;
     amrex::Real proj = x * solarDir[0] + y * solarDir[1] + z * solarDir[2];
-    if (proj >= 0.0) return false;
+    if (proj >= 0.0)
+      return false;
     if (-proj > shadowCylinderHalfHeight)
       return false;
     amrex::Real r2 = x * x + y * y + z * z;
@@ -258,11 +272,11 @@ public:
 
   // Electron temperature in eV from PIC-normalized pressure and density.
   amrex::Real electron_temperature(amrex::Real pe, amrex::Real ne) const {
-    if (ne <= 0.0) return 0.0;
+    if (ne <= 0.0)
+      return 0.0;
     const amrex::Real protonMassPerCharge =
-        cProtonMassSI / cUnitChargeSI;   // [kg/C]
-    const amrex::Real ur2 =
-        get_unorm_si() * get_unorm_si(); // [m^2/s^2]
+        cProtonMassSI / cUnitChargeSI;                       // [kg/C]
+    const amrex::Real ur2 = get_unorm_si() * get_unorm_si(); // [m^2/s^2]
     return protonMassPerCharge * ur2 * pe / ne;
   }
 
@@ -276,14 +290,16 @@ public:
     }
     amrex::Real r2 = xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2];
     amrex::Real r_m = sqrt(r2);
-    if (r_m <= 0.0) return 0.0;
+    if (r_m <= 0.0)
+      return 0.0;
     return photoNu0[iC] * photo_attenuation(xyz, r_m);
   }
 
   // Electron-impact ionization frequency [s^-1] for neutral component iC.
   amrex::Real impact_ionization_rate(amrex::Real ne, amrex::Real Te_eV,
                                      int iC) const {
-    if (ne <= 0.0 || Te_eV <= 0.0) return 0.0;
+    if (ne <= 0.0 || Te_eV <= 0.0)
+      return 0.0;
     amrex::Real ne_SI = ne / (get_Si2NoRho() * cProtonMassSI);
     amrex::Real Ei = impactEIon[iC];
     amrex::Real A = impactA[iC];
@@ -297,8 +313,8 @@ public:
   // Charge-exchange frequency [s^-1] for neutral component iC with ion iSp.
   amrex::Real charge_exchange_rate(const FluidInterface& other,
                                    const amrex::MFIter& mfi,
-                                   const amrex::IntVect& idx, int iLev,
-                                   int iSp, int iC) const {
+                                   const amrex::IntVect& idx, int iLev, int iSp,
+                                   int iC) const {
     int iIon = iSp - 1;
     amrex::Real ni = other.get_number_density(mfi, idx, iSp, iLev);
     amrex::Real ux_i = other.get_ux(mfi, idx, iSp, iLev);
@@ -306,7 +322,8 @@ public:
     amrex::Real uz_i = other.get_uz(mfi, idx, iSp, iLev);
     amrex::Real u_mag_SI =
         sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) * get_unorm_si();
-    if (ni <= 0.0 || u_mag_SI <= 0.0) return 0.0;
+    if (ni <= 0.0 || u_mag_SI <= 0.0)
+      return 0.0;
     amrex::Real ni_SI = ni / (get_Si2NoRho() * cProtonMassSI);
     amrex::Real sigma = cxSigma[iC * nCXIonSpecies + iIon];
     return ni_SI * sigma * 1e-4 * u_mag_SI;
@@ -318,10 +335,11 @@ public:
   // this object just before dispatching ionization commands, so a missing or
   // out-of-order #EXOSPHERE leaves nExoComponent == 0 and is caught here.
   void require_exosphere(const std::string& command) const {
-    if (nExoComponent > 0) return;
-    amrex::Abort(printPrefix + "Error: " + command + " requires "
-                 + "#EXOSPHERE with nComponent > 0 to be specified before "
-                 + command + ".");
+    if (nExoComponent > 0)
+      return;
+    amrex::Abort(printPrefix + "Error: " + command + " requires " +
+                 "#EXOSPHERE with nComponent > 0 to be specified before " +
+                 command + ".");
   }
 
   //-------------------------------------------------------------------
@@ -367,9 +385,9 @@ public:
       param.read_var("solarDirZ", solarDir[2]);
       param.read_var("radius", shadowCylinderRadius);
       param.read_var("halfHeight", shadowCylinderHalfHeight);
-      amrex::Real norm = sqrt(solarDir[0] * solarDir[0] +
-                              solarDir[1] * solarDir[1] +
-                              solarDir[2] * solarDir[2]);
+      amrex::Real norm =
+          sqrt(solarDir[0] * solarDir[0] + solarDir[1] * solarDir[1] +
+               solarDir[2] * solarDir[2]);
       if (norm > 0.0) {
         solarDir[0] /= norm;
         solarDir[1] /= norm;
@@ -408,8 +426,8 @@ public:
       // read_optional() parses numbers only.
       std::string chapmanFlag;
       if (param.read_optional("chapmanFunction", chapmanFlag)) {
-        useChapmanFunction = (chapmanFlag == "T" || chapmanFlag == "t" ||
-                              chapmanFlag == "true");
+        useChapmanFunction =
+            (chapmanFlag == "T" || chapmanFlag == "t" || chapmanFlag == "true");
       }
       if (param.read_optional("minProduction", optMinProduction)) {
         optMinProductionSet = true;
@@ -455,63 +473,62 @@ public:
     // Optical-depth attenuation validation.
     if (useOpticalDepth) {
       if (useShadowCylinder) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH and #SHADOWCYLINDER "
-                     + "describe two alternative models of the same physics "
-                     + "(EUV attenuation) and cannot be combined. Keep one.");
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH and #SHADOWCYLINDER " +
+                     "describe two alternative models of the same physics " +
+                     "(EUV attenuation) and cannot be combined. Keep one.");
       }
       if (nExoComponent <= 0) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH requires #EXOSPHERE "
-                     + "with nComponent > 0 to be specified before it.");
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH requires #EXOSPHERE " +
+                     "with nComponent > 0 to be specified before it.");
       }
-      const amrex::Real dirNorm =
-          sqrt(optSolarDir[0] * optSolarDir[0] +
-               optSolarDir[1] * optSolarDir[1] +
-               optSolarDir[2] * optSolarDir[2]);
+      const amrex::Real dirNorm = sqrt(optSolarDir[0] * optSolarDir[0] +
+                                       optSolarDir[1] * optSolarDir[1] +
+                                       optSolarDir[2] * optSolarDir[2]);
       if (dirNorm <= 0.0) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH requires a non-zero "
-                     + "solar direction (solarDirX, solarDirY, solarDirZ).");
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH requires a non-zero " +
+                     "solar direction (solarDirX, solarDirY, solarDirZ).");
       }
       if (optCosSzaFloor <= 0.0 || optCosSzaFloor >= 1.0) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH cosSzaFloor must be "
-                     + "in (0, 1). Got "
-                     + std::to_string(optCosSzaFloor) + ".");
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH cosSzaFloor must be " +
+                     "in (0, 1). Got " + std::to_string(optCosSzaFloor) + ".");
       }
       if (optTauFloor < 0.0) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH tauFloor must be "
-                     + ">= 0. Got " + std::to_string(optTauFloor) + ".");
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH tauFloor must be " +
+                     ">= 0. Got " + std::to_string(optTauFloor) + ".");
       }
       if (optTauCutoff <= 0.0) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH tauCutoff must be "
-                     + "> 0. Got " + std::to_string(optTauCutoff) + ".");
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH tauCutoff must be " +
+                     "> 0. Got " + std::to_string(optTauCutoff) + ".");
       }
       if (optMinProduction < 0.0 || optMinProduction > 1.0) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH minProduction must be "
-                     + "in [0, 1]. Got "
-                     + std::to_string(optMinProduction) + ".");
+        amrex::Abort(
+            printPrefix + "Error: #OPTICALDEPTH minProduction must be " +
+            "in [0, 1]. Got " + std::to_string(optMinProduction) + ".");
       }
       const amrex::Real rP = get_rPlanet_SI();
       int nAbsorbing = 0;
       for (int iC = 0; iC < nExoComponent; ++iC) {
         if (optCrossSection[iC] < 0.0) {
-          amrex::Abort(printPrefix + "Error: #OPTICALDEPTH crossSection for "
-                       + "component " + std::to_string(iC)
-                       + " must be >= 0 [m^2]. Got "
-                       + std::to_string(optCrossSection[iC]) + ".");
+          amrex::Abort(printPrefix + "Error: #OPTICALDEPTH crossSection for " +
+                       "component " + std::to_string(iC) +
+                       " must be >= 0 [m^2]. Got " +
+                       std::to_string(optCrossSection[iC]) + ".");
         }
-        if (optCrossSection[iC] <= 0.0) continue;
+        if (optCrossSection[iC] <= 0.0)
+          continue;
         nAbsorbing++;
         if (exosphere_scale_height(rP, iC) <= 0.0) {
-          amrex::Abort(printPrefix + "Error: #OPTICALDEPTH component "
-                       + std::to_string(iC) + " has a positive crossSection "
-                       + "but no usable scale height. Give an explicit "
-                       + "scaleHeight, or use an #EXOSPHERE profile that "
-                       + "defines one (Exponential with H0 > 0).");
+          amrex::Abort(printPrefix + "Error: #OPTICALDEPTH component " +
+                       std::to_string(iC) + " has a positive crossSection " +
+                       "but no usable scale height. Give an explicit " +
+                       "scaleHeight, or use an #EXOSPHERE profile that " +
+                       "defines one (Exponential with H0 > 0).");
         }
       }
       if (nAbsorbing == 0) {
-        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH needs at least one "
-                     + "positive crossSection, otherwise the optical depth is "
-                     + "always the tauFloor.");
+        amrex::Abort(printPrefix + "Error: #OPTICALDEPTH needs at least one " +
+                     "positive crossSection, otherwise the optical depth is " +
+                     "always the tauFloor.");
       }
       // BATSRUS uses a lower production floor with the Chapman function.
       if (useChapmanFunction && !optMinProductionSet)
@@ -523,7 +540,8 @@ public:
         chapmanComponent = 0;
         for (int iC = 0; iC < nExoComponent; ++iC) {
           const amrex::Real h = exosphere_scale_height(rP, iC);
-          if (optCrossSection[iC] <= 0.0 || h <= 0.0) continue;
+          if (optCrossSection[iC] <= 0.0 || h <= 0.0)
+            continue;
           const amrex::Real tau =
               get_exosphere_component_density(rP, iC) * optCrossSection[iC] * h;
           if (tau > bestTau) {
@@ -537,29 +555,29 @@ public:
     // Recombination validation.
     if (useRecombination) {
       if (nS < 1) {
-        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires "
-                     + "plasma species. Use #PLASMA to set species.");
+        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires " +
+                     "plasma species. Use #PLASMA to set species.");
       }
       if (!has_electron_species()) {
-        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires species 0 "
-                     + "to be the electron (negative charge). Reorder "
-                     + "#PLASMA so that the electron comes first. The "
-                     + "electron may be quasi-neutral "
-                     + "(useElectronFluid = false), which is the case for "
-                     + "GM-coupled multi-species runs.");
+        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires species 0 " +
+                     "to be the electron (negative charge). Reorder " +
+                     "#PLASMA so that the electron comes first. The " +
+                     "electron may be quasi-neutral " +
+                     "(useElectronFluid = false), which is the case for " +
+                     "GM-coupled multi-species runs.");
       }
       const int nIonS = nS - 1;
       for (int i = 0; i < static_cast<int>(recombIonIndex.size()); ++i) {
         int iSp = recombIonIndex[i];
         if (iSp < 1 || iSp > nIonS) {
-          amrex::Abort(printPrefix + "Error: #RECOMBINATION ionSpecies "
-                       + std::to_string(iSp) + " is out of range [1, "
-                       + std::to_string(nIonS) + "].");
+          amrex::Abort(printPrefix + "Error: #RECOMBINATION ionSpecies " +
+                       std::to_string(iSp) + " is out of range [1, " +
+                       std::to_string(nIonS) + "].");
         }
         if (recombRate0[i] <= 0.0) {
-          amrex::Abort(printPrefix + "Error: #RECOMBINATION rateCoef must "
-                       + "be positive (got "
-                       + std::to_string(recombRate0[i]) + ").");
+          amrex::Abort(printPrefix + "Error: #RECOMBINATION rateCoef must " +
+                       "be positive (got " + std::to_string(recombRate0[i]) +
+                       ").");
         }
       }
     }
@@ -567,13 +585,14 @@ public:
     // Chemistry validation.
     if (useChemistry) {
       if (usePhotoIonization || useChargeExchange || useRecombination) {
-        amrex::Abort(printPrefix + "Error: #CHEMISTRY cannot be combined with "
-                     + "#PHOTOIONIZATION, #CHARGEEXCHANGE, or #RECOMBINATION. "
-                     + "Use either the unified #CHEMISTRY table or individual commands.");
+        amrex::Abort(
+            printPrefix + "Error: #CHEMISTRY cannot be combined with " +
+            "#PHOTOIONIZATION, #CHARGEEXCHANGE, or #RECOMBINATION. " +
+            "Use either the unified #CHEMISTRY table or individual commands.");
       }
       if (nS < 2) {
-        amrex::Abort(printPrefix + "Error: #CHEMISTRY requires at least "
-                     + "2 plasma species (electron + 1 ion).");
+        amrex::Abort(printPrefix + "Error: #CHEMISTRY requires at least " +
+                     "2 plasma species (electron + 1 ion).");
       }
       const int nIonS = nS - 1;
       bool needsNeutral = false;
@@ -581,39 +600,38 @@ public:
       for (int i = 0; i < static_cast<int>(chemReactions.size()); ++i) {
         const auto& rxn = chemReactions[i];
         if (rxn.reactantIon < 0 || rxn.reactantIon > nIonS) {
-          amrex::Abort(printPrefix + "Error: #CHEMISTRY reactantIon "
-                       + std::to_string(rxn.reactantIon) + " out of range "
-                       + "[0, " + std::to_string(nIonS) + "].");
+          amrex::Abort(printPrefix + "Error: #CHEMISTRY reactantIon " +
+                       std::to_string(rxn.reactantIon) + " out of range " +
+                       "[0, " + std::to_string(nIonS) + "].");
         }
         if (rxn.productIon < 0 || rxn.productIon > nIonS) {
-          amrex::Abort(printPrefix + "Error: #CHEMISTRY productIon "
-                       + std::to_string(rxn.productIon) + " out of range "
-                       + "[0, " + std::to_string(nIonS) + "].");
+          amrex::Abort(printPrefix + "Error: #CHEMISTRY productIon " +
+                       std::to_string(rxn.productIon) + " out of range " +
+                       "[0, " + std::to_string(nIonS) + "].");
         }
         if (rxn.reactantIon == 0 && rxn.productIon == 0) {
-          amrex::Abort(printPrefix + "Error: #CHEMISTRY reaction "
-                       + std::to_string(i) + " has both reactantIon and "
-                       + "productIon = 0 (no-op).");
+          amrex::Abort(printPrefix + "Error: #CHEMISTRY reaction " +
+                       std::to_string(i) + " has both reactantIon and " +
+                       "productIon = 0 (no-op).");
         }
         if (rxn.rateType == 1 && rxn.neutralComp < 0) {
-          amrex::Abort(printPrefix + "Error: #CHEMISTRY photoionization "
-                       + "reaction " + std::to_string(i)
-                       + " requires a neutral component.");
+          amrex::Abort(printPrefix + "Error: #CHEMISTRY photoionization " +
+                       "reaction " + std::to_string(i) +
+                       " requires a neutral component.");
         }
-        if (rxn.rateType == 0 && rxn.neutralComp < 0 &&
-            rxn.reactantIon == 0) {
-          amrex::Abort(printPrefix + "Error: #CHEMISTRY thermal reaction "
-                       + std::to_string(i) + " with no neutral and no "
-                       + "reactant ion is invalid.");
+        if (rxn.rateType == 0 && rxn.neutralComp < 0 && rxn.reactantIon == 0) {
+          amrex::Abort(printPrefix + "Error: #CHEMISTRY thermal reaction " +
+                       std::to_string(i) + " with no neutral and no " +
+                       "reactant ion is invalid.");
         }
         if (rxn.neutralComp >= 0) {
           needsNeutral = true;
           if (nExoComponent > 0 && rxn.neutralComp >= nExoComponent) {
-            amrex::Abort(printPrefix + "Error: #CHEMISTRY reaction "
-                         + std::to_string(i) + " neutralComp "
-                         + std::to_string(rxn.neutralComp)
-                         + " >= nExoComponent "
-                         + std::to_string(nExoComponent) + ".");
+            amrex::Abort(printPrefix + "Error: #CHEMISTRY reaction " +
+                         std::to_string(i) + " neutralComp " +
+                         std::to_string(rxn.neutralComp) +
+                         " >= nExoComponent " + std::to_string(nExoComponent) +
+                         ".");
           }
         }
         if (rxn.productIon == 0 || rxn.tempExp != 0.0) {
@@ -621,55 +639,57 @@ public:
         }
       }
       if (needsNeutral && nExoComponent <= 0) {
-        amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with neutralComp >= 0 "
-                     + "require #EXOSPHERE with nComponent > 0 to be specified.");
+        amrex::Abort(printPrefix +
+                     "Error: #CHEMISTRY reactions with neutralComp >= 0 " +
+                     "require #EXOSPHERE with nComponent > 0 to be specified.");
       }
       if (needsElectron && !has_electron_species()) {
-        amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with "
-                     + "recombination or temperature dependence require "
-                     + "species 0 to be the electron (negative charge). "
-                     + "Reorder #PLASMA so that the electron comes first. "
-                     + "The electron may be quasi-neutral "
-                     + "(useElectronFluid = false), which is the case for "
-                     + "GM-coupled multi-species runs.");
+        amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with " +
+                     "recombination or temperature dependence require " +
+                     "species 0 to be the electron (negative charge). " +
+                     "Reorder #PLASMA so that the electron comes first. " +
+                     "The electron may be quasi-neutral " +
+                     "(useElectronFluid = false), which is the case for " +
+                     "GM-coupled multi-species runs.");
       }
     }
 
-    if (exosphereType == "None") return;
+    if (exosphereType == "None")
+      return;
 
     if (nS < 1) {
-      amrex::Abort(printPrefix + "Error: no plasma species defined. "
-                   + "Use #PLASMA to set species.");
+      amrex::Abort(printPrefix + "Error: no plasma species defined. " +
+                   "Use #PLASMA to set species.");
     }
     if (QoQi_S[0] >= 0.0) {
-      amrex::Abort(printPrefix + "Error: species 0 must be the electron "
-                   + "(negative charge). Got Q/Qi[0] = "
-                   + std::to_string(QoQi_S[0])
-                   + ". Reorder #PLASMA so the electron is first.");
+      amrex::Abort(
+          printPrefix + "Error: species 0 must be the electron " +
+          "(negative charge). Got Q/Qi[0] = " + std::to_string(QoQi_S[0]) +
+          ". Reorder #PLASMA so the electron is first.");
     }
     if (nExoComponent > nS - 1) {
-      amrex::Abort(printPrefix + "Error: #EXOSPHERE nComponent ("
-                   + std::to_string(nExoComponent)
-                   + ") exceeds the number of ion species ("
-                   + std::to_string(nS - 1)
-                   + "). Add more ion species in #PLASMA.");
+      amrex::Abort(printPrefix + "Error: #EXOSPHERE nComponent (" +
+                   std::to_string(nExoComponent) +
+                   ") exceeds the number of ion species (" +
+                   std::to_string(nS - 1) +
+                   "). Add more ion species in #PLASMA.");
     }
 
     if (useChargeExchange) {
       if (nCXIonSpecies != nS - 1) {
-        amrex::Abort(printPrefix + "Error: #CHARGEEXCHANGE nIonSpecies ("
-                     + std::to_string(nCXIonSpecies)
-                     + ") != number of ion species ("
-                     + std::to_string(nS - 1) + ")");
+        amrex::Abort(printPrefix + "Error: #CHARGEEXCHANGE nIonSpecies (" +
+                     std::to_string(nCXIonSpecies) +
+                     ") != number of ion species (" + std::to_string(nS - 1) +
+                     ")");
       }
     }
 
     for (int iC = 0; iC < nExoComponent; ++iC) {
       if (exoT0[iC] <= 0.0) {
-        amrex::Abort(printPrefix + "Error: #EXOSPHERE T0 for component "
-                     + std::to_string(iC) + " must be positive (got "
-                     + std::to_string(exoT0[iC])
-                     + " K). It is used as the ionization source temperature.");
+        amrex::Abort(printPrefix + "Error: #EXOSPHERE T0 for component " +
+                     std::to_string(iC) + " must be positive (got " +
+                     std::to_string(exoT0[iC]) +
+                     " K). It is used as the ionization source temperature.");
       }
     }
   }
@@ -683,7 +703,8 @@ public:
       if (attenuation >= 0.0) {
         return rxn.rateCoef * attenuation;
       }
-      if (r_val <= 0.0) return 0.0;
+      if (r_val <= 0.0)
+        return 0.0;
       return rxn.rateCoef * photo_attenuation(xyz, r_val);
     }
 
@@ -706,16 +727,15 @@ public:
   //-------------------------------------------------------------------
   // Apply chemistry reaction source term to accumulators.
   void chem_apply_source(const ChemistryReaction& rxn, amrex::Real rate,
-                         const FluidInterface& other,
-                         const amrex::MFIter& mfi,
-                         const amrex::IntVect& idx, int iLev,
-                         int nIonS, amrex::Real r_val,
-                         std::vector<amrex::Real>& srcRho,
+                         const FluidInterface& other, const amrex::MFIter& mfi,
+                         const amrex::IntVect& idx, int iLev, int nIonS,
+                         amrex::Real r_val, std::vector<amrex::Real>& srcRho,
                          std::vector<amrex::Real>& srcP,
                          std::vector<amrex::Real>& srcRhoUx,
                          std::vector<amrex::Real>& srcRhoUy,
                          std::vector<amrex::Real>& srcRhoUz) const {
-    if (rxn.productIon <= 0 || rxn.productIon > nIonS) return;
+    if (rxn.productIon <= 0 || rxn.productIon > nIonS)
+      return;
 
     int iSpProd = rxn.productIon;
     amrex::Real mass_prod = get_species_mass(iSpProd);
@@ -724,18 +744,17 @@ public:
       // Cross-species CX: product inherits reactant velocity and temperature.
       int iSpReac = rxn.reactantIon;
       const int iRhoReac = node_rho_slot(iSpReac);
-      if (iRhoReac < 0) return;
-      amrex::Real rho_reac_norm =
-          other.get_value(mfi, idx, iRhoReac, iLev);
-      if (rho_reac_norm <= 0.0) return;
+      if (iRhoReac < 0)
+        return;
+      amrex::Real rho_reac_norm = other.get_value(mfi, idx, iRhoReac, iLev);
+      if (rho_reac_norm <= 0.0)
+        return;
 
       amrex::Real mass_reac = get_species_mass(iSpReac);
       amrex::Real n_reac_norm = rho_reac_norm / mass_reac;
-      amrex::Real n_reac_si =
-          n_reac_norm / (get_Si2NoRho() * cProtonMassSI);
+      amrex::Real n_reac_si = n_reac_norm / (get_Si2NoRho() * cProtonMassSI);
 
-      amrex::Real srcRho_si =
-          rate * n_reac_si * mass_prod * cProtonMassSI;
+      amrex::Real srcRho_si = rate * n_reac_si * mass_prod * cProtonMassSI;
       srcRho[iSpProd] += srcRho_si;
 
       amrex::Real ux_reac = other.get_ux(mfi, idx, iSpReac, iLev);
@@ -774,19 +793,20 @@ public:
 
   // Apply chemistry reaction loss term to loss array.
   void chem_apply_loss(const ChemistryReaction& rxn, amrex::Real rate,
-                       const FluidInterface& other,
-                       const amrex::MFIter& mfi,
-                       const amrex::IntVect& idx, int iLev,
-                       int nIonS, int i, int j, int k,
+                       const FluidInterface& other, const amrex::MFIter& mfi,
+                       const amrex::IntVect& idx, int iLev, int nIonS, int i,
+                       int j, int k,
                        amrex::Array4<amrex::Real>& lossArr) const {
-    if (rxn.reactantIon <= 0 || rxn.reactantIon > nIonS) return;
+    if (rxn.reactantIon <= 0 || rxn.reactantIon > nIonS)
+      return;
 
     int iSpReac = rxn.reactantIon;
     const int iRhoReac = node_rho_slot(iSpReac);
-    if (iRhoReac < 0) return;
-    amrex::Real rho_reac_norm =
-        other.get_value(mfi, idx, iRhoReac, iLev);
-    if (rho_reac_norm <= 0.0) return;
+    if (iRhoReac < 0)
+      return;
+    amrex::Real rho_reac_norm = other.get_value(mfi, idx, iRhoReac, iLev);
+    if (rho_reac_norm <= 0.0)
+      return;
 
     amrex::Real lossRho_norm = rate * rho_reac_norm / get_Si2NoT();
     if (lossRho_norm > 0.0) {
@@ -803,13 +823,14 @@ public:
   // Apply #RECOMBINATION loss terms.
   void apply_recombination_loss(const FluidInterface& other,
                                 const amrex::MFIter& mfi,
-                                const amrex::IntVect& idx, int iLev,
-                                int nIonS, amrex::Real ne, amrex::Real Te_eV,
-                                int i, int j, int k,
+                                const amrex::IntVect& idx, int iLev, int nIonS,
+                                amrex::Real ne, amrex::Real Te_eV, int i, int j,
+                                int k,
                                 amrex::Array4<amrex::Real>& lossArr) const {
     for (int iR = 0; iR < static_cast<int>(recombIonIndex.size()); ++iR) {
       int iSp = recombIonIndex[iR];
-      if (iSp < 1 || iSp > nIonS) continue;
+      if (iSp < 1 || iSp > nIonS)
+        continue;
 
       amrex::Real k_si = recombRate0[iR] * 1e-6;
       if (Te_eV > 0.0 && recombTempExp[iR] != 0.0) {
@@ -818,12 +839,14 @@ public:
       }
 
       const int iRhoIon = node_rho_slot(iSp);
-      if (iRhoIon < 0) continue;
-      amrex::Real rho_ion_norm =
-          other.get_value(mfi, idx, iRhoIon, iLev);
-      if (rho_ion_norm <= 0.0) continue;
+      if (iRhoIon < 0)
+        continue;
+      amrex::Real rho_ion_norm = other.get_value(mfi, idx, iRhoIon, iLev);
+      if (rho_ion_norm <= 0.0)
+        continue;
 
-      amrex::Real lossRho_norm = k_si * ne * rho_ion_norm /
+      amrex::Real lossRho_norm =
+          k_si * ne * rho_ion_norm /
           (get_Si2NoRho() * cProtonMassSI * get_Si2NoT());
       if (lossRho_norm > 0.0) {
         lossArr(i, j, k, iSp) += lossRho_norm;
@@ -915,8 +938,9 @@ public:
 
                 amrex::Real ne = 0, pe = 0, Te_eV = 0;
                 bool plasmaFetched = false;
-                auto fetch_electron_plasma = [&, &other=other]() {
-                  if (plasmaFetched) return;
+                auto fetch_electron_plasma = [&, &other = other]() {
+                  if (plasmaFetched)
+                    return;
                   ne = other.get_number_density(mfi, idx, 0, iLev);
                   pe = other.get_p(mfi, idx, 0, iLev);
                   Te_eV = electron_temperature(pe, ne);
@@ -932,7 +956,8 @@ public:
                 // Exosphere-based ionization sources.
                 for (int iC = 0; iC < nExoComponent; ++iC) {
                   const int iSp = iC + 1;
-                  if (iSp > nIonS) break;
+                  if (iSp > nIonS)
+                    break;
 
                   amrex::Real dens_i =
                       get_exosphere_component_density(r_val, iC);
@@ -967,15 +992,16 @@ public:
                 // Chemistry sources.
                 if (doChem) {
                   fetch_electron_plasma();
-                  for (int iR = 0;
-                       iR < static_cast<int>(chemReactions.size()); ++iR) {
+                  for (int iR = 0; iR < static_cast<int>(chemReactions.size());
+                       ++iR) {
                     const auto& rxn = chemReactions[iR];
-                    amrex::Real rate = chem_reaction_rate(rxn, xyz, r_val,
-                                                          ne, Te_eV, photoAttenuation);
-                    if (rate <= 0.0) continue;
-                    chem_apply_source(rxn, rate, other, mfi, idx, iLev,
-                                      nIonS, r_val, srcRho, srcP,
-                                      srcRhoUx, srcRhoUy, srcRhoUz);
+                    amrex::Real rate = chem_reaction_rate(
+                        rxn, xyz, r_val, ne, Te_eV, photoAttenuation);
+                    if (rate <= 0.0)
+                      continue;
+                    chem_apply_source(rxn, rate, other, mfi, idx, iLev, nIonS,
+                                      r_val, srcRho, srcP, srcRhoUx, srcRhoUy,
+                                      srcRhoUz);
                   }
                 }
 
@@ -1060,20 +1086,21 @@ public:
                 // Loss terms.
                 if (doRecomb) {
                   fetch_electron_plasma();
-                  apply_recombination_loss(other, mfi, idx, iLev, nIonS,
-                                           ne, Te_eV, i, j, k, lossArr);
+                  apply_recombination_loss(other, mfi, idx, iLev, nIonS, ne,
+                                           Te_eV, i, j, k, lossArr);
                 }
 
                 if (doChem) {
                   fetch_electron_plasma();
-                  for (int iR = 0;
-                       iR < static_cast<int>(chemReactions.size()); ++iR) {
+                  for (int iR = 0; iR < static_cast<int>(chemReactions.size());
+                       ++iR) {
                     const auto& rxn = chemReactions[iR];
-                    amrex::Real rate = chem_reaction_rate(rxn, xyz, r_val,
-                                                          ne, Te_eV, photoAttenuation);
-                    if (rate <= 0.0) continue;
-                    chem_apply_loss(rxn, rate, other, mfi, idx, iLev,
-                                    nIonS, i, j, k, lossArr);
+                    amrex::Real rate = chem_reaction_rate(
+                        rxn, xyz, r_val, ne, Te_eV, photoAttenuation);
+                    if (rate <= 0.0)
+                      continue;
+                    chem_apply_loss(rxn, rate, other, mfi, idx, iLev, nIonS, i,
+                                    j, k, lossArr);
                   }
                 }
               } // for k
