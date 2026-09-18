@@ -1,112 +1,94 @@
-# Magnetic Reconnection Standalone Test
+# Magnetic Reconnection Standalone Tests
 
-This test demonstrates **magnetic reconnection** in FLEKS, reproducing the
-physics of the Hybrid-VPIC *"islands"* force-free Fadeev current-sheet example.
-It runs under **two field solvers**:
+This directory contains standalone magnetic reconnection test suites in FLEKS across multiple physical configurations and field solvers:
 
-- **`PARAM.in.hybrid`** — the hybrid solver (kinetic ions + massless fluid
-  electrons, generalized Ohm's law).
-- **`PARAM.in`** — the full-PIC solver (kinetic ions + kinetic electrons,
-  `m_i/m_e = 25`, standard Maxwell/GMRES EM solve).
+1. **`PARAM.in`** — **Fadeev full-PIC**: Force-free Fadeev current-sheet island equilibrium with kinetic ions and kinetic electrons ($m_i/m_e = 25$, Maxwell/GMRES solver).
+2. **`PARAM.in.hybrid`** — **Fadeev hybrid-PIC**: Kinetic ions + massless fluid electrons with generalized Ohm's law.
+3. **`PARAM.in.gem`** — **Classic GEM Challenge full-PIC**: The standard GEM reconnection benchmark (Birn et al. 2001) with a Harris current sheet, conducting walls in $y$, and a central magnetic perturbation.
+4. **`PARAM.in.asym`** — **Asymmetric full-PIC**: Double current sheet reconnection with asymmetric magnetic fields ($B_1 = 1.0, B_2 = 2.0$) and temperatures ($T_1 = 1.33, T_2 = 3.33$) in a periodic domain.
 
-Both share the same `FadeevIC` initial condition (`#TESTCASE fadeev`,
-`src/ic/FadeevIC.h` and `src/ic/FadeevIC.cpp`), which seeds the Fadeev
-equilibrium fields and the
-island density profile, plus the m=1 perturbation that drives the reconnection.
+All variants run in a few seconds each and the entire suite finishes in ~25 seconds in serial (well within the 1-minute CI ceiling).
 
-## Coordinate mapping
+---
 
-FLEKS's *fake-2D* convention keeps one cell along `z`, so the reconnection
-plane is `x-y` with `x` the periodic drive direction, `y` the current-sheet
-normal (the Fadeev profile coordinate), and `z` the thin invariant direction.
+## Coordinate Mapping
 
-## Equilibrium
+FLEKS uses a fake-2D convention with 1 cell along $z$:
+- $x$: Reconnection outflow / periodic drive direction
+- $y$: Current-sheet normal direction
+- $z$: Out-of-plane / current / guide-field direction
 
-In code units (`d_i ~ v_A ~ 1`), with `L = 5 d_i`, `eps = 0.4`,
-`num_islands = 2`, guide field `bg = 0` (anti-parallel):
+---
 
+## Physical Configurations
+
+### 1. Fadeev Equilibrium (`PARAM.in`, `PARAM.in.hybrid`)
+Uses `#TESTCASE fadeev` (`FadeevIC`):
 ```
-Bx = b0*sinh(y/L)/(cosh(y/L) + eps*cos(x/L))   + m=1 perturbation
-By = b0*eps*sin(x/L)/(cosh(y/L) + eps*cos(x/L))+ m=1 perturbation
-Bz = b0*bg                                     (= 0)
-n(x,y) = nb + (1-nb)*profile(x,y)/profile_max,
-    profile(x,y) = (1-eps^2)/(cosh(y/L) + eps*cos(x/L))^2,
-    profile_max = (1+eps)/(1-eps)  (at the island O-points, x = +-pi*L).
+Bx = b0 * sinh(y/L) / (cosh(y/L) + eps * cos(x/L)) + perturbation
+By = b0 * eps * sin(x/L) / (cosh(y/L) + eps * cos(x/L)) + perturbation
+Bz = b0 * bg (= 0)
+n(x,y) = nb + (1 - nb) * profile(x,y) / profile_max
 ```
+With $L = 5\,d_i$, $\epsilon = 0.4$, 2 islands, $n_b = 0.2$. The sheet is bounded by outflow field boundaries in $y$.
 
-The fields are set by `FadeevIC::set_fields`.  The plasma is loaded uniform
-(`#UNIFORMSTATE`, density `nb = 0.2`, ion `beta_i ~ 0.5`) and
-`FadeevIC::modify_particle_weight` boosts each macroparticle's weight to the
-Fadeev sheet profile `n(x,y) = nb + (1-nb)*profile/profile_max`.
+### 2. Classic GEM Challenge (`PARAM.in.gem`)
+Uses `#TESTCASE gem` with `useStandardGem = T`:
+```
+Bx0 = B0 * tanh(y / lambda0)
+n(y) = nb + (pB - Bx0^2) / (2 * Tp)
+```
+- Domain: $[-12.8, 12.8] \times [-6.4, 6.4]\,d_i$ ($64 \times 32 \times 1$ cells)
+- Harris sheet thickness $\lambda_0 = 0.5\,d_i$, $B_0 = 1.0$, $T_{tot} = 1.0$ ($T_i/T_e = 5$), $n_b = 0.2$
+- Background density $n_b = 0.2$, peak sheet density $n_0 + n_b = 0.5 + 0.2 = 0.7$
+- Conducting field walls and reflecting particle walls at $y = \pm 6.4\,d_i$, periodic in $x$
+- Perturbation: $\mathbf{B}_1 = \hat{\mathbf{z}} \times \nabla \psi$ with $\psi(x,y) = \psi_0 \cos(2\pi x/L_x) \cos(\pi y/L_y)$
 
-For the full-PIC (two kinetic species) case the load must be charge neutral and
-force balanced.  The `#UNIFORMSTATE` density is a mass density converted to a
-number density by `n_s = rho_s / (m_s/m_i)`, so the electron mass density must
-be `rho_e = rho_i*m_e/m_i = 12.5*0.04 = 0.5` to give `n_e = n_i`.
-`FadeevIC::modify_particle_velocity` seeds the diamagnetic drift
-`u_s = -(T_s/q_s) (grad(n) x B)/(n B^2)` so that `J x B = grad(p)` at `t = 0`.
+### 3. Asymmetric Double Current Sheet (`PARAM.in.asym`)
+Uses `#TESTCASE gem` with `isAsymmetryReconnection = T`:
+- Domain: $[-32, 32] \times [-14, 14]\,d_i$ ($64 \times 28 \times 1$ cells), fully periodic in $x$ and $y$
+- Two current sheets at $y = \pm 7\,d_i$ ($y = \pm 0.25 W_y$)
+- Asymmetric fields: $B_1 = 1.0$ (interior, $y \in [-7, 7]$) and $B_2 = 2.0$ (exterior, $y \notin [-7, 7]$)
+- Asymmetric temperatures: $T_1 = 1.33$ and $T_2 = 3.33$
+- Localized Gaussian perturbation centered on the sheets
 
-`#PERIODICITY` is periodic in `x` and `z`; the cross-sheet `y` faces use
-`#FIELDBOXBOUNDARY outflow` (float B).  The current sheet is far from the
-`y`-walls (`Ly/2 = 15.7 d_i` vs `L = 5 d_i`), so the walls do not affect the
-interior reconnection.
-
-## Domain and resolution
-
-Box: `Lx = 2*pi*L*num_islands ~ 62.8 d_i`, `Ly = Lx/2 ~ 31.4 d_i`, thin `z`.
-
-Normalization: `lNormSI = uNormSI = 1.0e5`, so `tNorm = lNormSI/uNormSI = 1 s`;
-the guide/reconnection field is set directly in code units by `FadeevIC b0 = 1`
-(so `Ω_i = 1` code, `TimeMax` in s == code time in `Ω_i⁻¹`).  SI scales
-(physical input `n = 12.5 amu/cc` background, `beta_i ~ 0.5`): `Ω_i = qB/m_i`
-with `B = 1.0` code, `v_A ~ 1.0e5 m/s`, `d_i ~ 1.0e5 m`, ion gyroperiod
-`T_ci = 2π ≈ 6.3 s`, Alfvén transit across `Lx` ~ `6.3e5 m / 1e5 m/s ≈ 6.3 s`.
-
-- **Hybrid** (`PARAM.in.hybrid`): `64 x 32 x 1`, `nppc = 36` ions, `dt = 0.02`,
-  `TimeMax = 20 s = 20 Ω_i⁻¹ ≈ 3.2 gyroperiods` (1000 steps).
-- **Full-PIC** (`PARAM.in`): `32 x 16 x 1`, `nppc = 25` per species,
-  `dt = 0.005` (resolves the electron timescale for `m_i/m_e = 25`),
-  `TimeMax = 3 s = 3 Ω_i⁻¹ ≈ 0.5 gyroperiod` (600 steps).
-
-Both are sized to finish within the 1-minute standalone serial budget and also
-run on a few MPI processes.
+---
 
 ## Running
 
-Run the automated check (builds, runs both solver variants, post-processes, and
-validates):
-
+Run all reconnection test variants together:
 ```bash
-# serial (default) -- runs both full PIC and hybrid
+# Serial (default)
 python3 tests/validate_tests.py --test=reconnection
 
-# or with MPI (e.g. 2 processes)
+# MPI (e.g. 2 ranks)
 python3 tests/validate_tests.py --test=reconnection -n 2
 ```
 
-To run a **single variant**, append its token to the test name:
-
+Run a single variant:
 ```bash
-python3 tests/validate_tests.py --test=reconnection.full     # full PIC only (PARAM.in)
-python3 tests/validate_tests.py --test=reconnection.hybrid   # hybrid only (PARAM.in.hybrid)
+python3 tests/validate_tests.py --test=reconnection.full     # Fadeev full-PIC
+python3 tests/validate_tests.py --test=reconnection.hybrid   # Fadeev hybrid-PIC
+python3 tests/validate_tests.py --test=reconnection.gem      # Classic GEM challenge
+python3 tests/validate_tests.py --test=reconnection.asym     # Asymmetric reconnection
 ```
 
-## Validation
+---
 
-The automated check (`validate.py`) runs for both solver variants and reads the
-`z=0` x-y plane `.out` files to verify:
+## Validation Checks (`validate.py`)
 
-1. **Energy-log sanity**: finite `Eb` / `Epart`, bounded `Eb` (no blow-up).
-2. **Equilibrium init** (t=0): the in-plane field nulls (O-points, the island
-   centres) sit at `x ~ +-pi*L ~ +-15.7 d_i`, the sheet density peaks near 1
-   and the background is near 0.2.
-3. **Active reconnection**: the seeded m=1 perturbation grows (`max|delta By|`
-   grows by several-fold) and the out-of-plane flux function `Ay` at the
-   central X-point gives a non-trivial reconnection rate `dAy/dt`.
-4. **O-point evolution**: the island-centre positions evolve, confirming the
-   magnetic topology changes (reconnection) rather than remaining frozen.
-5. **Charge neutrality (full-PIC only)**: the load must stay quasi-neutral,
-   i.e. `rhoS0 ~ rhoS1*(m_i/m_e)`, catching the "electron `rho` not scaled by
-   `m_e/m_i`" bug.  Skipped for the hybrid run (no electron species).
+1. **Energy Log Sanity**:
+   - Kinetic ion energy $E_{part}$ and magnetic energy $E_b$ are finite (no NaN/Inf).
+   - $E_b$ remains bounded (no numerical blow-up).
 
-These are qualitative physics checks; they confirm both solvers reproduce the hallmarks of reconnection in the Fadeev equilibrium.
+2. **Equilibrium Initialization ($t=0$)**:
+   - **Fadeev**: In-plane field nulls (O-points) located at $x \approx \pm \pi L \approx \pm 15.7\,d_i$; peak sheet density $\approx 1$, background $\approx 0.2$.
+   - **GEM Challenge**: Harris sheet field reversal ($B_x \to \pm 1.0$ at top/bottom boundaries); central X-point null at $x \approx 0$; peak density in $(0.5, 1.0)$, background $< 0.4$.
+   - **Asymmetric**: Central region field $B_x \approx +1.0$ ($B_1$), outer boundary field $B_x \approx -2.0$ ($-B_2$); sheet density enhancement in $(0.5, 1.6)$, background $< 0.4$.
+
+3. **Reconnection Dynamics**:
+   - Seeded in-plane field perturbation grows nonlinearly ($\delta B_y$ increases).
+   - Out-of-plane flux function $A_y$ at the X-point demonstrates active magnetic flux reconnection.
+
+4. **Quasi-Neutrality**:
+   - Initial condition verified to satisfy quasi-neutrality $|n_i - n_e| / n_0 < 0.5$ ($\rho_{S0} \approx 25\,\rho_{S1}$), verifying macroparticle charge scaling and electron mass loading.

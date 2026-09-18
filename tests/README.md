@@ -19,9 +19,8 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
 | Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
-| Reconnection          | `reconnection/`       | Fadeev current-sheet reconnection on a uniform grid (x-y)     | [README](reconnection/README.md) |
+| Reconnection          | `reconnection/`       | Current-sheet reconnection: Fadeev, classic GEM challenge, and asymmetric reconnection (<30s serial CI) | [README](reconnection/README.md) |
 | AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
-| GEM Reconnection      | `gem/`                | Asymmetric & classic GEM challenge reconnection (<10s serial CI) | [README](gem/README.md) |
 | Reflecting & PEC BC   | `bc_reflecting/`      | Specular reflecting particle walls + conducting (PEC) field walls (4 variants: full/hybrid fields/particles) | [README](bc_reflecting/README.md) |
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
 | Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |

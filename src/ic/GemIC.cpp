@@ -84,28 +84,34 @@ void GemIC::read_param(ReadParam& param) {
       progress = true;
       continue;
     }
-    if (param.read_optional("useDoubleCurrentSheet", useDoubleCurrentSheet_)) {
+    std::string sVal;
+    if (param.read_optional("useDoubleCurrentSheet", sVal)) {
+      useDoubleCurrentSheet_ = (sVal == "T" || sVal == "true" || sVal == "1");
       progress = true;
       continue;
     }
-    if (param.read_optional("isAsymmetryReconnection",
-                            isAsymmetryReconnection_)) {
+    if (param.read_optional("isAsymmetryReconnection", sVal)) {
+      isAsymmetryReconnection_ = (sVal == "T" || sVal == "true" || sVal == "1");
       progress = true;
       continue;
     }
-    if (param.read_optional("useGEMReflected", useGEMReflected_)) {
+    if (param.read_optional("useGEMReflected", sVal)) {
+      useGEMReflected_ = (sVal == "T" || sVal == "true" || sVal == "1");
       progress = true;
       continue;
     }
-    if (param.read_optional("useStandardGem", useStandardGem_)) {
+    if (param.read_optional("useStandardGem", sVal)) {
+      useStandardGem_ = (sVal == "T" || sVal == "true" || sVal == "1");
       progress = true;
       continue;
     }
-    if (param.read_optional("useUniformPressure", useUniformPressure_)) {
+    if (param.read_optional("useUniformPressure", sVal)) {
+      useUniformPressure_ = (sVal == "T" || sVal == "true" || sVal == "1");
       progress = true;
       continue;
     }
-    if (param.read_optional("useUniformIonPressure", useUniformIonPressure_)) {
+    if (param.read_optional("useUniformIonPressure", sVal)) {
+      useUniformIonPressure_ = (sVal == "T" || sVal == "true" || sVal == "1");
       progress = true;
       continue;
     }
