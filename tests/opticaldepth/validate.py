@@ -71,6 +71,9 @@ def _parse_deck():
     param_path = os.path.join(RUN_DIR, "PARAM.in")
     deck = {
         "rPlanet": 3.39e6,
+        "lNormSI": 1000.0,
+        "xMin": -1.017e7,
+        "xMax": 1.017e7,
         "typeProfile": "Exponential",
         "n0": [],
         "H0": [],
@@ -89,6 +92,8 @@ def _parse_deck():
     exo_counter = 0
     n_exo = 0
     opt_index = 0
+    norm_counter = 0
+    geom_counter = 0
     with open(param_path, "r", encoding="latin-1") as f:
         for line in f:
             s = line.strip()
@@ -100,6 +105,10 @@ def _parse_deck():
                     exo_counter = -1
                 elif section == "#OPTICALDEPTH":
                     opt_index = 0
+                elif section == "#NORMALIZATION":
+                    norm_counter = 0
+                elif section == "#GEOMETRY":
+                    geom_counter = 0
                 continue
             parts = s.split()
             val = _num(parts[0])
@@ -117,6 +126,18 @@ def _parse_deck():
                 continue
             if section == "#BODYSIZE":
                 deck["rPlanet"] = val
+            elif section == "#NORMALIZATION":
+                # First entry is lNormSI [m], the length of one code unit.
+                if norm_counter == 0:
+                    deck["lNormSI"] = val
+                norm_counter += 1
+            elif section == "#GEOMETRY":
+                # First two entries are xMin and xMax [m].
+                if geom_counter == 0:
+                    deck["xMin"] = val
+                elif geom_counter == 1:
+                    deck["xMax"] = val
+                geom_counter += 1
             elif section == "#EXOSPHERE":
                 if exo_counter == 0:
                     n_exo = int(val)
@@ -271,12 +292,12 @@ def _attenuation(deck, x, y, r):
     return max(math.exp(-tau), deck["minProduction"])
 
 
-def _production(deck, iC, r):
-    """Model source strength n_i(r) * nu0_i * A(r) at radius r on the axis."""
+def _production(deck, iC, x, y, r):
+    """Model source strength n_i(r) * nu0_i * A(r) at (x, y) [m], r = |x, y|."""
     if iC >= len(deck["nu0"]):
         return 0.0
     return _neutral(deck, iC, r) * deck["nu0"][iC] * _attenuation(
-        deck, r, 0.0, r)
+        deck, x, y, r)
 
 
 # ---------------------------------------------------------------------------
@@ -300,21 +321,40 @@ def _read_out(out_file):
     return vidx, rows
 
 
-def _sample(rows, vidx, r_planet_units):
-    """Average the rows closest to (x = r, y = 0) on the subsolar line."""
+def _plot_scale(rows, vidx, deck):
+    """Return the length of one plot unit in metres.
+
+    The plot coordinates span exactly the #GEOMETRY box, so the box length
+    from the deck and the coordinate span in the data give the unit directly.
+    No assumption about the output normalisation is needed.
+    """
+    xs = [r[0] for r in rows]
+    span_plot = max(xs) - min(xs)
+    span_si = deck["xMax"] - deck["xMin"]
+    if span_plot > 0.0 and span_si > 0.0:
+        return span_si / span_plot
+    return deck["lNormSI"]
+
+
+def _sample(rows, vidx, deck, target_rp, nightside=False):
+    """Pick the row closest to (x = +/-target_rp, y = 0) in rPlanet units."""
+    scale = _plot_scale(rows, vidx, deck)
+    rp = deck["rPlanet"]
     best = None
     for row in rows:
-        x, y = row[0], row[1]
-        if abs(y / 1000.0) > Y_TOL:
+        x_si = row[0] * scale
+        y_si = row[1] * scale
+        if (x_si > 0.0) == nightside or x_si == 0.0:
             continue
-        if x <= 0.0:
+        if abs(y_si) / rp > Y_TOL:
             continue
-        d = abs(x / 1000.0 - r_planet_units)
+        d = abs(abs(x_si) / rp - target_rp)
         if best is None or d < best[0]:
-            best = (d, row)
+            best = (d, row, x_si, y_si)
     if best is None:
         return None
-    return best[1]
+    _, row, x_si, y_si = best
+    return row, x_si, y_si, math.hypot(x_si, y_si)
 
 
 # ---------------------------------------------------------------------------
@@ -354,37 +394,39 @@ def validate_plot(test_name=None):
                 return False, "Non-finite value in the final plot frame"
 
     model = "Chapman" if deck["chapmanFunction"] else "exp(-tau/mu)"
-    logger.debug("    [OD] model=%s rPlanet=%.3e type=%s tau(rP)=%.4g",
+    logger.debug("    [OD] model=%s rPlanet=%.3e type=%s tau(rP)=%.4g "
+                 "plot unit=%.1f m",
                  model, deck["rPlanet"], deck["typeProfile"],
-                 _tau_vertical(deck, deck["rPlanet"], -1))
-    rp = deck["rPlanet"]
+                 _tau_vertical(deck, deck["rPlanet"], -1),
+                 _plot_scale(rows1, vidx1, deck))
 
     # ExoSource maps exosphere component iC to plasma species iC + 1, so
     # component 1 (O) feeds rhoS2 and component 0 (H) feeds rhoS1.
     # 2. the radial source profile follows the attenuation model
     for iC, sp in ((1, "O+"), (0, "H+")):
         key = f"RHOS{iC + 1}"
-        (row0, row1) = (_sample(rows0, vidx0, REFERENCE_RADIUS),
-                        _sample(rows1, vidx1, REFERENCE_RADIUS))
-        if row0 is None or row1 is None:
+        s0 = _sample(rows0, vidx0, deck, REFERENCE_RADIUS)
+        s1 = _sample(rows1, vidx1, deck, REFERENCE_RADIUS)
+        if s0 is None or s1 is None:
             return False, f"No sample row at r = {REFERENCE_RADIUS} rPlanet"
+        row0, row1 = s0[0], s1[0]
         ref_measured = row1[vidx1[key]] - row0[vidx0[key]]
         if ref_measured <= 0.0:
             return False, (f"{sp}: no source signal at r = "
                            f"{REFERENCE_RADIUS} rPlanet "
                            f"(delta = {ref_measured:.3e})")
-        ref_model = _production(deck, iC, REFERENCE_RADIUS * rp)
+        ref_model = _production(deck, iC, s1[1], s1[2], s1[3])
 
         for r_units in SAMPLE_RADII:
-            row_a = _sample(rows0, vidx0, r_units)
-            row_b = _sample(rows1, vidx1, r_units)
-            if row_a is None or row_b is None:
+            a = _sample(rows0, vidx0, deck, r_units)
+            b = _sample(rows1, vidx1, deck, r_units)
+            if a is None or b is None:
                 continue
-            measured = row_b[vidx1[key]] - row_a[vidx0[key]]
+            measured = b[0][vidx1[key]] - a[0][vidx0[key]]
             if ref_measured <= 0.0:
                 continue
             m_ratio = measured / ref_measured
-            p_ratio = _production(deck, iC, r_units * rp) / ref_model
+            p_ratio = _production(deck, iC, b[1], b[2], b[3]) / ref_model
             logger.debug(
                 "    [OD] %s r=%.2f rP: measured=%.4e model=%.4e "
                 "ratio meas/model=%.3f",
@@ -402,26 +444,15 @@ def validate_plot(test_name=None):
                     f"{PROFILE_TOL:.0%})")
 
     # 3. nightside suppression
-    for rows, vidx, tag in ((rows1, vidx1, "final"),):
-        day = _sample(rows, vidx, 1.5)
-        night = None
-        for row in rows:
-            x, y = row[0], row[1]
-            if abs(y / 1000.0) > Y_TOL or x >= 0.0:
-                continue
-            if night is None or abs(x / 1000.0 + 1.5) < abs(
-                    night[0] / 1000.0 + 1.5):
-                night = row
-        if day is None or night is None:
-            continue
+    day = _sample(rows1, vidx1, deck, 1.5)
+    night = _sample(rows1, vidx1, deck, 1.5, nightside=True)
+    if day is not None and night is not None:
         key = "RHOS2"
-        day_v = day[vidx[key]]
-        night_v = night[vidx[key]]
+        day_v = day[0][vidx1[key]]
+        night_v = night[0][vidx1[key]]
         logger.debug("    [OD] nightside rhoS2=%.4e vs dayside=%.4e",
                      night_v, day_v)
-        if day_v <= 0.0:
-            continue
-        if night_v > 0.1 * day_v:
+        if day_v > 0.0 and night_v > 0.1 * day_v:
             return False, (f"nightside production not suppressed: "
                            f"rhoS2(-1.5 rP) = {night_v:.3e} vs "
                            f"rhoS2(+1.5 rP) = {day_v:.3e}")

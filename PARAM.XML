@@ -1553,29 +1553,31 @@ $$
   \tau(r) = \sum_c n_c(r) \, \sigma_c \, H_c(r)
 $$
 that is, the local density times the local scale height (not an integrated
-column). $\mu = \max(\mathbf{x}\cdot\hat{s}/r, \texttt{cosSzaFloor})$ is the
-cosine of the solar zenith angle, with $\hat{s}$ the solar direction.
+column). Here $\mu = \max(\mathbf{x}\cdot\hat{s}/r, \mu_{min})$ is the cosine of
+the solar zenith angle, with $\hat{s}$ the solar direction and $\mu_{min}$ the
+cosSzaFloor parameter.
 
 Without the Chapman function the attenuation is
 $$
-  A = \begin{cases}
-  \max(\exp(-\tau/\mu), A_{min}) & \tau/\mu < \texttt{tauCutoff} \ \text{and dayside}\\
-  A_{min} & \text{otherwise}
-  \end{cases}
+  A = \max(\exp(-\tau/\mu), A_{min})
 $$
-with $\tau$ floored at tauFloor.
+while the point is on the dayside and $\tau/\mu$ stays below tauCutoff, and
+$$
+  A = A_{min}
+$$
+otherwise, with $\tau$ floored at tauFloor.
 
 With chapmanFunction = T only the component named by chapmanComponent
 contributes to $\tau$, which is then multiplied by the Chapman function
-(Smith & Smith 1972) to account for the curved-atmosphere slant path. This
-smooths the day/night transition instead of switching it off abruptly, and
-is the closer match to #SHADOWCYLINDER at the terminator.
+(Smith and Smith 1972) to account for the curved-atmosphere slant path. This
+smooths the day/night transition and is the closer match to #SHADOWCYLINDER
+at the terminator.
 
-crossSection is the EUV absorption cross section [m^2] of each #EXOSPHERE
-component, in the same order. BATSRUS lists them in cm^2: multiply by 1e-4.
+crossSection is the EUV absorption cross section [m$^2$] of each #EXOSPHERE
+component, in the same order. BATSRUS lists them in cm$^2$: multiply by 1e-4.
 scaleHeight is the neutral scale height [m] used for the column; a negative
 value means "use the exact local scale height of the #EXOSPHERE profile",
-which is H0 for Exponential, r^2/H0 for Chamberlain and r/k0 for Power-Law.
+which is H0 for Exponential, r$^2$/H0 for Chamberlain and r/k0 for Power-Law.
 solarDirX/Y/Z is this command's own solar direction and is independent of the
 one in #SHADOWCYLINDER; it is normalized automatically.
 
