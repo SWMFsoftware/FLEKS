@@ -996,6 +996,14 @@ If it is true, the test particle velocity update will be relativistic.
 It is used to set the simulation domain size for OH-PT simulations. 
 For MHD-AEPIC simulations, the domain is set from BATSRUS and 
 this command should only exist in the restart file.
+
+The limits are in code units: one length unit is lNormSI metres
+(see #NORMALIZATION), so a length given in metres has to be divided by
+lNormSI before it is written here.  Inputs that describe physics, such as
+#BODYSIZE, #EXOSPHERE, #PHOTOIONIZATION, #SHADOWCYLINDER and #OPTICALDEPTH,
+are SI and are converted internally; mixing the two conventions makes the
+neutral profile, the shadow geometry and the SI-based coefficients
+(#RESISTIVITY, #HYPERRESISTIVITY, #WAVEBC, #WAVEIC) wrong by that factor.
 </command>
 
 <command name="NCELL" alias="NCELL_FLEKS0,NCELL_FLEKS1,NCELL_FLEKS2" multiple="T">

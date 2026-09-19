@@ -14,12 +14,12 @@ validator checks both ion channels.
 F                       initFromSWMF
 
 #GEOMETRY
--1.017e7                xMin
- 1.017e7                xMax
--1.017e7                yMin
- 1.017e7                yMax
--0.5                    zMin
- 0.5                    zMax
+-1.017e4                xMin   [code units: 1 unit = lNormSI = 1000 m]
+ 1.017e4                xMax
+-1.017e4                yMin
+ 1.017e4                yMax
+-5.0e-4                 zMin   [one cell: the invariant direction]
+ 5.0e-4                 zMax
 
 #NCELL
 64                      nCellX

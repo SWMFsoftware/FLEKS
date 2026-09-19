@@ -325,15 +325,18 @@ def _plot_scale(rows, vidx, deck):
     """Return the length of one plot unit in metres.
 
     The plot coordinates span exactly the #GEOMETRY box, so the box length
-    from the deck and the coordinate span in the data give the unit directly.
-    No assumption about the output normalisation is needed.
+    and the coordinate span in the data give the unit directly.  The box is
+    given in code units, i.e. every unit is lNormSI metres, hence the extra
+    factor below.  No assumption about the output normalisation is needed.
     """
     xs = [r[0] for r in rows]
     span_plot = max(xs) - min(xs)
-    span_si = deck["xMax"] - deck["xMin"]
-    if span_plot > 0.0 and span_si > 0.0:
-        return span_si / span_plot
-    return deck["lNormSI"]
+    span_m = (deck["xMax"] - deck["xMin"]) * deck["lNormSI"]
+    if span_plot > 0.0 and span_m > 0.0:
+        return span_m / span_plot
+    # Fallback for a degenerate frame: the output unit is PLANETARY, so one
+    # plot unit is one #BODYSIZE radius.
+    return deck["rPlanet"]
 
 
 def _sample(rows, vidx, deck, target_rp, nightside=False):

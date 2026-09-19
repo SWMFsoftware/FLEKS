@@ -5,12 +5,12 @@
 F                       initFromSWMF
 
 #GEOMETRY
--9.0e6                  xMin
- 9.0e6                  xMax
--9.0e6                  yMin
- 9.0e6                  yMax
--0.5                    zMin
- 0.5                    zMax
+-9.0e3                  xMin   [code units: 1 unit = lNormSI = 1000 m]
+ 9.0e3                  xMax
+-9.0e3                  yMin
+ 9.0e3                  yMax
+-5.0e-4                 zMin   [one cell: the invariant direction]
+ 5.0e-4                 zMax
 
 #NCELL
 32                      nCellX
@@ -158,10 +158,10 @@ T                       isRelativistic
 #REGION
 sphere1                 nameRegion
 sphere                  shape
-5.0e6                   centerX
+5.0e3                   centerX   [code units]
 0.0                     centerY
 0.0                     centerZ
-3.0e6                   radius
+3.0e3                   radius    [code units]
 
 #TPREGION
 +sphere1                region
