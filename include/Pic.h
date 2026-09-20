@@ -295,6 +295,12 @@ private:
   bool useAvgFieldB = false;
   int nAvgFieldB = 10;
 
+  // Periodic smoothing of cell-centered magnetic field (hybrid PIC).
+  bool doSmoothB = false;
+  int nSmoothB = 0;
+  int nSmoothBPeriod = 1;
+  amrex::Real coefSmoothB = 0.5;
+
   bool doSmoothE = false;
   int nSmoothE = 0;
 
@@ -568,6 +574,8 @@ public:
 
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   void smooth_moments();
+  void smooth_B();
+  void smooth_B(int iLev);
   void update_B_hybrid();
   void project_centerB_to_nodeB(int iLev);
   // Apply periodic and physical boundary conditions to cell-centred B

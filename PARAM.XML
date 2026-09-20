@@ -817,6 +817,31 @@ This command enables hyperbolic divergence cleaning for the magnetic field.
 
 </command>
 
+<command name="SMOOTHB" alias="SMOOTHB_FLEKS0,SMOOTHB_FLEKS1,SMOOTHB_FLEKS2" multiple="T">
+  <parameter name="doSmoothB" type="logical" default="F"/>
+  <if expr="$doSmoothB">
+    <parameter name="nSmoothB" type="integer" default="1"/>
+    <parameter name="nSmoothBPeriod" type="integer" default="1"/>
+    <parameter name="coefSmoothB" type="real" default="0.5"/>
+  </if>
+
+#SMOOTHB
+T                         doSmoothB (rest is read if true)
+1                         nSmoothB
+200                       nSmoothBPeriod
+0.5                       coefSmoothB
+
+#SMOOTHB_FLEKS2
+F                         doSmoothB
+
+This command periodically applies digital-filter smoothing to the cell-centered
+magnetic field B to eliminate grid-scale (+/-1)^j checkerboard modes that fall into
+the null space of collocated central differences (similar to smooth_b in HybridVPIC).
+The smoothing is applied every nSmoothBPeriod steps for nSmoothB passes with strength coefSmoothB:
+B_new = (1-coef) * B_old + (coef/2) * (B_left + B_right).
+A typical period in hybrid reconnection simulations is 100-200 steps.
+</command>
+
 <command name="SMOOTHE" alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2" multiple="T">
   <parameter name="doSmoothE" type="logical" default="F"/>
   <if expr="$doSmoothE">

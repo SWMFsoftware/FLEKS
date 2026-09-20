@@ -905,7 +905,14 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
   timing_func(nameFunc);
 
   for (int icount = 0; icount < nSmoothE; icount++) {
-    smooth_multifab(mfE, iLev, icount % 2 + 1);
+    const int di = useHybridPIC ? 1 : (icount % 2 + 1);
+    smooth_multifab(mfE, iLev, di);
+  }
+
+  if (useHybridPIC) {
+    mfE.FillBoundary(Geom(iLev).periodicity());
+    apply_field_bc(cellStatus[iLev], mfE, 0, mfE.nComp(), &Pic::get_center_E,
+                   iLev, false);
   }
 }
 

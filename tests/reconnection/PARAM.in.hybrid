@@ -84,6 +84,21 @@ rk4                     fieldIntegrator
 T                       useAvgFieldB
 20                      nAvgFieldB
 
+#SMOOTHB
+T                       doSmoothB
+1                       nSmoothB
+50                      nSmoothBPeriod
+0.5                     coefSmoothB
+
+#SMOOTHE
+T                       doSmoothE
+1                       nSmoothE
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+2                       nSmoothMoments
+0.5                     coefSmoothMoments
+
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.
 #PLASMA

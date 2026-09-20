@@ -84,7 +84,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       Real ey = -(wi * bx - ui * bz);
       Real ez = -(ui * by - vi * bx);
 
-      // J = curl(B)/(4*pi) (CGS)
+      // J = curl(B)/(4*pi) in Gaussian CGS units
       Real jx = 0.0, jy = 0.0, jz = 0.0;
       if (needJ) {
         jx = arrJ(i, j, k, ix_) * invFourPI;
@@ -232,7 +232,42 @@ void Pic::seed_first_hybrid_step() {
   std::string nameFunc = "Pic::seed_first_hybrid_step";
   timing_func(nameFunc);
 
+  smooth_moments();
   save_current_moments_to_prev();
+}
+
+//==========================================================
+void Pic::smooth_B(int iLev) {
+  if (!doSmoothB || nSmoothB <= 0)
+    return;
+
+  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  for (int icount = 0; icount < nSmoothB; ++icount) {
+    smooth_multifab(centerB[iLev], iLev, 1, coefSmoothB);
+  }
+  apply_centerB_BC(iLev);
+}
+
+//==========================================================
+void Pic::smooth_B() {
+  std::string nameFunc = "Pic::smooth_B";
+  timing_func(nameFunc);
+
+  if (!doSmoothB || nSmoothB <= 0)
+    return;
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    smooth_B(iLev);
+  }
+
+  if (projectDownEmFields && finest_level > 0) {
+    for (int iLev = finest_level; iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3, ref_ratio[0]);
+    }
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      apply_centerB_BC(iLev);
+    }
+  }
 }
 
 //==========================================================
@@ -299,9 +334,6 @@ void Pic::update_B_hybrid() {
   // CFL stability check for explicit resistive and hyper-resistive diffusion.
   const Real cflLimit = useRK4 ? 2.785 : 2.513;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0)
-      continue;
-
     const auto dx = Geom(iLev).CellSizeArray();
     const Box& domBox = Geom(iLev).Domain();
     Real sMax = 0.0, lMax = 0.0;
@@ -314,17 +346,38 @@ void Pic::update_B_hybrid() {
       if (nCellDim >= 3)
         sMax += invDx2;
     }
-    const Real cflEta = (etaResistivity / fourPI) * sMax * subDt;
-    const Real cflHyper = (etaHyperLev[iLev] / fourPI) * sMax * lMax * subDt;
-    if (cflEta > cflLimit)
-      amrex::Print()
-          << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
-          << " (> " << cflLimit << ", explicit diffusion may be unstable)\n";
-    if (cflHyper > cflLimit)
-      amrex::Print()
-          << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
-          << cflHyper << " (> " << cflLimit
-          << ", explicit 4th-order diffusion may be unstable)\n";
+
+    if (etaResistivity > 0) {
+      const Real cflEta = (etaResistivity / fourPI) * sMax * subDt;
+      if (cflEta > cflLimit)
+        amrex::Print()
+            << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
+            << " (> " << cflLimit << ", explicit diffusion may be unstable)\n";
+    }
+
+    if (etaHyperLev[iLev] > 0) {
+      const Real cflHyper = (etaHyperLev[iLev] / fourPI) * sMax * lMax * subDt;
+      if (cflHyper > cflLimit)
+        amrex::Print()
+            << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
+            << cflHyper << " (> " << cflLimit
+            << ", explicit 4th-order diffusion may be unstable)\n";
+    }
+
+    // Diagnostic whistler-wave CFL check on the first hybrid step.
+    if (useHallTerm && isFirstHybridStep) {
+      const Real rhoEst = amrex::max(electronDensity0, rhoMinOhm);
+      if (rhoEst > 0) {
+        // Nominal Whistler CFL with B ~ 1.0; omega_W = k^2 B / (4pi rho)
+        const Real cflWhistler = (1.0 / (fourPI * rhoEst)) * lMax * subDt;
+        if (cflWhistler > cflLimit) {
+          amrex::Print()
+              << "  [CFL warning] Hall whistler estimate: (B_0/(4pi*rho))*kmax^2*dt_sub = "
+              << cflWhistler << " (> " << cflLimit
+              << ", consider increasing nBSubcycle or decreasing dt if solver is unstable)\n";
+        }
+      }
+    }
   }
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
@@ -454,6 +507,13 @@ void Pic::update_B_hybrid() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     apply_centerB_BC(iLev);
+  }
+
+  // Periodic smoothing of B to eliminate checkerboard modes.
+  const int currentCycle = tc ? tc->get_cycle() : 0;
+  if (doSmoothB && nSmoothB > 0 && nSmoothBPeriod > 0 &&
+      (currentCycle % nSmoothBPeriod == 0)) {
+    smooth_B();
   }
 
   // Running time-averaged B used in Ohm's law and the particle push.

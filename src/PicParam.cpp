@@ -130,6 +130,13 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("useLaggedLimiter", fsolver.useLaggedLimiter);
   } else if (command == "#CMAXE") {
     param.read_var("cMaxE", cMaxE);
+  } else if (command == "#SMOOTHB") {
+    param.read_var("doSmoothB", doSmoothB);
+    if (doSmoothB) {
+      param.read_var("nSmoothB", nSmoothB);
+      param.read_var("nSmoothBPeriod", nSmoothBPeriod);
+      param.read_var("coefSmoothB", coefSmoothB);
+    }
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {

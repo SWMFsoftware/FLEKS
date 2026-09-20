@@ -68,6 +68,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#RESISTIVITY", ParameterOwner::Pic },
   { "#SCALINGFACTOR", ParameterOwner::FluidInterface },
   { "#SELECTPARTICLE", ParameterOwner::Pic },
+  { "#SMOOTHB", ParameterOwner::Pic },
   { "#SMOOTHE", ParameterOwner::Pic },
   { "#SMOOTHJ", ParameterOwner::Pic },
   { "#SMOOTHMOMENTS", ParameterOwner::Pic },
