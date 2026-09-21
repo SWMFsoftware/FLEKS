@@ -61,38 +61,21 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 
     const int iLev = get_finest_lev(xyz);
 
-    // Hybrid solver reads the cell-centred fields.
-    // Full-PIC reads the node fields.
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
         const int iStart = iSpecies * nVarPerSpecies;
-        if (useHybridPIC) {
-          dataPIC_I[iStart + iVar] = get_value_at_loc(
-              centerPlasma[iSpecies][iLev], Geom(iLev), xyz, iVar);
-        } else {
-          dataPIC_I[iStart + iVar] = get_value_at_loc(
-              nodePlasma[iSpecies][iLev], Geom(iLev), xyz, iVar);
-        }
+        dataPIC_I[iStart + iVar] = get_value_at_loc(
+            nodePlasma[iSpecies][iLev], Geom(iLev), xyz, iVar);
       }
     }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      if (useHybridPIC) {
-        dataPIC_I[iBx_ + iDir] =
-            get_value_at_loc(centerB[iLev], Geom(iLev), xyz, iDir);
-      } else {
-        dataPIC_I[iBx_ + iDir] =
-            get_value_at_loc(nodeB[iLev], Geom(iLev), xyz, iDir);
-      }
+      dataPIC_I[iBx_ + iDir] =
+          get_value_at_loc(nodeB[iLev], Geom(iLev), xyz, iDir);
     }
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      if (useHybridPIC) {
-        dataPIC_I[iEx_ + iDir] =
-            get_value_at_loc(centerEhybrid[iLev], Geom(iLev), xyz, iDir);
-      } else {
-        dataPIC_I[iEx_ + iDir] =
-            get_value_at_loc(nodeE[iLev], Geom(iLev), xyz, iDir);
-      }
+      dataPIC_I[iEx_ + iDir] =
+          get_value_at_loc(nodeE[iLev], Geom(iLev), xyz, iDir);
     }
 
     // Combine PIC plasma data into MHD fluid data.
@@ -502,6 +485,21 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
     // 'X', 'Y', 'Z'
+    auto get_node_val_at_cell = [&](const Array4<Real const>& arr, int comp) {
+      const Real inv2d = (nDim > 2) ? 0.125 : 0.25;
+      const int i = ijk[ix_];
+      const int j = ijk[iy_];
+      const int k = (nDim > 2) ? ijk[iz_] : 0;
+      Real val = inv2d * (arr(i, j, k, comp) + arr(i + 1, j, k, comp) +
+                          arr(i, j + 1, k, comp) + arr(i + 1, j + 1, k, comp));
+      if (nDim > 2) {
+        val += inv2d * (arr(i, j, k + 1, comp) + arr(i + 1, j, k + 1, comp) +
+                        arr(i, j + 1, k + 1, comp) +
+                        arr(i + 1, j + 1, k + 1, comp));
+      }
+      return val;
+    };
+
     if (var.substr(0, 1) == "X") {
       value = useHybridPIC ? Geom(iLev).CellCenter(ijk[ix_], ix_)
                            : Geom(iLev).LoEdge(ijk, ix_);
@@ -515,17 +513,14 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
-      value = arr(ijk, ix_);
+      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      value = useHybridPIC ? get_node_val_at_cell(arr, ix_) : arr(ijk, ix_);
     } else if (var.substr(0, 2) == "Ey") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
-      value = arr(ijk, iy_);
+      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      value = useHybridPIC ? get_node_val_at_cell(arr, iy_) : arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Ez") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
-      value = arr(ijk, iz_);
+      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      value = useHybridPIC ? get_node_val_at_cell(arr, iz_) : arr(ijk, iz_);
     } else if (var.substr(0, 2) == "Bx") {
       const Array4<Real const>& arr =
           (useHybridPIC ? centerB[iLev] : nodeB[iLev])[mfi].array();
@@ -567,10 +562,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
                var.substr(0, 4) == "ppcS" || var.substr(0, 4) == "numS") {
 
-      // The last element of nodePlasma/centerPlasma is the sum of all species.
-      // Per-species vars map to index < size-1; the summed entry is not
-      // emitted as a species-named variable.
-      const auto& plasma = useHybridPIC ? centerPlasma : nodePlasma;
+      const auto& plasma = nodePlasma;
       if (extract_int(var) >= plasma.size() - 1) {
         value = 0;
       } else {
@@ -601,10 +593,11 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
 
         const Array4<Real const>& arr =
             plasma[extract_int(var)][iLev][mfi].array();
-        value = arr(ijk, iVar);
+        value = useHybridPIC ? get_node_val_at_cell(arr, iVar) : arr(ijk, iVar);
 
         if (var.substr(0, 1) == "u") {
-          double rho = arr(ijk, iRho_);
+          double rho = useHybridPIC ? get_node_val_at_cell(arr, iRho_)
+                                    : arr(ijk, iRho_);
           if (rho != 0)
             value /= rho;
         }
@@ -615,16 +608,22 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         const int iDir = (var.substr(0, 2) == "jx")   ? ix_
                          : (var.substr(0, 2) == "jy") ? iy_
                                                       : iz_;
-        const Array4<Real const>& arr = centerJ[iLev][mfi].array();
-        value = arr(ijk, iDir);
+        const Array4<Real const>& arr = nodeJ[iLev][mfi].array();
+        value = get_node_val_at_cell(arr, iDir) * (1.0 / fourPI);
       }
     } else if (var.substr(0, 4) == "mach") {
       value = mMach[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 2) == "pS") {
-      const auto& plasma = useHybridPIC ? centerPlasma : nodePlasma;
+      const auto& plasma = nodePlasma;
       const Array4<Real const>& arr =
           plasma[extract_int(var)][iLev][mfi].array();
-      value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
+      if (useHybridPIC) {
+        value = (get_node_val_at_cell(arr, iPxx_) +
+                 get_node_val_at_cell(arr, iPyy_) +
+                 get_node_val_at_cell(arr, iPzz_)) / 3.0;
+      } else {
+        value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
+      }
 
     } else if (var.substr(0, 3) == "E0x") {
       const Array4<Real const>& arr = eBg[iLev][mfi].array();
@@ -682,22 +681,12 @@ void Pic::save_restart_data() {
   std::string restartDir = fi->get_restart_out_dir();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    if (useHybridPIC) {
-      // Hybrid solver: write the live cell-centred fields directly. The node
-      // mirrors (nodeE, nodeB) are no longer maintained, so they are not
-      // written. Restart format for hybrid differs from full-PIC on purpose.
-      VisMF::Write(centerEhybrid[iLev],
-                   restartDir + gridName + "_centerE" + lev_string(iLev));
-      VisMF::Write(centerB[iLev],
-                   restartDir + gridName + "_centerB" + lev_string(iLev));
-    } else {
-      VisMF::Write(nodeE[iLev],
-                   restartDir + gridName + "_nodeE" + lev_string(iLev));
-      VisMF::Write(nodeB[iLev],
-                   restartDir + gridName + "_nodeB" + lev_string(iLev));
-      VisMF::Write(centerB[iLev],
-                   restartDir + gridName + "_centerB" + lev_string(iLev));
-    }
+    VisMF::Write(nodeE[iLev],
+                 restartDir + gridName + "_nodeE" + lev_string(iLev));
+    VisMF::Write(nodeB[iLev],
+                 restartDir + gridName + "_nodeB" + lev_string(iLev));
+    VisMF::Write(centerB[iLev],
+                 restartDir + gridName + "_centerB" + lev_string(iLev));
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -740,28 +729,15 @@ void Pic::read_restart() {
   std::string restartDir = component + "/restartIN/";
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    if (useHybridPIC) {
-      // Hybrid solver: the restart file stores the live cell-centred fields
-      // directly. Read centerEhybrid and centerB; no node->center
-      // reconstruction is needed. centerPlasma/centerPlasmaPrev are rebuilt by
-      // the sum_moments() deposit below and the seed_first_hybrid_step() hook
-      // on the first hybrid update.
-      VisMF::Read(centerEhybrid[iLev],
-                  restartDir + gridName + "_centerE" + lev_string(iLev));
-      VisMF::Read(centerB[iLev],
-                  restartDir + gridName + "_centerB" + lev_string(iLev));
-      centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-      apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
-               centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
-      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    } else {
-      VisMF::Read(nodeE[iLev],
-                  restartDir + gridName + "_nodeE" + lev_string(iLev));
-      VisMF::Read(nodeB[iLev],
-                  restartDir + gridName + "_nodeB" + lev_string(iLev));
-      VisMF::Read(centerB[iLev],
-                  restartDir + gridName + "_centerB" + lev_string(iLev));
-    }
+    VisMF::Read(nodeE[iLev],
+                restartDir + gridName + "_nodeE" + lev_string(iLev));
+    VisMF::Read(nodeB[iLev],
+                restartDir + gridName + "_nodeB" + lev_string(iLev));
+    VisMF::Read(centerB[iLev],
+                restartDir + gridName + "_centerB" + lev_string(iLev));
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -1124,7 +1100,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("B") != std::string::npos) {
       //------------------B---------------
-      if (saveNode && !useHybridPIC) {
+      if (saveNode) {
         MultiFab::Copy(out[iLev], nodeB[iLev], 0, iStart, nodeB[iLev].nComp(),
                        0);
       } else {
@@ -1140,12 +1116,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("E") != std::string::npos) {
       //-----------------E-----------------------------
-      if (saveNode && !useHybridPIC) {
+      if (saveNode) {
         MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
                        0);
-      } else if (useHybridPIC) {
-        MultiFab::Copy(out[iLev], centerEhybrid[iLev], 0, iStart,
-                       centerEhybrid[iLev].nComp(), 0);
       } else {
         average_node_to_cellcenter(out[iLev], iStart, nodeE[iLev], 0,
                                    nodeE[iLev].nComp(), 0);
@@ -1165,11 +1138,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                                           "pxz", "pyz", "ppc" };
 
       for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
-        // Hybrid solver: moments are cell-centred in centerPlasma (the
-        // nodePlasma mirror is no longer maintained). Full-PIC reads
-        // nodePlasma.
-        MultiFab& plasma = useHybridPIC ? centerPlasma[iSpecies][iLev]
-                                        : nodePlasma[iSpecies][iLev];
+        MultiFab& plasma = nodePlasma[iSpecies][iLev];
 
         MultiFab rho(plasma, make_alias, iRho_, 1);
 
@@ -1211,10 +1180,6 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
         MultiFab pl(plasma, make_alias, iRho_, nMoments);
         if (saveNode) {
-          MultiFab::Copy(out[iLev], pl, 0, iStart, pl.nComp(), 0);
-        } else if (useHybridPIC) {
-          // Hybrid solver: centerPlasma is already cell-centred, so no
-          // node-to-cell average is needed.
           MultiFab::Copy(out[iLev], pl, 0, iStart, pl.nComp(), 0);
         } else {
           average_node_to_cellcenter(out[iLev], iStart, pl, 0, pl.nComp(), 0);

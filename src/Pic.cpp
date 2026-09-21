@@ -98,16 +98,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   if (nodePlasma.empty()) {
     nodePlasma.resize(nSpecies + 1);
   }
-  // Per-species deposit targets; last entry = sum of all species.
-  if (centerPlasma.empty()) {
-    centerPlasma.resize(nSpecies + 1);
-  }
-  if (centerPlasmaPrev.empty()) {
-    centerPlasmaPrev.resize(nSpecies + 1);
-  }
-  if (centerPlasmaSum.empty()) {
-    centerPlasmaSum.resize(nSpecies + 1);
-  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {
@@ -225,31 +215,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev], DistributionMap(iLev),
                           1, nGst, doMoveData);
 
-      // Cell-centred legacy mirror fields.
-      distribute_FabArray(centerEhybrid[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
-      distribute_FabArray(centerJ[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
-      for (auto& pl : centerPlasmaSum) {
-        if (pl.empty())
-          pl.resize(n_lev_max());
-        distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
-                            nMoments, nGst, doMoveData);
-      }
-      for (auto& pl : centerPlasma) {
-        if (pl.empty())
-          pl.resize(n_lev_max());
-        distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
-                            nMoments, nGst, doMoveData);
-      }
-      for (auto& pl : centerPlasmaPrev) {
-        if (pl.empty())
-          pl.resize(n_lev_max());
-        // Ohm's law reads only rho + 3 momentum, so stored slim (like
-        // nodePlasmaPrev).
-        distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
-                            nHybridMomentsComps, nGst, doMoveData);
-      }
       // Hybrid-only node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
         if (pl.empty())
@@ -559,11 +524,6 @@ void Pic::fill_E_B_fields() {
         apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
                        iLev, true);
       }
-      average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
-      centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-      apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0,
-                     centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev,
-                     false);
     }
   }
 }
@@ -1153,17 +1113,6 @@ void Pic::sum_moments(bool updateDt) {
             Geom(iLev - 1), Geom(iLev), node_status(iLev),
             node_bilinear_interp);
       }
-    }
-  }
-
-  if (useHybridPIC) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      for (int i = 0; i <= nSpecies; ++i) {
-        average_node_to_center(nodePlasma[i][iLev], centerPlasma[i][iLev]);
-        centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
-      }
-      MultiFab::Copy(centerPlasmaSum[nSpecies][iLev],
-                     centerPlasma[nSpecies][iLev], 0, 0, nMoments, nGst);
     }
   }
 

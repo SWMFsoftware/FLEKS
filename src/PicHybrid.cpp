@@ -22,8 +22,6 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   if (needJ) {
     curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
     nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
-    average_node_to_center(nodeJ[iLev], centerJ[iLev]);
-    centerJ[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 
   // Magnetic field interpolated from cell centres to nodes for vector cross products.
@@ -641,13 +639,5 @@ void Pic::update_B_hybrid() {
       nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
       smooth_E(nodeE[iLev], iLev);
     }
-  }
-
-  // Sync centerEhybrid for backwards compatibility with any remaining legacy readers.
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
-    centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0, nDim3,
-                   &Pic::get_center_E, iLev, false);
   }
 }

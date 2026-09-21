@@ -228,13 +228,6 @@ private:
   amrex::Vector<amrex::MultiFab> centerPe;    // electron pressure at cell centers
   amrex::Vector<amrex::MultiFab> nodeEambi;   // ambipolar electric field -grad(Pe)/(e*ne) at nodes
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated density
-  // Legacy mirror fields maintained for backwards-compatible I/O and diagnostics
-  amrex::Vector<amrex::MultiFab> centerEhybrid;
-  amrex::Vector<amrex::MultiFab> centerJ;
-  // Per-species moments
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma;
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaSum;
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaPrev;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -372,8 +365,6 @@ public:
     centerLapB.resize(n_lev_max());
     nodeHyperE.resize(n_lev_max());
     centerBstage.resize(n_lev_max());
-    centerEhybrid.resize(n_lev_max());
-    centerJ.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
     nodeEstage.resize(n_lev_max());
@@ -587,8 +578,8 @@ public:
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion
-  // moments are time-interpolated between centerPlasmaPrev (J^{n-1/2}) and
-  // centerPlasmaSum (J^{n+1/2}) at the sub-step fraction `hstep`: X =
+  // moments are time-interpolated between nodePlasmaPrev (J^{n-1/2}) and
+  // nodePlasma (J^{n+1/2}) at the sub-step fraction `hstep`: X =
   // (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
   void assemble_ohm_E(const amrex::MultiFab &centerBin,
                       const amrex::MultiFab &centerBtimeAvg,
@@ -678,10 +669,6 @@ public:
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
                          const BoxBC<FieldBC::Type> &bc, bool isB);
-
-  // Mirror ion moments into physical-wall ghost cells (hybrid solver).
-  void apply_centerPlasma_BC(const amrex::iMultiFab &status,
-                             amrex::MultiFab &mf, const int iLev);
 
   // Inject wave source into boundary ghost cells (iField: 0 = B, 1 = E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
