@@ -226,7 +226,6 @@ private:
   amrex::Vector<amrex::MultiFab> nodeJ;       // total current J = curl(B)/(4*pi) (nodal)
   amrex::Vector<amrex::MultiFab> nodeBstage;  // B interpolated to nodes at RK stages
   amrex::Vector<amrex::MultiFab> centerPe;    // electron pressure at cell centers
-  amrex::Vector<amrex::MultiFab> nodeGradPe;  // grad(Pe) at nodes
   amrex::Vector<amrex::MultiFab> nodeEambi;   // ambipolar electric field -grad(Pe)/(e*ne) at nodes
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated density
   // Legacy mirror fields maintained for backwards-compatible I/O and diagnostics
@@ -381,7 +380,6 @@ public:
     nodeJ.resize(n_lev_max());
     nodeBstage.resize(n_lev_max());
     centerPe.resize(n_lev_max());
-    nodeGradPe.resize(n_lev_max());
     nodeEambi.resize(n_lev_max());
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());

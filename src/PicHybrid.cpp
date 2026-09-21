@@ -255,26 +255,24 @@ void Pic::compute_ambipolar_E(int iLev) {
     }
   }
 
-  // 5. Compute grad_center_to_node(Pe)
-  grad_center_to_node(centerPe[iLev], nodeGradPe[iLev],
+  // 5. Compute grad_center_to_node(Pe) directly into nodeEambi
+  grad_center_to_node(centerPe[iLev], nodeEambi[iLev],
                       Geom(iLev).InvCellSize());
-  nodeGradPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 6. Ambipolar electric field: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
+  // 6. Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
   for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
-    const Array4<Real const>& arrGrad = nodeGradPe[iLev][mfi].array();
     const Array4<Real const>& moments =
         nodePlasma[nSpecies][iLev][mfi].array();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = moments(i, j, k, iRho_);
       if (rho > 0) {
-        const Real invRhoEff = 1.0 / amrex::max(rho, rhoMinOhm);
-        arrEambi(i, j, k, ix_) = -arrGrad(i, j, k, ix_) * invRhoEff;
-        arrEambi(i, j, k, iy_) = -arrGrad(i, j, k, iy_) * invRhoEff;
-        arrEambi(i, j, k, iz_) = -arrGrad(i, j, k, iz_) * invRhoEff;
+        const Real invRhoEff = -1.0 / amrex::max(rho, rhoMinOhm);
+        arrEambi(i, j, k, ix_) *= invRhoEff;
+        arrEambi(i, j, k, iy_) *= invRhoEff;
+        arrEambi(i, j, k, iz_) *= invRhoEff;
       } else {
         arrEambi(i, j, k, ix_) = 0.0;
         arrEambi(i, j, k, iy_) = 0.0;
