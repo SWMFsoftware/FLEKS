@@ -281,15 +281,30 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
 
         # Test-particle tracer log (log_pt_n*.log), validated when #PARTICLETRACKER T.
         if validator is not None and validator.particle_tol:
-            pt_diags = read_pt_log(RUN_DIR)
-            pt_res, pt_reason = validate_test_particles(
-                pt_diags, test_name=base_name, tol=validator.particle_tol)
-            if not pt_res:
-                logger.error("%s: test-particle check failed (%s)",
-                             display_name, pt_reason)
-                results.append((display_name, "FAILED",
-                                f"test-particle check failed: {pt_reason}"))
-                return
+            has_pt = False
+            active_param = os.path.join(RUN_DIR, "PARAM.in")
+            if os.path.isfile(active_param):
+                with open(active_param, "r", errors="ignore") as pf:
+                    ptext = pf.read()
+                    if "#PARTICLETRACKER" in ptext:
+                        pt_block = ptext.split("#PARTICLETRACKER", 1)[1].splitlines()
+                        for ln in pt_block[1:]:
+                            ln_s = ln.strip()
+                            if not ln_s or ln_s.startswith("#"):
+                                continue
+                            if ln_s.startswith("T"):
+                                has_pt = True
+                            break
+            if has_pt:
+                pt_diags = read_pt_log(RUN_DIR)
+                pt_res, pt_reason = validate_test_particles(
+                    pt_diags, test_name=base_name, tol=validator.particle_tol)
+                if not pt_res:
+                    logger.error("%s: test-particle check failed (%s)",
+                                 display_name, pt_reason)
+                    results.append((display_name, "FAILED",
+                                    f"test-particle check failed: {pt_reason}"))
+                    return
 
         # Validate output plotfiles.
         plot_validator = validator.plot if validator is not None else None
@@ -823,12 +838,45 @@ def discover_tests(tests_dir="tests"):
     return tests
 
 
-def run_one_test(test_dir, name, nprocs, results, variant_filter=None):
+# Variants or tests that are computationally expensive and excluded from the
+# default test suite. They can be executed explicitly via `--test=NAME.VARIANT`
+# or by passing `--all` / `--include-expensive`.
+EXPENSIVE_VARIANTS = {
+    "reconnection.forcefree",
+    "beam.instability",
+    "iaw.landau",
+}
+
+
+def is_expensive(name, variant_token, test_dir=None):
+    """Check whether a test variant is marked as expensive."""
+    full_token = f"{name}.{variant_token}"
+    if full_token in EXPENSIVE_VARIANTS or name in EXPENSIVE_VARIANTS:
+        return True
+    if test_dir is not None:
+        expensive_marker = os.path.join(test_dir, ".expensive")
+        if os.path.isfile(expensive_marker):
+            try:
+                with open(expensive_marker) as f:
+                    marked = [
+                        ln.strip()
+                        for ln in f
+                        if ln.strip() and not ln.startswith("#")
+                    ]
+                if not marked or variant_token in marked or name in marked:
+                    return True
+            except Exception:
+                return True
+    return False
+
+
+def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
+                 include_expensive=False):
     """Pre-flight check + run one test (or its PARAM variants) + record result.
 
     *variant_filter* (optional) is a PARAM suffix (without the leading dot, e.g.
     "hybrid") that restricts execution to that single variant of the test.  When
-    None every variant under *test_dir* runs.
+    None every non-expensive variant under *test_dir* runs (unless include_expensive=True).
     """
     ok, preflight_reason, skip = preflight_check(name)
     if not ok:
@@ -906,6 +954,16 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None):
         variants = kept
         logger.debug("Restricted test '%s' to variant '%s'.", name,
                      variant_filter)
+    elif not include_expensive:
+        kept = []
+        for pf, display_name, base_name in variants:
+            v_tok = _variant_token(pf)
+            if is_expensive(name, v_tok, test_dir):
+                logger.info("  [INFO] Skipping expensive variant '%s.%s' (run with --test=%s.%s or --all)",
+                            name, v_tok, name, v_tok)
+            else:
+                kept.append((pf, display_name, base_name))
+        variants = kept
 
     for param_file, display_name, base_name in variants:
         with open(param_file) as _f:
@@ -1005,10 +1063,14 @@ def main():
         tests = matching
         logger.debug("Selected test: %s", selected_test)
 
+    # Parse --all / --include-expensive: run every variant including expensive benchmarks.
+    include_expensive = "--all" in sys.argv or "--include-expensive" in sys.argv
+
     results = []  # Collect results for summary table
 
     for test_dir, name in tests:
-        run_one_test(test_dir, name, nprocs, results, variant_filter=variant_filter)
+        run_one_test(test_dir, name, nprocs, results, variant_filter=variant_filter,
+                     include_expensive=include_expensive)
 
     # ----------------------------------------------------
     # Print Summary Table

@@ -1,0 +1,119 @@
+#DESCRIPTION
+Ion Landau Damping Multi-period Test - HYBRID PIC
+Kinetic ions / fluid electrons with Te ~ Ti (Muñoz et al. 2018 Sec 4.5).
+Tracks multi-period ion acoustic wave oscillation and collisionless Landau damping.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-8.0                    xMin  [code units; Lx = 16 d_i]
+ 8.0                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+48                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+48                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+34.5                    electronTemperature  [eV, Te ~ Ti for strong Landau damping]
+1.6666666666666667      electronGamma
+1.0                     electronDensity0
+
+#HALLTERM
+F                       useHallTerm
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+2                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#SMOOTHE
+T                       doSmoothE
+2                       nSmoothE
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+1.0                     rho [amu/cc]
+0.0                     ux
+0.0                     uy
+0.0                     uz
+400000.0                T [K, Ti ~ 34.5 eV matching Te]
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#TESTCASE
+IonAcousticWave
+0.03                    pert       [density perturbation amplitude]
+1                       waveMode   [m=1 fundamental mode]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+1000                    nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+2.0                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+20.0                    TimeMax
+
+#RUN
+
+#AVGFIELDB
+T                       useAvgFieldB
+20                      nAvgFieldB

@@ -6,6 +6,7 @@ This directory contains standalone magnetic reconnection test suites in FLEKS ac
 2. **`PARAM.in.hybrid`** — **Fadeev hybrid-PIC**: Kinetic ions + massless fluid electrons with generalized Ohm's law.
 3. **`PARAM.in.gem`** — **Classic GEM Challenge full-PIC**: The standard GEM reconnection benchmark (Birn et al. 2001) with a Harris current sheet, conducting walls in $y$, and a central magnetic perturbation.
 4. **`PARAM.in.asym`** — **Asymmetric full-PIC**: Double current sheet reconnection with asymmetric magnetic fields ($B_1 = 1.0, B_2 = 2.0$) and temperatures ($T_1 = 1.33, T_2 = 3.33$) in a periodic domain.
+5. **`PARAM.in.forcefree`** — **Force-Free Sheet hybrid-PIC**: Force-free current sheet reconnection (Le et al. 2016, WarpX benchmark) with uniform plasma density and uniform total magnetic pressure $B_0^2 + B_g^2$.
 
 ## Coordinate Mapping
 
@@ -46,6 +47,23 @@ Uses `#TESTCASE gem` with `isAsymmetryReconnection = T`:
 - Asymmetric temperatures: $T_1 = 1.33$ and $T_2 = 3.33$
 - Localized Gaussian perturbation centered on the sheets
 
+### 4. Force-Free Current Sheet (`PARAM.in.forcefree`)
+Uses `#TESTCASE forcefree` (`ForceFreeIC` / `#FORCEFREEIC`), ported from the WarpX benchmark (Le et al. 2016):
+```
+Bx(x,y) = b0 * tanh(y/lambda) + deltaBx
+By(x,y) = deltaBy
+Bz(x,y) = sqrt(bg^2 + b0^2 * sech^2(y/lambda))
+n(x,y)  = n0  (uniform)
+```
+with divergence-free magnetic perturbation:
+$$\delta B_x = -\delta B \frac{L_x}{2 L_y} \cos\left(\frac{2\pi x}{L_x}\right) \sin\left(\frac{\pi y}{L_y}\right)$$
+$$\delta B_y = \delta B \sin\left(\frac{2\pi x}{L_x}\right) \cos\left(\frac{\pi y}{L_y}\right)$$
+- **Force-Free Property**: Because $B_x^2 + B_z^2 = b_0^2 \tanh^2(y/\lambda) + b_g^2 + b_0^2 \operatorname{sech}^2(y/\lambda) \equiv b_0^2 + b_g^2 = \text{const}$, the unperturbed magnetic pressure is uniform everywhere, requiring no plasma pressure gradient for mechanical equilibrium ($\mathbf{J} \times \mathbf{B} = 0$).
+- **Domain**: $[-20, 20] \times [-10, 10]\,d_i$ ($L_x = 40\,d_i, L_y = 20\,d_i$) on a $512 \times 512 \times 1$ grid ($dx = 0.078125\,d_i, dy = 0.0390625\,d_i$).
+- **Physical Parameters**: $\lambda = 1.0\,d_i$, $b_0 = 1.0$, $b_g = 0.3$, $\delta B = 0.01$, uniform $n_0 = 1.0$ ($12.5$ amu/cc), $T_i = 304,000$ K ($\beta_i = 0.5$), $T_e = 5.22$ eV ($\beta_e = 0.1$, isothermal), normalized resistivity $\eta = 6 \times 10^{-3}$ (`etaResistivity = 6.0e7` m$^2$/s).
+- **Boundaries**: Periodic in $x$, conducting walls for fields and reflecting walls for particles at $y = \pm 10\,d_i$ (matching WarpX Dirichlet and reflecting conditions).
+- **Timestepping & Subcycling**: $dt = 10^{-3}\,\tau_{ci} \approx 0.006283$ s, 40 magnetic subcycles (`nBSubcycle = 40`), $T_{\max} = 50\,\tau_{ci} \approx 314.16$ (50,000 steps).
+
 ## Running
 
 Run all reconnection test variants together:
@@ -59,11 +77,13 @@ python3 tests/validate_tests.py --test=reconnection -n 2
 
 Run a single variant:
 ```bash
-python3 tests/validate_tests.py --test=reconnection.full     # Fadeev full-PIC
-python3 tests/validate_tests.py --test=reconnection.hybrid   # Fadeev hybrid-PIC
-python3 tests/validate_tests.py --test=reconnection.gem      # Classic GEM challenge
-python3 tests/validate_tests.py --test=reconnection.asym     # Asymmetric reconnection
+python3 tests/validate_tests.py --test=reconnection.full       # Fadeev full-PIC
+python3 tests/validate_tests.py --test=reconnection.hybrid     # Fadeev hybrid-PIC
+python3 tests/validate_tests.py --test=reconnection.gem        # Classic GEM challenge
+python3 tests/validate_tests.py --test=reconnection.asym       # Asymmetric reconnection
+python3 tests/validate_tests.py --test=reconnection.forcefree  # Force-free sheet hybrid-PIC
 ```
+*(Note: `reconnection.forcefree` is an expensive benchmark and is skipped during default full-suite runs; run it by explicitly specifying `--test=reconnection.forcefree` or adding `--include-expensive` / `--all`.)*
 
 ## Validation Checks (`validate.py`)
 
@@ -75,6 +95,7 @@ python3 tests/validate_tests.py --test=reconnection.asym     # Asymmetric reconn
    - **Fadeev**: In-plane field nulls (O-points) located at $x \approx \pm \pi L \approx \pm 15.7\,d_i$; peak sheet density $\approx 1$, background $\approx 0.2$.
    - **GEM Challenge**: Harris sheet field reversal ($B_x \to \pm 1.0$ at top/bottom boundaries); central X-point null at $x \approx 0$; peak density in $(0.5, 1.0)$, background $< 0.4$.
    - **Asymmetric**: Central region field $B_x \approx +1.0$ ($B_1$), outer boundary field $B_x \approx -2.0$ ($-B_2$); sheet density enhancement in $(0.5, 1.6)$, background $< 0.4$.
+   - **Force-Free Sheet**: Boundary asymptotic field $B_x \to \pm b_0$; midplane guide field $B_z(0) \approx \sqrt{b_g^2 + b_0^2}$; uniform total magnetic pressure ($|\mathbf{B}|^2 \approx b_0^2 + b_g^2$ with $<5\%$ relative variation); midplane anti-symmetry.
 
 3. **Reconnection Dynamics**:
    - Seeded in-plane field perturbation grows nonlinearly ($\delta B_y$ increases).

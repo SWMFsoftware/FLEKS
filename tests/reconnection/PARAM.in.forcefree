@@ -1,0 +1,144 @@
+#DESCRIPTION
+Magnetic reconnection from a force-free current sheet (Le et al. 2016)
+with the HYBRID PIC solver (collocated staggered grid, generalized Ohm's law).
+Ported from WarpX Examples/Tests/ohm_solver_magnetic_reconnection.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-20.0                   xMin  [Lx = 40 d_i]
+ 20.0                   xMax
+-10.0                   yMin  [Ly = 20 d_i, transverse/inflow direction]
+ 10.0                   yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+512                     nCellX  [matches WarpX NX = 512, dx = 0.078125 d_i]
+512                     nCellY  [matches WarpX NZ = 512, dy = 0.0390625 d_i]
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX  [8x8 = 64 blocks, ideal for MPI parallel scaling]
+64                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+conducting              fieldBoxBoundaryLo  (y; matches WarpX Dirichlet at transverse boundaries)
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo  (y; matches WarpX Reflecting at transverse boundaries)
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+6.0e7                   etaResistivity  [m^2/s; corresponds to normalized eta = 6e-3 in WarpX]
+
+#ELECTRONTEMPERATURE
+5.22                    electronTemperature  [eV; Te_code = 0.05, beta_e = 0.1]
+1.0                     electronGamma        [isothermal electrons]
+65.15939                electronDensity0     [amu/cc; n_e0 = 1.0 in code units]
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI      [m^4/s; unused in grid mode]
+grid                    etaHyperMode
+0.001                   etaHyperCh      [hyperresistivity from Le et al. 2016 Eq. 1 to damp grid-scale whistler modes]
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments [smooth ion moments to suppress particle shot noise]
+1                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#MINIMUMDENSITY
+0.0                     rhoMinOhm
+
+#BSUBCYCLE
+40                      nBSubcycle      [matches WarpX substeps = 40]
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#AVGFIELDB
+T                       useAvgFieldB
+20                      nAvgFieldB
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+65.15939                rho [amu/cc; n_i0 = 1.0 in code units, matching WarpX]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K; Ti_code = 0.25, beta_i = 0.5, Ti/Te = 5]
+0.0                     bx [T; set by ForceFreeIC]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+forcefree
+
+#FORCEFREEIC
+1.0                     lambda   [current sheet half-width / d_i]
+1.0                     b0       [asymptotic in-plane field B0]
+0.3                     bg       [guide field ratio Bg/B0 = 0.3]
+0.01                    perturb  [initial perturbation amplitude dB/B0 = 0.01]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.0062831853            dt       [dt = 1e-3 * t_ci, where t_ci = 2*pi / Omega_ci ~ 6.283185 s]
+
+#NORMALIZATION
+1.0e5                   lNormSI  [m; lNorm = 100 km ~ d_i]
+1.0e5                   uNormSI  [m/s; uNorm = 100 km/s ~ vA, tNorm = 1 s]
+
+#MONITOR
+100                     dnReport
+
+#SAVELOG
+250                     dnSavePic
+250                     dnSavePT
+
+#PARTICLES
+20                      nParticle per cell in X  [20x20 = 400 PPC, matching WarpX NPPC = 400]
+20                      nParticle per cell in Y  [Note: can be set to 10x10 for quicker initial test]
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii planet     plotString  [code units matching WarpX analysis]
+-1                      dn
+1.5707963               dt          [dt_plot = 0.25 * t_ci = 250 steps, yields 200 frames across run]
+1                       dx
+
+#STOP
+-1                      MaxIter
+314.159265              TimeMax     [50 * t_ci = 50 * 2*pi, identical to WarpX LT = 50]
+
+#RUN

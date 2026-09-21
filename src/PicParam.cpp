@@ -242,6 +242,12 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
                    "the gem initial condition.");
     }
     ic_->read_param(param);
+  } else if (command == "#FORCEFREEIC") {
+    if (!ic_ || std::string(ic_->name()) != "forcefree") {
+      amrex::Abort("The #FORCEFREEIC block must follow a #TESTCASE that selects "
+                   "the forcefree (magnetic reconnection) initial condition.");
+    }
+    ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {

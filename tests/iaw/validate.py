@@ -278,7 +278,72 @@ def _check_iaw_density():
         return True, f"Profile check errored ({e}); skipping."
 
 
+def _validate_landau_plot(test_name):
+    """Validate multi-period ion Landau damping."""
+    import numpy as np
+
+    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
+    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
+    if not out_files or len(out_files) < 3:
+        return False, f"Expected >= 3 .out files, found {len(out_files)}"
+
+    mode_amps = []
+    kx = 2.0 * math.pi / 16.0  # Lx = 16
+    for f in out_files:
+        with open(f, "r", encoding="latin-1") as fp:
+            lines = fp.readlines()
+        if len(lines) < 6:
+            continue
+        vnames = lines[4].split()
+        vidx = {v.upper(): i for i, v in enumerate(vnames)}
+        if "X" not in vidx or "RHOS0" not in vidx:
+            continue
+        ix, irho = vidx["X"], vidx["RHOS0"]
+        xs, rhos = [], []
+        for line in lines[5:]:
+            cols = line.split()
+            if len(cols) > max(ix, irho):
+                try:
+                    xs.append(float(cols[ix]))
+                    rhos.append(float(cols[irho]))
+                except ValueError:
+                    pass
+        if xs:
+            xs = np.array(xs)
+            rhos = np.array(rhos)
+            mean_rho = np.mean(rhos)
+            # Projection onto fundamental mode sin(kx*x) and cos(kx*x)
+            s_proj = 2.0 * np.mean((rhos - mean_rho) * np.sin(kx * xs))
+            c_proj = 2.0 * np.mean((rhos - mean_rho) * np.cos(kx * xs))
+            amp = math.hypot(s_proj, c_proj)
+            rel_amp = amp / max(abs(mean_rho), 1e-30)
+            mode_amps.append(rel_amp)
+
+    if len(mode_amps) < 3:
+        return False, f"Expected >= 3 valid frames, parsed {len(mode_amps)}"
+
+    amp_0 = mode_amps[0]
+    amp_min = min(mode_amps[len(mode_amps)//2:])
+
+    if not math.isfinite(amp_0) or not math.isfinite(amp_min):
+        return False, "Non-finite amplitude (NaN/Inf)"
+
+    if amp_0 <= 0.01:
+        return False, f"Initial relative mode amplitude {amp_0:.4f} too small (seed missing)"
+
+    if amp_min >= amp_0:
+        return False, f"No Landau damping observed: initial={amp_0:.4f}, late min={amp_min:.4f}"
+
+    decay_ratio = amp_min / amp_0
+    msg = f"Ion Landau damping: initial relative amp={amp_0:.4f}, late damped amp={amp_min:.4f} (ratio {decay_ratio:.2f} < 1)"
+    logger.debug("    %s", msg)
+    return True, msg
+
+
 def validate_plot(test_name):
     """Plot-output check: seeded density profile + mass conservation."""
     logger.debug("  --- Validating Output Files (IAW density profile) ---")
+    if "landau" in test_name:
+        return _validate_landau_plot(test_name)
     return _check_iaw_density()
+

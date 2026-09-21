@@ -111,13 +111,25 @@ When `-n 1` (or the flag is omitted), the executable is invoked directly as
 
 The `--test NAME` (or `--test=NAME`) option selects a single test to run from
 the available test subdirectories (`beam`, `photoionization`, `electronimpact`,
-`chargeexchange`, ...). If the given name does not match any test, the script
-exits with an error listing the available tests. When the flag is omitted, all
-tests are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
+`chargeexchange`, ...), or a specific variant such as `--test=reconnection.forcefree`.
+If the given name does not match any test, the script exits with an error listing
+the available tests. When the flag is omitted, all standard tests are run (the default behavior).
+The flag may be combined with `-n`/`--nprocs`.
 
-When a test directory contains both `PARAM.in` and `PARAM.in.hybrid`, the
-runner executes the test once per field solver, listing both variants in the
-summary table (e.g. `BEAM` and `BEAM (HYBRID)`).
+When a test directory contains multiple `PARAM.in.<variant>` files, the runner can execute
+each variant (e.g. `PARAM.in.hybrid`, `PARAM.in.forcefree`). Certain long-running or research
+tests (such as `reconnection.forcefree`, `beam.instability`, and `iaw.landau`) are designated as
+expensive and excluded from the default quick test run. They can be executed specifically via:
+```bash
+# Run a specific variant directly:
+python3 tests/validate_tests.py --test=reconnection.forcefree
+python3 tests/validate_tests.py --test=beam.instability
+python3 tests/validate_tests.py --test=iaw.landau
+
+# Or include all expensive tests in the full suite:
+python3 tests/validate_tests.py --include-expensive
+# (or python3 tests/validate_tests.py --all)
+```
 
 ### Performance Benchmark
 

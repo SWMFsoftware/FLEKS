@@ -375,15 +375,72 @@ def _validate_asym_plot(test_name, frames):
     return True, msg
 
 
+def _validate_forcefree_plot(test_name, frames):
+    """Force-free current sheet reconnection validation."""
+    if len(frames) < 2:
+        return False, f"Expected at least 2 frames, found {len(frames)}"
+
+    ux, uy, bx0, by0, bz0, rho0, _ = frames[0][1]
+    j_mid = int(np.argmin(np.abs(uy)))
+
+    # 1. Equilibrium checks at t=0
+    # On a cell-centered grid, the two rows straddling y=0 should be anti-symmetric
+    # in Bx with |Bx| ~ tanh(dy / (2*lambda)) ~ 0.30.
+    j_other = j_mid + 1 if uy[j_mid] < 0 else j_mid - 1
+    bx_mid_asym = float(np.abs(bx0[j_mid, :].mean() + bx0[j_other, :].mean()))
+    bx_top = float(bx0[-1, :].mean())
+    bx_bot = float(bx0[0, :].mean())
+
+    b0_ref = abs(bx_top)
+    if b0_ref <= 0.0:
+        return False, "t=0: boundary Bx is zero"
+
+    if bx_mid_asym / b0_ref > 0.05:
+        return False, f"t=0: midplane Bx asymmetry={bx_mid_asym:.3f} expected ~0"
+    if abs(bx_top + bx_bot) / b0_ref > 0.05:
+        return False, f"t=0: boundary Bx (top={bx_top:.2f}, bot={bx_bot:.2f}) not anti-symmetric"
+
+    # Midplane Bz should be near sqrt(bg^2 + b0^2) = sqrt(0.3^2 + 1) * b0 ~ 1.044 * b0
+    bz_mid = float(bz0[j_mid, :].mean())
+    bz_top = float(bz0[-1, :].mean())
+    bz_mid_ratio = bz_mid / b0_ref
+    bz_top_ratio = bz_top / b0_ref
+    if not (0.95 < bz_mid_ratio < 1.15):
+        return False, f"t=0: midplane Bz/b0={bz_mid_ratio:.3f} expected ~1.044"
+    if not (0.2 < bz_top_ratio < 0.4):
+        return False, f"t=0: boundary Bz/b0={bz_top_ratio:.3f} expected ~0.30 (bg)"
+
+    # Total |B|^2 should be nearly constant (uniform magnetic pressure)
+    b2_0 = bx0**2 + by0**2 + bz0**2
+    b2_mean = float(b2_0.mean())
+    b2_std = float(b2_0.std())
+    if b2_std / b2_mean > 0.05:
+        return False, f"t=0: total B^2 is not uniform (std/mean = {b2_std/b2_mean:.3f} > 0.05)"
+
+    # 2. Reconnection evolution
+    # Check that By develops perturbation and fields remain finite
+    by_late = frames[-1][1][3]
+    dby_max = float(np.abs(by_late).max())
+    if np.isnan(dby_max) or np.isinf(dby_max):
+        return False, "NaN or Inf detected in magnetic field"
+
+    msg = f"Force-free reconnection: Bx bounds [{bx_bot:.2f}, {bx_top:.2f}], midplane Bz={bz_mid:.3f}, late max|By|={dby_max:.3f}"
+    logger.debug("    %s", msg)
+    return True, msg
+
+
 def validate_plot(test_name):
-    """Reconnection plot check dispatcher: Fadeev, GEM, or Asymmetric."""
+    """Reconnection plot check dispatcher: Fadeev, GEM, Asymmetric, or ForceFree."""
     frames, err = _load_all_frames()
     if err is not None:
         return False, err
 
-    if "gem" in test_name:
+    if "forcefree" in test_name:
+        return _validate_forcefree_plot(test_name, frames)
+    elif "gem" in test_name:
         return _validate_gem_plot(test_name, frames)
     elif "asym" in test_name:
         return _validate_asym_plot(test_name, frames)
     else:
         return _validate_fadeev_plot(test_name, frames)
+

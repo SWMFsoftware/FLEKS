@@ -254,6 +254,18 @@ Selects the Fadeev magnetic-reconnection initial condition. Use after
 #TESTCASE selects the fadeev initial-condition implementation.
 </command>
 
+<command name="FORCEFREEIC">
+#FORCEFREEIC
+
+Configures parameters for the force-free current-sheet magnetic reconnection
+initial condition (Le et al. 2016). Use after #TESTCASE selects forcefree.
+Optional sub-parameters include:
+  lambda (or lambda0, L)  Current sheet width / d_i
+  b0                      Asymptotic in-plane magnetic field strength
+  bg                      Guide field strength
+  perturb (or dB)         Initial perturbation amplitude
+</command>
+
 <command name="GEMIC">
 #GEMIC
 
