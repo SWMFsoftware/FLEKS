@@ -227,6 +227,7 @@ private:
   amrex::Vector<amrex::MultiFab> nodeBstage;  // B interpolated to nodes at RK stages
   amrex::Vector<amrex::MultiFab> centerPe;    // electron pressure at cell centers
   amrex::Vector<amrex::MultiFab> nodeGradPe;  // grad(Pe) at nodes
+  amrex::Vector<amrex::MultiFab> nodeEambi;   // ambipolar electric field -grad(Pe)/(e*ne) at nodes
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated density
   // Legacy mirror fields maintained for backwards-compatible I/O and diagnostics
   amrex::Vector<amrex::MultiFab> centerEhybrid;
@@ -381,6 +382,7 @@ public:
     nodeBstage.resize(n_lev_max());
     centerPe.resize(n_lev_max());
     nodeGradPe.resize(n_lev_max());
+    nodeEambi.resize(n_lev_max());
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
@@ -593,6 +595,8 @@ public:
   void assemble_ohm_E(const amrex::MultiFab &centerBin,
                       const amrex::MultiFab &centerBtimeAvg,
                       amrex::MultiFab &Eout, int iLev, amrex::Real hstep);
+  void compute_ambipolar_E();
+  void compute_ambipolar_E(int iLev);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 

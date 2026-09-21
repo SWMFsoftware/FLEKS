@@ -222,6 +222,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           nGst, doMoveData);
       distribute_FabArray(nodeGradPe[iLev], nGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
+      distribute_FabArray(nodeEambi[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
       distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev], DistributionMap(iLev),
                           1, nGst, doMoveData);
 
