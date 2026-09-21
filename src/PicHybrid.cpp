@@ -202,14 +202,23 @@ void Pic::smooth_moments() {
     MultiFab& moments = useHybridPIC ? centerPlasmaSum[nSpecies][iLev]
                                      : nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
+    if (useHybridPIC) {
+      apply_centerPlasma_BC(cell_status(iLev), moments, iLev);
+    }
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       if (isCompensatedMoments) {
         smooth_multifab_compensated(moments, iLev);
       } else {
         smooth_multifab(moments, iLev, 1, coefSmoothMoments);
       }
+      if (useHybridPIC) {
+        apply_centerPlasma_BC(cell_status(iLev), moments, iLev);
+      }
     }
     moments.FillBoundary(Geom(iLev).periodicity());
+    if (useHybridPIC) {
+      apply_centerPlasma_BC(cell_status(iLev), moments, iLev);
+    }
   }
 }
 
@@ -275,8 +284,14 @@ void Pic::smooth_B(int iLev) {
   }
 
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  apply_centerB_BC(iLev);
   for (int icount = 0; icount < nSmoothB; ++icount) {
-    smooth_multifab(centerB[iLev], iLev, 1, coefSmoothB);
+    if (isCompensatedB) {
+      smooth_multifab_compensated(centerB[iLev], iLev);
+    } else {
+      smooth_multifab(centerB[iLev], iLev, 1, coefSmoothB);
+    }
+    apply_centerB_BC(iLev);
   }
 
   if (smoothDelta) {
@@ -307,10 +322,21 @@ void Pic::smooth_EB_for_particles() {
 
     centerEsmooth[iLev].FillBoundary(Geom(iLev).periodicity());
     centerBsmooth[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_field_bc(cellStatus[iLev], centerEsmooth[iLev], 0, nDim3,
+                   &Pic::get_center_E, iLev, false);
+    apply_centerB_BC(iLev, centerBsmooth[iLev]);
 
     for (int icount = 0; icount < nSmoothEB; ++icount) {
-      smooth_multifab(centerEsmooth[iLev], iLev, 1, coefSmoothEB);
-      smooth_multifab(centerBsmooth[iLev], iLev, 1, coefSmoothEB);
+      if (isCompensatedEB) {
+        smooth_multifab_compensated(centerEsmooth[iLev], iLev);
+        smooth_multifab_compensated(centerBsmooth[iLev], iLev);
+      } else {
+        smooth_multifab(centerEsmooth[iLev], iLev, 1, coefSmoothEB);
+        smooth_multifab(centerBsmooth[iLev], iLev, 1, coefSmoothEB);
+      }
+      apply_field_bc(cellStatus[iLev], centerEsmooth[iLev], 0, nDim3,
+                     &Pic::get_center_E, iLev, false);
+      apply_centerB_BC(iLev, centerBsmooth[iLev]);
     }
 
     centerEsmooth[iLev].FillBoundary(Geom(iLev).periodicity());

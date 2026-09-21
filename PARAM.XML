@@ -824,6 +824,7 @@ This command enables hyperbolic divergence cleaning for the magnetic field.
     <parameter name="nSmoothBPeriod" type="integer" default="1"/>
     <parameter name="coefSmoothB" type="real" default="0.5"/>
     <parameter name="isSmoothDeltaB" type="logical" default="T"/>
+    <parameter name="isCompensatedB" type="logical" default="T"/>
   </if>
 
 #SMOOTHB
@@ -832,6 +833,7 @@ T                         doSmoothB (rest is read if true)
 200                       nSmoothBPeriod
 0.5                       coefSmoothB
 T                         isSmoothDeltaB (if true, smooth dB = B - B0; if false, smooth total B)
+T                         isCompensatedB (if true, use 4th-order compensated filter [-1/16, 1/4, 5/8, 1/4, -1/16])
 
 #SMOOTHB_FLEKS2
 F                         doSmoothB
@@ -842,9 +844,10 @@ the null space of collocated central differences (similar to smooth_b in HybridV
 If isSmoothDeltaB is true (default), the smoothing is applied only to the perturbation
 dB = B - B0 (where B0 is the initial background state), preserving equilibrium current sheets.
 If isSmoothDeltaB is false, total B is smoothed directly.
-The smoothing is applied every nSmoothBPeriod steps for nSmoothB passes with strength coefSmoothB:
-B_new = (1-coef) * B_old + (coef/2) * (B_left + B_right).
-A typical period in hybrid reconnection simulations is 100-200 steps.
+If isCompensatedB is true (default), the 4th-order compensated filter (WarpX style) is used,
+which zeroes the 2*dy Nyquist mode while strictly preserving physical gradients with O((k*dy)^4) accuracy.
+The smoothing is applied every nSmoothBPeriod steps for nSmoothB passes.
+A typical period in hybrid reconnection simulations is 50-200 steps.
 </command>
 
 <command name="SMOOTHEB" alias="SMOOTHEB_FLEKS0,SMOOTHEB_FLEKS1,SMOOTHEB_FLEKS2" multiple="T">
@@ -852,18 +855,21 @@ A typical period in hybrid reconnection simulations is 100-200 steps.
   <if expr="$doSmoothEB">
     <parameter name="nSmoothEB" type="integer" default="2"/>
     <parameter name="coefSmoothEB" type="real" default="0.5"/>
+    <parameter name="isCompensatedEB" type="logical" default="T"/>
   </if>
 
 #SMOOTHEB
 T                  doSmoothEB (rest is read if true)
 2                  nSmoothEB
 0.5                coefSmoothEB
+T                  isCompensatedEB (if true, use 4th-order compensated filter)
 
 #SMOOTHEB_FLEKS2
 F                  doSmoothEB
 
 Smooth electric (E) and magnetic (B) fields strictly for particle interpolation
 (Boris push) in hybrid PIC, matching HybridVPIC's smooth_eb.
+If isCompensatedEB is true (default), the 4th-order compensated filter is used.
 The physical fields evolved by Faraday's law and Ohm's law are NEVER smoothed by this command.
 </command>
 

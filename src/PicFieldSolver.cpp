@@ -946,7 +946,11 @@ void Pic::smooth_multifab_compensated(MultiFab& mf, int iLev) {
             arrTmp(i + 2 * dIdx[ix_], j + 2 * dIdx[iy_], k + 2 * dIdx[iz_],
                    iVar);
 
-        arrE(i, j, k, iVar) = c0 * arrTmp(i, j, k, iVar) + c1 * val1 + c2 * val2;
+        Real smoothed = c0 * arrTmp(i, j, k, iVar) + c1 * val1 + c2 * val2;
+        if (mf.nComp() > nDim3 && iVar == iRho_) {
+          smoothed = amrex::max(smoothed, rhoMinOhm);
+        }
+        arrE(i, j, k, iVar) = smoothed;
       });
     }
 

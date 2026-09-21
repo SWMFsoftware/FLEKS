@@ -845,10 +845,12 @@ public:
       loc[iDim] = p.pos(iDim);
       if (Geom(iLev).isPeriodic(iDim)) {
         // Fix index/loc for periodic BC.
-        while (loc[iDim] > phi[iLev][iDim])
-          loc[iDim] -= phi[iLev][iDim] - plo[iLev][iDim];
-        while (loc[iDim] < plo[iLev][iDim])
-          loc[iDim] += phi[iLev][iDim] - plo[iLev][iDim];
+        const amrex::Real L = phi[iLev][iDim] - plo[iLev][iDim];
+        if (loc[iDim] > phi[iLev][iDim] || loc[iDim] < plo[iLev][iDim]) {
+          loc[iDim] = plo[iLev][iDim] + std::fmod(loc[iDim] - plo[iLev][iDim], L);
+          if (loc[iDim] < plo[iLev][iDim])
+            loc[iDim] += L;
+        }
       }
     }
 

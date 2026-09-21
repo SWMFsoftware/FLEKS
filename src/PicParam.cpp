@@ -137,12 +137,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nSmoothBPeriod", nSmoothBPeriod);
       param.read_var("coefSmoothB", coefSmoothB);
       param.read_var("isSmoothDeltaB", isSmoothDeltaB);
+      param.read_optional("isCompensatedB", isCompensatedB);
     }
   } else if (command == "#SMOOTHEB") {
     param.read_var("doSmoothEB", doSmoothEB);
     if (doSmoothEB) {
       param.read_var("nSmoothEB", nSmoothEB);
       param.read_var("coefSmoothEB", coefSmoothEB);
+      param.read_optional("isCompensatedEB", isCompensatedEB);
     }
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);

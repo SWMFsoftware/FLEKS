@@ -305,6 +305,7 @@ private:
   int nSmoothBPeriod = 1;
   amrex::Real coefSmoothB = 0.5;
   bool isSmoothDeltaB = true;
+  bool isCompensatedB = true;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
@@ -313,6 +314,7 @@ private:
   bool doSmoothEB = false;
   int nSmoothEB = 2;
   amrex::Real coefSmoothEB = 0.5;
+  bool isCompensatedEB = true;
 
   // Plug-in initial condition via #TESTCASE registry.
   std::unique_ptr<InitialCondition> ic_;
