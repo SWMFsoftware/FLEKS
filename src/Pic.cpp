@@ -66,6 +66,16 @@ void Pic::fill_new_cells() {
     // through the InitialCondition plugin during fill_particles().
     fill_particles();
     sum_moments(true);
+    if (useHybridPIC) {
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        average_center_to_node(centerB[iLev], nodeB[iLev]);
+        nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
+                         iLev, true);
+        }
+      }
+    }
     // div(E)-correction fields are full-PIC only.
     if (!useHybridPIC) {
       if (finest_level == 0) {
@@ -255,14 +265,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
 
-    // mMach: node grid for full-PIC, cell grid for hybrid.
-    if (useHybridPIC) {
-      distribute_FabArray(mMach[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                          nGst, doMoveData);
-    } else {
-      distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
-                          nGst, doMoveData);
-    }
+    // mMach: node grid for both full-PIC and hybrid.
+    distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
+                        nGst, doMoveData);
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
     // E current (jHat), and node-centred moments (nodePlasma): full-PIC only.
@@ -549,15 +554,17 @@ void Pic::fill_E_B_fields() {
                                   Geom(iLev), cell_status(iLev), cellInterp);
   }
 
-  // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
-  // seeded from it by averaging the node values to the cell centres, which
-  // plays the role of E0 for the very first hybrid particle Boris push.
+  // In hybrid PIC, sync nodeB from centerB at initialization.
   if (useHybridPIC) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
+                       iLev, true);
+      }
       average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-      // Match full-PIC nodeE: the same face type closes the ghost ring of
-      // the initial cell-centred E as well.
       apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0,
                      centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev,
                      false);
@@ -642,18 +649,10 @@ void Pic::particle_mover() {
   // Time-averaged B when enabled.
   const Vector<MultiFab>& nodeBpush =
       (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
-  const Vector<MultiFab>& centerBpush =
-      (useAvgFieldB && isBavgInit) ? centerBavg : centerB;
-  const Vector<MultiFab>& nodeEpush = nodeEth;
-  if (useHybridPIC) {
-    for (int i : kineticSpecies_) {
-      parts[i]->mover_cell_centered(centerEhybrid, centerBpush, eBg, uBg, dt,
-                                    dtnext);
-    }
-  } else {
-    for (int i : kineticSpecies_) {
-      parts[i]->mover(nodeEpush, nodeBpush, eBg, uBg, dt, dtnext);
-    }
+  const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeE : nodeEth;
+
+  for (int i : kineticSpecies_) {
+    parts[i]->mover(nodeEpush, nodeBpush, eBg, uBg, dt, dtnext);
   }
 
   for (int i : kineticSpecies_) {
@@ -1055,13 +1054,7 @@ void Pic::sum_moments(bool updateDt) {
 
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; ++i) {
-    Real energy = 0.0;
-    if (useHybridPIC) {
-      // Cell-centred moment deposit into centerPlasma[i].
-      energy = parts[i]->sum_moments_cell_centered(centerPlasma[i]);
-    } else {
-      energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
-    }
+    Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
   }
@@ -1077,8 +1070,7 @@ void Pic::sum_moments(bool updateDt) {
       if (tc->get_cfl() > 0 || doReport) {
         uMax[iLev] = 0.0;
         for (int i = 0; i < nSpecies; ++i) {
-          amrex::MultiFab& momMF =
-              useHybridPIC ? centerPlasma[i][iLev] : nodePlasma[i][iLev];
+          amrex::MultiFab& momMF = nodePlasma[i][iLev];
           Real uMaxSpecies = parts[i]->calc_max_thermal_velocity(momMF);
           ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
@@ -1128,86 +1120,58 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    nodePlasma[nSpecies][iLev].setVal(0.0);
+  }
+
+  for (int i = 0; i < nSpecies; ++i) {
+    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
+  }
+
+  for (int i : kineticSpecies_) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      // nodePlasma[nSpecies] holds the sum of all ion species.
+      // kineticSpecies_ excludes the (implicit fluid) electron.
+      MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
+                    nMoments, nGst);
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(
+          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+          nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+
+      if (useHybridPIC) {
+        fill_fine_lev_bny_from_coarse(
+            nodePlasmaPrev[nSpecies][iLev - 1],
+            nodePlasmaPrev[nSpecies][iLev], 0,
+            nodePlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+      }
+    }
+  }
+
   if (useHybridPIC) {
-    // Cell-centred hybrid moments: sum the per-species deposits into
-    // centerPlasmaSum and sync the nodePlasma output mirror (once per step,
-    // so the plot / restart / tracker path that reads nodePlasma sees correct
-    // data -- the node-sync bridge of the hybrid solver).
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      centerPlasmaSum[nSpecies][iLev].setVal(0.0);
-    }
-
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->convert_to_fluid_moments(centerPlasma[i]);
-    }
-
-    for (int i : kineticSpecies_) {
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        // centerPlasmaSum[nSpecies] holds the sum of all kinetic-ion species.
-        // kineticSpecies_ excludes the (implicit fluid) electron.
-        MultiFab::Add(centerPlasmaSum[nSpecies][iLev], centerPlasma[i][iLev], 0,
-                      0, nMoments, nGst);
+      for (int i = 0; i <= nSpecies; ++i) {
+        average_node_to_center(nodePlasma[i][iLev], centerPlasma[i][iLev]);
+        centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
       }
-    }
-
-    // Fill ghost cells for centerPlasmaSum so that assemble_ohm_E's 2-dx
-    // stencil reads valid data at MPI boundaries and coarse-fine interfaces.
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      centerPlasmaSum[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
-    }
-
-    // Mirror ion moments into the physical-wall ghost cells for smooth
-    // pressure-gradient / Hall stencils at a wall.
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaSum[nSpecies][iLev],
-                            iLev);
-      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaPrev[nSpecies][iLev],
-                            iLev);
-    }
-
-    // Fill coarse-fine interface ghost cells for centerPlasmaSum and
-    // centerPlasmaPrev on fine levels from the coarse level. Without this,
-    // assemble_ohm_E's pressure-gradient stencil reads zero/stale ghost cells
-    // at the coarse-fine interface, causing incorrect E fields and runaway
-    // particle heating.
-    if (finest_level > 0 && useHybridPIC) {
-      auto& cellInterp = *get_cell_interp();
-      for (int iLev = 1; iLev < n_lev(); iLev++) {
-        fill_fine_lev_bny_from_coarse(
-            centerPlasmaSum[nSpecies][iLev - 1],
-            centerPlasmaSum[nSpecies][iLev], 0,
-            centerPlasmaSum[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
-            Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
-
-        fill_fine_lev_bny_from_coarse(
-            centerPlasmaPrev[nSpecies][iLev - 1],
-            centerPlasmaPrev[nSpecies][iLev], 0,
-            centerPlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
-            Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
-      }
-    }
-  } else {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      nodePlasma[nSpecies][iLev].setVal(0.0);
-    }
-
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->convert_to_fluid_moments(nodePlasma[i]);
-    }
-
-    for (int i : kineticSpecies_) {
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        // nodePlasma[nSpecies] holds the sum of all ion species.
-        // kineticSpecies_ excludes the (implicit fluid) electron.
-        MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
-                      nMoments, nGst);
-      }
+      MultiFab::Copy(centerPlasmaSum[nSpecies][iLev],
+                     centerPlasma[nSpecies][iLev], 0, 0, nMoments, nGst);
     }
   }
 
-  if (!useHybridPIC) {
-    calc_mach_number();
-  }
+  calc_mach_number();
 
   isMomentsUpdated = true;
 }
@@ -1217,11 +1181,7 @@ void Pic::sum_moments(bool updateDt) {
 void Pic::calc_mach_number() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
-    // Hybrid: Mach number from the live cell-centred summed ion moments
-    // (centerPlasmaSum[nSpecies]). Full-PIC: from the node-centred
-    // nodePlasma[nSpecies]. mMach is allocated on the matching grid.
-    const auto& momentsMF = useHybridPIC ? centerPlasmaSum[nSpecies][iLev]
-                                         : nodePlasma[nSpecies][iLev];
+    const auto& momentsMF = nodePlasma[nSpecies][iLev];
     for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<const Real>& moments = momentsMF[mfi].array();
@@ -1261,19 +1221,9 @@ void Pic::calc_cost_per_cell() {
     if (balanceStrategy == BalanceStrategy::Cell) {
       cellCost[iLev].setVal(1.0);
     } else {
-      // Balance by particles or hybrid. Hybrid: cellCost and the summed ion
-      // moments are both cell-centred, so copy iNum_ directly (no cell->node->
-      // cell roundtrip and no need to materialize the deferred nodePlasma
-      // mirror). Full-PIC: average the node-centred nodePlasma particle count
-      // to the cell grid.
-      if (useHybridPIC) {
-        MultiFab::Copy(cellCost[iLev], centerPlasmaSum[nSpecies][iLev], iNum_,
-                       0, cellCost[iLev].nComp(), cellCost[iLev].nGrow());
-      } else {
-        average_node_to_cellcenter(
-            cellCost[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
-            cellCost[iLev].nComp(), cellCost[iLev].nGrow());
-      }
+      average_node_to_cellcenter(
+          cellCost[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
+          cellCost[iLev].nComp(), cellCost[iLev].nGrow());
     }
 
     for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {
