@@ -13,7 +13,7 @@ using namespace amrex;
 //==========================================================
 void Pic::assemble_ohm_E(const MultiFab& centerBin,
                          const MultiFab& centerBtimeAvg, MultiFab& Eout,
-                         int iLev, Real hstep) {
+                         int iLev, Real hstep, bool includeAmbi) {
   BL_PROFILE("Pic::assemble_ohm_E");
 
   // Nodal total current J = curl(B)/(4*pi) from trial B (compact 1*dx stencil
@@ -94,8 +94,11 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         ez += etaResistivity * jz;
       }
 
-      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e) (precomputed outside subcycling)
-      if (electronTemperature > 0) {
+      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e) (precomputed outside subcycling).
+      // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons; omitted when
+      // computing E to advance B via Faraday's law to prevent discrete baroclinic/shot-noise curl
+      // errors from injecting artificial grid-scale whistler waves (WarpX formulation).
+      if (includeAmbi && electronTemperature > 0) {
         ex += arrEambi(i, j, k, ix_);
         ey += arrEambi(i, j, k, iy_);
         ez += arrEambi(i, j, k, iz_);
@@ -444,7 +447,7 @@ void Pic::update_B_hybrid() {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         // Stage 1: k1 = curl(E(B^n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], nodeEstage[iLev], iLev,
-                       hstepStart);
+                       hstepStart, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
 
@@ -456,7 +459,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       nodeEstage[iLev], iLev, hstepHalf);
+                       nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
 
@@ -468,7 +471,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       nodeEstage[iLev], iLev, hstepHalf);
+                       nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
 
@@ -480,7 +483,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       nodeEstage[iLev], iLev, hstepEnd);
+                       nodeEstage[iLev], iLev, hstepEnd, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
 
@@ -506,7 +509,7 @@ void Pic::update_B_hybrid() {
 
         // Stage 1: B1 = B_n - subDt * curl(E(B_n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], nodeEstage[iLev], iLev,
-                       hstepStart);
+                       hstepStart, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
@@ -517,7 +520,7 @@ void Pic::update_B_hybrid() {
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], nodeEstage[iLev],
-                       iLev, hstepEnd);
+                       iLev, hstepEnd, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
@@ -531,7 +534,7 @@ void Pic::update_B_hybrid() {
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], nodeEstage[iLev],
-                       iLev, hstepHalf);
+                       iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,

@@ -583,7 +583,8 @@ public:
   // (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
   void assemble_ohm_E(const amrex::MultiFab &centerBin,
                       const amrex::MultiFab &centerBtimeAvg,
-                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep);
+                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep,
+                      bool includeAmbi = true);
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
   void save_current_moments_to_prev();

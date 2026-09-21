@@ -350,10 +350,13 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
             const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
             // A particle face can no longer be `conducting`: that is a
             // field-only type, and on the particle side it is mapped to
-            // `reflect` at parse time.  The fold set is therefore
-            // reflect + inflow.
+            // `reflect` at parse time. The fold set covers all uncoupled,
+            // non-periodic faces (reflect, inflow, outflow, vacuum, absorb)
+            // where no exterior ghost particles exist to deposit into the boundary node.
             const bool doFold =
-                (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow);
+                (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow ||
+                 faceBc == ParticleBC::outflow || faceBc == ParticleBC::vacuum ||
+                 faceBc == ParticleBC::absorb);
             if (!doFold)
               continue;
 
