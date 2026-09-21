@@ -22,6 +22,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   if (needJ) {
     curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
     nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
+    average_node_to_center(nodeJ[iLev], centerJ[iLev]);
+    centerJ[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 
   // Magnetic field interpolated from cell centres to nodes for vector cross products.

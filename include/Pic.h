@@ -228,13 +228,9 @@ private:
   amrex::Vector<amrex::MultiFab> centerPe;    // electron pressure at cell centers
   amrex::Vector<amrex::MultiFab> nodeGradPe;  // grad(Pe) at nodes
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated density
-  // ---- Hybrid cell-centred fields ----
-  // The hybrid step reads/writes these; nodeE/nodeB/nodePlasma are write-only
-  // output mirrors refreshed once per step for plot/restart/tracker paths.
+  // Legacy mirror fields maintained for backwards-compatible I/O and diagnostics
   amrex::Vector<amrex::MultiFab> centerEhybrid;
   amrex::Vector<amrex::MultiFab> centerJ;
-  amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B
-  amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
   // Per-species moments
   amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaSum;
@@ -378,8 +374,6 @@ public:
     centerBstage.resize(n_lev_max());
     centerEhybrid.resize(n_lev_max());
     centerJ.resize(n_lev_max());
-    centerEstage.resize(n_lev_max());
-    centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
     nodeEstage.resize(n_lev_max());

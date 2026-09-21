@@ -225,15 +225,11 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev], DistributionMap(iLev),
                           1, nGst, doMoveData);
 
-      // Cell-centred hybrid solver fields.
+      // Cell-centred legacy mirror fields.
       distribute_FabArray(centerEhybrid[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerJ[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
-      distribute_FabArray(centerEstage[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
-      distribute_FabArray(centerHyperE[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
       for (auto& pl : centerPlasmaSum) {
         if (pl.empty())
           pl.resize(n_lev_max());
