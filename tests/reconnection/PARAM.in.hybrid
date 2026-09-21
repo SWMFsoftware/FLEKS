@@ -81,23 +81,22 @@ grid                    etaHyperMode
 rk4                     fieldIntegrator
 
 #AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB
+F                       useAvgFieldB
 
 #SMOOTHB
-T                       doSmoothB
-1                       nSmoothB
-50                      nSmoothBPeriod
-0.5                     coefSmoothB
+F                       doSmoothB
 
 #SMOOTHE
-T                       doSmoothE
-1                       nSmoothE
+F                       doSmoothE
+
+#SMOOTHEB
+F                       doSmoothEB
 
 #SMOOTHMOMENTS
 T                       doSmoothMoments
-2                       nSmoothMoments
+1                       nSmoothMoments
 0.5                     coefSmoothMoments
+T                       isCompensatedMoments
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

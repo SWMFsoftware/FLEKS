@@ -900,6 +900,67 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
 }
 
 //==========================================================
+void Pic::smooth_multifab_compensated(MultiFab& mf, int iLev) {
+  std::string nameFunc = "Pic::smooth_multifab_compensated";
+  timing_func(nameFunc);
+
+  if (smoothScratchMF[iLev].empty() ||
+      smoothScratchMF[iLev].boxArray() != mf.boxArray() ||
+      smoothScratchMF[iLev].DistributionMap() != mf.DistributionMap() ||
+      smoothScratchMF[iLev].nComp() != mf.nComp() ||
+      smoothScratchMF[iLev].nGrow() != mf.nGrow()) {
+    smoothScratchMF[iLev].define(mf.boxArray(), mf.DistributionMap(),
+                                 mf.nComp(), mf.nGrow());
+  }
+
+  MultiFab& mfOld = smoothScratchMF[iLev];
+
+  auto smooth_dir = [&](int iDir) {
+    int dIdx[3] = {0, 0, 0};
+    dIdx[iDir] = 1;
+
+    MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+
+      Array4<Real> const& arrE = mf[mfi].array();
+      Array4<Real> const& arrTmp = mfOld[mfi].array();
+
+      ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
+        // 5-point compensated binomial filter (WarpX / Birdsall & Langdon):
+        // S_comp(k) = cos^2(k*dx/2) * [1 + sin^2(k*dx/2)] = 1 - 1/16*(k*dx)^4
+        // Weights: w0 = 5/8, w1 = 1/4, w2 = -1/16.
+        // Exactly zeros the Nyquist alternating mode (5/8 - 2/4 - 2/16 = 0)
+        // while canceling 2nd-order diffusion, preserving current sheet gradients.
+        const Real c0 = 5.0 / 8.0;
+        const Real c1 = 1.0 / 4.0;
+        const Real c2 = -1.0 / 16.0;
+
+        const Real val1 =
+            arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
+            arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
+        const Real val2 =
+            arrTmp(i - 2 * dIdx[ix_], j - 2 * dIdx[iy_], k - 2 * dIdx[iz_],
+                   iVar) +
+            arrTmp(i + 2 * dIdx[ix_], j + 2 * dIdx[iy_], k + 2 * dIdx[iz_],
+                   iVar);
+
+        arrE(i, j, k, iVar) = c0 * arrTmp(i, j, k, iVar) + c1 * val1 + c2 * val2;
+      });
+    }
+
+    mf.FillBoundary(Geom(iLev).periodicity());
+  };
+
+  smooth_dir(ix_);
+  if (nDim > 1)
+    smooth_dir(iy_);
+  if (nDim > 2 && !isFake2D)
+    smooth_dir(iz_);
+}
+
+//==========================================================
 void Pic::smooth_E(MultiFab& mfE, int iLev) {
   std::string nameFunc = "Pic::smooth_E";
   timing_func(nameFunc);

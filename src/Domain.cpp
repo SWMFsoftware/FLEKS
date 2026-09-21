@@ -70,6 +70,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#SELECTPARTICLE", ParameterOwner::Pic },
   { "#SMOOTHB", ParameterOwner::Pic },
   { "#SMOOTHE", ParameterOwner::Pic },
+  { "#SMOOTHEB", ParameterOwner::Pic },
   { "#SMOOTHJ", ParameterOwner::Pic },
   { "#SMOOTHMOMENTS", ParameterOwner::Pic },
   { "#SOLVEEM", ParameterOwner::Pic },

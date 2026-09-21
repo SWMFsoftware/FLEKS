@@ -823,6 +823,7 @@ This command enables hyperbolic divergence cleaning for the magnetic field.
     <parameter name="nSmoothB" type="integer" default="1"/>
     <parameter name="nSmoothBPeriod" type="integer" default="1"/>
     <parameter name="coefSmoothB" type="real" default="0.5"/>
+    <parameter name="isSmoothDeltaB" type="logical" default="T"/>
   </if>
 
 #SMOOTHB
@@ -830,6 +831,7 @@ T                         doSmoothB (rest is read if true)
 1                         nSmoothB
 200                       nSmoothBPeriod
 0.5                       coefSmoothB
+T                         isSmoothDeltaB (if true, smooth dB = B - B0; if false, smooth total B)
 
 #SMOOTHB_FLEKS2
 F                         doSmoothB
@@ -837,9 +839,32 @@ F                         doSmoothB
 This command periodically applies digital-filter smoothing to the cell-centered
 magnetic field B to eliminate grid-scale (+/-1)^j checkerboard modes that fall into
 the null space of collocated central differences (similar to smooth_b in HybridVPIC).
+If isSmoothDeltaB is true (default), the smoothing is applied only to the perturbation
+dB = B - B0 (where B0 is the initial background state), preserving equilibrium current sheets.
+If isSmoothDeltaB is false, total B is smoothed directly.
 The smoothing is applied every nSmoothBPeriod steps for nSmoothB passes with strength coefSmoothB:
 B_new = (1-coef) * B_old + (coef/2) * (B_left + B_right).
 A typical period in hybrid reconnection simulations is 100-200 steps.
+</command>
+
+<command name="SMOOTHEB" alias="SMOOTHEB_FLEKS0,SMOOTHEB_FLEKS1,SMOOTHEB_FLEKS2" multiple="T">
+  <parameter name="doSmoothEB" type="logical" default="F"/>
+  <if expr="$doSmoothEB">
+    <parameter name="nSmoothEB" type="integer" default="2"/>
+    <parameter name="coefSmoothEB" type="real" default="0.5"/>
+  </if>
+
+#SMOOTHEB
+T                  doSmoothEB (rest is read if true)
+2                  nSmoothEB
+0.5                coefSmoothEB
+
+#SMOOTHEB_FLEKS2
+F                  doSmoothEB
+
+Smooth electric (E) and magnetic (B) fields strictly for particle interpolation
+(Boris push) in hybrid PIC, matching HybridVPIC's smooth_eb.
+The physical fields evolved by Faraday's law and Ohm's law are NEVER smoothed by this command.
 </command>
 
 <command name="SMOOTHE" alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2" multiple="T">
@@ -892,23 +917,27 @@ It is recommended to apply the smoothing 1-3 times (nSmoothJ).
   <if expr="$doSmoothMoments">
     <parameter name="nSmoothMoments" type="integer" default="0"/>
     <parameter name="coefSmoothMoments" type="real" default="0.5"/>
+    <parameter name="isCompensatedMoments" type="logical" default="T"/>
   </if>
 
 #SMOOTHMOMENTS
 T                         doSmoothMoments (rest is read if true)
 3                         nSmoothMoments
 0.5                       coefSmoothMoments
+T                         isCompensatedMoments (optional, default T)
 
 This command applies digital-filter smoothing to the ion fluid moments
 (density rho and momentum density rho*U) before the generalized Ohm's law
 in the hybrid PIC solver. It is a low-pass filter on the PIC shot noise that
-otherwise accumulates un-damped through the explicit Ohm-Faraday loop and
-appears as a spurious magnetic-energy drift in a quiescent free-stream. The
-coefSmoothMoments parameter controls the smoothing strength through:
-m_new = (1-coef) * m_old + (coef/2) * (m_left + m_right)
-applied in each direction; the filter conserves the domain mean, so a uniform
-equilibrium is preserved. It is recommended to apply the smoothing a few times
-(nSmoothMoments = 1-4). Only used when #HYBRIDPIC is T.
+otherwise accumulates un-damped through the explicit Ohm-Faraday loop.
+When isCompensatedMoments is T (default), a 5-point compensated binomial filter
+[-1/16, 1/4, 5/8, 1/4, -1/16] (matching WarpX / Birdsall & Langdon) is used.
+This zeros the Nyquist alternating mode (k*dx = pi) while canceling 2nd-order
+diffusion (leading error is 4th order ~ (k*dx)^4/16), preserving sharp physical
+gradients (current sheets, reconnection rate) without diffusive smearing.
+When isCompensatedMoments is F, standard 3-point binomial smoothing with
+coefSmoothMoments is used.
+Only used when #HYBRIDPIC is T.
 </command>
 
 

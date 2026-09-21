@@ -210,6 +210,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerHyperE[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerB0[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(centerEsmooth[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerBsmooth[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
       for (auto& pl : centerPlasmaSum) {
         if (pl.empty())
           pl.resize(n_lev_max());
@@ -548,6 +554,7 @@ void Pic::fill_E_B_fields() {
                      centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev,
                      false);
     }
+    save_initial_B0();
   }
 }
 
@@ -632,9 +639,17 @@ void Pic::particle_mover() {
       (useAvgFieldB && isBavgInit) ? centerBavg : centerB;
   const Vector<MultiFab>& nodeEpush = nodeEth;
   if (useHybridPIC) {
-    for (int i : kineticSpecies_) {
-      parts[i]->mover_cell_centered(centerEhybrid, centerBpush, eBg, uBg, dt,
-                                    dtnext);
+    if (doSmoothEB) {
+      smooth_EB_for_particles();
+      for (int i : kineticSpecies_) {
+        parts[i]->mover_cell_centered(centerEsmooth, centerBsmooth, eBg, uBg,
+                                      dt, dtnext);
+      }
+    } else {
+      for (int i : kineticSpecies_) {
+        parts[i]->mover_cell_centered(centerEhybrid, centerBpush, eBg, uBg, dt,
+                                      dtnext);
+      }
     }
   } else {
     for (int i : kineticSpecies_) {

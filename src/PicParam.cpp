@@ -136,6 +136,13 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nSmoothB", nSmoothB);
       param.read_var("nSmoothBPeriod", nSmoothBPeriod);
       param.read_var("coefSmoothB", coefSmoothB);
+      param.read_var("isSmoothDeltaB", isSmoothDeltaB);
+    }
+  } else if (command == "#SMOOTHEB") {
+    param.read_var("doSmoothEB", doSmoothEB);
+    if (doSmoothEB) {
+      param.read_var("nSmoothEB", nSmoothEB);
+      param.read_var("coefSmoothEB", coefSmoothEB);
     }
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
@@ -153,6 +160,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doSmoothMoments) {
       param.read_var("nSmoothMoments", nSmoothMoments);
       param.read_var("coefSmoothMoments", coefSmoothMoments);
+      param.read_optional("isCompensatedMoments", isCompensatedMoments);
     }
   } else if (command == "#UPWINDB") {
     param.read_var("useUpwindB", useUpwindB);
@@ -271,7 +279,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#AVGFIELDB") {
     param.read_var("useAvgFieldB", useAvgFieldB);
-    param.read_var("nAvgFieldB", nAvgFieldB);
+    if (useAvgFieldB) {
+      param.read_var("nAvgFieldB", nAvgFieldB);
+    }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
@@ -484,7 +494,7 @@ void Pic::post_process_param() {
   if (etaHyperMode != "si" && etaHyperMode != "grid")
     amrex::Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
                  "'. Expected 'si' or 'grid'.");
-  if (nAvgFieldB < 1)
+  if (useAvgFieldB && nAvgFieldB < 1)
     amrex::Abort("Invalid #AVGFIELDB: nAvgFieldB must be at least 1.");
 
   fi->set_plasma_charge_and_mass(qomEl);

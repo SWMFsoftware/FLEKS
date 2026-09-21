@@ -148,6 +148,9 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
+  amrex::Vector<amrex::MultiFab> centerB0;      // Initial background magnetic field for delta-B smoothing
+  amrex::Vector<amrex::MultiFab> centerEsmooth; // Smoothed E for particle mover
+  amrex::Vector<amrex::MultiFab> centerBsmooth; // Smoothed B for particle mover
   // Hybrid hyper-resistivity scratch fields.
   amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (stage A)
   amrex::Vector<amrex::MultiFab> nodeHyperE; // nabla x (nabla^2 B) (stage B)
@@ -284,6 +287,7 @@ private:
   bool doSmoothMoments = false;
   int nSmoothMoments = 0;
   amrex::Real coefSmoothMoments = 0.5;
+  bool isCompensatedMoments = true;
 
   std::string fieldIntegrator = "rk4"; // B integrator
   bool useRK4 = false;
@@ -300,9 +304,15 @@ private:
   int nSmoothB = 0;
   int nSmoothBPeriod = 1;
   amrex::Real coefSmoothB = 0.5;
+  bool isSmoothDeltaB = true;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
+
+  // Smoothing E and B fields strictly for particle interpolation (hybrid PIC)
+  bool doSmoothEB = false;
+  int nSmoothEB = 2;
+  amrex::Real coefSmoothEB = 0.5;
 
   // Plug-in initial condition via #TESTCASE registry.
   std::unique_ptr<InitialCondition> ic_;
@@ -381,6 +391,9 @@ public:
     centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
+    centerB0.resize(n_lev_max());
+    centerEsmooth.resize(n_lev_max());
+    centerBsmooth.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
     kStage.resize(n_lev_max());
@@ -569,6 +582,7 @@ public:
 
   void smooth_multifab(amrex::MultiFab &mf, int iLev, int di,
                        amrex::Real coef = 0.5);
+  void smooth_multifab_compensated(amrex::MultiFab &mf, int iLev);
 
   void update_U0_E0();
 
@@ -576,6 +590,8 @@ public:
   void smooth_moments();
   void smooth_B();
   void smooth_B(int iLev);
+  void save_initial_B0();
+  void smooth_EB_for_particles();
   void update_B_hybrid();
   void project_centerB_to_nodeB(int iLev);
   // Apply periodic and physical boundary conditions to cell-centred B
@@ -591,9 +607,13 @@ public:
   // moments are time-interpolated between centerPlasmaPrev (J^{n-1/2}) and
   // centerPlasmaSum (J^{n+1/2}) at the sub-step fraction `hstep`: X =
   // (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
+  // solveForFaraday: when true (substepping dB/dt = -curl E), omit grad(Pe)
+  // because analytically curl(grad(Pe)/rho) == 0; omitting discrete cross-derivatives
+  // avoids feeding PIC density noise into high-k magnetic checkerboard modes.
   void assemble_ohm_E(const amrex::MultiFab &centerBin,
                       const amrex::MultiFab &centerBtimeAvg,
-                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep);
+                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep,
+                      bool solveForFaraday = false);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 

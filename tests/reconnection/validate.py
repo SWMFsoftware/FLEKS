@@ -177,6 +177,47 @@ def _check_charge_neutrality(frames, mass_ratio=MASS_RATIO):
     return True, None
 
 
+def _check_grid_scale_oscillations(frames, max_noise_ratio=0.25):
+    """Detect unphysical high-frequency grid-scale (2*dy) numerical oscillations along y.
+
+    On a collocated cell-centered grid, the 2*dy alternating mode (+ - + -) lies in the
+    null space of central-difference curls. This check calculates the 2nd-difference
+    Nyquist amplitude |f_{j+1} - 2f_j + f_{j-1}|/4 in By and Bz and tests for persistent
+    cell-to-cell sign reversals.
+    """
+    for iframe, (_, fr) in enumerate(frames):
+        ux, uy, bx, by, bz, rho, _ = fr
+        if by.shape[0] < 6:
+            continue
+        b_norm = max(float(np.max(np.abs(bx))), 0.01)
+        for name, field in [("By", by), ("Bz", bz)]:
+            # 2nd difference along y (axis 0): shape (ny - 2, nx)
+            d2 = (field[2:, :] - 2.0 * field[1:-1, :] + field[:-2, :]) / 4.0
+            # 1st difference along y: shape (ny - 1, nx)
+            d1 = field[1:, :] - field[:-1, :]
+            # Sign changes between consecutive steps in y: (d1[1:] * d1[:-1] < 0)
+            sign_flips = (d1[1:, :] * d1[:-1, :] < 0)
+            # Oscillation amplitude where sign flips occur:
+            nyq_amp = np.abs(d2) * sign_flips
+            max_nyq = float(np.max(nyq_amp))
+            rel_nyq = max_nyq / b_norm
+            # Check consecutive sign reversals in columns:
+            consec_flips = np.zeros_like(sign_flips, dtype=int)
+            for j in range(sign_flips.shape[0]):
+                if j == 0:
+                    consec_flips[j] = sign_flips[j].astype(int)
+                else:
+                    consec_flips[j] = np.where(sign_flips[j], consec_flips[j-1] + 1, 0)
+            max_consec = int(np.max(consec_flips))
+            if max_consec >= 4 and rel_nyq > max_noise_ratio:
+                msg = (f"Frame {iframe}: grid-scale numerical oscillation detected along y in {name} "
+                       f"(rel Nyquist amp = {rel_nyq:.3f} > {max_noise_ratio:.2f}, "
+                       f"{max_consec} consecutive sign flips)")
+                logger.debug("    [FAIL] %s", msg)
+                return False, msg
+    return True, None
+
+
 def _validate_fadeev_plot(test_name, frames):
     """Fadeev reconnection plot check: equilibrium init, perturbation growth,
     flux (Ay) change at the X-point, and O-point motion."""
@@ -380,6 +421,11 @@ def validate_plot(test_name):
     frames, err = _load_all_frames()
     if err is not None:
         return False, err
+
+    # Check for grid-scale (2*dy) numerical oscillations
+    ok_osc, err_osc = _check_grid_scale_oscillations(frames)
+    if not ok_osc:
+        return False, err_osc
 
     if "gem" in test_name:
         return _validate_gem_plot(test_name, frames)

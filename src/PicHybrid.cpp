@@ -13,7 +13,7 @@ using namespace amrex;
 //==========================================================
 void Pic::assemble_ohm_E(const MultiFab& centerBin,
                          const MultiFab& centerBtimeAvg, MultiFab& Eout,
-                         int iLev, Real hstep) {
+                         int iLev, Real hstep, bool solveForFaraday) {
   BL_PROFILE("Pic::assemble_ohm_E");
 
   const auto dx = Geom(iLev).CellSizeArray();
@@ -102,12 +102,17 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       // Electron-pressure-gradient and Hall terms. The floor caps 1/rho; the
       // pressure closure itself uses the true rho. Cells with rho == 0 are
       // left inert.
+      // Analytically, curl(grad(Pe)/rho) == 0 for isothermal/polytropic closure,
+      // but discretely curl(grad(Pe)/rho) != 0 due to particle noise in rho.
+      // Following WarpX's HybridPICSolveE, grad(Pe) is only included when NOT
+      // solving for Faraday's law (!solveForFaraday), preventing fictitious magnetic
+      // vorticity from continually pumping checkerboard noise into dB/dt.
       if (rho > 0) {
         const Real invRhoEff = 1.0 / amrex::max(rho, rhoMinOhm);
 
-        // Electron pressure gradient
-        Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
-        if (electronTemperature > 0) {
+        // Electron pressure gradient: only for particle push field (!solveForFaraday)
+        if (!solveForFaraday && electronTemperature > 0) {
+          Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
           if (electronGamma == 1.0) {
             // Isothermal: grad(Pe) = Te * grad(rho)
             dPe_dx = electronTemperature *
@@ -198,7 +203,11 @@ void Pic::smooth_moments() {
                                      : nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
-      smooth_multifab(moments, iLev, 1, coefSmoothMoments);
+      if (isCompensatedMoments) {
+        smooth_multifab_compensated(moments, iLev);
+      } else {
+        smooth_multifab(moments, iLev, 1, coefSmoothMoments);
+      }
     }
     moments.FillBoundary(Geom(iLev).periodicity());
   }
@@ -237,15 +246,80 @@ void Pic::seed_first_hybrid_step() {
 }
 
 //==========================================================
+void Pic::save_initial_B0() {
+  std::string nameFunc = "Pic::save_initial_B0";
+  timing_func(nameFunc);
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (centerB0[iLev].ok()) {
+      MultiFab::Copy(centerB0[iLev], centerB[iLev], 0, 0, nDim3,
+                     centerB0[iLev].nGrow());
+      centerB0[iLev].FillBoundary(Geom(iLev).periodicity());
+      apply_centerB_BC(iLev, centerB0[iLev]);
+    }
+  }
+}
+
+//==========================================================
 void Pic::smooth_B(int iLev) {
   if (!doSmoothB || nSmoothB <= 0)
     return;
+
+  const bool smoothDelta =
+      isSmoothDeltaB && (int)centerB0.size() > iLev && centerB0[iLev].ok();
+
+  if (smoothDelta) {
+    // dB = B - B0: subtract equilibrium background sheet
+    MultiFab::Saxpy(centerB[iLev], -1.0, centerB0[iLev], 0, 0, nDim3,
+                    centerB[iLev].nGrow());
+  }
 
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   for (int icount = 0; icount < nSmoothB; ++icount) {
     smooth_multifab(centerB[iLev], iLev, 1, coefSmoothB);
   }
+
+  if (smoothDelta) {
+    // B = dB + B0: add equilibrium background sheet back
+    MultiFab::Add(centerB[iLev], centerB0[iLev], 0, 0, nDim3,
+                  centerB[iLev].nGrow());
+  }
+
   apply_centerB_BC(iLev);
+}
+
+//==========================================================
+void Pic::smooth_EB_for_particles() {
+  std::string nameFunc = "Pic::smooth_EB_for_particles";
+  timing_func(nameFunc);
+
+  if (!doSmoothEB || nSmoothEB <= 0)
+    return;
+
+  const Vector<MultiFab>& centerBpush =
+      (useAvgFieldB && isBavgInit) ? centerBavg : centerB;
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab::Copy(centerEsmooth[iLev], centerEhybrid[iLev], 0, 0, nDim3,
+                   centerEsmooth[iLev].nGrow());
+    MultiFab::Copy(centerBsmooth[iLev], centerBpush[iLev], 0, 0, nDim3,
+                   centerBsmooth[iLev].nGrow());
+
+    centerEsmooth[iLev].FillBoundary(Geom(iLev).periodicity());
+    centerBsmooth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    for (int icount = 0; icount < nSmoothEB; ++icount) {
+      smooth_multifab(centerEsmooth[iLev], iLev, 1, coefSmoothEB);
+      smooth_multifab(centerBsmooth[iLev], iLev, 1, coefSmoothEB);
+    }
+
+    centerEsmooth[iLev].FillBoundary(Geom(iLev).periodicity());
+    centerBsmooth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    apply_field_bc(cellStatus[iLev], centerEsmooth[iLev], 0, nDim3,
+                   &Pic::get_center_E, iLev, false);
+    apply_centerB_BC(iLev, centerBsmooth[iLev]);
+  }
 }
 
 //==========================================================
@@ -398,7 +472,7 @@ void Pic::update_B_hybrid() {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         // Stage 1: k1 = curl(E(B^n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
-                       hstepStart);
+                       hstepStart, true);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
                               Geom(iLev).InvCellSize());
 
@@ -410,7 +484,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       centerEstage[iLev], iLev, hstepHalf);
+                       centerEstage[iLev], iLev, hstepHalf, true);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
                               Geom(iLev).InvCellSize());
 
@@ -422,7 +496,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       centerEstage[iLev], iLev, hstepHalf);
+                       centerEstage[iLev], iLev, hstepHalf, true);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                               Geom(iLev).InvCellSize());
 
@@ -434,7 +508,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       centerEstage[iLev], iLev, hstepEnd);
+                       centerEstage[iLev], iLev, hstepEnd, true);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
                               Geom(iLev).InvCellSize());
 
@@ -460,7 +534,7 @@ void Pic::update_B_hybrid() {
 
         // Stage 1: B1 = B_n - subDt * curl(E(B_n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
-                       hstepStart);
+                       hstepStart, true);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
                               Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
@@ -471,7 +545,7 @@ void Pic::update_B_hybrid() {
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                       iLev, hstepEnd);
+                       iLev, hstepEnd, true);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
                               Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
@@ -485,7 +559,7 @@ void Pic::update_B_hybrid() {
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                       iLev, hstepHalf);
+                       iLev, hstepHalf, true);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                               Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
@@ -549,11 +623,12 @@ void Pic::update_B_hybrid() {
 
   // Evaluate E^{n+1} into centerEhybrid for the next push. Note that
   // assemble_ohm_E already executes FillBoundary and apply_field_bc on each
-  // level.
+  // level. Here solveForFaraday=false includes the electron-pressure gradient
+  // so particles feel the physical -grad(Pe)/rho acceleration.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto& cBin =
         (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-    assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
+    assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0, false);
   }
 
   // Fill coarse-fine interface ghost cells for centerEhybrid.
