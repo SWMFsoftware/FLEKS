@@ -201,6 +201,20 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerBstar[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
 
+      // Staggered hybrid solver fields.
+      distribute_FabArray(nodeEstage[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(nodeJ[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
+      distribute_FabArray(nodeBstage[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(centerPe[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                          nGst, doMoveData);
+      distribute_FabArray(nodeGradPe[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev], DistributionMap(iLev),
+                          1, nGst, doMoveData);
+
       // Cell-centred hybrid solver fields.
       distribute_FabArray(centerEhybrid[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
@@ -270,13 +284,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
       distribute_FabArray(jHat[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
+    }
 
-      for (auto& pl : nodePlasma) {
-        if (pl.empty())
-          pl.resize(n_lev_max());
-        distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
-                            nMoments, nGst, doMoveData);
-      }
+    for (auto& pl : nodePlasma) {
+      if (pl.empty())
+        pl.resize(n_lev_max());
+      distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
+                          nMoments, nGst, doMoveData);
     }
   }
 

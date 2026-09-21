@@ -221,6 +221,13 @@ private:
   // Ion moments at J^{n-1/2}; interpolated with current nodePlasma
   // by hstep inside assemble_ohm_E.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
+  // ---- Staggered hybrid solver fields ----
+  amrex::Vector<amrex::MultiFab> nodeEstage;  // E at a stage B (nodal)
+  amrex::Vector<amrex::MultiFab> nodeJ;       // total current J = curl(B)/(4*pi) (nodal)
+  amrex::Vector<amrex::MultiFab> nodeBstage;  // B interpolated to nodes at RK stages
+  amrex::Vector<amrex::MultiFab> centerPe;    // electron pressure at cell centers
+  amrex::Vector<amrex::MultiFab> nodeGradPe;  // grad(Pe) at nodes
+  amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated density
   // ---- Hybrid cell-centred fields ----
   // The hybrid step reads/writes these; nodeE/nodeB/nodePlasma are write-only
   // output mirrors refreshed once per step for plot/restart/tracker paths.
@@ -375,6 +382,12 @@ public:
     centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
+    nodeEstage.resize(n_lev_max());
+    nodeJ.resize(n_lev_max());
+    nodeBstage.resize(n_lev_max());
+    centerPe.resize(n_lev_max());
+    nodeGradPe.resize(n_lev_max());
+    nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
     kStage.resize(n_lev_max());
