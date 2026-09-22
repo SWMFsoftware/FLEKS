@@ -473,12 +473,22 @@ nabla\^2 J in the generalized Ohm's law (equivalently -(eta_h/4*pi) * nabla x
 shot-noise that the second-order resistivity cannot reach. etaHyperSI is the SI
 value [m\^4/s] (used when etaHyperMode = "si"; converted to code units as
 etaCode = 4*pi*etaSI*Si2NoV*Si2NoL\^3). When etaHyperMode = "grid", eta_h is
-instead scaled to the CFL stability bound on each sub-step:
-   eta_h = 4*pi * C_h * dx_min\^4 / dt_sub,
-where C_h is the dimensionless etaHyperCh (typical 1e-3 .. 1e-2). "grid" mode is
-robust to resolution and time-step changes and is the recommended setting for
-general production runs. 0 (either mode) disables the term. Only used when
-HYBRIDPIC is T.
+instead scaled to the grid and the (full) time step:
+   eta_h = 4*pi * C_h * dx_min\^4 / dt,
+where dx_min is the finest cell size and C_h the dimensionless etaHyperCh
+(typical 1e-3 .. 1e-2). Because E scales as (eta_h/4*pi) k^4 B, this is a
+mode-dependent damping
+   gamma_h = (eta_h/4*pi) k^4 = C_h * (k dx)^4 / dt
+per unit code time, identical on every AMR level, so it only reaches the
+badly-resolved harmonics: on the 64-cell whistler deck (dx = 0.1) with
+C_h = 1e-2, gamma_h = 4.6e-5 at k d_i = 1 and 0.06 at k d_i = 6 (against
+omega = 36 there), while the few-cell band that the explicit Hall advance
+makes unstable at lambda ~ 3 cells receives 6.0 and is completely damped.
+The explicit-diffusion CFL check uses eta_h * k_max^4 * dt_sub / (4*pi) =
+4 * C_h / nBSubcycle, so sub-cycling adds margin. "grid" mode is robust to
+resolution and time-step changes and is the recommended setting for general
+production runs. 0 (either mode) disables the term. Only used when HYBRIDPIC
+is T.
 </command>
 
 <command name="MINIMUMDENSITY" alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2" multiple="T">

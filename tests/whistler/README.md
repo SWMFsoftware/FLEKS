@@ -122,20 +122,28 @@ seeded-mode spectrum, measured-vs-analytic) and prints a PASS/FAIL table for:
    seeded-harmonic estimate (reported as noise-limited when the probe is
    buried in grid noise).
 
-Measured (hybrid deck, `--periods 6`, `dn` per mode):
+Measured (hybrid deck, `--modes 1 2 3 4 5 6 --periods 6`, `dn` per mode; all
+four criteria PASS):
 
-| m | κ | measured | analytic | error | hand |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 1.000 | 1.614 | 1.617 | 0.20 % | R |
-| 2 | 2.000 | 4.806 | 4.826 | 0.43 % | R |
-| 3 | 2.999 | 9.828 | 9.903 | 0.76 % | R |
-| 4 | 3.999 | 16.712 | 16.936 | 1.32 % | R |
-| 5 | 4.999 | 25.420 | 25.949 | 2.04 % | R |
-| 6 | 5.999 | 35.889 | 36.954 | 2.88 % | R |
+| m | κ | measured | analytic | error | local `d ln ω / d ln k` (meas / anal.) | hand |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 0.9998 | 1.6159 | 1.6174 | −0.09 % | – | R |
+| 2 | 1.9995 | 4.8055 | 4.8262 | −0.43 % | 1.572 / 1.577 | R |
+| 3 | 2.9993 | 9.8276 | 9.9034 | −0.77 % | 1.764 / 1.773 | R |
+| 4 | 3.9991 | 16.7110 | 16.9357 | −1.33 % | 1.845 / 1.865 | R |
+| 5 | 4.9988 | 25.4178 | 25.9495 | −2.05 % | 1.879 / 1.912 | R |
+| 6 | 5.9986 | 35.8891 | 36.9544 | −2.88 % | 1.892 / 1.939 | R |
 
 The residual error grows with `k dx` as expected for the compact discrete
-operators (`k dx = 0.098 m`).  The full-PIC variant measures `ω/Ω_i = 0.790`
-against the full cold-plasma root `0.786` (0.5 %).
+operators (`k dx = 0.098 m`), and the measured curve sits consistently *below*
+the continuum one, i.e. the discrete stencil under-estimates the whistler
+frequency.  The local log-log slope climbs towards the `ω ∝ k²` asymptote
+(2) from below, tracking the analytic slope to ≲ 2.5 %.  Phase velocity agrees
+to ≤ 1.74 % and the raw probe-point frequency to ≤ 0.11 %, and all 6 seeded
+periods are usable as one clean fit window (before the fix in gotcha 4 the
+window had to be trimmed to 2.4–3.2 periods at `m = 1…3`).  The full-PIC
+variant measures `ω/Ω_i = 0.790` against the full cold-plasma root `0.786`
+(0.5 %).
 
 ## Validation
 
@@ -160,13 +168,42 @@ hybrid variant it additionally runs the shared hybrid energy-log checks (see
    `dn = 100` (the old deck) the phase step per frame was `ω dt = 3.3 rad > π`
    and the phase fit aliased.  The decks now use `dn = 10`
    (`dt_frame = 0.2 s`, phase step 0.32 rad).
-4. **Run length.**  The explicit hybrid advance of this low-beta plasma slowly
-   drives grid-scale fields (`max|B_perp|` grows after ≈ 10 s at `κ = 1`), so
-   the hybrid deck stops at `TimeMax = 10 s` (2.6 periods) and both the shared
-   validator and `dispersion.py` trim the fit window once the transverse
-   amplitude exceeds ~1.5× its seeded value.  The full-PIC variant uses
-   `TimeMax = 24 s` (3 full-EM periods of 8.0 s).
+4. **The hybrid Hall advance needs grid-scale hyper-resistivity.**  The explicit
+   Hall advance of this cold, low-β plasma is unstable to a non-propagating,
+   symmetric `±n` mode at the few-cell scale.  Measured on this deck (`κ ≈ 1`,
+   24 s, 64 cells): the strongest growth is at `λ ≈ 3` cells (`n ≈ ±19`) with
+   `γ ≈ 0.65 /Ω_i`, while the physical range `k d_i ≲ 6` is stable.  It is pinned
+   to the Hall-term discretization by two checks — it is independent of the
+   particle count (20 000 ppc: unchanged) and it disappears with the Hall term
+   off (`useHallTerm = F`: `γ = −0.007`) — while more B sub-cycling does not
+   help (`nBSubcycle = 32`: `γ = +0.50`).  The deck therefore enables grid-mode
+   hyper-resistivity (`#HYPERRESISTIVITY`, `etaHyperMode = grid`,
+   `etaHyperCh = 1e-2`), which damps at `γ_h = etaHyperCh (k dx)^4 / dt` per
+   step: ≈ `6.0 /Ω_i` at the unstable band (versus its `0.65`), but only
+   `4.6e-5` at `k d_i = 1` and `0.06` at `k d_i = 6` (`< 1 %` amplitude loss per
+   period).  With it, `max|B_perp|` grows by only 1.08–1.42× over the whole
+   6-period run (the seed's own beat) instead of 6.9–24×, and the seed mode is
+   untouched (`γ = 0.000` versus `−0.002`).  Anything `>= 1e-2` works equally
+   well; `1e-3` is too weak (`γ` only falls to `0.42`).  Before this was
+   understood the hybrid deck stopped at `TimeMax = 10 s` (2.6 periods) and both
+   the validator and `dispersion.py` trimmed the fit window once `max|B_perp|`
+   exceeded ~1.5× its seeded value; neither is necessary now.  (This option only
+   exists in the hybrid solver — the full-PIC deck has no Ohm's law to damp.)
 5. **Full-PIC electron density** must be quasi-neutral (`ρ_e = 5/1836
    amu/cc`).  The previous value (`2.5552e-5`) violated `n_e = n_i` by 106×,
    which moved the measured frequency from 0.79 to 1.24 and would have made the
    dispersion check meaningless.
+6. **Never write a command keyword inside a *comment* line of a PARAM.in file.**
+   The reader scans for the command keyword *anywhere* in the text, including
+   mid-line, and then takes the parameter value from the first token of the
+   **next** line.  A comment that referred to the Hall-term block by name
+   (`#HALLTERM`, followed on the next line by the word "not" …) silently built a
+   real `#HALLTERM` command with `useHallTerm = "not"` → false, which disabled
+   the Hall term; the seeded mode then appeared to grow 21× in 24 s instead of
+   holding its amplitude, and the k-scan returned `ω ≈ 0.38` for `m = 1`
+   instead of 1.62.  Nothing warns you.  The quickest checks:
+   * `grep -n '#' PARAM.in | grep -v '^[0-9]*:#'` — mid-line hashes;
+   * the startup echo in the run log (`PC: #COMMAND` followed by each
+     `<value> <name>`) lists every command the reader actually built.
+   Spell out command names in prose ("the HALLTERM block", "nBSubcycle"),
+   never as hash-prefixed tokens.  All other decks under `tests/` are clean.

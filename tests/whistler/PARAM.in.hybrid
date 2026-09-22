@@ -47,6 +47,54 @@ T                       useHybridPIC
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 
+Grid-scale hyper-resistivity, REQUIRED for a long hybrid wave run.  The
+explicit Hall advance of this cold, low-beta plasma is unstable to a
+non-propagating (symmetric +-n) mode at the few-cell scale: measured on this
+deck (k d_i ~ 1 seed, 24 s, 64 cells) the strongest growth is at lambda ~ 3
+cells (n ~ +-19) with gamma ~ 0.65 /Omega_i, while the k d_i <= 6 physical range
+is stable.  Two independent checks pin it on the Hall-term discretization: it is
+independent of the particle count (20000 ppc: unchanged) and it DISAPPEARS with
+the Hall term switched off (useHallTerm = F: gamma = -0.007), while more B
+sub-cycling does not help (nBSubcycle = 32: gamma = +0.50).
+
+NOTE (a real footgun, hit while writing this comment): never write a hash-name
+token such as the text of a command block inside a comment line of a PARAM.in
+file.  The FLEKS reader scans for a command keyword anywhere in the text,
+including mid-line, so a comment mentioning, say, the HALLTERM block silently
+builds a real HALLTERM command whose value is taken from the first token of the
+NEXT line.  That is exactly what happened here: the previous version of this
+comment contained the literal keyword of the Hall-term block followed by "F",
+which set useHallTerm to the word "not" (false) and disabled the Hall term, so
+the seeded mode looked unstable (21x growth in 24 s instead of flat).  The
+startup echo in the run log prints every command the reader actually built
+(lines beginning with "PC:") and is the quickest way to spot this.
+
+Grid mode sets eta_h = 4*pi * etaHyperCh * dx^4 / dt, i.e. a fixed damping per
+step of gamma_h = etaHyperCh * (k dx)^4 / dt_sim, so it acts only on the
+badly-resolved harmonics.  With etaHyperCh = 1e-2 and dx = 0.1:
+
+    n = 1  (k d_i = 1.0)  : (k dx)^4 = 9.3e-5 -> gamma_h = 4.6e-5  (seed
+                            damping ~1e-5 of omega, i.e. unmeasurable)
+    m = 6  (k d_i = 6.0)  : (k dx)^4 = 0.12   -> gamma_h = 0.060 vs
+                            omega = 36, so < 1 % amplitude loss per period
+    n = 19 (lambda ~ 3.4) : (k dx)^4 = 12.1   -> gamma_h = 6.0, far above the
+                            instability's 0.65
+
+Measured effect (identical runs, only etaHyperCh changed): the unstable band
+growth drops from +0.65 (off) to +0.42 (1e-3) to no growth at all (1e-2), and
+max|B_perp| at t = 24 s goes from 2.22 (5x the 0.0200 seed and growing) to
+0.0267 - the seed's own level.  The seed mode itself is untouched: gamma =
+-0.0024 versus -0.0019 without it.  etaHyperCh >= 1e-2 gives the same result
+(the damping already saturates the band), so 1e-2 is the smallest value that
+cleans the whole unstable band.  With the deck exactly as below the 24 s check
+run gives |C(n=1)| = 0.0200 -> 0.0262 (gamma = -0.0000), |C(n=19)| = 0.0000
+throughout, and max|B_perp| = 0.0200 -> 0.0267; without the block the same run
+leaves |C(n=19)| = 0.085 and growing.
+#HYPERRESISTIVITY
+0.0                     etaHyperSI
+grid                    etaHyperMode
+1.0e-2                  etaHyperCh
+
 #ELECTRONTEMPERATURE
 0.0                     electronTemperature  [eV]
 1.0                     electronGamma
@@ -123,6 +171,10 @@ z=0 fluid ascii pic     plotString
 
 #STOP
 -1                      MaxIter
-10.0                    TimeMax   ~2.6 whistler periods (n=1 mode, T = 3.9 s)
+24.0                    TimeMax   ~6 whistler periods (n=1 mode, T = 3.9 s);
+                                  this used to be 10 s because the grid-scale
+                                  instability of the Hall advance swamped the
+                                  signal after ~10 s - with the hyper-resistivity
+                                  above the mode is stable for the whole run
 
 #RUN
