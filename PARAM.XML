@@ -1329,6 +1329,8 @@ dedicated plug-ins (beam, tophat).
   <parameter name="waveMode" type="integer"/>
   <parameter name="frac" type="real"/>
   <parameter name="pert" type="real"/>
+  <parameter name="rightHand" type="logical" default="F"/>
+  <parameter name="walenFactor" type="real" default="1.0"/>
 
 #WAVEIC 
 T       seedE
@@ -1343,6 +1345,8 @@ T       velKick
 1       waveMode
 0.02    frac
 0.1     pert
+F       rightHand
+1.0     walenFactor
 
 Optional sub-parameters for a WaveIC wave initial condition (selected by a
 #TESTCASE name of waveic / lightwave / hybridwave / convectionwave /
@@ -1353,6 +1357,32 @@ oblique plane wave (wavelength in cells), otherwise the wave is x-aligned with
 kx = 2*pi*waveMode/Lx; guideField adds the uniform Bx0 guide field under the B
 perturbation (B1 = frac*Bx0); velKick adds the matching Alfven ion velocity
 kick; pert is the density perturbation amplitude.
+
+For the x-aligned transverse wave the perturbation is
+
+    dB_y(x,0) = B1 cos(kx),   dB_z(x,0) = hand * B1 sin(kx),
+
+with hand = -1 for rightHand = T and hand = +1 otherwise. The sign is the seed
+helicity about the +x guide field: hand = -1 rotates y -> z about +B0 (the
+electron-gyration sense), which is the RIGHT-hand (whistler) polarization for a
+wave propagating along +B0; hand = +1 is the LEFT-hand (ion-cyclotron) one.
+Take the waveMode sign together with hand to pick the branch: for B0 = +x, the
+right-hand whistler propagates along +B0 when hand = -1 and waveMode > 0.
+
+walenFactor scales the transverse ion velocity kick, u_perp = -walenFactor *
+B_perp/B0 in code units (B0 ~ 1). The default 1.0 is the incompressible
+(Alfven) relation, which is the exact eigenmode only for k*d_i -> 0. A
+single-branch seed needs walenFactor = (k d_i)/(omega/Omega_i) * v_A/B0, with
+omega/Omega_i the frequency of the seeded branch. For parallel propagation the
+Hall/cold-plasma branches (kappa = k*d_i) are
+
+    right-hand / whistler      : w/Omega_i = [kappa^2 + kappa sqrt(kappa^2+4)]/2
+    left-hand / ion-cyclotron  : w/Omega_i = [-kappa^2 + kappa sqrt(kappa^2+4)]/2
+
+so walenFactor = kappa*(v_A/B0)/[w/Omega_i]. Leaving it at 1.0 excites both
+circular branches (e.g. ~84%/16% whistler/ion-cyclotron amplitude for a
+right-hand seed at k d_i ~ 1), which is fine for a frequency measurement but
+not for a pure eigenmode.
 </command>
 
 <command name="PERIODICITY">

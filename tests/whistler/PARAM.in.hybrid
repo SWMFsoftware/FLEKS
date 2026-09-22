@@ -8,8 +8,9 @@ O(1) and the ion cyclotron motion is resolved by the timestep:
   Geometry in code units; box Lx = 6.4 d_i. With lNormSI = uNormSI = 1.0e5,
   tNorm = 1 s so TimeMax (s) equals code time; with q/(m c) = 1 for the proton,
   B = Omega_i ~ 1.  With dt = 0.02, dt*Omega_i = 0.02 << 1 so the Hall/whistler
-  mode (omega/Omega_i = (k d_i)^2/(1+(k d_i)^2)) is numerically stable.  The
-  n=1 mode has omega ~ 0.49 rad/s, period T ~ 12.8 s.
+  mode is numerically stable.  The right-hand Hall whistler at k d_i = 0.982 has
+  omega/Omega_i = [k^2 d_i^2 + k d_i sqrt(k^2 d_i^2 + 4)]/2 = 1.617, i.e. period
+  T = 3.89 s (the left-hand/ion-cyclotron branch would be at 0.618).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -43,9 +44,17 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
+B time-averaging must stay OFF for a propagating-wave test.  The EMA filter of
+B inside the Ohm's law lags the restoring convection term -u_i x B by
+tau ~ (nAvgFieldB-1)/2 * dt, which anti-damps the wave at gamma ~ omega^2*tau/2
+and destroys the eigenmode phase.  Measured on this deck (right-hand whistler,
+k d_i ~ 1, omega = 1.63 Omega_i, dt = 0.02): gamma = 0.20 /s with
+nAvgFieldB = 20 versus 0.014 /s with the filter off, i.e. the wave grew 13x in
+the 13 s run instead of holding its seed amplitude.  nAvgFieldB = 1 is also a
+no-op (alpha = 0) if the flag is ever re-enabled.
 #AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB
+F                       useAvgFieldB
+1                       nAvgFieldB
 
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
@@ -87,8 +96,15 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     ey [V/m]
 0.0                     ez [V/m]
 
+Right-hand (whistler) circular polarization: B_z carries the opposite sign to
+B_y so the transverse field rotates y -> z about +B0 (the electron-gyration
+sense) for the wave travelling along +B0.
 #TESTCASE
 HybridWave
+
+#WAVEIC
+T                       rightHand      right-hand (whistler) helicity
+1                       waveMode       box-fundamental (n=1) mode
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -113,12 +129,12 @@ T                       useFixedDt
 #SAVEPLOT
 1                       nPlot
 z=0 fluid ascii pic     plotString
-100                     dn
+10                      dn
 -1                      dt
 1                       dx
 
 #STOP
 -1                      MaxIter
-13.0                    TimeMax   ~1 whistler period (n=1 mode)
+10.0                    TimeMax   ~2.6 whistler periods (n=1 mode, T = 3.9 s)
 
 #RUN

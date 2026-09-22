@@ -7,10 +7,18 @@
 //
 // Presets (overridable via #WAVEIC sub-parameters):
 //   lightwave       : EM oblique circularly polarized plane wave.
-//   hybridwave      : transverse B perturbation B1*(cos kx, sin kx) on guide
+//   hybridwave      : transverse B perturbation B1*(cos kx, +-sin kx) on guide
 //                     field Bx0 + matching Alfven velocity kick.
 //   ionacousticwave : no field; sinusoidal density perturbation via weight
 //                     scaling 1 + pert*sin(kx*x).
+//
+// The +- sign of the B_z (and matching u_z) perturbation is the seed helicity,
+// selected with the rightHand sub-parameter:
+//   rightHand = F (default, left-hand ): B_z = +B1 sin kx  -> ion-cyclotron
+//   rightHand = T (right-hand, whistler): B_z = -B1 sin kx  -> whistler
+// relative to a +x guide field B0 = Bx0 with the wave propagating along +B0
+// (waveMode > 0).  The right-hand (whistler) sense is the one that rotates
+// y -> z about +B0, i.e. the sense of the electron gyration.
 class WaveIC : public InitialCondition {
 public:
   enum Profile {
@@ -57,6 +65,7 @@ private:
   bool guideField_ = false; // add uniform guide field Bx0
   bool velKick_ = false;    // matching Alfven ion velocity kick
   bool seedWeight_ = false; // sinusoidal density perturbation
+  bool rightHand_ = false;  // transverse (B, u) helicity: T = right-hand
 
   amrex::Real dir_[nDim3] = { 1, 0, 0 }; // propagation direction (oblique)
   amrex::Real waveLength_ = 48.0;        // wavelength in cells (oblique)
@@ -64,6 +73,13 @@ private:
   amrex::Real frac_ = 0.02;              // B perturbation amplitude (B1/Bx0)
   amrex::Real pert_ = 0.1;               // density perturbation amplitude
   amrex::Real anisoTPerpOverTPar_ = 0.0; // T_perp/T_par (0 = isotropic)
+  // Transverse velocity kick in units of the Alfvenic one (u_perp = -f * B1).
+  // 1.0 is the incompressible Alfven relation u_perp = -B_perp/B0; the whistler
+  // eigenmode needs -(k d_i)/(omega/Omega_i) instead (see PARAM.XML).
+  amrex::Real walenFactor_ = 1.0;
+
+  // +1 for the left-hand (default) seed, -1 for the right-hand one.
+  amrex::Real helicity() const { return rightHand_ ? -1.0 : 1.0; }
 
   // Cached in set_fields from the domain / guide field.
   mutable amrex::Real B1_ = 0.0; // B perturbation amplitude (code units)

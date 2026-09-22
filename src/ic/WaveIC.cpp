@@ -33,6 +33,8 @@ std::string WaveIC::name() const {
 
 // Fill preset defaults for the active profile; #WAVEIC sub-params override.
 void WaveIC::apply_preset() {
+  rightHand_ = false;
+  walenFactor_ = 1.0;
   switch (profile_) {
     case LightWave:
       seedE_ = true;
@@ -94,21 +96,46 @@ void WaveIC::apply_preset() {
 
 void WaveIC::read_param(ReadParam& param) {
   apply_preset();
-  // All sub-parameters are optional.
-  param.read_optional("seedE", seedE_);
-  param.read_optional("seedB", seedB_);
-  param.read_optional("oblique", oblique_);
-  param.read_optional("guideField", guideField_);
-  param.read_optional("velKick", velKick_);
-  param.read_optional("seedWeight", seedWeight_);
-  param.read_optional("dir", dir_[0]);
-  param.read_optional("dir", dir_[1]);
-  param.read_optional("dir", dir_[2]);
-  param.read_optional("waveLength", waveLength_);
-  param.read_optional("waveMode", waveMode_);
-  param.read_optional("frac", frac_);
-  param.read_optional("pert", pert_);
-  param.read_optional("anisoTPerpOverTPar", anisoTPerpOverTPar_);
+  // All sub-parameters are optional, and read_optional() only inspects the
+  // next line (it rewinds on a name mismatch), so a single pass would require
+  // the deck to list them in this exact order.  Loop until a full pass
+  // consumes nothing instead, which makes the deck order irrelevant.
+  bool progress = true;
+  while (progress) {
+    progress = false;
+    if (param.read_optional("seedE", seedE_))
+      progress = true;
+    if (param.read_optional("seedB", seedB_))
+      progress = true;
+    if (param.read_optional("oblique", oblique_))
+      progress = true;
+    if (param.read_optional("guideField", guideField_))
+      progress = true;
+    if (param.read_optional("velKick", velKick_))
+      progress = true;
+    if (param.read_optional("seedWeight", seedWeight_))
+      progress = true;
+    if (param.read_optional("rightHand", rightHand_))
+      progress = true;
+    if (param.read_optional("walenFactor", walenFactor_))
+      progress = true;
+    if (param.read_optional("dir", dir_[0]))
+      progress = true;
+    if (param.read_optional("dir", dir_[1]))
+      progress = true;
+    if (param.read_optional("dir", dir_[2]))
+      progress = true;
+    if (param.read_optional("waveLength", waveLength_))
+      progress = true;
+    if (param.read_optional("waveMode", waveMode_))
+      progress = true;
+    if (param.read_optional("frac", frac_))
+      progress = true;
+    if (param.read_optional("pert", pert_))
+      progress = true;
+    if (param.read_optional("anisoTPerpOverTPar", anisoTPerpOverTPar_))
+      progress = true;
+  }
 }
 
 void WaveIC::set_fields(PicICFields& fields) const {
@@ -211,7 +238,10 @@ void WaveIC::set_fields(PicICFields& fields) const {
         }
       }
     } else {
-      // Transverse circularly-polarized wave: B = (Bx0, B1 cos kx, B1 sin kx)
+      // Transverse circularly-polarized wave:
+      //   B = (Bx0, B1 cos kx, hand*B1 sin kx)
+      // with hand = +1 for the left-hand seed and -1 for the right-hand one.
+      const amrex::Real hand = helicity();
       if (seedB_) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
@@ -225,7 +255,7 @@ void WaveIC::set_fields(PicICFields& fields) const {
             const amrex::Real sphi = std::sin(kx_ * x);
             arrB(i, j, k, ix_) = Bx0;
             arrB(i, j, k, iy_) = B1 * cphi;
-            arrB(i, j, k, iz_) = B1 * sphi;
+            arrB(i, j, k, iz_) = hand * B1 * sphi;
           });
         }
         for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
@@ -238,7 +268,7 @@ void WaveIC::set_fields(PicICFields& fields) const {
             const amrex::Real sphi = std::sin(kx_ * x);
             arrB(i, j, k, ix_) = Bx0;
             arrB(i, j, k, iy_) = B1 * cphi;
-            arrB(i, j, k, iz_) = B1 * sphi;
+            arrB(i, j, k, iz_) = hand * B1 * sphi;
           });
         }
       }
@@ -258,11 +288,14 @@ void WaveIC::modify_particle_weight(ParticleICState& s) const {
 void WaveIC::modify_particle_velocity(ParticleICState& s) const {
   if (!velKick_)
     return;
-  // Transverse Alfven velocity B = (0, B1 cos kx, B1 sin kx).
+  // Transverse velocity kick matching the seeded helicity:
+  //   u_perp = -walenFactor * (B1 cos kx, hand*B1 sin kx)
+  // i.e. the Alfvenic relation u_perp = -B_perp/B0 for walenFactor = 1.
   const amrex::Real cphi = std::cos(kx_ * s.x);
   const amrex::Real sphi = std::sin(kx_ * s.x);
-  s.vBulk -= B1_ * cphi;
-  s.wBulk -= B1_ * sphi;
+  const amrex::Real amp = walenFactor_ * B1_;
+  s.vBulk -= amp * cphi;
+  s.wBulk -= helicity() * amp * sphi;
 }
 
 // Bi-Maxwellian seeding: treat #UNIFORMSTATE T as T_par (parallel draw, x)

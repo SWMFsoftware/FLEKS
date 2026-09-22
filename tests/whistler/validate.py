@@ -12,15 +12,17 @@ the test runner (tests/validate_tests.py):
       (useHybridPIC = T, Hall-only).
 
 Both variants seed the identical x-aligned, transverse, circularly-polarized
-whistler wave (#TESTCASE HybridWave, frac = 0.02) so the field diagnostics are
-directly comparable.  The shared, solver-agnostic checks in tests/_shared/hybrid.py
-are used for both:
+RIGHT-HAND (whistler) wave (#TESTCASE HybridWave, #WAVEIC rightHand T,
+frac = 0.02) so the field diagnostics are directly comparable.  The shared,
+solver-agnostic checks in tests/_shared/hybrid.py are used for both:
 
   * validate_log  -> energy-log checks (finite energies, bounded magnetic
     energy, conserved particle number under periodic BCs).
   * validate_plot -> seeded-wavelength (n=1) check + whistler-dispersion check
-    measuring the transverse-wave frequency and comparing it against
-    omega/Omega_i = (k d_i)^2 / (1 + (k d_i)^2) from the .out plot frames.
+    measuring the transverse-wave frequency and comparing it against the two
+    parallel-propagating Hall branches
+    w/Omega_i = [+-kappa^2 + kappa*sqrt(kappa^2+4)]/2 (kappa = k d_i) from the
+    .out plot frames.
 
 Because the dispersion check lives in tests/_shared/hybrid.py and reads only the
 By/Bz components, it applies unchanged to the full-PIC solver output.
