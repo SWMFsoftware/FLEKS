@@ -188,12 +188,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(kStage[iLev][kk], cGrids[iLev],
                             DistributionMap(iLev), 3, nGst, doMoveData);
 
-      // Time-averaged B scratch (cell + node), used when useAvgFieldB is set.
-      distribute_FabArray(centerBavg[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-      distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-
       // rk3/rk4 persistent scratch: centerBstart = B_n; centerBstar =
       // (trial+B_n)/2.
       distribute_FabArray(centerBstart[iLev], cGrids[iLev],
@@ -208,12 +202,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           nGst, doMoveData);
       distribute_FabArray(nodeBstage[iLev], nGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
-      distribute_FabArray(centerPe[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                          nGst, doMoveData);
+      distribute_FabArray(centerPe[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, nGst, doMoveData);
       distribute_FabArray(nodeEambi[iLev], nGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
-      distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev], DistributionMap(iLev),
-                          1, nGst, doMoveData);
+      distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev],
+                          DistributionMap(iLev), 1, nGst, doMoveData);
 
       // Hybrid-only node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
@@ -561,12 +555,7 @@ void Pic::update_part_loc_to_half_stage() {
     for (int i = 0; i < nSpecies; ++i) {
       if (useHybridPIC && parts[i]->get_charge() < 0)
         continue;
-      // Use the time-averaged B in the Boris half-stage position push when
-      // enabled (falls back to the instantaneous B before the first average is
-      // initialised).
-      const auto& nodeBhalf =
-          (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
-      parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeBhalf,
+      parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
                                               tc->get_dt());
     }
   }
@@ -602,13 +591,10 @@ void Pic::particle_mover() {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  // Time-averaged B when enabled.
-  const Vector<MultiFab>& nodeBpush =
-      (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
   const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeE : nodeEth;
 
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEpush, nodeBpush, eBg, uBg, dt, dtnext);
+    parts[i]->mover(nodeEpush, nodeB, eBg, uBg, dt, dtnext);
   }
 
   for (int i : kineticSpecies_) {
@@ -1102,14 +1088,12 @@ void Pic::sum_moments(bool updateDt) {
       fill_fine_lev_bny_from_coarse(
           nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
           nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
 
       if (useHybridPIC) {
         fill_fine_lev_bny_from_coarse(
-            nodePlasmaPrev[nSpecies][iLev - 1],
-            nodePlasmaPrev[nSpecies][iLev], 0,
-            nodePlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            nodePlasmaPrev[nSpecies][iLev - 1], nodePlasmaPrev[nSpecies][iLev],
+            0, nodePlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
             Geom(iLev - 1), Geom(iLev), node_status(iLev),
             node_bilinear_interp);
       }
@@ -1166,9 +1150,9 @@ void Pic::calc_cost_per_cell() {
     if (balanceStrategy == BalanceStrategy::Cell) {
       cellCost[iLev].setVal(1.0);
     } else {
-      average_node_to_cellcenter(
-          cellCost[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
-          cellCost[iLev].nComp(), cellCost[iLev].nGrow());
+      average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
+                                 iNum_, cellCost[iLev].nComp(),
+                                 cellCost[iLev].nGrow());
     }
 
     for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {

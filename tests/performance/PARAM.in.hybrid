@@ -47,10 +47,6 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB
-
 Hall-only: resistive and electron-pressure-gradient terms off (both 0.0) to
 isolate the whistler dispersion (the standard hybrid workload).
 #RESISTIVITY

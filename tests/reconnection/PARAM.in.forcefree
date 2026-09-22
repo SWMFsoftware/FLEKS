@@ -79,10 +79,6 @@ T                       doSmoothMoments [smooth ion moments to suppress particle
 #FIELDINTEGRATOR
 rk4                     fieldIntegrator
 
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB
-
 #PLASMA
 1                       nSpecies
 1.0                     mass

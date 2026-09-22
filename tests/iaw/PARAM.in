@@ -150,7 +150,3 @@ z=0 fluid ascii pic     plotString
 5.0                     TimeMax   ~0.3 of the n=1 ion-acoustic period
 
 #RUN
-
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB

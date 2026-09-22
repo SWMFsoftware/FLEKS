@@ -392,7 +392,7 @@ Related numerical controls:
     #BSUBCYCLE - sub-steps for the explicit Hall-whistler CFL,
     #MINIMUMDENSITY - caps the 1/rho factors in the Hall and pressure terms,
     #FIELDINTEGRATOR - time integrator for the Faraday (B) update,
-    #AVGFIELDB, #SMOOTHMOMENTS - damp PIC shot noise in the Ohm's law.
+    #SMOOTHMOMENTS - damps PIC shot noise in the Ohm's law.
 \end{verbatim}
 </command>
 
@@ -512,23 +512,6 @@ large linear-stability region, so with rk4 you typically do not need a large
 #BSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
 a time-centred E. Only used when HYBRIDPIC is T.
     </command>
-
-<command name="AVGFIELDB" alias="AVGFIELDB_FLEKS0,AVGFIELDB_FLEKS1,AVGFIELDB_FLEKS2,BAVERAGE" multiple="T">
-  <parameter name="useAvgFieldB" type="logical" default="F"/>
-  <parameter name="nAvgFieldB" type="integer" default="10"/>
-
-#AVGFIELDB
-F                    useAvgFieldB
-10                   nAvgFieldB
-
-Time-averaged (exponential moving average) magnetic field. B_avg =
-alpha*B_avg + (1-alpha)*B\^{n+1} with alpha = 1 - 1/nAvgFieldB. B_avg replaces
-the instantaneous B inside the generalized Ohm's law (convection / Hall terms)
-and in the particle Boris push, damping the high-frequency PIC shot noise that
-pollutes the Hall term and particle orbits. B_avg is NOT divergence-clean and is
-never used in the Faraday update, so no projection is required. Only used when
-HYBRIDPIC is T.
-</command>
 
 <command name="PARTMODE" alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2" multiple="T">
   <parameter name="partMode" type="string" input="select" required="T">

@@ -54,10 +54,6 @@ si                      etaHyperMode
 #FIELDINTEGRATOR
 rk4                     fieldIntegrator
 
-#AVGFIELDB
-F                       useAvgFieldB
-1                       nAvgFieldB
-
 #PLASMA
 1                       nSpecies
 1.0                     mass

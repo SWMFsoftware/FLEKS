@@ -72,7 +72,6 @@ the uniform reconnection test (`L = 5`, `eps = 0.4`, `num_islands = 2`,
 | `#HYPERRESISTIVITY` | — | grid mode, `C_h = 0.001` |
 | `#BSUBCYCLE` | — | `4` |
 | `#FIELDINTEGRATOR` | — | `rk4` |
-| `#AVGFIELDB` | — | `T`, `nAvgFieldB = 20` |
 | `#PARTICLES` | `4 4` (16 macroparticles/cell/species) | `5 5` (25 macroparticles/cell) |
 | `#TIMESTEPPING dt` | `0.005` (semi-implicit; resolves electron timescale for `m_i/m_e=25`) | `0.02` (explicit; ion-scale step) |
 | `#STOP TimeMax` | `3` | `20` (ion-scale onset is slower) |

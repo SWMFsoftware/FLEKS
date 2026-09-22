@@ -56,10 +56,6 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB
-
 Ideal frozen-in Ohm's law (Hall OFF) so the wave is a driven by the motional
 field alone.
 #HALLTERM

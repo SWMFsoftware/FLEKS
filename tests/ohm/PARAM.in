@@ -111,7 +111,3 @@ Bx By Bz Ex Ey Ez       varName
 6.25                    TimeMax
 
 #RUN
-
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB

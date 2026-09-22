@@ -244,8 +244,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     ic_->read_param(param);
   } else if (command == "#FORCEFREEIC") {
     if (!ic_ || std::string(ic_->name()) != "forcefree") {
-      amrex::Abort("The #FORCEFREEIC block must follow a #TESTCASE that selects "
-                   "the forcefree (magnetic reconnection) initial condition.");
+      amrex::Abort(
+          "The #FORCEFREEIC block must follow a #TESTCASE that selects "
+          "the forcefree (magnetic reconnection) initial condition.");
     }
     ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
@@ -268,9 +269,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("rhoMinOhm", rhoMinOhm);
   } else if (command == "#FIELDINTEGRATOR") {
     param.read_var("fieldIntegrator", fieldIntegrator);
-  } else if (command == "#AVGFIELDB") {
-    param.read_var("useAvgFieldB", useAvgFieldB);
-    param.read_var("nAvgFieldB", nAvgFieldB);
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
@@ -483,8 +481,6 @@ void Pic::post_process_param() {
   if (etaHyperMode != "si" && etaHyperMode != "grid")
     amrex::Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
                  "'. Expected 'si' or 'grid'.");
-  if (nAvgFieldB < 1)
-    amrex::Abort("Invalid #AVGFIELDB: nAvgFieldB must be at least 1.");
 
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
@@ -533,8 +529,6 @@ void Pic::post_process_param() {
 
     useRK4 = (fieldIntegrator == "rk4");
     amrex::Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
-    amrex::Print() << "  useAvgFieldB: " << useAvgFieldB
-                   << "   nAvgFieldB: " << nAvgFieldB << "\n";
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       double unormSI = fi->get_unorm_si();

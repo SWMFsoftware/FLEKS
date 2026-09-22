@@ -63,7 +63,7 @@ uncluttered.
   solve.
 - Enabled by `#HYBRIDPIC`; tuned with `#HALLTERM`, `#RESISTIVITY`,
   `#HYPERRESISTIVITY`, `#ELECTRON*`, `#FIELDINTEGRATOR`, `#BSUBCYCLE`,
-  `#MINIMUMDENSITY`, `#AVGFIELDB`, `#SMOOTHMOMENTS`, `#DIVE`/`#DIVB`.
+  `#MINIMUMDENSITY`, `#SMOOTHMOMENTS`, `#DIVE`/`#DIVB`.
 - Key file: `src/PicHybrid.cpp`. Standalone tests ship a `PARAM.in.hybrid`
   variant; the runner reports both solver variants when one exists.
 

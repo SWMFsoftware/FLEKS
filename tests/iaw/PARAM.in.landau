@@ -113,7 +113,3 @@ z=0 fluid ascii pic     plotString
 20.0                    TimeMax
 
 #RUN
-
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB

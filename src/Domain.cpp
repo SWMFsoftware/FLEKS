@@ -21,7 +21,6 @@ struct ParameterCommand {
 static const ParameterCommand parameter_registry[] = {
   { "#ABSORB", ParameterOwner::Pic },
   { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
-  { "#AVGFIELDB", ParameterOwner::Pic },
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#BODYSIZE", ParameterOwner::FluidInterface },
   { "#BSUBCYCLE", ParameterOwner::Pic },
@@ -106,27 +105,15 @@ const ParameterCommand *find_parameter_command(const std::string &command) {
 }
 
 bool is_singleton_command(const std::string &command) {
-  static const char *const singletonCommands[] = { "#AVGFIELDB",
-                                                   "#BSUBCYCLE",
-                                                   "#DISCRETIZE",
-                                                   "#ELECTRONTEMPERATURE",
-                                                   "#FIELDBOXBOUNDARY",
-                                                   "#FIELDINTEGRATOR",
-                                                   "#GEOMETRY",
-                                                   "#HYBRIDPIC",
-                                                   "#HYPERRESISTIVITY",
-                                                   "#INITFROMSWMF",
-                                                   "#LOADBALANCE",
-                                                   "#MINIMUMDENSITY",
-                                                   "#NCELL",
-                                                   "#NOUTFILE",
-                                                   "#PARTICLETRACKER",
-                                                   "#PERIODICITY",
-                                                   "#RECEIVEICONLY",
-                                                   "#RESTART",
-                                                   "#SOURCE",
-                                                   "#TIMESTEP",
-                                                   "#TIMESTEPPING" };
+  static const char *const singletonCommands[] = {
+    "#BSUBCYCLE",        "#DISCRETIZE",       "#ELECTRONTEMPERATURE",
+    "#FIELDBOXBOUNDARY", "#FIELDINTEGRATOR",  "#GEOMETRY",
+    "#HYBRIDPIC",        "#HYPERRESISTIVITY", "#INITFROMSWMF",
+    "#LOADBALANCE",      "#MINIMUMDENSITY",   "#NCELL",
+    "#NOUTFILE",         "#PARTICLETRACKER",  "#PERIODICITY",
+    "#RECEIVEICONLY",    "#RESTART",          "#SOURCE",
+    "#TIMESTEP",         "#TIMESTEPPING"
+  };
 
   for (const char *singleton : singletonCommands) {
     if (command == singleton)

@@ -67,13 +67,6 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-#AVGFIELDB
-F                       useAvgFieldB
-20                      nAvgFieldB
-
-useAvgFieldB = F disables FLEKS's EMA time-averaging of B (reference uses no
-B time-averaging).
-
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 

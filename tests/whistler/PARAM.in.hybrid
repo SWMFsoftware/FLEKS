@@ -44,18 +44,6 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-B time-averaging must stay OFF for a propagating-wave test.  The EMA filter of
-B inside the Ohm's law lags the restoring convection term -u_i x B by
-tau ~ (nAvgFieldB-1)/2 * dt, which anti-damps the wave at gamma ~ omega^2*tau/2
-and destroys the eigenmode phase.  Measured on this deck (right-hand whistler,
-k d_i ~ 1, omega = 1.63 Omega_i, dt = 0.02): gamma = 0.20 /s with
-nAvgFieldB = 20 versus 0.014 /s with the filter off, i.e. the wave grew 13x in
-the 13 s run instead of holding its seed amplitude.  nAvgFieldB = 1 is also a
-no-op (alpha = 0) if the flag is ever re-enabled.
-#AVGFIELDB
-F                       useAvgFieldB
-1                       nAvgFieldB
-
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 

@@ -163,12 +163,6 @@ private:
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
 
-  // Running time-averaged magnetic field for the hybrid solver, only used
-  // inside the generalized Ohm's law and the particle Boris push.
-  amrex::Vector<amrex::MultiFab> centerBavg; // cell-centred <B>
-  amrex::Vector<amrex::MultiFab> nodeBavg;   // node-centred <B>
-  bool isBavgInit = false;                   // first-step copy flag for the EMA
-
   // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
   amrex::Vector<amrex::MultiFab> hypPhi;
@@ -222,12 +216,16 @@ private:
   // by hstep inside assemble_ohm_E.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
   // ---- Staggered hybrid solver fields ----
-  amrex::Vector<amrex::MultiFab> nodeEstage;  // E at a stage B (nodal)
-  amrex::Vector<amrex::MultiFab> nodeJ;       // total current J = curl(B)/(4*pi) (nodal)
-  amrex::Vector<amrex::MultiFab> nodeBstage;  // B interpolated to nodes at RK stages
-  amrex::Vector<amrex::MultiFab> centerPe;    // electron pressure at cell centers
-  amrex::Vector<amrex::MultiFab> nodeEambi;   // ambipolar electric field -grad(Pe)/(e*ne) at nodes
-  amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated density
+  amrex::Vector<amrex::MultiFab> nodeEstage; // E at a stage B (nodal)
+  amrex::Vector<amrex::MultiFab> nodeJ;      // total current J = curl(B)/(4*pi)
+                                             // (nodal)
+  amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
+                                             // stages
+  amrex::Vector<amrex::MultiFab> centerPe;  // electron pressure at cell centers
+  amrex::Vector<amrex::MultiFab> nodeEambi; // ambipolar electric field
+                                            // -grad(Pe)/(e*ne) at nodes
+  amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated
+                                              // density
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -286,10 +284,6 @@ private:
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
-
-  // EMA-averaged B fed to Ohm's law and Boris push.
-  bool useAvgFieldB = false;
-  int nAvgFieldB = 10;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
@@ -365,8 +359,6 @@ public:
     centerLapB.resize(n_lev_max());
     nodeHyperE.resize(n_lev_max());
     centerBstage.resize(n_lev_max());
-    centerBavg.resize(n_lev_max());
-    nodeBavg.resize(n_lev_max());
     nodeEstage.resize(n_lev_max());
     nodeJ.resize(n_lev_max());
     nodeBstage.resize(n_lev_max());

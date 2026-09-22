@@ -147,12 +147,12 @@ hybrid variant it additionally runs the shared hybrid energy-log checks (see
 
 ## Gotchas (all verified on this test)
 
-1. **`#AVGFIELDB` must stay off.**  The EMA filter of B inside the Ohm's law
-   lags the convection term `-u_i × B` by `τ ~ (nAvgFieldB-1)/2 · dt` and thus
-   *anti-damps* the wave at `γ ~ ω²τ/2`.  Measured here with `nAvgFieldB = 20`:
-   `γ = 0.20 /Ω_i` versus `0.014 /Ω_i` with it off — the wave grew 13× in 13 s
-   instead of holding its seed amplitude.  The deck sets `useAvgFieldB = F`
-   and `nAvgFieldB = 1` (the latter alone is a no-op: `alpha = 0`).
+1. **Do not reintroduce any EMA time-averaging of B into the Ohm's law.**  The
+   (now removed) `#AVGFIELDB` filter lagged the convection term `-u_i × B` by
+   `τ ~ (nAvgFieldB-1)/2 · dt` and thus *anti-damped* the wave at `γ ~ ω²τ/2`.
+   Measured on this deck with `nAvgFieldB = 20`: `γ = 0.20 /Ω_i` versus
+   `0.014 /Ω_i` without it — the wave grew 13× in 13 s instead of holding its
+   seed amplitude.
 2. **The hybrid seed must match the branch.**  `wf_neg` (wrong sign of
    `walenFactor`) excites the ion-cyclotron branch and the probe amplitude
    beats to zero; `rightHand`/`walenFactor` are the two knobs.
