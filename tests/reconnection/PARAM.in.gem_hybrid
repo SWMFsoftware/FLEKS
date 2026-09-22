@@ -1,6 +1,6 @@
 #DESCRIPTION
 Classic GEM Challenge magnetic reconnection benchmark (Birn et al. 2001)
-with the FULL-PIC EM solver (solveEM = T, Maxwell/GMRES): kinetic ions and kinetic electrons.
+with the HYBRID PIC solver (useHybridPIC = T, generalized Ohm's law): kinetic ions and fluid electrons.
 
 Scale and Grid Calculation (Gaussian / CGS Code Units):
   FLEKS uses Gaussian / CGS-normalized code units where:
@@ -21,14 +21,18 @@ Scale and Grid Calculation (Gaussian / CGS Code Units):
     Densities:
       Uniform background nb = 0.20 code units = 0.20 * 65.15939 ~ 13.03188 amu/cc
       Sheet peak increment n0 = 1.00 code units (total peak n(0) = nb + n0 = 1.20)
+      electronDensity0 = 65.15939 amu/cc (n_e0 = 1.0 code units)
     Temperatures:
       Magnetic pressure balance requires n0 * (Ti + Te) = B0^2 / (8*pi) = 0.5 / (4*pi)
       With Ti / Te = 5:
         Ti_code = (5/6) * 0.5 / (4*pi) = 5 / (48*pi) ~ 0.033157 code units
           -> Ti = 0.033157 * 1.21146e6 K ~ 40168.0 K
         Te_code = (1/6) * 0.5 / (4*pi) = 1 / (48*pi) ~ 0.0066315 code units
-          -> Te = 0.0066315 * 1.21146e6 K ~ 8033.6 K
+          -> Te = 0.0066315 * 104.394 eV ~ 0.6923 eV
     Grid: 64 x 32 (dx = dy = 0.40 d_i ~ 0.1128 code units, isotropic square cells)
+    Hybrid Configuration:
+      useUniformIonPressure = T ensures stationary background ions (uz_i = 0),
+      while the electron fluid carries the diamagnetic current via Ohm's law.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -72,38 +76,51 @@ reflect                 particleBoxBoundaryLo  (y; reflecting walls matching GEM
 reflect                 particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
-1                       iSpecies
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
-reflect                 particleBoxBoundaryLo
-reflect                 particleBoxBoundaryHi
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
 
 #SOLVEEM
-T                       solveEM
+F                       solveEM
 
 #HYBRIDPIC
-F                       useHybridPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+8.0e5                   etaResistivity  [m^2/s; small background resistivity]
+
+#ELECTRONTEMPERATURE
+0.6923                  electronTemperature  [eV; Te_code = 1/(48*pi) ~ 0.00663 code units, Ti/Te = 5]
+1.0                     electronGamma        [isothermal fluid electrons]
+65.15939                electronDensity0     [amu/cc; n_e0 = 1.0 code units]
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI      [m^4/s; unused in grid mode]
+grid                    etaHyperMode
+0.001                   etaHyperCh      [damp grid-scale whistler modes]
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments [smooth ion moments to suppress particle shot noise]
+1                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#MINIMUMDENSITY
+0.0                     rhoMinOhm
+
+#BSUBCYCLE
+20                      nBSubcycle
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
 
 #PLASMA
-2                       nSpecies
+1                       nSpecies
 1.0                     mass           Species 0: ions
 1.0                     charge
-0.04                    mass           Species 1: electrons (mi/me = 25)
--1.0                    charge
 
 #UNIFORMSTATE
 13.03188                rho [amu/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-40168.0                 T [K]          ions (Ti_code = 5/(48*pi) ~ 0.03316 code units, Ti/Te = 5)
-0.521275                rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi = 13.03188 * 0.04)
-0.0                     ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-8033.6                  T [K]          electrons (Te_code = 1/(48*pi) ~ 0.00663 code units, Ti/Te = 5)
+40168.0                 T [K]          ion temperature (Ti_code = 5/(48*pi) ~ 0.03316, Ti/Te = 5)
 0.0                     bx [T]
 0.0                     by [T]
 0.0                     bz [T]
@@ -121,9 +138,8 @@ gem
 0.02821                 apert    [vector potential perturbation amplitude psi0 = 0.1 * B0 * d_i]
 T                       useStandardGem
 F                       useUniformPressure
-T                       useUniformIonPressure  [stationary ions; electrons carry diamagnetic current]
+T                       useUniformIonPressure  [stationary ions; electron fluid carries diamagnetic current]
 0.2                     nb       [background density ratio nb = 0.2]
-0.2                     teOverTi [Te / Ti = 0.2]
 standard                pertType
 
 #TIMESTEPPING

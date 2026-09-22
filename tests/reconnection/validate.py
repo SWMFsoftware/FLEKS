@@ -287,11 +287,11 @@ def _validate_gem_plot(test_name, frames):
     if not any(abs(x) < 1.5 for x in nulls):
         return False, f"t=0: central X-point null not found near x=0 (nulls={nulls})"
 
-    # Sheet density: peak near 0.7 (n0=0.5 + nb=0.2), background near 0.2
+    # Sheet density: peak near 1.2 (n0=1.0 + nb=0.2), background near 0.2
     rho_peak = float(rho0.max())
     rho_bg = float(rho0.min())
-    if not (0.5 < rho_peak < 1.0):
-        return False, f"t=0: peak density {rho_peak:.3f} not in expected range (0.5, 1.0)"
+    if not (0.9 < rho_peak < 1.5):
+        return False, f"t=0: peak density {rho_peak:.3f} not in expected range (0.9, 1.5)"
     if rho_bg > 0.4:
         return False, f"t=0: background density {rho_bg:.3f} too high (expected ~0.2)"
 
