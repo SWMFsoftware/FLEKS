@@ -41,6 +41,16 @@ void ForceFreeIC::read_param(ReadParam& param) {
       progress = true;
       continue;
     }
+    std::string sVal;
+    if (param.read_optional("useUniformIonPressure", sVal)) {
+      useUniformIonPressure_ = (sVal == "T" || sVal == "true" || sVal == "1");
+      progress = true;
+      continue;
+    }
+    if (param.read_optional("teOverTi", teOverTi_)) {
+      progress = true;
+      continue;
+    }
   }
 }
 
@@ -126,4 +136,57 @@ void ForceFreeIC::set_fields(PicICFields& fields) const {
   }
 
   fields.fill_boundary_E_B();
+}
+
+void ForceFreeIC::modify_particle_velocity(ParticleICState& s) const {
+  if (s.charge == 0.0)
+    return;
+
+  const amrex::Real lambda = (lambda_ > 0.0) ? lambda_ : 1.0;
+  const amrex::Real b0 = b0_;
+  const amrex::Real bg = bg_;
+
+  const amrex::Real ch = std::cosh(s.y / lambda);
+  const amrex::Real th = std::tanh(s.y / lambda);
+  const amrex::Real sech = 1.0 / ch;
+  const amrex::Real sech2 = sech * sech;
+  const amrex::Real bz = std::sqrt(bg * bg + b0 * b0 * sech2);
+  if (bz <= 0.0)
+    return;
+
+  // Equilibrium current density components J = curl(B):
+  // J_x = d(Bz)/dy = -b0^2 / (lambda * Bz) * sech^2(y/lambda) * tanh(y/lambda)
+  // J_z = -d(Bx)/dy = -b0 / lambda * sech^2(y/lambda)
+  const amrex::Real jx = -(b0 * b0 / (lambda * bz)) * sech2 * th;
+  const amrex::Real jz = -(b0 / lambda) * sech2;
+
+  // In code units, background plasma number density is n0 = 1.0
+  const amrex::Real n0 = 1.0;
+
+  amrex::Real ux = 0.0;
+  amrex::Real uz = 0.0;
+
+  if (useUniformIonPressure_) {
+    if (s.charge > 0.0) {
+      ux = 0.0;
+      uz = 0.0;
+    } else {
+      ux = jx / (s.charge * n0);
+      uz = jz / (s.charge * n0);
+    }
+  } else {
+    amrex::Real frac = 0.5;
+    if (teOverTi_ >= 0.0) {
+      if (s.charge > 0.0) {
+        frac = 1.0 / (1.0 + teOverTi_);
+      } else {
+        frac = teOverTi_ / (1.0 + teOverTi_);
+      }
+    }
+    ux = frac * jx / (s.charge * n0);
+    uz = frac * jz / (s.charge * n0);
+  }
+
+  s.uBulk += ux;
+  s.wBulk += uz;
 }

@@ -1,0 +1,126 @@
+#DESCRIPTION
+Force-free current sheet magnetic reconnection benchmark (Le et al. 2016)
+with the FULL-PIC EM solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-10.0                   xMin  [code units; Lx = 20 d_i]
+ 10.0                   xMax
+-5.0                    yMin  [code units; Ly = 10 d_i]
+ 5.0                    yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+32                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+32                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+conducting              fieldBoxBoundaryLo  (y)
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+1                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons (mi/me = 25)
+-1.0                    charge
+
+#UNIFORMSTATE
+65.15939                rho [amu/cc]   Species 0: ions (n_i = 1.0)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+304000.0                T [K]          ions, beta_i = 0.5, Ti_code = 0.25
+2.6063756               rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi = 65.15939 * 0.04)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60800.0                 T [K]          electrons, beta_e = 0.1, Te_code = 0.05, Ti/Te = 5
+0.0                     bx [T]         set by ForceFreeIC
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+forcefree
+
+#FORCEFREEIC
+1.0                     lambda   [current sheet half-width / d_i]
+1.0                     b0       [asymptotic in-plane field B0]
+0.3                     bg       [guide field ratio Bg/B0 = 0.3]
+0.05                    perturb  [initial perturbation amplitude dB/B0 = 0.05]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI  [m; lNorm = 100 km ~ d_i]
+1.0e5                   uNormSI  [m/s; uNorm = 100 km/s ~ vA, tNorm = 1 s]
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+10                      nParticle per cell in X
+10                      nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.5                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+1.0                     TimeMax
+
+#RUN

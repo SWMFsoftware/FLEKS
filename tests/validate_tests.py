@@ -842,7 +842,7 @@ def discover_tests(tests_dir="tests"):
 # default test suite. They can be executed explicitly via `--test=NAME.VARIANT`
 # or by passing `--all` / `--include-expensive`.
 EXPENSIVE_VARIANTS = {
-    "reconnection.forcefree",
+    "reconnection.forcefree_hybrid",
     "beam.instability",
     "iaw.landau",
 }

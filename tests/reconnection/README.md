@@ -2,11 +2,12 @@
 
 This directory contains standalone magnetic reconnection test suites in FLEKS across multiple physical configurations and field solvers:
 
-1. **`PARAM.in`** — **Fadeev full-PIC**: Force-free Fadeev current-sheet island equilibrium with kinetic ions and kinetic electrons ($m_i/m_e = 25$, Maxwell/GMRES solver).
-2. **`PARAM.in.hybrid`** — **Fadeev hybrid-PIC**: Kinetic ions + massless fluid electrons with generalized Ohm's law.
-3. **`PARAM.in.gem`** — **Classic GEM Challenge full-PIC**: The standard GEM reconnection benchmark (Birn et al. 2001) with a Harris current sheet, conducting walls in $y$, and a central magnetic perturbation.
-4. **`PARAM.in.asym`** — **Asymmetric full-PIC**: Double current sheet reconnection with asymmetric magnetic fields ($B_1 = 1.0, B_2 = 2.0$) and temperatures ($T_1 = 1.33, T_2 = 3.33$) in a periodic domain.
-5. **`PARAM.in.forcefree`** — **Force-Free Sheet hybrid-PIC**: Force-free current sheet reconnection (Le et al. 2016, WarpX benchmark) with uniform plasma density and uniform total magnetic pressure $B_0^2 + B_g^2$.
+1. **`PARAM.in.fadeev_pic`** — **Fadeev full-PIC**: Force-free Fadeev current-sheet island equilibrium with kinetic ions and kinetic electrons ($m_i/m_e = 25$, Maxwell/GMRES solver).
+2. **`PARAM.in.fadeev_hybrid`** — **Fadeev hybrid-PIC**: Kinetic ions + massless fluid electrons with generalized Ohm's law.
+3. **`PARAM.in.gem_pic`** — **Classic GEM Challenge full-PIC**: Standard GEM reconnection benchmark (Birn et al. 2001) with a Harris current sheet, conducting walls in $y$, and a central magnetic perturbation.
+4. **`PARAM.in.asym_pic`** — **Asymmetric full-PIC**: Double current sheet reconnection with asymmetric magnetic fields ($B_1 = 1.0, B_2 = 2.0$) and temperatures ($T_1 = 1.33, T_2 = 3.33$) in a periodic domain.
+5. **`PARAM.in.forcefree_hybrid`** — **Force-Free Sheet hybrid-PIC**: Force-free current sheet reconnection (Le et al. 2016, WarpX benchmark) with uniform plasma density and uniform total magnetic pressure $B_0^2 + B_g^2$.
+6. **`PARAM.in.forcefree_pic`** — **Force-Free Sheet full-PIC**: Force-free current sheet reconnection with kinetic ions and electrons ($m_i/m_e = 25$, $10 \times 10$ PPC per species, Maxwell/GMRES solver).
 
 ## Coordinate Mapping
 
@@ -77,13 +78,14 @@ python3 tests/validate_tests.py --test=reconnection -n 2
 
 Run a single variant:
 ```bash
-python3 tests/validate_tests.py --test=reconnection.full       # Fadeev full-PIC
-python3 tests/validate_tests.py --test=reconnection.hybrid     # Fadeev hybrid-PIC
-python3 tests/validate_tests.py --test=reconnection.gem        # Classic GEM challenge
-python3 tests/validate_tests.py --test=reconnection.asym       # Asymmetric reconnection
-python3 tests/validate_tests.py --test=reconnection.forcefree  # Force-free sheet hybrid-PIC
+python3 tests/validate_tests.py --test=reconnection.fadeev_pic        # Fadeev full-PIC
+python3 tests/validate_tests.py --test=reconnection.fadeev_hybrid     # Fadeev hybrid-PIC
+python3 tests/validate_tests.py --test=reconnection.gem_pic           # Classic GEM challenge full-PIC
+python3 tests/validate_tests.py --test=reconnection.asym_pic          # Asymmetric reconnection full-PIC
+python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid  # Force-free sheet hybrid-PIC
+python3 tests/validate_tests.py --test=reconnection.forcefree_pic     # Force-free sheet full-PIC
 ```
-*(Note: `reconnection.forcefree` is an expensive benchmark and is skipped during default full-suite runs; run it by explicitly specifying `--test=reconnection.forcefree` or adding `--include-expensive` / `--all`.)*
+*(Note: `reconnection.forcefree_hybrid` is an expensive benchmark and is skipped during default full-suite runs; run it by explicitly specifying `--test=reconnection.forcefree_hybrid` or adding `--include-expensive` / `--all`.)*
 
 ## Validation Checks (`validate.py`)
 

@@ -383,22 +383,34 @@ def _validate_forcefree_plot(test_name, frames):
     ux, uy, bx0, by0, bz0, rho0, _ = frames[0][1]
     j_mid = int(np.argmin(np.abs(uy)))
 
-    # 1. Equilibrium checks at t=0
-    # On a cell-centered grid, the two rows straddling y=0 should be anti-symmetric
-    # in Bx with |Bx| ~ tanh(dy / (2*lambda)) ~ 0.30.
-    j_other = j_mid + 1 if uy[j_mid] < 0 else j_mid - 1
-    bx_mid_asym = float(np.abs(bx0[j_mid, :].mean() + bx0[j_other, :].mean()))
     bx_top = float(bx0[-1, :].mean())
     bx_bot = float(bx0[0, :].mean())
-
     b0_ref = abs(bx_top)
     if b0_ref <= 0.0:
         return False, "t=0: boundary Bx is zero"
 
-    if bx_mid_asym / b0_ref > 0.05:
-        return False, f"t=0: midplane Bx asymmetry={bx_mid_asym:.3f} expected ~0"
+    # 1. Equilibrium checks at t=0
+    # For a node-centered grid, y=0 is a grid line (Bx ~ 0, and row-1 / row+1 are anti-symmetric).
+    # For a cell-centered grid, the two rows straddling y=0 are anti-symmetric.
+    if abs(uy[j_mid]) < 1e-4:
+        # Node-centered grid
+        bx_mid_val = float(np.abs(bx0[j_mid, :].mean()))
+        if bx_mid_val / b0_ref > 0.05:
+            return False, f"t=0: midplane node Bx={bx_mid_val:.3f} expected ~0"
+        if j_mid > 0 and j_mid < len(uy) - 1:
+            bx_neigh_asym = float(np.abs(bx0[j_mid - 1, :].mean() + bx0[j_mid + 1, :].mean()))
+            if bx_neigh_asym / b0_ref > 0.05:
+                return False, f"t=0: neighbor Bx asymmetry={bx_neigh_asym:.3f} expected ~0"
+    else:
+        # Cell-centered grid
+        j_other = j_mid + 1 if uy[j_mid] < 0 else j_mid - 1
+        bx_mid_asym = float(np.abs(bx0[j_mid, :].mean() + bx0[j_other, :].mean()))
+        if bx_mid_asym / b0_ref > 0.05:
+            return False, f"t=0: midplane Bx asymmetry={bx_mid_asym:.3f} expected ~0"
+
     if abs(bx_top + bx_bot) / b0_ref > 0.05:
         return False, f"t=0: boundary Bx (top={bx_top:.2f}, bot={bx_bot:.2f}) not anti-symmetric"
+
 
     # Midplane Bz should be near sqrt(bg^2 + b0^2) = sqrt(0.3^2 + 1) * b0 ~ 1.044 * b0
     bz_mid = float(bz0[j_mid, :].mean())
@@ -424,9 +436,15 @@ def _validate_forcefree_plot(test_name, frames):
     if np.isnan(dby_max) or np.isinf(dby_max):
         return False, "NaN or Inf detected in magnetic field"
 
+    # 3. Quasi-neutrality (if full-PIC with rhoS1)
+    ok_neutral, err_neutral = _check_charge_neutrality(frames)
+    if not ok_neutral:
+        return False, err_neutral
+
     msg = f"Force-free reconnection: Bx bounds [{bx_bot:.2f}, {bx_top:.2f}], midplane Bz={bz_mid:.3f}, late max|By|={dby_max:.3f}"
     logger.debug("    %s", msg)
     return True, msg
+
 
 
 def validate_plot(test_name):
@@ -441,6 +459,8 @@ def validate_plot(test_name):
         return _validate_gem_plot(test_name, frames)
     elif "asym" in test_name:
         return _validate_asym_plot(test_name, frames)
+    elif "fadeev" in test_name:
+        return _validate_fadeev_plot(test_name, frames)
     else:
         return _validate_fadeev_plot(test_name, frames)
 

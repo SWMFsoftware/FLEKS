@@ -17,11 +17,16 @@ public:
   void read_param(ReadParam& param) override;
   void set_fields(PicICFields& fields) const override;
 
+  bool modifies_velocities() const override { return true; }
+  void modify_particle_velocity(ParticleICState& s) const override;
+
 private:
   amrex::Real lambda_ = 1.0;   // current sheet thickness / d_i
   amrex::Real b0_ = 1.0;       // asymptotic in-plane field
   amrex::Real bg_ = 0.3;       // guide field
   amrex::Real perturb_ = 0.01; // initial perturbation amplitude
+  bool useUniformIonPressure_ = true; // electrons carry full current by default
+  amrex::Real teOverTi_ = -1.0; // optional temperature-weighted current split
 };
 
 #endif
