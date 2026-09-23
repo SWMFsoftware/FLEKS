@@ -186,6 +186,7 @@ def run_test(test_dir, nprocs=1, param_text=None):
     param_file = os.path.join(test_dir, "PARAM.in")
     logger.debug("Running test in %s...", test_dir)
     prepare_run_dir()
+    cleanup_run_dir()
 
     postidl_link = os.path.join(RUN_DIR, "PC", "PostIDL.exe")
     if os.path.islink(postidl_link) and not os.path.exists(postidl_link):

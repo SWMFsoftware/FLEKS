@@ -14,6 +14,9 @@ void register_all_initial_conditions() {
   ICRegistry::instance().register_ic("hybridwave", []() {
     return std::make_unique<WaveIC>(WaveIC::HybridWave);
   });
+  ICRegistry::instance().register_ic("hybridpulse", []() {
+    return std::make_unique<WaveIC>(WaveIC::HybridPulse);
+  });
   ICRegistry::instance().register_ic("convectionwave", []() {
     return std::make_unique<WaveIC>(WaveIC::ConvectionWave);
   });

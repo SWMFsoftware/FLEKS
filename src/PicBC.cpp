@@ -297,7 +297,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
             }
           }
           if (isNormal) {
-            arr(i, j, k, comp) = 0.0;
+            arr(i, j, k, comp) = -arr(m[0], m[1], m[2], comp);
           } else {
             arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
           }
@@ -310,7 +310,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
             }
           }
           if (isTangential) {
-            arr(i, j, k, comp) = 0.0;
+            arr(i, j, k, comp) = -arr(m[0], m[1], m[2], comp);
           } else {
             arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
           }

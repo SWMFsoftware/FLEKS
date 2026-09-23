@@ -21,6 +21,8 @@ std::string WaveIC::name() const {
       return "lightwave";
     case HybridWave:
       return "hybridwave";
+    case HybridPulse:
+      return "hybridpulse";
     case ConvectionWave:
       return "convectionwave";
     case IonAcousticWave:
@@ -59,6 +61,22 @@ void WaveIC::apply_preset() {
       seedWeight_ = false;
       waveMode_ = 1;
       frac_ = 0.02;
+      break;
+    case HybridPulse:
+      // Gaussian-envelope Alfven pulse: By = B1 * exp(-((x-x0)/sigma)^2).
+      // No velocity kick (velKick=false) so the pulse naturally decomposes
+      // into +x and -x travelling Alfven packets.
+      // gaussWidth_ defaults to L/4 (set when Lx is known in set_fields).
+      seedE_ = false;
+      seedB_ = true;
+      oblique_ = false;
+      guideField_ = true;
+      velKick_ = false;
+      seedWeight_ = false;
+      waveMode_ = 0;     // kx = 0: cos(0) = 1, pure Gaussian envelope
+      frac_ = 0.02;
+      gaussWidth_ = 0.0; // updated in set_fields to L/4 if still 0
+      xCenter_ = 0.0;    // default: centre of domain
       break;
     case ConvectionWave:
       seedE_ = false;
@@ -135,6 +153,10 @@ void WaveIC::read_param(ReadParam& param) {
       progress = true;
     if (param.read_optional("anisoTPerpOverTPar", anisoTPerpOverTPar_))
       progress = true;
+    if (param.read_optional("gaussWidth", gaussWidth_))
+      progress = true;
+    if (param.read_optional("xCenter", xCenter_))
+      progress = true;
   }
 }
 
@@ -151,7 +173,8 @@ void WaveIC::set_fields(PicICFields& fields) const {
       if (mfi.isValid()) {
         const Array4<Real const>& a = fields.node_B(iLev).array(mfi);
         const Box& b = mfi.validbox();
-        Bx0 = a(b.smallEnd(), ix_);
+        const IntVect mid = (b.smallEnd() + b.bigEnd()) / 2;
+        Bx0 = a(mid, ix_);
       }
     }
     const amrex::Real B1 = frac_ * Bx0;
@@ -238,10 +261,19 @@ void WaveIC::set_fields(PicICFields& fields) const {
         }
       }
     } else {
-      // Transverse circularly-polarized wave:
-      //   B = (Bx0, B1 cos kx, hand*B1 sin kx)
+      // Transverse circularly-polarized wave or Gaussian pulse:
+      //   B = (Bx0, B1 f(x), hand*B1 g(x))
+      // where for waveMode > 0:
+      //   f(x) = cos(kx*x),  g(x) = sin(kx*x)   [global sinusoidal mode]
+      // and when gaussWidth_ > 0 (HybridPulse):
+      //   f(x) = G(x),  g(x) = 0                 [Gaussian pulse, no Bz]
+      //   G(x) = exp(-((x - xCenter_) / gaussWidth_)^2)
       // with hand = +1 for the left-hand seed and -1 for the right-hand one.
+      //
+      // gaussWidth_ defaults to L/4 if not set by the user.
       const amrex::Real hand = helicity();
+      const amrex::Real gw = (gaussWidth_ > 0.0) ? gaussWidth_ : 0.25 * Lx_;
+
       if (seedB_) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
@@ -251,11 +283,18 @@ void WaveIC::set_fields(PicICFields& fields) const {
           const Array4<Real>& arrB = fab.array();
           ParallelFor(box, [&](int i, int j, int k) {
             const amrex::Real x = prob_lo[0] + dx[0] * i;
-            const amrex::Real cphi = std::cos(kx_ * x);
-            const amrex::Real sphi = std::sin(kx_ * x);
+            amrex::Real fy, gz;
+            if (gw > 0.0) {
+              const amrex::Real xi = (x - xCenter_) / gw;
+              fy = std::exp(-xi * xi);
+              gz = 0.0;            // no circular polarisation for pulse
+            } else {
+              fy = std::cos(kx_ * x);
+              gz = std::sin(kx_ * x);
+            }
             arrB(i, j, k, ix_) = Bx0;
-            arrB(i, j, k, iy_) = B1 * cphi;
-            arrB(i, j, k, iz_) = hand * B1 * sphi;
+            arrB(i, j, k, iy_) = B1 * fy;
+            arrB(i, j, k, iz_) = hand * B1 * gz;
           });
         }
         for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
@@ -264,11 +303,18 @@ void WaveIC::set_fields(PicICFields& fields) const {
           const Array4<Real>& arrB = fab.array();
           ParallelFor(box, [&](int i, int j, int k) {
             const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-            const amrex::Real cphi = std::cos(kx_ * x);
-            const amrex::Real sphi = std::sin(kx_ * x);
+            amrex::Real fy, gz;
+            if (gw > 0.0) {
+              const amrex::Real xi = (x - xCenter_) / gw;
+              fy = std::exp(-xi * xi);
+              gz = 0.0;
+            } else {
+              fy = std::cos(kx_ * x);
+              gz = std::sin(kx_ * x);
+            }
             arrB(i, j, k, ix_) = Bx0;
-            arrB(i, j, k, iy_) = B1 * cphi;
-            arrB(i, j, k, iz_) = hand * B1 * sphi;
+            arrB(i, j, k, iy_) = B1 * fy;
+            arrB(i, j, k, iz_) = hand * B1 * gz;
           });
         }
       }
@@ -289,13 +335,21 @@ void WaveIC::modify_particle_velocity(ParticleICState& s) const {
   if (!velKick_)
     return;
   // Transverse velocity kick matching the seeded helicity:
-  //   u_perp = -walenFactor * (B1 cos kx, hand*B1 sin kx)
-  // i.e. the Alfvenic relation u_perp = -B_perp/B0 for walenFactor = 1.
-  const amrex::Real cphi = std::cos(kx_ * s.x);
-  const amrex::Real sphi = std::sin(kx_ * s.x);
+  //   u_perp = -walenFactor * B1 * f(x)
+  // where f(x) is the same spatial envelope used in set_fields (cosine or
+  // Gaussian, as appropriate).
+  amrex::Real fy, gz;
+  if (gaussWidth_ > 0.0) {
+    const amrex::Real xi = (s.x - xCenter_) / gaussWidth_;
+    fy = std::exp(-xi * xi);
+    gz = 0.0;
+  } else {
+    fy = std::cos(kx_ * s.x);
+    gz = std::sin(kx_ * s.x);
+  }
   const amrex::Real amp = walenFactor_ * B1_;
-  s.vBulk -= amp * cphi;
-  s.wBulk -= helicity() * amp * sphi;
+  s.vBulk -= amp * fy;
+  s.wBulk -= helicity() * amp * gz;
 }
 
 // Bi-Maxwellian seeding: treat #UNIFORMSTATE T as T_par (parallel draw, x)

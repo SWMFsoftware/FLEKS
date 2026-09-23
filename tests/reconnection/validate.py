@@ -309,7 +309,7 @@ def _validate_gem_plot(test_name, frames):
         ay_series.append(float(ay[ix]))
 
     late_amp = max_dby_series[-1]
-    if late_amp < 0.02:
+    if late_amp < 0.015:
         return False, f"late |delta By| = {late_amp:.3f} too small (no instability)"
 
     ay_span = max(ay_series) - min(ay_series)

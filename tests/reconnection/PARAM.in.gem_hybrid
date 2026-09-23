@@ -94,7 +94,7 @@ T                       useHybridPIC
 #HYPERRESISTIVITY
 0.0                     etaHyperSI      [m^4/s; unused in grid mode]
 grid                    etaHyperMode
-0.001                   etaHyperCh      [damp grid-scale whistler modes]
+0.003                   etaHyperCh      [damp grid-scale whistler modes]
 
 #SMOOTHMOMENTS
 T                       doSmoothMoments [smooth ion moments to suppress particle shot noise]
@@ -102,7 +102,7 @@ T                       doSmoothMoments [smooth ion moments to suppress particle
 0.5                     coefSmoothMoments
 
 #MINIMUMDENSITY
-0.0                     rhoMinOhm
+0.08                    rhoMinOhm
 
 #BSUBCYCLE
 20                      nBSubcycle
@@ -158,8 +158,8 @@ T                       useFixedDt
 10                      dnSavePT
 
 #PARTICLES
-4                       nParticle per cell in X
-4                       nParticle per cell in Y
+10                      nParticle per cell in X
+10                      nParticle per cell in Y
 1                       nParticle per cell in Z
 
 #SAVEPLOT

@@ -171,6 +171,37 @@ def _col(vidx, rows, name):
     return [r[i] for r in rows]
 
 
+def _find_boundary_rows(vidx, rows, n_cells=1):
+    """Return (lo_rows, hi_rows) -- the rows nearest the low and high x boundaries.
+
+    Uses the 'X' column when present to find the actual min/max-x rows, so the
+    check is correct regardless of whether AMReX writes rows in sorted order.
+    Falls back to rows[0:n_cells] / rows[-n_cells:] when no X column exists.
+
+    Parameters
+    ----------
+    n_cells : int
+        How many boundary-adjacent rows to include on each side.
+    """
+    xi = vidx.get("X")
+    if xi is None or not rows:
+        # No X column -- fall back to positional indexing.
+        return rows[:n_cells], rows[-n_cells:]
+
+    xs = [r[xi] for r in rows]
+    xmin, xmax = min(xs), max(xs)
+    dx_est = (xmax - xmin) / max(1, len(set(xs)) - 1) if len(set(xs)) > 1 else 1.0
+    half = max(0.5, n_cells) * dx_est
+
+    lo_rows = [r for r in rows if r[xi] <= xmin + half]
+    hi_rows = [r for r in rows if r[xi] >= xmax - half]
+    if not lo_rows:
+        lo_rows = rows[:n_cells]
+    if not hi_rows:
+        hi_rows = rows[-n_cells:]
+    return lo_rows, hi_rows
+
+
 def validate_plot(test_name):
     """Plot checks branching on variant."""
     logger.debug("Validating %s (plot)...", test_name)
@@ -182,49 +213,172 @@ def validate_plot(test_name):
         return True, "No .out files (skipped)"
 
     if test_name == "bc_reflecting_fields":
-        return _check_fields_plot(out_files[-1])
+        return _check_fields_plot(out_files)
     if test_name == "bc_reflecting_hybrid_fields":
         return _check_hybrid_fields_plot(out_files)
 
     return _check_particles_plot(out_files[-1])
 
 
-def _check_fields_plot(out_file):
-    """Full-PIC conducting fields: verify fields are finite and bounded."""
-    vidx, rows = _load_out(out_file)
-    if vidx is None or not rows:
-        return True, "Could not parse .out (skipped)"
+def _check_fields_plot(out_files):
+    """Full-PIC conducting fields: verify PEC reflection via finiteness,
+    boundedness, and interior pulse detection.
 
-    for var in ("EY", "BZ", "EX", "EZ", "BX", "BY"):
-        col = _col(vidx, rows, var)
-        if col is None:
-            continue
-        if not all(math.isfinite(v) for v in col):
-            return False, f"{var} not finite (NaN)"
-        peak = max(abs(v) for v in col)
-        if peak > 1e6:
-            return False, f"{var} blew up (peak {peak:.2e})"
+    Note: the .out file writes cell-centre values (not wall-face values), so we
+    cannot directly check Et=0 / Bn=0 from plot output -- the PEC BC constrains
+    the *face* value, not the adjacent cell centre.  Instead we rely on:
+      * All field components finite (no NaN/Inf).
+      * No blow-up (|field| < 1e6).
+      * The pulse is still present in the interior (not absorbed by the wall).
+    Energy conservation across reflections is verified in validate_log
+    (_validate_log_fields), which robustly catches the anti-symmetric-reflection
+    bug (absorbing wall would drain EM energy below the ETOT_CONDUCTING_MIN
+    threshold).
+    """
+    if isinstance(out_files, str):
+        out_files = [out_files]
 
-    return True, "Passed (PEC reflected fields finite and bounded)"
-
-
-def _check_hybrid_fields_plot(out_files):
-    """Hybrid-PIC conducting fields: check last two frames for stability."""
-    for out_file in out_files[-2:]:
+    has_interior_pulse = False
+    for out_file in out_files:
         vidx, rows = _load_out(out_file)
         if vidx is None or not rows:
             continue
-        for var in ("BY", "BZ", "EY", "EZ"):
+
+        for var in ("EY", "BZ", "EX", "EZ", "BX", "BY"):
             col = _col(vidx, rows, var)
             if col is None:
                 continue
-            peak = max(abs(v) for v in col)
             if not all(math.isfinite(v) for v in col):
                 return False, f"{var} not finite (NaN)"
+            peak = max(abs(v) for v in col)
             if peak > 1e6:
                 return False, f"{var} blew up (peak {peak:.2e})"
 
-    return True, "Passed (hybrid PEC fields finite and bounded near walls)"
+        col_ey = _col(vidx, rows, "EY")
+        if col_ey and max(abs(v) for v in col_ey) > 0.05:
+            has_interior_pulse = True
+
+    if not has_interior_pulse:
+        return False, "Pulse not detected in interior (EM fields stayed near 0)"
+
+    return True, "Passed (fields finite, bounded, and interior pulse persists => PEC reflection active)"
+
+
+# Soft tolerance for near-wall |Et| in the hybrid pulse test.  The cell-
+# centred hybrid advance applies the PEC BC on the wall face; the nearest
+# plotted cell (at the cell centre, ~dx/2 from the face) can carry a small
+# residual Ey/Ez from the Ohm's-law evaluation before the BC overwrites it.
+# NOTE: we only check tangential E (Ey, Ez) here, NOT normal B (Bx), because
+# the test carries a background guide field Bx ≈ 1.0 throughout the domain.
+_HYBRID_WALL_ET_TOL = 0.5
+
+# Minimum fraction of the initial pulse peak |By| that must still be present
+# at the late frame.  A fully absorbing wall drains all By energy out of the
+# domain; a properly reflecting wall conserves it.  The threshold 0.3 is loose
+# enough to tolerate phase-mixing and numerical dispersion over many bounces
+# while still failing if the wall is absorbing most of the energy.
+_HYBRID_PULSE_AMPLITUDE_RATIO_MIN = 0.3
+
+
+def _check_hybrid_fields_plot(out_files):
+    """Hybrid-PIC Gaussian-pulse conducting-wall test.
+
+    Checks:
+      * All field components finite (no NaN/Inf) at every frame.
+      * No blow-up (|field| < 1e6) at every frame.
+      * Guide field Bx stays in (0.5, 2.0) in interior rows.
+      * Near-wall tangential E (Ey, Ez) does not spike at the x walls.
+      * Pulse-energy conservation: max|By| at the last frame is at least
+        _HYBRID_PULSE_AMPLITUDE_RATIO_MIN × max|By| at the first frame.
+        A properly reflecting wall conserves the Alfven-pulse amplitude;
+        an absorbing wall drains it below the threshold.
+
+    NOTE on ghost-cell sensitivity: the wall-node Et=0 BC is enforced by
+    section 1 of apply_conducting_wall (correct in both old and new code),
+    so the 1D single-process pulse test validates section 1.  Section 2
+    (ghost-cell anti-symmetry for MPI halos / AMR boundaries) requires a
+    multi-level or multi-MPI test to distinguish.
+    """
+    if isinstance(out_files, str):
+        out_files = [out_files]
+
+    # Sort frames by filename (they embed the step number).
+    sorted_files = sorted(out_files)
+    if not sorted_files:
+        return True, "No .out files to check (skipped)"
+
+    early_peak_by = None
+    late_peak_by = None
+
+    for frame_idx, out_file in enumerate(sorted_files):
+        vidx, rows = _load_out(out_file)
+        if vidx is None or not rows:
+            continue
+
+        # Global finiteness / blow-up check.
+        for var in ("BX", "BY", "BZ", "EX", "EY", "EZ"):
+            col = _col(vidx, rows, var)
+            if col is None:
+                continue
+            if not all(math.isfinite(v) for v in col):
+                return False, f"[frame {frame_idx}] {var} not finite (NaN)"
+            peak = max(abs(v) for v in col)
+            if peak > 1e6:
+                return False, f"[frame {frame_idx}] {var} blew up (peak {peak:.2e})"
+
+        # Near-wall tangential-E check (Ey, Ez only; Bx has guide-field offset).
+        lo_rows, hi_rows = _find_boundary_rows(vidx, rows, n_cells=1)
+        for side, brows in (("low", lo_rows), ("high", hi_rows)):
+            for var in ("EY", "EZ"):
+                idx = vidx.get(var)
+                if idx is None:
+                    continue
+                worst = max(abs(r[idx]) for r in brows)
+                if worst > _HYBRID_WALL_ET_TOL:
+                    return False, (
+                        f"[frame {frame_idx}] Near-wall {var} spike at {side}-x "
+                        f"wall: {worst:.3e} > {_HYBRID_WALL_ET_TOL:.2g}"
+                    )
+
+        # Guide field Bx: interior rows only (exclude potential ghost effects).
+        boundary_set = set(id(r) for r in lo_rows + hi_rows)
+        interior_rows = [r for r in rows if id(r) not in boundary_set] or rows
+        col_bx_int = _col(vidx, interior_rows, "BX") if interior_rows else None
+        if col_bx_int:
+            min_bx = min(col_bx_int)
+            max_bx = max(col_bx_int)
+            if min_bx < 0.5 or max_bx > 2.0:
+                return False, (
+                    f"[frame {frame_idx}] Guide field Bx abnormal in interior: "
+                    f"min={min_bx:.3f}, max={max_bx:.3f} (expected ~1.0)"
+                )
+
+        # Track peak |By| for pulse-amplitude conservation check.
+        col_by = _col(vidx, rows, "BY")
+        if col_by:
+            peak_by = max(abs(v) for v in col_by)
+            if early_peak_by is None:
+                early_peak_by = peak_by
+            late_peak_by = peak_by
+
+    # Pulse-amplitude conservation: the reflecting wall must preserve the By peak.
+    if early_peak_by is not None and late_peak_by is not None:
+        if early_peak_by < 1e-12:
+            return False, "Initial By pulse is essentially zero (not seeded?)"
+        ratio = late_peak_by / early_peak_by
+        logger.debug("    [HYB] pulse amplitude ratio late/early |By| = %.3f", ratio)
+        if ratio < _HYBRID_PULSE_AMPLITUDE_RATIO_MIN:
+            return False, (
+                f"Alfven pulse was absorbed (not reflected) by the conducting "
+                f"wall: |By| ratio = {ratio:.3f} < {_HYBRID_PULSE_AMPLITUDE_RATIO_MIN}"
+            )
+
+    return True, (
+        f"Passed (hybrid pulse reflected: amplitude ratio "
+        f"{late_peak_by / early_peak_by:.2f}, "
+        f"fields finite, near-wall |Et| OK, guide field stable)"
+    )
+
 
 
 def _check_particles_plot(out_file):

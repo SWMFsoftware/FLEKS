@@ -1,9 +1,18 @@
 #DESCRIPTION
-Hybrid-PIC conducting-field-wall test: a transverse shear-Alfven wave (HybridWave
-testcase) lives in a finite-x domain whose x faces are CONDUCTING (PEC) field
-boundaries and REFLECTING particle boundaries.  Validates that the conducting
-field BC (E_t=0, B_n=0) is wired into the hybrid cell-centred advance and that
-the run stays finite/stable (no NaN).
+Hybrid-PIC conducting-field-wall test: a spatially localised Gaussian Alfven
+pulse (HybridPulse testcase) is seeded at the centre of a finite-x domain
+whose x faces are CONDUCTING (PEC) field boundaries and REFLECTING particle
+boundaries.
+
+Unlike the previous global sinusoidal (HybridWave) test, the Gaussian pulse
+actually needs to BOUNCE off the conducting walls: without any reflection the
+perturbation energy would dissipate from the interior.  This exercises the
+Et=0, Bn=0 wall enforcement more directly.
+
+The pulse seeds By = B1 * exp(-(x/sigma)^2) with no velocity kick, so the
+field decomposes into equal +x and -x travelling Alfven packets.  Each packet
+reflects off its respective wall and the total magnetic energy should be
+conserved.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -17,7 +26,7 @@ F                       initFromSWMF
  0.05                   zMax
 
 #NCELL
-32                      nCellX
+64                      nCellX
 1                       nCellY
 1                       nCellZ
 
@@ -56,13 +65,15 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-Ideal frozen-in Ohm's law (Hall OFF) so the wave is a driven by the motional
-field alone.
+Ideal frozen-in Ohm's law (Hall OFF) so the Alfven pulse is driven purely by
+the motional field; the wave speed is v_A = Bx / sqrt(mu0*rho).
 #HALLTERM
 F                       useHallTerm
 
+nBSubcycle=8: same as the bc_wave Alfven test; subcycles the explicit B advance
+to keep the Alfven-CFL stable at the given dt.
 #BSUBCYCLE
-1                       nBSubcycle
+8                       nBSubcycle
 
 #RESISTIVITY
 0.0                     etaResistivity
@@ -92,8 +103,10 @@ neutralizing fluid.
 0.0                     ey
 0.0                     ez
 
+HybridPulse: Gaussian By = B1*exp(-(x/sigma)^2), no velocity kick.
+gaussWidth defaults to L/4 = 1.6 if not specified; xCenter defaults to 0.
 #TESTCASE
-HybridWave
+HybridPulse
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -115,6 +128,7 @@ T                       useFixedDt
 1                       npcely
 1                       npcelz
 
+Save first frame (t=0, initial state) and subsequent frames every 100 steps.
 #SAVEPLOT
 1                       nPlot
 z=0 var ascii pic       plotString
