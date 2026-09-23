@@ -195,7 +195,7 @@ void Particles<NStructReal, NStructInt>::select_particle(
              ParallelDescriptor::Communicator());
   Print() << "select particle finished... " << numParticlesFoundTotal
           << "particles found..." << std::endl;
-  amrex::Abort("Abort: select particle finished!");
+  Abort("Abort: select particle finished!");
 }
 
 //==========================================================

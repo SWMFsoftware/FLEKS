@@ -18,7 +18,7 @@ void AMReXDataContainer::read_header(const std::string& headerName, int& nVar,
 
   std::ifstream HeaderFile(headerName, std::ifstream::in);
   if (!HeaderFile.is_open()) {
-    amrex::Abort("Error: cannot open header file: " + headerName);
+    Abort("Error: cannot open header file: " + headerName);
   }
 
   HeaderFile.precision(17);

@@ -365,12 +365,11 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   finalize_normalization();
 
   if (useMultiFluid && !useMhdPe) {
-    std::cout << printPrefix
-              << " Use multi-fluid but do not use electron pressure. This "
-                 "case is "
-                 "not supported so far!!!"
-              << std::endl;
-    abort();
+    Print() << printPrefix
+            << " Use multi-fluid but do not use electron pressure. This "
+               "case is not supported so far!!!"
+            << std::endl;
+    Abort();
   }
 }
 
@@ -1361,8 +1360,7 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
         // ONLY works for iso pressure so far!!!!!
         data_I[iP_I[iIon]] += (PiXX + PiYY + PiZZ) / 3.0;
         if (useAnisoP) {
-          amrex::Abort(
-              "Multi-fluid model can not work with aniso pressure now!!");
+          Abort("Multi-fluid model can not work with aniso pressure now!!");
         }
       }
 

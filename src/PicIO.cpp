@@ -91,8 +91,9 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     return;
 
   if (n_lev() > 1 && writerIn.get_plotDx() >= 0) {
-    Abort("Error: multi-level grid can not be saved with structured data "
-          "format. Change plotDx of #SAVEPLOT to -1.");
+    Print() << "Error: multi-level grid can not be saved with structured data "
+            << "format. Change plotDx of #SAVEPLOT to -1." << std::endl;
+    Abort();
   }
 
   const auto plo = Geom(0).ProbLo();
@@ -273,7 +274,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
   // The point list is enumerated over the node grid in find_output_list, so
   // iterate the matching MultiFab grid to keep the iBlock / iLev matching
   // consistent.
-  amrex::Vector<amrex::MultiFab>& gridMF = nodeE;
+  Vector<MultiFab>& gridMF = nodeE;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     int iBlockCount = 0;
@@ -330,15 +331,15 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   if (useHybridPIC &&
       (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
        var.substr(0, 5) == "dBzdt")) {
-    amrex::Abort(ToString(var) +
-                 " is not supported by the hybrid-PIC solver (dBdt is a "
-                 "full-PIC-only diagnostic).");
+    Abort(ToString(var) +
+          " is not supported by the hybrid-PIC solver (dBdt is a "
+          "full-PIC-only diagnostic).");
   }
   // Mach number (mMach) is a full-PIC-only diagnostic.
   if (useHybridPIC && var.substr(0, 4) == "mach") {
-    amrex::Abort(ToString(var) +
-                 " is not supported by the hybrid-PIC solver (Mach number is a "
-                 "full-PIC-only diagnostic).");
+    Abort(ToString(var) +
+          " is not supported by the hybrid-PIC solver (Mach number is a "
+          "full-PIC-only diagnostic).");
   }
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {

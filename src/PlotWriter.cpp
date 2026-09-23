@@ -85,7 +85,7 @@ void PlotWriter::init() {
       std::cout << errorPrefix
                 << "Unknown plot range!! plotString = " << plotString
                 << std::endl;
-    abort();
+    Abort();
   }
 
   // Find out plot variables.
@@ -114,7 +114,7 @@ void PlotWriter::init() {
       std::cout << errorPrefix
                 << "Unknown plot variables!! plotString = " << plotString
                 << std::endl;
-    abort();
+    Abort();
   }
 
   if (plotString.find("ilev") != std::string::npos) {
@@ -180,7 +180,7 @@ void PlotWriter::init() {
       std::cout << errorPrefix
                 << "Unknown plot output format!! plotString = " << plotString
                 << std::endl;
-    abort();
+    Abort();
   }
 
   if (outputFormat == "ascii") {
@@ -202,7 +202,7 @@ void PlotWriter::init() {
       std::cout << errorPrefix
                 << "Unknown plot output unit!! plotString = " << plotString
                 << std::endl;
-    abort();
+    Abort();
   }
 
   { //--------------------- Check parameters----------------------
@@ -212,7 +212,7 @@ void PlotWriter::init() {
                 << "for grid data, 'amrex' format output only support "
                    "'3d' plot range!"
                 << std::endl;
-      abort();
+      Abort();
     }
 
     if (is_particle()) {
@@ -220,7 +220,7 @@ void PlotWriter::init() {
         std::cout << errorPrefix
                   << "particles can only be saved in 'amrex' format! "
                   << std::endl;
-        abort();
+        Abort();
       }
 
       if (plotString.find("3d") == std::string::npos &&
@@ -229,7 +229,7 @@ void PlotWriter::init() {
                   << "particles can only be saved with either '3d' or "
                      "'cut' plot range! "
                   << std::endl;
-        abort();
+        Abort();
       }
     }
   }
@@ -266,7 +266,7 @@ std::string PlotWriter::expand_variables(std::string inVars) const {
     pos2 = inVars.find_first_of("}");
     if (pos2 == std::string::npos) {
       std::cout << "Variables should be inside { }: " << inVars << std::endl;
-      abort();
+      Abort();
     }
 
     var0 = inVars.substr(pos1 + 1, pos2 - pos1 - 1);
@@ -566,7 +566,7 @@ void PlotWriter::set_output_unit() {
   } else {
     if (isVerbose)
       std::cout << "Unknown unit!! unit = " << outputUnit << std::endl;
-    abort();
+    Abort();
   }
 
   No2Out_I.resize(var_I.size());

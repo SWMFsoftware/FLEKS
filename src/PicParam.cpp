@@ -219,34 +219,33 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
           known += ", ";
         known += n;
       }
-      amrex::Abort("Unknown #TESTCASE name '" + testcase +
-                   "'. Registered names: " + known + ".");
+      Abort("Unknown #TESTCASE name '" + testcase +
+            ". Registered names: " + known + ".");
     }
     ic_->read_param(param);
   } else if (command == "#WAVEIC") {
     if (!ic_) {
-      amrex::Abort("The #WAVEIC block must follow a #TESTCASE that selects a "
-                   "wave initial condition (waveic / lightwave / hybridwave / "
-                   "alfvenpulse / convectionwave / ionacousticwave).");
+      Abort("The #WAVEIC block must follow a #TESTCASE that selects a "
+            "wave initial condition (waveic / lightwave / hybridwave / "
+            "alfvenpulse / convectionwave / ionacousticwave).");
     }
     ic_->read_param(param);
   } else if (command == "#FADEEVIC") {
     if (!ic_ || std::string(ic_->name()) != "fadeev") {
-      amrex::Abort("The #FADEEVIC block must follow a #TESTCASE that selects "
-                   "the fadeev (magnetic reconnection) initial condition.");
+      Abort("The #FADEEVIC block must follow a #TESTCASE that selects "
+            "the fadeev (magnetic reconnection) initial condition.");
     }
     ic_->read_param(param);
   } else if (command == "#GEMIC") {
     if (!ic_ || std::string(ic_->name()) != "gem") {
-      amrex::Abort("The #GEMIC block must follow a #TESTCASE that selects "
-                   "the gem initial condition.");
+      Abort("The #GEMIC block must follow a #TESTCASE that selects "
+            "the gem initial condition.");
     }
     ic_->read_param(param);
   } else if (command == "#FORCEFREEIC") {
     if (!ic_ || std::string(ic_->name()) != "forcefree") {
-      amrex::Abort(
-          "The #FORCEFREEIC block must follow a #TESTCASE that selects "
-          "the forcefree (magnetic reconnection) initial condition.");
+      Abort("The #FORCEFREEIC block must follow a #TESTCASE that selects "
+            "the forcefree (magnetic reconnection) initial condition.");
     }
     ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
@@ -286,7 +285,7 @@ void Pic::report_bc_warnings(const std::string& context) {
   std::string msg;
   for (const std::string& w : bcWarnings_)
     msg += "\n  - " + w;
-  amrex::Abort("Error: " + context + " boundary conditions:" + msg);
+  Abort("Error: " + context + " boundary conditions:" + msg);
 }
 
 //==========================================================
@@ -347,13 +346,11 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
 
   if (isStandalone && hasNonPeriodic) {
     if (!fieldBCSet_)
-      amrex::Abort(
-          "Error: #FIELDBOXBOUNDARY command is required when there are "
-          "non-periodic boundaries in standalone mode.");
+      Abort("Error: #FIELDBOXBOUNDARY command is required when there are "
+            "non-periodic boundaries in standalone mode.");
     if (usePIC && (pInfo.pBCsSet.empty() || pInfo.pBCsSet[0] == 0))
-      amrex::Abort(
-          "Error: #PARTICLEBOXBOUNDARY command is required when there are "
-          "non-periodic boundaries in standalone mode.");
+      Abort("Error: #PARTICLEBOXBOUNDARY command is required when there are "
+            "non-periodic boundaries in standalone mode.");
   }
 
   const int nSpeciesBC = static_cast<int>(pInfo.pBCs.size());
@@ -448,10 +445,10 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
       }
     }
     if (hasWall)
-      amrex::Print() << "  Note: hybrid solver: only centerB is evolved, so a "
-                     << "conducting / wave field boundary constrains "
-                     << "B; for the Ohm's-law E it only closes the ghost ring "
-                     << "(it is not an independent constraint).\n";
+      Print() << "  Note: hybrid solver: only centerB is evolved, so a "
+              << "conducting / wave field boundary constrains "
+              << "B; for the Ohm's-law E it only closes the ghost ring "
+              << "(it is not an independent constraint).\n";
   }
 
   update_bc_flags();
@@ -464,23 +461,23 @@ void Pic::post_process_param() {
   // silently correcting them can produce a run with different physics than
   // the input deck describes.
   if (nBSubcycle < 1)
-    amrex::Abort("Invalid #BSUBCYCLE: nBSubcycle must be at least 1.");
+    Abort("Invalid #BSUBCYCLE: nBSubcycle must be at least 1.");
   if (electronGamma <= 0)
-    amrex::Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
+    Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
   if (electronDensity0In <= 0)
-    amrex::Abort("Invalid #ELECTRONTEMPERATURE: electronDensity0 must be > 0.");
+    Abort("Invalid #ELECTRONTEMPERATURE: electronDensity0 must be > 0.");
   if (etaHyperSI < 0)
-    amrex::Abort("Invalid #HYPERRESISTIVITY: etaHyperSI must be non-negative.");
+    Abort("Invalid #HYPERRESISTIVITY: etaHyperSI must be non-negative.");
   if (etaHyperCh < 0)
-    amrex::Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
+    Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
-    amrex::Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+    Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
   if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3")
-    amrex::Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
-                 "'. Expected 'rk4' or 'ssprk3'.");
+    Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+          "'. Expected 'rk4' or 'ssprk3'.");
   if (etaHyperMode != "si" && etaHyperMode != "grid")
-    amrex::Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
-                 "'. Expected 'si' or 'grid'.");
+    Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
+          "'. Expected 'si' or 'grid'.");
 
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
@@ -528,14 +525,14 @@ void Pic::post_process_param() {
     // finalize_units_conversion().
 
     useRK4 = (fieldIntegrator == "rk4");
-    amrex::Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
+    Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       double unormSI = fi->get_unorm_si();
       electronTemperature = electronTemperatureEV * cUnitChargeSI /
                             (cProtonMassSI * unormSI * unormSI);
-      amrex::Print() << "  electronTemperature: " << electronTemperatureEV
-                     << " [eV] -> " << electronTemperature << " [code units]\n";
+      Print() << "  electronTemperature: " << electronTemperatureEV
+              << " [eV] -> " << electronTemperature << " [code units]\n";
     }
 
     // Conversion to code units deferred until convert_electron_density0()
@@ -566,10 +563,9 @@ void Pic::convert_resistivity() {
   // eta_code = 4*pi * eta_SI * Si2NoV * Si2NoL.
   if (etaResistivitySI > 0) {
     etaResistivity = fourPI * etaResistivitySI * Si2NoV * Si2NoL;
-    amrex::Print() << "  etaResistivity: " << etaResistivitySI << " [m^2/s] -> "
-                   << etaResistivity << " [code units]"
-                   << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL
-                   << ")\n";
+    Print() << "  etaResistivity: " << etaResistivitySI << " [m^2/s] -> "
+            << etaResistivity << " [code units]"
+            << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL << ")\n";
   }
 
   // Hyper-resistive term eta_h*nabla^2 J: [eta_h] = [U]*[L]^3, so
@@ -579,8 +575,8 @@ void Pic::convert_resistivity() {
     const Real etaHyper = fourPI * etaHyperSI * Si2NoV * std::pow(Si2NoL, 3);
     for (int iLev = 0; iLev < n_lev_max(); ++iLev)
       etaHyperLev[iLev] = etaHyper;
-    amrex::Print() << "  etaHyper: " << etaHyperSI << " [m^4/s, si] -> "
-                   << etaHyper << " [code units]\n";
+    Print() << "  etaHyper: " << etaHyperSI << " [m^4/s, si] -> " << etaHyper
+            << " [code units]\n";
   }
 
   // Guard against uninitialized normalization producing non-positive
@@ -588,9 +584,9 @@ void Pic::convert_resistivity() {
   if ((etaResistivitySI > 0 && !(etaResistivity > 0)) ||
       (etaHyperSI > 0 && etaHyperMode == "si" &&
        (etaHyperLev.empty() || !(etaHyperLev[0] > 0)))) {
-    amrex::Abort("Pic::convert_resistivity: the SI->code conversion produced a "
-                 "non-positive resistivity. Check the normalization "
-                 "(#NORMALIZATION lNormSI / uNormSI).");
+    Abort("Pic::convert_resistivity: the SI->code conversion produced a "
+          "non-positive resistivity. Check the normalization "
+          "(#NORMALIZATION lNormSI / uNormSI).");
   }
 }
 
@@ -604,10 +600,9 @@ void Pic::convert_electron_density0() {
   if (rhoMinOhm <= 0)
     rhoMinOhm = 1.0e-6 * electronDensity0;
 
-  amrex::Print() << "  electronDensity0: " << electronDensity0In
-                 << " [amu/cc] -> " << electronDensity0
-                 << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho()
-                 << ")\n";
+  Print() << "  electronDensity0: " << electronDensity0In << " [amu/cc] -> "
+          << electronDensity0
+          << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho() << ")\n";
 }
 
 //==========================================================
@@ -637,8 +632,7 @@ void Pic::convert_inflow_state() {
   baseVel.uz = inflowUz_;
   baseVel.vth = 0.0;
 
-  amrex::Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies,
-                                                              baseVel);
+  Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies, baseVel);
   const int nParts = static_cast<int>(parts.size());
   for (int iS = 0; iS < nSpecies; ++iS) {
     const double mass_i =
@@ -649,10 +643,10 @@ void Pic::convert_inflow_state() {
   fi->set_inflow_state(stateVec);
   fi->set_inflow_defined(true);
 
-  amrex::Print() << "  #INFLOW state (code units):"
-                 << " n=" << inflowRho_ << " u=(" << inflowUx_ << ","
-                 << inflowUy_ << "," << inflowUz_ << ")"
-                 << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
-                 << "  (Si2NoRho=" << Si2NoRho
-                 << ", Si2NoV=" << fi->get_Si2NoV() << ")\n";
+  Print() << "  #INFLOW state (code units):"
+          << " n=" << inflowRho_ << " u=(" << inflowUx_ << "," << inflowUy_
+          << "," << inflowUz_ << ")"
+          << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
+          << "  (Si2NoRho=" << Si2NoRho << ", Si2NoV=" << fi->get_Si2NoV()
+          << ")\n";
 }
