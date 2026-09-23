@@ -476,15 +476,15 @@ etaCode = 4*pi*etaSI*Si2NoV*Si2NoL\^3). When etaHyperMode = "grid", eta_h is
 instead scaled to the grid and the (full) time step:
    eta_h = 4*pi * C_h * dx_min\^4 / dt,
 where dx_min is the finest cell size and C_h the dimensionless etaHyperCh
-(typical 1e-3 .. 1e-2). Because E scales as (eta_h/4*pi) k^4 B, this is a
+(typical 1e-3 .. 1e-2). Because E scales as (eta_h/4*pi) k\^4 B, this is a
 mode-dependent damping
-   gamma_h = (eta_h/4*pi) k^4 = C_h * (k dx)^4 / dt
+   gamma_h = (eta_h/4*pi) k\^4 = C_h * (k dx)\^4 / dt
 per unit code time, identical on every AMR level, so it only reaches the
 badly-resolved harmonics: on the 64-cell whistler deck (dx = 0.1) with
 C_h = 1e-2, gamma_h = 4.6e-5 at k d_i = 1 and 0.06 at k d_i = 6 (against
 omega = 36 there), while the few-cell band that the explicit Hall advance
 makes unstable at lambda ~ 3 cells receives 6.0 and is completely damped.
-The explicit-diffusion CFL check uses eta_h * k_max^4 * dt_sub / (4*pi) =
+The explicit-diffusion CFL check uses eta_h * k_max\^4 * dt_sub / (4*pi) =
 4 * C_h / nBSubcycle, so sub-cycling adds margin. "grid" mode is robust to
 resolution and time-step changes and is the recommended setting for general
 production runs. 0 (either mode) disables the term. Only used when HYBRIDPIC
@@ -1129,7 +1129,7 @@ Multiple #REFINEREGION commands can be used for different levels.
 0.7                       gridEfficiency
 
 From AMReX online docs: "This threshold value (gridEfficiency), which defaults
-to 0.7 (or 70%), is used to ensure that grids do not contain too large a fraction of un-tagged cells."
+to 0.7 (or 70\%), is used to ensure that grids do not contain too large a fraction of un-tagged cells."
 
 For a block, if the ratio of its cells that are labelled for refinement is 
 more than 'gridEfficiency', the whole block will be refined. Since the block
@@ -1304,8 +1304,8 @@ It will set the initial conditions for a specific test case. The kernel names no
 test case: the name is resolved by the InitialCondition registry (case-insensitive)
 and an unknown name aborts listing the registered names. Wave / sinusoidal tests
 are all ONE parameterized plug-in (WaveIC) registered as lightwave, hybridwave,
-convectionwave, ionacousticwave and a generic waveic; non-wave tests have
-dedicated plug-ins (beam, tophat).
+alfvenpulse, convectionwave, ionacousticwave and a generic waveic; non-wave tests
+have dedicated plug-ins (beam, tophat).
 </command>
 
 <command name="WAVEIC" alias="WAVEIC_FLEKS0,WAVEIC_FLEKS1,WAVEIC_FLEKS2" multiple="T">
@@ -1324,6 +1324,8 @@ dedicated plug-ins (beam, tophat).
   <parameter name="pert" type="real"/>
   <parameter name="rightHand" type="logical" default="F"/>
   <parameter name="walenFactor" type="real" default="1.0"/>
+  <parameter name="gaussWidth" type="real" default="0.0"/>
+  <parameter name="xCenter" type="real" default="0.0"/>
 
 #WAVEIC 
 T       seedE
@@ -1342,18 +1344,21 @@ F       rightHand
 1.0     walenFactor
 
 Optional sub-parameters for a WaveIC wave initial condition (selected by a
-#TESTCASE name of waveic / lightwave / hybridwave / convectionwave /
-ionacousticwave). All parameters are optional: when absent the plug-in uses its
-preset for the selected name. seedE/seedB/seedWeight toggle E-field / B-field /
-sinusoidal-density-perturbation seeding; oblique + dir + waveLength give an
-oblique plane wave (wavelength in cells), otherwise the wave is x-aligned with
-kx = 2*pi*waveMode/Lx; guideField adds the uniform Bx0 guide field under the B
-perturbation (B1 = frac*Bx0); velKick adds the matching Alfven ion velocity
-kick; pert is the density perturbation amplitude.
+#TESTCASE name of waveic / lightwave / hybridwave / alfvenpulse /
+convectionwave / ionacousticwave). All parameters are optional: when absent the
+plug-in uses its preset for the selected name. seedE/seedB/seedWeight toggle
+E-field / B-field / sinusoidal-density-perturbation seeding; oblique + dir +
+waveLength give an oblique plane wave (wavelength in cells), otherwise the wave
+is x-aligned with kx = 2*pi*waveMode/Lx; guideField adds the uniform Bx0 guide
+field under the B perturbation (B1 = frac*Bx0); velKick adds the matching Alfven
+ion velocity kick; pert is the density perturbation amplitude.
+
+The presets carry no solver dependence: nothing keys off solveEM/useHybridPIC.
+Any of them can be used in a full-PIC deck as well.
 
 For the x-aligned transverse wave the perturbation is
 
-    dB_y(x,0) = B1 cos(kx),   dB_z(x,0) = hand * B1 sin(kx),
+    dB_y(x,0) = B1 f(x),   dB_z(x,0) = hand * B1 g(x),
 
 with hand = -1 for rightHand = T and hand = +1 otherwise. The sign is the seed
 helicity about the +x guide field: hand = -1 rotates y -> z about +B0 (the
@@ -1369,13 +1374,34 @@ single-branch seed needs walenFactor = (k d_i)/(omega/Omega_i) * v_A/B0, with
 omega/Omega_i the frequency of the seeded branch. For parallel propagation the
 Hall/cold-plasma branches (kappa = k*d_i) are
 
-    right-hand / whistler      : w/Omega_i = [kappa^2 + kappa sqrt(kappa^2+4)]/2
-    left-hand / ion-cyclotron  : w/Omega_i = [-kappa^2 + kappa sqrt(kappa^2+4)]/2
+    right-hand / whistler      : w/Omega_i = [kappa\^2 + kappa sqrt(kappa\^2+4)]/2
+    left-hand / ion-cyclotron  : w/Omega_i = [-kappa\^2 + kappa sqrt(kappa\^2+4)]/2
 
 so walenFactor = kappa*(v_A/B0)/[w/Omega_i]. Leaving it at 1.0 excites both
-circular branches (e.g. ~84%/16% whistler/ion-cyclotron amplitude for a
+circular branches (e.g. ~84\%/16\% whistler/ion-cyclotron amplitude for a
 right-hand seed at k d_i ~ 1), which is fine for a frequency measurement but
 not for a pure eigenmode.
+
+seedE seeds the motional electric field E = -u x B belonging to the velocity
+kick, so for the x-aligned seed it needs velKick = T (with velKick = F the fluid
+velocity is zero and seedE is ignored with a warning rather than wiping a
+uniform E from #UNIFORMSTATE). A full-PIC deck that wants a self-consistent
+B + u + E Alfven seed should therefore set seedE = T and velKick = T; note that
+the kick is applied to every species, so in a full-PIC run the ions and the
+electrons get the same u_perp (no relative drift, i.e. the seed current is
+supplied by the electron response during the first few electron timescales).
+The hybrid solver recomputes E from the ion moments through Ohm's law, so there
+a seeded E is only an initial guess.
+
+gaussWidth > 0 replaces the sinusoidal envelope of the x-aligned seed by a
+localised Gaussian exp(-((x - xCenter)/gaussWidth)^2) with g(x) = 0 (no Bz, no
+circular polarisation). The alfvenpulse preset is exactly that configuration
+(Gaussian By on the uniform Bx0, no velocity kick, no density perturbation), so
+it decomposes into +x and -x travelling Alfven packets; it is named after the
+Alfven pulse it seeds, not after a solver, and it is used in hybrid and full-PIC
+decks alike (a B-only seed additionally drives the finite-c / kinetic-electron
+transients of the full EM solver). Its gaussWidth defaults to Lx/4 when not
+given on the deck.
 </command>
 
 <command name="PERIODICITY">

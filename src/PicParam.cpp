@@ -227,7 +227,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (!ic_) {
       amrex::Abort("The #WAVEIC block must follow a #TESTCASE that selects a "
                    "wave initial condition (waveic / lightwave / hybridwave / "
-                   "convectionwave / ionacousticwave).");
+                   "alfvenpulse / convectionwave / ionacousticwave).");
     }
     ic_->read_param(param);
   } else if (command == "#FADEEVIC") {

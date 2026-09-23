@@ -9,8 +9,13 @@
 //   lightwave       : EM oblique circularly polarized plane wave.
 //   hybridwave      : transverse B perturbation B1*(cos kx, +-sin kx) on guide
 //                     field Bx0 + matching Alfven velocity kick.
+//   alfvenpulse     : the same transverse B seed with a Gaussian envelope
+//                     (gaussWidth, xCenter) and no velocity kick; the pulse
+//                     splits into +-x travelling Alfven packets.
 //   ionacousticwave : no field; sinusoidal density perturbation via weight
 //                     scaling 1 + pert*sin(kx*x).
+//
+// The presets are solver-agnostic: nothing keys off useHybridPIC/solveEM.
 //
 // The +- sign of the B_z (and matching u_z) perturbation is the seed helicity,
 // selected with the rightHand sub-parameter:
@@ -24,7 +29,7 @@ public:
   enum Profile {
     LightWave,
     HybridWave,
-    HybridPulse,
+    AlfvenPulse,
     ConvectionWave,
     IonAcousticWave,
     Generic
@@ -44,7 +49,7 @@ public:
   void modify_particle_weight(ParticleICState& s) const override;
 
   bool modifies_velocities() const override {
-    return profile_ == HybridWave || profile_ == HybridPulse;
+    return profile_ == HybridWave || profile_ == AlfvenPulse;
   }
   void modify_particle_velocity(ParticleICState& s) const override;
 
@@ -89,6 +94,13 @@ private:
 
   // +1 for the left-hand (default) seed, -1 for the right-hand one.
   amrex::Real helicity() const { return rightHand_ ? -1.0 : 1.0; }
+
+  // Effective Gaussian envelope width; <= 0 selects the global sinusoidal mode.
+  amrex::Real gaussWidthEffective() const;
+
+  // Transverse envelope (f, g) at x, shared by the seeded B, E and ion kick.
+  void envelope(amrex::Real x, amrex::Real gw, amrex::Real& f,
+                amrex::Real& g) const;
 
   // Cached in set_fields from the domain / guide field.
   mutable amrex::Real B1_ = 0.0; // B perturbation amplitude (code units)

@@ -1,6 +1,6 @@
 #DESCRIPTION
 Hybrid-PIC conducting-field-wall test: a spatially localised Gaussian Alfven
-pulse (HybridPulse testcase) is seeded at the centre of a finite-x domain
+pulse (alfvenpulse testcase) is seeded at the centre of a finite-x domain
 whose x faces are CONDUCTING (PEC) field boundaries and REFLECTING particle
 boundaries.
 
@@ -103,10 +103,10 @@ neutralizing fluid.
 0.0                     ey
 0.0                     ez
 
-HybridPulse: Gaussian By = B1*exp(-(x/sigma)^2), no velocity kick.
+alfvenpulse: Gaussian By = B1*exp(-(x/sigma)^2), no velocity kick.
 gaussWidth defaults to L/4 = 1.6 if not specified; xCenter defaults to 0.
 #TESTCASE
-HybridPulse
+AlfvenPulse
 
 #TIMESTEPPING
 T                       useFixedDt
