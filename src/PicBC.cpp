@@ -2,7 +2,11 @@
 #include <cmath>
 #include <vector>
 
+#include <AMReX_BCRec.H>
+#include <AMReX_BCUtil.H>
+#include <AMReX_BC_TYPES.H>
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_PhysBCFunct.H>
 
 #include "GridUtility.h"
 #include "Pic.h"
@@ -70,24 +74,113 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   std::string nameFunc = "Pic::apply_field_bc";
   timing_func(nameFunc);
 
-  // Base fill: float on open faces, or evaluate state from func elsewhere.
-  apply_BC(status, mf, iStart, nComp, func, iLev, &bcField);
+  const auto qty =
+      isB ? FieldBC::Quantity::Magnetic : FieldBC::Quantity::Electric;
+  const Vector<BCRec> bcr =
+      FieldBC::create_bcrec(bcField, qty, nComp, Geom(iLev));
 
-  // Dedicated wall operators applied per configured face type.
-  if (hasConductingBC_)
+  // Native AMReX physical boundary fill for foextrap and reflections:
+  GpuBndryFuncFab<FabFillNoOp> bfunc(FabFillNoOp{});
+  PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
+  physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
+
+  // Fill external Dirichlet (coupled / fixed) faces from func if provided:
+  if (func != nullptr) {
+    fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField);
+  }
+
+  // Node-centered conducting wall requires zeroing boundary wall nodes
+  // and mirroring nodal ghost nodes.
+  if (hasConductingBC_ && mf.boxArray().ixType().nodeCentered()) {
     apply_conducting_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+  }
 
   if (hasAbsorbBC_)
     apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB);
-
-  if (hasInflowBC_ && fi->get_inflow_defined())
-    apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB);
 
   // Wave boundary condition overwrites faces where active.
   if (waveBC.active) {
     const Real t = tc ? tc->get_time() : 0.0;
     apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t,
                      func);
+  }
+}
+
+//==========================================================
+void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
+                       const int nComp, GETVALUE func, const int iLev,
+                       const BoxBC<FieldBC::Type>* bc) {
+  if (!func)
+    return;
+
+  const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
+
+  // Precompute Dirichlet faces and early-exit if no face requires fill_ext_dir.
+  GpuArray<bool, 3> isDirLo{ false, false, false };
+  GpuArray<bool, 3> isDirHi{ false, false, false };
+  if (bc != nullptr) {
+    bool hasExtDir = false;
+    for (int d = 0; d < nDim; ++d) {
+      if (bnd.bcLo[d] == FieldBC::coupled || bnd.bcLo[d] == FieldBC::fixed ||
+          bnd.bcLo[d] == FieldBC::wave) {
+        isDirLo[d] = true;
+        hasExtDir = true;
+      }
+      if (bnd.bcHi[d] == FieldBC::coupled || bnd.bcHi[d] == FieldBC::fixed ||
+          bnd.bcHi[d] == FieldBC::wave) {
+        isDirHi[d] = true;
+        hasExtDir = true;
+      }
+    }
+    if (!hasExtDir)
+      return;
+  }
+
+  const BoxArray ba =
+      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+  const Box& domainBox = Geom(iLev).Domain();
+
+  const GpuArray<int, 3> loBnd{ bnd.loBnd[0], bnd.loBnd[1], bnd.loBnd[2] };
+  const GpuArray<int, 3> hiBnd{ bnd.hiBnd[0], bnd.hiBnd[1], bnd.hiBnd[2] };
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    // Interior fabs contain no cells outside physical domain bounds.
+    if (bc != nullptr && domainBox.contains(bxFab))
+      continue;
+
+    Array4<Real> const arr = mf.array(mfi);
+    Array4<const int> const statusArr = status.array(mfi);
+
+    // Note: [&mfi] is retained because host member-function pointer func
+    // requires mfi. All other data (arrays, bounds, flags) are captured by
+    // value for GPU readiness when device functors are introduced.
+    ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      if (bc != nullptr) {
+        const int ijk[3] = { i, j, k };
+        bool onDirFace = false;
+        for (int d = 0; d < nDim; ++d) {
+          if ((isDirLo[d] && ijk[d] < loBnd[d]) ||
+              (isDirHi[d] && ijk[d] > hiBnd[d])) {
+            onDirFace = true;
+            break;
+          }
+        }
+        if (!onDirFace)
+          return;
+      }
+
+      for (int iVar = 0; iVar < nComp; ++iVar) {
+        arr(i, j, k, iStart + iVar) =
+            (this->*func)(mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+      }
+    });
   }
 }
 
@@ -101,101 +194,36 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
-  bool useFloatBC = (func == nullptr);
-  const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
-
   if (bc != nullptr) {
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-      const Box& bxFab = mfi.fabbox();
-      const Box& bxValid = mfi.validbox();
+    const Vector<BCRec> bcr = FieldBC::create_bcrec(
+        *bc, FieldBC::Quantity::Scalar, nComp, Geom(iLev));
+    GpuBndryFuncFab<FabFillNoOp> bfunc(FabFillNoOp{});
+    PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
+    physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
-      if (!ba.contains(bxFab)) {
-        Array4<Real> const& arr = mf[mfi].array();
-        const Array4<const int>& statusArr = status[mfi].array();
-
-        ParallelFor(bxFab, [&](int i, int j, int k) {
-          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-            int ip, jp, kp;
-            bool useFloat = use_float(i, j, k, ip, jp, kp, *bc, bxValid);
-
-            if (useFloat) {
-              for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-                arr(i, j, k, iVar) = arr(ip, jp, kp, iVar);
-              }
-            } else if (func) {
-              for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-                arr(i, j, k, iVar) = (this->*func)(
-                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar - iStart, iLev);
-              }
-            }
-          }
-        });
-      }
+    if (func != nullptr) {
+      fill_ext_dir(status, mf, iStart, nComp, func, iLev, bc);
     }
-    return;
-  }
-
-  if (useFloatBC) {
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-      const Box& bxFab = mfi.fabbox();
-      const Box& bxValid = mfi.validbox();
-
-      if (!ba.contains(bxFab)) {
-        Array4<Real> const& arr = mf[mfi].array();
-        const Array4<const int>& statusArr = status[mfi].array();
-
-        Box box = bxValid;
-        box.grow(1);
-
-        ParallelFor(box, [&](int i, int j, int k) {
-          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-            bool isNeiFound = false;
-            const int kmin = (nDim > 2) ? -1 : 0;
-            const int kmax = (nDim > 2) ? 1 : 0;
-            for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
-              for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
-                for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
-                  if (!bit::is_lev_boundary(
-                          statusArr(i + ii, j + jj, k + kk, 0))) {
-                    isNeiFound = true;
-                    for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
-                      arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        });
-      }
-    }
-  } else {
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-      const Box& bx = mfi.fabbox();
-
-      if (!ba.contains(bx)) {
-        Array4<Real> const& arr = mf[mfi].array();
-        const Array4<const int>& statusArr = status[mfi].array();
-
-        auto lo = IntVect(bx.loVect());
-        auto hi = IntVect(bx.hiVect());
-        if (nDim > 2 && Geom(iLev).Domain().bigEnd(iz_) ==
-                            Geom(iLev).Domain().smallEnd(iz_)) {
-          lo[iz_]++;
-          hi[iz_]--;
+  } else if (func == nullptr) {
+    // Pure floating / extrapolation BC on physical boundaries (e.g. scratch
+    // scalars)
+    Vector<BCRec> bcr(nComp);
+    for (int c = 0; c < nComp; ++c) {
+      for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        if (Geom(iLev).isPeriodic(d)) {
+          bcr[c].setLo(d, BCType::int_dir);
+          bcr[c].setHi(d, BCType::int_dir);
+        } else {
+          bcr[c].setLo(d, BCType::foextrap);
+          bcr[c].setHi(d, BCType::foextrap);
         }
-
-        Box box0(lo, hi);
-
-        ParallelFor(box0, nComp, [&](int i, int j, int k, int iVar) {
-          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-            arr(i, j, k, iStart + iVar) = (this->*func)(
-                mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
-          }
-        });
       }
     }
+    GpuBndryFuncFab<FabFillNoOp> bfunc(FabFillNoOp{});
+    PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
+    physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
+  } else {
+    fill_ext_dir(status, mf, iStart, nComp, func, iLev, nullptr);
   }
 }
 
