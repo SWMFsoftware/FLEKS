@@ -8,7 +8,7 @@
 using namespace amrex;
 
 // Input spellings accepted by ParticleBC::parse().
-const std::vector<bc_detail::Entry> &ParticleBC::table() {
+const std::vector<bc_detail::Entry>& ParticleBC::table() {
   using bc_detail::Legacy;
   static const std::vector<bc_detail::Entry> tbl = {
     { "periodic", ParticleBC::periodic, Legacy::none },
@@ -29,7 +29,7 @@ const std::vector<bc_detail::Entry> &ParticleBC::table() {
 }
 
 // Input spellings accepted by FieldBC::parse().
-const std::vector<bc_detail::Entry> &FieldBC::table() {
+const std::vector<bc_detail::Entry>& FieldBC::table() {
   using bc_detail::Legacy;
   static const std::vector<bc_detail::Entry> tbl = {
     { "periodic", FieldBC::periodic, Legacy::none },
@@ -47,4 +47,62 @@ const std::vector<bc_detail::Entry> &FieldBC::table() {
     { "reflect", FieldBC::conducting, Legacy::deprecated },
   };
   return tbl;
+}
+
+amrex::Vector<amrex::BCRec> FieldBC::create_bcrec(
+    const BoxBC<FieldBC::Type>& physBC, Quantity qty, int nComp,
+    const amrex::Geometry& geom) {
+  amrex::Vector<amrex::BCRec> bcr(nComp);
+
+  for (int c = 0; c < nComp; ++c) {
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+      for (int side = 0; side < 2; ++side) {
+        int mathType = amrex::BCType::bogus;
+
+        if (geom.isPeriodic(d)) {
+          mathType = amrex::BCType::int_dir;
+        } else {
+          const auto pType = static_cast<FieldBC::Type>(physBC.face(d, side));
+          switch (pType) {
+            case FieldBC::periodic:
+              mathType = amrex::BCType::int_dir;
+              break;
+            case FieldBC::outflow:
+            case FieldBC::vacuum:
+            case FieldBC::inflow:
+            case FieldBC::absorb:
+            case FieldBC::wave:
+              mathType = amrex::BCType::foextrap;
+              break;
+            case FieldBC::conducting:
+              if (qty == Quantity::Magnetic) {
+                mathType = (c == d) ? amrex::BCType::reflect_odd
+                                    : amrex::BCType::reflect_even;
+              } else if (qty == Quantity::Electric) {
+                mathType = (c == d) ? amrex::BCType::reflect_even
+                                    : amrex::BCType::reflect_odd;
+              } else {
+                mathType = amrex::BCType::reflect_even;
+              }
+              break;
+            case FieldBC::coupled:
+            case FieldBC::fixed:
+              mathType = amrex::BCType::ext_dir;
+              break;
+            default:
+              mathType = amrex::BCType::foextrap;
+              break;
+          }
+        }
+
+        if (side == 0) {
+          bcr[c].setLo(d, mathType);
+        } else {
+          bcr[c].setHi(d, mathType);
+        }
+      }
+    }
+  }
+
+  return bcr;
 }

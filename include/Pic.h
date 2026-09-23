@@ -665,54 +665,10 @@ public:
   void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
                           amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz);
 
-  // Map ghost cell (i,j,k) at open faces to adjacent edge cell for
-  // zero-gradient copy.
-  bool use_float(const int i, const int j, const int k, int &ip, int &jp,
-                 int &kp, const BoxBC<FieldBC::Type> &bc,
-                 const amrex::Box &bxValid) const {
-    bool useFloat = false;
-    ip = i;
-    jp = j;
-    kp = k;
-
-    if (i < bxValid.smallEnd(ix_) &&
-        (bc.lo[ix_] == FieldBC::outflow || bc.lo[ix_] == FieldBC::inflow)) {
-      useFloat = true;
-      ip = bxValid.smallEnd(ix_);
-    }
-    if (i > bxValid.bigEnd(ix_) &&
-        (bc.hi[ix_] == FieldBC::outflow || bc.hi[ix_] == FieldBC::inflow)) {
-      useFloat = true;
-      ip = bxValid.bigEnd(ix_);
-    }
-
-    if (j < bxValid.smallEnd(iy_) &&
-        (bc.lo[iy_] == FieldBC::outflow || bc.lo[iy_] == FieldBC::inflow)) {
-      useFloat = true;
-      jp = bxValid.smallEnd(iy_);
-    }
-
-    if (j > bxValid.bigEnd(iy_) &&
-        (bc.hi[iy_] == FieldBC::outflow || bc.hi[iy_] == FieldBC::inflow)) {
-      useFloat = true;
-      jp = bxValid.bigEnd(iy_);
-    }
-
-    if (nDim > 2) {
-      if (k < bxValid.smallEnd(iz_) &&
-          (bc.lo[iz_] == FieldBC::outflow || bc.lo[iz_] == FieldBC::inflow)) {
-        useFloat = true;
-        kp = bxValid.smallEnd(iz_);
-      }
-
-      if (k > bxValid.bigEnd(iz_) &&
-          (bc.hi[iz_] == FieldBC::outflow || bc.hi[iz_] == FieldBC::inflow)) {
-        useFloat = true;
-        kp = bxValid.bigEnd(iz_);
-      }
-    }
-    return useFloat;
-  }
+  // Fill external Dirichlet (coupled / fixed) ghost cells from func.
+  void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                    const int iStart, const int nComp, GETVALUE func,
+                    const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
 
   amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {

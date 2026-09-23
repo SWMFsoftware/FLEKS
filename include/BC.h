@@ -4,11 +4,15 @@
 #include <string>
 #include <vector>
 
+#include <AMReX_BCRec.H>
+#include <AMReX_BCUtil.H>
+#include <AMReX_BC_TYPES.H>
 #include <AMReX_Geometry.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MFIter.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_PhysBCFunct.H>
+#include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
 
 //==========================================================
@@ -30,6 +34,11 @@ template <typename EnumT> struct BoxBC {
     else
       hi[d] = static_cast<int>(type);
   }
+
+  int loFace(const int d) const { return lo[d]; }
+  int hiFace(const int d) const { return hi[d]; }
+  void setLo(const int d, const EnumT type) { lo[d] = static_cast<int>(type); }
+  void setHi(const int d, const EnumT type) { hi[d] = static_cast<int>(type); }
 
   bool has(const EnumT type) const {
     for (int d = 0; d < amrex::SpaceDim; ++d) {
@@ -144,6 +153,15 @@ enum Type {
   fixed = 7,
   wave = 8
 };
+
+enum class Quantity { Magnetic, Electric, Scalar };
+
+// Translate physical FieldBC boundary conditions on domain faces into
+// mathematical AMReX BCRec records (amrex::BCType) for each component of a
+// MultiFab.
+amrex::Vector<amrex::BCRec> create_bcrec(const BoxBC<FieldBC::Type> &physBC,
+                                         Quantity qty, int nComp,
+                                         const amrex::Geometry &geom);
 
 const std::vector<bc_detail::Entry> &table();
 
