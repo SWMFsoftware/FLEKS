@@ -17,7 +17,6 @@ import glob
 
 MOVERS = [
     "Pts::charged_particle_mover",
-    "Pts::charged_particle_mover_cell_centered",
     "TestParticles::move_charged_particles",
 ]
 
@@ -36,7 +35,7 @@ PT_SOLVERS = []
 
 _REQUIRED_MOVER = {
     "fullpic": "Pts::charged_particle_mover",
-    "hybrid":  "Pts::charged_particle_mover_cell_centered",
+    "hybrid":  "Pts::charged_particle_mover",
     "pt":      "TestParticles::move_charged_particles",
     "reconnection2d": "Pts::charged_particle_mover",
 }

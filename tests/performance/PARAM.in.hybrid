@@ -4,14 +4,18 @@ whistler wave (the standard hybrid workload) on a 1D periodic grid sized to be a
 representative scaling benchmark: 128 X cells, 2000 macroparticles/cell, so the
 particle mover and the explicit Ohm's-law + Faraday field advance both dominate
 the wall-clock.  This is the hybrid counterpart of performance/PARAM.in (the
-full-PIC beam benchmark) and is exercised by tests/validate_performance.py.
+full-PIC beam benchmark) and is exercised by tests/validate_performance.py and
+by the memory regression selection in tests/capture_memory.py.
+
+The solver setup is the one validated by tests/whistler/PARAM.in.hybrid: the
+same Hall-only Ohm's law, the same grid-mode hyper-resistivity, and the B
+sub-cycling scaled to this (finer) grid, so the benchmark exercises the same
+field-advance machinery as the hybrid validation test instead of a private
+configuration.  See the RESISTIVITY / BSUBCYCLE notes below.
 
 Normalization matches the hybrid test family (whistler): lNormSI ~ d_i,
 uNormSI = speed of light (set to v_A so c/v_A = 1), so d_i ~ v_A ~ 1 and
-(for the proton) B ~ Omega_i ~ 1 in code units.  The Hall/whistler mode is
-sub-cycled (nBSubcycle = 8) so the explicit
-advance stays RK4-stable at dt = 0.02; this exercises the sub-cycling machinery
-that dominates the hybrid field-solver cost.
+(for the proton) B ~ Omega_i ~ 1 in code units.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -47,20 +51,42 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-Hall-only: resistive and electron-pressure-gradient terms off (both 0.0) to
-isolate the whistler dispersion (the standard hybrid workload).
+Hall-only: resistive and electron-pressure-gradient terms off (0.0).  This is
+what isolates the Hall/whistler workload, exactly as in the whistler deck.
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+Grid-mode hyper-resistivity, the same setting as tests/whistler/PARAM.in.hybrid
+(0.0 / grid / 1.0e-2): eta_h = 4*pi * C_h * dx^4 / dt, i.e. a damping
+gamma_h = C_h * (k*dx)^4 / dt that acts only on the badly resolved harmonics.
+At dx = 0.05 it is negligible where the physics lives (gamma_h = 1.2e-4 at
+k d_i = 1 against omega = 1.6) and it only reaches the few-cell band that the
+explicit Hall advance cannot integrate (gamma_h = 48 at k dx = pi, against the
+~11 per-step growth measured below).  Damping of that band is NOT sufficient on
+its own here: with C_h = 1e-2 the deck still diverges at nBSubcycle = 8, so the
+sub-cycling below carries the stability at this resolution.
+#HYPERRESISTIVITY
+0.0                     etaHyperSI
+grid                    etaHyperMode
+1.0e-2                  etaHyperCh
 
 #ELECTRONTEMPERATURE
 0.0                     electronTemperature  [eV]
 1.0                     electronGamma
 1.0                     electronDensity0
 
-Sub-cycle the explicit Hall advance (limited by the grid-scale whistler mode).
-nBSubcycle = 8 exercises the sub-cycling machinery at 4x the cost of 32.
+Sub-cycle the explicit Hall advance (limited by the grid-scale whistler mode):
+omega_max * dt_sub < 2.785 (RK4).  32 sub-steps give the same margin as the
+whistler deck's 8 at dx = 0.1: the grid-scale whistler frequency goes as dx^-2,
+and 8 * (0.1/0.05)^2 = 32, so both run at omega_max * dt_sub ~ 2.5.  Measured
+here: 8 sub-steps are over the limit and diverge in the FIRST step (max(uth)
+0.093 -> 6569, CFL 2627, particles leaving the periodic box by ~1e4 cell lengths
+per step), while 16 / 32 / 64 are all stable for the full TimeMax.  32 is used
+so the benchmark carries the same stability margin as the validation deck, and
+the margin is cheap: the whole TimeMax = 1.0 run takes 2.7 / 3.2 / 3.8 s at
+16 / 32 / 64 sub-steps (the particle mover is a large share of that).
 #BSUBCYCLE
-8                       nBSubcycle
+32                      nBSubcycle
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

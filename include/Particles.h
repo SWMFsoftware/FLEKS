@@ -566,35 +566,21 @@ public:
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
-  // Cell-centred mover dispatch: gathers from the centerE/centerB
-  // (rather than the node fields) using a trilinear gather.
-  void mover_cell_centered(const amrex::Vector<amrex::MultiFab>& centerE,
-                           const amrex::Vector<amrex::MultiFab>& centerB,
-                           const amrex::Vector<amrex::MultiFab>& eBg,
-                           const amrex::Vector<amrex::MultiFab>& uBg,
-                           amrex::Real dt, amrex::Real dtNext);
-
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext);
 
-  // Cell-centred particle gather + Boris push, reading E and B from the
-  // fields (centerE / centerB) using a trilinear gather.
-  void charged_particle_mover_cell_centered(
-      const amrex::Vector<amrex::MultiFab>& centerE,
-      const amrex::Vector<amrex::MultiFab>& centerB,
-      const amrex::Vector<amrex::MultiFab>& eBg,
-      const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
-      amrex::Real dtNext);
-
   // Where the fields are sampled for the Boris push.
   enum class FieldSampling { Node, CellCentered };
 
-  // Shared implementation of the two charged-particle movers above; they
-  // differ only in where E and B are sampled. eBg and uBg belong to the public
-  // mover signatures but are not needed here.
+  // Field gather + Boris push shared by the charged-particle movers. The
+  // hybrid solver projects its cell-centred B onto the nodes
+  // (project_centerB_to_nodeB), so the full-PIC and the hybrid path both
+  // sample at nodes today; the cell-centred sampling point is kept because it
+  // costs nothing here and is the natural fallback if a solver ever wants the
+  // staggered fields directly.
   void charged_particle_mover_impl(const amrex::Vector<amrex::MultiFab>& EGrid,
                                    const amrex::Vector<amrex::MultiFab>& BGrid,
                                    amrex::Real dt, amrex::Real dtNext,

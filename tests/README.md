@@ -157,10 +157,12 @@ python3 tests/compare_memory.py base.json mine.json            # step 2: compare
 
 `compare_memory.py` prints a table and exits non-zero on a regression. Run
 either script with `--help` for the options; the ones worth knowing are
-`capture_memory.py --list` (which decks are captured — beam, performance.hybrid,
-reconnection, shock and 2-rank beam, ~25 s in total) and `--verify`, which
-reports how reproducible memory is on your machine and is what `--rss-tol`
-should be tuned from.
+`capture_memory.py --list` (which decks are captured — beam,
+performance.hybrid, reconnection.fadeev_pic, shock and 2-rank beam, ~25 s in
+total), `--timeout` (per-test wall-clock limit, 900 s by default: a deck that
+diverges into an endless loop is killed and recorded as an error instead of
+hanging the job), and `--verify`, which reports how reproducible memory is on
+your machine and is what `--rss-tol` should be tuned from.
 
 Arena counts and peak bytes are exact integers across runs, so any increase
 fails. RSS drifts by up to 0.4 MB between runs, so it gets a tolerance

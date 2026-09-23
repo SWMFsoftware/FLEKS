@@ -67,21 +67,6 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
 //==========================================================
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::mover_cell_centered(
-    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
-    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext) {
-  if (is_neutral()) {
-    neutral_mover(dt);
-  } else {
-    charged_particle_mover_cell_centered(centerE, centerB, eBg, uBg, dt,
-                                         dtNext);
-  }
-}
-
-//==========================================================
-
-template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
     const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
@@ -91,24 +76,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 }
 
 //==========================================================
-// Cell-centred Boris push. The E and B are gathered from cell fields. The
-// gather is a plain cell-centred trilinear interpolation.
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
-    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
-    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext) {
-  timing_func("Pts::charged_particle_mover_cell_centered");
-  charged_particle_mover_impl(centerE, centerB, dt, dtNext,
-                              FieldSampling::CellCentered);
-}
-
-//==========================================================
-// Shared implementation of charged_particle_mover and
-// charged_particle_mover_cell_centered. Only the sampling point of E and B
-// differs: the node-centred stencil for the full-PIC fields, the cell-centred
-// one for the hybrid fields. Everything from the Boris push onwards is common.
+// Shared implementation of the charged-particle movers: only the sampling
+// point of E and B differs (the node-centred stencil for the full-PIC fields,
+// the cell-centred one when a caller hands the staggered fields in directly).
+// Everything from the Boris push onwards is common.
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover_impl(
@@ -445,13 +416,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   template void T::mover(const Vector<MultiFab>&, const Vector<MultiFab>&,     \
                          const Vector<MultiFab>&, const Vector<MultiFab>&,     \
                          Real, Real);                                          \
-  template void T::mover_cell_centered(                                        \
-      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
-      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
   template void T::charged_particle_mover(                                     \
-      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
-      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
-  template void T::charged_particle_mover_cell_centered(                       \
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
       const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
   template void T::charged_particle_mover_impl(const Vector<MultiFab>&,        \
