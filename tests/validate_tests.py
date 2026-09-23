@@ -384,7 +384,6 @@ def configured_amrex_dim():
     checking the InstallDir symlink and its 2D/3D targets so a broken symlink
     does not prevent detection.
     """
-    import os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     # (path-to-AMReX-root, candidates-to-check) per layout.
     layouts = [
@@ -499,7 +498,6 @@ def read_pic_log(run_dir):
     Returns a list of dicts with keys: time, cycle, Etot, Ee, Eb,
     Epart, and one EpartN key per species.
     """
-    import glob
     pc_plots = os.path.join(run_dir, "PC", "plots")
     log_files = sorted(glob.glob(os.path.join(pc_plots, "log_pic_n*.log")))
     if not log_files:
@@ -557,7 +555,6 @@ def read_pt_log(run_dir):
     Returns a list of dicts with keys: time, cycle, and per species
     mass{i}, moment_x{i}, moment_y{i}, moment_z{i}, energy{i}.
     """
-    import glob
     pc_plots = os.path.join(run_dir, "PC", "plots")
     log_files = sorted(glob.glob(os.path.join(pc_plots, "log_pt_n*.log")))
     if not log_files:

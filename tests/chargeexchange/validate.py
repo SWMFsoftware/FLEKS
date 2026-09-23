@@ -11,6 +11,7 @@ import logging
 import os
 
 from tests._shared import run_dir as _run_dir
+from tests._shared.validators import log_epart_header
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +42,7 @@ def validate_log(pic_diags=None, test_name=None):
         logger.debug("  [INFO] No per-species energy columns; skipping.")
         return True, "Passed (no Epart columns)"
 
-    logger.debug("  --- Energy Diagnostics (from log_pic log) ---")
-    for k in epart_keys:
-        logger.debug("    %s: %s -> %s",
-                     k, f"{first.get(k, 0):.6e}", f"{last.get(k, 0):.6e}")
-    logger.debug("    Initial total Epart: %s", f"{first.get('Epart', 0):.6e}")
-    logger.debug("    Final total Epart:   %s", f"{last.get('Epart', 0):.6e}")
+    log_epart_header(first, last, epart_keys, logger)
 
     # Verify both H+ (Epart1) and O+ (Epart2).  O+ has a near-zero background,
     # so its energy should increase by a large factor.  H+ has a large

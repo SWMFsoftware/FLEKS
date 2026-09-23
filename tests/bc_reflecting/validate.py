@@ -23,6 +23,8 @@ import os
 logger = logging.getLogger(__name__)
 
 import tests._shared.hybrid as _hyb
+from tests._shared import run_dir as _run_dir
+from tests._shared.validators import validate_hybrid_energy_bounded
 
 RUN_DIR = "run_test"
 
@@ -120,55 +122,20 @@ def _validate_log_fields(e0, e1, first, last):
 
 def _validate_log_hybrid_fields(pic_diags):
     """Hybrid-PIC conducting wall: advance stays finite, positive, and bounded."""
-    e0 = pic_diags[0].get("Etot", 0.0)
-    finite = all(
-        math.isfinite(d.get("Etot", 0.0)) and
-        math.isfinite(d.get("Epart", 0.0)) for d in pic_diags
+    return validate_hybrid_energy_bounded(
+        pic_diags,
+        growth_max=ETOT_HYBRID_GROWTH,
+        test_label="PEC Field Wall",
+        logger=logger,
     )
-    e1 = pic_diags[-1].get("Etot", 0.0)
-    logger.debug("    Etot: %.4e -> %.4e (%.1f growth)", e0, e1,
-                 1.0 if e0 == 0 else e1 / e0)
-
-    if not finite:
-        return False, "Non-finite energy (NaN/Inf) in energy log"
-    if e0 <= 0 or e1 <= 0:
-        return False, "Non-positive total energy (plasma not initialised / drained)"
-    if e0 > 0 and e1 > ETOT_HYBRID_GROWTH * e0:
-        return False, (
-            f"Etot grew from {e0:.3e} to {e1:.3e} "
-            f"(>{ETOT_HYBRID_GROWTH:.0f}x) -- field-wall instability"
-        )
-
-    return True, "Passed (finite, bounded energy => PEC field wall is stable)"
 
 
 # ---------------------------------------------------------------------------
 # Plot helpers
 # ---------------------------------------------------------------------------
-def _load_out(out_file):
-    """Load a .out frame: return ({VAR: col_idx}, float rows)."""
-    with open(out_file, "r", encoding="latin-1") as f:
-        lines = f.readlines()
-    if len(lines) < 6:
-        return None, None
-    vidx = {v.upper(): i for i, v in enumerate(lines[4].split())}
-    rows = []
-    for line in lines[5:]:
-        cols = line.split()
-        if not cols:
-            continue
-        try:
-            rows.append([float(c) for c in cols])
-        except ValueError:
-            continue
-    return vidx, rows
-
-
-def _col(vidx, rows, name):
-    i = vidx.get(name)
-    if i is None or not rows or i >= len(rows[0]):
-        return None
-    return [r[i] for r in rows]
+# Use the shared helpers from run_dir instead of local copies.
+_load_out = _run_dir._read_out_file
+_col = _run_dir.col
 
 
 def _find_boundary_rows(vidx, rows, n_cells=1):

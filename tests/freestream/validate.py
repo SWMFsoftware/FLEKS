@@ -24,6 +24,8 @@ import logging
 import math
 import os
 
+from tests._shared import run_dir as _run_dir
+
 logger = logging.getLogger(__name__)
 
 # Strict free-stream tolerances.
@@ -117,31 +119,9 @@ def validate_log(pic_diags=None, test_name=None):
     return False, "; ".join(reasons)
 
 
-def _fs_load_out(out_file):
-    """Load a .out frame: return ({VAR: col_idx}, float rows)."""
-    with open(out_file, "r", encoding="latin-1") as f:
-        lines = f.readlines()
-    if len(lines) < 6:
-        return None, None
-    vidx = {v.upper(): i for i, v in enumerate(lines[4].split())}
-    rows = []
-    for line in lines[5:]:
-        cols = line.split()
-        if not cols:
-            continue
-        try:
-            rows.append([float(c) for c in cols])
-        except ValueError:
-            continue
-    return vidx, rows
-
-
-def _fs_col(vidx, rows, name):
-    """Return the column array for *name* (or None if absent)."""
-    i = vidx.get(name)
-    if i is None or not rows or i >= len(rows[0]):
-        return None
-    return [r[i] for r in rows]
+# Use shared .out loading helpers from run_dir instead of local copies.
+_fs_load_out = _run_dir._read_out_file
+_fs_col = _run_dir.col
 
 
 def validate_plot(test_name):
