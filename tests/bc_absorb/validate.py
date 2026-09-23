@@ -10,7 +10,7 @@ Four variants are discovered from this directory:
                           through absorbing x walls; Epart decays)
   - PARAM.in.hybrid.particles -> base_name "bc_absorb_hybrid_particles"
                           (same ion drain through absorbing x walls, but in the
-                          hybrid cell-centred mover; Epart decays)
+                          hybrid mover; Epart decays)
 
 The single validate_log/validate_plot here branch on the variant's base_name.
 """

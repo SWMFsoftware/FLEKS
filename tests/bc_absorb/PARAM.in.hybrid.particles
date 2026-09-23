@@ -1,7 +1,7 @@
 #DESCRIPTION
 Absorbing-particle boundary-condition test - HYBRID PIC variant:
 kinetic ions drain out through the absorbing x walls (particles removed +
-tallied on exit) in the hybrid cell-centred mover.
+tallied on exit) in the hybrid mover.
 
 #INITFROMSWMF
 F                       initFromSWMF

@@ -489,11 +489,6 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
-  // Cell-centred moment deposit: scatter rho/rhoU/Pi from particles to the
-  // momentsMF (centerPlasma[iSpecies]) with trilinear weights.
-  amrex::Real sum_moments_cell_centered(
-      amrex::Vector<amrex::MultiFab>& momentsMF);
-
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   void calc_mass_matrix(NodeMMFab& nodeMM, amrex::MultiFab& jHat,
@@ -566,10 +561,6 @@ public:
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
-  // Field gather at the nodes + Boris push. The hybrid solver projects its
-  // cell-centred B onto the nodes (project_centerB_to_nodeB), so both solvers
-  // sample the same way; eBg and uBg belong to the signature for the
-  // co-moving-background cases but are not needed by this push.
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               const amrex::Vector<amrex::MultiFab>& eBg,

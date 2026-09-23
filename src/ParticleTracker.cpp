@@ -219,12 +219,6 @@ void ParticleTracker::post_regrid() {
   if (nodeE.empty()) {
     nodeE.resize(n_lev_max());
   }
-  if (centerB.empty()) {
-    centerB.resize(n_lev_max());
-  }
-  if (centerE.empty()) {
-    centerE.resize(n_lev_max());
-  }
   if (ptRecordSize > 13 && nodeJacB.empty()) {
     nodeJacB.resize(n_lev_max());
   }
@@ -233,10 +227,6 @@ void ParticleTracker::post_regrid() {
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, false);
-    distribute_FabArray(centerE[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, false);
-    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
     if (ptRecordSize > 13) {
       distribute_FabArray(nodeJacB[iLev], nGrids[iLev], DistributionMap(iLev),

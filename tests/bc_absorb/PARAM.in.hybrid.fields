@@ -2,7 +2,7 @@
 Hybrid-PIC absorbing-field-wall test: a transverse shear-Alfven wave (HybridWave
 testcase) lives in a finite-x domain whose x faces are ABSORBING (outgoing
 characteristic) field boundaries and REFLECTING particle boundaries.  Validates
-that the absorbing field BC is wired into the hybrid cell-centred advance and
+that the absorbing field BC is wired into the hybrid field advance and
 that the run stays finite/stable (no NaN).
 
 #INITFROMSWMF

@@ -334,12 +334,8 @@ void Pic::seed_first_hybrid_step() {
 }
 
 //==========================================================
-void Pic::project_centerB_to_nodeB(int iLev) {
-  project_centerB_to_nodeB_scratch(centerB[iLev], nodeB[iLev], iLev);
-}
-
-// BCs for the cell-centred B (the cell-centred part of
-// project_centerB_to_nodeB), called at the end of each sub-step.
+// BCs for the cell-centred B, applied to the RK trial states and to the new
+// state at the end of each B sub-step.
 void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
@@ -351,23 +347,6 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
         Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
-  }
-}
-
-//==========================================================
-void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
-                                           amrex::MultiFab& nodeOut, int iLev) {
-  // Same projection as project_centerB_to_nodeB on caller-owned scratch fields.
-  apply_centerB_BC(iLev, centerIn);
-  average_center_to_node(centerIn, nodeOut);
-  nodeOut.FillBoundary(Geom(iLev).periodicity());
-  if (iLev == 0) {
-    apply_field_bc(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(),
-                   &Pic::get_node_B, iLev, true);
-  } else {
-    fill_fine_lev_bny_from_coarse(
-        nodeB[iLev - 1], nodeOut, 0, nodeOut.nComp(), ref_ratio[iLev - 1],
-        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
   }
 }
 

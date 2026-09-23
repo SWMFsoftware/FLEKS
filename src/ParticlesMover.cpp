@@ -65,10 +65,6 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
 }
 
 //==========================================================
-// Node-centred Boris push. E and B are gathered at the nodes: the full-PIC
-// solver keeps its fields there, and the hybrid solver projects its
-// cell-centred B onto the nodes (project_centerB_to_nodeB), so a single
-// sampling point serves both. eBg and uBg are unused here.
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(

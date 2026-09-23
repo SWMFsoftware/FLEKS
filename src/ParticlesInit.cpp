@@ -361,7 +361,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
 //==========================================================
 // Return true if ghost-cell particle injection should be skipped for this BC.
 // - outflow: Ghost particles would be folded into edge cells in
-//   sum_moments_cell_centered(), causing double counting.
+//   sum_moments(), causing double counting.
 // - inflow: Flux is injected at the physical face by
 //   inject_flux_at_inflow_faces().
 

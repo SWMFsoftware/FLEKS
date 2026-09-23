@@ -430,8 +430,7 @@ public:
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
   // 2nd-order conservative with slope limiting) for higher accuracy at
   // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
-  // (cell_bilinear_interp) since the cell-centred fields are output-only
-  // mirrors.
+  // (cell_bilinear_interp).
   amrex::Interpolater *get_cell_interp() const {
     return useHybridPIC
                ? static_cast<amrex::Interpolater *>(&amrex::lincc_interp)
@@ -480,10 +479,6 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
-  bool is_inside_cell_plot_region(const PlotWriter &writerIn, int const ix,
-                                  int const iy, int const iz, double const x,
-                                  double const y, double const z) const;
-
   // Convert SI input parameters to code units after normalization is finalized.
   void finalize_units_conversion();
   void convert_resistivity();
@@ -559,14 +554,11 @@ public:
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   void smooth_moments();
   void update_B_hybrid();
-  void project_centerB_to_nodeB(int iLev);
-  // Apply periodic and physical boundary conditions to cell-centred B
-  // (e.g. intermediate RK trial states that need fresh ghosts for Ohm's law
-  // stencils).
+  // Apply periodic and physical boundary conditions (and coarse-fine interface
+  // ghosts on refined levels) to the cell-centred B, e.g. for intermediate RK
+  // trial states that need fresh ghosts for the Ohm's law stencils.
   void apply_centerB_BC(int iLev);
   void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
-  void project_centerB_to_nodeB_scratch(amrex::MultiFab &centerIn,
-                                        amrex::MultiFab &nodeOut, int iLev);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion

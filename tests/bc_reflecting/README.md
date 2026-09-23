@@ -28,7 +28,7 @@ and perfectly conducting field walls (PEC, `#FIELDBOXBOUNDARY conducting`).
   - **Validation**: unlike absorbing boundaries (where energy decays $< 25\%$), conducting walls reflect the pulses and strictly conserve total electromagnetic energy ($E_{tot}$ conserved within discretization bounds, $0.8 \le E_1/E_0 \le 1.25$).
 - **`PARAM.in.hybrid.fields` (Hybrid-PIC)**:
   - A transverse shear-Alfvén wave (`HybridWave`) in a finite-x domain with conducting field walls and reflecting particle walls.
-  - **Validation**: verifies that the hybrid cell-centred field advance (`assemble_ohm_E` and `apply_centerB_BC`) stays finite, positive, and bounded without numerical instability.
+  - **Validation**: verifies that the hybrid field advance (`assemble_ohm_E` and `apply_centerB_BC`) stays finite, positive, and bounded without numerical instability.
 
 ## Running
 

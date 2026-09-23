@@ -19,7 +19,7 @@ test is **1D-3V** (`k ∥ B0 ∥ x`) with a bi-Maxwellian ion distribution:
 | `Δt · Ω_ci` | 0.01 | time step |
 | `nParticle` | 600 | macro-particles per cell (kept low so the test runs ~0.5 min on 1 core) |
 | `TimeMax` / `dn` | 40 / 500 | run `t·Ω_ci = 40`; ~8 output frames |
-| `nBSubcycle` | 1 | no B sub-cycling (stable with the cell-centred solver) |
+| `nBSubcycle` | 1 | no B sub-cycling (stable with the hybrid solver) |
 
 The anisotropy is seeded as a bi-Maxwellian (`T_perp = 3 T_par` via the
 `anisoTPerpOverTPar` option); there is **no initial `B_y`/`B_z` perturbation**

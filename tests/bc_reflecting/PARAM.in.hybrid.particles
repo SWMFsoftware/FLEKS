@@ -5,7 +5,7 @@ Reflecting-wall particle-boundary-condition test (pure particle push) - HYBRID P
 Hybrid counterpart of PARAM.in (full-PIC).  The single kinetic ion species
 streams toward the +x wall; both x faces are REFLECTING particle boundaries
 (normal velocity flipped, position mirrored).  The shared particle-BC hook
-(reflect_or_delete_particle) is exercised in the hybrid cell-centred mover,
+(reflect_or_delete_particle) is exercised in the hybrid mover,
 so particle number and kinetic energy must be conserved.
 
 The Ohm's law is kept minimal (ideal frozen-in: no Hall, no resistivity, no

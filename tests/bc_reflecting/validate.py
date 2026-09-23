@@ -224,9 +224,10 @@ def _check_fields_plot(out_files):
     """Full-PIC conducting fields: verify PEC reflection via finiteness,
     boundedness, and interior pulse detection.
 
-    Note: the .out file writes cell-centre values (not wall-face values), so we
-    cannot directly check Et=0 / Bn=0 from plot output -- the PEC BC constrains
-    the *face* value, not the adjacent cell centre.  Instead we rely on:
+    Note: the .out file writes volume-sampled values (not wall-face values), so
+    we cannot directly check Et=0 / Bn=0 from plot output -- the PEC BC
+    constrains the *face* value, not the adjacent output point.  Instead we rely
+    on:
       * All field components finite (no NaN/Inf).
       * No blow-up (|field| < 1e6).
       * The pulse is still present in the interior (not absorbed by the wall).
