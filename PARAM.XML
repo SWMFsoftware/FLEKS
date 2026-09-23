@@ -1394,7 +1394,7 @@ The hybrid solver recomputes E from the ion moments through Ohm's law, so there
 a seeded E is only an initial guess.
 
 gaussWidth > 0 replaces the sinusoidal envelope of the x-aligned seed by a
-localised Gaussian exp(-((x - xCenter)/gaussWidth)^2) with g(x) = 0 (no Bz, no
+localised Gaussian $\exp(-((x - xCenter)/gaussWidth)^2)$ with $g(x)=0$ (no Bz, no
 circular polarisation). The alfvenpulse preset is exactly that configuration
 (Gaussian By on the uniform Bx0, no velocity kick, no density perturbation), so
 it decomposes into +x and -x travelling Alfven packets; it is named after the
