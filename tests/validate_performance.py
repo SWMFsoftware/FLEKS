@@ -49,10 +49,10 @@ BASELINES = {
         "speedup": 1.5,      # 2-core scaling floor
     },
     "hybrid": {
-        "total_pps": 0.2,    # total wall-clock
-        "mover_pps": 0.03,   # isolated particle mover
-        "solver_pps": 0.048, # explicit hybrid field advance is cheaper
-        "speedup": 1.4,      # 2-core scaling floor
+        "total_pps": 0.25,   # total wall-clock
+        "mover_pps": 0.036,  # isolated particle mover
+        "solver_pps": 0.07,  # explicit hybrid field advance is cheaper
+        "speedup": 1.45,     # 2-core scaling floor
     },
     "pt": {
         "total_pps": 3.2,    # total wall-clock rate
