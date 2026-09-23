@@ -1,5 +1,6 @@
 #include "BeamIC.h"
 #include "FadeevIC.h"
+#include "ForceFreeIC.h"
 #include "GemIC.h"
 #include "InitialCondition.h"
 #include "TopHatIC.h"
@@ -12,6 +13,9 @@ void register_all_initial_conditions() {
   });
   ICRegistry::instance().register_ic("hybridwave", []() {
     return std::make_unique<WaveIC>(WaveIC::HybridWave);
+  });
+  ICRegistry::instance().register_ic("alfvenpulse", []() {
+    return std::make_unique<WaveIC>(WaveIC::AlfvenPulse);
   });
   ICRegistry::instance().register_ic("convectionwave", []() {
     return std::make_unique<WaveIC>(WaveIC::ConvectionWave);
@@ -28,6 +32,10 @@ void register_all_initial_conditions() {
       "tophat", []() { return std::make_unique<TopHatIC>(); });
   ICRegistry::instance().register_ic(
       "fadeev", []() { return std::make_unique<FadeevIC>(); });
+  ICRegistry::instance().register_ic(
+      "forcefree", []() { return std::make_unique<ForceFreeIC>(); });
+  ICRegistry::instance().register_ic(
+      "forcefreereconnect", []() { return std::make_unique<ForceFreeIC>(); });
   ICRegistry::instance().register_ic(
       "gem", []() { return std::make_unique<GemIC>(); });
   ICRegistry::instance().register_ic(

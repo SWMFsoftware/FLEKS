@@ -44,14 +44,8 @@ void ParticleTracker::set_ic(Pic& pic) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const MultiFab* jacPtr =
           (ptRecordSize > 13 && !nodeJacB.empty()) ? &nodeJacB[iLev] : nullptr;
-      if (pic.useHybridPIC) {
-        tps->move_and_save_particles_cell_centered(
-            iLev, centerE[iLev], centerB[iLev], 0, 0, tc->get_time_si(), doSave,
-            jacPtr);
-      } else {
-        tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev], 0, 0,
-                                     tc->get_time_si(), doSave, jacPtr);
-      }
+      tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev], 0, 0,
+                                   tc->get_time_si(), doSave, jacPtr);
     }
     if (tps->get_dt_save() > 0.0) {
       tps->advance_next_save();
@@ -142,15 +136,9 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
       const MultiFab* jacPtr =
           (ptRecordSize > 13 && !nodeJacB.empty() && doRecord) ? &nodeJacB[iLev]
                                                                : nullptr;
-      if (pic.useHybridPIC) {
-        tps->move_and_save_particles_cell_centered(
-            iLev, centerE[iLev], centerB[iLev], tc->get_dt(), tc->get_next_dt(),
-            tc->get_time_si(), doRecord, jacPtr);
-      } else {
-        tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev],
-                                     tc->get_dt(), tc->get_next_dt(),
-                                     tc->get_time_si(), doRecord, jacPtr);
-      }
+      tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev],
+                                   tc->get_dt(), tc->get_next_dt(),
+                                   tc->get_time_si(), doRecord, jacPtr);
     }
 
     if (doRecord && tps->get_dt_save() > 0.0) {
@@ -177,21 +165,11 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
 }
 
 void ParticleTracker::update_field(Pic& pic, bool needJacobian) {
-  if (pic.useHybridPIC) {
-    // Hybrid: gather from the live cell-centred fields.
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      MultiFab::Copy(centerE[iLev], pic.centerEhybrid[iLev], 0, 0,
-                     centerE[iLev].nComp(), centerE[iLev].nGrow());
-      MultiFab::Copy(centerB[iLev], pic.centerB[iLev], 0, 0,
-                     centerB[iLev].nComp(), centerB[iLev].nGrow());
-    }
-  } else {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
-                     nodeE[iLev].nGrow());
-      MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
-                     nodeB[iLev].nGrow());
-    }
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                   nodeE[iLev].nGrow());
+    MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
+                   nodeB[iLev].nGrow());
   }
 
   // If magnetic field gradient is requested AND needed this step, compute
@@ -241,12 +219,6 @@ void ParticleTracker::post_regrid() {
   if (nodeE.empty()) {
     nodeE.resize(n_lev_max());
   }
-  if (centerB.empty()) {
-    centerB.resize(n_lev_max());
-  }
-  if (centerE.empty()) {
-    centerE.resize(n_lev_max());
-  }
   if (ptRecordSize > 13 && nodeJacB.empty()) {
     nodeJacB.resize(n_lev_max());
   }
@@ -255,10 +227,6 @@ void ParticleTracker::post_regrid() {
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, false);
-    distribute_FabArray(centerE[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, false);
-    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
     if (ptRecordSize > 13) {
       distribute_FabArray(nodeJacB[iLev], nGrids[iLev], DistributionMap(iLev),

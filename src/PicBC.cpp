@@ -297,7 +297,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
             }
           }
           if (isNormal) {
-            arr(i, j, k, comp) = 0.0;
+            arr(i, j, k, comp) = -arr(m[0], m[1], m[2], comp);
           } else {
             arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
           }
@@ -310,7 +310,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
             }
           }
           if (isTangential) {
-            arr(i, j, k, comp) = 0.0;
+            arr(i, j, k, comp) = -arr(m[0], m[1], m[2], comp);
           } else {
             arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
           }
@@ -444,60 +444,6 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 
       for (int iVar = 0; iVar < nComp; ++iVar) {
         arr(i, j, k, iStart + iVar) = arr(m[0], m[1], m[2], iStart + iVar);
-      }
-    });
-  }
-}
-
-//==========================================================
-// Mirror ion moments into physical-wall ghost cells for smooth Ohm/Hall
-// stencils.
-void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
-                                const int iLev) {
-  if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
-    return;
-
-  std::string nameFunc = "Pic::apply_centerPlasma_BC";
-  timing_func(nameFunc);
-
-  const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
-  const Dim3 domLo = Geom(iLev).Domain().smallEnd().dim3();
-  const Dim3 domHi = Geom(iLev).Domain().bigEnd().dim3();
-  const int nComp = mf.nComp();
-
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    const Box& bxFab = mfi.fabbox();
-    if (ba.contains(bxFab))
-      continue;
-
-    Array4<Real> const& arr = mf[mfi].array();
-    const Array4<const int>& statusArr = status[mfi].array();
-
-    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
-        return;
-
-      const int ijk[3] = { i, j, k };
-      const int dLo[3] = { domLo.x, domLo.y, domLo.z };
-      const int dHi[3] = { domHi.x, domHi.y, domHi.z };
-      int m[3] = { i, j, k };
-      bool touched = false;
-
-      for (int d = 0; d < nDim; ++d) {
-        if (ijk[d] < dLo[d]) {
-          m[d] = 2 * dLo[d] - 1 - ijk[d];
-          touched = true;
-        } else if (ijk[d] > dHi[d]) {
-          m[d] = 2 * dHi[d] + 1 - ijk[d];
-          touched = true;
-        }
-      }
-
-      if (!touched)
-        return;
-      for (int comp = 0; comp < nComp; ++comp) {
-        arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
       }
     });
   }

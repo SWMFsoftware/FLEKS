@@ -1,0 +1,160 @@
+#DESCRIPTION
+Classic GEM Challenge magnetic reconnection benchmark (Birn et al. 2001)
+with the FULL-PIC EM solver (solveEM = T, Maxwell/GMRES): kinetic ions and kinetic electrons.
+
+Scale and Grid Calculation (Gaussian / CGS Code Units):
+  FLEKS uses Gaussian / CGS-normalized code units where:
+    curl(B) = 4*pi*J,  J x B = (curl(B) x B) / (4*pi),  P_mag = B0^2 / (8*pi)
+  For reference parameters B0 = 1.0, rho0 = 1.0, q = 1.0, m = 1.0:
+    Omega_ci = q*B0 / m = 1.0  ->  t_ci = 2*pi / Omega_ci ~ 6.2831853 s
+    v_A = B0 / sqrt(4*pi*rho0) = 1/sqrt(4*pi) ~ 0.2820948 code units (28.21 km/s)
+    d_i = v_A / Omega_ci = 1/sqrt(4*pi) ~ 0.2820948 code units (28.21 km)
+    d_i * v_A = 1 / (4*pi) ~ 0.0795775 code units
+    P_mag = B0^2 / (8*pi) = 1/(8*pi) ~ 0.0397887 code units
+
+  GEM Challenge Specifications (Birn et al. 2001):
+    Domain: Lx = 25.6 d_i = 25.6 * 0.2820948 ~ 7.2216 code units  (x in [-3.61081, 3.61081])
+            Ly = 12.8 d_i = 12.8 * 0.2820948 ~ 3.6108 code units  (y in [-1.80541, 1.80541])
+    Sheet half-width: lambda0 = 0.5 d_i = 0.5 * 0.2820948 ~ 0.14105 code units
+    Perturbation amplitude: psi0 = 0.1 * B0 * d_i = 0.1 * 0.282095 ~ 0.02821 code units
+      (Yields delta_By / B0 = psi0 * 2*pi / Lx ~ 0.02454, matching Birn et al.)
+    Densities:
+      Uniform background nb = 0.20 code units = 0.20 * 65.15939 ~ 13.03188 amu/cc
+      Sheet peak increment n0 = 1.00 code units (total peak n(0) = nb + n0 = 1.20)
+    Temperatures:
+      Magnetic pressure balance requires n0 * (Ti + Te) = B0^2 / (8*pi) = 0.5 / (4*pi)
+      With Ti / Te = 5:
+        Ti_code = (5/6) * 0.5 / (4*pi) = 5 / (48*pi) ~ 0.033157 code units
+          -> Ti = 0.033157 * 1.21146e6 K ~ 40168.0 K
+        Te_code = (1/6) * 0.5 / (4*pi) = 1 / (48*pi) ~ 0.0066315 code units
+          -> Te = 0.0066315 * 1.21146e6 K ~ 8033.6 K
+    Grid: 64 x 32 (dx = dy = 0.40 d_i ~ 0.1128 code units, isotropic square cells)
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.61081                xMin  [code units; Lx = 25.6 d_i = 7.2216 code units]
+ 3.61081                xMax
+-1.80541                yMin  [code units; Ly = 12.8 d_i = 3.6108 code units]
+ 1.80541                yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+32                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+conducting              fieldBoxBoundaryLo  (y; conducting walls matching GEM challenge)
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo  (y; reflecting walls matching GEM challenge)
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+1                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons (mi/me = 25)
+-1.0                    charge
+
+#UNIFORMSTATE
+13.03188                rho [amu/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+40168.0                 T [K]          ions (Ti_code = 5/(48*pi) ~ 0.03316 code units, Ti/Te = 5)
+0.521275                rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi = 13.03188 * 0.04)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+8033.6                  T [K]          electrons (Te_code = 1/(48*pi) ~ 0.00663 code units, Ti/Te = 5)
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+gem
+
+#GEMIC
+1.0                     b0       [asymptotic magnetic field B0 = 1.0]
+0.5                     tp       [tp = 0.5 yields delta_n = 1.0, so n(0) = nb + n0 = 0.2 + 1.0 = 1.2]
+0.14105                 lambda0  [current sheet half-width = 0.5 d_i = 0.5 / sqrt(4*pi) code units]
+0.02821                 apert    [vector potential perturbation amplitude psi0 = 0.1 * B0 * d_i]
+T                       useStandardGem
+F                       useUniformPressure
+T                       useUniformIonPressure  [stationary ions; electrons carry diamagnetic current]
+0.2                     nb       [background density ratio nb = 0.2]
+0.2                     teOverTi [Te / Ti = 0.2]
+standard                pertType
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt
+
+#NORMALIZATION
+1.0e5                   lNormSI  [m; lNorm = 100 km]
+1.0e5                   uNormSI  [m/s; uNorm = 100 km/s]
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.5                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+1.0                     TimeMax
+
+#RUN

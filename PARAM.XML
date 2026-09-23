@@ -254,6 +254,18 @@ Selects the Fadeev magnetic-reconnection initial condition. Use after
 #TESTCASE selects the fadeev initial-condition implementation.
 </command>
 
+<command name="FORCEFREEIC">
+#FORCEFREEIC
+
+Configures parameters for the force-free current-sheet magnetic reconnection
+initial condition (Le et al. 2016). Use after #TESTCASE selects forcefree.
+Optional sub-parameters include:
+  lambda (or lambda0, L)  Current sheet width / d_i
+  b0                      Asymptotic in-plane magnetic field strength
+  bg                      Guide field strength
+  perturb (or dB)         Initial perturbation amplitude
+</command>
+
 <command name="GEMIC">
 #GEMIC
 
@@ -380,7 +392,7 @@ Related numerical controls:
     #BSUBCYCLE - sub-steps for the explicit Hall-whistler CFL,
     #MINIMUMDENSITY - caps the 1/rho factors in the Hall and pressure terms,
     #FIELDINTEGRATOR - time integrator for the Faraday (B) update,
-    #AVGFIELDB, #SMOOTHMOMENTS - damp PIC shot noise in the Ohm's law.
+    #SMOOTHMOMENTS - damps PIC shot noise in the Ohm's law.
 \end{verbatim}
 </command>
 
@@ -461,12 +473,22 @@ nabla\^2 J in the generalized Ohm's law (equivalently -(eta_h/4*pi) * nabla x
 shot-noise that the second-order resistivity cannot reach. etaHyperSI is the SI
 value [m\^4/s] (used when etaHyperMode = "si"; converted to code units as
 etaCode = 4*pi*etaSI*Si2NoV*Si2NoL\^3). When etaHyperMode = "grid", eta_h is
-instead scaled to the CFL stability bound on each sub-step:
-   eta_h = 4*pi * C_h * dx_min\^4 / dt_sub,
-where C_h is the dimensionless etaHyperCh (typical 1e-3 .. 1e-2). "grid" mode is
-robust to resolution and time-step changes and is the recommended setting for
-general production runs. 0 (either mode) disables the term. Only used when
-HYBRIDPIC is T.
+instead scaled to the grid and the (full) time step:
+   eta_h = 4*pi * C_h * dx_min\^4 / dt,
+where dx_min is the finest cell size and C_h the dimensionless etaHyperCh
+(typical 1e-3 .. 1e-2). Because E scales as (eta_h/4*pi) k\^4 B, this is a
+mode-dependent damping
+   gamma_h = (eta_h/4*pi) k\^4 = C_h * (k dx)\^4 / dt
+per unit code time, identical on every AMR level, so it only reaches the
+badly-resolved harmonics: on the 64-cell whistler deck (dx = 0.1) with
+C_h = 1e-2, gamma_h = 4.6e-5 at k d_i = 1 and 0.06 at k d_i = 6 (against
+omega = 36 there), while the few-cell band that the explicit Hall advance
+makes unstable at lambda ~ 3 cells receives 6.0 and is completely damped.
+The explicit-diffusion CFL check uses eta_h * k_max\^4 * dt_sub / (4*pi) =
+4 * C_h / nBSubcycle, so sub-cycling adds margin. "grid" mode is robust to
+resolution and time-step changes and is the recommended setting for general
+production runs. 0 (either mode) disables the term. Only used when HYBRIDPIC
+is T.
 </command>
 
 <command name="MINIMUMDENSITY" alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2" multiple="T">
@@ -500,23 +522,6 @@ large linear-stability region, so with rk4 you typically do not need a large
 #BSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
 a time-centred E. Only used when HYBRIDPIC is T.
     </command>
-
-<command name="AVGFIELDB" alias="AVGFIELDB_FLEKS0,AVGFIELDB_FLEKS1,AVGFIELDB_FLEKS2,BAVERAGE" multiple="T">
-  <parameter name="useAvgFieldB" type="logical" default="F"/>
-  <parameter name="nAvgFieldB" type="integer" default="10"/>
-
-#AVGFIELDB
-F                    useAvgFieldB
-10                   nAvgFieldB
-
-Time-averaged (exponential moving average) magnetic field. B_avg =
-alpha*B_avg + (1-alpha)*B\^{n+1} with alpha = 1 - 1/nAvgFieldB. B_avg replaces
-the instantaneous B inside the generalized Ohm's law (convection / Hall terms)
-and in the particle Boris push, damping the high-frequency PIC shot noise that
-pollutes the Hall term and particle orbits. B_avg is NOT divergence-clean and is
-never used in the Faraday update, so no projection is required. Only used when
-HYBRIDPIC is T.
-</command>
 
 <command name="PARTMODE" alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2" multiple="T">
   <parameter name="partMode" type="string" input="select" required="T">
@@ -1132,7 +1137,7 @@ Multiple #REFINEREGION commands can be used for different levels.
 0.7                       gridEfficiency
 
 From AMReX online docs: "This threshold value (gridEfficiency), which defaults
-to 0.7 (or 70%), is used to ensure that grids do not contain too large a fraction of un-tagged cells."
+to 0.7 (or 70\%), is used to ensure that grids do not contain too large a fraction of un-tagged cells."
 
 For a block, if the ratio of its cells that are labelled for refinement is 
 more than 'gridEfficiency', the whole block will be refined. Since the block
@@ -1307,8 +1312,8 @@ It will set the initial conditions for a specific test case. The kernel names no
 test case: the name is resolved by the InitialCondition registry (case-insensitive)
 and an unknown name aborts listing the registered names. Wave / sinusoidal tests
 are all ONE parameterized plug-in (WaveIC) registered as lightwave, hybridwave,
-convectionwave, ionacousticwave and a generic waveic; non-wave tests have
-dedicated plug-ins (beam, tophat).
+alfvenpulse, convectionwave, ionacousticwave and a generic waveic; non-wave tests
+have dedicated plug-ins (beam, tophat).
 </command>
 
 <command name="WAVEIC" alias="WAVEIC_FLEKS0,WAVEIC_FLEKS1,WAVEIC_FLEKS2" multiple="T">
@@ -1325,6 +1330,10 @@ dedicated plug-ins (beam, tophat).
   <parameter name="waveMode" type="integer"/>
   <parameter name="frac" type="real"/>
   <parameter name="pert" type="real"/>
+  <parameter name="rightHand" type="logical" default="F"/>
+  <parameter name="walenFactor" type="real" default="1.0"/>
+  <parameter name="gaussWidth" type="real" default="0.0"/>
+  <parameter name="xCenter" type="real" default="0.0"/>
 
 #WAVEIC 
 T       seedE
@@ -1339,16 +1348,68 @@ T       velKick
 1       waveMode
 0.02    frac
 0.1     pert
+F       rightHand
+1.0     walenFactor
 
 Optional sub-parameters for a WaveIC wave initial condition (selected by a
-#TESTCASE name of waveic / lightwave / hybridwave / convectionwave /
-ionacousticwave). All parameters are optional: when absent the plug-in uses its
-preset for the selected name. seedE/seedB/seedWeight toggle E-field / B-field /
-sinusoidal-density-perturbation seeding; oblique + dir + waveLength give an
-oblique plane wave (wavelength in cells), otherwise the wave is x-aligned with
-kx = 2*pi*waveMode/Lx; guideField adds the uniform Bx0 guide field under the B
-perturbation (B1 = frac*Bx0); velKick adds the matching Alfven ion velocity
-kick; pert is the density perturbation amplitude.
+#TESTCASE name of waveic / lightwave / hybridwave / alfvenpulse /
+convectionwave / ionacousticwave). All parameters are optional: when absent the
+plug-in uses its preset for the selected name. seedE/seedB/seedWeight toggle
+E-field / B-field / sinusoidal-density-perturbation seeding; oblique + dir +
+waveLength give an oblique plane wave (wavelength in cells), otherwise the wave
+is x-aligned with kx = 2*pi*waveMode/Lx; guideField adds the uniform Bx0 guide
+field under the B perturbation (B1 = frac*Bx0); velKick adds the matching Alfven
+ion velocity kick; pert is the density perturbation amplitude.
+
+The presets carry no solver dependence: nothing keys off solveEM/useHybridPIC.
+Any of them can be used in a full-PIC deck as well.
+
+For the x-aligned transverse wave the perturbation is
+
+    dB_y(x,0) = B1 f(x),   dB_z(x,0) = hand * B1 g(x),
+
+with hand = -1 for rightHand = T and hand = +1 otherwise. The sign is the seed
+helicity about the +x guide field: hand = -1 rotates y -> z about +B0 (the
+electron-gyration sense), which is the RIGHT-hand (whistler) polarization for a
+wave propagating along +B0; hand = +1 is the LEFT-hand (ion-cyclotron) one.
+Take the waveMode sign together with hand to pick the branch: for B0 = +x, the
+right-hand whistler propagates along +B0 when hand = -1 and waveMode > 0.
+
+walenFactor scales the transverse ion velocity kick, u_perp = -walenFactor *
+B_perp/B0 in code units (B0 ~ 1). The default 1.0 is the incompressible
+(Alfven) relation, which is the exact eigenmode only for k*d_i -> 0. A
+single-branch seed needs walenFactor = (k d_i)/(omega/Omega_i) * v_A/B0, with
+omega/Omega_i the frequency of the seeded branch. For parallel propagation the
+Hall/cold-plasma branches (kappa = k*d_i) are
+
+    right-hand / whistler      : w/Omega_i = [kappa\^2 + kappa sqrt(kappa\^2+4)]/2
+    left-hand / ion-cyclotron  : w/Omega_i = [-kappa\^2 + kappa sqrt(kappa\^2+4)]/2
+
+so walenFactor = kappa*(v_A/B0)/[w/Omega_i]. Leaving it at 1.0 excites both
+circular branches (e.g. ~84\%/16\% whistler/ion-cyclotron amplitude for a
+right-hand seed at k d_i ~ 1), which is fine for a frequency measurement but
+not for a pure eigenmode.
+
+seedE seeds the motional electric field E = -u x B belonging to the velocity
+kick, so for the x-aligned seed it needs velKick = T (with velKick = F the fluid
+velocity is zero and seedE is ignored with a warning rather than wiping a
+uniform E from #UNIFORMSTATE). A full-PIC deck that wants a self-consistent
+B + u + E Alfven seed should therefore set seedE = T and velKick = T; note that
+the kick is applied to every species, so in a full-PIC run the ions and the
+electrons get the same u_perp (no relative drift, i.e. the seed current is
+supplied by the electron response during the first few electron timescales).
+The hybrid solver recomputes E from the ion moments through Ohm's law, so there
+a seeded E is only an initial guess.
+
+gaussWidth > 0 replaces the sinusoidal envelope of the x-aligned seed by a
+localised Gaussian $\exp(-((x - xCenter)/gaussWidth)^2)$ with $g(x)=0$ (no Bz, no
+circular polarisation). The alfvenpulse preset is exactly that configuration
+(Gaussian By on the uniform Bx0, no velocity kick, no density perturbation), so
+it decomposes into +x and -x travelling Alfven packets; it is named after the
+Alfven pulse it seeds, not after a solver, and it is used in hybrid and full-PIC
+decks alike (a B-only seed additionally drives the finite-c / kinetic-electron
+transients of the full EM solver). Its gaussWidth defaults to Lx/4 when not
+given on the deck.
 </command>
 
 <command name="PERIODICITY">

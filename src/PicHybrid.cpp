@@ -13,53 +13,55 @@ using namespace amrex;
 //==========================================================
 void Pic::assemble_ohm_E(const MultiFab& centerBin,
                          const MultiFab& centerBtimeAvg, MultiFab& Eout,
-                         int iLev, Real hstep) {
+                         int iLev, Real hstep, bool includeAmbi) {
   BL_PROFILE("Pic::assemble_ohm_E");
 
-  const auto dx = Geom(iLev).CellSizeArray();
-  const Real dxInv = 1.0 / (2.0 * dx[0]);
-  const Real dyInv = 1.0 / (2.0 * dx[1]);
-  const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
-
-  // Cell-centred current J = curl(B)/(4*pi) from the trial B (2*dx central
-  // difference, zero at the Nyquist wavenumber). Only needed for physical
-  // resistivity and the Hall term; hyper-resistivity computes lap(B) and
-  // curl(lap(B)).
+  // Nodal total current J = curl(B)/(4*pi) from trial B (compact 1*dx stencil
+  // from cell centres to nodes). Only needed for physical resistivity and Hall.
   const bool needJ = (etaResistivity > 0 || useHallTerm);
   if (needJ) {
-    curl_center_to_center(centerBin, centerJ[iLev], Geom(iLev).InvCellSize());
+    curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
+    nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
   }
+
+  // Magnetic field interpolated from cell centres to nodes for vector cross
+  // products.
+  average_center_to_node(centerBtimeAvg, nodeBstage[iLev]);
+  nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+  if (iLev == 0) {
+    apply_field_bc(nodeStatus[iLev], nodeBstage[iLev], 0, 3, &Pic::get_node_B,
+                   iLev, true);
+  }
+
+  // Moment time-interpolation weights: X(hstep) =
+  // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
+  const Real wPrev = 0.5 - hstep;
+  const Real wCur = 0.5 + hstep;
+  const Real invFourPI = 1.0 / fourPI;
 
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
-    const Array4<Real const>& arrB = centerBtimeAvg[mfi].array();
-    const Array4<Real const>& moments =
-        centerPlasmaSum[nSpecies][iLev][mfi].array();
+    const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
     const Array4<Real const>& momentsPrev =
-        centerPlasmaPrev[nSpecies][iLev][mfi].array();
+        nodePlasmaPrev[nSpecies][iLev][mfi].array();
     const Array4<Real const> arrJ =
-        needJ ? centerJ[iLev][mfi].array() : Array4<Real const>();
-
-    // Moment time-interpolation weights: X(hstep) =
-    // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
-    const Real wPrev = 0.5 - hstep;
-    const Real wCur = 0.5 + hstep;
-    const Real invFourPI = 1.0 / fourPI;
-    const Real p0 = electronDensity0 * electronTemperature;
-    const Real invRho0 =
-        (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
+        needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
+    const Array4<Real const> arrEambi = (electronTemperature > 0)
+                                            ? nodeEambi[iLev][mfi].array()
+                                            : Array4<Real const>();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rhoPrev = momentsPrev(i, j, k, iRho_);
       const Real rhoCur = moments(i, j, k, iRho_);
       const Real rho = wPrev * rhoPrev + wCur * rhoCur;
       const Real mx =
-          wPrev * momentsPrev(i, j, k, iUx_) + wCur * moments(i, j, k, iUx_);
+          wPrev * momentsPrev(i, j, k, iMx_) + wCur * moments(i, j, k, iMx_);
       const Real my =
-          wPrev * momentsPrev(i, j, k, iUy_) + wCur * moments(i, j, k, iUy_);
+          wPrev * momentsPrev(i, j, k, iMy_) + wCur * moments(i, j, k, iMy_);
       const Real mz =
-          wPrev * momentsPrev(i, j, k, iUz_) + wCur * moments(i, j, k, iUz_);
+          wPrev * momentsPrev(i, j, k, iMz_) + wCur * moments(i, j, k, iMz_);
       Real ui = 0, vi = 0, wi = 0;
 
       if (rho > 0) {
@@ -67,13 +69,6 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         vi = my / rho;
         wi = mz / rho;
       }
-
-      // Interpolated density at an arbitrary cell (same hstep weights), used
-      // for the electron-pressure gradient closure.
-      auto rho_at = [=](int ii, int jj, int kk) AMREX_GPU_DEVICE {
-        return wPrev * momentsPrev(ii, jj, kk, iRho_) +
-               wCur * moments(ii, jj, kk, iRho_);
-      };
 
       Real bx = arrB(i, j, k, ix_);
       Real by = arrB(i, j, k, iy_);
@@ -99,59 +94,28 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         ez += etaResistivity * jz;
       }
 
-      // Electron-pressure-gradient and Hall terms. The floor caps 1/rho; the
-      // pressure closure itself uses the true rho. Cells with rho == 0 are
-      // left inert.
-      if (rho > 0) {
+      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e) (precomputed
+      // outside subcycling). Analytically curl(E_ambi) == 0 for
+      // isothermal/polytropic electrons; omitted when computing E to advance B
+      // via Faraday's law to prevent discrete baroclinic/shot-noise curl errors
+      // from injecting artificial grid-scale whistler waves (WarpX
+      // formulation).
+      if (includeAmbi && electronTemperature > 0) {
+        ex += arrEambi(i, j, k, ix_);
+        ey += arrEambi(i, j, k, iy_);
+        ez += arrEambi(i, j, k, iz_);
+      }
+
+      // Hall term: (J x B) / rho_q
+      if (rho > 0 && useHallTerm) {
         const Real invRhoEff = 1.0 / amrex::max(rho, rhoMinOhm);
+        Real hall_x = (jy * bz - jz * by) * invRhoEff;
+        Real hall_y = (jz * bx - jx * bz) * invRhoEff;
+        Real hall_z = (jx * by - jy * bx) * invRhoEff;
 
-        // Electron pressure gradient
-        Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
-        if (electronTemperature > 0) {
-          if (electronGamma == 1.0) {
-            // Isothermal: grad(Pe) = Te * grad(rho)
-            dPe_dx = electronTemperature *
-                     (rho_at(i + 1, j, k) - rho_at(i - 1, j, k)) * dxInv;
-            dPe_dy = electronTemperature *
-                     (rho_at(i, j + 1, k) - rho_at(i, j - 1, k)) * dyInv;
-            dPe_dz = (nDim > 2)
-                         ? electronTemperature *
-                               (rho_at(i, j, k + 1) - rho_at(i, j, k - 1)) *
-                               dzInv
-                         : 0.0;
-          } else {
-            // Adiabatic: Pe = P0 * (rho / rho0)^gamma
-            auto calc_Pe = [=] AMREX_GPU_DEVICE(Real r) {
-              return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma) : 0.0;
-            };
-
-            dPe_dx =
-                (calc_Pe(rho_at(i + 1, j, k)) - calc_Pe(rho_at(i - 1, j, k))) *
-                dxInv;
-            dPe_dy =
-                (calc_Pe(rho_at(i, j + 1, k)) - calc_Pe(rho_at(i, j - 1, k))) *
-                dyInv;
-            dPe_dz = (nDim > 2) ? (calc_Pe(rho_at(i, j, k + 1)) -
-                                   calc_Pe(rho_at(i, j, k - 1))) *
-                                      dzInv
-                                : 0.0;
-          }
-
-          ex -= dPe_dx * invRhoEff;
-          ey -= dPe_dy * invRhoEff;
-          ez -= dPe_dz * invRhoEff;
-        }
-
-        // Hall term: (J x B) / rho_q
-        if (useHallTerm) {
-          Real hall_x = (jy * bz - jz * by) * invRhoEff;
-          Real hall_y = (jz * bx - jx * bz) * invRhoEff;
-          Real hall_z = (jx * by - jy * bx) * invRhoEff;
-
-          ex += hall_x;
-          ey += hall_y;
-          ez += hall_z;
-        }
+        ex += hall_x;
+        ey += hall_y;
+        ez += hall_z;
       }
 
       arrE(i, j, k, ix_) = ex;
@@ -160,28 +124,167 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     });
   }
 
-  // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B) (see
-  // tests/hyper_resistivity). Applied before the final BC pass so ghost cells
-  // include the hyper-resistive term.
+  // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B).
+  // centerLapB = Laplacian(centerBin); nodeHyperE =
+  // curl_center_to_node(centerLapB).
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
                    centerLapB[iLev].nComp(), &Pic::get_center_B, iLev, true);
 
-    curl_center_to_center(centerLapB[iLev], centerHyperE[iLev],
-                          Geom(iLev).InvCellSize());
-    centerHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_field_bc(cellStatus[iLev], centerHyperE[iLev], 0,
-                   centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev, false);
+    curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
+                        Geom(iLev).InvCellSize());
+    nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_field_bc(nodeStatus[iLev], nodeHyperE[iLev], 0,
+                   nodeHyperE[iLev].nComp(), &Pic::get_node_E, iLev, false);
 
     const Real f = etaHyperLev[iLev] / fourPI;
-    MultiFab::Saxpy(Eout, -f, centerHyperE[iLev], 0, 0, nDim3, 0);
+    MultiFab::Saxpy(Eout, -f, nodeHyperE[iLev], 0, 0, nDim3, 0);
   }
 
   Eout.FillBoundary(Geom(iLev).periodicity());
-  apply_field_bc(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev,
+  apply_field_bc(nodeStatus[iLev], Eout, 0, nDim3, &Pic::get_node_E, iLev,
                  false);
+}
+
+//==========================================================
+// Ambipolar electric field: E_ambi = -grad(p_e) / (e * n_e).
+// Precomputed once per PIC timestep outside the magnetic subcycling
+// steps (WarpX scheme), avoiding redundant gradient and EOS operations
+// during the high-frequency whistler integration.
+void Pic::compute_ambipolar_E() {
+  std::string nameFunc = "Pic::compute_ambipolar_E";
+  timing_func(nameFunc);
+
+  if (electronTemperature <= 0) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      nodeEambi[iLev].setVal(0.0);
+    }
+    return;
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    compute_ambipolar_E(iLev);
+  }
+
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); ++iLev) {
+      fill_fine_lev_bny_from_coarse(
+          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    }
+  }
+}
+
+//==========================================================
+void Pic::compute_ambipolar_E(int iLev) {
+  if (electronTemperature <= 0) {
+    nodeEambi[iLev].setVal(0.0);
+    return;
+  }
+
+  // 1. Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
+  for (MFIter mfi(nodeRhoTemp[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrRho = nodeRhoTemp[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      arrRho(i, j, k) = moments(i, j, k, iRho_);
+    });
+  }
+  nodeRhoTemp[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  // 2. Average nodal density to cell centres
+  average_node_to_center(nodeRhoTemp[iLev], centerPe[iLev]);
+  centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  // 3. Evaluate electron pressure Pe at cell centres via EOS
+  const Real p0 = electronDensity0 * electronTemperature;
+  const Real invRho0 =
+      (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
+  const Real gamma = electronGamma;
+  const Real Te = electronTemperature;
+
+  for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      Real r = arrPe(i, j, k);
+      if (gamma == 1.0) {
+        arrPe(i, j, k) = Te * r;
+      } else {
+        arrPe(i, j, k) = (r > 0) ? p0 * std::pow(r * invRho0, gamma) : 0.0;
+      }
+    });
+  }
+  centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  // 4. Zero-gradient (Neumann) BC across non-periodic domain boundaries
+  if (!Geom(iLev).isAllPeriodic() && centerPe[iLev].nGrow() > 0) {
+    const Box& dom = Geom(iLev).Domain();
+    for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      Array4<Real> const& arr = centerPe[iLev][mfi].array();
+      for (int iDim = 0; iDim < nDim; ++iDim) {
+        if (Geom(iLev).isPeriodic(iDim))
+          continue;
+        if (bx.smallEnd(iDim) == dom.smallEnd(iDim)) {
+          IntVect lo = bx.smallEnd();
+          IntVect hi = bx.bigEnd();
+          lo[iDim] = dom.smallEnd(iDim) - 1;
+          hi[iDim] = dom.smallEnd(iDim) - 1;
+          Box ghostBox(lo, hi);
+          ParallelFor(ghostBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            IntVect src{ AMREX_D_DECL(i, j, k) };
+            src[iDim] = dom.smallEnd(iDim);
+            arr(i, j, k) = arr(src);
+          });
+        }
+        if (bx.bigEnd(iDim) == dom.bigEnd(iDim)) {
+          IntVect lo = bx.smallEnd();
+          IntVect hi = bx.bigEnd();
+          lo[iDim] = dom.bigEnd(iDim) + 1;
+          hi[iDim] = dom.bigEnd(iDim) + 1;
+          Box ghostBox(lo, hi);
+          ParallelFor(ghostBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            IntVect src{ AMREX_D_DECL(i, j, k) };
+            src[iDim] = dom.bigEnd(iDim);
+            arr(i, j, k) = arr(src);
+          });
+        }
+      }
+    }
+  }
+
+  // 5. Compute grad_center_to_node(Pe) directly into nodeEambi
+  grad_center_to_node(centerPe[iLev], nodeEambi[iLev],
+                      Geom(iLev).InvCellSize());
+
+  // 6. Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
+  for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      const Real rho = moments(i, j, k, iRho_);
+      if (rho > 0) {
+        const Real invRhoEff = -1.0 / amrex::max(rho, rhoMinOhm);
+        arrEambi(i, j, k, ix_) *= invRhoEff;
+        arrEambi(i, j, k, iy_) *= invRhoEff;
+        arrEambi(i, j, k, iz_) *= invRhoEff;
+      } else {
+        arrEambi(i, j, k, ix_) = 0.0;
+        arrEambi(i, j, k, iy_) = 0.0;
+        arrEambi(i, j, k, iz_) = 0.0;
+      }
+    });
+  }
+
+  nodeEambi[iLev].FillBoundary(Geom(iLev).periodicity());
+  apply_field_bc(nodeStatus[iLev], nodeEambi[iLev], 0, nDim3, &Pic::get_node_E,
+                 iLev, false);
 }
 
 //==========================================================
@@ -192,10 +295,9 @@ void Pic::smooth_moments() {
   if (!doSmoothMoments || nSmoothMoments <= 0)
     return;
 
-  // Smooth the total ion moments the Ohm's law reads. Hybrid-only.
+  // Smooth the total ion moments on the node grid.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab& moments = useHybridPIC ? centerPlasmaSum[nSpecies][iLev]
-                                     : nodePlasma[nSpecies][iLev];
+    MultiFab& moments = nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       smooth_multifab(moments, iLev, 1, coefSmoothMoments);
@@ -205,29 +307,25 @@ void Pic::smooth_moments() {
 }
 
 //==========================================================
-// Copy the current summed moment deposit into centerPlasmaPrev (J^{n-1/2})
+// Copy the current summed moment deposit into nodePlasmaPrev (J^{n-1/2})
 // before a fresh deposit (J^{n+1/2}), so assemble_ohm_E can time-interpolate
 // the two at the magnetic sub-step fraction hstep.
 void Pic::save_current_moments_to_prev() {
-  // Hybrid-only. Copy the rho + 3 momentum components of the current summed
-  // deposit into centerPlasmaPrev so the Ohm's law can time-interpolate the
-  // previous and current moments. Re-fill ghosts so grad(Pe) at box boundaries
-  // reads valid values.
   std::string nameFunc = "Pic::save_current_moments_to_prev";
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
-                   centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
-                   centerPlasmaSum[nSpecies][iLev].nGrow());
-    centerPlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+    MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev],
+                   0, 0, nHybridMomentsComps,
+                   nodePlasma[nSpecies][iLev].nGrow());
+    nodePlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
 
 //==========================================================
-// Seed centerPlasmaPrev on the first hybrid step, where there is no previous
+// Seed nodePlasmaPrev on the first hybrid step, where there is no previous
 // deposit: initialise it from the current deposit so the time interpolation
-// degrades to a plain average for that single step. Hybrid-only.
+// degrades to a plain average for that single step.
 void Pic::seed_first_hybrid_step() {
   std::string nameFunc = "Pic::seed_first_hybrid_step";
   timing_func(nameFunc);
@@ -236,12 +334,8 @@ void Pic::seed_first_hybrid_step() {
 }
 
 //==========================================================
-void Pic::project_centerB_to_nodeB(int iLev) {
-  project_centerB_to_nodeB_scratch(centerB[iLev], nodeB[iLev], iLev);
-}
-
-// BCs for the cell-centred B (the cell-centred part of
-// project_centerB_to_nodeB), called at the end of each sub-step.
+// BCs for the cell-centred B, applied to the RK trial states and to the new
+// state at the end of each B sub-step.
 void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
@@ -253,23 +347,6 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
         Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
-  }
-}
-
-//==========================================================
-void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
-                                           amrex::MultiFab& nodeOut, int iLev) {
-  // Same projection as project_centerB_to_nodeB on caller-owned scratch fields.
-  apply_centerB_BC(iLev, centerIn);
-  average_center_to_node(centerIn, nodeOut);
-  nodeOut.FillBoundary(Geom(iLev).periodicity());
-  if (iLev == 0) {
-    apply_field_bc(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(),
-                   &Pic::get_node_B, iLev, true);
-  } else {
-    fill_fine_lev_bny_from_coarse(
-        nodeB[iLev - 1], nodeOut, 0, nodeOut.nComp(), ref_ratio[iLev - 1],
-        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
   }
 }
 
@@ -327,6 +404,10 @@ void Pic::update_B_hybrid() {
           << ", explicit 4th-order diffusion may be unstable)\n";
   }
 
+  // Precalculate the ambipolar electric field E_ambi = -grad(p_e)/(e*n_e)
+  // once per PIC timestep outside the magnetic subcycling steps (WarpX scheme).
+  compute_ambipolar_E();
+
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
@@ -344,10 +425,10 @@ void Pic::update_B_hybrid() {
 
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         // Stage 1: k1 = curl(E(B^n))
-        assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
-                       hstepStart);
-        curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
-                              Geom(iLev).InvCellSize());
+        assemble_ohm_E(centerB[iLev], centerB[iLev], nodeEstage[iLev], iLev,
+                       hstepStart, false);
+        curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
+                            Geom(iLev).InvCellSize());
 
         // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
@@ -356,10 +437,10 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       centerEstage[iLev], iLev, hstepHalf);
-        curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
-                              Geom(iLev).InvCellSize());
+        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], nodeEstage[iLev],
+                       iLev, hstepHalf, false);
+        curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
+                            Geom(iLev).InvCellSize());
 
         // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
@@ -368,10 +449,10 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       centerEstage[iLev], iLev, hstepHalf);
-        curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
-                              Geom(iLev).InvCellSize());
+        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], nodeEstage[iLev],
+                       iLev, hstepHalf, false);
+        curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
+                            Geom(iLev).InvCellSize());
 
         // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
@@ -380,10 +461,10 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                       centerEstage[iLev], iLev, hstepEnd);
-        curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
-                              Geom(iLev).InvCellSize());
+        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], nodeEstage[iLev],
+                       iLev, hstepEnd, false);
+        curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
+                            Geom(iLev).InvCellSize());
 
         // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
@@ -406,10 +487,10 @@ void Pic::update_B_hybrid() {
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
 
         // Stage 1: B1 = B_n - subDt * curl(E(B_n))
-        assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
-                       hstepStart);
-        curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
-                              Geom(iLev).InvCellSize());
+        assemble_ohm_E(centerB[iLev], centerB[iLev], nodeEstage[iLev], iLev,
+                       hstepStart, false);
+        curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
+                            Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
                           kStage[iLev][0], 0, 0, nDim3, nGst);
 
@@ -417,10 +498,10 @@ void Pic::update_B_hybrid() {
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                       iLev, hstepEnd);
-        curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
-                              Geom(iLev).InvCellSize());
+        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], nodeEstage[iLev],
+                       iLev, hstepEnd, false);
+        curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
+                            Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
@@ -431,10 +512,10 @@ void Pic::update_B_hybrid() {
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                       iLev, hstepHalf);
-        curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
-                              Geom(iLev).InvCellSize());
+        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], nodeEstage[iLev],
+                       iLev, hstepHalf, false);
+        curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
+                            Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
                           1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nGst);
         MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
@@ -456,62 +537,44 @@ void Pic::update_B_hybrid() {
     apply_centerB_BC(iLev);
   }
 
-  // Running time-averaged B used in Ohm's law and the particle push.
-  if (useAvgFieldB) {
-    const Real alpha = (nAvgFieldB > 1) ? (1.0 - 1.0 / nAvgFieldB) : 0.0;
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      if (!isBavgInit) {
-        MultiFab::Copy(centerBavg[iLev], centerB[iLev], 0, 0, nDim3,
-                       centerBavg[iLev].nGrow());
-        isBavgInit = true;
-      } else {
-        centerBavg[iLev].mult(alpha);
-        MultiFab::Saxpy(centerBavg[iLev], 1.0 - alpha, centerB[iLev], 0, 0,
-                        nDim3, centerBavg[iLev].nGrow());
-      }
-      centerBavg[iLev].FillBoundary(Geom(iLev).periodicity());
-      if (iLev == 0) {
-        apply_field_bc(cellStatus[iLev], centerBavg[iLev], 0, nDim3,
-                       &Pic::get_center_B, iLev, true);
-      }
-    }
-  }
-
-  // Fill coarse-fine interface ghost cells for centerBavg.
-  if (useAvgFieldB && isBavgInit && finest_level > 0) {
-    auto& cellInterp = *get_cell_interp();
-    for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_bny_from_coarse(centerBavg[iLev - 1], centerBavg[iLev], 0,
-                                    nDim3, ref_ratio[iLev - 1], Geom(iLev - 1),
-                                    Geom(iLev), cell_status(iLev), cellInterp);
-    }
-  }
-
-  // Evaluate E^{n+1} into centerEhybrid for the next push. Note that
-  // assemble_ohm_E already executes FillBoundary and apply_field_bc on each
-  // level.
+  // Update nodeB from centerB on all levels.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const auto& cBin =
-        (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-    assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
-  }
-
-  // Fill coarse-fine interface ghost cells for centerEhybrid.
-  if (finest_level > 0) {
-    auto& cellInterp = *get_cell_interp();
-    for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_bny_from_coarse(centerEhybrid[iLev - 1],
-                                    centerEhybrid[iLev], 0, nDim3,
-                                    ref_ratio[iLev - 1], Geom(iLev - 1),
-                                    Geom(iLev), cell_status(iLev), cellInterp);
+    average_center_to_node(centerB[iLev], nodeB[iLev]);
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3, &Pic::get_node_B,
+                     iLev, true);
     }
   }
 
-  // Suppress grid-scale (odd-even) E component.
+  // Fill coarse-fine interface ghost cells for nodeB.
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(
+          nodeB[iLev - 1], nodeB[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    }
+  }
+
+  // Evaluate E^{n+1} into nodeE for the next push.
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    assemble_ohm_E(centerB[iLev], centerB[iLev], nodeE[iLev], iLev, 1.0);
+  }
+
+  // Fill coarse-fine interface ghost cells for nodeE.
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(
+          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    }
+  }
+
+  // Suppress grid-scale E component if enabled.
   if (doSmoothE) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-      smooth_E(centerEhybrid[iLev], iLev);
+      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+      smooth_E(nodeE[iLev], iLev);
     }
   }
 }

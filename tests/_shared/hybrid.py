@@ -176,6 +176,133 @@ def _parse_param_commands(param_path, target_commands):
     return blocks
 
 
+def _parse_number(tok):
+    """PARAM value -> float: logicals (T/F), fractions ('1.0/1836.0'), numbers."""
+    t = tok.strip()
+    if t.upper() in ("T", "TRUE", ".TRUE."):
+        return 1.0
+    if t.upper() in ("F", "FALSE", ".FALSE."):
+        return 0.0
+    try:
+        return float(t)
+    except ValueError:
+        pass
+    if "/" in t:
+        num, _, den = t.partition("/")
+        try:
+            return float(num) / float(den)
+        except (ValueError, ZeroDivisionError):
+            return None
+    return None
+
+
+def _parse_named(param_path, target_commands):
+    """Like _parse_param_commands but keeps the SWMF parameter name."""
+    blocks = {cmd: [] for cmd in target_commands}
+    current_cmd = None
+    try:
+        with open(param_path, "r", encoding="latin-1") as f:
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                toks = s.split()
+                if toks[0].startswith("#"):
+                    current_cmd = toks[0] if toks[0] in blocks else None
+                    continue
+                if current_cmd is None:
+                    continue
+                value = _parse_number(toks[0])
+                if value is not None:
+                    blocks[current_cmd].append(
+                        (value, toks[1] if len(toks) > 1 else ""))
+    except OSError:
+        pass
+    return blocks
+
+
+def _first_root(f, lo, hi, nscan=2000):
+    """Lowest root of f on (lo, hi) by sign-change scan + bisection."""
+    fa = f(lo)
+    x0, f0 = lo, fa
+    for i in range(1, nscan + 1):
+        x1 = lo + (hi - lo) * i / nscan
+        f1 = f(x1)
+        if f0 == 0.0:
+            return x0
+        if f0 * f1 < 0.0:
+            a, b = x0, x1
+            for _ in range(80):
+                m = 0.5 * (a + b)
+                if f(a) * f(m) <= 0.0:
+                    b = m
+                else:
+                    a = m
+            return 0.5 * (a + b)
+        x0, f0 = x1, f1
+    return None
+
+
+def _full_em_branches(kappa, mu, ne_over_ni):
+    """Lowest positive roots of the cold-plasma parallel R and L modes.
+
+    In the standalone code units (c = 1, Omega_i = 1, d_i = 1, so w and kappa
+    are omega/Omega_i and k d_i) the mode equations, i.e.
+
+        c^2 k^2/omega^2 = 1 - sum_s w_ps^2 / (omega (omega +- Omega_s))
+
+    read
+
+        R: kappa^2/w^2 = 1 + (ne/ni)/(w (1 - w/mu)) - 1/(w (w+1))
+        L: kappa^2/w^2 = 1 - (ne/ni)/(w (1 + w/mu)) - 1/(w (w-1))
+
+    with mu = |Omega_e|/Omega_i = m_i/m_e.  Unlike the Hall / massless-electron
+    form these retain the displacement current (the leading 1), which is only
+    negligible when c >> v_A.
+    """
+    def f_r(w):
+        return (1.0 + ne_over_ni / (w * (1.0 - w / mu))
+                - 1.0 / (w * (w + 1.0)) - kappa * kappa / (w * w))
+
+    def f_l(w):
+        return (1.0 - ne_over_ni / (w * (1.0 + w / mu))
+                - 1.0 / (w * (w - 1.0)) - kappa * kappa / (w * w))
+
+    return (
+        ("right-hand/whistler", _first_root(f_r, 1e-3, 0.9999 * mu)),
+        ("left-hand/ion-cyclotron", _first_root(f_l, 1e-3, 0.9999)),
+    )
+
+
+def _solver_and_species(param_path):
+    """Return (is_full_em, mu, ne_over_ni) read from the deck.
+
+    is_full_em is True when the deck runs the Maxwell solver (#SOLVEEM T), for
+    which the expectation is the full cold-plasma dispersion rather than the
+    Hall (massless-electron, no displacement current) one.  mu = m_i/m_e;
+    mu is None when the deck has a single species.
+    """
+    blocks = _parse_named(param_path, ["#SOLVEEM", "#PLASMA", "#UNIFORMSTATE"])
+    solveem = blocks.get("#SOLVEEM", [])
+    is_full_em = bool(solveem) and solveem[0][0] != 0.0
+
+    plasma = blocks.get("#PLASMA", [])
+    masses = [v for v, n in plasma if n.lower().startswith("mass")]
+    unif = blocks.get("#UNIFORMSTATE", [])
+    rhos = [v for v, n in unif if n.lower().startswith("rho")]
+
+    mu = None
+    if len(masses) >= 2 and masses[1] > 0:
+        mu = masses[0] / masses[1]
+    ne_over_ni = None
+    if mu and len(rhos) >= 2 and rhos[0] > 0 and masses[0] > 0:
+        n_i = rhos[0] / masses[0]
+        n_e = rhos[1] / masses[1]
+        if n_i > 0:
+            ne_over_ni = n_e / n_i
+    return is_full_em, mu, ne_over_ni
+
+
 def _hyb_seeded_mode(test_name=None):
     """Return seeded spatial mode from #WAVEIC waveMode (defaults to 1)."""
     p = _hyb_param_path(test_name)
@@ -198,8 +325,16 @@ def _hyb_whistler_dispersion(out_files, test_name=None):
     """Measure the seeded-mode whistler frequency and compare with hybrid theory.
 
     Tracks the phase of the dominant spatial mode C(t) across all frames, fits
-    phi(t) = omega*t + phi0, and compares against the hybrid whistler relation:
-        omega / Omega_i = (k d_i)^2 / (1 + (k d_i)^2)
+    phi(t) = omega*t + phi0, and compares against the two parallel-propagating
+    Hall / cold-plasma branches (kappa = k d_i):
+
+        right-hand (whistler)     : w/Omega_i = [kappa^2 + kappa*sqrt(kappa^2+4)]/2
+        left-hand (ion-cyclotron) : w/Omega_i = [-kappa^2 + kappa*sqrt(kappa^2+4)]/2
+
+    The check passes when the measured |omega| matches either branch (whichever
+    the seeded helicity should have excited).  NOTE: at kappa -> 0 both reduce
+    to the Alfven wave (w = k v_A) and at large kappa they approach kappa^2
+    (whistler, i.e. w ~ k^2) and Omega_i (ion-cyclotron resonance) respectively.
 
     Returns:
       (True, message)  -> measured frequency matched theory
@@ -219,12 +354,28 @@ def _hyb_whistler_dispersion(out_files, test_name=None):
     if first_data is None:
         return None, "no parseable frames"
 
-    by0, _ = first_data
+    by0, bz0 = first_data
     kdom, kfrac, _ = _hyb_dft_dominant(by0)
     if kdom <= 0:
         return None, "no dominant spatial mode (flat By)"
     if kfrac < 0.3:
         return None, f"dominant mode too weak ({kfrac:.2f})"
+
+    # The seeded helicity decides which sign of the spatial harmonic carries
+    # the wave: Psi = By + i Bz ~ exp(+i k x) for the left-hand seed and
+    # exp(-i k x) for the right-hand one, so track whichever dominates the
+    # transverse field.  (Projecting onto the wrong sign averages the wave
+    # away and leaves pure noise.)
+    n0 = len(by0)
+    m_pos = sum(
+        complex(by0[i], bz0[i]) * cmath.exp(-2j * math.pi * kdom * i / n0)
+        for i in range(n0)
+    ) / n0
+    m_neg = sum(
+        complex(by0[i], bz0[i]) * cmath.exp(2j * math.pi * kdom * i / n0)
+        for i in range(n0)
+    ) / n0
+    ksign = 1.0 if abs(m_pos) >= abs(m_neg) else -1.0
 
     # Collect (time_si, phase) samples for dominant mode.
     samples = []
@@ -240,15 +391,26 @@ def _hyb_whistler_dispersion(out_files, test_name=None):
         if t_si is None:
             continue
         c = sum(
-            complex(by[i], bz[i]) * cmath.exp(-2j * math.pi * kdom * i / n)
+            complex(by[i], bz[i]) * cmath.exp(-ksign * 2j * math.pi * kdom * i / n)
             for i in range(n)
         )
         c_mode = c / n
         if abs(c_mode) >= 1e-12:
-            samples.append((t_si, cmath.phase(c_mode)))
+            bperp = max(math.hypot(by[i], bz[i]) for i in range(n))
+            samples.append((t_si, cmath.phase(c_mode), bperp))
 
     if len(samples) < 3:
         return None, "too few usable frames"
+
+    # The explicit hybrid advance of a low-beta plasma slowly drives grid-scale
+    # fields, so drop the trailing frames once the transverse amplitude has
+    # grown well past its seeded value (keeps >= 3 samples).
+    samples.sort(key=lambda s: s[0])
+    limit = 1.5 * samples[0][2]
+    for i, s in enumerate(samples):
+        if s[2] > limit and i >= 3:
+            samples = samples[:i]
+            break
 
     # Phase unwrapping.
     samples.sort(key=lambda s: s[0])
@@ -285,17 +447,47 @@ def _hyb_whistler_dispersion(out_files, test_name=None):
         Lx, tNorm = 6.4, 1.0
 
     k = 2.0 * math.pi * kdom / Lx
+    # These decks normalize lNormSI = uNormSI so that d_i ~ 1 (and Omega_i ~ 1)
+    # in code units, hence kappa = k d_i ~ k.
+    kappa = k
+
+    # The expected dispersion depends on which physics the field solver carries:
+    # the hybrid (massless-electron, generalized Ohm) solver reproduces the
+    # Hall branches, while a full Maxwell (#SOLVEEM T) run keeps the
+    # displacement current *and* the electron inertia, which are only
+    # negligible for c >> v_A.  Pick the deck-appropriate model.
+    full_em, mu, ne_over_ni = _solver_and_species(p)
+    branches, model = None, "Hall / massless electrons"
+    if full_em:
+        if mu and ne_over_ni:
+            branches = _full_em_branches(kappa, mu, ne_over_ni)
+            model = (f"full cold plasma (m_i/m_e = {mu:.0f}, "
+                     f"n_e/n_i = {ne_over_ni:.3g})")
+        else:
+            branches = None
+            model = "full cold plasma (species not parseable)"
+    if not branches or any(w is None for _, w in branches):
+        kappa2 = kappa * kappa
+        root = math.sqrt(kappa2 * kappa2 + 4.0 * kappa2)
+        branches = (
+            ("right-hand/whistler", 0.5 * (kappa2 + root)),
+            ("left-hand/ion-cyclotron", 0.5 * (-kappa2 + root)),
+        )
+        model = "Hall / massless electrons"
+
     omega_code = omega_si * tNorm
-    k2 = k * k
-    omega_theory = k2 / (1.0 + k2)
-    tol = 0.25 * max(omega_theory, 1e-9)
+    measured = abs(omega_code)
+    branch, omega_theory = min(
+        branches, key=lambda b: abs(measured - b[1]))
+    tol = 0.20 * max(omega_theory, 1e-9)
 
     msg = (
-        f"whistler dispersion n={kdom}: measured |omega|/Omega_i = {abs(omega_code):.3f} "
-        f"(theory = {omega_theory:.3f}, k d_i = {k:.3f}), fit r^2 = {r2:.2f}"
+        f"whistler dispersion n={kdom}: measured |omega|/Omega_i = {measured:.3f} "
+        f"({branch} theory = {omega_theory:.3f} [{model}], "
+        f"k d_i = {kappa:.3f}), fit r^2 = {r2:.2f}"
     )
 
-    if abs(abs(omega_code) - omega_theory) <= tol:
+    if abs(measured - omega_theory) <= tol:
         return True, msg
     return False, f"{msg} [DISPERSION MISMATCH]"
 

@@ -19,10 +19,13 @@ $$
 with discrete damping rate:
 
 $$
-\gamma = \frac{\eta_h}{4\pi} \frac{4 \sin^2(\theta) \sin^2(\theta/2)}{\Delta x^4}, \quad \theta = k \Delta x
+\gamma = \frac{\eta_h}{4\pi} \frac{16 \sin^4(\theta/2)}{\Delta x^4}, \quad \theta = k \Delta x
 $$
 
-which accounts for the collocated $2\Delta x$ curl and 3-point Laplacian stencils.
+which accounts for the compact (1 $\Delta x$) cell-centre $\to$ node curl used for
+$\nabla \times (\nabla^2 \mathbf{B})$, its node $\to$ cell-centre adjoint in
+Faraday's law, and the 3-point Laplacian. The two curls compose into a
+bi-Laplacian whose discrete eigenvalue is $16 \sin^4(\theta/2)/\Delta x^4$.
 
 ## Validation
 

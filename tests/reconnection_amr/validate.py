@@ -103,12 +103,11 @@ def _frame_stats(frame):
 def _midplane_by(frame):
     """Return (x_array, By_array) along the midplane y ~ 0 (refined layer).
 
-    The refined band is block-aligned (`maxBlockSizeY = 2`), so its cell-centred
-    y rows are offset by half a fine cell and need NOT straddle y = 0 exactly
-    (the nearest fine row is |y| = DX_FINE/2 ~ 0.49).  A fixed `|y| < 0.3*DX_FINE`
-    window would select nothing.  Instead pick the fine-level row (x cells
-    spaced by DX_FINE) whose |y| is smallest — the row closest to the current
-    sheet — and return its By profile.
+    The structured `.out` output samples the node grid (both solvers), so the
+    block-aligned refined band (`maxBlockSizeY = 2`) contains the node row
+    y = 0 exactly.  Pick the fine-level row (x cells spaced by DX_FINE) whose
+    |y| is smallest — the row closest to the current sheet — and return its By
+    profile.
     """
     y = frame["y"]
     ys = np.unique(y)

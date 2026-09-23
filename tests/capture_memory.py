@@ -18,17 +18,23 @@ holding the per-region allocation counts / peak bytes plus the RSS.  The
 selection is deliberately small: it has to run twice (reference + candidate)
 inside one CI job.
 
+Each entry is killed after ``--timeout`` seconds (default 900) and recorded as
+an error, so a deck that diverges into an endless loop fails the job with a
+diagnostic instead of hanging it until the runner cancels the job.
+
 Other options::
 
     --verify    run twice and report how reproducible memory is here, which is
                 what --rss-tol in step 2 should be tuned from
     --list      show the captured selection
     --test X    restrict to one entry of the selection
+    --timeout S per-test wall-clock limit in seconds (0 disables it)
 """
 import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -45,17 +51,25 @@ from tests import validate_tests  # noqa: E402
 # Chosen to cover the dominant cost centres of both field solvers while
 # staying short: full-PIC implicit E solve + particle mover (beam), hybrid
 # Ohm assembly + Faraday advance (performance/PARAM.in.hybrid), 2D moment
-# deposition and current calculation (reconnection), boundary injection
-# (shock), and one 2-rank entry so MPI-related allocations are covered too.
+# deposition and current calculation (reconnection.fadeev_pic, the 32x16
+# Fadeev current-sheet deck that replaced the unsuffixed reconnection deck),
+# boundary injection (shock), and one 2-rank entry so MPI-related allocations
+# are covered too.
 PROFILE_TESTS = [
     ("beam", None, 1),
     ("performance", "hybrid", 1),
-    ("reconnection", None, 1),
+    ("reconnection", "fadeev_pic", 1),
     ("shock", None, 1),
     ("beam", None, 2),
 ]
 
 DEFAULT_RUN_DIR = "run_test_prof"
+
+# Per-test wall-clock limit. The whole selection runs in ~20 s on a laptop and
+# in a couple of minutes on CI, so 900 s only ever fires for a run that is
+# genuinely stuck (the failure mode that used to hang the job: a divergence
+# spinning in the mover, see Particles::is_outside_active_region).
+DEFAULT_TIMEOUT_S = 900
 
 # Force the profiler to report every region instead of folding the small ones
 # into "Other" (AMReX default print_threshold is 1 %), and to write the
@@ -113,8 +127,35 @@ def clean_output(run_dir):
                 pass
 
 
+def run_command(cmd, run_dir, env, timeout):
+    """Run *cmd* and return (returncode, output, timed_out).
+
+    A per-test timeout is enforced by killing the whole process group, so an
+    ``mpirun`` wrapper cannot leave ranks behind that keep running (and keep
+    holding memory) after the kill. *timeout* <= 0 disables the limit.
+    """
+    new_session = hasattr(os, "setsid")
+    proc = subprocess.Popen(cmd, cwd=run_dir, env=env,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            start_new_session=new_session)
+    try:
+        out, _ = proc.communicate(timeout=timeout if timeout > 0 else None)
+        return proc.returncode, out or b"", False
+    except subprocess.TimeoutExpired:
+        if new_session:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                proc.kill()
+        else:
+            proc.kill()
+        out, _ = proc.communicate()
+        return proc.returncode, out or b"", True
+
+
 def run_one(test, variant, nprocs, run_dir, exe, keep_prof=False,
-            keep_log=False):
+            keep_log=False, timeout=DEFAULT_TIMEOUT_S):
     """Run one entry and return its profile record."""
     prepare_run_dir(run_dir, exe)
     clean_output(run_dir)
@@ -132,11 +173,9 @@ def run_one(test, variant, nprocs, run_dir, exe, keep_prof=False,
 
     env = dict(os.environ, OMP_NUM_THREADS="1")
     start = time.monotonic()
-    result = subprocess.run(cmd, cwd=run_dir, env=env,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    exit_code, out, timed_out = run_command(cmd, run_dir, env, timeout)
     wall_s = time.monotonic() - start
-    log = (result.stdout or b"").decode("utf-8", "replace")
-    result.stdout = log
+    log = out.decode("utf-8", "replace")
 
     prof_file = os.path.join(run_dir, "prof.txt")
     record = {
@@ -145,7 +184,7 @@ def run_one(test, variant, nprocs, run_dir, exe, keep_prof=False,
         "nprocs": nprocs,
         "param": os.path.relpath(source, REPO_ROOT),
         "wall_s": round(wall_s, 4),
-        "exit_code": result.returncode,
+        "exit_code": exit_code,
         "profile": {},
         "load_balance": {},
     }
@@ -154,7 +193,15 @@ def run_one(test, variant, nprocs, run_dir, exe, keep_prof=False,
         with open(os.path.join(run_dir, "run.log"), "w") as handle:
             handle.write(log)
 
-    if result.returncode != 0:
+    if timed_out:
+        record["error"] = (
+            f"killed after the {timeout} s timeout (run still alive): the deck "
+            f"is not making progress, which in practice means a numerical "
+            f"divergence spinning in the mover or in a solver loop.\n"
+            + log[-4000:])
+        return record
+
+    if exit_code != 0:
         record["error"] = log[-4000:]
         return record
 
@@ -180,7 +227,7 @@ def run_one(test, variant, nprocs, run_dir, exe, keep_prof=False,
 
 
 def capture(selection, run_dir, exe, verbose=False, keep_prof=False,
-            keep_log=False):
+            keep_log=False, timeout=DEFAULT_TIMEOUT_S):
     """Run every entry in *selection* and return the full profile document."""
     if not os.path.isfile(exe):
         print(f"error: executable not found: {exe}\n"
@@ -203,10 +250,13 @@ def capture(selection, run_dir, exe, verbose=False, keep_prof=False,
         key = test_key(test, variant, nprocs)
         print(f"  RUN  {key} ...", flush=True)
         record = run_one(test, variant, nprocs, run_dir, exe,
-                         keep_prof=keep_prof, keep_log=keep_log)
+                         keep_prof=keep_prof, keep_log=keep_log,
+                         timeout=timeout)
         tests[key] = record
         if "error" in record:
-            print(f"       FAILED (exit {record['exit_code']})")
+            reason = ("TIMEOUT" if record["error"].startswith("killed after")
+                      else f"exit {record['exit_code']}")
+            print(f"       FAILED ({reason})")
         elif verbose:
             print(profiler.format_summary(record["profile"], top=5))
             rss = record.get("load_balance", {}).get("last", {}).get("Memory(MB)")
@@ -258,7 +308,7 @@ def _rss_index(record):
     return out
 
 
-def verify(selection, run_dir, exe, repeats=2):
+def verify(selection, run_dir, exe, repeats=2, timeout=DEFAULT_TIMEOUT_S):
     """Run the selection twice and report non-deterministic memory values.
 
     Allocation counts and peak bytes are exact integers for a fixed problem,
@@ -268,7 +318,7 @@ def verify(selection, run_dir, exe, repeats=2):
     runs = []
     for i in range(repeats):
         print(f"run {i + 1}/{repeats}")
-        runs.append(capture(selection, run_dir, exe))
+        runs.append(capture(selection, run_dir, exe, timeout=timeout))
 
     baseline = runs[0]
     problems, rss_spread = [], []
@@ -349,6 +399,9 @@ def main():
                         help="keep the raw prof.txt of the last test")
     parser.add_argument("--keep-log", action="store_true",
                         help="keep the raw run.log of the last test")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S,
+                        help="per-test wall-clock limit in seconds, 0 to "
+                             f"disable (default: {DEFAULT_TIMEOUT_S:g})")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -377,11 +430,13 @@ def main():
     exe = args.exe if os.path.isabs(args.exe) else os.path.join(REPO_ROOT, args.exe)
 
     if args.verify:
-        return verify(selection, args.run_dir, exe, repeats=args.repeats)
+        return verify(selection, args.run_dir, exe, repeats=args.repeats,
+                      timeout=args.timeout)
 
     print("Capturing profiles:")
     document = capture(selection, args.run_dir, exe, verbose=args.verbose,
-                       keep_prof=args.keep_prof, keep_log=args.keep_log)
+                       keep_prof=args.keep_prof, keep_log=args.keep_log,
+                       timeout=args.timeout)
     if args.ref:
         document["meta"]["ref"] = args.ref
 

@@ -313,10 +313,9 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     // node with only ~half the charge of an interior node: with the node at the
     // domain face, a particle in the edge cell deposits its weight between that
     // edge node and the next interior node, and NO particle lies on the
-    // exterior side to contribute the complementary weight.  This is why, in
-    // full-PIC mode, the reflecting-wall node of the 1D shock test showed rhoS0
-    // ~ 6.25 instead of ~12.5, while the hybrid path (cell-centred deposit +
-    // sum_moments_cell_centered) did not.
+    // exterior side to contribute the complementary weight.  This is why the
+    // reflecting-wall node of the 1D shock test showed rhoS0 ~ 6.25 instead of
+    // ~12.5 before this fold was introduced.
     //
     // The physically correct boundary condition for a reflecting wall (and an
     // open-inflow face, whose injected particles live just inside the edge
@@ -350,10 +349,13 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
             const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
             // A particle face can no longer be `conducting`: that is a
             // field-only type, and on the particle side it is mapped to
-            // `reflect` at parse time.  The fold set is therefore
-            // reflect + inflow.
+            // `reflect` at parse time. The fold set covers all uncoupled,
+            // non-periodic faces (reflect, inflow, outflow, vacuum, absorb)
+            // where no exterior ghost particles exist to deposit into the boundary node.
             const bool doFold =
-                (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow);
+                (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow ||
+                 faceBc == ParticleBC::outflow || faceBc == ParticleBC::vacuum ||
+                 faceBc == ParticleBC::absorb);
             if (!doFold)
               continue;
 
@@ -451,149 +453,6 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 }
 
 //==========================================================
-// Cell-centred moment deposit. The raw rho / momentum / pressure-tensor moments
-// are scattered to the cell-centred momentsMF (centerPlasma[iSpecies]) with a
-// plain cell-centred trilinear scatter (find_cell_index + linear weights).
-
-template <int NStructReal, int NStructInt>
-Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
-    Vector<MultiFab>& momentsMF) {
-  timing_func("Pts::sum_moments_cell_centered");
-
-  Real energy = 0;
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    momentsMF[iLev].setVal(0.0);
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
-
-      const AoS& particles = pti.GetArrayOfStructs();
-
-      const Dim3 lo = init_dim3(0);
-      const Dim3 hi = init_dim3(1);
-
-      for (const auto& p : particles) {
-        if (p.id() < 0)
-          continue;
-
-        const Real up = p.rdata(iup_);
-        const Real vp = p.rdata(ivp_);
-        const Real wp = p.rdata(iwp_);
-        const Real qp = p.rdata(iqp_);
-
-        //-----calculate interpolate coef begin-------------
-        IntVect loIdx;
-        RealVect dShift;
-        // Cell-centred deposit: find the containing cell (find_cell_index) and
-        // interpolate between its centre and the next cell centre (trilinear).
-        Real coef[2][2][2];
-        find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                Geom(iLev).InvCellSize(), loIdx, dShift, coef);
-        //-----calculate interpolate coef end-------------
-
-        //-------cell-centred moments begin---------
-        Real pMoments[nMoments];
-
-        pMoments[iNum_] = 1;
-        pMoments[iRho_] = qp;
-
-        {
-          const Real mx = qp * up;
-          const Real my = qp * vp;
-          const Real mz = qp * wp;
-          pMoments[iMx_] = mx;
-          pMoments[iMy_] = my;
-          pMoments[iMz_] = mz;
-
-          pMoments[iPxx_] = mx * up;
-          pMoments[iPyy_] = my * vp;
-          pMoments[iPzz_] = mz * wp;
-
-          pMoments[iPxy_] = mx * vp;
-          pMoments[iPxz_] = mx * wp;
-          pMoments[iPyz_] = my * wp;
-        }
-
-        for (int iVar = 0; iVar < nMoments; iVar++)
-          for (int kk = lo.z; kk <= hi.z; ++kk)
-            for (int jj = lo.y; jj <= hi.y; ++jj)
-              for (int ii = lo.x; ii <= hi.x; ++ii) {
-                const IntVect ijk = { AMREX_D_DECL(
-                    loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-                momentsArr(ijk, iVar) += coef[ii][jj][kk] * pMoments[iVar];
-              }
-        //-------cell-centred moments end---------
-
-        energy += qp * (up * up + vp * vp + wp * wp);
-      } // for p
-    }
-
-    // Exclude the number density.
-    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
-                         momentsMF[iLev].nGrow());
-
-    // Fold first ghost layer back into edge cells at non-periodic domain
-    // boundaries to conserve charge from outer half-cell CIC deposits.
-    // Executed before SumBoundary so transverse ghost tails are correctly
-    // combined across tile boundaries.
-    if (!Geom(iLev).isAllPeriodic() && momentsMF[iLev].nGrow() > 0) {
-      const Box& dom = Geom(iLev).Domain();
-      const int nCompMF = momentsMF[iLev].nComp();
-      for (MFIter mfi(momentsMF[iLev]); mfi.isValid(); ++mfi) {
-        const Box& bx = mfi.validbox();
-        Array4<Real> const& arr = momentsMF[iLev][mfi].array();
-
-        for (int iDim = 0; iDim < nDim; ++iDim) {
-          if (Geom(iLev).isPeriodic(iDim))
-            continue;
-
-          for (int side = 0; side < 2; ++side) {
-            const bool isLo = (side == 0);
-            const int domEdge = isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim);
-            if ((isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim)) != domEdge)
-              continue;
-
-            const Box& fbx = mfi.fabbox();
-            IntVect gs = fbx.smallEnd();
-            IntVect ge = fbx.bigEnd();
-            gs[iDim] = domEdge + (isLo ? -1 : 1);
-            ge[iDim] = gs[iDim];
-            const Box strip(gs, ge);
-
-            const int di = (iDim == 0) ? (isLo ? 1 : -1) : 0;
-            const int dj = (iDim == 1) ? (isLo ? 1 : -1) : 0;
-            const int dk = (iDim == 2) ? (isLo ? 1 : -1) : 0;
-
-            ParallelFor(strip, nCompMF,
-                        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-                          arr(i + di, j + dj, k + dk, c) += arr(i, j, k, c);
-                          arr(i, j, k, c) = 0.0;
-                        });
-          }
-        }
-      }
-    }
-
-    momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
-  }
-
-  // Cell-centred coarse-fine interface for AMR. Unlike the node-centred path,
-  // we only need the fine→coarse summation (average_down + Add) for
-  // cell-centred moments. The coarse→fine overwrite of level-edge cells is NOT
-  // used here because it discards valid fine-level particle deposits (the fine
-  // level-edge cells contain real particles), causing worse energy growth.
-  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
-    timing_func("Pts::sum_moments_coarse_fine_interface_cell");
-    sum_fine_to_coarse_lev_bny_cell(momentsMF[iLev], momentsMF[iLev + 1], 0,
-                                    momentsMF[iLev].nComp(),
-                                    get_ref_ratio(iLev));
-  }
-
-  energy *= 0.5 * qomSign * get_mass();
-
-  return energy;
-}
-
-//==========================================================
 
 template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
@@ -674,8 +533,6 @@ template Real PicParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
                                         Real);
 template Real PTParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
                                        Real);
-template Real PicParticles::sum_moments_cell_centered(Vector<MultiFab>&);
-template Real PTParticles::sum_moments_cell_centered(Vector<MultiFab>&);
 template Real PicParticles::calc_max_thermal_velocity(MultiFab&);
 template Real PTParticles::calc_max_thermal_velocity(MultiFab&);
 template void PicParticles::convert_to_fluid_moments(Vector<MultiFab>&);

@@ -604,18 +604,6 @@ void Pic::update_B() {
 }
 
 //==========================================================
-// Generalized Ohm's law
-//   E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
-// on cell-centred fields at an arbitrary (off-member) B state. `centerBin` is
-// the trial B used for J = curl(B)/(4*pi); `centerBtimeAvg` is the
-// time-averaged B used for the Hall/convection factor. Ion moments are
-// time-interpolated between centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum
-// (J^{n+1/2}) at hstep. Particle weights are initialized with dt = 1, so iRho_
-// is the true charge density rho_q (the Hall / pressure terms divide by it
-// directly).
-//==========================================================
-
-//==========================================================
 void Pic::solve_hyp_phi(int iLev) {
   std::string nameFunc = "Pic::solve_hyp_phi";
   timing_func(nameFunc);

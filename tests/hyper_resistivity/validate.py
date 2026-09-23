@@ -60,8 +60,9 @@ def _named_number(text, command, name):
 def _analytic_gamma():
     """Return (gamma, gamma_as_measured) for the seeded mode.
 
-    Accounts for the discrete spatial stencils and the classical RK4
-    amplification factor R(-z) = 1 - z + z^2/2 - z^3/6 + z^4/24 with z = gamma*dt.
+    gamma = (eta_h/4pi) * 16*sin^4(theta/2)/dx^4 for the staggered-grid
+    bi-Laplacian operator, times the RK4 amplification factor
+    R(-z) = 1 - z + z^2/2 - z^3/6 + z^4/24 with z = gamma*dt.
     """
     try:
         with open(PARAM_PATH, "r") as f:
@@ -82,7 +83,7 @@ def _analytic_gamma():
     eta_code = 4.0 * math.pi * eta_si / (u_norm * l_norm ** 3)
 
     theta = 2.0 * math.pi * mode / n_cell
-    shape = 4.0 * math.sin(theta) ** 2 * math.sin(theta / 2.0) ** 2
+    shape = 16.0 * math.sin(theta / 2.0) ** 4
     gamma = (eta_code / (4.0 * math.pi)) * shape / dx ** 4
 
     z = gamma * dt

@@ -85,7 +85,7 @@ T                       doSmoothMoments
 2                       nSmoothMoments
 0.5                     coefSmoothMoments
 
-Smoothing of the cell-centred electric field after each hybrid field advance.
+Smoothing of the nodal electric field after each hybrid field advance.
 The ambipolar term E = -grad(p_e)/rho uses a central difference that does not
 couple odd/even cells, so without this a grid-scale (Nyquist) checkerboard can
 grow in E and feed back into the ion push.
@@ -150,7 +150,3 @@ z=0 fluid ascii pic     plotString
 5.0                     TimeMax   ~0.3 of the n=1 ion-acoustic period
 
 #RUN
-
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB

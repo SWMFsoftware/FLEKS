@@ -61,21 +61,9 @@ public:
                                bool doSave,
                                const amrex::MultiFab* nodeJacBMF = nullptr);
 
-  void move_and_save_particles_cell_centered(
-      int iLev, const amrex::MultiFab& centerEMF,
-      const amrex::MultiFab& centerBMF, amrex::Real dt, amrex::Real dtNext,
-      amrex::Real tNow, bool doSave,
-      const amrex::MultiFab* nodeJacBMF = nullptr);
-
   void move_and_save_charged_particles(
       int iLev, const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
       amrex::Real dt, amrex::Real dtNext, amrex::Real tNow, bool doSave,
-      const amrex::MultiFab* nodeJacBMF = nullptr);
-
-  void move_and_save_charged_particles_cell_centered(
-      int iLev, const amrex::MultiFab& centerEMF,
-      const amrex::MultiFab& centerBMF, amrex::Real dt, amrex::Real dtNext,
-      amrex::Real tNow, bool doSave,
       const amrex::MultiFab* nodeJacBMF = nullptr);
 
   void move_and_save_neutrals(int iLev, amrex::Real dt, amrex::Real tNow,

@@ -53,10 +53,6 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-#AVGFIELDB
-T                       useAvgFieldB
-20                      nAvgFieldB
-
 #HALLTERM
 T                       useHallTerm
 

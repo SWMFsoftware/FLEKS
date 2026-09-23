@@ -67,56 +67,14 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
 //==========================================================
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::mover_cell_centered(
-    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
-    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext) {
-  if (is_neutral()) {
-    neutral_mover(dt);
-  } else {
-    charged_particle_mover_cell_centered(centerE, centerB, eBg, uBg, dt,
-                                         dtNext);
-  }
-}
-
-//==========================================================
-
-template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
     const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
     Real dtNext) {
   timing_func("Pts::charged_particle_mover");
-  charged_particle_mover_impl(nodeE, nodeB, dt, dtNext, FieldSampling::Node);
-}
 
-//==========================================================
-// Cell-centred Boris push. The E and B are gathered from cell fields. The
-// gather is a plain cell-centred trilinear interpolation.
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
-    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
-    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext) {
-  timing_func("Pts::charged_particle_mover_cell_centered");
-  charged_particle_mover_impl(centerE, centerB, dt, dtNext,
-                              FieldSampling::CellCentered);
-}
-
-//==========================================================
-// Shared implementation of charged_particle_mover and
-// charged_particle_mover_cell_centered. Only the sampling point of E and B
-// differs: the node-centred stencil for the full-PIC fields, the cell-centred
-// one for the hybrid fields. Everything from the Boris push onwards is common.
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::charged_particle_mover_impl(
-    const Vector<MultiFab>& EGrid, const Vector<MultiFab>& BGrid, Real dt,
-    Real dtNext, FieldSampling sampling) {
   const Real qdto2mc = charge / mass * 0.5 * dt;
   Real dtLoc = 0.5 * (dt + dtNext);
-  const bool sampleAtNodes = (sampling == FieldSampling::Node);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const Real* const ploLoc = plo[iLev].begin();
@@ -124,8 +82,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_impl(
     const Real* const invDxLoc = invDx[iLev].begin();
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      const Array4<Real const>& EArr = EGrid[iLev][pti].array();
-      const Array4<Real const>& BArr = BGrid[iLev][pti].array();
+      const Array4<Real const>& EArr = nodeE[iLev][pti].array();
+      const Array4<Real const>& BArr = nodeB[iLev][pti].array();
 
       const Box& bx = cell_status(iLev)[pti].box();
       const Array4<int const>& status = cell_status(iLev)[pti].array();
@@ -150,20 +108,14 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_impl(
         const Real zp = nDim > 2 ? p.pos(iz_) : 0;
 
         //-----calculate interpolate coef begin-------------
-        // Node sampling centres the stencil on the containing node, cell-centre
-        // sampling on the containing cell centre (a -0.5 offset in
-        // find_cell_interpolation). Both are plain trilinear weights over the
-        // 2x2x2 stencil.
+        // The stencil is centred on the node that contains the particle: plain
+        // trilinear weights over the surrounding 2x2x2 nodes.
         IntVect loIdx;
         RealVect dShift;
 
         Real coef[2][2][2];
-        if (sampleAtNodes)
-          find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift,
-                                  coef);
-        else
-          find_cell_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift,
-                                  coef);
+        find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift,
+                                coef);
         //-----calculate interpolate coef end-------------
 
         Real bp[3] = { 0, 0, 0 };
@@ -445,18 +397,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   template void T::mover(const Vector<MultiFab>&, const Vector<MultiFab>&,     \
                          const Vector<MultiFab>&, const Vector<MultiFab>&,     \
                          Real, Real);                                          \
-  template void T::mover_cell_centered(                                        \
-      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
-      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
   template void T::charged_particle_mover(                                     \
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
       const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
-  template void T::charged_particle_mover_cell_centered(                       \
-      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
-      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
-  template void T::charged_particle_mover_impl(const Vector<MultiFab>&,        \
-                                               const Vector<MultiFab>&, Real,  \
-                                               Real, T::FieldSampling);        \
   template void T::neutral_mover(Real);                                        \
   template void T::divE_correct_position(const Vector<MultiFab>&, int);
 

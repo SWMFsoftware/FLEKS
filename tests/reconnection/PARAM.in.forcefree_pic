@@ -1,15 +1,27 @@
 #DESCRIPTION
-Classic GEM Challenge magnetic reconnection benchmark (Birn et al. 2001)
+Force-free current sheet magnetic reconnection benchmark (Le et al. 2016)
 with the FULL-PIC EM solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons.
+
+Scale and Grid Calculation:
+  FLEKS uses Gaussian / CGS-normalized code units where:
+    curl(B) = 4*pi*J,  d_i = v_A / Omega_ci = 1/sqrt(4*pi) ~ 0.2820948 code units
+    P_mag = B0^2 / (8*pi) = 1/(8*pi) ~ 0.0397887 code units
+  Domain: Lx = 20 d_i = 20 * 0.2820948 ~ 5.6419 code units  (x in [-2.82095, 2.82095])
+          Ly = 10 d_i = 10 * 0.2820948 ~ 2.82095 code units  (y in [-1.41047, 1.41047])
+  Sheet half-width: lambda = 1.0 d_i = 0.2821 code units
+  Grid: 64 x 32 (dx = dy = 0.3125 d_i ~ 0.08815 code units, isotropic square cells)
+  Temperatures:
+    beta_i = 0.50 -> Pi_code = 0.25 / (4*pi) ~ 0.01989 code units -> T_i = 24191.0 K
+    beta_e = 0.10 -> Pe_code = 0.05 / (4*pi) ~ 0.00398 code units -> T_e = 4838.2 K (Ti/Te = 5)
 
 #INITFROMSWMF
 F                       initFromSWMF
 
 #GEOMETRY
--12.8                   xMin  [code units; Lx = 25.6 di]
- 12.8                   xMax
--6.4                    yMin  [code units; Ly = 12.8 di]
- 6.4                    yMax
+-2.82095                xMin  [code units; Lx = 20 d_i = 5.6419 code units]
+ 2.82095                xMax
+-1.41047                yMin  [code units; Ly = 10 d_i = 2.82095 code units]
+ 1.41047                yMax
 -0.5                    zMin  [thin invariant direction, 1 cell]
  0.5                    zMax
 
@@ -19,7 +31,7 @@ F                       initFromSWMF
 1                       nCellZ
 
 #MAXBLOCKSIZE
-16                      maxBlockSizeX
+32                      maxBlockSizeX
 16                      maxBlockSizeY
 1                       maxBlockSizeZ
 
@@ -66,17 +78,17 @@ F                       useHybridPIC
 -1.0                    charge
 
 #UNIFORMSTATE
-12.5                    rho [amu/cc]   Species 0: ions (nb = 0.2)
+65.15939                rho [amu/cc]   Species 0: ions (n_i = 1.0)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-304000.0                T [K]
-0.5                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi)
+24191.0                 T [K]          ions, beta_i = 0.5, Ti_code = 0.25 / (4*pi)
+2.6063756               rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi = 65.15939 * 0.04)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-304000.0                T [K]
-0.0                     bx [T]
+4838.2                  T [K]          electrons, beta_e = 0.1, Te_code = 0.05 / (4*pi), Ti/Te = 5
+0.0                     bx [T]         set by ForceFreeIC
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -84,26 +96,21 @@ F                       useHybridPIC
 0.0                     ez [V/m]
 
 #TESTCASE
-gem
+forcefree
 
-#GEMIC
-1.0                     b0
-1.0                     tp
-0.5                     lambda0
-0.1                     apert
-T                       useStandardGem
-F                       useUniformPressure
-F                       useUniformIonPressure
-0.2                     nb
-standard                pertType
+#FORCEFREEIC
+0.2821                  lambda   [current sheet half-width = 1.0 d_i = 1/sqrt(4*pi) code units]
+1.0                     b0       [asymptotic in-plane field B0]
+0.3                     bg       [guide field ratio Bg/B0 = 0.3]
+0.05                    perturb  [initial perturbation amplitude dB/B0 = 0.05]
 
 #TIMESTEPPING
 T                       useFixedDt
-0.005                   dt
+0.01                    dt
 
 #NORMALIZATION
-1.0e5                   lNormSI
-1.0e5                   uNormSI
+1.0e5                   lNormSI  [m; lNorm = 100 km ~ d_i]
+1.0e5                   uNormSI  [m/s; uNorm = 100 km/s ~ vA, tNorm = 1 s]
 
 #MONITOR
 50                      dnReport
@@ -113,8 +120,8 @@ T                       useFixedDt
 10                      dnSavePT
 
 #PARTICLES
-4                       nParticle per cell in X
-4                       nParticle per cell in Y
+10                      nParticle per cell in X
+10                      nParticle per cell in Y
 1                       nParticle per cell in Z
 
 #SAVEPLOT

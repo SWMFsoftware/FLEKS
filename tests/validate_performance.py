@@ -17,7 +17,6 @@ import glob
 
 MOVERS = [
     "Pts::charged_particle_mover",
-    "Pts::charged_particle_mover_cell_centered",
     "TestParticles::move_charged_particles",
 ]
 
@@ -36,7 +35,7 @@ PT_SOLVERS = []
 
 _REQUIRED_MOVER = {
     "fullpic": "Pts::charged_particle_mover",
-    "hybrid":  "Pts::charged_particle_mover_cell_centered",
+    "hybrid":  "Pts::charged_particle_mover",
     "pt":      "TestParticles::move_charged_particles",
     "reconnection2d": "Pts::charged_particle_mover",
 }
@@ -50,10 +49,10 @@ BASELINES = {
         "speedup": 1.5,      # 2-core scaling floor
     },
     "hybrid": {
-        "total_pps": 0.23,   # total wall-clock
-        "mover_pps": 0.06,   # isolated particle mover
-        "solver_pps": 0.008, # explicit hybrid field advance is cheaper
-        "speedup": 1.6,      # 2-core scaling floor
+        "total_pps": 0.25,   # total wall-clock
+        "mover_pps": 0.036,  # isolated particle mover
+        "solver_pps": 0.07,  # explicit hybrid field advance is cheaper
+        "speedup": 1.45,     # 2-core scaling floor
     },
     "pt": {
         "total_pps": 3.2,    # total wall-clock rate

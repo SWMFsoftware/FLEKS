@@ -489,11 +489,6 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
-  // Cell-centred moment deposit: scatter rho/rhoU/Pi from particles to the
-  // momentsMF (centerPlasma[iSpecies]) with trilinear weights.
-  amrex::Real sum_moments_cell_centered(
-      amrex::Vector<amrex::MultiFab>& momentsMF);
-
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   void calc_mass_matrix(NodeMMFab& nodeMM, amrex::MultiFab& jHat,
@@ -566,39 +561,11 @@ public:
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
-  // Cell-centred mover dispatch: gathers from the centerE/centerB
-  // (rather than the node fields) using a trilinear gather.
-  void mover_cell_centered(const amrex::Vector<amrex::MultiFab>& centerE,
-                           const amrex::Vector<amrex::MultiFab>& centerB,
-                           const amrex::Vector<amrex::MultiFab>& eBg,
-                           const amrex::Vector<amrex::MultiFab>& uBg,
-                           amrex::Real dt, amrex::Real dtNext);
-
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext);
-
-  // Cell-centred particle gather + Boris push, reading E and B from the
-  // fields (centerE / centerB) using a trilinear gather.
-  void charged_particle_mover_cell_centered(
-      const amrex::Vector<amrex::MultiFab>& centerE,
-      const amrex::Vector<amrex::MultiFab>& centerB,
-      const amrex::Vector<amrex::MultiFab>& eBg,
-      const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
-      amrex::Real dtNext);
-
-  // Where the fields are sampled for the Boris push.
-  enum class FieldSampling { Node, CellCentered };
-
-  // Shared implementation of the two charged-particle movers above; they
-  // differ only in where E and B are sampled. eBg and uBg belong to the public
-  // mover signatures but are not needed here.
-  void charged_particle_mover_impl(const amrex::Vector<amrex::MultiFab>& EGrid,
-                                   const amrex::Vector<amrex::MultiFab>& BGrid,
-                                   amrex::Real dt, amrex::Real dtNext,
-                                   FieldSampling sampling);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);

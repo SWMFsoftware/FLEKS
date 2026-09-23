@@ -71,9 +71,6 @@ def run_case(dt, nsub, nprocs=1):
     # Time step + subcycling (smaller dt -> weaker Hall CFL, fewer sub-steps).
     text = _rewrite_param(text, "#TIMESTEPPING", {"dt": dt})
     text = _rewrite_param(text, "#BSUBCYCLE", {"nBSubcycle": nsub})
-    # Disable the EMA B-averaging: it is a time filter that would mask the
-    # pure temporal convergence order.
-    text = _rewrite_param(text, "#AVGFIELDB", {"useAvgFieldB": "F"})
     # Save plots more often so the acoustic phase is well resolved.
     text = _rewrite_param(text, "#SAVEPLOT", {"dn": "5"})
     # High PPC: push the PIC shot-noise floor well below the temporal error so

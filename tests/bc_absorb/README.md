@@ -10,7 +10,7 @@ This directory groups the absorbing-boundary tests.  Each variant is a
 | `bc_absorb_fields` | `PARAM.in.fields` | Tophat EM pulse (Ey/Bz) absorbed at the x-faces (`#FIELDBOXBOUNDARY absorb`, full-PIC) | EM energy decays; late interior field reduced |
 | `bc_absorb_hybrid_fields` | `PARAM.in.hybrid.fields` | Transverse shear-Alfvén wave (`HybridWave`) absorbed at x-faces (`#FIELDBOXBOUNDARY absorb`, hybrid-PIC) | Run finite and stable; fields bounded near walls |
 | `bc_absorb_particles` | `PARAM.in.particles` | Ions with bulk +x flow drain out through absorbing x-walls (`#PARTICLEBOXBOUNDARY absorb`, pure particle push) | Epart decays toward zero |
-| `bc_absorb_hybrid_particles` | `PARAM.in.hybrid.particles` | Same ion drain through absorbing x-walls, but in the hybrid cell-centred mover (`useHybridPIC = T`) | Epart decays toward zero |
+| `bc_absorb_hybrid_particles` | `PARAM.in.hybrid.particles` | Same ion drain through absorbing x-walls, but in the hybrid mover (`useHybridPIC = T`) | Epart decays toward zero |
 
 ## Validation
 
@@ -22,7 +22,7 @@ particles. `validate.py` branches on the variant name:
      out, so `Etot` (Ee+Eb) decays below 25% of its initial value — the decisive
      absorber signature (conducting/periodic walls would reflect the pulses and
      keep the energy).
-   - `bc_absorb_hybrid_fields`: verifies that the hybrid cell-centred field advance
+   - `bc_absorb_hybrid_fields`: verifies that the hybrid field advance
      with absorbing boundaries stays finite, positive, and bounded (no numerical
      instability or runaway growth).
    - `bc_absorb_particles` / `bc_absorb_hybrid_particles`: a single ion species

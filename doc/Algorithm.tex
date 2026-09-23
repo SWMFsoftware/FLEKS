@@ -304,7 +304,7 @@ In the hybrid PIC approach, ions are treated as kinetic particles and electrons 
 
 \subsection{The generalized Ohm's law}
 
-The electric field is assembled cell-centered from the ion fluid moments and the magnetic field:
+The electric field is assembled on the node grid from the node-centred ion fluid moments and the cell-centred magnetic field:
 \begin{equation}
 \mathbf{E} = -\mathbf{U}_i \times \mathbf{B}
            + \eta\,\mathbf{J}
@@ -336,13 +336,13 @@ The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\
 \end{equation}
 where $C_{\text{CFL}} = 2.785$ for RK4 and $2.513$ for SSPRK3.
 
-\subsection{Cell-centered field layout}
+\subsection{Collocated field layout}
 
-All hybrid fields ($\mathbf{B}$, $\mathbf{E}$, $\mathbf{J}$, and ion moments $\rho$, $\rho\mathbf{u}$) are stored cell-centered. Spatial curl and gradient operators use a $2\,\Delta x$ central-difference stencil:
+The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centres. The generalized Ohm's law is therefore assembled at the nodes from the node-centred moments and the cell-centred $\mathbf{B}$, and the Faraday update advances the cell-centred $\mathbf{B}$; the node-centred $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values. The cell-centred field is differentiated with the compact $2\,\Delta x$ central-difference stencil
 \begin{equation}
 (\nabla \times \mathbf{B})_{i,j,k} \propto \frac{\mathbf{B}_{i+1} - \mathbf{B}_{i-1}}{2\Delta x},
 \end{equation}
-whose discrete Fourier kernel vanishes identically at the grid Nyquist mode ($k\Delta x = \pi$). This eliminates the grid-scale odd-even decoupling instability that would otherwise force heavy Hall sub-cycling, and removes the need for center$\leftrightarrow$node interpolations during field advances.
+whose discrete Fourier kernel vanishes identically at the grid Nyquist mode ($k\Delta x = \pi$). This eliminates the grid-scale odd-even decoupling instability that would otherwise force heavy Hall sub-cycling.
 
 \subsection{Time integration and subcycling of $\mathbf{B}$}
 
@@ -368,16 +368,10 @@ The complete hybrid PIC time step proceeds through the following stages:
 \begin{enumerate}
   \item \textbf{Particle Boris push:} Ions are advanced $\mathbf{v}^n \to \mathbf{v}^{n+1}$ using integer-step fields $\mathbf{E}^n, \mathbf{B}^n$; positions are updated as $\mathbf{x}^{n+1/2} = \mathbf{x}^{n-1/2} + \Delta t\,\mathbf{v}^n$.
   \item \textbf{Kinetic source and boundary updates:} Particle boundary conditions, chemistry, charge exchange, and physical inflow flux injection are evaluated.
-  \item \textbf{Moment deposition:} Ion charge $\rho_q^{n+1/2}$ and mass momentum $(\rho\mathbf{u})_i^{n+1/2}$ are deposited cell-centered. A digital-filter smoothing can be applied to reduce particle noise.
-  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments.
-  \item \textbf{Electric field assembly:} Cell-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} and stored for the subsequent Boris push.
+  \item \textbf{Moment deposition:} Ion charge $\rho_q^{n+1/2}$ and mass momentum $(\rho\mathbf{u})_i^{n+1/2}$ are deposited on the node grid. A digital-filter smoothing can be applied to reduce particle noise.
+  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances the cell-centred $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments; the node-centred $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
+  \item \textbf{Electric field assembly:} The node-centred $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} and stored for the subsequent Boris push.
 \end{enumerate}
-
-To suppress high-frequency PIC shot noise in the Hall term and particle trajectories, an optional exponential moving average of the magnetic field is maintained:
-\begin{equation}
-\mathbf{B}_{\text{avg}}^{n+1} = \alpha \mathbf{B}_{\text{avg}}^n + (1-\alpha)\mathbf{B}^{n+1}, \qquad \alpha = 1 - \frac{1}{N_{\text{avg}}}.
-\end{equation}
-When active, $\mathbf{B}_{\text{avg}}$ replaces the instantaneous $\mathbf{B}$ inside the convection and Hall terms of Ohm's law and in the Boris particle pusher.
 
 \section{Miscellaneous}
 \subsection{Calculate total pressure tensor from sub groups}

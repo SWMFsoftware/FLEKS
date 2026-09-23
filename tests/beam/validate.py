@@ -353,14 +353,85 @@ def _beam_growth_over_time(plots_dir):
     return True, None
 
 
-def validate_plot(test_name):
-    """Plot-output check: FFT-based transverse-wave resonant-wavenumber check.
+def _validate_instability_plot(test_name):
+    """Validate ion beam R-mode instability growth and wave mode excitation."""
+    import numpy as np
 
-    Applies to both the full-PIC and hybrid variants: the hybrid keeps the
-    identical box, guide field, beam ratio/speeds and density, so the FFT check
-    is valid for both solvers.
-    """
+    plots_dir = os.path.join(_run_dir.RUN_DIR, "PC", "plots")
+    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
+    if not out_files:
+        return False, "No .out files found in plots directory"
+
+    frames_bperp = []
+    last_by = None
+    last_bz = None
+    for f in out_files:
+        with open(f, "r", encoding="latin-1") as fp:
+            lines = fp.readlines()
+        if len(lines) < 6:
+            continue
+        vnames = lines[4].split()
+        vidx = {v.upper(): i for i, v in enumerate(vnames)}
+        if "BY" not in vidx or "BZ" not in vidx:
+            continue
+        iby, ibz = vidx["BY"], vidx["BZ"]
+        by_arr = []
+        bz_arr = []
+        for line in lines[5:]:
+            cols = line.split()
+            if len(cols) > max(iby, ibz):
+                try:
+                    by_arr.append(float(cols[iby]))
+                    bz_arr.append(float(cols[ibz]))
+                except ValueError:
+                    pass
+        if by_arr:
+            bperp = np.sqrt(np.array(by_arr)**2 + np.array(bz_arr)**2)
+            frames_bperp.append(float(bperp.max()))
+            last_by = np.array(by_arr)
+            last_bz = np.array(bz_arr)
+
+    if len(frames_bperp) < 2:
+        return False, f"Expected >= 2 valid frames, found {len(frames_bperp)}"
+
+    bperp_0 = frames_bperp[0]
+    bperp_end = frames_bperp[-1]
+
+    if not math.isfinite(bperp_end):
+        return False, "Non-finite values (NaN/Inf) detected in magnetic field"
+
+    if bperp_end <= bperp_0:
+        return False, f"No wave growth: bperp_0={bperp_0:.3e}, bperp_end={bperp_end:.3e}"
+
+    fy = np.abs(np.fft.rfft(last_by))
+    fz = np.abs(np.fft.rfft(last_bz))
+    amps = np.hypot(fy, fz)
+    non_dc_power = np.sum(amps[1:]**2)
+    if non_dc_power <= 0:
+        return False, "No non-DC wave power detected"
+
+    n_dom = int(np.argmax(amps[1:])) + 1
+    dom_frac = float(amps[n_dom]**2 / non_dc_power)
+
+    # Power in the lower half of the spectrum (n <= 16)
+    n_half = len(amps) // 2
+    low_mode_power = np.sum(amps[1:n_half]**2)
+    low_frac = float(low_mode_power / non_dc_power)
+    if low_frac < 0.25:
+        return False, f"Power not concentrated in low modes: low_frac={low_frac:.2f} < 0.25"
+
+    msg = (f"Ion beam instability: Bperp {bperp_0:.2e} -> {bperp_end:.2e} "
+           f"(growth {bperp_end/max(bperp_0, 1e-30):.1f}x), dominant mode n={n_dom} "
+           f"({dom_frac:.1%} power), lower-half power {low_frac:.1%}")
+    logger.debug("    %s", msg)
+    return True, msg
+
+
+def validate_plot(test_name):
+    """Plot-output check: FFT-based transverse-wave resonant-wavenumber check."""
     logger.debug("  --- Validating Output Files (FFT transverse wave) ---")
+    if "instability" in test_name:
+        return _validate_instability_plot(test_name)
     result, reason = _check_beam_transverse_wave()
     if result:
         logger.debug("    [FFT] Beam transverse-wave resonance check: VERIFIED")

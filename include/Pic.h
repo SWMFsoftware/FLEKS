@@ -163,12 +163,6 @@ private:
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
 
-  // Running time-averaged magnetic field for the hybrid solver, only used
-  // inside the generalized Ohm's law and the particle Boris push.
-  amrex::Vector<amrex::MultiFab> centerBavg; // cell-centred <B>
-  amrex::Vector<amrex::MultiFab> nodeBavg;   // node-centred <B>
-  bool isBavgInit = false;                   // first-step copy flag for the EMA
-
   // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
   amrex::Vector<amrex::MultiFab> hypPhi;
@@ -221,17 +215,17 @@ private:
   // Ion moments at J^{n-1/2}; interpolated with current nodePlasma
   // by hstep inside assemble_ohm_E.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
-  // ---- Hybrid cell-centred fields ----
-  // The hybrid step reads/writes these; nodeE/nodeB/nodePlasma are write-only
-  // output mirrors refreshed once per step for plot/restart/tracker paths.
-  amrex::Vector<amrex::MultiFab> centerEhybrid;
-  amrex::Vector<amrex::MultiFab> centerJ;
-  amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B
-  amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
-  // Per-species moments
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma;
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaSum;
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaPrev;
+  // ---- Staggered hybrid solver fields ----
+  amrex::Vector<amrex::MultiFab> nodeEstage; // E at a stage B (nodal)
+  amrex::Vector<amrex::MultiFab> nodeJ;      // total current J = curl(B)/(4*pi)
+                                             // (nodal)
+  amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
+                                             // stages
+  amrex::Vector<amrex::MultiFab> centerPe;  // electron pressure at cell centers
+  amrex::Vector<amrex::MultiFab> nodeEambi; // ambipolar electric field
+                                            // -grad(Pe)/(e*ne) at nodes
+  amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated
+                                              // density
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -290,10 +284,6 @@ private:
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
-
-  // EMA-averaged B fed to Ohm's law and Boris push.
-  bool useAvgFieldB = false;
-  int nAvgFieldB = 10;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
@@ -369,12 +359,12 @@ public:
     centerLapB.resize(n_lev_max());
     nodeHyperE.resize(n_lev_max());
     centerBstage.resize(n_lev_max());
-    centerEhybrid.resize(n_lev_max());
-    centerJ.resize(n_lev_max());
-    centerEstage.resize(n_lev_max());
-    centerHyperE.resize(n_lev_max());
-    centerBavg.resize(n_lev_max());
-    nodeBavg.resize(n_lev_max());
+    nodeEstage.resize(n_lev_max());
+    nodeJ.resize(n_lev_max());
+    nodeBstage.resize(n_lev_max());
+    centerPe.resize(n_lev_max());
+    nodeEambi.resize(n_lev_max());
+    nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
     kStage.resize(n_lev_max());
@@ -440,8 +430,7 @@ public:
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
   // 2nd-order conservative with slope limiting) for higher accuracy at
   // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
-  // (cell_bilinear_interp) since the cell-centred fields are output-only
-  // mirrors.
+  // (cell_bilinear_interp).
   amrex::Interpolater *get_cell_interp() const {
     return useHybridPIC
                ? static_cast<amrex::Interpolater *>(&amrex::lincc_interp)
@@ -490,10 +479,6 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
-  bool is_inside_cell_plot_region(const PlotWriter &writerIn, int const ix,
-                                  int const iy, int const iz, double const x,
-                                  double const y, double const z) const;
-
   // Convert SI input parameters to code units after normalization is finalized.
   void finalize_units_conversion();
   void convert_resistivity();
@@ -569,23 +554,23 @@ public:
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   void smooth_moments();
   void update_B_hybrid();
-  void project_centerB_to_nodeB(int iLev);
-  // Apply periodic and physical boundary conditions to cell-centred B
-  // (e.g. intermediate RK trial states that need fresh ghosts for Ohm's law
-  // stencils).
+  // Apply periodic and physical boundary conditions (and coarse-fine interface
+  // ghosts on refined levels) to the cell-centred B, e.g. for intermediate RK
+  // trial states that need fresh ghosts for the Ohm's law stencils.
   void apply_centerB_BC(int iLev);
   void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
-  void project_centerB_to_nodeB_scratch(amrex::MultiFab &centerIn,
-                                        amrex::MultiFab &nodeOut, int iLev);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion
-  // moments are time-interpolated between centerPlasmaPrev (J^{n-1/2}) and
-  // centerPlasmaSum (J^{n+1/2}) at the sub-step fraction `hstep`: X =
+  // moments are time-interpolated between nodePlasmaPrev (J^{n-1/2}) and
+  // nodePlasma (J^{n+1/2}) at the sub-step fraction `hstep`: X =
   // (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
   void assemble_ohm_E(const amrex::MultiFab &centerBin,
                       const amrex::MultiFab &centerBtimeAvg,
-                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep);
+                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep,
+                      bool includeAmbi = true);
+  void compute_ambipolar_E();
+  void compute_ambipolar_E(int iLev);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 
@@ -669,10 +654,6 @@ public:
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
                          const BoxBC<FieldBC::Type> &bc, bool isB);
-
-  // Mirror ion moments into physical-wall ghost cells (hybrid solver).
-  void apply_centerPlasma_BC(const amrex::iMultiFab &status,
-                             amrex::MultiFab &mf, const int iLev);
 
   // Inject wave source into boundary ghost cells (iField: 0 = B, 1 = E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
