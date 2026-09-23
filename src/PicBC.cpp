@@ -113,66 +113,41 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (!func)
     return;
 
-  const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
-
-  // Precompute Dirichlet faces and early-exit if no face requires fill_ext_dir.
-  GpuArray<bool, 3> isDirLo{ false, false, false };
-  GpuArray<bool, 3> isDirHi{ false, false, false };
-  if (bc != nullptr) {
-    bool hasExtDir = false;
-    for (int d = 0; d < nDim; ++d) {
-      if (bnd.bcLo[d] == FieldBC::coupled || bnd.bcLo[d] == FieldBC::fixed ||
-          bnd.bcLo[d] == FieldBC::wave) {
-        isDirLo[d] = true;
-        hasExtDir = true;
-      }
-      if (bnd.bcHi[d] == FieldBC::coupled || bnd.bcHi[d] == FieldBC::fixed ||
-          bnd.bcHi[d] == FieldBC::wave) {
-        isDirHi[d] = true;
-        hasExtDir = true;
-      }
-    }
-    if (!hasExtDir)
-      return;
-  }
-
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
-  const Box& domainBox = Geom(iLev).Domain();
-
-  const GpuArray<int, 3> loBnd{ bnd.loBnd[0], bnd.loBnd[1], bnd.loBnd[2] };
-  const GpuArray<int, 3> hiBnd{ bnd.hiBnd[0], bnd.hiBnd[1], bnd.hiBnd[2] };
+  const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     if (ba.contains(bxFab))
       continue;
 
-    // Interior fabs contain no cells outside physical domain bounds.
-    if (bc != nullptr && domainBox.contains(bxFab))
-      continue;
-
     Array4<Real> const arr = mf.array(mfi);
     Array4<const int> const statusArr = status.array(mfi);
 
     // Note: [&mfi] is retained because host member-function pointer func
-    // requires mfi. All other data (arrays, bounds, flags) are captured by
-    // value for GPU readiness when device functors are introduced.
+    // requires mfi. All other data are captured by value for GPU readiness.
     ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
+      // If at an outer physical boundary with non-Dirichlet condition,
+      // PhysBCFunct and dedicated wall operators handle it.
       if (bc != nullptr) {
         const int ijk[3] = { i, j, k };
-        bool onDirFace = false;
+        bool skipForPhysWall = false;
         for (int d = 0; d < nDim; ++d) {
-          if ((isDirLo[d] && ijk[d] < loBnd[d]) ||
-              (isDirHi[d] && ijk[d] > hiBnd[d])) {
-            onDirFace = true;
+          if ((ijk[d] < bnd.loBnd[d] && (bnd.bcLo[d] == FieldBC::outflow ||
+                                         bnd.bcLo[d] == FieldBC::inflow ||
+                                         bnd.bcLo[d] == FieldBC::conducting)) ||
+              (ijk[d] > bnd.hiBnd[d] && (bnd.bcHi[d] == FieldBC::outflow ||
+                                         bnd.bcHi[d] == FieldBC::inflow ||
+                                         bnd.bcHi[d] == FieldBC::conducting))) {
+            skipForPhysWall = true;
             break;
           }
         }
-        if (!onDirFace)
+        if (skipForPhysWall)
           return;
       }
 
@@ -205,8 +180,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       fill_ext_dir(status, mf, iStart, nComp, func, iLev, bc);
     }
   } else if (func == nullptr) {
-    // Pure floating / extrapolation BC on physical boundaries (e.g. scratch
-    // scalars)
+    // Float / extrapolation BC on physical and embedded level boundaries:
+    // 1. Native AMReX foextrap at physical domain boundaries:
     Vector<BCRec> bcr(nComp);
     for (int c = 0; c < nComp; ++c) {
       for (int d = 0; d < AMREX_SPACEDIM; ++d) {
@@ -222,6 +197,41 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     GpuBndryFuncFab<FabFillNoOp> bfunc(FabFillNoOp{});
     PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
     physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
+
+    // 2. Extrapolate from nearest valid neighbor for embedded active-region
+    // boundaries:
+    const BoxArray ba =
+        get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bxFab = mfi.fabbox();
+      const Box& bxValid = mfi.validbox();
+      if (!ba.contains(bxFab)) {
+        Array4<Real> const& arr = mf[mfi].array();
+        const Array4<const int>& statusArr = status[mfi].array();
+        Box box = bxValid;
+        box.grow(1);
+        ParallelFor(box, [&](int i, int j, int k) {
+          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
+            bool isNeiFound = false;
+            const int kmin = (nDim > 2) ? -1 : 0;
+            const int kmax = (nDim > 2) ? 1 : 0;
+            for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
+              for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
+                for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
+                  if (!bit::is_lev_boundary(
+                          statusArr(i + ii, j + jj, k + kk, 0))) {
+                    isNeiFound = true;
+                    for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
+                      arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
   } else {
     fill_ext_dir(status, mf, iStart, nComp, func, iLev, nullptr);
   }
