@@ -1,6 +1,8 @@
 #include <cstdlib>
 
 #include <AMReX_ParReduce.H>
+#include <AMReX_ParticleInterpolators.H>
+#include <AMReX_ParticleReduce.H>
 
 #include "InitialCondition.h"
 #include "Morton.h"
@@ -34,13 +36,15 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
                                                        int iLev) {
   timing_func("Pts::sum_to_center");
 
+  const auto plo = Geom(iLev).ProbLoArray();
+  const auto dxi = Geom(iLev).InvCellSizeArray();
+  const Real invV = invVol[iLev];
+  const int iqp = iqp_;
+
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const& mmArr = centerMM[pti].array();
     const AoS& particles = pti.GetArrayOfStructs();
-
-    const Dim3 lo = init_dim3(0);
-    const Dim3 hi = init_dim3(1);
 
     for (const auto& p : particles) {
       /*
@@ -49,24 +53,20 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
       divE_correct_position(), but these particles should be take into account
       here.
       */
-
-      // Print() << "particle = " << p << std::endl;
-
-      const Real qp = p.rdata(iqp_);
-
-      //-----calculate interpolate coef begin-------------
-      IntVect loIdx;
-      RealVect dShift;
-      Real coef[2][2][2];
-      find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
-      //-----calculate interpolate coef end-------------
-
-      const Real cTmp = qp * invVol[iLev];
-      deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
+      ParticleInterpolator::Linear interp(p, plo, dxi);
+      interp.ParticleToMesh(
+          p, chargeArr, 0, 0, 1,
+          [=] AMREX_GPU_DEVICE(const ParticleType& part, int /*comp*/) {
+            return part.rdata(iqp) * invV;
+          });
 
       if (!doNetChargeOnly) {
-        accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp, mmArr);
+        const IntVect loIdx(
+            AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
+        const RealVect dShift(
+            AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
+        accumulate_mass_matrix_contribution(iLev, loIdx, dShift, p.rdata(iqp),
+                                            mmArr);
       } // if doChargeOnly
 
     } // for p
@@ -192,33 +192,37 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
     bool localOnly) {
   timing_func("Pts::total_moments");
 
-  std::array<Real, 5> sum = { 0, 0, 0, 0, 0 };
-
-  for (int i = 0; i < 5; ++i)
-    sum[i] = 0;
-
   const int iLev = 0;
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    const AoS& particles = pti.GetArrayOfStructs();
-    for (const auto& p : particles) {
-      if (p.id() < 0)
-        continue;
+  const int iup = iup_;
+  const int ivp = ivp_;
+  const int iwp = iwp_;
+  const int iqp = iqp_;
 
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
+  amrex::ReduceOps<ReduceOpSum, ReduceOpSum, ReduceOpSum, ReduceOpSum,
+                   ReduceOpSum>
+      reduce_ops;
+  auto r = amrex::ParticleReduce<ReduceData<Real, Real, Real, Real, Real> >(
+      *this, iLev,
+      [=] AMREX_GPU_DEVICE(const ParticleType& p)
+          noexcept -> amrex::GpuTuple<Real, Real, Real, Real, Real> {
+            if (p.id() < 0) {
+              return { 0.0, 0.0, 0.0, 0.0, 0.0 };
+            }
+            const Real up = p.rdata(iup);
+            const Real vp = p.rdata(ivp);
+            const Real wp = p.rdata(iwp);
+            const Real qp = p.rdata(iqp);
+            return { qp, qp * up, qp * vp, qp * wp,
+                     0.5 * qp * (up * up + vp * vp + wp * wp) };
+          },
+      reduce_ops);
 
-      sum[0] += qp;
-      sum[1] += qp * up;
-      sum[2] += qp * vp;
-      sum[3] += qp * wp;
-      sum[4] += 0.5 * qp * (up * up + vp * vp + wp * wp);
-    }
-  }
-
-  for (int i = 0; i < 5; ++i)
-    sum[i] *= qomSign * get_mass();
+  const Real factor = qomSign * get_mass();
+  std::array<Real, 5> sum = { amrex::get<0>(r) * factor,
+                              amrex::get<1>(r) * factor,
+                              amrex::get<2>(r) * factor,
+                              amrex::get<3>(r) * factor,
+                              amrex::get<4>(r) * factor };
 
   if (!localOnly) {
     ParallelDescriptor::ReduceRealSum(sum.data(), sum.size(),
