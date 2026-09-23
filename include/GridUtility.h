@@ -8,6 +8,7 @@
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_ParticleInterpolators.H>
 #include <AMReX_PhysBCFunct.H>
 
 #include "Bit.h"
@@ -127,6 +128,133 @@ inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
  * @param loIdx The calculated node index.
  * @param dShift The calculated shift.
  */
+namespace amrex::ParticleInterpolator {
+
+namespace detail {
+template <typename P>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real get_particle_pos(
+    const P& p, int dim) {
+  if constexpr (std::is_same_v<std::decay_t<P>, amrex::RealVect>) {
+    return p[dim];
+  } else {
+    return p.pos(dim);
+  }
+}
+} // namespace detail
+
+/**
+ * \brief A class that implements linear (CIC/trilinear) node-centered
+ * particle/mesh interpolation.
+ *
+ * Stencil width is 2. The lower node index is floor((pos - plo) * invDx),
+ * and weights are (1 - dShift, dShift) along each dimension.
+ */
+struct NodeLinear : public Base<NodeLinear, amrex::Real> {
+  static constexpr int stencil_width = 2;
+
+  static constexpr int nx = (AMREX_SPACEDIM >= 1) ? stencil_width - 1 : 0;
+  static constexpr int ny = (AMREX_SPACEDIM >= 2) ? stencil_width - 1 : 0;
+  static constexpr int nz = (AMREX_SPACEDIM >= 3) ? stencil_width - 1 : 0;
+
+  amrex::Real weights[3 * stencil_width];
+
+  template <typename P>
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE NodeLinear(
+      const P& p, amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& plo,
+      amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dxi) {
+    w = &weights[0];
+    for (int i = 0; i < AMREX_SPACEDIM; ++i) {
+      amrex::Real pos = detail::get_particle_pos(p, i);
+      amrex::Real l = (pos - plo[i]) * dxi[i];
+      index[i] = static_cast<int>(amrex::Math::floor(l));
+      amrex::Real lint = l - index[i];
+      w[stencil_width * i + 0] = 1.0 - lint;
+      w[stencil_width * i + 1] = lint;
+    }
+    for (int i = AMREX_SPACEDIM; i < 3; ++i) {
+      index[i] = 0;
+      w[stencil_width * i + 0] = 1.0;
+      w[stencil_width * i + 1] = 0.0;
+    }
+  }
+
+  template <typename P>
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE NodeLinear(const P& p,
+                                                      const amrex::Real* plo,
+                                                      const amrex::Real* dxi) {
+    w = &weights[0];
+    for (int i = 0; i < AMREX_SPACEDIM; ++i) {
+      amrex::Real pos = detail::get_particle_pos(p, i);
+      amrex::Real l = (pos - plo[i]) * dxi[i];
+      index[i] = static_cast<int>(amrex::Math::floor(l));
+      amrex::Real lint = l - index[i];
+      w[stencil_width * i + 0] = 1.0 - lint;
+      w[stencil_width * i + 1] = lint;
+    }
+    for (int i = AMREX_SPACEDIM; i < 3; ++i) {
+      index[i] = 0;
+      w[stencil_width * i + 0] = 1.0;
+      w[stencil_width * i + 1] = 0.0;
+    }
+  }
+};
+
+/**
+ * \brief A class that implements linear (CIC/trilinear) cell-centered
+ * particle/mesh interpolation supporting both Particle types and RealVect.
+ */
+struct CellLinear : public Base<CellLinear, amrex::Real> {
+  static constexpr int stencil_width = 2;
+
+  static constexpr int nx = (AMREX_SPACEDIM >= 1) ? stencil_width - 1 : 0;
+  static constexpr int ny = (AMREX_SPACEDIM >= 2) ? stencil_width - 1 : 0;
+  static constexpr int nz = (AMREX_SPACEDIM >= 3) ? stencil_width - 1 : 0;
+
+  amrex::Real weights[3 * stencil_width];
+
+  template <typename P>
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE CellLinear(
+      const P& p, amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& plo,
+      amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dxi) {
+    w = &weights[0];
+    for (int i = 0; i < AMREX_SPACEDIM; ++i) {
+      amrex::Real pos = detail::get_particle_pos(p, i);
+      amrex::Real l = (pos - plo[i]) * dxi[i] + 0.5;
+      index[i] = static_cast<int>(amrex::Math::floor(l)) - 1;
+      amrex::Real lint = l - (index[i] + 1);
+      w[stencil_width * i + 0] = 1.0 - lint;
+      w[stencil_width * i + 1] = lint;
+    }
+    for (int i = AMREX_SPACEDIM; i < 3; ++i) {
+      index[i] = 0;
+      w[stencil_width * i + 0] = 1.0;
+      w[stencil_width * i + 1] = 0.0;
+    }
+  }
+
+  template <typename P>
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE CellLinear(const P& p,
+                                                      const amrex::Real* plo,
+                                                      const amrex::Real* dxi) {
+    w = &weights[0];
+    for (int i = 0; i < AMREX_SPACEDIM; ++i) {
+      amrex::Real pos = detail::get_particle_pos(p, i);
+      amrex::Real l = (pos - plo[i]) * dxi[i] + 0.5;
+      index[i] = static_cast<int>(amrex::Math::floor(l)) - 1;
+      amrex::Real lint = l - (index[i] + 1);
+      w[stencil_width * i + 0] = 1.0 - lint;
+      w[stencil_width * i + 1] = lint;
+    }
+    for (int i = AMREX_SPACEDIM; i < 3; ++i) {
+      index[i] = 0;
+      w[stencil_width * i + 0] = 1.0;
+      w[stencil_width * i + 1] = 0.0;
+    }
+  }
+};
+
+} // namespace amrex::ParticleInterpolator
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_node_index(
     const amrex::RealVect& xyz, const amrex::Real* const plo,
     const amrex::Real* const invDx, amrex::IntVect& loIdx,
@@ -163,7 +291,10 @@ inline void find_node_interpolation(const amrex::RealVect& xyz,
                                     amrex::IntVect& loIdx,
                                     amrex::RealVect& dShift,
                                     amrex::Real (&coef)[2][2][2]) {
-  find_node_index(xyz, plo, invDx, loIdx, dShift);
+  amrex::ParticleInterpolator::NodeLinear interp(xyz, plo, invDx);
+  loIdx = amrex::IntVect(
+      AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
+  dShift = amrex::RealVect(AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
   linear_interpolation_coef(dShift, coef);
 }
 
@@ -173,7 +304,10 @@ inline void find_cell_interpolation(const amrex::RealVect& xyz,
                                     amrex::IntVect& loIdx,
                                     amrex::RealVect& dShift,
                                     amrex::Real (&coef)[2][2][2]) {
-  find_cell_index(xyz, plo, invDx, loIdx, dShift);
+  amrex::ParticleInterpolator::CellLinear interp(xyz, plo, invDx);
+  loIdx = amrex::IntVect(
+      AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
+  dShift = amrex::RealVect(AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
   linear_interpolation_coef(dShift, coef);
 }
 
