@@ -136,9 +136,9 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
       const MultiFab* jacPtr =
           (ptRecordSize > 13 && !nodeJacB.empty() && doRecord) ? &nodeJacB[iLev]
                                                                : nullptr;
-      tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev],
-                                   tc->get_dt(), tc->get_next_dt(),
-                                   tc->get_time_si(), doRecord, jacPtr);
+      tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev], tc->get_dt(),
+                                   tc->get_next_dt(), tc->get_time_si(),
+                                   doRecord, jacPtr);
     }
 
     if (doRecord && tps->get_dt_save() > 0.0) {

@@ -114,8 +114,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         RealVect dShift;
 
         Real coef[2][2][2];
-        find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift,
-                                coef);
+        find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
         //-----calculate interpolate coef end-------------
 
         Real bp[3] = { 0, 0, 0 };

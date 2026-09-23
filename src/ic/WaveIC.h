@@ -79,14 +79,14 @@ private:
   amrex::Real waveLength_ = 48.0;        // wavelength in cells (oblique)
   int waveMode_ = 1;                     // mode number for x-aligned kx
   amrex::Real frac_ = 0.02;              // B perturbation amplitude (B1/Bx0)
-  amrex::Real pert_ = 0.1;              // density perturbation amplitude
+  amrex::Real pert_ = 0.1;               // density perturbation amplitude
   amrex::Real anisoTPerpOverTPar_ = 0.0; // T_perp/T_par (0 = isotropic)
   // Gaussian pulse width (0 = disabled, use global sinusoidal mode).
   // When > 0 the sinusoidal seed is multiplied by
   //   exp(-((x - xCenter_) / gaussWidth_)^2)
   // giving a spatially localised Alfven pulse.
   amrex::Real gaussWidth_ = 0.0;
-  amrex::Real xCenter_ = 0.0;           // Gaussian pulse centre (code units)
+  amrex::Real xCenter_ = 0.0; // Gaussian pulse centre (code units)
   // Transverse velocity kick in units of the Alfvenic one (u_perp = -f * B1).
   // 1.0 is the incompressible Alfven relation u_perp = -B_perp/B0; the whistler
   // eigenmode needs -(k d_i)/(omega/Omega_i) instead (see PARAM.XML).

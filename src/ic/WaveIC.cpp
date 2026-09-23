@@ -73,7 +73,7 @@ void WaveIC::apply_preset() {
       guideField_ = true;
       velKick_ = false;
       seedWeight_ = false;
-      waveMode_ = 0;     // kx = 0: cos(0) = 1, pure Gaussian envelope
+      waveMode_ = 0; // kx = 0: cos(0) = 1, pure Gaussian envelope
       frac_ = 0.02;
       gaussWidth_ = 0.0; // updated in set_fields to L/4 if still 0
       xCenter_ = 0.0;    // default: centre of domain

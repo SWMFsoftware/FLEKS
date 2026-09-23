@@ -98,8 +98,7 @@ void ForceFreeIC::set_fields(PicICFields& fields) const {
         const amrex::Real dbx = -perturb * b0 * (0.5 * Lx * invLy) *
                                 std::cos(2.0 * dPI * x * invLx) *
                                 std::sin(dPI * y * invLy);
-        const amrex::Real dby = perturb * b0 *
-                                std::sin(2.0 * dPI * x * invLx) *
+        const amrex::Real dby = perturb * b0 * std::sin(2.0 * dPI * x * invLx) *
                                 std::cos(dPI * y * invLy);
         const amrex::Real bz = std::sqrt(bg * bg + b0 * b0 * sech * sech);
 
@@ -123,8 +122,7 @@ void ForceFreeIC::set_fields(PicICFields& fields) const {
         const amrex::Real dbx = -perturb * b0 * (0.5 * Lx * invLy) *
                                 std::cos(2.0 * dPI * x * invLx) *
                                 std::sin(dPI * y * invLy);
-        const amrex::Real dby = perturb * b0 *
-                                std::sin(2.0 * dPI * x * invLx) *
+        const amrex::Real dby = perturb * b0 * std::sin(2.0 * dPI * x * invLx) *
                                 std::cos(dPI * y * invLy);
         const amrex::Real bz = std::sqrt(bg * bg + b0 * b0 * sech * sech);
 
