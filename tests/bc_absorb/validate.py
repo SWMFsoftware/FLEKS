@@ -19,6 +19,7 @@ import math
 import os
 
 from tests._shared import run_dir as _run_dir
+from tests._shared.validators import validate_hybrid_energy_bounded
 
 logger = logging.getLogger(__name__)
 
@@ -94,24 +95,12 @@ def _validate_log_particles(e0, e1, first, last):
 
 def _validate_log_hybrid_fields(pic_diags):
     """Hybrid fields: run stays finite, positive, and energy remains bounded."""
-    e0 = pic_diags[0].get("Etot", 0.0)
-    finite = all(
-        math.isfinite(d.get("Etot", 0.0)) and
-        math.isfinite(d.get("Epart", 0.0)) for d in pic_diags
+    return validate_hybrid_energy_bounded(
+        pic_diags,
+        growth_max=ETOT_GROWTH_MAX,
+        test_label="Absorbing Field Wall",
+        logger=logger,
     )
-    e1 = pic_diags[-1].get("Etot", 0.0)
-    logger.debug("    Etot: %.4e -> %.4e (%.1f growth)", e0, e1,
-                 1.0 if e0 == 0 else e1 / e0)
-
-    if not finite:
-        return False, "Non-finite energy (NaN/Inf) in energy log"
-    if e0 <= 0 or e1 <= 0:
-        return False, "Non-positive total energy (plasma not initialised / drained)"
-    if e0 > 0 and e1 > ETOT_GROWTH_MAX * e0:
-        return False, (f"Etot grew from {e0:.3e} to {e1:.3e} "
-                       f"(>{ETOT_GROWTH_MAX:.0f}x) -- field-wall instability")
-
-    return True, "Passed (finite, bounded energy => absorbing field wall is stable)"
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +110,8 @@ def _load_last_out():
     return _run_dir.load_last_out()
 
 
-def _col(vidx, rows, name):
-    i = vidx.get(name)
-    if i is None or not rows or i >= len(rows[0]):
-        return None
-    return [r[i] for r in rows]
+# Use the shared col() helper from run_dir instead of a local copy.
+_col = _run_dir.col
 
 
 def validate_plot(test_name):

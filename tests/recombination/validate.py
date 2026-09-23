@@ -7,6 +7,8 @@ remains stable since H+ does not participate in recombination.
 """
 import logging
 
+from tests._shared.validators import log_epart_header
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,10 +36,7 @@ def validate_log(pic_diags=None, test_name=None):
         logger.debug("  [INFO] No per-species energy columns; skipping.")
         return True, "Passed (no Epart columns)"
 
-    logger.debug("  --- Energy Diagnostics (from log_pic log) ---")
-    for k in epart_keys:
-        logger.debug("    %s: %s -> %s",
-                     k, f"{first.get(k, 0):.6e}", f"{last.get(k, 0):.6e}")
+    log_epart_header(first, last, epart_keys, logger)
 
     passed = True
     reasons = []

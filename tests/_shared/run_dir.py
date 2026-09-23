@@ -46,3 +46,29 @@ def _read_out_file(out_file):
         except ValueError:
             continue
     return vidx, rows
+
+
+def col(vidx, rows, name):
+    """Return the column array for *name* from a parsed .out frame.
+
+    Parameters
+    ----------
+    vidx : dict or None
+        Column-name → index map returned by ``load_last_out`` / ``_read_out_file``.
+    rows : list[list[float]] or None
+        Data rows returned by the same functions.
+    name : str
+        Upper-case variable name (e.g. ``"BX"``, ``"RHOS0"``).
+
+    Returns
+    -------
+    list[float] or None
+        The column values, or ``None`` if the variable is absent or data
+        is missing.
+    """
+    if vidx is None or rows is None:
+        return None
+    i = vidx.get(name)
+    if i is None or not rows or i >= len(rows[0]):
+        return None
+    return [r[i] for r in rows]

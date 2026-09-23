@@ -10,6 +10,8 @@ import logging
 import math
 import os
 
+from tests._shared import run_dir as _run_dir
+
 logger = logging.getLogger(__name__)
 
 # Loose energy tolerances: the state is steady but the open boundaries inject
@@ -104,11 +106,8 @@ def _load_out(out_file):
     return vidx, rows
 
 
-def _col(vidx, rows, name):
-    i = vidx.get(name)
-    if i is None or not rows or i >= len(rows[0]):
-        return None
-    return [r[i] for r in rows]
+# Use the shared col() helper from run_dir instead of a local copy.
+_col = _run_dir.col
 
 
 def _mean(vals):
