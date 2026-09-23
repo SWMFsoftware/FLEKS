@@ -566,25 +566,15 @@ public:
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
+  // Field gather at the nodes + Boris push. The hybrid solver projects its
+  // cell-centred B onto the nodes (project_centerB_to_nodeB), so both solvers
+  // sample the same way; eBg and uBg belong to the signature for the
+  // co-moving-background cases but are not needed by this push.
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext);
-
-  // Where the fields are sampled for the Boris push.
-  enum class FieldSampling { Node, CellCentered };
-
-  // Field gather + Boris push shared by the charged-particle movers. The
-  // hybrid solver projects its cell-centred B onto the nodes
-  // (project_centerB_to_nodeB), so the full-PIC and the hybrid path both
-  // sample at nodes today; the cell-centred sampling point is kept because it
-  // costs nothing here and is the natural fallback if a solver ever wants the
-  // staggered fields directly.
-  void charged_particle_mover_impl(const amrex::Vector<amrex::MultiFab>& EGrid,
-                                   const amrex::Vector<amrex::MultiFab>& BGrid,
-                                   amrex::Real dt, amrex::Real dtNext,
-                                   FieldSampling sampling);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);
