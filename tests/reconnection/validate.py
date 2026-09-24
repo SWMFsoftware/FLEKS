@@ -1,5 +1,37 @@
 #!/usr/bin/env python3
-"""Validator for the Fadeev reconnection test (see tests/reconnection/README)."""
+"""Validator for all magnetic reconnection tests (Fadeev, GEM, Asymmetric, Force-Free).
+
+Validation checks performed for every test variant
+---------------------------------------------------
+1. **Energy log sanity** (``validate_log``)
+   - Kinetic ion energy ``Epart`` and magnetic energy ``Eb`` are finite (no NaN/Inf).
+   - ``Eb`` remains bounded — a >10× increase is flagged as a numerical blow-up,
+     not physical reconnection-driven energy conversion.
+
+2. **Equilibrium initialisation at t=0** (variant-specific):
+   - Fadeev: O-points at x ≈ ±π L ≈ ±15.7 dᵢ; peak sheet density ≈ 1,
+     background ≈ 0.2.
+   - GEM Challenge: Harris-sheet field reversal (Bx → ±1 at top/bottom);
+     central X-point null at x ≈ 0; peak density in (0.9, 1.5), background < 0.4.
+   - Asymmetric: central Bx ≈ +1.0 (B₁), outer Bx ≈ −2.0 (−B₂);
+     sheet density enhancement in (0.5, 1.6), background < 0.4.
+   - Force-Free: boundary Bx → ±b₀; midplane Bz ≈ √(bg²+b₀²); uniform total
+     magnetic pressure |B|² ≈ b₀²+bg² (<5% relative variation); midplane
+     anti-symmetry of Bx.
+
+3. **Reconnection dynamics**:
+   - Seeded in-plane field perturbation grows nonlinearly (δBy increases).
+   - Out-of-plane flux function Ay at the X-point changes, confirming active
+     magnetic-flux reconnection.
+
+4. **Quasi-neutrality** (full-PIC only):
+   - |ρS0 − ρS1·mass_ratio| / ρ₀_max < 0.5, verifying macroparticle charge
+     scaling and electron-mass loading.
+
+5. **GEM conducting-wall boundary condition** (GEM only):
+   - Tangential E (Ex, Ez) = 0 at y = ±ymax walls (< 1×10⁻⁴ tolerance).
+   - Normal E (Ey) bounded at walls (< 0.2 tolerance).
+"""
 import glob
 import logging
 import math
@@ -56,6 +88,29 @@ def _load_frame(path):
     return ux, uy, bx, by, bz, rho, rhoS1
 
 
+def _load_efield(path):
+    """Parse Ex, Ey, Ez from a ``z=0`` .out file."""
+    lines = open(path, encoding="latin-1").read().splitlines()
+    if len(lines) < 6:
+        return None
+    names = lines[4].split()[:19]
+    idx = {v: i for i, v in enumerate(names)}
+    if "Ex" not in idx or "Ey" not in idx or "Ez" not in idx:
+        return None
+    rows = [ln.split() for ln in lines[5:] if len(ln.split()) >= 19]
+    if not rows:
+        return None
+    data = np.array([r[:19] for r in rows], dtype=float)
+    x = data[:, idx["x"]]
+    y = data[:, idx["y"]]
+    nx = len(np.unique(np.round(x, 3)))
+    ny = len(np.unique(np.round(y, 3)))
+    ex = data[:, idx["Ex"]].reshape(ny, nx)
+    ey = data[:, idx["Ey"]].reshape(ny, nx)
+    ez = data[:, idx["Ez"]].reshape(ny, nx)
+    return ex, ey, ez
+
+
 def _flux_function(bx, bz, dx):
     """Out-of-plane flux function Ay(x,y) from B = curl(A).
 
@@ -107,13 +162,11 @@ def _island_opoints(x, f):
 def validate_log(pic_diags=None, test_name=None):
     """Energy-log sanity for the reconnection run.
 
-    Unlike the wave-family tests, the kinetic-ion energy Epart is *expected* to
-    grow substantially: magnetic reconnection converts stored magnetic energy
-    into ion kinetic energy.  So we only require
-      1. finite magnetic and ion energies (no NaN / blow-up), and
-      2. bounded magnetic-energy growth (Eb must not blow up by orders of
-         magnitude, which would signal a solver instability rather than a
-         physical reconnection-driven conversion).
+    Magnetic reconnection converts stored magnetic energy into ion kinetic
+    energy, so Epart is *expected* to grow.  Checks:
+      1. Eb and Epart are finite (no NaN/Inf).
+      2. Eb stays bounded: a >10× increase flags a numerical blow-up rather
+         than physical reconnection-driven conversion.
     """
     if not pic_diags or len(pic_diags) < 2:
         return True, "Passed (no pic log)"
@@ -178,8 +231,15 @@ def _check_charge_neutrality(frames, mass_ratio=MASS_RATIO):
 
 
 def _validate_fadeev_plot(test_name, frames):
-    """Fadeev reconnection plot check: equilibrium init, perturbation growth,
-    flux (Ay) change at the X-point, and O-point motion."""
+    """Fadeev reconnection plot checks.
+
+    1. Equilibrium at t=0: O-points at x ≈ ±π·L ≈ ±15.7 dᵢ (within ~dx
+       or 0.35·L); peak sheet density in (0.5, 2.0), background < 0.6.
+    2. Perturbation growth: late max|δBy| > 0.1 (hybrid) or 0.03 (full-PIC).
+    3. Flux change: Ay span at the central X-point > 0.05.
+    4. O-point motion monitored (warning if < 0.2 dᵢ).
+    5. Quasi-neutrality (full-PIC): max charge imbalance < 0.5.
+    """
     # ---- (1) Equilibrium initialization at t=0 ----
     ux, uy, bx0, by0, bz0, rho0, rhoS1_0 = frames[0][1]
     dx = ux[1] - ux[0]
@@ -270,7 +330,16 @@ def _validate_fadeev_plot(test_name, frames):
 
 
 def _validate_gem_plot(test_name, frames):
-    """GEM challenge reconnection plot checks (equilibrium, perturbation, flux, neutrality)."""
+    """GEM Challenge (Birn et al. 2001) reconnection plot checks.
+
+    1. Harris-sheet equilibrium at t=0: Bx → ±1 at top/bottom boundaries;
+       central X-point null at x ≈ 0; peak density in (0.9, 1.5),
+       background < 0.4.
+    2. Perturbation growth: late max|δBy| > 0.012 (hybrid) or 0.015 (full-PIC).
+    3. Quasi-neutrality (full-PIC): max charge imbalance < 0.5.
+    4. Conducting-wall BC: tangential E (Ex, Ez) < 1×10⁻⁴ and normal Ey < 0.2
+       at y = ±ymax boundaries.
+    """
     ux, uy, bx0, by0, bz0, rho0, rhoS1_0 = frames[0][1]
     dx = ux[1] - ux[0]
     j0 = int(np.argmin(np.abs(uy)))
@@ -328,13 +397,42 @@ def _validate_gem_plot(test_name, frames):
     if not ok_neutral:
         return False, err_neutral
 
+    # 4. Electric field at conducting / reflecting walls (y_min and y_max)
+    for path, _ in frames:
+        efield = _load_efield(path)
+        if efield is None:
+            continue
+        ex, ey, ez = efield
+        for j_bnd, bnd_name in [(0, "bottom"), (-1, "top")]:
+            ex_bnd = ex[j_bnd, :]
+            ez_bnd = ez[j_bnd, :]
+            ey_bnd = ey[j_bnd, :]
+            max_tan_e = max(float(np.abs(ex_bnd).max()), float(np.abs(ez_bnd).max()))
+            if max_tan_e > 1e-4:
+                return False, (
+                    f"Tangential electric field non-zero at {bnd_name} conducting wall: "
+                    f"max|E_tan| = {max_tan_e:.4e} (file {os.path.basename(path)})"
+                )
+            max_norm_e = float(np.abs(ey_bnd).max())
+            if max_norm_e > 0.2:
+                return False, (
+                    f"Normal electric field Ey spiked at {bnd_name} wall: "
+                    f"max|Ey| = {max_norm_e:.4e} > 0.2 (file {os.path.basename(path)})"
+                )
+
     msg = f"GEM reconnection: By perturbation late={late_amp:.3f}, Ay span={ay_span:.4f}"
     logger.debug("    %s", msg)
     return True, msg
 
 
 def _validate_asym_plot(test_name, frames):
-    """Asymmetric double current-sheet reconnection plot checks."""
+    """Asymmetric double current-sheet reconnection plot checks.
+
+    1. Asymmetric field at t=0: central Bx ≈ +1.0 (B₁ = 1.0); outer Bx ≈ −2.0
+       (−B₂ = −2.0); sheet density in (0.5, 1.6), background < 0.4.
+    2. Perturbation growth: late max|δBy| > 0.02.
+    3. Quasi-neutrality (full-PIC): max charge imbalance < 0.5.
+    """
     ux, uy, bx0, by0, bz0, rho0, rhoS1_0 = frames[0][1]
     dx = ux[1] - ux[0]
 
@@ -384,7 +482,16 @@ def _validate_asym_plot(test_name, frames):
 
 
 def _validate_forcefree_plot(test_name, frames):
-    """Force-free current sheet reconnection validation."""
+    """Force-free current sheet reconnection plot checks (Le et al. 2016 / WarpX benchmark).
+
+    1. Equilibrium at t=0:
+       - Boundary Bx anti-symmetric (top ≈ +b₀, bottom ≈ −b₀).
+       - Midplane Bz ≈ √(bg²+b₀²) / b₀ in (0.95, 1.15).
+       - Boundary Bz/b₀ ≈ bg in (0.2, 0.4).
+       - Uniform total magnetic pressure: std(|B|²) / mean(|B|²) < 0.05.
+    2. Field remains finite at late time (NaN/Inf check on By).
+    3. Quasi-neutrality (full-PIC): max charge imbalance < 0.5.
+    """
     if len(frames) < 2:
         return False, f"Expected at least 2 frames, found {len(frames)}"
 

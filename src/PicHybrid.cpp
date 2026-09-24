@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_PhysBCFunct.H>
 
 #include "GridUtility.h"
 #include "Pic.h"
@@ -33,8 +34,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
                    iLev, true);
   }
 
-  // Moment time-interpolation weights: X(hstep) =
-  // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
+  // Moment time-interpolation weights:
+  // X(hstep) = (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
   const Real wPrev = 0.5 - hstep;
   const Real wCur = 0.5 + hstep;
   const Real invFourPI = 1.0 / fourPI;
@@ -79,7 +80,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       Real ey = -(wi * bx - ui * bz);
       Real ez = -(ui * by - vi * bx);
 
-      // J = curl(B)/(4*pi) (CGS)
+      // J = curl(B)/(4*pi)
       Real jx = 0.0, jy = 0.0, jz = 0.0;
       if (needJ) {
         jx = arrJ(i, j, k, ix_) * invFourPI;
@@ -94,12 +95,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         ez += etaResistivity * jz;
       }
 
-      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e) (precomputed
-      // outside subcycling). Analytically curl(E_ambi) == 0 for
-      // isothermal/polytropic electrons; omitted when computing E to advance B
-      // via Faraday's law to prevent discrete baroclinic/shot-noise curl errors
-      // from injecting artificial grid-scale whistler waves (WarpX
-      // formulation).
+      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
+      // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
       if (includeAmbi && electronTemperature > 0) {
         ex += arrEambi(i, j, k, ix_);
         ey += arrEambi(i, j, k, iy_);
@@ -125,8 +122,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   }
 
   // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B).
-  // centerLapB = Laplacian(centerBin); nodeHyperE =
-  // curl_center_to_node(centerLapB).
+  // centerLapB = Laplacian(centerBin);
+  // nodeHyperE = curl_center_to_node(centerLapB).
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -151,8 +148,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 //==========================================================
 // Ambipolar electric field: E_ambi = -grad(p_e) / (e * n_e).
 // Precomputed once per PIC timestep outside the magnetic subcycling
-// steps (WarpX scheme), avoiding redundant gradient and EOS operations
-// during the high-frequency whistler integration.
+// steps, avoiding redundant gradient and EOS operations during the
+// high-frequency whistler integration.
 void Pic::compute_ambipolar_E() {
   std::string nameFunc = "Pic::compute_ambipolar_E";
   timing_func(nameFunc);
@@ -184,7 +181,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     return;
   }
 
-  // 1. Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
+  // Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
   for (MFIter mfi(nodeRhoTemp[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrRho = nodeRhoTemp[iLev][mfi].array();
@@ -195,11 +192,11 @@ void Pic::compute_ambipolar_E(int iLev) {
   }
   nodeRhoTemp[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 2. Average nodal density to cell centres
+  // Average nodal density to cell centres
   average_node_to_center(nodeRhoTemp[iLev], centerPe[iLev]);
   centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 3. Evaluate electron pressure Pe at cell centres via EOS
+  // Evaluate electron pressure Pe at cell centres via EOS
   const Real p0 = electronDensity0 * electronTemperature;
   const Real invRho0 =
       (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
@@ -220,48 +217,46 @@ void Pic::compute_ambipolar_E(int iLev) {
   }
   centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 4. Zero-gradient (Neumann) BC across non-periodic domain boundaries
+  // Zero-gradient (Neumann / foextrap) BC across non-periodic domain boundaries
   if (!Geom(iLev).isAllPeriodic() && centerPe[iLev].nGrow() > 0) {
-    const Box& dom = Geom(iLev).Domain();
-    for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
-      const Box& bx = mfi.validbox();
-      Array4<Real> const& arr = centerPe[iLev][mfi].array();
-      for (int iDim = 0; iDim < nDim; ++iDim) {
-        if (Geom(iLev).isPeriodic(iDim))
-          continue;
-        if (bx.smallEnd(iDim) == dom.smallEnd(iDim)) {
-          IntVect lo = bx.smallEnd();
-          IntVect hi = bx.bigEnd();
-          lo[iDim] = dom.smallEnd(iDim) - 1;
-          hi[iDim] = dom.smallEnd(iDim) - 1;
-          Box ghostBox(lo, hi);
-          ParallelFor(ghostBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-            IntVect src{ AMREX_D_DECL(i, j, k) };
-            src[iDim] = dom.smallEnd(iDim);
-            arr(i, j, k) = arr(src);
-          });
-        }
-        if (bx.bigEnd(iDim) == dom.bigEnd(iDim)) {
-          IntVect lo = bx.smallEnd();
-          IntVect hi = bx.bigEnd();
-          lo[iDim] = dom.bigEnd(iDim) + 1;
-          hi[iDim] = dom.bigEnd(iDim) + 1;
-          Box ghostBox(lo, hi);
-          ParallelFor(ghostBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-            IntVect src{ AMREX_D_DECL(i, j, k) };
-            src[iDim] = dom.bigEnd(iDim);
-            arr(i, j, k) = arr(src);
-          });
-        }
+    Vector<BCRec> bcr(1);
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+      if (Geom(iLev).isPeriodic(d)) {
+        bcr[0].setLo(d, BCType::int_dir);
+        bcr[0].setHi(d, BCType::int_dir);
+      } else {
+        bcr[0].setLo(d, BCType::foextrap);
+        bcr[0].setHi(d, BCType::foextrap);
       }
+    }
+    GpuBndryFuncFab<FabFillNoOp> bfunc(FabFillNoOp{});
+    PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
+    physbcf(centerPe[iLev], 0, 1, centerPe[iLev].nGrowVect(), 0.0, 0);
+    centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  if (isFake2D) {
+    for (amrex::MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
+      const auto& vbox = mfi.validbox();
+      const auto& fbox = mfi.fabbox();
+      auto arr = centerPe[iLev][mfi].array();
+      const int klo = vbox.smallEnd(2);
+      const int khi = vbox.bigEnd(2);
+      amrex::ParallelFor(fbox,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           const int k_src = std::clamp(k, klo, khi);
+                           if (k != k_src) {
+                             arr(i, j, k) = arr(i, j, k_src);
+                           }
+                         });
     }
   }
 
-  // 5. Compute grad_center_to_node(Pe) directly into nodeEambi
+  // Compute grad_center_to_node(Pe) directly into nodeEambi
   grad_center_to_node(centerPe[iLev], nodeEambi[iLev],
                       Geom(iLev).InvCellSize());
 
-  // 6. Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
+  // Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
   for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
@@ -280,6 +275,63 @@ void Pic::compute_ambipolar_E(int iLev) {
         arrEambi(i, j, k, iz_) = 0.0;
       }
     });
+  }
+
+  // At physical conducting/reflecting walls, the normal ambipolar field
+  // vanishes analytically (dPe/dn = 0)
+  if (!Geom(iLev).isAllPeriodic()) {
+    const BoundaryBounds bnd(Geom(iLev), nodeEambi[iLev].boxArray().ixType(),
+                             &bcField);
+    for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
+      const Box& bxValid = mfi.validbox();
+      Array4<Real> const& arr = nodeEambi[iLev][mfi].array();
+      const Dim3 vLo = bxValid.smallEnd().dim3();
+      const Dim3 vHi = bxValid.bigEnd().dim3();
+      ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        const int ijk[3] = { i, j, k };
+        const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+        const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
+        for (int d = 0; d < nDim; ++d) {
+          if (!bnd.isNode[d])
+            continue;
+          const bool onLoWall =
+              (bnd.bcLo[d] == FieldBC::conducting) && (ijk[d] == bnd.loBnd[d]);
+          const bool onHiWall =
+              (bnd.bcHi[d] == FieldBC::conducting) && (ijk[d] == bnd.hiBnd[d]);
+          if (onLoWall || onHiWall) {
+            bool inValid = true;
+            for (int od = 0; od < nDim; ++od) {
+              if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+                inValid = false;
+                break;
+              }
+            }
+            if (inValid) {
+              arr(i, j, k, d) = 0.0;
+            }
+          }
+        }
+      });
+    }
+  }
+
+  if (isFake2D) {
+    for (amrex::MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
+      const auto& vbox = mfi.validbox();
+      const auto& fbox = mfi.fabbox();
+      auto arr = nodeEambi[iLev][mfi].array();
+      const int klo = vbox.smallEnd(2);
+      const int khi = vbox.bigEnd(2);
+      amrex::ParallelFor(fbox,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           const int k_src = std::clamp(k, klo, khi);
+                           if (k != k_src) {
+                             for (int n = 0; n < nDim3; ++n) {
+                               arr(i, j, k, n) = arr(i, j, k_src, n);
+                             }
+                           }
+                         });
+    }
   }
 
   nodeEambi[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -303,6 +355,54 @@ void Pic::smooth_moments() {
       smooth_multifab(moments, iLev, 1, coefSmoothMoments);
     }
     moments.FillBoundary(Geom(iLev).periodicity());
+
+    if (!Geom(iLev).isAllPeriodic()) {
+      const BoundaryBounds bnd(Geom(iLev), moments.boxArray().ixType(),
+                               &bcField);
+      for (MFIter mfi(moments); mfi.isValid(); ++mfi) {
+        const Box& bxValid = mfi.validbox();
+        Array4<Real> const& arr = moments[mfi].array();
+        const Dim3 vLo = bxValid.smallEnd().dim3();
+        const Dim3 vHi = bxValid.bigEnd().dim3();
+        ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const int ijk[3] = { i, j, k };
+          const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+          const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
+          for (int d = 0; d < nDim; ++d) {
+            if (!bnd.isNode[d])
+              continue;
+            const bool onLoWall = (bnd.bcLo[d] == FieldBC::conducting) &&
+                                  (ijk[d] == bnd.loBnd[d]);
+            const bool onHiWall = (bnd.bcHi[d] == FieldBC::conducting) &&
+                                  (ijk[d] == bnd.hiBnd[d]);
+            if (onLoWall || onHiWall) {
+              bool inValid = true;
+              for (int od = 0; od < nDim; ++od) {
+                if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+                  inValid = false;
+                  break;
+                }
+              }
+              if (inValid) {
+                if (d == 0) {
+                  arr(i, j, k, iMx_) = 0.0;
+                  arr(i, j, k, iPxy_) = 0.0;
+                  arr(i, j, k, iPxz_) = 0.0;
+                } else if (d == 1) {
+                  arr(i, j, k, iMy_) = 0.0;
+                  arr(i, j, k, iPxy_) = 0.0;
+                  arr(i, j, k, iPyz_) = 0.0;
+                } else if (d == 2) {
+                  arr(i, j, k, iMz_) = 0.0;
+                  arr(i, j, k, iPxz_) = 0.0;
+                  arr(i, j, k, iPyz_) = 0.0;
+                }
+              }
+            }
+          }
+        });
+      }
+    }
   }
 }
 
@@ -344,9 +444,34 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
     apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
                    iLev, true);
   } else {
+    MultiFab& coarseB = (&mfB == &centerBstage[iLev])  ? centerBstage[iLev - 1]
+                        : (&mfB == &centerBstar[iLev]) ? centerBstar[iLev - 1]
+                                                       : centerB[iLev - 1];
     fill_fine_lev_bny_from_coarse(
-        centerB[iLev - 1], mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
-        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+        coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1], Geom(iLev - 1),
+        Geom(iLev), cell_status(iLev), *get_cell_interp());
+    apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
+                   iLev, true);
+  }
+
+  if (isFake2D) {
+    const int nComp = mfB.nComp();
+    for (amrex::MFIter mfi(mfB); mfi.isValid(); ++mfi) {
+      const auto& vbox = mfi.validbox();
+      const auto& fbox = mfi.fabbox();
+      auto arr = mfB[mfi].array();
+      const int klo = vbox.smallEnd(2);
+      const int khi = vbox.bigEnd(2);
+      amrex::ParallelFor(fbox,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           const int k_src = std::clamp(k, klo, khi);
+                           if (k != k_src) {
+                             for (int n = 0; n < nComp; ++n) {
+                               arr(i, j, k, n) = arr(i, j, k_src, n);
+                             }
+                           }
+                         });
+    }
   }
 }
 
@@ -374,9 +499,11 @@ void Pic::update_B_hybrid() {
   }
 
   // CFL stability check for explicit resistive and hyper-resistive diffusion.
+  // CFL stability check for explicit resistive, hyper-resistive, and whistler
+  // terms.
   const Real cflLimit = useRK4 ? 2.785 : 2.513;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0)
+    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0 && !useHallTerm)
       continue;
 
     const auto dx = Geom(iLev).CellSizeArray();
@@ -402,10 +529,32 @@ void Pic::update_B_hybrid() {
           << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
           << cflHyper << " (> " << cflLimit
           << ", explicit 4th-order diffusion may be unstable)\n";
+
+    if (useHallTerm) {
+      Real bMaxLev = 0.0;
+      for (int d = 0; d < 3; ++d) {
+        bMaxLev = amrex::max(bMaxLev, centerB[iLev].norm0(d, 0, false));
+      }
+      const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
+      const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
+      const Real cflWhistler = (sMax * bMaxLev / (fourPI * rhoEff)) * subDt;
+      if (cflWhistler > cflLimit) {
+        const int nSubReq =
+            static_cast<int>(std::ceil(nBSubcycle * (cflWhistler / cflLimit)));
+        amrex::Print()
+            << "  [CFL warning] whistler wave: "
+               "(kmax^2*Bmax)/(4pi*rho_eff)*dt_sub = "
+            << cflWhistler << " (> " << cflLimit
+            << ", whistler wave is linearly unstable in RK4! rho_min="
+            << rhoMinLev << ", rho_eff=" << rhoEff << ", B_max=" << bMaxLev
+            << "). Recommend nBSubcycle >= " << nSubReq
+            << " or increasing rhoMinOhm.\n";
+      }
+    }
   }
 
   // Precalculate the ambipolar electric field E_ambi = -grad(p_e)/(e*n_e)
-  // once per PIC timestep outside the magnetic subcycling steps (WarpX scheme).
+  // once per PIC timestep outside the magnetic subcycling steps.
   compute_ambipolar_E();
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);

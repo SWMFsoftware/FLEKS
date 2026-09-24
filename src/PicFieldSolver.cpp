@@ -858,23 +858,39 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
 
     MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
 
+    const bool isPeriodicDir = Geom(iLev).isPeriodic(iDir);
+    const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType());
+    const int domLo = bnd.loBnd[iDir];
+    const int domHi = bnd.hiBnd[iDir];
+
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       Array4<Real> const& arrE = mf[mfi].array();
       Array4<Real> const& arrTmp = mfOld[mfi].array();
 
-      ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
-        const Real weightSelf = 1 - coef;
-        const Real WeightNei = coef / 2.0;
+      ParallelFor(
+          box, mf.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+            const Real weightSelf = 1 - coef;
+            const Real WeightNei = coef / 2.0;
 
-        const Real neiSum =
-            arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
-            arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
+            Real neiLo =
+                arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar);
+            Real neiHi =
+                arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
+            if (!isPeriodicDir) {
+              const int idx = (iDir == ix_) ? i : ((iDir == iy_) ? j : k);
+              if (idx <= domLo) {
+                neiLo = neiHi;
+              } else if (idx >= domHi) {
+                neiHi = neiLo;
+              }
+            }
 
-        arrE(i, j, k, iVar) =
-            weightSelf * arrTmp(i, j, k, iVar) + WeightNei * neiSum;
-      });
+            const Real neiSum = neiLo + neiHi;
+            arrE(i, j, k, iVar) =
+                weightSelf * arrTmp(i, j, k, iVar) + WeightNei * neiSum;
+          });
     }
 
     mf.FillBoundary(Geom(iLev).periodicity());

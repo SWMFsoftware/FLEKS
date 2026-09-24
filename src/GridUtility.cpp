@@ -613,9 +613,7 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
   // nodes. The factor is 1/(2^nDim).
   const Real inv2d = (nDim > 2) ? 0.125 : 0.25;
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    const int ng = std::min(centerMF.nGrow(), std::max(0, nodeMF.nGrow() - 1));
     Box box = mfi.validbox();
-    box.grow(ng);
 
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();

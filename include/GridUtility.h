@@ -635,6 +635,29 @@ void interp_from_coarse_to_fine(amrex::FabArray<FAB>& coarse,
   amrex::InterpFromCoarseLevel(f, amrex::IntVect(nGst), 0.0, c, 0, 0, nComp,
                                cgeom, fgeom, cphysbc, 0, fphysbc, 0, ratio,
                                mapper, bcs, 0);
+
+  // In fake 2D (where the coarse z domain has only 1 cell and is periodic),
+  // AMReX's periodicity only shifts by 1 cell, leaving coarse ghost cells
+  // beyond 1 cell uninitialized. Clamping/replicating along z fills fine ghost cells
+  // consistently and prevents NaNs from uninitialized coarse z-ghosts.
+  if (AMREX_SPACEDIM > 2 && cgeom.isPeriodic(2) && cgeom.Domain().length(2) == 1) {
+    const int numComp = f.nComp();
+    for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+      const auto& vbox = mfi.validbox();
+      const auto& fbox = mfi.fabbox();
+      auto farr = f[mfi].array();
+      const int klo = vbox.smallEnd(2);
+      const int khi = vbox.bigEnd(2);
+      amrex::ParallelFor(fbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const int k_src = std::clamp(k, klo, khi);
+        if (k != k_src) {
+          for (int n = 0; n < numComp; ++n) {
+            farr(i, j, k, n) = farr(i, j, k_src, n);
+          }
+        }
+      });
+    }
+  }
 }
 
 // Sum from fine level to coarse level for nodes at the interface of two levels.
