@@ -34,8 +34,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
                    iLev, true);
   }
 
-  // Moment time-interpolation weights: X(hstep) =
-  // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
+  // Moment time-interpolation weights:
+  // X(hstep) = (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
   const Real wPrev = 0.5 - hstep;
   const Real wCur = 0.5 + hstep;
   const Real invFourPI = 1.0 / fourPI;
@@ -80,7 +80,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       Real ey = -(wi * bx - ui * bz);
       Real ez = -(ui * by - vi * bx);
 
-      // J = curl(B)/(4*pi) (CGS)
+      // J = curl(B)/(4*pi)
       Real jx = 0.0, jy = 0.0, jz = 0.0;
       if (needJ) {
         jx = arrJ(i, j, k, ix_) * invFourPI;
@@ -95,12 +95,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         ez += etaResistivity * jz;
       }
 
-      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e) (precomputed
-      // outside subcycling). Analytically curl(E_ambi) == 0 for
-      // isothermal/polytropic electrons; omitted when computing E to advance B
-      // via Faraday's law to prevent discrete baroclinic/shot-noise curl errors
-      // from injecting artificial grid-scale whistler waves (WarpX
-      // formulation).
+      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
+      // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
       if (includeAmbi && electronTemperature > 0) {
         ex += arrEambi(i, j, k, ix_);
         ey += arrEambi(i, j, k, iy_);
@@ -126,8 +122,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   }
 
   // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B).
-  // centerLapB = Laplacian(centerBin); nodeHyperE =
-  // curl_center_to_node(centerLapB).
+  // centerLapB = Laplacian(centerBin);
+  // nodeHyperE = curl_center_to_node(centerLapB).
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -152,8 +148,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 //==========================================================
 // Ambipolar electric field: E_ambi = -grad(p_e) / (e * n_e).
 // Precomputed once per PIC timestep outside the magnetic subcycling
-// steps (WarpX scheme), avoiding redundant gradient and EOS operations
-// during the high-frequency whistler integration.
+// steps, avoiding redundant gradient and EOS operations during the
+// high-frequency whistler integration.
 void Pic::compute_ambipolar_E() {
   std::string nameFunc = "Pic::compute_ambipolar_E";
   timing_func(nameFunc);
@@ -185,7 +181,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     return;
   }
 
-  // 1. Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
+  // Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
   for (MFIter mfi(nodeRhoTemp[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrRho = nodeRhoTemp[iLev][mfi].array();
@@ -196,11 +192,11 @@ void Pic::compute_ambipolar_E(int iLev) {
   }
   nodeRhoTemp[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 2. Average nodal density to cell centres
+  // Average nodal density to cell centres
   average_node_to_center(nodeRhoTemp[iLev], centerPe[iLev]);
   centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 3. Evaluate electron pressure Pe at cell centres via EOS
+  // Evaluate electron pressure Pe at cell centres via EOS
   const Real p0 = electronDensity0 * electronTemperature;
   const Real invRho0 =
       (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
@@ -221,8 +217,7 @@ void Pic::compute_ambipolar_E(int iLev) {
   }
   centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 4. Zero-gradient (Neumann / foextrap) BC across non-periodic domain
-  // boundaries
+  // Zero-gradient (Neumann / foextrap) BC across non-periodic domain boundaries
   if (!Geom(iLev).isAllPeriodic() && centerPe[iLev].nGrow() > 0) {
     Vector<BCRec> bcr(1);
     for (int d = 0; d < AMREX_SPACEDIM; ++d) {
@@ -257,11 +252,11 @@ void Pic::compute_ambipolar_E(int iLev) {
     }
   }
 
-  // 5. Compute grad_center_to_node(Pe) directly into nodeEambi
+  // Compute grad_center_to_node(Pe) directly into nodeEambi
   grad_center_to_node(centerPe[iLev], nodeEambi[iLev],
                       Geom(iLev).InvCellSize());
 
-  // 6. Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
+  // Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
   for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
@@ -282,9 +277,8 @@ void Pic::compute_ambipolar_E(int iLev) {
     });
   }
 
-  // 7. At physical conducting/reflecting walls, the normal ambipolar field
-  // vanishes analytically (dPe/dn = 0) - clamp normal component on physical
-  // wall nodes to zero:
+  // At physical conducting/reflecting walls, the normal ambipolar field
+  // vanishes analytically (dPe/dn = 0)
   if (!Geom(iLev).isAllPeriodic()) {
     const BoundaryBounds bnd(Geom(iLev), nodeEambi[iLev].boxArray().ixType(),
                              &bcField);
@@ -560,7 +554,7 @@ void Pic::update_B_hybrid() {
   }
 
   // Precalculate the ambipolar electric field E_ambi = -grad(p_e)/(e*n_e)
-  // once per PIC timestep outside the magnetic subcycling steps (WarpX scheme).
+  // once per PIC timestep outside the magnetic subcycling steps.
   compute_ambipolar_E();
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
