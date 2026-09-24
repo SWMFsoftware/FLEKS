@@ -8,6 +8,7 @@
 #include <AMReX_BCUtil.H>
 #include <AMReX_BC_TYPES.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MFIter.H>
 #include <AMReX_MultiFab.H>
@@ -188,5 +189,36 @@ inline Type parse(const std::string &str) {
 }
 
 } // namespace FieldBC
+
+// Boundary geometry metadata helper for domain walls
+struct BoundaryBounds {
+  amrex::Dim3 domLo;
+  amrex::Dim3 domHi;
+  bool isNode[3] = { false, false, false };
+  int loBnd[3] = { 0, 0, 0 };
+  int hiBnd[3] = { 0, 0, 0 };
+  int bcLo[3] = { 0, 0, 0 };
+  int bcHi[3] = { 0, 0, 0 };
+
+  BoundaryBounds() = default;
+  BoundaryBounds(const amrex::Geometry &geom, amrex::IndexType ixType,
+                 const BoxBC<FieldBC::Type> *bc = nullptr) {
+    domLo = geom.Domain().smallEnd().dim3();
+    domHi = geom.Domain().bigEnd().dim3();
+    const int *dLo = geom.Domain().smallEnd().getVect();
+    const int *dHi = geom.Domain().bigEnd().getVect();
+    for (int d = 0; d < 3; ++d) {
+      if (d < amrex::SpaceDim) {
+        isNode[d] = (ixType[d] == amrex::IndexType::NODE);
+        loBnd[d] = dLo[d];
+        hiBnd[d] = isNode[d] ? (dHi[d] + 1) : dHi[d];
+        if (bc) {
+          bcLo[d] = bc->face(d, 0);
+          bcHi[d] = bc->face(d, 1);
+        }
+      }
+    }
+  }
+};
 
 #endif

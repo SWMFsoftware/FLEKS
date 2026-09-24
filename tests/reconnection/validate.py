@@ -56,6 +56,29 @@ def _load_frame(path):
     return ux, uy, bx, by, bz, rho, rhoS1
 
 
+def _load_efield(path):
+    """Parse Ex, Ey, Ez from a ``z=0`` .out file."""
+    lines = open(path, encoding="latin-1").read().splitlines()
+    if len(lines) < 6:
+        return None
+    names = lines[4].split()[:19]
+    idx = {v: i for i, v in enumerate(names)}
+    if "Ex" not in idx or "Ey" not in idx or "Ez" not in idx:
+        return None
+    rows = [ln.split() for ln in lines[5:] if len(ln.split()) >= 19]
+    if not rows:
+        return None
+    data = np.array([r[:19] for r in rows], dtype=float)
+    x = data[:, idx["x"]]
+    y = data[:, idx["y"]]
+    nx = len(np.unique(np.round(x, 3)))
+    ny = len(np.unique(np.round(y, 3)))
+    ex = data[:, idx["Ex"]].reshape(ny, nx)
+    ey = data[:, idx["Ey"]].reshape(ny, nx)
+    ez = data[:, idx["Ez"]].reshape(ny, nx)
+    return ex, ey, ez
+
+
 def _flux_function(bx, bz, dx):
     """Out-of-plane flux function Ay(x,y) from B = curl(A).
 
@@ -327,6 +350,29 @@ def _validate_gem_plot(test_name, frames):
     ok_neutral, err_neutral = _check_charge_neutrality(frames)
     if not ok_neutral:
         return False, err_neutral
+
+    # 4. Electric field at conducting / reflecting walls (y_min and y_max)
+    for path, _ in frames:
+        efield = _load_efield(path)
+        if efield is None:
+            continue
+        ex, ey, ez = efield
+        for j_bnd, bnd_name in [(0, "bottom"), (-1, "top")]:
+            ex_bnd = ex[j_bnd, :]
+            ez_bnd = ez[j_bnd, :]
+            ey_bnd = ey[j_bnd, :]
+            max_tan_e = max(float(np.abs(ex_bnd).max()), float(np.abs(ez_bnd).max()))
+            if max_tan_e > 1e-4:
+                return False, (
+                    f"Tangential electric field non-zero at {bnd_name} conducting wall: "
+                    f"max|E_tan| = {max_tan_e:.4e} (file {os.path.basename(path)})"
+                )
+            max_norm_e = float(np.abs(ey_bnd).max())
+            if max_norm_e > 0.2:
+                return False, (
+                    f"Normal electric field Ey spiked at {bnd_name} wall: "
+                    f"max|Ey| = {max_norm_e:.4e} > 0.2 (file {os.path.basename(path)})"
+                )
 
     msg = f"GEM reconnection: By perturbation late={late_amp:.3f}, Ay span={ay_span:.4f}"
     logger.debug("    %s", msg)

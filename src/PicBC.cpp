@@ -16,36 +16,6 @@ using namespace amrex;
 
 namespace {
 
-struct BoundaryBounds {
-  Dim3 domLo;
-  Dim3 domHi;
-  bool isNode[3] = { false, false, false };
-  int loBnd[3] = { 0, 0, 0 };
-  int hiBnd[3] = { 0, 0, 0 };
-  int bcLo[3] = { 0, 0, 0 };
-  int bcHi[3] = { 0, 0, 0 };
-
-  BoundaryBounds() = default;
-  BoundaryBounds(const Geometry& geom, IndexType ixType,
-                 const BoxBC<FieldBC::Type>* bc = nullptr) {
-    domLo = geom.Domain().smallEnd().dim3();
-    domHi = geom.Domain().bigEnd().dim3();
-    const int* dLo = geom.Domain().smallEnd().getVect();
-    const int* dHi = geom.Domain().bigEnd().getVect();
-    for (int d = 0; d < 3; ++d) {
-      if (d < nDim) {
-        isNode[d] = (ixType[d] == IndexType::NODE);
-        loBnd[d] = dLo[d];
-        hiBnd[d] = isNode[d] ? (dHi[d] + 1) : dHi[d];
-        if (bc) {
-          bcLo[d] = bc->face(d, 0);
-          bcHi[d] = bc->face(d, 1);
-        }
-      }
-    }
-  }
-};
-
 struct AbsorbWeights {
   Real decay[3] = { 0.0, 0.0, 0.0 };
   Real drive[3] = { 0.0, 0.0, 0.0 };
