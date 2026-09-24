@@ -344,9 +344,34 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
     apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
                    iLev, true);
   } else {
+    MultiFab& coarseB =
+        (&mfB == &centerBstage[iLev]) ? centerBstage[iLev - 1]
+        : (&mfB == &centerBstar[iLev]) ? centerBstar[iLev - 1]
+                                       : centerB[iLev - 1];
     fill_fine_lev_bny_from_coarse(
-        centerB[iLev - 1], mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
+        coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
         Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+    apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
+                   iLev, true);
+  }
+
+  if (isFake2D) {
+    const int nComp = mfB.nComp();
+    for (amrex::MFIter mfi(mfB); mfi.isValid(); ++mfi) {
+      const auto& vbox = mfi.validbox();
+      const auto& fbox = mfi.fabbox();
+      auto arr = mfB[mfi].array();
+      const int klo = vbox.smallEnd(2);
+      const int khi = vbox.bigEnd(2);
+      amrex::ParallelFor(fbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const int k_src = std::clamp(k, klo, khi);
+        if (k != k_src) {
+          for (int n = 0; n < nComp; ++n) {
+            arr(i, j, k, n) = arr(i, j, k_src, n);
+          }
+        }
+      });
+    }
   }
 }
 

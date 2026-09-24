@@ -588,9 +588,6 @@ public:
                                          const amrex::IntVect& high, int iLev,
                                          const amrex::Real* const ploLoc,
                                          const amrex::Real* const phiLoc) {
-    if (iLev > 0)
-      return is_outside_active_region(p, status, low, high, iLev);
-
     for (int d = 0; d < nDim; ++d) {
       const int bcLo = bc.lo[d];
       const int bcHi = bc.hi[d];
