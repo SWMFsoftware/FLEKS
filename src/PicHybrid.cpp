@@ -361,6 +361,54 @@ void Pic::smooth_moments() {
       smooth_multifab(moments, iLev, 1, coefSmoothMoments);
     }
     moments.FillBoundary(Geom(iLev).periodicity());
+
+    if (!Geom(iLev).isAllPeriodic()) {
+      const BoundaryBounds bnd(Geom(iLev), moments.boxArray().ixType(),
+                               &bcField);
+      for (MFIter mfi(moments); mfi.isValid(); ++mfi) {
+        const Box& bxValid = mfi.validbox();
+        Array4<Real> const& arr = moments[mfi].array();
+        const Dim3 vLo = bxValid.smallEnd().dim3();
+        const Dim3 vHi = bxValid.bigEnd().dim3();
+        ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const int ijk[3] = { i, j, k };
+          const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+          const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
+          for (int d = 0; d < nDim; ++d) {
+            if (!bnd.isNode[d])
+              continue;
+            const bool onLoWall = (bnd.bcLo[d] == FieldBC::conducting) &&
+                                  (ijk[d] == bnd.loBnd[d]);
+            const bool onHiWall = (bnd.bcHi[d] == FieldBC::conducting) &&
+                                  (ijk[d] == bnd.hiBnd[d]);
+            if (onLoWall || onHiWall) {
+              bool inValid = true;
+              for (int od = 0; od < nDim; ++od) {
+                if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+                  inValid = false;
+                  break;
+                }
+              }
+              if (inValid) {
+                if (d == 0) {
+                  arr(i, j, k, iMx_) = 0.0;
+                  arr(i, j, k, iPxy_) = 0.0;
+                  arr(i, j, k, iPxz_) = 0.0;
+                } else if (d == 1) {
+                  arr(i, j, k, iMy_) = 0.0;
+                  arr(i, j, k, iPxy_) = 0.0;
+                  arr(i, j, k, iPyz_) = 0.0;
+                } else if (d == 2) {
+                  arr(i, j, k, iMz_) = 0.0;
+                  arr(i, j, k, iPxz_) = 0.0;
+                  arr(i, j, k, iPyz_) = 0.0;
+                }
+              }
+            }
+          }
+        });
+      }
+    }
   }
 }
 
@@ -457,9 +505,11 @@ void Pic::update_B_hybrid() {
   }
 
   // CFL stability check for explicit resistive and hyper-resistive diffusion.
+  // CFL stability check for explicit resistive, hyper-resistive, and whistler
+  // terms.
   const Real cflLimit = useRK4 ? 2.785 : 2.513;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0)
+    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0 && !useHallTerm)
       continue;
 
     const auto dx = Geom(iLev).CellSizeArray();
@@ -485,6 +535,28 @@ void Pic::update_B_hybrid() {
           << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
           << cflHyper << " (> " << cflLimit
           << ", explicit 4th-order diffusion may be unstable)\n";
+
+    if (useHallTerm) {
+      Real bMaxLev = 0.0;
+      for (int d = 0; d < 3; ++d) {
+        bMaxLev = amrex::max(bMaxLev, centerB[iLev].norm0(d, 0, false));
+      }
+      const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
+      const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
+      const Real cflWhistler = (sMax * bMaxLev / (fourPI * rhoEff)) * subDt;
+      if (cflWhistler > cflLimit) {
+        const int nSubReq =
+            static_cast<int>(std::ceil(nBSubcycle * (cflWhistler / cflLimit)));
+        amrex::Print()
+            << "  [CFL warning] whistler wave: "
+               "(kmax^2*Bmax)/(4pi*rho_eff)*dt_sub = "
+            << cflWhistler << " (> " << cflLimit
+            << ", whistler wave is linearly unstable in RK4! rho_min="
+            << rhoMinLev << ", rho_eff=" << rhoEff << ", B_max=" << bMaxLev
+            << "). Recommend nBSubcycle >= " << nSubReq
+            << " or increasing rhoMinOhm.\n";
+      }
+    }
   }
 
   // Precalculate the ambipolar electric field E_ambi = -grad(p_e)/(e*n_e)
