@@ -30,6 +30,10 @@ struct DomainParameters {
   BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
   int cellWeight = 10;
 
+  // Reporting options.
+  int dnReportLB = 100;
+  bool doCompact = true;
+
   // Return the first invalid domain-level combination, or an empty string.
   // Parsing and application remain separate from semantic validation.
   std::string validation_error() const {

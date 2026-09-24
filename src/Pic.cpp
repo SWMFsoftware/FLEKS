@@ -1002,41 +1002,46 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (updateDt) {
-    Vector<Real> uMax(n_lev());
+    Vector<Real> uMax(n_lev(), 0.0);
     Vector<Real> dxMin(n_lev());
     Vector<Real> dtMax(n_lev());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const auto& dx = Geom(iLev).CellSize();
       dxMin[iLev] = min(AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]));
 
-      if (tc->get_cfl() > 0 || doReport) {
-        uMax[iLev] = 0.0;
-        for (int i = 0; i < nSpecies; ++i) {
-          amrex::MultiFab& momMF = nodePlasma[i][iLev];
-          Real uMaxSpecies = parts[i]->calc_max_thermal_velocity(momMF);
-          ParallelDescriptor::ReduceRealMax(uMaxSpecies);
+      // Only compute thermal velocity if CFL is active or if detailed report is enabled.
+      // Avoids expensive particle traversal and MPI reductions for fixed-dt compact runs.
+      bool needThermalSpeed =
+          (tc->get_cfl() > 0) || (doReport && !domainParameters.doCompact);
 
-          if (doReport) {
-            Print() << printPrefix << std::setprecision(5) << "lev " << iLev
-                    << " Species " << i << ": max(uth) = " << uMaxSpecies
-                    << std::endl;
-          }
-
-          if (uMaxSpecies > uMax[iLev]) {
-            uMax[iLev] = uMaxSpecies;
-          }
-        }
-
-        // Generic override of the CFL signal speed (e.g. the old TopHat
-        // option used a fixed value of 1.0). A negative fixedUMax keeps the
-        // particle-thermal-velocity estimate.
+      if (needThermalSpeed) {
         if (fixedUMax >= 0) {
           uMax[iLev] = fixedUMax;
-        }
+        } else {
+          Vector<Real> uMaxSpecies(nSpecies, 0.0);
+          for (int i = 0; i < nSpecies; ++i) {
+            amrex::MultiFab& momMF = nodePlasma[i][iLev];
+            uMaxSpecies[i] = parts[i]->calc_max_thermal_velocity(momMF);
+          }
+          // Reduce all species in a single MPI reduction instead of nSpecies calls
+          ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
 
-        dtMax[iLev] = (uMax[iLev] > 0.0) ? dxMin[iLev] / uMax[iLev]
-                                         : std::numeric_limits<Real>::max();
+          for (int i = 0; i < nSpecies; ++i) {
+            if (doReport && !domainParameters.doCompact) {
+              Print() << printPrefix << std::setprecision(5) << "lev " << iLev
+                      << " Species " << i << ": max(uth) = " << uMaxSpecies[i]
+                      << std::endl;
+            }
+
+            if (uMaxSpecies[i] > uMax[iLev]) {
+              uMax[iLev] = uMaxSpecies[i];
+            }
+          }
+        }
       }
+
+      dtMax[iLev] = (uMax[iLev] > 0.0) ? dxMin[iLev] / uMax[iLev]
+                                       : std::numeric_limits<Real>::max();
     }
 
     if (tc->get_cfl() > 0) {
@@ -1049,7 +1054,16 @@ void Pic::sum_moments(bool updateDt) {
       }
     }
 
-    if (doReport) {
+    maxCFL = 0.0;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (dtMax[iLev] > 0.0 && dtMax[iLev] < std::numeric_limits<Real>::max()) {
+        Real cflLev = tc->get_next_dt() / dtMax[iLev];
+        if (cflLev > maxCFL)
+          maxCFL = cflLev;
+      }
+    }
+
+    if (doReport && !domainParameters.doCompact) {
       Print() << printPrefix << std::setprecision(5)
               << "dt = " << tc->get_dt_si()
               << " dtNext = " << tc->get_next_dt_si() << std::endl;
@@ -1340,11 +1354,31 @@ void Pic::update(bool doReportIn) {
 
     // speedNorm is a value obtained from tests.
     Real speedNorm = 1000;
-    Print() << printPrefix
-            << "Normalized PIC simulation speed = " << speed / speedNorm
-            << " (performance is good if the value >> 1 and bad if <<1 )"
-            << std::endl;
+    Real normSpeed = speed / speedNorm;
 
+    if (domainParameters.doCompact) {
+      Print() << "==== " << printPrefix << "Cycle " << tc->get_cycle()
+              << " | t = " << std::setprecision(6) << tc->get_time_si()
+              << " (s) | dt = " << std::setprecision(5) << tc->get_dt_si()
+              << " (s)";
+      if (maxCFL > 0.0) {
+        Print() << " | CFL = " << std::setprecision(4) << maxCFL;
+      }
+      Print() << " | Speed = " << std::setprecision(2) << std::fixed
+              << normSpeed << " ====" << std::endl;
+      Print() << std::defaultfloat;
+    } else {
+      Print() << printPrefix
+              << "Normalized PIC simulation speed = " << normSpeed
+              << " (performance is good if the value >> 1 and bad if <<1 )"
+              << std::endl;
+    }
+  }
+
+  // Periodic load balance report at dnReportLB interval (default: 100 steps)
+  bool doReportLB = (domainParameters.dnReportLB > 0 &&
+                     tc->get_cycle() % domainParameters.dnReportLB == 0);
+  if (doReportLB) {
     report_load_balance();
   }
 

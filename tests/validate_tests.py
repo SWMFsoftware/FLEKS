@@ -512,7 +512,7 @@ def read_pic_log(run_dir):
     if len(lines) < 2:
         return []
 
-    header = lines[0].strip().split("\t")
+    header = [col.strip() for col in lines[0].strip().split("\t")]
     # Discover species count from EpartN columns
     n_species = sum(1 for col in header if col.startswith("Epart") and col != "Epart")
 

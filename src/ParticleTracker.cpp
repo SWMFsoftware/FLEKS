@@ -6,6 +6,10 @@
 using namespace amrex;
 
 ParticleTracker::~ParticleTracker() {
+  if (ptLogStream.is_open()) {
+    ptLogStream.close();
+  }
+
   if (isGridEmpty || isNewGrid || !savectr)
     return;
 
@@ -59,20 +63,30 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
   if (isGridEmpty)
     return;
 
+  const int wCol = 24;
+  const int wStep = 10;
+
   if (doCreateFile) {
     std::stringstream ss;
     ss << component << "/plots/log_pt_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();
     if (ParallelDescriptor::IOProcessor()) {
-      std::ofstream of(logFile.c_str());
-      of << "time nStep";
-      for (int i = 0; i < parts.size(); ++i)
-        of << " mass_" << i << " moment_x_" << i << " moment_y_" << i
-           << " moment_z_" << i << " energy_" << i;
-
-      of << std::endl;
-      of.close();
+      if (ptLogStream.is_open()) {
+        ptLogStream.close();
+      }
+      ptLogStream.open(logFile.c_str());
+      ptLogStream << std::left << std::setw(wCol) << "time" << "\t"
+                  << std::setw(wStep) << "nStep";
+      for (int i = 0; i < parts.size(); ++i) {
+        std::string sI = std::to_string(i);
+        ptLogStream << "\t" << std::setw(wCol) << ("mass_" + sI)
+                    << "\t" << std::setw(wCol) << ("moment_x_" + sI)
+                    << "\t" << std::setw(wCol) << ("moment_y_" + sI)
+                    << "\t" << std::setw(wCol) << ("moment_z_" + sI)
+                    << "\t" << std::setw(wCol) << ("energy_" + sI);
+      }
+      ptLogStream << std::endl;
     }
   }
 
@@ -85,17 +99,19 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
     }
 
     if (ParallelDescriptor::IOProcessor()) {
-      std::ofstream of(logFile.c_str(), std::fstream::app);
-      of.precision(15);
-      of << std::scientific;
-      of << tc->get_time_si() << "\t" << tc->get_cycle();
+      if (!ptLogStream.is_open()) {
+        ptLogStream.open(logFile.c_str(), std::fstream::app);
+      }
+      ptLogStream.precision(15);
+      ptLogStream << std::scientific;
+      ptLogStream << std::setw(wCol) << tc->get_time_si() << "\t"
+                  << std::setw(wStep) << tc->get_cycle();
 
       for (int i = 0; i < parts.size(); ++i) {
         for (auto& m : moments[i])
-          of << "\t" << m;
+          ptLogStream << "\t" << std::setw(wCol) << m;
       }
-      of << std::endl;
-      of.close();
+      ptLogStream << std::endl;
     }
   }
 }

@@ -638,17 +638,29 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   if (isGridEmpty || !usePIC)
     return;
 
+  const int wCol = 24;
+  const int wStep = 10;
+
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
+    if (picLogStream.is_open()) {
+      picLogStream.close();
+    }
     std::stringstream ss;
     ss << component << "/plots/log_pic_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();
-    std::ofstream of(logFile.c_str());
-    of << "time\tnStep\tEtot\tEe\tEb\tEpart";
-    for (int i = 0; i < nSpecies; ++i)
-      of << "\tEpart" << i;
-    of << std::endl;
-    of.close();
+    picLogStream.open(logFile.c_str());
+    picLogStream << std::left << std::setw(wCol) << "time" << "\t"
+                 << std::setw(wStep) << "nStep" << "\t"
+                 << std::setw(wCol) << "Etot" << "\t"
+                 << std::setw(wCol) << "Ee" << "\t"
+                 << std::setw(wCol) << "Eb" << "\t"
+                 << std::setw(wCol) << "Epart";
+    for (int i = 0; i < nSpecies; ++i) {
+      std::string sName = "Epart" + std::to_string(i);
+      picLogStream << "\t" << std::setw(wCol) << sName;
+    }
+    picLogStream << std::endl;
   }
 
   if (tc->picLog.is_time_to(doForce)) {
@@ -662,16 +674,20 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     Real eEnergy = calc_E_field_energy();
     Real bEnergy = calc_B_field_energy();
     if (ParallelDescriptor::IOProcessor()) {
-      std::ofstream of(logFile.c_str(), std::fstream::app);
-      of.precision(15);
-      of << std::scientific;
-      of << tc->get_time_si() << "\t" << tc->get_cycle() << "\t"
-         << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy << "\t"
-         << bEnergy << "\t" << plasmaEnergy[iTot];
+      if (!picLogStream.is_open()) {
+        picLogStream.open(logFile.c_str(), std::fstream::app);
+      }
+      picLogStream.precision(15);
+      picLogStream << std::scientific;
+      picLogStream << std::setw(wCol) << tc->get_time_si() << "\t"
+                   << std::setw(wStep) << tc->get_cycle() << "\t"
+                   << std::setw(wCol) << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t"
+                   << std::setw(wCol) << eEnergy << "\t"
+                   << std::setw(wCol) << bEnergy << "\t"
+                   << std::setw(wCol) << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
-        of << "\t" << plasmaEnergy[i];
-      of << std::endl;
-      of.close();
+        picLogStream << "\t" << std::setw(wCol) << plasmaEnergy[i];
+      picLogStream << std::endl;
     }
   }
 #endif

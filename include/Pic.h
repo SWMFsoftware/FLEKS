@@ -1,6 +1,7 @@
 #ifndef _PIC_H_
 #define _PIC_H_
 
+#include <fstream>
 #include <iostream>
 #include <set>
 #include <string>
@@ -329,9 +330,11 @@ private:
   std::string selectParticleInputFile;
 
   bool doReport = false;
+  amrex::Real maxCFL = 0.0;
   int dnMemory = -1;
 
   std::string logFile;
+  std::ofstream picLogStream;
 
   // public methods
 public:
@@ -416,7 +419,11 @@ public:
     pMode = PartMode::Neutral;
 #endif
   };
-  ~Pic() {};
+  ~Pic() {
+    if (picLogStream.is_open()) {
+      picLogStream.close();
+    }
+  };
 
   void free_memory();
 
