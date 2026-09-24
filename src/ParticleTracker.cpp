@@ -80,11 +80,11 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
                   << std::setw(wStep) << "nStep";
       for (int i = 0; i < parts.size(); ++i) {
         std::string sI = std::to_string(i);
-        ptLogStream << "\t" << std::setw(wCol) << ("mass_" + sI)
-                    << "\t" << std::setw(wCol) << ("moment_x_" + sI)
-                    << "\t" << std::setw(wCol) << ("moment_y_" + sI)
-                    << "\t" << std::setw(wCol) << ("moment_z_" + sI)
-                    << "\t" << std::setw(wCol) << ("energy_" + sI);
+        ptLogStream << "\t" << std::setw(wCol) << ("mass_" + sI) << "\t"
+                    << std::setw(wCol) << ("moment_x_" + sI) << "\t"
+                    << std::setw(wCol) << ("moment_y_" + sI) << "\t"
+                    << std::setw(wCol) << ("moment_z_" + sI) << "\t"
+                    << std::setw(wCol) << ("energy_" + sI);
       }
       ptLogStream << std::endl;
     }

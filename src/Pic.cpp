@@ -1009,8 +1009,9 @@ void Pic::sum_moments(bool updateDt) {
       const auto& dx = Geom(iLev).CellSize();
       dxMin[iLev] = min(AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]));
 
-      // Only compute thermal velocity if CFL is active or if detailed report is enabled.
-      // Avoids expensive particle traversal and MPI reductions for fixed-dt compact runs.
+      // Only compute thermal velocity if CFL is active or if detailed report is
+      // enabled. Avoids expensive particle traversal and MPI reductions for
+      // fixed-dt compact runs.
       bool needThermalSpeed =
           (tc->get_cfl() > 0) || (doReport && !domainParameters.doCompact);
 
@@ -1023,7 +1024,8 @@ void Pic::sum_moments(bool updateDt) {
             amrex::MultiFab& momMF = nodePlasma[i][iLev];
             uMaxSpecies[i] = parts[i]->calc_max_thermal_velocity(momMF);
           }
-          // Reduce all species in a single MPI reduction instead of nSpecies calls
+          // Reduce all species in a single MPI reduction instead of nSpecies
+          // calls
           ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
 
           for (int i = 0; i < nSpecies; ++i) {

@@ -651,11 +651,10 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     logFile = ss.str();
     picLogStream.open(logFile.c_str());
     picLogStream << std::left << std::setw(wCol) << "time" << "\t"
-                 << std::setw(wStep) << "nStep" << "\t"
-                 << std::setw(wCol) << "Etot" << "\t"
-                 << std::setw(wCol) << "Ee" << "\t"
-                 << std::setw(wCol) << "Eb" << "\t"
-                 << std::setw(wCol) << "Epart";
+                 << std::setw(wStep) << "nStep" << "\t" << std::setw(wCol)
+                 << "Etot" << "\t" << std::setw(wCol) << "Ee" << "\t"
+                 << std::setw(wCol) << "Eb" << "\t" << std::setw(wCol)
+                 << "Epart";
     for (int i = 0; i < nSpecies; ++i) {
       std::string sName = "Epart" + std::to_string(i);
       picLogStream << "\t" << std::setw(wCol) << sName;
@@ -681,10 +680,10 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       picLogStream << std::scientific;
       picLogStream << std::setw(wCol) << tc->get_time_si() << "\t"
                    << std::setw(wStep) << tc->get_cycle() << "\t"
-                   << std::setw(wCol) << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t"
-                   << std::setw(wCol) << eEnergy << "\t"
-                   << std::setw(wCol) << bEnergy << "\t"
-                   << std::setw(wCol) << plasmaEnergy[iTot];
+                   << std::setw(wCol)
+                   << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t"
+                   << std::setw(wCol) << eEnergy << "\t" << std::setw(wCol)
+                   << bEnergy << "\t" << std::setw(wCol) << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << plasmaEnergy[i];
       picLogStream << std::endl;
