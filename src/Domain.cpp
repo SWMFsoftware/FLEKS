@@ -410,7 +410,7 @@ void Domain::update() {
   // update time, step number.
   tc->update();
 
-  if (doReport) {
+  if (doReport && !domainParameters.doCompact) {
     const Real t1 = tc->get_time_si();
     Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
             << " from t = " << std::setprecision(6) << t0
@@ -1364,6 +1364,8 @@ void Domain::read_param(const bool readGridInfo) {
       int dn;
       readParam.read_var("dnReport", dn);
       tc->monitor.init(-1, dn);
+      readParam.read_optional("dnReportLB", domainParameters.dnReportLB);
+      readParam.read_optional("doCompact", domainParameters.doCompact);
     } else if (command == "#SAVEPLOT" || command == "#SAVEIDL") {
 
       /*

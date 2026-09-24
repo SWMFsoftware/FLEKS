@@ -57,6 +57,7 @@ private:
   std::unique_ptr<PlotCtr> savectr;
 
   std::string logFile;
+  std::ofstream ptLogStream;
 
   // Test Particle initialization regions (set from the domain #REGION blocks).
   amrex::Vector<std::shared_ptr<Shape> > tpShapes;
