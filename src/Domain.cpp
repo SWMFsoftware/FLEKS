@@ -62,6 +62,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#PARTICLES", ParameterOwner::Pic },
   { "#PARTMODE", ParameterOwner::Pic },
   { "#PIC", ParameterOwner::Pic },
+  { "#PLANETRADIUS", ParameterOwner::FluidInterface },
   { "#PLASMA", ParameterOwner::FluidInterface },
   { "#PRESPLITTING", ParameterOwner::Pic },
   { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
@@ -128,6 +129,8 @@ std::string canonical_command(const std::string &command) {
     return "#DISCRETIZE";
   if (command == "#BFIELDBOXBOUNDARY")
     return "#FIELDBOXBOUNDARY";
+  if (command == "#BODYSIZE")
+    return "#PLANETRADIUS";
   return command;
 }
 

@@ -124,7 +124,7 @@ def _parse_deck():
                 continue
             if val is None:
                 continue
-            if section == "#BODYSIZE":
+            if section == "#PLANETRADIUS":
                 deck["rPlanet"] = val
             elif section == "#NORMALIZATION":
                 # First entry is lNormSI [m], the length of one code unit.
@@ -335,7 +335,7 @@ def _plot_scale(rows, vidx, deck):
     if span_plot > 0.0 and span_m > 0.0:
         return span_m / span_plot
     # Fallback for a degenerate frame: the output unit is PLANETARY, so one
-    # plot unit is one #BODYSIZE radius.
+    # plot unit is one #PLANETRADIUS radius.
     return deck["rPlanet"]
 
 

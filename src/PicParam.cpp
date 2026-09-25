@@ -92,7 +92,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("radius", radius);
 
     // The geometry is in code units (one length unit is lNormSI metres),
-    // like #REGION, and unlike #BODYSIZE which is in SI.
+    // like #REGION, and unlike #PLANETRADIUS which is in SI.
     set_body(center, radius);
 
     Print() << "  inner body: sphere, radius = " << bodyRadius

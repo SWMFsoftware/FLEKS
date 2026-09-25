@@ -1529,8 +1529,9 @@ behind it.
 
 center and radius are in code units (one length unit is lNormSI metres, see
 #NORMALIZATION), the same convention as #REGION. They are independent of
-#BODYSIZE, which is in SI units and only sets the exosphere reference radius
-and the planetary output unit.
+#PLANETRADIUS, which is in SI units and only sets the exosphere reference
+radius and the planetary output unit; #PLANETRADIUS does not create an inner
+boundary.
 
 The body is represented by the cells whose centers lie inside the sphere, so
 its boundary is a staircase with a resolution of dx/2 and the effective
@@ -1547,13 +1548,29 @@ the electric field grows near the surface, add dissipation
 (#RESISTIVITY / #HYPERRESISTIVITY) instead of changing the boundary.
 </command>
 
-<command name="BODYSIZE" alias="BODYSIZE_FLEKS0,BODYSIZE_FLEKS1,BODYSIZE_FLEKS2" multiple="T">
+<command name="PLANETRADIUS" alias="PLANETRADIUS_FLEKS0,PLANETRADIUS_FLEKS1,PLANETRADIUS_FLEKS2" multiple="T">
   <parameter name="radius" type="real" default="1.0"/>
 
-#BODYSIZE
+#PLANETRADIUS
 1.0               radius
 
-This command sets the size of the planet or other body in the simulation.
+This command sets the radius of the planet (or other central body) in SI
+units. It is a length scale only:
+
+* it is the reference radius of the exosphere: the neutral density of
+  #EXOSPHERE is defined with n0 at r = r_planet and is zero for
+  r < r_planet;
+* it is the unit of the 'planet' output (lengths are divided by
+  r_planet) and it is written as the 'rPlanet' scalar in the output header.
+
+It does NOT create an inner boundary for the PIC solver: no particle is
+removed and no field is modified at r = r_planet. Use #BODY for that.
+
+In a GM-PC (SWMF) coupled run the value is provided by the fluid component
+and this command is ignored.
+
+#BODYSIZE is deprecated in favor of this command; it is still accepted and
+mapped to #PLANETRADIUS.
 </command>
 
 <command name="EXOSPHERE" alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2" multiple="T">
