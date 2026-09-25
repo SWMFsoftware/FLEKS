@@ -203,7 +203,7 @@ amrex::Real GemIC::eval_Bx0(amrex::Real y) const {
 
 amrex::Real GemIC::eval_Jz(amrex::Real y) const {
   const amrex::Real l0 = (lambda0_ > 0.0) ? lambda0_ : 1.0;
-  const amrex::Real factor = -b0Eff_ / l0;
+  const amrex::Real factor = -b0Eff_ / (fourPI * l0);
   if (useDoubleCurrentSheet_) {
     return factor * (sech2((y + ySheet_) / l0) - sech2((y - ySheet_) / l0));
   } else if (isAsymmetryReconnection_) {
@@ -411,7 +411,7 @@ void GemIC::modify_particle_velocity(ParticleICState& s) const {
     if (s.charge > 0.0) {
       uz = 0.0; // ions carry no current
     } else {
-      uz = -jz / (s.charge * n); // electrons carry full current
+      uz = jz / (s.charge * n); // electrons carry full current
     }
   } else {
     // Distribute current according to species temperatures (diamagnetic drift)

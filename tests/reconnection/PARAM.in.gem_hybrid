@@ -69,7 +69,6 @@ periodic                fieldBoxBoundaryLo  (z)
 periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 reflect                 particleBoxBoundaryLo  (y; reflecting walls matching GEM challenge)
