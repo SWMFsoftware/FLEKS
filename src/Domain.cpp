@@ -338,8 +338,6 @@ void Domain::calc_refine_region() {
   Print() << printPrefix << "Domain::calc_refine_region() is called"
           << std::endl;
 
-  shapes.clear();
-
   std::string name = "lev0new";
   Real lo[nDim], hi[nDim];
 
@@ -356,9 +354,10 @@ void Domain::calc_refine_region() {
     hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
   }
 
-  shapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
+  Vector<std::shared_ptr<Shape> > movingShapes;
+  movingShapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
 
-  refineRegions[0].define(shapes, "+" + name);
+  refineRegions[0].define(movingShapes, "+" + name);
 
   isNewGrid = true;
   isNewRefinement = true;
@@ -1250,7 +1249,7 @@ void Domain::read_param(const bool readGridInfo) {
           hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
         }
 
-        shapes.push_back(std::make_unique<BoxShape>(name, lo, hi));
+        shapeList.push_back(std::make_unique<BoxShape>(name, lo, hi));
       } else if (type == "sphere") {
 
         Real center[nDim], radius;
@@ -1263,7 +1262,7 @@ void Domain::read_param(const bool readGridInfo) {
           center[iz_] = 0;
         }
 
-        shapes.push_back(std::make_unique<Sphere>(name, center, radius));
+        shapeList.push_back(std::make_unique<Sphere>(name, center, radius));
 
       } else if (type == "shell") {
 
@@ -1278,7 +1277,8 @@ void Domain::read_param(const bool readGridInfo) {
           center[iz_] = 0;
         }
 
-        shapes.push_back(std::make_unique<Shell>(name, center, rInner, rOuter));
+        shapeList.push_back(
+            std::make_unique<Shell>(name, center, rInner, rOuter));
       } else if (type == "paraboloid") {
         int iAxis;
         Real center[nDim], height, r1, r2;
@@ -1296,7 +1296,7 @@ void Domain::read_param(const bool readGridInfo) {
           center[iz_] = 0;
         }
 
-        shapes.push_back(
+        shapeList.push_back(
             std::make_unique<Paraboloid>(name, center, r1, r2, height, iAxis));
       }
 
@@ -1491,7 +1491,7 @@ void Domain::read_param(const bool readGridInfo) {
     { //====== Post process refinement region====
       for (int i = 0; i < refineRegionsStr.size() - 1; ++i) {
         if (refineRegionsStr[i].size() > 0) {
-          refineRegions[i] = Regions(shapes, refineRegionsStr[i]);
+          refineRegions[i] = Regions(shapeList, refineRegionsStr[i]);
         }
       }
     } //==========================================
@@ -1525,7 +1525,7 @@ void Domain::read_param(const bool readGridInfo) {
       // fi is final, then refresh the tracker from the resolved config.
       ptInfo.post_process_param();
       pt->post_process_param();
-      pt->set_tp_init_shapes(shapes);
+      pt->set_tp_init_shapes(shapeList);
     }
   }
 
