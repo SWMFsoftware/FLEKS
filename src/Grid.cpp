@@ -268,6 +268,25 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
 
+    // Mark the cells that belong to the absorbing inner body (see #BODY).
+    // The body is approximated by the union of the cells whose centers are
+    // inside the sphere, i.e., a staircase boundary with an error of dx/2.
+    if (useBody) {
+      for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.fabbox();
+        const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
+          Real xyz[nDim];
+          Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+          if (is_inside_body(xyz)) {
+            bit::set_body(cellArr(i, j, k));
+          } else {
+            bit::set_not_body(cellArr(i, j, k));
+          }
+        });
+      }
+    }
+
     // Set edge cells and find cells with 'is_refined' neighbors
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -380,6 +399,24 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           }
         }
       });
+    }
+
+    // Mark the nodes inside the absorbing inner body (see #BODY). The
+    // electric field is pinned to zero on these nodes.
+    if (useBody) {
+      for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.fabbox();
+        const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
+          Real xyz[nDim];
+          Geom(iLev).LoNode({ AMREX_D_DECL(i, j, k) }, xyz);
+          if (is_inside_body(xyz)) {
+            bit::set_body(nodeArr(i, j, k));
+          } else {
+            bit::set_not_body(nodeArr(i, j, k));
+          }
+        });
+      }
     }
 
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {

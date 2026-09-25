@@ -1500,6 +1500,43 @@ code_time = SI_time * uNorm/lNorm (so tNorm = lNorm/uNorm s per code-time unit).
 This command sets the scaling factor for the simulation.
 </command>
 
+<command name="BODY" alias="BODY_FLEKS0,BODY_FLEKS1,BODY_FLEKS2" multiple="T">
+  <parameter name="type" type="string" default="sphere"/>
+  <parameter name="center" type="real" default="0.0"/>
+  <parameter name="radius" type="real" default="1.0"/>
+
+#BODY
+sphere            type
+0.0 0.0 0.0       center
+1.0               radius
+
+This command defines an absorbing inner body, i.e., a real inner boundary
+inside the Cartesian PIC domain. Particles crossing into a body cell are
+removed and tallied, no particles are created inside the body, the electric
+field is pinned to zero inside the body, and the cell-centered output
+variables are zeroed there, so the body shows up as an empty hole with a wake
+behind it.
+
+center and radius are in code units (one length unit is lNormSI metres, see
+#NORMALIZATION), the same convention as #REGION. They are independent of
+#BODYSIZE, which is in SI units and only sets the exosphere reference radius
+and the planetary output unit.
+
+The body is represented by the cells whose centers lie inside the sphere, so
+its boundary is a staircase with a resolution of dx/2 and the effective
+radius carries an O(dx) error that converges under refinement. Particle
+absorption uses the same cell-based boundary, which is what makes the
+treatment conservative: no charge is silently discarded at the surface. The
+magnetic field is not forced to zero inside the body; with E = 0 and no
+particles inside, B is frozen at its initial value in the interior.
+
+Limitations: only 'sphere' is implemented; only the full-PIC solver
+(#SOLVEEM) is supported, not #HYBRIDPIC; AMR (nLevMax greater than 1) is not
+verified. A sharp absorbing boundary can be a source of numerical noise: if
+the electric field grows near the surface, add dissipation
+(#RESISTIVITY / #HYPERRESISTIVITY) instead of changing the boundary.
+</command>
+
 <command name="BODYSIZE" alias="BODYSIZE_FLEKS0,BODYSIZE_FLEKS1,BODYSIZE_FLEKS2" multiple="T">
   <parameter name="radius" type="real" default="1.0"/>
 

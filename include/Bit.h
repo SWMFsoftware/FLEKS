@@ -38,6 +38,11 @@ constexpr static int iRefined_ = 6;
 
 // If a cell is a neighbour to a refined cell.
 constexpr static int iRefinedNeighbour_ = 7;
+
+// The cells/nodes that are inside the absorbing inner body (see the #BODY
+// command). Particles entering a body cell are removed and the electric field
+// is pinned to zero on the body nodes.
+constexpr static int iBody_ = 8;
 //=========================================================
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool test_bit(const int& i, int pos) {
@@ -152,6 +157,23 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_refined_neighbour(
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_refined_neighbour(
     const int& i) {
   return test_bit(i, iRefinedNeighbour_);
+}
+
+//======= Inner body =======
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_body(int& i) {
+  turn_on_bit(i, iBody_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_body(int& i) {
+  turn_off_bit(i, iBody_);
+}
+/**
+ * @brief Check if the input cell/node is inside the absorbing inner body.
+ *
+ * @param i The integer representing the cell/node status.
+ * @return True if the cell/node belongs to the body, false otherwise.
+ */
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_body(const int& i) {
+  return test_bit(i, iBody_);
 }
 
 } // namespace bit

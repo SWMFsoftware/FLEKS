@@ -77,6 +77,29 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("T", tmp);
     inflowT_ = tmp; // [K]
     inflowDefined_ = true;
+  } else if (command == "#BODY") {
+    std::string type;
+    param.read_var("type", type);
+    if (type != "sphere")
+      Abort("Error: #BODY type '" + type +
+            "' is not supported. Only 'sphere' is implemented.");
+
+    Real center[nDim];
+    for (int i = 0; i < nDim; i++)
+      param.read_var("center", center[i]);
+
+    Real radius;
+    param.read_var("radius", radius);
+
+    // The geometry is in code units (one length unit is lNormSI metres),
+    // like #REGION, and unlike #BODYSIZE which is in SI.
+    set_body(center, radius);
+
+    Print() << "  inner body: sphere, radius = " << bodyRadius
+            << ", center = (";
+    for (int i = 0; i < nDim; i++)
+      Print() << (i > 0 ? ", " : "") << bodyCenter[i];
+    Print() << ") [code units]\n";
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -476,6 +499,33 @@ void Pic::post_process_param() {
   if (etaHyperMode != "si" && etaHyperMode != "grid")
     Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
           "'. Expected 'si' or 'grid'.");
+
+  if (useBody) {
+    if (bodyRadius <= 0)
+      Abort("Invalid #BODY: radius must be positive.");
+
+    // The body mask and the E-field Dirichlet condition are only wired into
+    // the full-PIC (implicit) solver for now.
+    if (useHybridPIC)
+      Abort("Invalid #BODY: the inner body is only implemented for the "
+            "full-PIC solver. It is not supported with #HYBRIDPIC.");
+
+    if (n_lev_max() > 1)
+      Print() << "  Warning: #BODY has not been verified with AMR "
+              << "(nLevMax > 1).\n";
+
+    // The body has to be strictly inside the domain: a body crossing a
+    // domain face (or a periodic face) would need a mask that is consistent
+    // across the periodic images, which is not implemented.
+    const auto plo = Geom(0).ProbLo();
+    const auto phi = Geom(0).ProbHi();
+    for (int i = 0; i < nDim; i++) {
+      if (bodyCenter[i] - bodyRadius <= plo[i] ||
+          bodyCenter[i] + bodyRadius >= phi[i])
+        Abort("Invalid #BODY: the body must be strictly inside the "
+              "simulation domain.");
+    }
+  }
 
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();

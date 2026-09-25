@@ -7,6 +7,7 @@
 #include <AMReX_BoxArray.H>
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_GpuQualifiers.H>
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
@@ -71,6 +72,14 @@ protected:
   bool isTargetPPCDefined = false;
 
   std::string tag;
+
+  // Geometry of the optional absorbing inner body declared by #BODY, in
+  // normalized (code) units: a sphere of radius bodyRadius around bodyCenter.
+  // The body is static, so the mask is built when the grid is (re)generated.
+  bool useBody = false;
+  amrex::Real bodyCenter[3] = { 0.0, 0.0, 0.0 };
+  amrex::Real bodyRadius = 0.0;
+  amrex::Real bodyRadius2 = 0.0;
 
 private:
   // Here is the inheritance chain: AmrInfo -> AmrMesh -> AmrCore -> Grid. We
@@ -200,6 +209,38 @@ public:
         return true;
     }
     return false;
+  }
+
+  //---- Inner body (see the #BODY command) ----
+
+  bool use_body() const { return useBody; }
+
+  amrex::Real get_body_radius() const { return bodyRadius; }
+
+  const amrex::Real* get_body_center() const { return bodyCenter; }
+
+  // Declare the absorbing body. `center` is in code units and may be a
+  // nDim-long array; a null pointer means the origin.
+  void set_body(const amrex::Real* center, const amrex::Real radius) {
+    useBody = true;
+    bodyRadius = radius;
+    bodyRadius2 = radius * radius;
+    for (int i = 0; i < 3; i++)
+      bodyCenter[i] = (center == nullptr) ? 0.0 : center[i];
+  }
+
+  // Is the point 'loc' (code units) inside the body? The test uses the
+  // nDim active dimensions, so a fake-2D run measures the radius in x-y only.
+  AMREX_GPU_HOST_DEVICE bool is_inside_body(const amrex::Real* loc) const {
+    if (!useBody)
+      return false;
+
+    amrex::Real r2 = 0;
+    for (int i = 0; i < nDim; i++) {
+      const amrex::Real delta = loc[i] - bodyCenter[i];
+      r2 += delta * delta;
+    }
+    return r2 < bodyRadius2;
   }
 
   void print_grid_info(bool printBoxes = false);
