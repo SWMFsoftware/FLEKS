@@ -1,4 +1,5 @@
 #include <cmath>
+#include <iomanip>
 #include <vector>
 
 #include <AMReX_MultiFabUtil.H>
@@ -16,17 +17,60 @@ void Pic::divE_correction() {
 
   timing_func(nameFunc);
 
+#ifdef GMRES_VERBOSE
+  const bool useCompactDivELog = false;
+#else
+  const bool useCompactDivELog = domainParameters.doCompact;
+#endif
+
+  struct DivELogEntry {
+    double res0;
+    int nMatVec;
+    double relErr;
+  };
+  std::vector<DivELogEntry> logEntries;
+  if (doReport && useCompactDivELog) {
+    logEntries.reserve(nDivECorrection);
+  }
+
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
 
     sum_to_center(true);
 
-    if (doReport)
+    if (doReport && !useCompactDivELog)
       Print() << "\n-----" << printPrefix << " div(E) correction at iter "
               << iIter << "----------" << std::endl;
 
-    calculate_phi(divESolver, 0);
+    calculate_phi(divESolver, 0, doReport && !useCompactDivELog);
+
+    if (doReport && useCompactDivELog) {
+      logEntries.push_back({ divESolver.get_initial_residual(),
+                             divESolver.get_actual_nIter(),
+                             divESolver.get_achieved_error() });
+    }
 
     divE_correct_particle_position();
+  }
+
+  if (doReport && useCompactDivELog && !logEntries.empty()) {
+    int totalMatVec = 0;
+    for (const auto& entry : logEntries) {
+      totalMatVec += entry.nMatVec;
+    }
+    const double resInitial = logEntries.front().res0;
+    const double resFinal = logEntries.back().res0 * logEntries.back().relErr;
+
+    if (logEntries.size() == 1) {
+      Print() << printPrefix << "div(E): res " << std::setprecision(5)
+              << resInitial << " -> " << resFinal << " (" << totalMatVec
+              << " mv)" << std::defaultfloat << std::setprecision(6)
+              << std::endl;
+    } else {
+      Print() << printPrefix << "div(E) [" << logEntries.size()
+              << " iters]: res " << std::setprecision(5) << resInitial << " -> "
+              << resFinal << " (total " << totalMatVec << " mv)"
+              << std::defaultfloat << std::setprecision(6) << std::endl;
+    }
   }
 
   for (int i = 0; i < nSpecies; ++i) {
@@ -55,7 +99,7 @@ void Pic::divE_correct_particle_position() {
 }
 
 //==========================================================
-void Pic::calculate_phi(LinearSolver& solver, int iLev) {
+void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
   std::string nameFunc = "Pic::calculate_phi";
 
   timing_func(nameFunc);
@@ -76,7 +120,7 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev) {
     convert_3d_to_1d(residual, solver.rhs, iLev);
 
     BL_PROFILE_VAR("Pic::phi_iterate", solve);
-    solver.solve(iLev, doReport);
+    solver.solve(iLev, reportSolver);
     BL_PROFILE_VAR_STOP(solve);
 
     convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
@@ -260,11 +304,41 @@ void Pic::amr_divE_correction() {
 
   timing_func(nameFunc);
 
+#ifdef GMRES_VERBOSE
+  const bool useCompactDivELog = false;
+#else
+  const bool useCompactDivELog = domainParameters.doCompact;
+#endif
+
+  struct DivELogEntry {
+    int iter;
+    int lev;
+    double res0;
+    int nMatVec;
+    double relErr;
+  };
+  std::vector<DivELogEntry> logEntries;
+  if (doReport && useCompactDivELog) {
+    logEntries.reserve(nDivECorrection * (finest_level + 1));
+  }
+
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
       sum_to_center_amr(true, iLev);
       skip_cells_divE_correction(centerMM[iLev], cell_status(iLev), iLev);
-      calculate_phi(divESolver, iLev);
+
+      if (doReport && !useCompactDivELog)
+        Print() << "\n-----" << printPrefix << " div(E) correction at iter "
+                << iIter << ", lev " << iLev << "----------" << std::endl;
+
+      calculate_phi(divESolver, iLev, doReport && !useCompactDivELog);
+
+      if (doReport && useCompactDivELog) {
+        logEntries.push_back({ iIter, iLev, divESolver.get_initial_residual(),
+                               divESolver.get_actual_nIter(),
+                               divESolver.get_achieved_error() });
+      }
+
       for (int i = 0; i < nSpecies; ++i) {
         parts[i]->divE_correct_position(centerPhi, iLev);
       }
@@ -273,6 +347,35 @@ void Pic::amr_divE_correction() {
           parts[i]->Redistribute();
         }
       }
+    }
+  }
+
+  if (doReport && useCompactDivELog && !logEntries.empty()) {
+    int totalMatVec = 0;
+    for (const auto& entry : logEntries) {
+      totalMatVec += entry.nMatVec;
+    }
+    const double resInitial = logEntries.front().res0;
+    const double resFinal = logEntries.back().res0 * logEntries.back().relErr;
+
+    if (finest_level == 0) {
+      if (logEntries.size() == 1) {
+        Print() << printPrefix << "div(E): res " << std::setprecision(5)
+                << resInitial << " -> " << resFinal << " (" << totalMatVec
+                << " mv)" << std::defaultfloat << std::setprecision(6)
+                << std::endl;
+      } else {
+        Print() << printPrefix << "div(E) [" << logEntries.size()
+                << " iters]: res " << std::setprecision(5) << resInitial
+                << " -> " << resFinal << " (total " << totalMatVec << " mv)"
+                << std::defaultfloat << std::setprecision(6) << std::endl;
+      }
+    } else {
+      Print() << printPrefix << "div(E) [" << nDivECorrection << " iters, "
+              << (finest_level + 1) << " levs]: res " << std::setprecision(5)
+              << resInitial << " -> " << resFinal << " (total " << totalMatVec
+              << " mv)" << std::defaultfloat << std::setprecision(6)
+              << std::endl;
     }
   }
 

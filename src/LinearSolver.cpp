@@ -17,7 +17,8 @@ void matvec_divE_accurate(const double *vecIn, double *vecOut, int iLev) {
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double *rhs, double *xLeft,
                          MATVEC fMatvec, int iLev, bool doReport,
-                         GmresWorkspace *work) {
+                         GmresWorkspace *work, double *initialResidual,
+                         int *actualMatvec, double *achievedError) {
 
   int nJ = 1, nK = 1, nBlock = 1;
   double precond_matrix_II[1][1];
@@ -27,10 +28,10 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
   if (true) {
     MPI_Comm iComm = ParallelDescriptor::Communicator();
     PrecondType TypePrecond = NONE;
-    linear_solver_wrapper_hy(fMatvec, iLev, GMRES, tolerance, nIteration,
-                             nVarSolve, nDim, nGrid, nJ, nK, nBlock, iComm, rhs,
-                             xLeft, TypePrecond, precond_matrix_II[0], lTest,
-                             work);
+    linear_solver_wrapper_hy(
+        fMatvec, iLev, GMRES, tolerance, nIteration, nVarSolve, nDim, nGrid, nJ,
+        nK, nBlock, iComm, rhs, xLeft, TypePrecond, precond_matrix_II[0], lTest,
+        work, initialResidual, actualMatvec, achievedError);
   } else { // Fortran solver
     /*
     // The shared library matvec requires non-const vecIn due to compatibility
@@ -65,7 +66,8 @@ void linear_solver_wrapper_hy(
     const PrecondType typePrecond, // Parameter for the preconditioner
     double *precondMatrix_II, // Diagonal and super/sub diagonal elements from
                               // the matrix A, which is in the equation Ax = b
-    const int lTest, GmresWorkspace *work) {
+    const int lTest, GmresWorkspace *work, double *initialResidual,
+    int *actualMatvec, double *achievedError) {
   struct LinearSolverParam param;
 
   param.typePrecond = typePrecond;
@@ -117,7 +119,7 @@ void linear_solver_wrapper_hy(
     case GMRES:
       gmres(matvec, iLev, rhs_I, x_I, param.useInitialGuess, nImpl,
             param.nKrylovVector, param.error, param.typeStop, param.nMatvec,
-            DoTest, iComm, work);
+            DoTest, iComm, work, initialResidual);
       break;
     case BICGSTAB:
       // bicgstab(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
@@ -136,6 +138,11 @@ void linear_solver_wrapper_hy(
   if (DoTest)
     std::cout << "After nMatVec, " << typeError << " error = " << param.nMatvec
               << " " << param.error << std::endl;
+
+  if (actualMatvec)
+    *actualMatvec = param.nMatvec;
+  if (achievedError)
+    *achievedError = param.error;
 }
 
 /*
@@ -157,7 +164,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
           int &nIter,              // Maximum/actual number of iterations
           const bool doTest,       // Write debug info if true
           MPI_Comm iComm,          // MPI communicator
-          GmresWorkspace *work) {
+          GmresWorkspace *work, double *initialResidual) {
   int info = -1;
   // gives reason for returning:
   //    abs(info)=  0: solution found satisfying given tolerance.
@@ -245,12 +252,16 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
 
       tol = ro;
       nIter = its;
+      if (initialResidual)
+        *initialResidual = 0.0;
       return info;
     }
 
     // Set Tol1 for stopping criterion
     if (its == 0) {
       ro0 = ro;
+      if (initialResidual)
+        *initialResidual = ro0;
       if (doTest)
         std::cout << "initial residual norm: " << ro0 << std::endl;
       if (typeStop == ABS) {

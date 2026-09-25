@@ -596,7 +596,7 @@ public:
   void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
   void sum_to_center_amr(bool isBeforeCorrection, int iLev);
-  void calculate_phi(LinearSolver &solver, int iLev);
+  void calculate_phi(LinearSolver &solver, int iLev, bool reportSolver = true);
   //-------------div(E) correction end----------------
 
   void report_load_balance(bool doReportSummary = true,

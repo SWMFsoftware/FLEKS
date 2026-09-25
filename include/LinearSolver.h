@@ -100,7 +100,10 @@ void matvec_divE_accurate(const double *vecIn, double *vecOut, int iLev);
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double *rhs, double *xLeft,
                          MATVEC fMatvec, int iLev, bool doReport = true,
-                         GmresWorkspace *work = nullptr);
+                         GmresWorkspace *work = nullptr,
+                         double *initialResidual = nullptr,
+                         int *actualMatvec = nullptr,
+                         double *achievedError = nullptr);
 
 void linear_solver_wrapper_hy(
     std::function<void(const double *, double *, const int)> matvec, int iLev,
@@ -108,7 +111,8 @@ void linear_solver_wrapper_hy(
     const int nVar, const int nDim, const int nI, const int nJ, const int nK,
     const int nBlock, MPI_Comm iComm, double *Rhs_I, double *x_I,
     const PrecondType TypePrecond, double *precond_matrix, const int lTest,
-    GmresWorkspace *work = nullptr);
+    GmresWorkspace *work = nullptr, double *initialResidual = nullptr,
+    int *actualMatvec = nullptr, double *achievedError = nullptr);
 
 // hyzhou: eventually we should use this and merge the above into this class!
 class LinearSolver {
@@ -123,6 +127,9 @@ class LinearSolver {
   std::vector<double> xLeftBuffer;
   std::vector<double> matvecBuffer;
   GmresWorkspace gmresWork;
+  int actualMatvec = 0;
+  double initialResidual = 0.0;
+  double achievedError = 0.0;
 
 public:
   double *rhs;
@@ -153,6 +160,9 @@ public:
     gmresWork.rs.clear();
     gmresWork.krylovBuffer.clear();
     gmresWork.hhBuffer.clear();
+    actualMatvec = 0;
+    initialResidual = 0.0;
+    achievedError = 0.0;
     rhs = nullptr;
     xLeft = nullptr;
     matvec = nullptr;
@@ -179,6 +189,9 @@ public:
       xLeft[i] = 0;
       matvec[i] = 0;
     }
+    actualMatvec = 0;
+    initialResidual = 0.0;
+    achievedError = 0.0;
   }
 
   void set_tol(amrex::Real in) { tol = in; }
@@ -193,7 +206,8 @@ public:
 
   void solve(int iLev, bool doReport = true) {
     linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec,
-                        iLev, doReport, &gmresWork);
+                        iLev, doReport, &gmresWork, &initialResidual,
+                        &actualMatvec, &achievedError);
   }
 
   void solve(std::function<void(const double *, double *, const int)> matvec,
@@ -205,10 +219,14 @@ public:
     linear_solver_wrapper_hy(matvec, iLev, GMRES, tol, nIter, nVar, nDim, nGrid,
                              nJ, nK, nBlock,
                              amrex::ParallelDescriptor::Communicator(), rhs,
-                             xLeft, NONE, precondMatrix, lTest, &gmresWork);
+                             xLeft, NONE, precondMatrix, lTest, &gmresWork,
+                             &initialResidual, &actualMatvec, &achievedError);
   }
 
   int get_nSolve() const { return nSolve; }
+  int get_actual_nIter() const { return actualMatvec; }
+  double get_initial_residual() const { return initialResidual; }
+  double get_achieved_error() const { return achievedError; }
 };
 
 int gmres(std::function<void(const double *, double *, const int)> matvec,
@@ -223,6 +241,6 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
           int &nIter,              // Maximum/actual number of iterations
           const bool doTest,       // Write debug info if true
           MPI_Comm iComm = MPI_COMM_SELF, // MPI communicator
-          GmresWorkspace *work = nullptr);
+          GmresWorkspace *work = nullptr, double *initialResidual = nullptr);
 
 #endif
