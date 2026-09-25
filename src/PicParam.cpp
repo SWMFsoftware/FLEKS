@@ -30,57 +30,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     else
       Abort("Error: wrong input for partMode.");
   } else if (command == "#PARTICLEBOXBOUNDARY") {
-    std::string firstToken;
-    param.read_var("particleBoxBoundaryLo", firstToken);
-    // Backward compatibility: if the first token is an integer, it is the
-    // legacy per-species syntax with "iSpecies" on the first line.
-    const bool isLegacySpecies =
-        !firstToken.empty() &&
-        (std::isdigit(firstToken[0]) ||
-         (firstToken[0] == '-' && firstToken.size() > 1 &&
-          std::isdigit(firstToken[1])));
+    if (pInfo.pBCs.empty()) {
+      pInfo.pBCs.resize(1);
+      pInfo.pBCsSet.resize(1, 0);
+    }
+    pInfo.pBCsSet[0] = 1;
+
     std::string lo, hi;
-    if (isLegacySpecies) {
-      const int iSpecies = std::stoi(firstToken);
-      if (iSpecies < 0)
-        Abort("Error: negative species index in #PARTICLEBOXBOUNDARY.");
-      // nSpecies is only known in post_process_param(), so pBCs grows on
-      // demand here and is padded to nSpecies there.
-      if (iSpecies >= static_cast<int>(pInfo.pBCs.size())) {
-        pInfo.pBCs.resize(iSpecies + 1);
-        pInfo.pBCsSet.resize(iSpecies + 1, 0);
-      }
-      pInfo.pBCsSet[iSpecies] = 1;
-
-      for (int i = 0; i < nDim; ++i) {
-        param.read_var("particleBoxBoundaryLo", lo);
-        param.read_var("particleBoxBoundaryHi", hi);
-        pInfo.pBCs[iSpecies].set(i, 0, ParticleBC::parse(lo));
-        pInfo.pBCs[iSpecies].set(i, 1, ParticleBC::parse(hi));
-      }
-    } else {
-      // Unified syntax: applies to all species, matching #FIELDBOXBOUNDARY
-      if (pInfo.pBCs.empty()) {
-        pInfo.pBCs.resize(1);
-        pInfo.pBCsSet.resize(1, 0);
-      }
-      pInfo.pBCsSet[0] = 1;
-
-      lo = firstToken;
+    for (int i = 0; i < nDim; ++i) {
+      param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
-      pInfo.pBCs[0].set(0, 0, ParticleBC::parse(lo));
-      pInfo.pBCs[0].set(0, 1, ParticleBC::parse(hi));
-
-      for (int i = 1; i < nDim; ++i) {
-        param.read_var("particleBoxBoundaryLo", lo);
-        param.read_var("particleBoxBoundaryHi", hi);
-        pInfo.pBCs[0].set(i, 0, ParticleBC::parse(lo));
-        pInfo.pBCs[0].set(i, 1, ParticleBC::parse(hi));
-      }
-      for (size_t s = 1; s < pInfo.pBCs.size(); ++s) {
-        pInfo.pBCs[s] = pInfo.pBCs[0];
-        pInfo.pBCsSet[s] = 1;
-      }
+      pInfo.pBCs[0].set(i, 0, ParticleBC::parse(lo));
+      pInfo.pBCs[0].set(i, 1, ParticleBC::parse(hi));
+    }
+    for (size_t s = 1; s < pInfo.pBCs.size(); ++s) {
+      pInfo.pBCs[s] = pInfo.pBCs[0];
+      pInfo.pBCsSet[s] = 1;
     }
   } else if (command == "#FIELDBOXBOUNDARY" ||
              command == "#BFIELDBOXBOUNDARY") {

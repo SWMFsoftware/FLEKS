@@ -38,7 +38,6 @@ periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
 absorb                  particleBoxBoundaryLo
 absorb                  particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo

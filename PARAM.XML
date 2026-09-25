@@ -2066,7 +2066,6 @@ outflow           particleBoxBoundaryLo
 outflow           particleBoxBoundaryHi
 
 This command defines the kinetic boundary conditions for all particle species.
-(For backward compatibility, a leading species index integer is also accepted).
 
 * `periodic` -- requires the direction to be periodic in `#PERIODICITY` too.
   The stored value is auto-derived from the geometry, so the geometry wins and
