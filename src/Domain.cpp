@@ -23,7 +23,6 @@ static const ParameterCommand parameter_registry[] = {
   { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#BODY", ParameterOwner::Pic },
-  { "#BODYSIZE", ParameterOwner::FluidInterface },
   { "#BSUBCYCLE", ParameterOwner::Pic },
   { "#CMAXE", ParameterOwner::Pic },
   { "#COMOVING", ParameterOwner::Pic },
@@ -129,8 +128,6 @@ std::string canonical_command(const std::string &command) {
     return "#DISCRETIZE";
   if (command == "#BFIELDBOXBOUNDARY")
     return "#FIELDBOXBOUNDARY";
-  if (command == "#BODYSIZE")
-    return "#PLANETRADIUS";
   return command;
 }
 

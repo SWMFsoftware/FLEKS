@@ -1569,8 +1569,8 @@ removed and no field is modified at r = r_planet. Use #BODY for that.
 In a GM-PC (SWMF) coupled run the value is provided by the fluid component
 and this command is ignored.
 
-#BODYSIZE is deprecated in favor of this command; it is still accepted and
-mapped to #PLANETRADIUS.
+This command was previously named #BODYSIZE. The old name is no longer
+accepted: rename it to #PLANETRADIUS in existing input decks.
 </command>
 
 <command name="EXOSPHERE" alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2" multiple="T">
