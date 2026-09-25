@@ -39,16 +39,6 @@ periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
-reflect                 particleBoxBoundaryLo
-inflow                  particleBoxBoundaryHi
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
-
-#PARTICLEBOXBOUNDARY
-1                       iSpecies
 reflect                 particleBoxBoundaryLo
 inflow                  particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo

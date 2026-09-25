@@ -36,7 +36,6 @@ periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
 reflect                 particleBoxBoundaryLo
 reflect                 particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo

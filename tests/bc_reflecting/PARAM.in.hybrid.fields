@@ -51,7 +51,6 @@ periodic                fieldBoxBoundaryHi
 Reflecting particle walls keep the ions (and hence the hybrid Ohm's-law moments)
 inside the cavity.
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
 reflect                 particleBoxBoundaryLo
 reflect                 particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo

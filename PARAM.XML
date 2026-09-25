@@ -2033,8 +2033,7 @@ accordingly for the next step. This is only used for OH-PT coupling.
 </command>
 
 
-<command name="PARTICLEBOXBOUNDARY" alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2" multiple="T">
-  <parameter name="iSpecies" type="integer" required="T"/>
+<command name="PARTICLEBOXBOUNDARY" alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2" multiple="F">
   <for from="1" to="$nDim">
     <parameter name="particleBoxBoundaryLo" type="string" input="select" required="T">
       <option value="periodic"/>
@@ -2059,7 +2058,6 @@ accordingly for the next step. This is only used for OH-PT coupling.
   </for>
 
 #PARTICLEBOXBOUNDARY
-0                 iSpecies
 coupled           particleBoxBoundaryLo
 coupled           particleBoxBoundaryHi
 outflow           particleBoxBoundaryLo
@@ -2067,9 +2065,7 @@ outflow           particleBoxBoundaryHi
 outflow           particleBoxBoundaryLo
 outflow           particleBoxBoundaryHi
 
-This command defines the kinetic boundary conditions for one particle species
-(`iSpecies`); repeat the block for every species.  A species with no block of
-its own keeps the default `coupled`.
+This command defines the kinetic boundary conditions for all particle species.
 
 * `periodic` -- requires the direction to be periodic in `#PERIODICITY` too.
   The stored value is auto-derived from the geometry, so the geometry wins and

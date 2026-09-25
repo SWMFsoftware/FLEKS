@@ -39,7 +39,6 @@ periodic                fieldBoxBoundaryLo  (z)
 periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 outflow                 particleBoxBoundaryLo

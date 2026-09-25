@@ -49,14 +49,6 @@ periodic                fieldBoxBoundaryLo  (z)
 periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
-reflect                 particleBoxBoundaryLo
-reflect                 particleBoxBoundaryHi
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
-1                       iSpecies
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 reflect                 particleBoxBoundaryLo
