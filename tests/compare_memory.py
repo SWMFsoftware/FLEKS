@@ -66,6 +66,14 @@ def _cell(row, value):
     return f"{value:,}"
 
 
+def _change_percent(row):
+    """Return the relative change for a numeric comparison, if meaningful."""
+    base, delta = row["base"], row["delta"]
+    if base in (None, 0) or delta is None:
+        return "-"
+    return f"{100.0 * delta / abs(base):+,.2f}%"
+
+
 class Findings:
     """Ordered collection of comparison results."""
 
@@ -241,12 +249,13 @@ def compare(baseline, candidate, cfg):
 # Reporting
 # ---------------------------------------------------------------------------
 def _table(rows, show_arena=False):
-    header = ["| Test", "Region", "Metric", "master", "PR", "Δ", "Note |"]
+    header = ["| Test", "Region", "Metric", "Baseline", "Candidate",
+              "Change", "Change %", "Note |"]
     if show_arena:
         header.insert(1, "Arena")
-    separator = ("| :--- | :--- | :--- | :--- | ---: | ---: | ---: | :--- |"
+    separator = ("| :--- | :--- | :--- | :--- | ---: | ---: | ---: | ---: | :--- |"
                  if show_arena
-                 else "| :--- | :--- | :--- | ---: | ---: | ---: | :--- |")
+                 else "| :--- | :--- | :--- | ---: | ---: | ---: | ---: | :--- |")
     lines = [" | ".join(header), separator]
 
     for row in rows:
@@ -257,7 +266,7 @@ def _table(rows, show_arena=False):
         cells.append(f"`{row['metric']}`")
 
         if row["base"] is None and row["cand"] is None:
-            cells += ["-", "-", "-"]
+            cells += ["-", "-", "-", "-"]
         else:
             delta = row["delta"]
             if delta is not None and row["kind"] in ("mb", "bytes", "ratio"):
@@ -265,6 +274,7 @@ def _table(rows, show_arena=False):
             cells.append(_cell(row, row["base"]))
             cells.append(_cell(row, row["cand"]))
             cells.append("-" if delta is None else _cell(row, delta))
+            cells.append(_change_percent(row))
         cells.append(f"{row['note']} |")
         lines.append(" | ".join(cells))
 
@@ -274,11 +284,21 @@ def _table(rows, show_arena=False):
 def format_markdown(baseline, candidate, findings):
     bmeta, cmeta = baseline.get("meta", {}), candidate.get("meta", {})
     out = [f"### {REPORT_TITLE}", ""]
-    out.append(f"* master: `{str(bmeta.get('commit', '?'))[:12]}` "
-               f"({bmeta.get('ref', '?')}) — {bmeta.get('commit_subject', '')}")
-    out.append(f"* PR: `{str(cmeta.get('commit', '?'))[:12]}` "
-               f"({cmeta.get('ref', '?')}) — {cmeta.get('commit_subject', '')}")
+    out.append(f"* Baseline (`{bmeta.get('ref', '?')}`): "
+               f"`{str(bmeta.get('commit', '?'))[:12]}` "
+               f"— {bmeta.get('commit_subject', '')}")
+    out.append(f"* Candidate (`{cmeta.get('ref', '?')}`): "
+               f"`{str(cmeta.get('commit', '?'))[:12]}` "
+               f"— {cmeta.get('commit_subject', '')}")
     out.append("")
+
+    if bmeta.get("commit") and bmeta.get("commit") == cmeta.get("commit"):
+        out += [
+            "⚠️ **Baseline and candidate are the same commit.** "
+            "This comparison does not measure a source change; differences "
+            "may be build or runtime noise.",
+            "",
+        ]
 
     failures = findings.failures()
     others = findings.by_severity(INFO)
