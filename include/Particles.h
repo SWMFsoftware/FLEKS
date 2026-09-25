@@ -1,6 +1,7 @@
 #ifndef _PARTICLES_H_
 #define _PARTICLES_H_
 
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -801,22 +802,63 @@ public:
   void set_is_target_ppc_defined(bool in) { isTargetPPCDefined = in; }
 
   inline bool is_outside_active_region(const ParticleType& p, int iLev) {
-    if (iLev > 0) {
-      return false;
-    }
     amrex::RealVect loc;
-    for (int iDim = 0; iDim < nDim; iDim++) {
+    for (int iDim = 0; iDim < nDim; ++iDim) {
       loc[iDim] = p.pos(iDim);
       if (Geom(iLev).isPeriodic(iDim)) {
-        // Fix index/loc for periodic BC.
-        while (loc[iDim] > phi[iLev][iDim])
-          loc[iDim] -= phi[iLev][iDim] - plo[iLev][iDim];
-        while (loc[iDim] < plo[iLev][iDim])
-          loc[iDim] += phi[iLev][iDim] - plo[iLev][iDim];
+        // Fix index/loc for periodic BC in O(1) without unbounded iteration.
+        const amrex::Real L = phi[iLev][iDim] - plo[iLev][iDim];
+        loc[iDim] -= std::floor((loc[iDim] - plo[iLev][iDim]) / L) * L;
+        if (loc[iDim] >= phi[iLev][iDim]) {
+          loc[iDim] = plo[iLev][iDim];
+        }
+      } else {
+        // Fast bounding-box check: if outside global [plo, phi], cannot be
+        // inside activeRegion.
+        if (loc[iDim] < plo[iLev][iDim] || loc[iDim] > phi[iLev][iDim]) {
+          return true;
+        }
       }
     }
 
     return !grid->is_inside_domain(loc.begin());
+  }
+
+  /**
+   * @brief Checks if a particle is outside the active region at a given level.
+   *
+   * This function determines whether a particle is outside the active region
+   * at a specified level (`iLev`). It takes into account periodic boundary
+   * conditions and adjusts the particle's position accordingly.
+   *
+   * @param p The particle to check.
+   * @param status Status bitmask array of the local tile (including ghost
+   * cells).
+   * @param low Lower index bound of the status array.
+   * @param high Upper index bound of the status array.
+   * @param iLev The level at which to check the particle's position.
+   * @return True if the particle is outside the active region, false otherwise.
+   */
+  inline bool is_outside_active_region(const ParticleType& p,
+                                       amrex::Array4<int const> const& status,
+                                       const amrex::IntVect& low,
+                                       const amrex::IntVect& high, int iLev) {
+    bool isInsideBox = true;
+    amrex::IntVect cellIdx;
+    for (int i = 0; i < nDim; ++i) {
+      const amrex::Real dShift = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
+      cellIdx[i] = fastfloor(dShift);
+      if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
+        isInsideBox = false;
+        break;
+      }
+    }
+
+    if (isInsideBox) {
+      return bit::is_domain_boundary(status(cellIdx));
+    } else {
+      return is_outside_active_region(p, iLev);
+    }
   }
 
   inline bool is_outside_level(const ParticleType& p, int iLev,
@@ -829,46 +871,6 @@ public:
     }
 
     return isOutsideLevel;
-  }
-
-  /**
-   * @brief Checks if a particle is outside the active region at a given level.
-   *
-   * This function determines whether a particle is outside the active region
-   * at a specified level (`iLev`). It takes into account periodic boundary
-   * conditions and adjusts the particle's position accordingly.
-   *
-   * @param p The particle to check.
-   * @param iLev The level at which to check the particle's position.
-   * @return True if the particle is outside the active region, false otherwise.
-   */
-  inline bool is_outside_active_region(const ParticleType& p,
-                                       amrex::Array4<int const> const& status,
-                                       const amrex::IntVect& low,
-                                       const amrex::IntVect& high, int iLev) {
-
-    // TODO: It does not work with AMR.
-    // Contains ghost cells.
-    if (iLev > 0) {
-      return false;
-    }
-    bool isInsideBox = true;
-    amrex::IntVect cellIdx;
-    amrex::RealVect dShift;
-    for (int i = 0; i < nDim; ++i) {
-      dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-      cellIdx[i] = fastfloor(dShift[i]);
-      if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
-        isInsideBox = false;
-        break;
-      }
-    }
-
-    if (isInsideBox) {
-      return bit::is_domain_boundary(status(cellIdx));
-    } else {
-      return is_outside_active_region(p, iLev);
-    }
   }
 
   inline void label_particles_outside_active_region() {
