@@ -18,7 +18,7 @@
 #include "Constants.h"
 #include "FleksDistributionMap.h"
 #include "GridInfo.h"
-#include "Regions.h"
+#include "RefineRegions.h"
 
 class DomainGrid {
 
@@ -57,7 +57,7 @@ protected:
 
   amrex::Vector<std::shared_ptr<Shape> > shapeList;
   amrex::Vector<std::string> refineRegionsStr;
-  amrex::Vector<Regions> refineRegions;
+  RefineRegions refineRegions;
 
   // "This threshold value, which defaults to 0.7 (or 70%), is used to ensure
   // that grids do not contain too large a fraction of un-tagged cells." - AMReX
@@ -67,7 +67,6 @@ protected:
   // If the grid has not been initialized or the grid changed due to AMR,
   // isNewGrid is true.
   bool isNewGrid = true;
-  bool isNewRefinement = false;
 
   bool doSplitLevs = false;
 

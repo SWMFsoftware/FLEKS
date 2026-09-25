@@ -20,7 +20,7 @@
 
 #include "Array1D.h"
 #include "Constants.h"
-#include "Regions.h"
+#include "RefineRegions.h"
 #include "TimeCtr.h"
 
 // This class define the grid information, but NOT the data on the grid.
@@ -58,7 +58,7 @@ protected:
 
   amrex::Vector<amrex::MultiFab> cellCost;
 
-  amrex::Vector<Regions> refineRegions;
+  RefineRegions refineRegions;
 
   bool doNeedFillNewCell = true;
 
@@ -135,11 +135,11 @@ public:
     return vol;
   }
 
-  const amrex::Vector<Regions>& get_refine_regions() const {
+  const RefineRegions& get_refine_regions() const {
     return refineRegions;
   }
 
-  void set_refine_regions(const amrex::Vector<Regions>& in) {
+  void set_refine_regions(const RefineRegions& in) {
     refineRegions = in;
   }
 
@@ -160,7 +160,7 @@ public:
       bool doSplitLevs = false);
 
   void regrid(const amrex::BoxArray& region,
-              const amrex::Vector<Regions>& refine = amrex::Vector<Regions>(),
+              const RefineRegions& refine = RefineRegions(),
               const amrex::Real eff = 0.7) {
     refineRegions = refine;
 
@@ -190,7 +190,7 @@ public:
     }
   }
 
-  void update_refine_region(const amrex::Vector<Regions>& in) {
+  void update_refine_region(const RefineRegions& in) {
     refineRegions = in;
   }
 

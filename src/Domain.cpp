@@ -360,7 +360,7 @@ void Domain::calc_refine_region() {
   refineRegions[0].define(Shapes, "+" + name);
 
   isNewGrid = true;
-  isNewRefinement = true;
+  refineRegions.mark_modified();
 
   fi->is_new_grid(isNewGrid);
 
@@ -610,7 +610,7 @@ void Domain::regrid() {
   if (pic) {
     pic->regrid(activeRegion, fi.get());
 
-    if (isNewRefinement) {
+    if (refineRegions.is_modified()) {
       pic->fill_new_cells();
       // Add functions to fill in EM fields for new cells.
       // Some thoughts:
@@ -633,7 +633,7 @@ void Domain::regrid() {
   // otherwise, Domain::regrid() will be executed every step.
   gridInfo.is_grid_new(false);
   isNewGrid = false;
-  isNewRefinement = false;
+  refineRegions.clear_modified();
 }
 
 //========================================================
