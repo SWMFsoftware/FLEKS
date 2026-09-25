@@ -687,6 +687,14 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       std::string sName = "Epart" + std::to_string(i);
       picLogStream << "\t" << std::setw(wCol) << sName;
     }
+    // Cumulative tallies of the particles absorbed by the inner body
+    // (#BODY). Appended at the end so that the existing columns keep their
+    // positions.
+    if (useBody) {
+      picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
+                   << std::setw(wCol) << "qBodyAbsorb" << "\t"
+                   << std::setw(wCol) << "mBodyAbsorb";
+    }
     picLogStream << std::endl;
   }
 
@@ -700,6 +708,21 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
     Real eEnergy = calc_E_field_energy();
     Real bEnergy = calc_B_field_energy();
+
+    // Cumulative number / charge / mass of the particles absorbed by the
+    // inner body (#BODY), summed over all species and all MPI ranks.
+    Vector<Real> bodyAbsorb(3, 0.0);
+    if (useBody) {
+      for (auto& part : parts) {
+        bodyAbsorb[0] += part->get_body_absorb_count();
+        bodyAbsorb[1] += part->get_body_absorb_charge();
+        bodyAbsorb[2] += part->get_body_absorb_mass();
+      }
+      ParallelDescriptor::ReduceRealSum(
+          bodyAbsorb.data(), bodyAbsorb.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
         picLogStream.open(logFile.c_str(), std::fstream::app);
@@ -714,6 +737,11 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                    << bEnergy << "\t" << std::setw(wCol) << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << plasmaEnergy[i];
+      if (useBody) {
+        picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
+                     << std::setw(wCol) << bodyAbsorb[1] << "\t"
+                     << std::setw(wCol) << bodyAbsorb[2];
+      }
       picLogStream << std::endl;
     }
   }
