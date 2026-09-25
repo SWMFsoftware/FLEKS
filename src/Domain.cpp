@@ -354,10 +354,10 @@ void Domain::calc_refine_region() {
     hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
   }
 
-  Vector<std::shared_ptr<Shape> > movingShapes;
-  movingShapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
+  Vector<std::shared_ptr<Shape> > Shapes;
+  Shapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
 
-  refineRegions[0].define(movingShapes, "+" + name);
+  refineRegions[0].define(Shapes, "+" + name);
 
   isNewGrid = true;
   isNewRefinement = true;
