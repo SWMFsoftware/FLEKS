@@ -191,7 +191,8 @@ This command controls the frequency and format of printing simulation progress t
 - dnReport:   Frequency of printing simulation progress (default: 10 steps).
 - dnReportLB: Frequency of printing the detailed load balance report table (default: 100 steps).
               Set to -1 to only report load balance upon actual rebalancing or memory cleanup.
-- doCompact:  When true (default), prints a concise single-line progress summary per report cycle.
+- doCompact:  When true (default), prints a concise single-line progress summary per report cycle
+              and compact solver summaries (such as div(E) correction).
               When false, prints the legacy multi-line output.
 </command>
 
