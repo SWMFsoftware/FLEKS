@@ -356,7 +356,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
 
   // Decks spell the plot variables in mixed case ('RhoS0' and 'rhoS0' are
   // both in use), so the body-related names are matched case-insensitively.
-  std::string varLower{var};
+  std::string varLower{ var };
   for (char& c : varLower) {
     if (c >= 'A' && c <= 'Z')
       c = c - 'A' + 'a';
@@ -373,8 +373,8 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
        varLower.substr(0, 4) == "pxzs" || varLower.substr(0, 4) == "pyzs" ||
        varLower.substr(0, 2) == "ps" || varLower.substr(0, 4) == "ppcs" ||
        varLower.substr(0, 4) == "nums" || varLower.substr(0, 5) == "jhatx" ||
-       varLower.substr(0, 5) == "jhaty" ||
-       varLower.substr(0, 5) == "jhatz" || varLower.substr(0, 3) == "nmm"))
+       varLower.substr(0, 5) == "jhaty" || varLower.substr(0, 5) == "jhatz" ||
+       varLower.substr(0, 3) == "nmm"))
     return 0.0;
 
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||

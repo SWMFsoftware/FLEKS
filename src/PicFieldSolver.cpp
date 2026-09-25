@@ -524,8 +524,8 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
     // linear system: they are not unknowns, and convert_1d_to_3d leaves them
     // at zero, which is the Dirichlet condition E = 0 inside the body.
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter ||
-          (bit::is_owner(nodeArr(i, j, k)) && !bit::is_body(nodeArr(i, j, k)))) {
+      if (isCenter || (bit::is_owner(nodeArr(i, j, k)) &&
+                       !bit::is_body(nodeArr(i, j, k)))) {
         arr(i, j, k, iVar) = p[iCount++];
       }
     });
@@ -548,8 +548,8 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter ||
-          (bit::is_owner(nodeArr(i, j, k)) && !bit::is_body(nodeArr(i, j, k)))) {
+      if (isCenter || (bit::is_owner(nodeArr(i, j, k)) &&
+                       !bit::is_body(nodeArr(i, j, k)))) {
         p[iCount++] = arr(i, j, k, iVar);
       }
     });

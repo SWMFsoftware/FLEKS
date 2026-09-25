@@ -771,14 +771,13 @@ void mask_body(amrex::FabArray<FAB>& dst, const amrex::iMultiFab& fstatus) {
     auto data = dst[mfi].array();
     const auto statusArr = fstatus[mfi].array();
 
-    amrex::ParallelFor(box,
-                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                         if (bit::is_body(statusArr(i, j, k))) {
-                           for (int iVar = 0; iVar < nComp; ++iVar) {
-                             data(i, j, k, iVar) = 0.0;
-                           }
-                         }
-                       });
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_body(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          data(i, j, k, iVar) = 0.0;
+        }
+      }
+    });
   }
 }
 
