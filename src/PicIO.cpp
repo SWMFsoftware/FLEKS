@@ -341,6 +341,34 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           " is not supported by the hybrid-PIC solver (Mach number is a "
           "full-PIC-only diagnostic).");
   }
+  //--- Inner body (see #BODY) ---
+  // No plasma lives inside the body, so the particle-derived moments are
+  // reported as zero there and 'body' reports the mask itself. The electric
+  // field is zero inside the body by construction and the magnetic field
+  // keeps its initial value, so both are reported as they are.
+  bool isInsideBody = false;
+  if (useBody) {
+    Real xyz[3] = { 0.0, 0.0, 0.0 };
+    for (int d = 0; d < nDim; d++)
+      xyz[d] = Geom(iLev).LoEdge(ijk, d);
+    isInsideBody = is_inside_body(xyz);
+  }
+
+  if (var.substr(0, 4) == "body")
+    return isInsideBody ? 1.0 : 0.0;
+
+  if (isInsideBody &&
+      (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
+       var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
+       var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
+       var.substr(0, 4) == "pZZS" || var.substr(0, 4) == "pXYS" ||
+       var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
+       var.substr(0, 2) == "pS" || var.substr(0, 4) == "ppcS" ||
+       var.substr(0, 4) == "numS" || var.substr(0, 5) == "jHatx" ||
+       var.substr(0, 5) == "jHaty" ||
+       var.substr(0, 5) == "jHatz" || var.substr(0, 3) == "nMM"))
+    return 0.0;
+
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than

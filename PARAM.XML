@@ -129,10 +129,13 @@ particlesN - location, velocity and weight of species N particles (N=0,1,..)
 fluid      - all the fluid variables of the first two species:
              'rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 pYYS1 pZZS1 pXYS1 pXZS1 pYZS1'
 var        - read from parameter file. The available variables:
-             'Bx By Bz Ex Ey Ez ppcS* rhoS* uxS* uyS* uzS* pS* pXXS* pYYS* pZZS* pXYS* pXZS* pYZS* qc divEc dx',
+             'Bx By Bz Ex Ey Ez ppcS* rhoS* uxS* uyS* uzS* pS* pXXS* pYYS* pZZS* pXYS* pXZS* pYZS* qc divEc dx body',
              where '*' is the number of the species. The variables 'qc' and
 	     'divEc' are the net charge and the divergence of the electric field
-	     at the cell center, respectively.
+	     at the cell center, respectively. 'body' is the mask of the
+	     absorbing inner body defined by #BODY: 1 inside the body and 0
+	     outside. Inside the body the particle moments (rhoS*, u*S*, p*S*,
+	     ppcS*, numS*) are written as zero.
 \end{verbatim}
 
 The file format can be 'real4', 'real8', 'ascii' 'amrex' or 'hdf5'. The IDL formats
@@ -1513,8 +1516,8 @@ sphere            type
 This command defines an absorbing inner body, i.e., a real inner boundary
 inside the Cartesian PIC domain. Particles crossing into a body cell are
 removed and tallied, no particles are created inside the body, the electric
-field is pinned to zero inside the body, and the cell-centered output
-variables are zeroed there, so the body shows up as an empty hole with a wake
+field is pinned to zero inside the body, and the particle moments are written
+as zero in the output, so the body shows up as an empty hole with a wake
 behind it.
 
 center and radius are in code units (one length unit is lNormSI metres, see

@@ -117,6 +117,14 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       skip_cells_divE_correction(residual, cellStatus[iLev], iLev);
     }
 
+    // The body interior is not part of the plasma domain: drop its
+    // contribution to the div(E) correction, otherwise the correction would
+    // move particles around to compensate for the charge that the CIC tails
+    // of the surrounding plasma deposit inside the body.
+    if (useBody) {
+      mask_body(residual, cellStatus[iLev]);
+    }
+
     convert_3d_to_1d(residual, solver.rhs, iLev);
 
     BL_PROFILE_VAR("Pic::phi_iterate", solve);
