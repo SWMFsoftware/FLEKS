@@ -59,7 +59,20 @@ jobs:
         uses: actions/cache@v5
         with:
           path: SWMF/PC/FLEKS/memory_master.json
-          key: memory-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+          key: memory-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+
+      - name: Checkout PR head
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          # actions/checkout uses the synthetic merge ref for pull_request
+          # events. Build and capture the actual PR head so the metadata and
+          # executable describe the same commit.
+          git fetch --no-tags --depth=1 origin \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
+          git checkout "${{ github.event.pull_request.head.sha }}"
 
       - name: Build candidate (PR head)
         working-directory: SWMF/PC/FLEKS
@@ -103,7 +116,7 @@ jobs:
         run: |
           python3 tests/capture_memory.py \
             --exe "$RUNNER_TEMP/FLEKS_pr.exe" \
-            --out memory_pr.json
+            --out memory_pr.json --ref pr
 
       - name: Compare memory
         id: compare

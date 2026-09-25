@@ -182,7 +182,9 @@ performance.hybrid, reconnection.fadeev_pic, shock and 2-rank beam, ~25 s in
 total), `--timeout` (per-test wall-clock limit, 900 s by default: a deck that
 diverges into an endless loop is killed and recorded as an error instead of
 hanging the job), and `--verify`, which reports how reproducible memory is on
-your machine and is what `--rss-tol` should be tuned from.
+your machine and is what `--rss-tol` should be tuned from. The report
+identifies the exact baseline and candidate commits, includes absolute and
+relative changes, and warns if both profiles come from the same commit.
 
 Arena counts and peak bytes are exact integers across runs, so any increase
 fails. RSS drifts by up to 0.4 MB between runs, so it gets a tolerance
