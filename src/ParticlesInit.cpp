@@ -54,6 +54,20 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   if (nPPC == 0)
     return;
 
+  // No particle is created inside the absorbing inner body (see #BODY). The
+  // test uses the cell center, i.e., the same cell-based staircase as the
+  // particle absorption and the field mask. This covers the initial fill, the
+  // source particles and the boundary (ghost) injection, which all funnel
+  // through this function.
+  if (grid != nullptr && grid->use_body()) {
+    Real cellCenter[nDim];
+    for (int iDim = 0; iDim < nDim; iDim++)
+      cellCenter[iDim] = (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
+
+    if (grid->is_inside_body(cellCenter))
+      return;
+  }
+
   if (isTargetPPCDefined && !isFake2D) {
     const auto tppc = target_PPC(iLev)[mfi].array();
     for (int i = 0; i < nDim; ++i) {

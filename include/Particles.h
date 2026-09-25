@@ -409,6 +409,13 @@ protected:
   amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
   amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
 
+  // Tallies for the particles absorbed by the inner body (see #BODY). They
+  // are kept separate from the face tallies above, which are indexed by the
+  // domain face the particle left through.
+  amrex::Real bodyAbsorbCount = 0;
+  amrex::Real bodyAbsorbCharge = 0;
+  amrex::Real bodyAbsorbMass = 0;
+
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
   // avoid the mismatch, FLEKS set the maximum value of p.id() to 2^31-1, and
@@ -589,6 +596,29 @@ public:
                                          const amrex::IntVect& high, int iLev,
                                          const amrex::Real* const ploLoc,
                                          const amrex::Real* const phiLoc) {
+    // Absorbing inner body (see #BODY): a particle that is pushed into a body
+    // cell is removed and tallied. The test uses the cell that contains the
+    // particle, i.e., the same cell-based staircase as the field/moment mask,
+    // so the absorption surface and the mask are the same object and no
+    // charge is silently discarded at the surface.
+    if (grid != nullptr && grid->use_body()) {
+      bool isInsideBox = true;
+      amrex::IntVect cellIdx;
+      for (int d = 0; d < nDim; ++d) {
+        const amrex::Real dShift = (p.pos(d) - ploLoc[d]) * invDx[iLev][d];
+        cellIdx[d] = fastfloor(dShift);
+        if (cellIdx[d] > high[d] || cellIdx[d] < low[d]) {
+          isInsideBox = false;
+          break;
+        }
+      }
+
+      if (isInsideBox && bit::is_body(status(cellIdx))) {
+        body_absorb_tally(p.rdata(iqp_));
+        return true;
+      }
+    }
+
     for (int d = 0; d < nDim; ++d) {
       const int bcLo = bc.lo[d];
       const int bcHi = bc.hi[d];
@@ -621,6 +651,13 @@ public:
     absorbTallyCount[face] += 1.0;
     absorbTallyCharge[face] += weight * charge;
     absorbTallyMass[face] += weight * mass;
+  }
+
+  // Tally a particle absorbed by the inner body (see #BODY).
+  inline void body_absorb_tally(amrex::Real weight) {
+    bodyAbsorbCount += 1.0;
+    bodyAbsorbCharge += weight * charge;
+    bodyAbsorbMass += weight * mass;
   }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
@@ -966,6 +1003,11 @@ public:
     return absorbTallyCharge[face];
   }
   amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
+
+  // Tallies for the particles absorbed by the inner body (see #BODY).
+  amrex::Real get_body_absorb_count() const { return bodyAbsorbCount; }
+  amrex::Real get_body_absorb_charge() const { return bodyAbsorbCharge; }
+  amrex::Real get_body_absorb_mass() const { return bodyAbsorbMass; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 
