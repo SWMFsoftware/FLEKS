@@ -59,7 +59,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: SWMF/PC/FLEKS/memory_master.json
-          key: memory-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+          # v3 invalidates captures whose metadata was read after the
+          # workflow checked out the PR tree, which mislabeled the base binary
+          # with the candidate commit.
+          key: memory-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
 
       - name: Checkout PR head
         working-directory: SWMF/PC/FLEKS
@@ -108,7 +111,8 @@ jobs:
         run: |
           python3 tests/capture_memory.py \
             --exe "$RUNNER_TEMP/FLEKS_base.exe" \
-            --out memory_master.json --ref master
+            --out memory_master.json --ref master \
+            --commit "${{ github.event.pull_request.base.sha }}"
 
       - name: Capture candidate memory
         working-directory: SWMF/PC/FLEKS
@@ -116,7 +120,8 @@ jobs:
         run: |
           python3 tests/capture_memory.py \
             --exe "$RUNNER_TEMP/FLEKS_pr.exe" \
-            --out memory_pr.json --ref pr
+            --out memory_pr.json --ref pr \
+            --commit "${{ github.event.pull_request.head.sha }}"
 
       - name: Compare memory
         id: compare
