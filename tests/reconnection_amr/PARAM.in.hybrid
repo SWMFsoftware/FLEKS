@@ -38,7 +38,6 @@ outflow                 fieldBoxBoundaryLo  (y)
 outflow                 fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
-0                       iSpecies
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 outflow                 particleBoxBoundaryLo

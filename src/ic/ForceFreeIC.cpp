@@ -152,11 +152,11 @@ void ForceFreeIC::modify_particle_velocity(ParticleICState& s) const {
   if (bz <= 0.0)
     return;
 
-  // Equilibrium current density components J = curl(B):
-  // J_x = d(Bz)/dy = -b0^2 / (lambda * Bz) * sech^2(y/lambda) * tanh(y/lambda)
-  // J_z = -d(Bx)/dy = -b0 / lambda * sech^2(y/lambda)
-  const amrex::Real jx = -(b0 * b0 / (lambda * bz)) * sech2 * th;
-  const amrex::Real jz = -(b0 / lambda) * sech2;
+  // Equilibrium current density components J = curl(B) / (4*pi):
+  // J_x = d(Bz)/dy = -b0^2 / (4*pi * lambda * Bz) * sech^2(y/lambda) *
+  // tanh(y/lambda) J_z = -d(Bx)/dy = -b0 / (4*pi * lambda) * sech^2(y/lambda)
+  const amrex::Real jx = -(b0 * b0 / (fourPI * lambda * bz)) * sech2 * th;
+  const amrex::Real jz = -(b0 / (fourPI * lambda)) * sech2;
 
   // In code units, background plasma number density is n0 = 1.0
   const amrex::Real n0 = 1.0;
