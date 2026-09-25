@@ -383,6 +383,10 @@ def main():
         description="Memory regression step 1 of 2: capture a memory profile.")
     parser.add_argument("--out", help="write the profile document as JSON")
     parser.add_argument("--ref", help="label recorded in meta['ref']")
+    parser.add_argument(
+        "--commit",
+        help="commit that produced the executable (overrides the checkout HEAD)",
+    )
     parser.add_argument("--run-dir", default=DEFAULT_RUN_DIR,
                         help=f"run directory (default: {DEFAULT_RUN_DIR})")
     parser.add_argument("--exe", default=os.path.join("bin", "FLEKS.exe"),
@@ -439,6 +443,11 @@ def main():
                        timeout=args.timeout)
     if args.ref:
         document["meta"]["ref"] = args.ref
+    if args.commit:
+        document["meta"]["commit"] = args.commit
+        document["meta"]["commit_subject"] = git(
+            "show", "-s", "--format=%s", args.commit
+        )
 
     if args.out:
         with open(args.out, "w") as handle:
