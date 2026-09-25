@@ -510,16 +510,21 @@ void Pic::post_process_param() {
       Abort("Invalid #BODY: the inner body is only implemented for the "
             "full-PIC solver. It is not supported with #HYBRIDPIC.");
 
-    if (n_lev_max() > 1)
+    if (n_lev_max() > 1 && !refineRegions.empty())
       Print() << "  Warning: #BODY has not been verified with AMR "
-              << "(nLevMax > 1).\n";
+              << "(refinement regions are defined).\n";
 
     // The body has to be strictly inside the domain: a body crossing a
     // domain face (or a periodic face) would need a mask that is consistent
-    // across the periodic images, which is not implemented.
+    // across the periodic images, which is not implemented. The invariant
+    // direction of a fake-2D run (one cell) is not checked, because the body
+    // necessarily extends beyond it.
     const auto plo = Geom(0).ProbLo();
     const auto phi = Geom(0).ProbHi();
+    const auto& dom = Geom(0).Domain();
     for (int i = 0; i < nDim; i++) {
+      if (dom.length(i) <= 1)
+        continue;
       if (bodyCenter[i] - bodyRadius <= plo[i] ||
           bodyCenter[i] + bodyRadius >= phi[i])
         Abort("Invalid #BODY: the body must be strictly inside the "

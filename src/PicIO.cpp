@@ -354,19 +354,27 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     isInsideBody = is_inside_body(xyz);
   }
 
-  if (var.substr(0, 4) == "body")
+  // Decks spell the plot variables in mixed case ('RhoS0' and 'rhoS0' are
+  // both in use), so the body-related names are matched case-insensitively.
+  std::string varLower{var};
+  for (char& c : varLower) {
+    if (c >= 'A' && c <= 'Z')
+      c = c - 'A' + 'a';
+  }
+
+  if (varLower.substr(0, 4) == "body")
     return isInsideBody ? 1.0 : 0.0;
 
   if (isInsideBody &&
-      (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
-       var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
-       var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
-       var.substr(0, 4) == "pZZS" || var.substr(0, 4) == "pXYS" ||
-       var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
-       var.substr(0, 2) == "pS" || var.substr(0, 4) == "ppcS" ||
-       var.substr(0, 4) == "numS" || var.substr(0, 5) == "jHatx" ||
-       var.substr(0, 5) == "jHaty" ||
-       var.substr(0, 5) == "jHatz" || var.substr(0, 3) == "nMM"))
+      (varLower.substr(0, 4) == "rhos" || varLower.substr(0, 3) == "uxs" ||
+       varLower.substr(0, 3) == "uys" || varLower.substr(0, 3) == "uzs" ||
+       varLower.substr(0, 4) == "pxxs" || varLower.substr(0, 4) == "pyys" ||
+       varLower.substr(0, 4) == "pzzs" || varLower.substr(0, 4) == "pxys" ||
+       varLower.substr(0, 4) == "pxzs" || varLower.substr(0, 4) == "pyzs" ||
+       varLower.substr(0, 2) == "ps" || varLower.substr(0, 4) == "ppcs" ||
+       varLower.substr(0, 4) == "nums" || varLower.substr(0, 5) == "jhatx" ||
+       varLower.substr(0, 5) == "jhaty" ||
+       varLower.substr(0, 5) == "jhatz" || varLower.substr(0, 3) == "nmm"))
     return 0.0;
 
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
