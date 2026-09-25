@@ -43,7 +43,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       pInfo.pBCs[0].set(i, 0, ParticleBC::parse(lo));
       pInfo.pBCs[0].set(i, 1, ParticleBC::parse(hi));
     }
-    for (size_t s = 1; s < pInfo.pBCs.size(); ++s) {
+    for (int s = 1; s < static_cast<int>(pInfo.pBCs.size()); ++s) {
       pInfo.pBCs[s] = pInfo.pBCs[0];
       pInfo.pBCsSet[s] = 1;
     }
