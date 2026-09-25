@@ -760,6 +760,28 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
   }
 }
 
+// Zero every component of 'dst' on the cells/nodes that belong to the
+// absorbing inner body (see the #BODY command). Use the cell status mask for
+// cell-centered data and the node status mask for node-centered data.
+template <class FAB>
+void mask_body(amrex::FabArray<FAB>& dst, const amrex::iMultiFab& fstatus) {
+  const int nComp = dst.nComp();
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.fabbox();
+    auto data = dst[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+
+    amrex::ParallelFor(box,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         if (bit::is_body(statusArr(i, j, k))) {
+                           for (int iVar = 0; iVar < nComp; ++iVar) {
+                             data(i, j, k, iVar) = 0.0;
+                           }
+                         }
+                       });
+  }
+}
+
 template <class FAB>
 void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
                          int startvar = 0, int stopvar = -1) {

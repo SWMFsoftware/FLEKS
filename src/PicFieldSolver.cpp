@@ -49,6 +49,10 @@ void Pic::update_E_expl() {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
                    iLev, false);
+
+    // E is pinned to zero inside the absorbing body (see #BODY).
+    if (useBody)
+      mask_body(nodeE[iLev], node_status(iLev));
   }
 }
 
@@ -99,6 +103,16 @@ void Pic::update_E_impl() {
       smooth_E(nodeEth[iLev], iLev);
       smooth_E(nodeE[iLev], iLev);
     }
+
+    // E is pinned to zero inside the absorbing body (see #BODY). The nodes
+    // inside the body are not part of the linear system, so nodeEth is zero
+    // there by construction; nodeE is zeroed after the last operation that
+    // can write into the body (the smoothing above).
+    if (useBody) {
+      mask_body(nodeE[iLev], node_status(iLev));
+      mask_body(nodeEth[iLev], node_status(iLev));
+    }
+
     div_node_to_center(nodeE[iLev], centerDivE[iLev], Geom(iLev).InvCellSize());
   }
 }
@@ -506,8 +520,12 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
+    // The nodes inside the absorbing body (see #BODY) are excluded from the
+    // linear system: they are not unknowns, and convert_1d_to_3d leaves them
+    // at zero, which is the Dirichlet condition E = 0 inside the body.
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
+      if (isCenter ||
+          (bit::is_owner(nodeArr(i, j, k)) && !bit::is_body(nodeArr(i, j, k)))) {
         arr(i, j, k, iVar) = p[iCount++];
       }
     });
@@ -530,7 +548,8 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
+      if (isCenter ||
+          (bit::is_owner(nodeArr(i, j, k)) && !bit::is_body(nodeArr(i, j, k)))) {
         p[iCount++] = arr(i, j, k, iVar);
       }
     });
