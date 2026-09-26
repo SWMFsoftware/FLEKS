@@ -1046,7 +1046,20 @@ void Pic::sum_moments(bool updateDt) {
                                        : std::numeric_limits<Real>::max();
     }
 
-    if (tc->get_cfl() > 0) {
+    if (useHybridPIC && (tc->get_cfl() > 0 || isAutoSubcycle)) {
+      Real dtNext = tc->get_next_dt();
+      int nSubNext = nBSubcycle;
+      calc_hybrid_dt_and_subcycle(dtNext, nSubNext, doReport);
+      if (tc->get_cfl() > 0) {
+        tc->set_next_dt(dtNext);
+        if (tc->get_dt() < 0) {
+          tc->set_dt(dtNext);
+        }
+      }
+      if (isAutoSubcycle) {
+        nBSubcycle = nSubNext;
+      }
+    } else if (tc->get_cfl() > 0) {
       Real dt0 = *std::min_element(dtMax.begin(), dtMax.end());
       Real dt = tc->get_cfl() * dt0;
       tc->set_next_dt(dt);

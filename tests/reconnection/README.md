@@ -7,8 +7,9 @@ This directory contains standalone magnetic reconnection test suites in FLEKS ac
 3. **`PARAM.in.gem_pic`** — **Classic GEM Challenge full-PIC**: Standard GEM reconnection benchmark (Birn et al. 2001) with a Harris current sheet, conducting walls in $y$, and a central magnetic perturbation.
 4. **`PARAM.in.gem_hybrid`** — **Classic GEM Challenge hybrid-PIC**: Kinetic ions + isothermal fluid electrons with generalized Ohm's law, stationary ion background (`useUniformIonPressure = T`), and electron fluid carrying the diamagnetic current.
 5. **`PARAM.in.asym_pic`** — **Asymmetric full-PIC**: Double current sheet reconnection with asymmetric magnetic fields ($B_1 = 1.0, B_2 = 2.0$) and temperatures ($T_1 = 1.33, T_2 = 3.33$) in a periodic domain.
-6. **`PARAM.in.forcefree_hybrid`** — **Force-Free Sheet hybrid-PIC**: Force-free current sheet reconnection (Le et al. 2016, WarpX benchmark) with uniform plasma density and uniform total magnetic pressure.
-7. **`PARAM.in.forcefree_pic`** — **Force-Free Sheet full-PIC**: Force-free current sheet reconnection with kinetic ions and electrons ($m_i/m_e = 25$, Maxwell/GMRES solver).
+6. **`PARAM.in.forcefree_hybrid`** — **Force-Free Sheet hybrid-PIC**: Force-free current sheet reconnection (Le et al. 2016, WarpX benchmark) with uniform plasma density, uniform total magnetic pressure, and fixed 40 subcycles.
+7. **`PARAM.in.forcefree_hybrid_adaptive`** — **Force-Free Sheet hybrid-PIC (Adaptive)**: Same force-free setup with CFL-driven adaptive macro time-stepping (`#TIMESTEPPING F 0.25`) and automatic magnetic subcycling (`#BSUBCYCLE 1 T 40`). Fast CI benchmark.
+8. **`PARAM.in.forcefree_pic`** — **Force-Free Sheet full-PIC**: Force-free current sheet reconnection with kinetic ions and electrons ($m_i/m_e = 25$, Maxwell/GMRES solver).
 
 ## Coordinate Mapping
 
@@ -51,7 +52,8 @@ python3 tests/validate_tests.py --test=reconnection.fadeev_hybrid     # Fadeev h
 python3 tests/validate_tests.py --test=reconnection.gem_pic           # Classic GEM challenge full-PIC
 python3 tests/validate_tests.py --test=reconnection.gem_hybrid        # Classic GEM challenge hybrid-PIC
 python3 tests/validate_tests.py --test=reconnection.asym_pic          # Asymmetric reconnection full-PIC
-python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid  # Force-free sheet hybrid-PIC
+python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid  # Force-free sheet hybrid-PIC (fixed 40 subcycles)
+python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid_adaptive # Force-free sheet hybrid-PIC (adaptive)
 python3 tests/validate_tests.py --test=reconnection.forcefree_pic     # Force-free sheet full-PIC
 ```
 *(Note: `reconnection.forcefree_hybrid` is an expensive benchmark and is skipped during default full-suite runs; run it by explicitly specifying `--test=reconnection.forcefree_hybrid` or adding `--include-expensive` / `--all`.)*
