@@ -531,12 +531,16 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
-    // Only a 'linetied' body drops its nodes from the linear system; the
-    // other field boundary conditions keep them as unknowns.
-    const bool skipBody = is_body_linetied();
+    // A 'linetied' body drops all its nodes from the linear system (E = 0),
+    // a 'conducting' body only drops the interior ones (E = 0 inside, E_t = 0
+    // on the surface), and an 'insulating' body keeps all of them.
+    const bool skipAllBody = is_body_linetied();
+    const bool skipInterior = is_body_conducting();
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || (bit::is_owner(nodeArr(i, j, k)) &&
-                       !(skipBody && bit::is_body(nodeArr(i, j, k))))) {
+      if (isCenter ||
+          (bit::is_owner(nodeArr(i, j, k)) &&
+           !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
+           !(skipInterior && bit::is_body_interior(nodeArr(i, j, k))))) {
         arr(i, j, k, iVar) = p[iCount++];
       }
     });
@@ -560,10 +564,13 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 
     // See convert_1d_to_3d: only the 'linetied' body drops its nodes from the
     // linear system.
-    const bool skipBody = is_body_linetied();
+    const bool skipAllBody = is_body_linetied();
+    const bool skipInterior = is_body_conducting();
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || (bit::is_owner(nodeArr(i, j, k)) &&
-                       !(skipBody && bit::is_body(nodeArr(i, j, k))))) {
+      if (isCenter ||
+          (bit::is_owner(nodeArr(i, j, k)) &&
+           !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
+           !(skipInterior && bit::is_body_interior(nodeArr(i, j, k))))) {
         p[iCount++] = arr(i, j, k, iVar);
       }
     });
@@ -582,6 +589,11 @@ void Pic::update_B() {
     }
     MultiFab& dB = centerDB[iLev];
     curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+
+    // The interior of the body is a cavity: Faraday's law does not change the
+    // magnetic field there, so B keeps its initial value.
+    if (is_body_interior_frozen())
+      mask_body_interior(dB, cellStatus[iLev]);
 
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
@@ -871,6 +883,10 @@ void Pic::correct_B(int iLev) {
       });
     } // end MFIter
   } // end useHyperbolicCleaning
+
+  // The div(B) cleaning must not reach into the frozen interior of the body.
+  if (is_body_interior_frozen())
+    mask_body_interior(cDB, cellStatus[iLev]);
 
   MultiFab::Add(centerB[iLev], cDB, 0, 0, nDim3, 0);
 

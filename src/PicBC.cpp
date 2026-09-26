@@ -688,9 +688,18 @@ void Pic::zero_body_E(amrex::MultiFab& mf, const int iLev) {
 }
 
 //==========================================================
+void Pic::zero_body_interior_E(amrex::MultiFab& mf, const int iLev) {
+  // The interior of the body is a cavity: it is shielded by the surface layer
+  // and carries no electric field, whatever the field boundary condition is.
+  mask_body_interior(mf, node_status(iLev));
+}
+
+//==========================================================
 void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
   // conducting: E <- (E.n) n, i.e. the tangential electric field vanishes and
-  // the radial component is kept.
+  // the radial component is kept. This is a surface condition: it is applied
+  // to the one-cell-thick surface layer of the body, while the interior is
+  // field free.
   if (mf.nComp() < 3)
     return;
 
@@ -707,7 +716,8 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
     const auto statusArr = status[mfi].array();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      if (!bit::is_body(statusArr(i, j, k)))
+      if (!bit::is_body(statusArr(i, j, k)) ||
+          bit::is_body_interior(statusArr(i, j, k)))
         return;
 
       const Real x = plo[ix_] + i * dx[ix_] - cx;
@@ -756,7 +766,8 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
     const auto statusArr = status[mfi].array();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      if (!bit::is_body(statusArr(i, j, k)))
+      if (!bit::is_body(statusArr(i, j, k)) ||
+          bit::is_body_interior(statusArr(i, j, k)))
         return;
 
       const Real x = plo[ix_] + (i + shift) * dx[ix_] - cx;
@@ -788,8 +799,12 @@ void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
     return;
 
   if (bodyFieldBC == BodyFieldBC::linetied) {
+    // E = 0 on every body node: the surface is line-tied and the interior is a
+    // field-free cavity.
     zero_body_E(mf, iLev);
   } else if (bodyFieldBC == BodyFieldBC::conducting) {
+    // E = 0 in the interior, E_t = 0 on the surface layer.
+    zero_body_interior_E(mf, iLev);
     project_body_E(mf, iLev);
   }
   // insulating: no constraint, the fields pass through the body.

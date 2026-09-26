@@ -62,7 +62,7 @@ normal rather than the staircase face normal.
   |----------|-----------|
   | Particles | removed (and tallied) when pushed into a body cell |
   | Injection | initial fill, source and boundary injection skip body cells |
-  | E | body nodes excluded from the implicit solve (Dirichlet) ⇒ `E ≡ 0` |
+  | E | `E ≡ 0`: the body nodes are excluded from the implicit solve (Dirichlet) |
   | B | not forced to zero; frozen at its initial value in the interior |
   | jHat / nodeMM | not masked — their body rows are dropped from the solve, so no charge is silently discarded |
   | div(E) | residual zeroed in body cells |
@@ -72,6 +72,21 @@ normal rather than the staircase face normal.
   the deposition is node-centred CIC, so an exact-radius test would let
   surface particles deposit into masked nodes every step (a charge sink with
   no bookkeeping) while the field boundary is still the staircase.
+
+  The body is split into a **surface layer**, one cell thick, where the
+  condition of `#BODYBOUNDARY` is applied, and the **interior** behind it,
+  which is a cavity: `E = 0` and `B` frozen at its initial value, so neither
+  the Faraday update nor the div(B) cleaning reaches it. In the output the
+  separation shows up at `r ≈ R − 1.6 dx`: nodes inside that radius keep the
+  initial `B` and carry `E = 0`, nodes outside carry the surface condition.
+
+  The node-centred moments are **rescaled** by the fraction of the cells
+  around a node that lie outside the body. A CIC moment averages over those
+  cells and the body cells are empty, so an uncorrected node on the staircase
+  surface reports only half (or three quarters) of the density and of the mass
+  matrix of the plasma that is really there; with the rescaling the density is
+  uniform right up to the surface, and so is the inertia the implicit solver
+  sees. The same factor is applied to `jHat` and `nodeMM`.
 
 - **Plasma Species**:
   | Species | Mass [amu] | Charge [e] | n [amu/cc] | ux [km/s] | T [K] | Role |
@@ -99,6 +114,12 @@ From the pic-log history:
   the fixed columns) is present, non-decreasing and non-zero at the end;
 - all energies stay finite and `Etot` does not grow by more than 10×.
 
+From the first plot frame (the initial state is uniform):
+
+- on the nodes next to the staircase surface, `rhoS0` is the far-field density
+  (within the particle noise) — i.e. the moment rescaling removes the
+  geometric dilution by the empty body cells.
+
 From the last plot frame:
 
 - on every point with `body == 1`, `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are
@@ -114,7 +135,7 @@ faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 | Deck | `particleBoundary` | `fieldBoundary` | What it asserts |
 |------|--------------------|-----------------|-----------------|
 | `PARAM.in` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
-| `PARAM.in.conducting` | absorb | conducting | on the body: the in-plane tangential `E` vanishes (`Ex*y - Ey*x = 0`) and the radial `B` vanishes (up to the fake-2D residual `|Bz| dz/2 / r`); ambient `B` has an in-plane component `Bx = 2e-9 T` so that `B_r` is non-trivial |
+| `PARAM.in.conducting` | absorb | conducting | on the **surface layer** (`r > R − 1.5 dx`): the in-plane tangential `E` vanishes (`Ex*y - Ey*x = 0`) and the radial `B` vanishes (up to the fake-2D residual `|Bz| dz/2 / r`); in the **interior** (`r < R − 2.5 dx`): `E = 0` and `B` still equals `B(t = 0)`. Ambient `B` has an in-plane component `Bx = 2e-9 T` so that `B_r` is non-trivial |
 | `PARAM.in.insulating` | absorb | insulating | `|B|` inside is within a factor of two of `|B|` just outside (no distortion) and `E` inside is *not* forced to zero; particles are still absorbed |
 | `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and the particle energy is kept; no particle is left inside the body |
 

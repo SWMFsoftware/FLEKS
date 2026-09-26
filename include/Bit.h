@@ -43,6 +43,12 @@ constexpr static int iRefinedNeighbour_ = 7;
 // command). Particles entering a body cell are removed and the electric field
 // is pinned to zero on the body nodes.
 constexpr static int iBody_ = 8;
+
+// The inner body minus its one-cell-thick surface layer, i.e. the body
+// cells/nodes that are surrounded by body cells only. The surface layer is
+// where the field boundary condition (#BODYBOUNDARY) acts; the interior is a
+// cavity where E is zero and B keeps its initial value.
+constexpr static int iBodyInterior_ = 9;
 //=========================================================
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool test_bit(const int& i, int pos) {
@@ -174,6 +180,23 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_body(int& i) {
  */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_body(const int& i) {
   return test_bit(i, iBody_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_body_interior(int& i) {
+  turn_on_bit(i, iBodyInterior_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_body_interior(int& i) {
+  turn_off_bit(i, iBodyInterior_);
+}
+
+/**
+ * @brief Check if the input cell/node belongs to the interior of the body,
+ * i.e. it is a body cell/node that does not touch the body surface.
+ *
+ * @param i The integer representing the cell/node status.
+ * @return True if the cell/node is in the body interior, false otherwise.
+ */
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_body_interior(const int& i) {
+  return test_bit(i, iBodyInterior_);
 }
 
 } // namespace bit

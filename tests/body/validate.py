@@ -30,6 +30,10 @@ ETOT_GROWTH_MAX = 10.0  # the body must not inject energy
 CONSTRAINT_TOL = 1e-6   # relative tolerance of the conducting constraint
 Z_HALF = 0.05           # half of the z extent of the fake-2D decks (one cell)
 PASS_THROUGH_MIN = 0.5  # insulating: |B| and |E| inside vs outside
+# Density next to the staircase surface relative to the far field. The initial
+# frame is uniform; the allowed band covers the particle noise (4 ppc).
+SURFACE_RHO_MIN = 0.7
+SURFACE_RHO_MAX = 1.35
 EPART_KEEP_MIN = 0.8    # reflect: elastic reflection keeps the particle energy
 
 
@@ -70,6 +74,23 @@ def _radial_in_plane(cols, i):
 
 def _vec(cols, prefix, i):
     return (cols[prefix + "X"][i], cols[prefix + "Y"][i], cols[prefix + "Z"][i])
+
+
+def _grid_spacing(cols):
+    """Grid spacing of the output frame (the .out files are node centred)."""
+    xs = sorted(set(cols["X"]))
+    if len(xs) < 2:
+        return 0.0
+    return min(b - a for a, b in zip(xs, xs[1:]))
+
+
+def _median(values):
+    values = sorted(values)
+    n = len(values)
+    if n == 0:
+        return None
+    mid = n // 2
+    return values[mid] if n % 2 else 0.5 * (values[mid - 1] + values[mid])
 
 
 def _norm(vec):
@@ -177,14 +198,65 @@ def validate_plot(test_name):
     if not inside:
         return False, "No point is marked as inside the body (mask is empty)"
 
+    # The initial frame is uniform, so it shows whether the moments next to the
+    # staircase surface are diluted by the empty body cells.
+    first_vidx, first_rows = _run_dir.load_first_out()
+    first_cols = None
+    if first_vidx is not None and first_rows:
+        first_cols = _columns(first_vidx, first_rows)
+        ok, msg = _check_surface_density(first_cols)
+        if not ok:
+            return False, msg
+        logger.debug("    initial frame: %s", msg)
+
     if test_name == "body_conducting":
-        return _check_conducting(cols, inside)
+        return _check_conducting(cols, inside, first_cols)
     if test_name == "body_insulating":
         return _check_insulating(cols, inside)
     if test_name == "body_reflect":
         return _check_reflect(cols, inside)
 
     return _check_linetied(cols, inside, rows)
+
+
+def _check_surface_density(cols):
+    """The density next to the body must be the density of the plasma there.
+
+    A node-centred CIC moment averages over the cells around the node and the
+    cells inside the body are empty, so without a correction the nodes on the
+    staircase surface report only a half or three quarters of the plasma
+    density. The moments are rescaled by the fraction of the surrounding cells
+    that are outside the body, so the first frame, which is uniform, has to
+    come out uniform right up to the surface.
+    """
+    rho = cols.get("RHOS0")
+    if rho is None:
+        return True, "No rhoS0 column (surface density not checked)"
+
+    dx = _grid_spacing(cols)
+    if dx <= 0:
+        return True, "Cannot determine the grid spacing (not checked)"
+
+    far = _median([rho[i] for i in range(len(rho))
+                   if _radial_in_plane(cols, i)[1] > R_BODY + 0.6])
+    if not far:
+        return True, "No far-field sample (surface density not checked)"
+
+    ratios = [rho[i] / far for i in range(len(rho))
+              if cols["BODY"][i] < 0.5 and
+              R_BODY - 1.5 * dx <= _radial_in_plane(cols, i)[1] <= R_BODY + 1.5 * dx]
+    if not ratios:
+        return True, "No node next to the body (surface density not checked)"
+
+    logger.debug("    rho/rho_far next to the body: %.3f .. %.3f (n = %d)",
+                 min(ratios), max(ratios), len(ratios))
+    if min(ratios) < SURFACE_RHO_MIN or max(ratios) > SURFACE_RHO_MAX:
+        return False, (f"The density next to the body is not the plasma density "
+                       f"(rho/rho_far in [{min(ratios):.3f}, {max(ratios):.3f}], "
+                       f"expected [{SURFACE_RHO_MIN}, {SURFACE_RHO_MAX}])")
+
+    return True, (f"surface density uniform (rho/rho_far in "
+                  f"[{min(ratios):.3f}, {max(ratios):.3f}])")
 
 
 def _check_linetied(cols, inside, rows):
@@ -225,8 +297,14 @@ def _check_linetied(cols, inside, rows):
                   f"{wake / upstream:.3f})")
 
 
-def _check_conducting(cols, inside):
+def _check_conducting(cols, inside, first_cols=None):
     """conducting: E is purely radial (E_t = 0) and B is purely tangential.
+
+    The conditions are surface conditions: they hold on the one-cell-thick
+    surface layer of the body, while the interior is a cavity with E = 0 and B
+    frozen at its initial value. The two layers are told apart by the radius,
+    with a band of ambiguous nodes in between that is not checked (the
+    staircase surface sits at R_BODY - 1.5 dx to R_BODY - 2.5 dx).
 
     The check uses the in-plane (x, y) components: the run is fake 2D (one
     cell in z), the plot output carries no z coordinate, and the radial
@@ -239,42 +317,76 @@ def _check_conducting(cols, inside):
     if scale_e <= 0 or scale_b <= 0:
         return False, "The ambient E or B field is zero (test is vacuous)"
 
+    dx = _grid_spacing(cols)
+    r_surf = R_BODY - 1.5 * dx   # solidly in the surface layer
+    r_int = R_BODY - 2.5 * dx    # solidly in the frozen interior
+
     max_et = 0.0
     max_br = 0.0
+    max_e_int = 0.0
+    max_db_int = 0.0
+    n_surf = n_int = 0
     for i in inside:
         n2, r2 = _radial_in_plane(cols, i)
         if n2 is None:
             continue
 
-        # E x n = 0 gives Ex*y - Ey*x = 0, which does not involve z, so the
-        # in-plane tangential field must vanish exactly.
-        ex, ey = cols["EX"][i], cols["EY"][i]
-        er = ex * n2[0] + ey * n2[1]
-        max_et = max(max_et, math.hypot(ex - er * n2[0], ey - er * n2[1]))
+        if r2 >= r_surf:
+            n_surf += 1
 
-        # B . n = 0 reads Bx*x + By*y + Bz*z = 0. The output plane carries no
-        # z and a body node sits at z = +-dz/2, so the in-plane part may keep
-        # a residual of |Bz| * dz/2 / r.
-        bx, by = cols["BX"][i], cols["BY"][i]
-        br = abs(bx * n2[0] + by * n2[1])
-        allowed = abs(cols["BZ"][i]) * Z_HALF / r2
-        max_br = max(max_br, max(0.0, br - allowed))
+            # E x n = 0 gives Ex*y - Ey*x = 0, which does not involve z, so
+            # the in-plane tangential field must vanish exactly.
+            ex, ey = cols["EX"][i], cols["EY"][i]
+            er = ex * n2[0] + ey * n2[1]
+            max_et = max(max_et, math.hypot(ex - er * n2[0], ey - er * n2[1]))
 
-    logger.debug("    max |E_t| = %.3e (|E| = %.3e), max |B_r| beyond the "
-                 "fake-2D residual = %.3e (|B| = %.3e)", max_et, scale_e,
-                 max_br, scale_b)
+            # B . n = 0 reads Bx*x + By*y + Bz*z = 0. The output plane carries
+            # no z and a body node sits at z = +-dz/2, so the in-plane part may
+            # keep a residual of |Bz| * dz/2 / r.
+            bx, by = cols["BX"][i], cols["BY"][i]
+            br = abs(bx * n2[0] + by * n2[1])
+            allowed = abs(cols["BZ"][i]) * Z_HALF / r2
+            max_br = max(max_br, max(0.0, br - allowed))
+        elif r2 <= r_int:
+            n_int += 1
+
+            # The interior is shielded: no electric field and the magnetic
+            # field keeps its initial value.
+            max_e_int = max(max_e_int, math.hypot(cols["EX"][i], cols["EY"][i],
+                                                  cols["EZ"][i]))
+            if first_cols is not None:
+                db = math.sqrt(sum((cols["B" + d][i] - first_cols["B" + d][i]) ** 2
+                                   for d in ("X", "Y", "Z")))
+                max_db_int = max(max_db_int, db)
+
+    logger.debug("    surface: %d nodes, max |E_t| = %.3e (|E| = %.3e), "
+                 "max |B_r| beyond the fake-2D residual = %.3e (|B| = %.3e)",
+                 n_surf, max_et, scale_e, max_br, scale_b)
+    logger.debug("    interior: %d nodes, max |E| = %.3e, max |B - B(t=0)| = %.3e",
+                 n_int, max_e_int, max_db_int)
+
+    if n_surf == 0 or n_int == 0:
+        return False, ("The conducting body is too small to separate the "
+                       "surface layer from the interior")
 
     if max_et > CONSTRAINT_TOL * scale_e:
-        return False, (f"Tangential E does not vanish on the conducting body "
+        return False, (f"Tangential E does not vanish on the conducting surface "
                        f"(max |E_t| = {max_et:.3e} > "
                        f"{CONSTRAINT_TOL} * |E| = {CONSTRAINT_TOL * scale_e:.3e})")
     if max_br > CONSTRAINT_TOL * scale_b:
-        return False, (f"Radial B does not vanish on the conducting body "
+        return False, (f"Radial B does not vanish on the conducting surface "
                        f"(max |B_r| = {max_br:.3e} > "
                        f"{CONSTRAINT_TOL} * |B| = {CONSTRAINT_TOL * scale_b:.3e})")
 
-    return True, ("Passed (E is radial and B is tangential on the conducting "
-                  "body)")
+    if max_e_int > CONSTRAINT_TOL * scale_e:
+        return False, (f"The electric field is not zero inside the conducting "
+                       f"body (max |E| = {max_e_int:.3e})")
+    if first_cols is not None and max_db_int > CONSTRAINT_TOL * scale_b:
+        return False, (f"The magnetic field is not frozen inside the conducting "
+                       f"body (max |B - B(t=0)| = {max_db_int:.3e})")
+
+    return True, (f"Passed (E radial and B tangential on the {n_surf} surface "
+                  f"nodes; E = 0 and B frozen on the {n_int} interior nodes)")
 
 
 def _check_insulating(cols, inside):
