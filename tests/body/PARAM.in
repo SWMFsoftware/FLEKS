@@ -49,16 +49,24 @@ F                       useHybridPIC
 0.0                     coefDiff
 
 #COMOVING
-F                       solveFieldInCoMov
-0                       nSmoothBackGroundU
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
 
+Lax-Friedrichs upwind viscosity on the E equation (minmod limiter theta=1).
 #UPWINDE
-F                       useUpwindE
-0                       limiterTheta
+T                       useUpwindE
+1                       limiterThetaE
 
+Lax-Friedrichs upwind viscosity on the B equation + hyperbolic div-B cleaning.
 #UPWINDB
-F                       doSmoothB
-0                       theta
+T                       useUpwindB
+1                       limiterThetaB
+
+Digital-filter smoothing of the current density J.
+#SMOOTHJ
+T                       doSmoothJ
+1                       nSmoothJ
+0.5                     coefSmoothJ
 
 #PLASMA
 2                       nS
