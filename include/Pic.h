@@ -108,6 +108,12 @@ private:
   amrex::Real electronDensity0 = 0.0;
   // Number of sub-steps for the B-field update within one dt.
   int nBSubcycle = 1;
+  // Adaptive subcycling control for hybrid field advance.
+  bool isAutoSubcycle = false;
+  int nBSubcycleMax = 40;
+  int nBSubcycleMin = 1;
+  int subcycleHoldCount = 0;
+  std::string dtLimitingReason = "";
   // Hall term in the generalized Ohm's law.
   bool useHallTerm = true;
 
@@ -561,6 +567,8 @@ public:
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   void smooth_moments();
   void update_B_hybrid();
+  void calc_hybrid_dt_and_subcycle(amrex::Real &dtNext, int &nSubNext,
+                                   bool doReport);
   // Apply periodic and physical boundary conditions (and coarse-fine interface
   // ghosts on refined levels) to the cell-centred B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.

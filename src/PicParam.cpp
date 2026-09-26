@@ -256,6 +256,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("electronDensity0", electronDensity0In);
   } else if (command == "#BSUBCYCLE") {
     param.read_var("nBSubcycle", nBSubcycle);
+    param.read_optional("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_optional("nBSubcycleMax", nBSubcycleMax);
+    }
   } else if (command == "#HALLTERM") {
     param.read_var("useHallTerm", useHallTerm);
   } else if (command == "#HYPERRESISTIVITY") {
@@ -460,6 +464,8 @@ void Pic::post_process_param() {
   // the input deck describes.
   if (nBSubcycle < 1)
     Abort("Invalid #BSUBCYCLE: nBSubcycle must be at least 1.");
+  if (isAutoSubcycle && nBSubcycleMax < nBSubcycle)
+    Abort("Invalid #BSUBCYCLE: nBSubcycleMax must be >= nBSubcycle.");
   if (electronGamma <= 0)
     Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
   if (electronDensity0In <= 0)

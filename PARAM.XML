@@ -437,17 +437,24 @@ units (default 1.0 = reference charge density).
 
 <command name="BSUBCYCLE" alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2" multiple="T">
   <parameter name="nBSubcycle" type="integer" min="1" default="1"/>
+  <parameter name="isAutoSubcycle" type="logical" default="F"/>
+  <parameter name="nBSubcycleMax" type="integer" min="1" default="40" if="$isAutoSubcycle"/>
 
 #BSUBCYCLE
 1                 nBSubcycle
+F                 isAutoSubcycle
+40                nBSubcycleMax (if isAutoSubcycle is true)
 
 Number of sub-steps used to advance the magnetic field within one coarse time
 step in the hybrid solver (refines the B-field integration). The total advance
 is always exactly one coarse step dt: nBSubcycle full integrator steps of
 size dt/nBSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nBSubcycle
-nested 4th-order Runge-Kutta steps). Because RK4 has a large linear-stability
+nested 4th-order Runge-Kutta steps). If isAutoSubcycle is true, nBSubcycle is
+dynamically adapted based on explicit field CFL limits (whistler wave, resistivity,
+and hyper-resistivity) up to nBSubcycleMax. Because RK4 has a large linear-stability
 region along the imaginary axis (where the Hall-whistler oscillatory modes live),
-with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability.
+with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability
+in weakly magnetized or moderate-resolution regimes.
 Only used when #HYBRIDPIC is T.
 </command>
 
