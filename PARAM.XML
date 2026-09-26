@@ -1597,17 +1597,22 @@ fieldBoundary (n is the radial direction from the body center):
 #PLANETRADIUS
 1.0               radius
 
-This command sets the radius of the planet (or other central body) in SI
-units. It is a length scale only:
+This command sets the reference radius of the central body or obstacle, in SI
+units. Despite its name it is not restricted to planets: it is the length
+scale of whatever object the exosphere and the outputs refer to (a planet, a
+moon, a comet, an obstacle, ...); the name is kept because it is also the
+unit of the 'planet' output.
+
+It is a length scale only:
 
 * it is the reference radius of the exosphere: the neutral density of
-  #EXOSPHERE is defined with n0 at r = r_planet and is zero for
-  r < r_planet;
-* it is the unit of the 'planet' output (lengths are divided by
-  r_planet) and it is written as the 'rPlanet' scalar in the output header.
+  #EXOSPHERE is defined with n0 at r = r_reference and is zero for
+  r < r_reference;
+* it is the unit of the 'planet' output (lengths are divided by this radius)
+  and it is written as the 'rPlanet' scalar in the output header.
 
 It does NOT create an inner boundary for the PIC solver: no particle is
-removed and no field is modified at r = r_planet. Use #BODY for that.
+removed and no field is modified at this radius. Use #BODY for that.
 
 In a GM-PC (SWMF) coupled run the value is provided by the fluid component
 and this command is ignored.
