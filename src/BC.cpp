@@ -49,7 +49,6 @@ const std::vector<bc_detail::Entry>& FieldBC::table() {
   return tbl;
 }
 
-// Input spellings accepted by BodyFieldBC::parse().
 const std::vector<bc_detail::Entry>& BodyFieldBC::table() {
   using bc_detail::Legacy;
   static const std::vector<bc_detail::Entry> tbl = {

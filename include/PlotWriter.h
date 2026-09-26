@@ -73,8 +73,7 @@ private:
   // Output variable list. Include X/Y/Z.
   std::vector<std::string> var_I;
 
-  // Is an inner body (#BODY) defined? The 'body' mask is only written when it
-  // is, so that a run without a body does not grow an all-zero column.
+  // Is an inner body (#BODY) defined? If not, the 'body' variable is skipped.
   bool hasBody = false;
 
   // The output point number of ALL the processors.

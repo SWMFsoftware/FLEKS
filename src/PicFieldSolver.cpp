@@ -531,12 +531,8 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
-    // For a 'linetied' body (see #BODYBOUNDARY) the nodes inside the body are
-    // excluded from the linear system: they are not unknowns, and
-    // convert_1d_to_3d leaves them at zero, which is the Dirichlet condition
-    // E = 0 inside the body. The other field boundary conditions keep the body
-    // nodes as unknowns (conducting solves the radial E, insulating solves
-    // everything), so they must not be skipped here.
+    // Only a 'linetied' body drops its nodes from the linear system; the
+    // other field boundary conditions keep them as unknowns.
     const bool skipBody = is_body_linetied();
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
       if (isCenter || (bit::is_owner(nodeArr(i, j, k)) &&
@@ -638,11 +634,8 @@ void Pic::update_B() {
           node_bilinear_interp);
     }
 
-    // 'conducting' body: the radial magnetic field vanishes on the body, so
-    // the field is excluded from the body while the tangential component
-    // (the surface current) is kept. 'linetied' and 'insulating' leave B
-    // untouched: it is frozen by E = 0 and by the missing plasma inside
-    // (linetied) or passes through the body (insulating).
+    // 'conducting' body: B_r = 0, the tangential B carries the surface
+    // current. 'linetied' and 'insulating' leave B untouched.
     if (is_body_conducting()) {
       project_body_B(centerB[iLev], iLev);
       project_body_B(nodeB[iLev], iLev);

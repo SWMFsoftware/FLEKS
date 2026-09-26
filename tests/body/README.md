@@ -106,10 +106,8 @@ From the last plot frame:
 - the region just downstream of the body is depleted to below 50% of the
   upstream density (a wake forms).
 
-Reference numbers of the 4-rank run: 437 of 4096 points inside the body
-(geometric expectation πR²/(Lx·Ly) = 452), wake/upstream density = 0.22,
-`nBodyAbsorb` → 5.85e4 by t = 2.0 (the count is dominated by the electron
-thermal flux, which is much faster than the bulk flow).
+The absorbed count is dominated by the electron thermal flux, which is much
+faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 
 ## Variants
 
@@ -130,10 +128,3 @@ From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
 python3 tests/validate_tests.py --test=body      # runs all four variants
 python3 tests/validate_tests.py --test=body_conducting
 ```
-
-> Only the full-PIC solver is supported: `#BODY` with `#HYBRIDPIC` aborts, and
-> AMR (with refinement regions) is not verified yet.
->
-> The four variants are exercised in both the 2D (`./Config.pl -amrex2d`) and
-> the 3D build; `#REGION` still reads its `radius` after the center lines, so
-> it has the same 2D caveat.

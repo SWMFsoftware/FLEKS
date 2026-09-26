@@ -300,9 +300,7 @@ private:
   bool hasInflowBC_ = false;
 
   // Field condition on the surface of the inner body (#BODYBOUNDARY); the
-  // particle condition lives in Grid. The defaults reproduce the original
-  // absorbing body, so that a deck with #BODY but without #BODYBOUNDARY
-  // behaves exactly as before.
+  // particle condition lives in Grid.
   BodyFieldBC::Type bodyFieldBC = BodyFieldBC::linetied;
   bool bodyBoundarySet_ = false;
 
