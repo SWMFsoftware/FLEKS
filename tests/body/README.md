@@ -11,7 +11,29 @@ body appears as an empty hole with a wake behind it.
 
 Note that `#PLANETRADIUS` (formerly `#BODYSIZE`) does **not** create such a
 boundary — it is only the exosphere reference radius and the `planet` output
-unit. `#BODY` is the command that defines the PIC inner boundary.
+unit. `#BODY` is the command that defines the PIC inner boundary, and
+`#BODYBOUNDARY` selects what happens on its surface:
+
+```
+#BODYBOUNDARY
+absorb            particleBoundary   absorb | reflect
+linetied          fieldBoundary      linetied | conducting | insulating
+```
+
+* particles: `absorb` removes a particle when it is pushed into a body cell
+  (cell-staircase test, the same object as the grid mask, so no charge is
+  silently discarded); `reflect` is a specular reflection on the smooth
+  sphere, using the radial direction from the body center as the normal
+  (the particle and its charge are kept).
+* fields: `linetied` (default) pins the electric field to zero on the body
+  nodes, so the body is a field-free cavity and `B` is frozen at its initial
+  value inside; `conducting` is a perfect conductor (`n x E = 0` and
+  `n . B = 0`, the radial `E` stays an unknown of the implicit solve and the
+  tangential `B` carries the surface current); `insulating` applies no field
+  constraint at all, so the magnetic field passes through undistorted.
+
+`n` is the radial direction from the body center, i.e. the smooth spherical
+normal rather than the staircase face normal.
 
 ## Physics & Solver Setup
 
@@ -75,12 +97,24 @@ Reference numbers of the 4-rank run: 437 of 4096 points inside the body
 `nBodyAbsorb` → 5.85e4 by t = 2.0 (the count is dominated by the electron
 thermal flux, which is much faster than the bulk flow).
 
+## Variants
+
+| Deck | `particleBoundary` | `fieldBoundary` | What it asserts |
+|------|--------------------|-----------------|-----------------|
+| `PARAM.in` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
+| `PARAM.in.conducting` | absorb | conducting | on the body: the in-plane tangential `E` vanishes (`Ex*y - Ey*x = 0`) and the radial `B` vanishes (up to the fake-2D residual `|Bz| dz/2 / r`); ambient `B` has an in-plane component `Bx = 2e-9 T` so that `B_r` is non-trivial |
+| `PARAM.in.insulating` | absorb | insulating | `|B|` inside is within a factor of two of `|B|` just outside (no distortion) and `E` inside is *not* forced to zero; particles are still absorbed |
+| `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and the particle energy is kept; no particle is left inside the body |
+
+All variants share the checks "no NaN" and "`Etot` grows by less than 10x".
+
 ## Running
 
 From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
 
 ```bash
-python3 tests/validate_tests.py --test=body
+python3 tests/validate_tests.py --test=body      # runs all four variants
+python3 tests/validate_tests.py --test=body_conducting
 ```
 
 > Only the full-PIC solver is supported: `#BODY` with `#HYBRIDPIC` aborts, and
