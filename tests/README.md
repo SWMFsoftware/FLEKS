@@ -19,7 +19,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
 | Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
-| Reconnection          | `reconnection/`       | Current-sheet reconnection: Fadeev, classic GEM challenge, and asymmetric reconnection (<30s serial CI) | [README](reconnection/README.md) |
+| Reconnection          | `reconnection/`       | Current-sheet reconnection: force-free sheet in CI; Fadeev, classic GEM challenge, and asymmetric reconnection are expensive variants | [README](reconnection/README.md) |
 | AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
 | Reflecting & PEC BC   | `bc_reflecting/`      | Specular reflecting particle walls + conducting (PEC) field walls (4 variants: full/hybrid fields/particles) | [README](bc_reflecting/README.md) |
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
@@ -139,11 +139,12 @@ The flag may be combined with `-n`/`--nprocs`.
 
 When a test directory contains multiple `PARAM.in.<variant>` files, the runner can execute
 each variant (e.g. `PARAM.in.hybrid`, `PARAM.in.forcefree`). Certain long-running or research
-tests (such as `reconnection.forcefree`, `beam.instability`, and `iaw.landau`) are designated as
-expensive and excluded from the default quick test run. They can be executed specifically via:
+tests are designated as expensive and excluded from the default quick test run: all
+`reconnection` variants except the force-free ones (`forcefree_pic`, `forcefree_hybrid`), plus
+`beam.instability` and `iaw.landau`. They can be executed specifically via:
 ```bash
 # Run a specific variant directly:
-python3 tests/validate_tests.py --test=reconnection.forcefree
+python3 tests/validate_tests.py --test=reconnection.gem_pic
 python3 tests/validate_tests.py --test=beam.instability
 python3 tests/validate_tests.py --test=iaw.landau
 

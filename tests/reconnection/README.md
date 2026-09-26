@@ -54,7 +54,10 @@ python3 tests/validate_tests.py --test=reconnection.asym_pic          # Asymmetr
 python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid  # Force-free sheet hybrid-PIC
 python3 tests/validate_tests.py --test=reconnection.forcefree_pic     # Force-free sheet full-PIC
 ```
-*(Note: `reconnection.forcefree_hybrid` is an expensive benchmark and is skipped during default full-suite runs; run it by explicitly specifying `--test=reconnection.forcefree_hybrid` or adding `--include-expensive` / `--all`.)*
+*(Note: only the two force-free variants (`forcefree_hybrid`, `forcefree_pic`) run in the
+default full suite. The Fadeev, GEM and asymmetric variants are marked expensive and skipped;
+run them by explicitly specifying e.g. `--test=reconnection.gem_pic` or by adding
+`--include-expensive` / `--all`.)*
 
 ## Validation
 

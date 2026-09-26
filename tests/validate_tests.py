@@ -849,7 +849,14 @@ def discover_tests(tests_dir="tests"):
 # default test suite. They can be executed explicitly via `--test=NAME.VARIANT`
 # or by passing `--all` / `--include-expensive`.
 EXPENSIVE_VARIANTS = {
-    "reconnection.forcefree_hybrid",
+    # Only the force-free reconnection variants run in the default suite. The
+    # Fadeev, GEM and asymmetric ones are research benchmarks: keep them
+    # runnable explicitly (or with --all) so CI stays fast.
+    "reconnection.fadeev_hybrid",
+    "reconnection.fadeev_pic",
+    "reconnection.gem_hybrid",
+    "reconnection.gem_pic",
+    "reconnection.asym_pic",
     "beam.instability",
     "iaw.landau",
 }
