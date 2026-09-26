@@ -119,8 +119,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     bodyFieldBC = BodyFieldBC::parse(field);
     bodyBoundarySet_ = true;
 
-    Print() << "  inner body BC: particles = " << ParticleBC::to_string(
-                   bodyParticleBC)
+    Print() << "  inner body BC: particles = "
+            << ParticleBC::to_string(bodyParticleBC)
             << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
