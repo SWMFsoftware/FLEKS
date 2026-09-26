@@ -120,7 +120,7 @@ protected:
   int iJx, iJy, iJz;
 
   // Normalization base scalars, read from SWMF iParam/norm or from
-  // #NORMALIZATION/#SCALINGFACTOR/#BODYSIZE.
+  // #NORMALIZATION/#SCALINGFACTOR/#PLANETRADIUS.
   double lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
   double rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
 

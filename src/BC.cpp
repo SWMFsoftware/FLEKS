@@ -49,6 +49,17 @@ const std::vector<bc_detail::Entry>& FieldBC::table() {
   return tbl;
 }
 
+// Input spellings accepted by BodyFieldBC::parse().
+const std::vector<bc_detail::Entry>& BodyFieldBC::table() {
+  using bc_detail::Legacy;
+  static const std::vector<bc_detail::Entry> tbl = {
+    { "linetied", BodyFieldBC::linetied, Legacy::none },
+    { "conducting", BodyFieldBC::conducting, Legacy::none },
+    { "insulating", BodyFieldBC::insulating, Legacy::none },
+  };
+  return tbl;
+}
+
 amrex::Vector<amrex::BCRec> FieldBC::create_bcrec(
     const BoxBC<FieldBC::Type>& physBC, Quantity qty, int nComp,
     const amrex::Geometry& geom) {

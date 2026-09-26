@@ -159,7 +159,7 @@ def _check_charge_exchange_source_profile():
                 if not line_s:
                     continue
                 parts = line_s.split()
-                if section == "#BODYSIZE" and len(parts) >= 1:
+                if section == "#PLANETRADIUS" and len(parts) >= 1:
                     try:
                         Rp_si = float(parts[0])
                     except ValueError:
@@ -167,7 +167,7 @@ def _check_charge_exchange_source_profile():
     except Exception:
         pass
 
-    # The output unit is PLANETARY, so one plot unit is exactly one #BODYSIZE
+    # The output unit is PLANETARY, so one plot unit is exactly one #PLANETRADIUS
     # radius and the body radius sits at coordinate 1.
     Rp_plot = 1.0
     logger.debug("    [CX] rBody = %.3e m, Rp (plot coords) = %.1f", Rp_si, Rp_plot)

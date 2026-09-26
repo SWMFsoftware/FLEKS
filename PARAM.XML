@@ -129,10 +129,13 @@ particlesN - location, velocity and weight of species N particles (N=0,1,..)
 fluid      - all the fluid variables of the first two species:
              'rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 pYYS1 pZZS1 pXYS1 pXZS1 pYZS1'
 var        - read from parameter file. The available variables:
-             'Bx By Bz Ex Ey Ez ppcS* rhoS* uxS* uyS* uzS* pS* pXXS* pYYS* pZZS* pXYS* pXZS* pYZS* qc divEc dx',
+             'Bx By Bz Ex Ey Ez ppcS* rhoS* uxS* uyS* uzS* pS* pXXS* pYYS* pZZS* pXYS* pXZS* pYZS* qc divEc dx body',
              where '*' is the number of the species. The variables 'qc' and
 	     'divEc' are the net charge and the divergence of the electric field
-	     at the cell center, respectively.
+	     at the cell center, respectively. 'body' is the mask of the
+	     absorbing inner body defined by #BODY: 1 inside the body and 0
+	     outside. Inside the body the particle moments (rhoS*, u*S*, p*S*,
+	     ppcS*, numS*) are written as zero.
 \end{verbatim}
 
 The file format can be 'real4', 'real8', 'ascii' 'amrex' or 'hdf5'. The IDL formats
@@ -1500,13 +1503,128 @@ code_time = SI_time * uNorm/lNorm (so tNorm = lNorm/uNorm s per code-time unit).
 This command sets the scaling factor for the simulation.
 </command>
 
-<command name="BODYSIZE" alias="BODYSIZE_FLEKS0,BODYSIZE_FLEKS1,BODYSIZE_FLEKS2" multiple="T">
+<command name="BODY" alias="BODY_FLEKS0,BODY_FLEKS1,BODY_FLEKS2" multiple="T">
+  <parameter name="type" type="string" default="sphere"/>
+  <parameter name="radius" type="real" default="1.0"/>
+  <parameter name="centerX" type="real" default="0.0"/>
+  <parameter name="centerY" type="real" default="0.0"/>
+  <parameter name="centerZ" type="real" default="0.0" if="$nDim==3"/>
+
+#BODY
+sphere            type
+1.0               radius
+0.0               center
+0.0               center
+0.0               center
+
+One value per line: the radius is read first, then the center once per
+dimension (like #REGION), in the order x, y, z. A 2D build (nDim = 2) reads
+only the first two center lines and skips the third one, so the same deck
+works for 2D and 3D builds.
+
+This command defines an absorbing inner body, i.e., a real inner boundary
+inside the Cartesian PIC domain. Particles crossing into a body cell are
+removed and tallied, no particles are created inside the body, the electric
+field is pinned to zero inside the body, and the particle moments are written
+as zero in the output, so the body shows up as an empty hole with a wake
+behind it.
+
+center and radius are in code units (one length unit is lNormSI metres, see
+#NORMALIZATION), the same convention as #REGION. They are independent of
+#PLANETRADIUS, which is in SI units and only sets the exosphere reference
+radius and the planetary output unit; #PLANETRADIUS does not create an inner
+boundary.
+
+The body is represented by the cells whose centers lie inside the sphere, so
+its boundary is a staircase with a resolution of dx/2 and the effective
+radius carries an O(dx) error that converges under refinement. Particle
+absorption uses the same cell-based boundary, which is what makes the
+treatment conservative: no charge is silently discarded at the surface. The
+magnetic field is not forced to zero inside the body; with E = 0 and no
+particles inside, B is frozen at its initial value in the interior.
+
+Limitations: only 'sphere' is implemented; only the full-PIC solver
+(#SOLVEEM) is supported, not #HYBRIDPIC; AMR (nLevMax greater than 1) is not
+verified. A sharp absorbing boundary can be a source of numerical noise: if
+the electric field grows near the surface, add dissipation
+(#RESISTIVITY / #HYPERRESISTIVITY) instead of changing the boundary.
+</command>
+
+<command name="BODYBOUNDARY" alias="BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2" multiple="T">
+  <parameter name="particleBoundary" type="string" default="absorb"/>
+  <parameter name="fieldBoundary" type="string" default="linetied"/>
+
+#BODYBOUNDARY
+absorb            particleBoundary
+linetied          fieldBoundary
+
+This command selects the boundary condition on the surface of the inner body
+declared by #BODY. It has two parameters: the first one applies to the
+particles, the second one to the electromagnetic field. It is ignored (with a
+warning) if no #BODY is given, and the defaults reproduce the original
+absorbing body, so a deck with #BODY but without #BODYBOUNDARY is unchanged.
+
+particleBoundary:
+
+  absorb  - a particle pushed into a body cell is removed and tallied
+            (nBodyAbsorb, qBodyAbsorb, mBodyAbsorb in the log). The test uses
+            the cell that contains the particle, i.e. the same cell-based
+            staircase as the grid mask, so no charge is silently discarded at
+            the surface.
+  reflect - specular reflection on the sphere: with n the radial direction
+            from the body center to the particle, the position is mirrored to
+            r -> 2R - r and the velocity to v -> v - 2(v.n)n. The particle and
+            its charge are kept, so nothing is tallied. Here the test uses the
+            exact radius (a smooth spherical surface): unlike absorption,
+            reflection does not remove charge, so the cell-staircase argument
+            above does not apply and the smooth surface is the better
+            approximation.
+
+fieldBoundary (n is the radial direction from the body center):
+
+  linetied  - (default) E = 0 on the body nodes: they are not unknowns of the
+              implicit E solve, so the body is a field-free cavity and B is
+              frozen at its initial value in the interior, because there is
+              neither plasma nor electric field left there.
+  conducting- perfect conductor: the tangential electric field and the radial
+              magnetic field vanish,
+              n x E = 0  and  n . B = 0,
+              while the radial E remains an unknown of the solve and the
+              tangential B carries the surface current.
+  insulating- perfect insulator: the body conducts no current and sustains no
+              macroscopic surface shielding current, so the magnetic field
+              passes through undistorted,
+              B(interior) = B(exterior),
+              n x (E(exterior) - E(interior)) = 0,
+              n . (D(exterior) - D(interior)) = surface charge.
+              Discretely this means no field constraint at all: E and B are
+              solved inside the body as usual, and since no particle survives
+              there the interior simply evolves as vacuum.
+</command>
+
+<command name="PLANETRADIUS" alias="PLANETRADIUS_FLEKS0,PLANETRADIUS_FLEKS1,PLANETRADIUS_FLEKS2" multiple="T">
   <parameter name="radius" type="real" default="1.0"/>
 
-#BODYSIZE
+#PLANETRADIUS
 1.0               radius
 
-This command sets the size of the planet or other body in the simulation.
+This command sets the radius of the planet (or other central body) in SI
+units. It is a length scale only:
+
+* it is the reference radius of the exosphere: the neutral density of
+  #EXOSPHERE is defined with n0 at r = r_planet and is zero for
+  r < r_planet;
+* it is the unit of the 'planet' output (lengths are divided by
+  r_planet) and it is written as the 'rPlanet' scalar in the output header.
+
+It does NOT create an inner boundary for the PIC solver: no particle is
+removed and no field is modified at r = r_planet. Use #BODY for that.
+
+In a GM-PC (SWMF) coupled run the value is provided by the fluid component
+and this command is ignored.
+
+This command was previously named #BODYSIZE. The old name is no longer
+accepted: rename it to #PLANETRADIUS in existing input decks.
 </command>
 
 <command name="EXOSPHERE" alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2" multiple="T">

@@ -1,0 +1,143 @@
+#DESCRIPTION
+Inner-body (absorbing sphere) test: a uniform plasma streams in +x past an
+absorbing sphere of radius 1.2 at the origin, declared with BODY.
+
+Particles that enter a body cell are removed and tallied, no particle is
+created inside the body, the electric field is pinned to zero inside the body
+and the particle moments are reported as zero there, so the body must show up
+as an empty hole with a wake downstream.
+
+Variant: BODYBOUNDARY absorb + conducting.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin   [code units]
+ 3.2                    xMax
+-3.2                    yMin
+ 3.2                    yMax
+-0.05                   zMin   one cell: the invariant direction
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+64                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+BODY is only implemented for the full-PIC solver.
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#EFIELDSOLVER
+1.0e-8                  tol
+30                      nIter
+
+#DISCRETIZATION
+0.5                     theta
+0.0                     coefDiff
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+Lax-Friedrichs upwind viscosity on the E equation (minmod limiter theta=1).
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+Lax-Friedrichs upwind viscosity on the B equation + hyperbolic div-B cleaning.
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+
+Digital-filter smoothing of the current density J.
+#SMOOTHJ
+T                       doSmoothJ
+1                       nSmoothJ
+0.5                     coefSmoothJ
+
+#PLASMA
+2                       nS
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions
+100.0                   ux [km/s]      u_code = 1 (uNormSI = 1e5 m/s)
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]
+0.2                     rho [amu/cc]   Species 1: electrons (n_e = n_i)
+100.0                   ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]
+2.0e-9                  bx [T]         in-plane, so that B_r is non-zero
+0.0                     by [T]
+3.0e-9                  bz [T]         gives the motional E_y = -u x B
+0.0                     ex [V/m]
+3.0e-4                  ey [V/m]       motional field E = -u x B
+0.0                     ez [V/m]
+
+The absorbing inner body: a sphere of radius 1.2 (code units, 12 cells) at
+the origin. The unit here is the code length unit, not SI.
+#BODY
+sphere                  type
+1.2                     radius [code units]
+0.0                     center [code units] x
+0.0                     center [code units] y
+0.0                     center [code units] z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+conducting              fieldBoundary
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]
+1.0e5                   uNormSI   [m/s]
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+4                       npcelx
+4                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+-1                      dn
+0.5                     dt
+1                       dx
+body rhoS0 rhoS1 Ex Ey Ez Bx By Bz   plotVar
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax
+
+#RUN

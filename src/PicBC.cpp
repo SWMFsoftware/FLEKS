@@ -673,3 +673,124 @@ void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
 }
 
 //==========================================================
+//==========================================================
+// Inner body field boundary (see #BODY / #BODYBOUNDARY).
+//
+// All these operators work on the nodes/cells flagged with bit::iBody_ and use
+// the radial direction from the body center as the surface normal, which is
+// the smooth spherical normal rather than the staircase face normal.
+//==========================================================
+
+void Pic::zero_body_E(amrex::MultiFab& mf, const int iLev) {
+  // linetied: the body nodes are not part of the plasma domain and carry no
+  // electric field.
+  mask_body(mf, node_status(iLev));
+}
+
+//==========================================================
+void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
+  // conducting: E <- (E.n) n, i.e. the tangential electric field vanishes and
+  // the radial component is kept.
+  if (mf.nComp() < 3)
+    return;
+
+  const auto plo = Geom(iLev).ProbLo();
+  const auto dx = Geom(iLev).CellSize();
+  const Real cx = bodyCenter[ix_];
+  const Real cy = bodyCenter[iy_];
+  const Real cz = bodyCenter[iz_];
+  const auto& status = node_status(iLev);
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    auto arr = mf[mfi].array();
+    const auto statusArr = status[mfi].array();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (!bit::is_body(statusArr(i, j, k)))
+        return;
+
+      const Real x = plo[ix_] + i * dx[ix_] - cx;
+      const Real y = (nDim > 1) ? plo[iy_] + j * dx[iy_] - cy : 0.0;
+      const Real z = (nDim > 2) ? plo[iz_] + k * dx[iz_] - cz : 0.0;
+      const Real r = std::sqrt(x * x + y * y + z * z);
+      if (r <= 0.0)
+        return;
+
+      const Real nx = x / r;
+      const Real ny = y / r;
+      const Real nz = z / r;
+
+      const Real ex = arr(i, j, k, ix_);
+      const Real ey = arr(i, j, k, iy_);
+      const Real ez = arr(i, j, k, iz_);
+      const Real er = ex * nx + ey * ny + ez * nz;
+
+      arr(i, j, k, ix_) = er * nx;
+      arr(i, j, k, iy_) = er * ny;
+      arr(i, j, k, iz_) = er * nz;
+    });
+  }
+}
+
+//==========================================================
+void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
+  // conducting: B <- B - (B.n) n, i.e. the radial (normal) magnetic field
+  // vanishes while the tangential component carries the surface current.
+  if (mf.nComp() < 3)
+    return;
+
+  const bool isCell = mf.ixType().cellCentered();
+  const auto& status = isCell ? cell_status(iLev) : node_status(iLev);
+  const auto plo = Geom(iLev).ProbLo();
+  const auto dx = Geom(iLev).CellSize();
+  const Real cx = bodyCenter[ix_];
+  const Real cy = bodyCenter[iy_];
+  const Real cz = bodyCenter[iz_];
+  // Cell centres sit half a cell above the lower node.
+  const Real shift = isCell ? 0.5 : 0.0;
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    auto arr = mf[mfi].array();
+    const auto statusArr = status[mfi].array();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (!bit::is_body(statusArr(i, j, k)))
+        return;
+
+      const Real x = plo[ix_] + (i + shift) * dx[ix_] - cx;
+      const Real y = (nDim > 1) ? plo[iy_] + (j + shift) * dx[iy_] - cy : 0.0;
+      const Real z = (nDim > 2) ? plo[iz_] + (k + shift) * dx[iz_] - cz : 0.0;
+      const Real r = std::sqrt(x * x + y * y + z * z);
+      if (r <= 0.0)
+        return;
+
+      const Real nx = x / r;
+      const Real ny = y / r;
+      const Real nz = z / r;
+
+      const Real bx = arr(i, j, k, ix_);
+      const Real by = arr(i, j, k, iy_);
+      const Real bz = arr(i, j, k, iz_);
+      const Real br = bx * nx + by * ny + bz * nz;
+
+      arr(i, j, k, ix_) = bx - br * nx;
+      arr(i, j, k, iy_) = by - br * ny;
+      arr(i, j, k, iz_) = bz - br * nz;
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
+  if (!useBody)
+    return;
+
+  if (bodyFieldBC == BodyFieldBC::linetied) {
+    zero_body_E(mf, iLev);
+  } else if (bodyFieldBC == BodyFieldBC::conducting) {
+    project_body_E(mf, iLev);
+  }
+  // insulating: no constraint, the fields pass through the body.
+}

@@ -117,6 +117,16 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       skip_cells_divE_correction(residual, cellStatus[iLev], iLev);
     }
 
+    // For the 'linetied' and 'conducting' bodies the electric field inside is
+    // constrained, so the div(E) equation cannot be satisfied there: drop the
+    // contribution of the body cells, otherwise the correction would move
+    // particles around to compensate for the charge that the CIC tails of the
+    // surrounding plasma deposit inside the body. For an 'insulating' body the
+    // field inside is free, so that charge is a real source and is kept.
+    if (useBody && bodyFieldBC != BodyFieldBC::insulating) {
+      mask_body(residual, cellStatus[iLev]);
+    }
+
     convert_3d_to_1d(residual, solver.rhs, iLev);
 
     BL_PROFILE_VAR("Pic::phi_iterate", solve);

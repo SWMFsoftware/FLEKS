@@ -534,6 +534,15 @@ def read_pic_log(run_dir):
             }
             for iS in range(n_species):
                 entry[f"Epart{iS}"] = float(vals[6 + iS])
+            # Optional columns appended after the fixed ones (e.g. the #BODY
+            # absorption tallies) are exposed under their header name.
+            for iCol in range(6 + n_species, min(len(vals), len(header))):
+                name = header[iCol]
+                if name and name not in entry:
+                    try:
+                        entry[name] = float(vals[iCol])
+                    except ValueError:
+                        continue
             pic_diags.append(entry)
         except (ValueError, IndexError):
             continue

@@ -74,7 +74,7 @@ T                       solveEM
 #SOURCE
 T                       useSource
 
-#BODYSIZE
+#PLANETRADIUS
 3.39e6                  radius        Mars radius, also the exosphere reference
 
 #EXOSPHERE

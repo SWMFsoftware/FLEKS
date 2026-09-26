@@ -386,6 +386,15 @@ void Pic::fill_new_node_E() {
           node_bilinear_interp);
     }
   }
+
+  // The initial/new electric field has to satisfy the inner-body condition
+  // (see #BODYBOUNDARY) as well, otherwise the body would start with the
+  // ambient field.
+  if (useBody) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      apply_body_E_bc(nodeE[iLev], iLev);
+    }
+  }
 }
 
 //==========================================================

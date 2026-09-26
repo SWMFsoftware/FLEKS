@@ -25,6 +25,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
 | Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |
 | Oblique shock         | `shock/`              | 1D oblique magnetized shock | [README](shock/README.md) |
+| Inner body            | `body/`               | Absorbing spherical inner boundary (`#BODY`): particle absorption, empty interior, wake | [README](body/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |
 
 ### Ionization Parameter Commands
@@ -51,7 +52,7 @@ The two length conventions coexist and must not be mixed:
 - **grid** — `#GEOMETRY` (and any other grid-oriented command such as
   `#REGION`) is in *code units*, i.e. multiples of `#NORMALIZATION lNormSI`
   metres. Standalone, the numbers are used verbatim as AMReX coordinates.
-- **physics input** — `#BODYSIZE`, `#EXOSPHERE` (`n0`, `H0`, `T0`),
+- **physics input** — `#PLANETRADIUS`, `#EXOSPHERE` (`n0`, `H0`, `T0`),
   `#PHOTOIONIZATION`, `#ELECTRONIMPACT`, `#CHARGEEXCHANGE`,
   `#SHADOWCYLINDER` and `#OPTICALDEPTH` are all **SI**.
   `UserSource` converts the code-unit cell position to metres (`No2SiL`) before
@@ -61,7 +62,7 @@ This is also what a GM-coupled run looks like: there `No2SiL` is the length
 of one GM length unit (one planetary radius), so the deck of a coupled run and
 the deck of a standalone run describe the same setup as long as each keeps to
 its own convention. A validator must therefore use the plot unit of the
-`PLANETARY` output, namely one `#BODYSIZE` radius, to turn plot coordinates
+`PLANETARY` output, namely one `#PLANETRADIUS` radius, to turn plot coordinates
 back into metres.
 
 ## Architecture

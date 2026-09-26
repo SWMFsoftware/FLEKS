@@ -49,6 +49,9 @@ void Pic::update_E_expl() {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
                    iLev, false);
+
+    // Electric field boundary on the inner body (see #BODYBOUNDARY).
+    apply_body_E_bc(nodeE[iLev], iLev);
   }
 }
 
@@ -99,6 +102,16 @@ void Pic::update_E_impl() {
       smooth_E(nodeEth[iLev], iLev);
       smooth_E(nodeE[iLev], iLev);
     }
+
+    // Electric field boundary on the inner body (see #BODYBOUNDARY). For
+    // 'linetied' the body nodes are not part of the linear system, so nodeEth
+    // is zero there by construction and nodeE is zeroed here, after the last
+    // operation that can write into the body (the smoothing above). For
+    // 'conducting' both are projected onto the radial direction, which also
+    // removes the round-off of the Krylov solve.
+    apply_body_E_bc(nodeE[iLev], iLev);
+    apply_body_E_bc(nodeEth[iLev], iLev);
+
     div_node_to_center(nodeE[iLev], centerDivE[iLev], Geom(iLev).InvCellSize());
   }
 }
@@ -357,6 +370,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
+  // 'conducting' body: keep the Krylov vectors inside the constrained space
+  // by removing the tangential electric field on the body nodes. Together with
+  // the same projection of the right-hand side and of the solution, this makes
+  // E_t = 0 an exact constraint of the linear system.
+  if (is_body_conducting())
+    project_body_E(matvecMF, iLev);
+
   convert_3d_to_1d(matvecMF, vecOut, iLev);
 }
 
@@ -486,6 +506,11 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
                   tempNode.nGrow());
   }
 
+  // 'conducting' body: project the right-hand side onto the radial direction
+  // so that the Krylov space stays inside the constrained space.
+  if (is_body_conducting())
+    project_body_E(temp2Node, iLev);
+
   convert_3d_to_1d(temp2Node, rhs, iLev);
 }
 
@@ -506,8 +531,16 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
+    // For a 'linetied' body (see #BODYBOUNDARY) the nodes inside the body are
+    // excluded from the linear system: they are not unknowns, and
+    // convert_1d_to_3d leaves them at zero, which is the Dirichlet condition
+    // E = 0 inside the body. The other field boundary conditions keep the body
+    // nodes as unknowns (conducting solves the radial E, insulating solves
+    // everything), so they must not be skipped here.
+    const bool skipBody = is_body_linetied();
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
+      if (isCenter || (bit::is_owner(nodeArr(i, j, k)) &&
+                       !(skipBody && bit::is_body(nodeArr(i, j, k))))) {
         arr(i, j, k, iVar) = p[iCount++];
       }
     });
@@ -529,8 +562,12 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
+    // See convert_1d_to_3d: only the 'linetied' body drops its nodes from the
+    // linear system.
+    const bool skipBody = is_body_linetied();
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
+      if (isCenter || (bit::is_owner(nodeArr(i, j, k)) &&
+                       !(skipBody && bit::is_body(nodeArr(i, j, k))))) {
         p[iCount++] = arr(i, j, k, iVar);
       }
     });
@@ -599,6 +636,17 @@ void Pic::update_B() {
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
+    }
+
+    // 'conducting' body: the radial magnetic field vanishes on the body, so
+    // the field is excluded from the body while the tangential component
+    // (the surface current) is kept. 'linetied' and 'insulating' leave B
+    // untouched: it is frozen by E = 0 and by the missing plasma inside
+    // (linetied) or passes through the body (insulating).
+    if (is_body_conducting()) {
+      project_body_B(centerB[iLev], iLev);
+      project_body_B(nodeB[iLev], iLev);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
 }

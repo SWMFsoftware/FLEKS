@@ -111,7 +111,7 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
   mNormSI = 1e7 * lNormSI * pow(protonMassPerChargeSI * ScalingFactor, 2);
 
   // rPlanetSi default set in #NORMALIZATION read_param; only override
-  // if it was not already set by #BODYSIZE.
+  // if it was not already set by #PLANETRADIUS.
   if (rPlanetSi == 1.0)
     rPlanetSi = lNormSI;
 
@@ -390,7 +390,10 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     param.read_var("scaling", ScalingFactor);
     if (ScalingFactor != sOld && initFromSWMF)
       finalize_normalization();
-  } else if (command == "#BODYSIZE") {
+  } else if (command == "#PLANETRADIUS") {
+    // The planetary length scale: the reference radius of the exosphere
+    // profiles and the unit of the 'planet' output. It does NOT create an
+    // inner boundary for the PIC solver; see #BODY.
     const double rOld = rPlanetSi;
     param.read_var("radius", rPlanetSi);
     if (rPlanetSi != rOld && initFromSWMF)

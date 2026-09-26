@@ -341,6 +341,42 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           " is not supported by the hybrid-PIC solver (Mach number is a "
           "full-PIC-only diagnostic).");
   }
+  //--- Inner body (see #BODY) ---
+  // No plasma lives inside the body, so the particle-derived moments are
+  // reported as zero there and 'body' reports the mask itself. The electric
+  // field is zero inside the body by construction and the magnetic field
+  // keeps its initial value, so both are reported as they are.
+  bool isInsideBody = false;
+  if (useBody) {
+    Real xyz[3] = { 0.0, 0.0, 0.0 };
+    for (int d = 0; d < nDim; d++)
+      xyz[d] = Geom(iLev).LoEdge(ijk, d);
+    isInsideBody = is_inside_body(xyz);
+  }
+
+  // Decks spell the plot variables in mixed case ('RhoS0' and 'rhoS0' are
+  // both in use), so the body-related names are matched case-insensitively.
+  std::string varLower{ var };
+  for (char& c : varLower) {
+    if (c >= 'A' && c <= 'Z')
+      c = c - 'A' + 'a';
+  }
+
+  if (varLower.substr(0, 4) == "body")
+    return isInsideBody ? 1.0 : 0.0;
+
+  if (isInsideBody &&
+      (varLower.substr(0, 4) == "rhos" || varLower.substr(0, 3) == "uxs" ||
+       varLower.substr(0, 3) == "uys" || varLower.substr(0, 3) == "uzs" ||
+       varLower.substr(0, 4) == "pxxs" || varLower.substr(0, 4) == "pyys" ||
+       varLower.substr(0, 4) == "pzzs" || varLower.substr(0, 4) == "pxys" ||
+       varLower.substr(0, 4) == "pxzs" || varLower.substr(0, 4) == "pyzs" ||
+       varLower.substr(0, 2) == "ps" || varLower.substr(0, 4) == "ppcs" ||
+       varLower.substr(0, 4) == "nums" || varLower.substr(0, 5) == "jhatx" ||
+       varLower.substr(0, 5) == "jhaty" || varLower.substr(0, 5) == "jhatz" ||
+       varLower.substr(0, 3) == "nmm"))
+    return 0.0;
+
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
@@ -659,6 +695,14 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       std::string sName = "Epart" + std::to_string(i);
       picLogStream << "\t" << std::setw(wCol) << sName;
     }
+    // Cumulative tallies of the particles absorbed by the inner body
+    // (#BODY). Appended at the end so that the existing columns keep their
+    // positions.
+    if (useBody) {
+      picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
+                   << std::setw(wCol) << "qBodyAbsorb" << "\t"
+                   << std::setw(wCol) << "mBodyAbsorb";
+    }
     picLogStream << std::endl;
   }
 
@@ -672,6 +716,21 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
     Real eEnergy = calc_E_field_energy();
     Real bEnergy = calc_B_field_energy();
+
+    // Cumulative number / charge / mass of the particles absorbed by the
+    // inner body (#BODY), summed over all species and all MPI ranks.
+    Vector<Real> bodyAbsorb(3, 0.0);
+    if (useBody) {
+      for (auto& part : parts) {
+        bodyAbsorb[0] += part->get_body_absorb_count();
+        bodyAbsorb[1] += part->get_body_absorb_charge();
+        bodyAbsorb[2] += part->get_body_absorb_mass();
+      }
+      ParallelDescriptor::ReduceRealSum(
+          bodyAbsorb.data(), bodyAbsorb.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
         picLogStream.open(logFile.c_str(), std::fstream::app);
@@ -686,6 +745,11 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                    << bEnergy << "\t" << std::setw(wCol) << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << plasmaEnergy[i];
+      if (useBody) {
+        picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
+                     << std::setw(wCol) << bodyAbsorb[1] << "\t"
+                     << std::setw(wCol) << bodyAbsorb[2];
+      }
       picLogStream << std::endl;
     }
   }
