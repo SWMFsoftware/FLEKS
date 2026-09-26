@@ -602,20 +602,32 @@ public:
     // so the absorption surface and the mask are the same object and no
     // charge is silently discarded at the surface.
     if (grid != nullptr && grid->use_body()) {
-      bool isInsideBox = true;
-      amrex::IntVect cellIdx;
-      for (int d = 0; d < nDim; ++d) {
-        const amrex::Real dShift = (p.pos(d) - ploLoc[d]) * invDx[iLev][d];
-        cellIdx[d] = fastfloor(dShift);
-        if (cellIdx[d] > high[d] || cellIdx[d] < low[d]) {
-          isInsideBox = false;
-          break;
-        }
-      }
+      if (grid->bodyParticleBC == ParticleBC::reflect) {
+        // Specular reflection on the smooth sphere: the test uses the exact
+        // radius, because reflecting does not remove charge and therefore the
+        // cell-staircase argument of the absorbing case does not apply.
+        amrex::Real xyz[3] = { 0.0, 0.0, 0.0 };
+        for (int d = 0; d < nDim; ++d)
+          xyz[d] = p.pos(d);
 
-      if (isInsideBox && bit::is_body(status(cellIdx))) {
-        body_absorb_tally(p.rdata(iqp_));
-        return true;
+        if (grid->is_inside_body(xyz))
+          reflect_particle_at_body(p);
+      } else {
+        bool isInsideBox = true;
+        amrex::IntVect cellIdx;
+        for (int d = 0; d < nDim; ++d) {
+          const amrex::Real dShift = (p.pos(d) - ploLoc[d]) * invDx[iLev][d];
+          cellIdx[d] = fastfloor(dShift);
+          if (cellIdx[d] > high[d] || cellIdx[d] < low[d]) {
+            isInsideBox = false;
+            break;
+          }
+        }
+
+        if (isInsideBox && bit::is_body(status(cellIdx))) {
+          body_absorb_tally(p.rdata(iqp_));
+          return true;
+        }
       }
     }
 
@@ -651,6 +663,52 @@ public:
     absorbTallyCount[face] += 1.0;
     absorbTallyCharge[face] += weight * charge;
     absorbTallyMass[face] += weight * mass;
+  }
+
+  // Specular reflection of a particle that is inside the inner body (see
+  // #BODYBOUNDARY with particleBoundary = reflect). The surface normal is the
+  // radial direction from the body center, so the reflection uses the smooth
+  // sphere: with n = (x - c)/|x - c| the position is mirrored to r -> 2R - r
+  // and an inward velocity is reflected as v -> v - 2(v.n)n. The particle and
+  // its charge are kept, so nothing is tallied.
+  inline void reflect_particle_at_body(ParticleType& p) {
+    if (grid == nullptr)
+      return;
+
+    const amrex::Real* c = grid->get_body_center();
+    const amrex::Real radius = grid->get_body_radius();
+
+    amrex::Real dr[3] = { 0.0, 0.0, 0.0 };
+    for (int d = 0; d < nDim; ++d)
+      dr[d] = p.pos(d) - c[d];
+
+    amrex::Real r2 = 0.0;
+    for (int d = 0; d < nDim; ++d)
+      r2 += dr[d] * dr[d];
+
+    const amrex::Real r = std::sqrt(r2);
+    if (r <= 0.0)
+      return; // Degenerate (particle at the center): leave it unchanged.
+
+    const amrex::Real invR = 1.0 / r;
+    amrex::Real n[3] = { 0.0, 0.0, 0.0 };
+    for (int d = 0; d < nDim; ++d)
+      n[d] = dr[d] * invR;
+
+    // Mirror the radial position about the surface.
+    const amrex::Real rNew = 2.0 * radius - r;
+    for (int d = 0; d < nDim; ++d)
+      p.pos(d) = c[d] + rNew * n[d];
+
+    // Only an inward velocity is reversed; an outward one is kept.
+    amrex::Real vn = 0.0;
+    for (int d = 0; d < nDim; ++d)
+      vn += p.rdata(iup_ + d) * n[d];
+
+    if (vn < 0.0) {
+      for (int d = 0; d < nDim; ++d)
+        p.rdata(iup_ + d) -= 2.0 * vn * n[d];
+    }
   }
 
   // Tally a particle absorbed by the inner body (see #BODY).

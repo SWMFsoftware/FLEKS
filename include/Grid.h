@@ -20,6 +20,7 @@
 #include <AMReX_iMultiFab.H>
 
 #include "Array1D.h"
+#include "BC.h"
 #include "Constants.h"
 #include "Regions.h"
 #include "TimeCtr.h"
@@ -214,6 +215,10 @@ public:
   //---- Inner body (see the #BODY command) ----
 
   bool use_body() const { return useBody; }
+
+  // Particle condition on the body surface, set by #BODYBOUNDARY. It lives
+  // here, next to the geometry, because the particles only see the Grid.
+  ParticleBC::Type bodyParticleBC = ParticleBC::absorb;
 
   amrex::Real get_body_radius() const { return bodyRadius; }
 
