@@ -143,6 +143,22 @@ void PlotWriter::init() {
     pos2 = plotVar.find_first_of(" \t\n", pos1);
     if (pos1 != std::string::npos) {
       std::string name = plotVar.substr(pos1, pos2 - pos1);
+
+      // The 'body' mask only exists when #BODY defines an inner body; skip it
+      // otherwise instead of writing an all-zero column.
+      std::string nameLow = name;
+      for (char& c : nameLow) {
+        if (c >= 'A' && c <= 'Z')
+          c = c - 'A' + 'a';
+      }
+      if (nameLow == "body" && !hasBody) {
+        if (isVerbose)
+          std::cout << errorPrefix
+                    << "Warning: 'body' is requested in plotVar but no #BODY "
+                    << "is defined; the variable is skipped.\n";
+        continue;
+      }
+
 #ifdef _PT_COMPONENT_
       // For OH-PT simulations, the variable names read from PARAM.in can be
       // *Pop*, which are also used in the output files. But internationally,

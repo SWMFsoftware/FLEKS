@@ -73,6 +73,10 @@ private:
   // Output variable list. Include X/Y/Z.
   std::vector<std::string> var_I;
 
+  // Is an inner body (#BODY) defined? The 'body' mask is only written when it
+  // is, so that a run without a body does not grow an all-zero column.
+  bool hasBody = false;
+
   // The output point number of ALL the processors.
   long int nCellAllProc;
 
@@ -179,6 +183,7 @@ public:
   /*----Set class member value begin--------------------*/
   void set_plotString(std::string in) { plotString = in; }
   void set_plotVar(std::string in) { plotVar = in; }
+  void set_has_body(const bool in) { hasBody = in; }
   void set_plotDx(const double in) { plotDx = in; }
   void set_nSpecies(const int in) { nSpecies = in; }
   void set_useHybridPIC(const bool in) { useHybridPIC = in; }

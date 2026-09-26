@@ -1050,6 +1050,7 @@ void Domain::init_time_ctr() {
 
       writer.set_scalarValue_I(scalarVar_I);
       writer.set_scalarName_I(scalarName_I);
+      writer.set_has_body(pic != nullptr && pic->use_body());
       //--------------------------------------------------
       writer.init();
       // writer.print();
