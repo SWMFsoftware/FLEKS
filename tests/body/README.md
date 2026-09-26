@@ -42,7 +42,21 @@ normal rather than the staircase face normal.
   12 cells. One cell in z (fake 2D).
 
 - **Inner Body**: declared with `#BODY` (radius 1.2, center at the origin,
-  **code units** like `#REGION`). The mask is built from the cell centers
+  **code units** like `#REGION`). The values are read positionally one per
+  line, radius first and then one center line per dimension, so the same deck
+  works for a 2D (`-amrex2d`) and a 3D build — a 2D build reads only the first
+  two center lines and skips the third:
+
+  ```
+  #BODY
+  sphere                  type
+  1.2                     radius [code units]
+  0.0                     center [code units] x
+  0.0                     center [code units] y
+  0.0                     center [code units] z
+  ```
+
+  The mask is built from the cell centers
   (staircase boundary, resolution `dx/2`), and:
   | Quantity | Treatment |
   |----------|-----------|
@@ -119,3 +133,7 @@ python3 tests/validate_tests.py --test=body_conducting
 
 > Only the full-PIC solver is supported: `#BODY` with `#HYBRIDPIC` aborts, and
 > AMR (with refinement regions) is not verified yet.
+>
+> The four variants are exercised in both the 2D (`./Config.pl -amrex2d`) and
+> the 3D build; `#REGION` still reads its `radius` after the center lines, so
+> it has the same 2D caveat.
