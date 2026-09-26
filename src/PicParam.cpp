@@ -84,12 +84,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       Abort("Error: #BODY type '" + type +
             "' is not supported. Only 'sphere' is implemented.");
 
+    // The values are read positionally, one per line, so the radius comes
+    // first: a deck can then list one center line per dimension and stay
+    // valid for both a 2D (nDim = 2) and a 3D (nDim = 3) build -- the reader
+    // skips the extra line when it moves on to the next command.
+    Real radius;
+    param.read_var("radius", radius);
+
     Real center[nDim];
     for (int i = 0; i < nDim; i++)
       param.read_var("center", center[i]);
-
-    Real radius;
-    param.read_var("radius", radius);
 
     // The geometry is in code units (one length unit is lNormSI metres),
     // like #REGION, and unlike #PLANETRADIUS which is in SI.

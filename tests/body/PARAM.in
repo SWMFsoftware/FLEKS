@@ -97,10 +97,10 @@ The absorbing inner body: a sphere of radius 1.2 (code units, 12 cells) at
 the origin. The unit here is the code length unit, not SI.
 #BODY
 sphere                  type
+1.2                     radius [code units]
 0.0                     center [code units] x
 0.0                     center [code units] y
 0.0                     center [code units] z
-1.2                     radius [code units]
 
 #TIMESTEPPING
 T                       useFixedDt

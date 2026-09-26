@@ -7,7 +7,7 @@ created inside the body, the electric field is pinned to zero inside the body
 and the particle moments are reported as zero there, so the body must show up
 as an empty hole with a wake downstream.
 
-Variant: BODYBOUNDARY reflect (specular reflection on the sphere).
+Variant: BODYBOUNDARY reflect + linetied.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -99,10 +99,10 @@ The absorbing inner body: a sphere of radius 1.2 (code units, 12 cells) at
 the origin. The unit here is the code length unit, not SI.
 #BODY
 sphere                  type
+1.2                     radius [code units]
 0.0                     center [code units] x
 0.0                     center [code units] y
 0.0                     center [code units] z
-1.2                     radius [code units]
 
 #BODYBOUNDARY
 reflect                 particleBoundary

@@ -1505,20 +1505,22 @@ This command sets the scaling factor for the simulation.
 
 <command name="BODY" alias="BODY_FLEKS0,BODY_FLEKS1,BODY_FLEKS2" multiple="T">
   <parameter name="type" type="string" default="sphere"/>
+  <parameter name="radius" type="real" default="1.0"/>
   <parameter name="centerX" type="real" default="0.0"/>
   <parameter name="centerY" type="real" default="0.0"/>
   <parameter name="centerZ" type="real" default="0.0" if="$nDim==3"/>
-  <parameter name="radius" type="real" default="1.0"/>
 
 #BODY
 sphere            type
-0.0               center
-0.0               center
-0.0               center
 1.0               radius
+0.0               center
+0.0               center
+0.0               center
 
-One value per line: the center is read once per dimension (like #REGION), in
-the order x, y, z.
+One value per line: the radius is read first, then the center once per
+dimension (like #REGION), in the order x, y, z. A 2D build (nDim = 2) reads
+only the first two center lines and skips the third one, so the same deck
+works for 2D and 3D builds.
 
 This command defines an absorbing inner body, i.e., a real inner boundary
 inside the Cartesian PIC domain. Particles crossing into a body cell are
