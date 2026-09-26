@@ -190,6 +190,56 @@ inline Type parse(const std::string &str) {
 
 } // namespace FieldBC
 
+//==========================================================
+namespace BodyFieldBC {
+
+// Electromagnetic condition on the surface of the inner body (see the #BODY
+// and #BODYBOUNDARY commands). Unlike FieldBC, these are applied on the
+// nodes/cells of a body that sits inside the domain, and the surface normal
+// is the radial direction from the body center, not a domain-face axis.
+enum Type {
+  unset = -1,
+  // Perfectly absorbing / line-tied: E vanishes on the body nodes (the body
+  // nodes are not unknowns of the implicit E solve) and B is frozen at its
+  // initial value inside, because no plasma and no E are left there.
+  linetied = 0,
+  // Perfect conductor: the tangential electric field and the radial magnetic
+  // field vanish, E_t = 0 and B_r = 0 (the radial E remains an unknown and
+  // the tangential B carries the surface current).
+  conducting = 1,
+  // Perfect insulator: no conduction and no macroscopic surface shielding
+  // current, so the magnetic field passes through undistorted
+  // (B_inside = B_outside), n x (E_out - E_in) = 0 and the jump of the normal
+  // D is the accumulated surface charge. Discretely: no field constraint.
+  insulating = 2
+};
+
+const std::vector<bc_detail::Entry> &table();
+
+inline bool is_valid(const Type t) {
+  for (const bc_detail::Entry &e : table()) {
+    if (e.type == t && e.legacy == bc_detail::Legacy::none)
+      return true;
+  }
+  return false;
+}
+
+inline const char *to_string(const Type t) {
+  return bc_detail::canonical_name(table(), t);
+}
+
+inline Type parse(const std::string &str) {
+  int mapped = unset;
+  std::string valid;
+  if (!bc_detail::lookup(str, table(), mapped, valid)) {
+    amrex::Abort("Error: unrecognized body field boundary type '" + str +
+                 "'. Accepted values: " + valid);
+  }
+  return static_cast<Type>(mapped);
+}
+
+} // namespace BodyFieldBC
+
 // Boundary geometry metadata helper for domain walls
 struct BoundaryBounds {
   amrex::Dim3 domLo;

@@ -23,6 +23,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#BODY", ParameterOwner::Pic },
+  { "#BODYBOUNDARY", ParameterOwner::Pic },
   { "#BSUBCYCLE", ParameterOwner::Pic },
   { "#CMAXE", ParameterOwner::Pic },
   { "#COMOVING", ParameterOwner::Pic },

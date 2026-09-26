@@ -1548,6 +1548,58 @@ the electric field grows near the surface, add dissipation
 (#RESISTIVITY / #HYPERRESISTIVITY) instead of changing the boundary.
 </command>
 
+<command name="BODYBOUNDARY" alias="BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2" multiple="T">
+  <parameter name="particleBoundary" type="string" default="absorb"/>
+  <parameter name="fieldBoundary" type="string" default="linetied"/>
+
+#BODYBOUNDARY
+absorb            particleBoundary
+linetied          fieldBoundary
+
+This command selects the boundary condition on the surface of the inner body
+declared by #BODY. It has two parameters: the first one applies to the
+particles, the second one to the electromagnetic field. It is ignored (with a
+warning) if no #BODY is given, and the defaults reproduce the original
+absorbing body, so a deck with #BODY but without #BODYBOUNDARY is unchanged.
+
+particleBoundary:
+
+  absorb  - a particle pushed into a body cell is removed and tallied
+            (nBodyAbsorb, qBodyAbsorb, mBodyAbsorb in the log). The test uses
+            the cell that contains the particle, i.e. the same cell-based
+            staircase as the grid mask, so no charge is silently discarded at
+            the surface.
+  reflect - specular reflection on the sphere: with n the radial direction
+            from the body center to the particle, the position is mirrored to
+            r -> 2R - r and the velocity to v -> v - 2(v.n)n. The particle and
+            its charge are kept, so nothing is tallied. Here the test uses the
+            exact radius (a smooth spherical surface): unlike absorption,
+            reflection does not remove charge, so the cell-staircase argument
+            above does not apply and the smooth surface is the better
+            approximation.
+
+fieldBoundary (n is the radial direction from the body center):
+
+  linetied  - (default) E = 0 on the body nodes: they are not unknowns of the
+              implicit E solve, so the body is a field-free cavity and B is
+              frozen at its initial value in the interior, because there is
+              neither plasma nor electric field left there.
+  conducting- perfect conductor: the tangential electric field and the radial
+              magnetic field vanish,
+              n x E = 0  and  n . B = 0,
+              while the radial E remains an unknown of the solve and the
+              tangential B carries the surface current.
+  insulating- perfect insulator: the body conducts no current and sustains no
+              macroscopic surface shielding current, so the magnetic field
+              passes through undistorted,
+              B(interior) = B(exterior),
+              n x (E(exterior) - E(interior)) = 0,
+              n . (D(exterior) - D(interior)) = surface charge.
+              Discretely this means no field constraint at all: E and B are
+              solved inside the body as usual, and since no particle survives
+              there the interior simply evolves as vacuum.
+</command>
+
 <command name="PLANETRADIUS" alias="PLANETRADIUS_FLEKS0,PLANETRADIUS_FLEKS1,PLANETRADIUS_FLEKS2" multiple="T">
   <parameter name="radius" type="real" default="1.0"/>
 

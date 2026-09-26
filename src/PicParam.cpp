@@ -100,6 +100,24 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     for (int i = 0; i < nDim; i++)
       Print() << (i > 0 ? ", " : "") << bodyCenter[i];
     Print() << ") [code units]\n";
+  } else if (command == "#BODYBOUNDARY") {
+    std::string particle, field;
+    param.read_var("particleBoundary", particle);
+    param.read_var("fieldBoundary", field);
+
+    bodyParticleBC = ParticleBC::parse(particle);
+    if (bodyParticleBC != ParticleBC::absorb &&
+        bodyParticleBC != ParticleBC::reflect)
+      Abort("Error: #BODYBOUNDARY particleBoundary '" + particle +
+            "' is not supported for the inner body. Accepted values: "
+            "absorb, reflect.");
+
+    bodyFieldBC = BodyFieldBC::parse(field);
+    bodyBoundarySet_ = true;
+
+    Print() << "  inner body BC: particles = " << ParticleBC::to_string(
+                   bodyParticleBC)
+            << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -530,6 +548,13 @@ void Pic::post_process_param() {
         Abort("Invalid #BODY: the body must be strictly inside the "
               "simulation domain.");
     }
+  } else if (bodyBoundarySet_) {
+    // #BODYBOUNDARY only has a meaning together with #BODY.
+    Print() << "  Warning: #BODYBOUNDARY is ignored because no #BODY is "
+            << "defined.\n";
+    bodyParticleBC = ParticleBC::absorb;
+    bodyFieldBC = BodyFieldBC::linetied;
+    bodyBoundarySet_ = false;
   }
 
   fi->set_plasma_charge_and_mass(qomEl);

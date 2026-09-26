@@ -299,6 +299,20 @@ private:
   bool hasAbsorbBC_ = false;
   bool hasInflowBC_ = false;
 
+  // Boundary conditions on the surface of the inner body (#BODYBOUNDARY).
+  // The defaults reproduce the original absorbing body, so that a deck with
+  // #BODY but without #BODYBOUNDARY behaves exactly as before.
+  ParticleBC::Type bodyParticleBC = ParticleBC::absorb;
+  BodyFieldBC::Type bodyFieldBC = BodyFieldBC::linetied;
+  bool bodyBoundarySet_ = false;
+
+  bool is_body_linetied() const {
+    return useBody && bodyFieldBC == BodyFieldBC::linetied;
+  }
+  bool is_body_conducting() const {
+    return useBody && bodyFieldBC == BodyFieldBC::conducting;
+  }
+
   void update_bc_flags() {
     hasConductingBC_ = bcField.has(FieldBC::conducting);
     hasAbsorbBC_ = bcField.has(FieldBC::absorb);
@@ -661,6 +675,21 @@ public:
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
                          const BoxBC<FieldBC::Type> &bc, bool isB);
+
+  //--- Inner body field boundary (see #BODY / #BODYBOUNDARY) ---
+  // These act on the nodes/cells flagged with bit::iBody_ and use the radial
+  // direction from the body center as the surface normal.
+  //
+  // linetied   : E = 0 on the body nodes.
+  // conducting : E <- (E.n) n on the body nodes (E_t = 0, E_r kept);
+  //              B <- B - (B.n) n on the body cells/nodes (B_r = 0).
+  // insulating : nothing (the fields pass through the body).
+  void zero_body_E(amrex::MultiFab &mf, const int iLev);
+  void project_body_E(amrex::MultiFab &mf, const int iLev);
+  void project_body_B(amrex::MultiFab &mf, const int iLev);
+
+  // Dispatch the electric-field condition selected by #BODYBOUNDARY.
+  void apply_body_E_bc(amrex::MultiFab &mf, const int iLev);
 
   // Inject wave source into boundary ghost cells (iField: 0 = B, 1 = E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
