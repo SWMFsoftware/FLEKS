@@ -135,7 +135,7 @@ faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 
 | Deck | `particleBoundary` | `fieldBoundary` | What it asserts |
 |------|--------------------|-----------------|-----------------|
-| `PARAM.in` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
+| `PARAM.in.linetied` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
 | `PARAM.in.conducting` | absorb | conducting | on the **surface layer** (`r > R − 1.5 dx`): tangential `E` vanishes (`E_t = 0`) and radial `B` vanishes (`B_r = 0`); in the **interior** (`r < R − 2.5 dx`): `E = 0` and `B` is frozen at `B(t = 0)`. Ambient `B` has in-plane `By = 3e-9 T` with motional `Ez = -ux * By`; upstream `B` compares against the analytical 2D conducting cylinder potential field, and a wake forms |
 | `PARAM.in.insulating` | absorb | insulating | `B` passes through without boundary constraint; compares against undistorted uniform analytical field `B0 * y` (`<By>/B0 ≈ 1`, `<|Bx|>/B0 << 1`); `E` inside is *not* forced to zero; absorbing wake forms downstream |
 | `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and particle kinetic energy is conserved; particles are excluded from the body (`rho = 0` inside); `E = 0` inside (linetied); `B` in the deep interior is analytically frozen (`max |B - B(0)| = 0`) |

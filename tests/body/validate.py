@@ -3,7 +3,8 @@
 
 Four variants are discovered from this directory:
 
-  - PARAM.in              -> "body"             (default: absorb + linetied)
+  - PARAM.in.linetied     -> "body_linetied"    (absorb + linetied: Dirichlet
+                             E = 0 on body nodes, frozen interior B)
   - PARAM.in.conducting   -> "body_conducting"  (absorb + conducting: PEC,
                              tangential E = 0 and radial B = 0)
   - PARAM.in.insulating   -> "body_insulating"  (absorb + insulating: no field
@@ -216,6 +217,9 @@ def validate_plot(test_name):
         return _check_insulating(cols, inside, first_cols)
     if test_name == "body_reflect":
         return _check_reflect(cols, inside, first_cols)
+
+    if test_name in ("body", "body_linetied"):
+        return _check_linetied(cols, inside, rows)
 
     return _check_linetied(cols, inside, rows)
 

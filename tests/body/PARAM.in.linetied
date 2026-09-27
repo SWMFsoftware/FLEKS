@@ -125,6 +125,10 @@ sphere                  type
 0.0                     center [code units] y
 0.0                     center [code units] z
 
+#BODYBOUNDARY
+absorb                  particleBoundary
+linetied                fieldBoundary
+
 #TIMESTEPPING
 T                       useFixedDt
 0.02                    dt
