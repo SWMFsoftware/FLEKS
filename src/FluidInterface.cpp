@@ -155,6 +155,12 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
         iBy = i;
       } else if (name.compare(0, 2, "bz") == 0) {
         iBz = i;
+      } else if (name == "ex") {
+        iEx = i;
+      } else if (name == "ey") {
+        iEy = i;
+      } else if (name == "ez") {
+        iEz = i;
       }
     }
 

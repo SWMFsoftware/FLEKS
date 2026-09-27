@@ -92,7 +92,8 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
     }
 
     // Why need 'isNewGrid'? See the explanation in Domain::regrid().
-    if (region == activeRegion && !isNewGrid)
+    if (region == activeRegion && !isNewGrid &&
+        !(refineRegions && refineRegions->is_modified()))
       return;
 
     pre_regrid();

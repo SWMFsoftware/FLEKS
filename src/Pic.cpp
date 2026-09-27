@@ -113,7 +113,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst);
+                        nGst, true, 0.0);
 
     bool doMoveData = false;
     // div(E)/div(B) correction and implicit E-solver arrays (full-PIC only).
@@ -489,9 +489,9 @@ void Pic::fill_E_B_fields() {
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   auto& cellInterp = *get_cell_interp();
   for (int iLev = 1; iLev <= finest_level; iLev++) {
-    nodeE[iLev].FillBoundary();
-    nodeB[iLev].FillBoundary();
-    centerB[iLev].FillBoundary();
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
     fill_fine_lev_bny_from_coarse(nodeE[iLev - 1], nodeE[iLev], 0,
                                   nodeE[iLev - 1].nComp(), ref_ratio[iLev - 1],
@@ -507,6 +507,11 @@ void Pic::fill_E_B_fields() {
                                   centerB[iLev - 1].nComp(),
                                   ref_ratio[iLev - 1], Geom(iLev - 1),
                                   Geom(iLev), cell_status(iLev), cellInterp);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                   nodeE[iLev].nGrow());
   }
 
   // In hybrid PIC, sync nodeB from centerB at initialization.

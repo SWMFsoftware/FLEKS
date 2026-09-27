@@ -2,7 +2,11 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <iomanip>
+#include <limits>
 #include <map>
+#include <set>
+#include <sstream>
 
 #include "Domain.h"
 #include "GridUtility.h"
@@ -448,7 +452,9 @@ void Domain::update_param(const std::string &paramString) {
   readParam = paramString;
   parameterText = paramString;
   parameterCommandLocations.clear();
+  readingSessionUpdate = true;
   read_param(false);
+  readingSessionUpdate = false;
   init_time_ctr();
 };
 
@@ -509,10 +515,14 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
   // algorithm).
   amrInfo.blocking_factor.clear();
   for (int iLev = 0; iLev <= amrInfo.max_level; iLev++) {
-    // If (isFake2D && iLev==0) is true, there is only one cell in the
-    // z-direction.
-    amrInfo.blocking_factor.push_back(
-        (isFake2D && iLev == 0) ? IntVect(AMREX_D_DECL(2, 2, 1)) : IntVect(2));
+    amrInfo.blocking_factor.push_back(isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1))
+                                               : IntVect(2));
+  }
+
+  amrInfo.ref_ratio.clear();
+  for (int iLev = 0; iLev < amrInfo.max_level; iLev++) {
+    amrInfo.ref_ratio.push_back(isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1))
+                                         : IntVect(2));
   }
 
   amrInfo.max_grid_size.clear();
@@ -567,7 +577,7 @@ void Domain::regrid() {
   // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is
   // false, but it is still required to run the rest of the function to
   // initialize variables. That's why we need isNewGrid here.
-  if (!gridInfo.is_grid_new() && !isNewGrid)
+  if (!gridInfo.is_grid_new() && !isNewGrid && !refineRegions.is_modified())
     return;
 
   Print() << printPrefix << nameFunc << " is called" << std::endl;
@@ -1106,6 +1116,11 @@ void Domain::read_param(const bool readGridInfo) {
 
   std::string command;
   std::size_t commandSearchPosition = 0;
+  std::set<std::string> shapeNamesSeen;
+  std::set<int> refineLevelsSeen;
+  amrex::Vector<std::string> changedShapeNames;
+  bool refineSelectorsChanged = false;
+  bool gridEfficiencyChanged = false;
   if (readGridInfo)
     parameterCommandLocations.clear();
 
@@ -1231,11 +1246,21 @@ void Domain::read_param(const bool readGridInfo) {
       isFake2D = (nDim == 3) && (nCell[iz_] == 1);
 
     } else if (command == "#GRIDEFFICIENCY") {
+      const Real oldEfficiency = gridEfficiency;
       readParam.read_var("gridEfficiency", gridEfficiency);
+      gridEfficiencyChanged |= gridEfficiency != oldEfficiency;
     } else if (command == "#REGION") {
       std::string name, type;
       readParam.read_var("name", name);
       readParam.read_var("shape", type);
+
+      if (!shapeNamesSeen.insert(name).second)
+        Abort("Duplicate #REGION name in one session: " + name);
+
+      std::shared_ptr<Shape> shape;
+      std::ostringstream signature;
+      signature << type
+                << std::setprecision(std::numeric_limits<Real>::max_digits10);
 
       if (type == "box") {
         Real lo[nDim], hi[nDim];
@@ -1249,7 +1274,9 @@ void Domain::read_param(const bool readGridInfo) {
           hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
         }
 
-        shapeList.push_back(std::make_unique<BoxShape>(name, lo, hi));
+        shape = std::make_shared<BoxShape>(name, lo, hi);
+        for (int i = 0; i < nDim; ++i)
+          signature << ' ' << lo[i] << ' ' << hi[i];
       } else if (type == "sphere") {
 
         Real center[nDim], radius;
@@ -1262,7 +1289,10 @@ void Domain::read_param(const bool readGridInfo) {
           center[iz_] = 0;
         }
 
-        shapeList.push_back(std::make_unique<Sphere>(name, center, radius));
+        shape = std::make_shared<Sphere>(name, center, radius);
+        for (int i = 0; i < nDim; ++i)
+          signature << ' ' << center[i];
+        signature << ' ' << radius;
 
       } else if (type == "shell") {
 
@@ -1277,8 +1307,10 @@ void Domain::read_param(const bool readGridInfo) {
           center[iz_] = 0;
         }
 
-        shapeList.push_back(
-            std::make_unique<Shell>(name, center, rInner, rOuter));
+        shape = std::make_shared<Shell>(name, center, rInner, rOuter);
+        for (int i = 0; i < nDim; ++i)
+          signature << ' ' << center[i];
+        signature << ' ' << rInner << ' ' << rOuter;
       } else if (type == "paraboloid") {
         int iAxis;
         Real center[nDim], height, r1, r2;
@@ -1296,20 +1328,28 @@ void Domain::read_param(const bool readGridInfo) {
           center[iz_] = 0;
         }
 
-        shapeList.push_back(
-            std::make_unique<Paraboloid>(name, center, r1, r2, height, iAxis));
+        shape =
+            std::make_shared<Paraboloid>(name, center, r1, r2, height, iAxis);
+        signature << ' ' << iAxis;
+        for (int i = 0; i < nDim; ++i)
+          signature << ' ' << center[i];
+        signature << ' ' << r1 << ' ' << r2 << ' ' << height;
+      } else {
+        Abort("Unknown #REGION shape: " + type);
       }
+
+      if (upsert_shape(shape, signature.str()))
+        changedShapeNames.push_back(name);
 
     } else if (command == "#REFINEREGION") {
       int iLev;
       std::string s;
       readParam.read_var("iLev", iLev);
 
-      if (iLev >= refineRegionsStr.size() - 1)
-        Abort("Error: iLev should be smaller than the max level index!");
-
       readParam.read_var("regions", s);
-      refineRegionsStr[iLev] = s + " ";
+      if (!refineLevelsSeen.insert(iLev).second)
+        Abort("Duplicate #REFINEREGION level in one session");
+      refineSelectorsChanged |= set_refine_region(iLev, s);
 
     } else if (command == "#REFINEMENTRATIO") {
       int rr;
@@ -1317,7 +1357,8 @@ void Domain::read_param(const bool readGridInfo) {
       int size = amrInfo.ref_ratio.size();
       amrInfo.ref_ratio.clear();
       for (int i = 0; i < size; ++i) {
-        amrInfo.ref_ratio.push_back(IntVect(rr));
+        amrInfo.ref_ratio.push_back(isFake2D ? IntVect(AMREX_D_DECL(rr, rr, 1))
+                                             : IntVect(rr));
       }
     } else if (command == "#NOUTFILE") {
       readParam.read_var("nFileField", domainParameters.nFileField);
@@ -1488,13 +1529,14 @@ void Domain::read_param(const bool readGridInfo) {
   if (!readGridInfo) {
     validate_configuration();
 
-    { //====== Post process refinement region====
-      for (int i = 0; i < refineRegionsStr.size() - 1; ++i) {
-        if (refineRegionsStr[i].size() > 0) {
-          refineRegions[i] = Regions(shapeList, refineRegionsStr[i]);
-        }
-      }
-    } //==========================================
+    rebuild_refine_regions();
+    bool shapeAffectsRefinement = false;
+    for (const auto &name : changedShapeNames)
+      shapeAffectsRefinement |= is_shape_used_for_refinement(name);
+    if (readingSessionUpdate &&
+        (refineSelectorsChanged || shapeAffectsRefinement ||
+         gridEfficiencyChanged))
+      refineRegions.mark_modified();
 
     if (pic) {
       pic->post_process_param();

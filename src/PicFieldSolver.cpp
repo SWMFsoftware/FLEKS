@@ -30,8 +30,16 @@ void Pic::update_E_expl() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
-    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-                   &Pic::get_center_B, iLev, true);
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                     &Pic::get_center_B, iLev, true);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          *get_cell_interp());
+    }
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -450,6 +458,8 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab& temp2Node = solverRhsNode2[iLev];
   temp2Node.setVal(0.0);
 
+  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
     apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
                    &Pic::get_center_B, iLev, true);
@@ -949,7 +959,7 @@ void Pic::project_down_E() {
         });
       }
       fill_fine_lev_edge_from_coarse(
-          nodeE[iLev - 1], tmp, 0, nodeE[iLev].nComp(), ref_ratio[iLev],
+          nodeE[iLev - 1], tmp, 0, nodeE[iLev].nComp(), ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
       average_down_nodal(tmp, nodeE[iLev - 1], ref_ratio[iLev - 1]);
     }

@@ -1108,6 +1108,8 @@ paraboloid   	  shape
  10.0			      radius2
 
 The regions defined here can be used for setting refinement areas. 
+In a later session, a #REGION with an existing name replaces that shape.
+Shapes not mentioned in the session keep their previous definitions.
 
 For a 'paraboloid', the iAxis is the axis of the paraboloid, and it can 
 be 0 (x-dir), 1 (y-dir), or 2 (z-dir). Its height can be negative, which 
@@ -1135,6 +1137,9 @@ level refineLev. The cells inside the '+' shapes but outside the '-'
 shapes will be refined.
 
 Multiple #REFINEREGION commands can be used for different levels.
+In a later session, a #REFINEREGION command replaces the definition for its
+level. Levels not mentioned keep their previous definitions. Use `none` as
+the refinement area to remove refinement from one level.
 
 </command>
 
