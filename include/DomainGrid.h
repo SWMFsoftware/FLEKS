@@ -147,6 +147,7 @@ public:
 
   int get_iGrid() const { return iGrid; }
   int get_iDecomp() const { return iDecomp; }
+  int get_dim() const { return (isFake2D || nDim == 2) ? 2 : nDim; }
   void set_periodicity(const int iDir, const bool isPeriodic) {
     periodicity[iDir] = (isPeriodic ? 1 : 0);
   }

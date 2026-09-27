@@ -28,6 +28,18 @@ def load_last_out(run_dir=None, pattern="*.out", plots_subdir="PC/plots"):
     return _read_out_file(out_files[-1])
 
 
+def load_first_out(run_dir=None, pattern="*.out", plots_subdir="PC/plots"):
+    """Return the first .out frame in the run directory as (vidx, rows).
+
+    Used by the checks that need the initial state, e.g. that the magnetic
+    field inside a body is frozen at its initial value.
+    """
+    out_files = plot_files(run_dir=run_dir, pattern=pattern, plots_subdir=plots_subdir)
+    if not out_files:
+        return None, None
+    return _read_out_file(out_files[0])
+
+
 def _read_out_file(out_file):
     """Parse a standard FLEKS PostProc .out file into column map and rows."""
     with open(out_file, "r", encoding="latin-1") as f:

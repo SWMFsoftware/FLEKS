@@ -266,6 +266,55 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
 
+    // Mark the cells that belong to the absorbing inner body (see #BODY).
+    // The body is approximated by the union of the cells whose centers are
+    // inside the sphere, i.e., a staircase boundary with an error of dx/2.
+    if (useBody) {
+      for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.fabbox();
+        const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
+          Real xyz[nDim];
+          Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+          if (is_inside_body(xyz)) {
+            bit::set_body(cellArr(i, j, k));
+          } else {
+            bit::set_not_body(cellArr(i, j, k));
+          }
+        });
+      }
+
+      // Split the body into a one-cell-thick surface layer, where the field
+      // boundary condition acts, and the interior, where the fields are frozen
+      // (E = 0 and B at its initial value).
+      for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
+          if (!bit::is_body(cellArr(i, j, k))) {
+            bit::set_not_body_interior(cellArr(i, j, k));
+            return;
+          }
+
+          bool isInterior = bit::is_body(cellArr(i - 1, j, k)) &&
+                            bit::is_body(cellArr(i + 1, j, k));
+          if (nDim > 1)
+            isInterior = isInterior && bit::is_body(cellArr(i, j - 1, k)) &&
+                         bit::is_body(cellArr(i, j + 1, k));
+          if (nDim > 2)
+            isInterior = isInterior && bit::is_body(cellArr(i, j, k - 1)) &&
+                         bit::is_body(cellArr(i, j, k + 1));
+
+          if (isInterior) {
+            bit::set_body_interior(cellArr(i, j, k));
+          } else {
+            bit::set_not_body_interior(cellArr(i, j, k));
+          }
+        });
+      }
+      cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
     // Set edge cells and find cells with 'is_refined' neighbors
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -380,6 +429,56 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
 
+    // Mark the nodes inside the absorbing inner body (see #BODY). The
+    // electric field is pinned to zero on these nodes.
+    if (useBody) {
+      for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.fabbox();
+        const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
+          Real xyz[nDim];
+          Geom(iLev).LoNode({ AMREX_D_DECL(i, j, k) }, xyz);
+          if (is_inside_body(xyz)) {
+            bit::set_body(nodeArr(i, j, k));
+          } else {
+            bit::set_not_body(nodeArr(i, j, k));
+          }
+        });
+      }
+
+      // A body node belongs to the frozen interior when all the cells around
+      // it belong to the body interior, so that it only sees frozen cells.
+      for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
+        const Array4<int const>& cellArr = cellStatus[iLev][mfi].array();
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
+          if (!bit::is_body(nodeArr(i, j, k))) {
+            bit::set_not_body_interior(nodeArr(i, j, k));
+            return;
+          }
+
+          bool isInterior = true;
+          for (int kk = (nDim > 2 ? -1 : 0); kk <= 0; ++kk) {
+            for (int jj = (nDim > 1 ? -1 : 0); jj <= 0; ++jj) {
+              for (int ii = -1; ii <= 0; ++ii) {
+                if (!bit::is_body_interior(cellArr(i + ii, j + jj, k + kk))) {
+                  isInterior = false;
+                }
+              }
+            }
+          }
+
+          if (isInterior) {
+            bit::set_body_interior(nodeArr(i, j, k));
+          } else {
+            bit::set_not_body_interior(nodeArr(i, j, k));
+          }
+        });
+      }
+      nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
@@ -392,7 +491,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         int diMax = 0, diMin = -1;
         int djMax = 0, djMin = -1;
         int dkMax = 0, dkMin = -1;
-        if (isFake2D || nDim == 2) {
+        const int activeDim = get_dim();
+        if (activeDim == 2) {
           dkMin = 0;
         }
         // Is the box the owner of this node?
@@ -417,7 +517,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         ParallelFor(box, [&](int i, int j, int k) noexcept {
           if (!isFake2D || k == lo.z) {
             if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                (nDim == 3 && !isFake2D && (k == lo.z || k == hi.z))) {
+                (activeDim == 3 && (k == lo.z || k == hi.z))) {
               // Block boundary nodes.
               if (is_the_box_owner(i, j, k)) {
                 bit::set_owner(nodeArr(i, j, k));

@@ -65,7 +65,7 @@ T                       solveEM
 #SOURCE
 T                       useSource
 
-#BODYSIZE
+#PLANETRADIUS
 3.0e6                   radius        Mars-like planet radius
 
 #RECOMBINATION

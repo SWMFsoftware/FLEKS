@@ -2,6 +2,8 @@
 #define _GRIDUTILITY_H_
 
 #include <limits>
+#include <string>
+#include <vector>
 
 #include <AMReX_DistributionMapping.H>
 #include <AMReX_FabArray.H>
@@ -757,6 +759,127 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
                            }
                          });
     }
+  }
+}
+
+// Zero every component of 'dst' on the cells/nodes that belong to the
+// absorbing inner body (see the #BODY command). Use the cell status mask for
+// cell-centered data and the node status mask for node-centered data.
+template <class FAB>
+void mask_body(amrex::FabArray<FAB>& dst, const amrex::iMultiFab& fstatus) {
+  const int nComp = dst.nComp();
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.fabbox();
+    auto data = dst[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_body(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          data(i, j, k, iVar) = 0.0;
+        }
+      }
+    });
+  }
+}
+
+// Is 'var' one of the plot variables that are derived from the particles?
+//
+// Those are zero inside the absorbing inner body (see the #BODY command),
+// where there is no plasma, both in the .out files (Pic::get_var) and in the
+// AMReX/HDF5 plotfiles (Pic::write_plots). The comparison is case insensitive
+// and strips the species tag ('S0' in the PC component, 'Pop1' in the OH-PT
+// component), so the same list works for every spelling of the variables.
+bool is_body_moment_var(const std::string& var);
+
+// Zero the components of 'dst' that hold a particle-derived variable on the
+// cells/nodes that belong to the absorbing inner body (see the #BODY command).
+// 'varNames' names the components of 'dst' in order, as Pic::write_plots
+// builds them. Use the cell status for cell-centered data and the node status
+// for node-centered data.
+void mask_body_vars(amrex::MultiFab& dst, const amrex::iMultiFab& fstatus,
+                    const amrex::Vector<std::string>& varNames);
+
+// Zero every component of 'dst' on the cells/nodes that belong to the interior
+// of the absorbing inner body, i.e. the body minus its one-cell-thick surface
+// layer (see the #BODY command).
+template <class FAB>
+void mask_body_interior(amrex::FabArray<FAB>& dst,
+                        const amrex::iMultiFab& fstatus) {
+  const int nComp = dst.nComp();
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.fabbox();
+    auto data = dst[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_body_interior(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          data(i, j, k, iVar) = 0.0;
+        }
+      }
+    });
+  }
+}
+
+// Undo the geometric dilution of the node-centred moments at the staircase
+// surface of the inner body (see the #BODY command).
+//
+// A node-centred CIC moment is the average over the 2^nDim cells around the
+// node, and the cells inside the body are empty, so a node on the staircase
+// surface reports only a fraction of the plasma density (1/2 or 3/4 in 2D).
+// Dividing by the fraction of the surrounding cells that are outside the body
+// restores the density of the plasma that really is there, for the moments
+// (nodePlasma), the current (jHat) and the mass matrix (nodeMM).
+//
+// 'cellDomain' is the index range of the cells, used to clamp the look-up at
+// the domain boundary (and for the fake-2D runs, where the nodes along z
+// outnumber the cells).
+template <class FAB>
+void rescale_body_surface_nodes(amrex::FabArray<FAB>& dst,
+                                const amrex::iMultiFab& cellStatus,
+                                const amrex::iMultiFab& nodeStatus,
+                                const amrex::Box& cellDomain, const int nDim) {
+  const int nComp = dst.nComp();
+  const int clo[3] = { AMREX_D_DECL(
+      cellDomain.smallEnd(0), cellDomain.smallEnd(1), cellDomain.smallEnd(2)) };
+  const int chi[3] = { AMREX_D_DECL(cellDomain.bigEnd(0), cellDomain.bigEnd(1),
+                                    cellDomain.bigEnd(2)) };
+
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.fabbox();
+    auto data = dst[mfi].array();
+    const auto cellArr = cellStatus[mfi].array();
+    const auto nodeArr = nodeStatus[mfi].array();
+
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      // The nodes inside the body are not part of the plasma domain.
+      if (bit::is_body(nodeArr(i, j, k)))
+        return;
+
+      const int nCombo = 1 << nDim;
+      int nOut = 0;
+      for (int iCombo = 0; iCombo < nCombo; ++iCombo) {
+        int ii = i - ((iCombo & 1) != 0 ? 1 : 0);
+        int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
+        int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
+
+        ii = amrex::min(amrex::max(ii, clo[0]), chi[0]);
+        jj = amrex::min(amrex::max(jj, clo[1]), chi[1]);
+        kk = amrex::min(amrex::max(kk, clo[2]), chi[2]);
+
+        if (!bit::is_body(cellArr(ii, jj, kk)))
+          ++nOut;
+      }
+
+      if (nOut == 0 || nOut == nCombo)
+        return;
+
+      const amrex::Real scale = amrex::Real(nCombo) / nOut;
+      for (int iVar = 0; iVar < nComp; ++iVar) {
+        data(i, j, k, iVar) *= scale;
+      }
+    });
   }
 }
 

@@ -388,6 +388,15 @@ void Pic::fill_new_node_E() {
           node_bilinear_interp);
     }
   }
+
+  // The initial/new electric field has to satisfy the inner-body condition
+  // (see #BODYBOUNDARY) as well, otherwise the body would start with the
+  // ambient field.
+  if (useBody) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      apply_body_E_bc(nodeE[iLev], iLev);
+    }
+  }
 }
 
 //==========================================================
@@ -878,6 +887,13 @@ void Pic::calc_mass_matrix() {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
     jHat[iLev].FillBoundary(Geom(iLev).periodicity());
 
+    // Undo the geometric dilution of the current at the staircase surface of
+    // the inner body: the cells inside the body are empty, so a CIC node on
+    // the surface only collects part of the current of the plasma there.
+    if (useBody)
+      rescale_body_surface_nodes(jHat[iLev], cellStatus[iLev], nodeStatus[iLev],
+                                 Geom(iLev).Domain(), nDim);
+
     if (doSmoothJ) {
       for (int icount = 0; icount < nSmoothJ; icount++) {
         smooth_multifab(jHat[iLev], iLev, icount % 2 + 1, coefSmoothJ);
@@ -886,6 +902,12 @@ void Pic::calc_mass_matrix() {
 
     if (!useExplicitPIC) {
       sum_boundary_node_mm(iLev);
+
+      // Same correction as jHat above: the mass matrix of the plasma next to
+      // the body surface is diluted by the empty body cells.
+      if (useBody)
+        rescale_body_surface_nodes(nodeMM[iLev], cellStatus[iLev],
+                                   nodeStatus[iLev], Geom(iLev).Domain(), nDim);
     }
   }
 
@@ -1008,6 +1030,18 @@ void Pic::sum_moments(bool updateDt) {
     Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
+
+    // Undo the geometric dilution of the moments at the staircase surface of
+    // the inner body (see #BODY) before they are converted to fluid moments:
+    // the raw moments are linear in the particle weight, so rescaling them
+    // leaves the bulk velocity and the pressure unchanged while the density
+    // becomes the density of the plasma that is really there.
+    if (useBody) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        rescale_body_surface_nodes(nodePlasma[i][iLev], cellStatus[iLev],
+                                   nodeStatus[iLev], Geom(iLev).Domain(), nDim);
+      }
+    }
   }
 
   if (updateDt) {

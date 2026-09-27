@@ -77,6 +77,47 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("T", tmp);
     inflowT_ = tmp; // [K]
     inflowDefined_ = true;
+  } else if (command == "#BODY") {
+    std::string type;
+    param.read_var("type", type);
+    if (type != "sphere")
+      Abort("Error: #BODY type '" + type +
+            "' is not supported. Only 'sphere' is implemented.");
+
+    Real radius;
+    param.read_var("radius", radius);
+
+    Real center[nDim];
+    for (int i = 0; i < nDim; i++)
+      param.read_var("center", center[i]);
+
+    // The geometry is in code units (one length unit is lNormSI metres),
+    // like #REGION, and unlike #PLANETRADIUS which is in SI.
+    set_body(center, radius);
+
+    Print() << "  inner body: sphere, radius = " << bodyRadius
+            << ", center = (";
+    for (int i = 0; i < nDim; i++)
+      Print() << (i > 0 ? ", " : "") << bodyCenter[i];
+    Print() << ") [code units]\n";
+  } else if (command == "#BODYBOUNDARY") {
+    std::string particle, field;
+    param.read_var("particleBoundary", particle);
+    param.read_var("fieldBoundary", field);
+
+    bodyParticleBC = ParticleBC::parse(particle);
+    if (bodyParticleBC != ParticleBC::absorb &&
+        bodyParticleBC != ParticleBC::reflect)
+      Abort("Error: #BODYBOUNDARY particleBoundary '" + particle +
+            "' is not supported for the inner body. Accepted values: "
+            "absorb, reflect.");
+
+    bodyFieldBC = BodyFieldBC::parse(field);
+    bodyBoundarySet_ = true;
+
+    Print() << "  inner body BC: particles = "
+            << ParticleBC::to_string(bodyParticleBC)
+            << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -477,6 +518,45 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
           "'. Expected 'si' or 'grid'.");
 
+  if (useBody) {
+    if (bodyRadius <= 0)
+      Abort("Invalid #BODY: radius must be positive.");
+
+    // The body mask and the E-field Dirichlet condition are only wired into
+    // the full-PIC (implicit) solver for now.
+    if (useHybridPIC)
+      Abort("Invalid #BODY: the inner body is only implemented for the "
+            "full-PIC solver. It is not supported with #HYBRIDPIC.");
+
+    if (n_lev_max() > 1 && !refineRegions.empty())
+      Print() << "  Warning: #BODY has not been verified with AMR "
+              << "(refinement regions are defined).\n";
+
+    // The body has to be strictly inside the domain: a body crossing a
+    // domain face (or a periodic face) would need a mask that is consistent
+    // across the periodic images, which is not implemented. The invariant
+    // direction of a fake-2D run (one cell) is not checked, because the body
+    // necessarily extends beyond it.
+    const auto plo = Geom(0).ProbLo();
+    const auto phi = Geom(0).ProbHi();
+    const auto& dom = Geom(0).Domain();
+    for (int i = 0; i < nDim; i++) {
+      if (dom.length(i) <= 1)
+        continue;
+      if (bodyCenter[i] - bodyRadius <= plo[i] ||
+          bodyCenter[i] + bodyRadius >= phi[i])
+        Abort("Invalid #BODY: the body must be strictly inside the "
+              "simulation domain.");
+    }
+  } else if (bodyBoundarySet_) {
+    // #BODYBOUNDARY only has a meaning together with #BODY.
+    Print() << "  Warning: #BODYBOUNDARY is ignored because no #BODY is "
+            << "defined.\n";
+    bodyParticleBC = ParticleBC::absorb;
+    bodyFieldBC = BodyFieldBC::linetied;
+    bodyBoundarySet_ = false;
+  }
+
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
   // Species without a #PARTICLEBOXBOUNDARY block keep the default (coupled),
@@ -647,4 +727,24 @@ void Pic::convert_inflow_state() {
           << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
           << "  (Si2NoRho=" << Si2NoRho << ", Si2NoV=" << fi->get_Si2NoV()
           << ")\n";
+
+  const auto& unif = fi->get_uniform_state();
+  if (nSpecies > 1 && !unif.empty()) {
+    const double rawInflowN = inflowRho_ / (1.0e6 * cProtonMassSI * Si2NoRho);
+    for (int iS = 0; iS < nSpecies; ++iS) {
+      if (iS * 5 < static_cast<int>(unif.size()) && iS < fi->get_nS() &&
+          fi->get_species_mass(iS) > 0.0) {
+        const double speciesN =
+            unif[iS * 5] / (fi->get_species_mass(iS) * cProtonMassSI * 1.0e6);
+        if (std::abs(speciesN - rawInflowN) >
+            1e-4 * std::max(speciesN, rawInflowN)) {
+          Print()
+              << "  Warning: #INFLOW supplies a single uniform number density "
+              << "(n=" << rawInflowN << " /cc) for all species, but species "
+              << iS << " has #UNIFORMSTATE density n=" << speciesN << " /cc.\n";
+          break;
+        }
+      }
+    }
+  }
 }

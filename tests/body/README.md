@@ -1,0 +1,152 @@
+# Inner Body Test (`#BODY`: Absorbing Sphere)
+
+## Description
+
+This standalone test verifies the `#BODY` command, which adds a **real inner
+boundary** to a Cartesian PIC domain: a uniform plasma streams in +x past an
+absorbing sphere at the origin. Particles that are pushed into a body cell are
+removed and tallied, no particle is created inside the body, the electric field
+is pinned to zero there, and the particle moments are written as zero, so the
+body appears as an empty hole with a wake behind it.
+
+Note that `#PLANETRADIUS` (formerly `#BODYSIZE`) does **not** create such a
+boundary — it is only the exosphere reference radius and the `planet` output
+unit. `#BODY` is the command that defines the PIC inner boundary, and
+`#BODYBOUNDARY` selects what happens on its surface:
+
+```
+#BODYBOUNDARY
+absorb            particleBoundary   absorb | reflect
+linetied          fieldBoundary      linetied | conducting | insulating
+```
+
+* particles: `absorb` removes a particle when it is pushed into a body cell
+  (cell-staircase test, the same object as the grid mask, so no charge is
+  silently discarded); `reflect` is a specular reflection on the smooth
+  sphere, using the radial direction from the body center as the normal
+  (the particle and its charge are kept).
+* fields: `linetied` (default) pins the electric field to zero on the body
+  nodes, so the body is a field-free cavity and `B` is frozen at its initial
+  value inside; `conducting` is a perfect conductor (`n x E = 0` and
+  `n . B = 0`, the radial `E` stays an unknown of the implicit solve and the
+  tangential `B` carries the surface current); `insulating` applies no field
+  constraint at all, so the magnetic field passes through undistorted.
+
+`n` is the radial direction from the body center, i.e. the smooth spherical
+normal rather than the staircase face normal.
+
+## Physics & Solver Setup
+
+- **Geometry & Boundaries**: 2D grid (64 × 64 × 1), domain spans
+  [-3.2, 3.2] code units in x and y, so `dx = 0.1` and the sphere radius is
+  12 cells. One cell in z (fake 2D). Open boundaries along x (inflow at -x,
+  outflow at +x); periodic in y and z.
+
+- **Inner Body**: declared with `#BODY` (radius 1.2, center at the origin,
+  **code units** like `#REGION`). The values are read positionally one per
+  line, radius first and then one center line per dimension, so the same deck
+  works for a 2D (`-amrex2d`) and a 3D build — a 2D build reads only the first
+  two center lines and skips the third:
+
+  ```
+  #BODY
+  sphere                  type
+  1.2                     radius [code units]
+  0.0                     center [code units] x
+  0.0                     center [code units] y
+  0.0                     center [code units] z
+  ```
+
+  The mask is built from the cell centers
+  (staircase boundary, resolution `dx/2`), and:
+  | Quantity | Treatment |
+  |----------|-----------|
+  | Particles | removed (and tallied) when pushed into a body cell |
+  | Injection | initial fill, source and boundary injection skip body cells |
+  | E | `E ≡ 0`: the body nodes are excluded from the implicit solve (Dirichlet) |
+  | B | not forced to zero; frozen at its initial value in the interior |
+  | jHat / nodeMM | not masked — their body rows are dropped from the solve, so no charge is silently discarded |
+  | div(E) | residual zeroed in body cells |
+  | Output | `body` mask variable and particle moments zeroed inside, in both the `.out` files and the AMReX plotfiles |
+
+  The absorption test is the **cell-based** boundary, not the exact radius:
+  the deposition is node-centred CIC, so an exact-radius test would let
+  surface particles deposit into masked nodes every step (a charge sink with
+  no bookkeeping) while the field boundary is still the staircase.
+
+  The body is split into a **surface layer**, one cell thick, where the
+  condition of `#BODYBOUNDARY` is applied, and the **interior** behind it,
+  which is a cavity: `E = 0` and `B` frozen at its initial value, so neither
+  the Faraday update nor the div(B) cleaning reaches it. In the output the
+  separation shows up at `r ≈ R − 1.6 dx`: nodes inside that radius keep the
+  initial `B` and carry `E = 0`, nodes outside carry the surface condition.
+
+  The node-centred moments are **rescaled** by the fraction of the cells
+  around a node that lie outside the body. A CIC moment averages over those
+  cells and the body cells are empty, so an uncorrected node on the staircase
+  surface reports only half (or three quarters) of the density and of the mass
+  matrix of the plasma that is really there; with the rescaling the density is
+  uniform right up to the surface, and so is the inertia the implicit solver
+  sees. The same factor is applied to `jHat` and `nodeMM`.
+
+- **Plasma Species**:
+  | Species | Mass [amu] | Charge [e] | n [amu/cc] | ux [km/s] | T [K] | Role |
+  |---------|------------|------------|------------|-----------|-------|------|
+  | 0 | 1.0 | +1 | 5.0 | 100 | 314000 | Ions |
+  | 1 | 0.04 | −1 | 0.2 | 100 | 314000 | Electrons (n_e = n_i) |
+
+- **Electromagnetic Fields**: enabled (`solveEM = T`) with in-plane `B_y = 3.0e-9` T
+  and the matching motional field `E = -u × B` = (0, 0, -3.0e-4) V/m, so the
+  body has to pin a non-zero ambient E to zero. Solver: implicit GMRES
+  (`theta = 0.5`, tol 1e-8, 30 iterations), comoving frame
+  (`solveFieldInCoMov = T`, 5 smoothing passes), Lax-Friedrichs upwind
+  viscosity on both the E and the B equation (limiter theta = 1, which also
+  enables hyperbolic div-B cleaning) and digital-filter smoothing of J
+  (1 pass, coefficient 0.5).
+
+- **Time Stepping**: `dt = 0.02` fixed, `TimeMax = 2.0` (100 steps),
+  4 × 4 × 1 particles per cell (≈ 131k macroparticles).
+
+## Validation
+
+From the pic-log history:
+
+- `nBodyAbsorb` (cumulative number of absorbed macroparticles, appended after
+  the fixed columns) is present, non-decreasing and non-zero at the end;
+- all energies stay finite and `Etot` does not grow by more than 10×.
+
+From the first plot frame (the initial state is uniform):
+
+- on the nodes next to the staircase surface, `rhoS0` is the far-field density
+  (within the particle noise) — i.e. the moment rescaling removes the
+  geometric dilution by the empty body cells.
+
+From the last plot frame:
+
+- on every point with `body == 1`, `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are
+  **exactly zero**;
+- the region just downstream of the body is depleted to below 50% of the
+  upstream density (a wake forms).
+
+The absorbed count is dominated by the electron thermal flux, which is much
+faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
+
+## Variants
+
+| Deck | `particleBoundary` | `fieldBoundary` | What it asserts |
+|------|--------------------|-----------------|-----------------|
+| `PARAM.in.linetied` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
+| `PARAM.in.conducting` | absorb | conducting | on the **surface layer** (`r > R − 1.5 dx`): tangential `E` vanishes (`E_t = 0`) and radial `B` vanishes (`B_r = 0`); in the **interior** (`r < R − 2.5 dx`): `E = 0` and `B` is frozen at `B(t = 0)`. Ambient `B` has in-plane `By = 3e-9 T` with motional `Ez = -ux * By`; upstream `B` compares against the analytical 2D conducting cylinder potential field, and a wake forms |
+| `PARAM.in.insulating` | absorb | insulating | `B` passes through without boundary constraint; compares against undistorted uniform analytical field `B0 * y` (`<By>/B0 ≈ 1`, `<|Bx|>/B0 << 1`); `E` inside is *not* forced to zero; absorbing wake forms downstream |
+| `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and particle kinetic energy is conserved; particles are excluded from the body (`rho = 0` inside); `E = 0` inside (linetied); `B` in the deep interior is analytically frozen (`max |B - B(0)| = 0`) |
+
+All variants share the checks "no NaN" and "`Etot` grows by less than 10x".
+
+## Running
+
+From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
+
+```bash
+python3 tests/validate_tests.py --test=body      # runs all four variants
+python3 tests/validate_tests.py --test=body_conducting
+```
