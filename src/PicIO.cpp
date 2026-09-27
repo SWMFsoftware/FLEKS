@@ -362,19 +362,13 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       c = c - 'A' + 'a';
   }
 
-  if (varLower.substr(0, 4) == "body")
+  if (varLower == "body")
     return isInsideBody ? 1.0 : 0.0;
 
-  if (isInsideBody &&
-      (varLower.substr(0, 4) == "rhos" || varLower.substr(0, 3) == "uxs" ||
-       varLower.substr(0, 3) == "uys" || varLower.substr(0, 3) == "uzs" ||
-       varLower.substr(0, 4) == "pxxs" || varLower.substr(0, 4) == "pyys" ||
-       varLower.substr(0, 4) == "pzzs" || varLower.substr(0, 4) == "pxys" ||
-       varLower.substr(0, 4) == "pxzs" || varLower.substr(0, 4) == "pyzs" ||
-       varLower.substr(0, 2) == "ps" || varLower.substr(0, 4) == "ppcs" ||
-       varLower.substr(0, 4) == "nums" || varLower.substr(0, 5) == "jhatx" ||
-       varLower.substr(0, 5) == "jhaty" || varLower.substr(0, 5) == "jhatz" ||
-       varLower.substr(0, 3) == "nmm"))
+  // The particle-derived variables (rhoS0, uxS0, jHatx, nMM, ...) are zero
+  // inside the body. is_body_moment_var() matches them in both the PC ('S0')
+  // and the OH-PT ('Pop1') spelling.
+  if (isInsideBody && is_body_moment_var(varLower))
     return 0.0;
 
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
@@ -949,6 +943,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (usePIC && plotVars.find("plasma") != std::string::npos)
     nVarOut += nMoments * nSpecies;
 
+  // The body mask is only saved when a body exists, so that the plotfile
+  // variable list stays the same for every other run. (plotVars only selects
+  // the groups above -- X, E, B, plasma -- it does not list single variables.)
+  const bool saveBody = useBody;
+  if (saveBody)
+    nVarOut += 1;
+
   // Save cell-centered, instead of the nodal, values, because the AMReX
   // document says some visualization tools assumes the AMReX format outputs
   // are cell-centered.
@@ -1069,9 +1070,16 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
           const auto lo = lbound(box);
           const auto hi = ubound(box);
 
+          // There is no plasma inside the inner body (see #BODY), so the
+          // zero-density diagnostic below must not fire there.
+          const Array4<int const>& statusArr = nodeStatus[iLev][mfi].array();
+
           for (int k = lo.z; k <= hi.z; ++k)
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
+                if (useBody && bit::is_body(statusArr(i, j, k)))
+                  continue;
+
                 const Real rho = plasmaArr(i, j, k, iRho_);
                 if (rho > 0) {
                   uxArr(i, j, k) = plasmaArr(i, j, k, iUx_) / rho;
@@ -1113,10 +1121,35 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       }
     }
 
+    if (saveBody) {
+      //-------------body mask---------------------
+      const auto& status = saveNode ? nodeStatus[iLev] : cellStatus[iLev];
+
+      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& outArr = out[iLev][mfi].array();
+        const Array4<int const>& statusArr = status[mfi].array();
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          outArr(i, j, k, iStart) =
+              bit::is_body(statusArr(i, j, k)) ? 1.0 : 0.0;
+        });
+      }
+
+      iStart += 1;
+      varNames.push_back("body");
+    }
+
     for (int i = 0; i < out[iLev].nComp(); ++i) {
       Real no2out = pw.No2OutTable(varNames[i]);
       out[iLev].mult(no2out, i, 1);
     }
+
+    // No plasma lives inside the body: report the particle-derived variables
+    // as zero there, like Pic::get_var does for the .out files.
+    if (useBody)
+      mask_body_vars(out[iLev], saveNode ? nodeStatus[iLev] : cellStatus[iLev],
+                     varNames);
   }
 
   std::string filename;
@@ -1189,7 +1222,17 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
            "boundary."
         << "\n========================================================\n\n\n"
         << std::endl;
-    Abort();
+
+    // An absorbing inner body (#BODY) leaves regions without plasma behind it,
+    // so an empty node is expected there and must not stop the run.
+    if (useBody) {
+      AllPrint() << printPrefix
+                 << "Continuing: an empty region is expected downstream of an "
+                 << "absorbing body (#BODY).\n"
+                 << std::endl;
+    } else {
+      Abort();
+    }
   }
 #endif
 }

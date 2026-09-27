@@ -66,7 +66,7 @@ normal rather than the staircase face normal.
   | B | not forced to zero; frozen at its initial value in the interior |
   | jHat / nodeMM | not masked — their body rows are dropped from the solve, so no charge is silently discarded |
   | div(E) | residual zeroed in body cells |
-  | Output | `body` mask variable; particle moments reported as zero inside |
+  | Output | `body` mask variable and particle moments zeroed inside, in both the `.out` files and the AMReX plotfiles |
 
   The absorption test is the **cell-based** boundary, not the exact radius:
   the deposition is node-centred CIC, so an exact-radius test would let

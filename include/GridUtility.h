@@ -2,6 +2,8 @@
 #define _GRIDUTILITY_H_
 
 #include <limits>
+#include <string>
+#include <vector>
 
 #include <AMReX_DistributionMapping.H>
 #include <AMReX_FabArray.H>
@@ -780,6 +782,23 @@ void mask_body(amrex::FabArray<FAB>& dst, const amrex::iMultiFab& fstatus) {
     });
   }
 }
+
+// Is 'var' one of the plot variables that are derived from the particles?
+//
+// Those are zero inside the absorbing inner body (see the #BODY command),
+// where there is no plasma, both in the .out files (Pic::get_var) and in the
+// AMReX/HDF5 plotfiles (Pic::write_plots). The comparison is case insensitive
+// and strips the species tag ('S0' in the PC component, 'Pop1' in the OH-PT
+// component), so the same list works for every spelling of the variables.
+bool is_body_moment_var(const std::string& var);
+
+// Zero the components of 'dst' that hold a particle-derived variable on the
+// cells/nodes that belong to the absorbing inner body (see the #BODY command).
+// 'varNames' names the components of 'dst' in order, as Pic::write_plots
+// builds them. Use the cell status for cell-centered data and the node status
+// for node-centered data.
+void mask_body_vars(amrex::MultiFab& dst, const amrex::iMultiFab& fstatus,
+                    const amrex::Vector<std::string>& varNames);
 
 // Zero every component of 'dst' on the cells/nodes that belong to the interior
 // of the absorbing inner body, i.e. the body minus its one-cell-thick surface
