@@ -95,8 +95,8 @@ normal rather than the staircase face normal.
   | 0 | 1.0 | +1 | 5.0 | 100 | 314000 | Ions |
   | 1 | 0.04 | −1 | 0.2 | 100 | 314000 | Electrons (n_e = n_i) |
 
-- **Electromagnetic Fields**: enabled (`solveEM = T`) with `B_z = 3.0e-9` T
-  and the matching motional field `E = -u × B` = (0, 3.0e-4, 0) V/m, so the
+- **Electromagnetic Fields**: enabled (`solveEM = T`) with in-plane `B_y = 3.0e-9` T
+  and the matching motional field `E = -u × B` = (0, 0, -3.0e-4) V/m, so the
   body has to pin a non-zero ambient E to zero. Solver: implicit GMRES
   (`theta = 0.5`, tol 1e-8, 30 iterations), comoving frame
   (`solveFieldInCoMov = T`, 5 smoothing passes), Lax-Friedrichs upwind
@@ -137,8 +137,8 @@ faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 |------|--------------------|-----------------|-----------------|
 | `PARAM.in` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
 | `PARAM.in.conducting` | absorb | conducting | on the **surface layer** (`r > R − 1.5 dx`): tangential `E` vanishes (`E_t = 0`) and radial `B` vanishes (`B_r = 0`); in the **interior** (`r < R − 2.5 dx`): `E = 0` and `B` is frozen at `B(t = 0)`. Ambient `B` has in-plane `By = 3e-9 T` with motional `Ez = -ux * By`; upstream `B` compares against the analytical 2D conducting cylinder potential field, and a wake forms |
-| `PARAM.in.insulating` | absorb | insulating | `|B|` inside is within a factor of two of `|B|` just outside (no distortion) and `E` inside is *not* forced to zero; particles are still absorbed |
-| `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and the particle energy is kept; no particle is left inside the body |
+| `PARAM.in.insulating` | absorb | insulating | `B` passes through without boundary constraint; compares against undistorted uniform analytical field `B0 * y` (`<By>/B0 ≈ 1`, `<|Bx|>/B0 << 1`); `E` inside is *not* forced to zero; absorbing wake forms downstream |
+| `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and particle kinetic energy is conserved; particles are excluded from the body (`rho = 0` inside); `E = 0` inside (linetied); `B` in the deep interior is analytically frozen (`max |B - B(0)| = 0`) |
 
 All variants share the checks "no NaN" and "`Etot` grows by less than 10x".
 

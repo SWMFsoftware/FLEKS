@@ -143,7 +143,7 @@ T                       useFixedDt
 50                      dnReport
 
 #SAVELOG
-1                       dnSavePic
+10                      dnSavePic
 1                       dnSavePT
 
 #PARTICLES

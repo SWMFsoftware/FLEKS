@@ -213,9 +213,9 @@ def validate_plot(test_name):
     if test_name == "body_conducting":
         return _check_conducting(cols, inside, first_cols)
     if test_name == "body_insulating":
-        return _check_insulating(cols, inside)
+        return _check_insulating(cols, inside, first_cols)
     if test_name == "body_reflect":
-        return _check_reflect(cols, inside)
+        return _check_reflect(cols, inside, first_cols)
 
     return _check_linetied(cols, inside, rows)
 
@@ -451,8 +451,18 @@ def _check_conducting(cols, inside, first_cols=None):
                   f"upstream B matches analytical 2D dipole, wake formed)")
 
 
-def _check_insulating(cols, inside):
-    """insulating: no field constraint, so |B| and |E| pass through the body."""
+def _check_insulating(cols, inside, first_cols=None):
+    """insulating: no field constraint, so B and E pass through the body.
+
+    Analytically, an unmagnetized dielectric cylinder (mu = mu0) in a uniform
+    transverse magnetic field B0 * y produces zero field distortion:
+        B_an(x, y) = (0, B0, 0)
+    unlike a conducting cylinder which sets up a line dipole perturbation.
+    The field passes straight through the interior with By ~ B0 and Bx ~ 0.
+    Electric fields are unshielded (E != 0 inside), and an absorbing wake forms
+    downstream.
+    """
+    n_pt = len(cols["BODY"])
     e_in, e_out = _magnitude_inside_outside(cols, inside, "E")
     b_in, b_out = _magnitude_inside_outside(cols, inside, "B")
     logger.debug("    |E|: inside %.3e, outside %.3e; |B|: inside %.3e, "
@@ -470,18 +480,92 @@ def _check_insulating(cols, inside):
         return False, ("The electric field inside the insulating body is zero "
                        "-- it should not be constrained")
 
-    return True, (f"Passed (fields pass through the insulating body, "
-                  f"|B| inside/outside = {ratio:.3f})")
+    # Analytical comparison against undistorted uniform field B0 * y:
+    b0 = _median(first_cols["BY"]) if first_cols is not None else None
+    if b0 and b0 > 0:
+        by_in = [cols["BY"][i] for i in inside]
+        bx_in = [cols["BX"][i] for i in inside]
+        mean_by = sum(by_in) / len(inside)
+        mean_bx = sum(abs(bx) for bx in bx_in) / len(inside)
+        logger.debug("    inside B vs uniform analytical B0: <By>/B0 = %.3f, <|Bx|>/B0 = %.3f",
+                     mean_by / b0, mean_bx / b0)
+
+        if not (0.7 <= mean_by / b0 <= 1.3):
+            return False, (f"Inside By deviates from undistorted analytical field B0 "
+                           f"(<By>/B0 = {mean_by / b0:.3f}, expected in [0.7, 1.3])")
+        if mean_bx / b0 > 0.35:
+            return False, (f"Inside Bx has significant distortion from uniform field "
+                           f"(<|Bx|>/B0 = {mean_bx / b0:.3f} > 0.35)")
+
+    # Wake check: an absorbing body creates a wake cavity downstream
+    rho = cols.get("RHOS0")
+    if rho is not None:
+        x, y = cols["X"], cols["Y"]
+        def mean_rho(x_lo, x_hi):
+            sel = [rho[i] for i in range(n_pt)
+                   if x_lo <= x[i] <= x_hi and abs(y[i]) <= 0.5 * R_BODY and cols["BODY"][i] < 0.5]
+            return (sum(sel) / len(sel)) if sel else None
+
+        upstream_rho = mean_rho(-2.4, -1.3)
+        wake_rho = mean_rho(R_BODY + 0.1, 2.4)
+        if upstream_rho and wake_rho:
+            logger.debug("    rho: upstream %.4e, wake %.4e (wake/upstream = %.3f)",
+                         upstream_rho, wake_rho, wake_rho / upstream_rho)
+            if wake_rho >= WAKE_MAX_FRAC * upstream_rho:
+                return False, (f"No wake behind the body (wake/upstream = "
+                               f"{wake_rho / upstream_rho:.3f} >= {WAKE_MAX_FRAC})")
+
+    return True, (f"Passed (fields pass through insulating body with undistorted By, "
+                  f"wake formed)")
 
 
-def _check_reflect(cols, inside):
-    """reflect: nothing is inside the body, but the fields are untouched."""
-    rho = cols["RHOS0"]
-    if rho is None:
-        return True, "No rhoS0 column (skipped)"
-    peak = max(abs(rho[i]) for i in inside)
-    logger.debug("    max |rhoS0| inside the body = %.3e", peak)
-    if peak > ZERO_TOL:
-        return False, (f"Particles inside a reflecting body "
-                       f"(max |rhoS0| = {peak:.3e})")
-    return True, "Passed (no particle inside the reflecting body)"
+def _check_reflect(cols, inside, first_cols=None):
+    """reflect: specular particle reflection and linetied fields.
+
+    Analytically:
+    1. Particle exclusion: specular reflection keeps all particles outside the
+       body, so density inside the body vanishes exactly (rho = 0).
+    2. Linetied field: E vanishes on all body nodes (E = 0).
+    3. Frozen interior B: inside the body E = 0, so curl(E) = 0 and Faraday's law
+       keeps B frozen at its initial uniform value: B_int(t) = B0.
+    """
+    n_pt = len(cols["BODY"])
+    scale_b = max(_norm(_vec(cols, "B", i)) for i in range(n_pt))
+    scale_e = max(_norm(_vec(cols, "E", i)) for i in range(n_pt))
+
+    for name in ("RHOS0", "RHOS1"):
+        rho = cols.get(name)
+        if rho is not None:
+            peak = max(abs(rho[i]) for i in inside)
+            logger.debug("    max |%s| inside the body = %.3e", name, peak)
+            if peak > ZERO_TOL:
+                return False, (f"Particles inside a reflecting body "
+                               f"(max |{name}| = {peak:.3e})")
+
+    # Check electric field is zero inside (linetied)
+    max_e_int = max(_norm(_vec(cols, "E", i)) for i in inside)
+    logger.debug("    interior max |E| = %.3e (scale |E| = %.3e)",
+                 max_e_int, scale_e)
+    if scale_e > 0 and max_e_int > CONSTRAINT_TOL * scale_e:
+        return False, (f"The electric field is not zero inside the linetied body "
+                       f"(max |E| = {max_e_int:.3e} > {CONSTRAINT_TOL * scale_e:.3e})")
+
+    # Check frozen magnetic field in the interior (curl(E) = 0)
+    if first_cols is not None and scale_b > 0:
+        dx = _grid_spacing(cols)
+        r_int = R_BODY - 2.5 * dx
+        deep_pts = [i for i in inside
+                    if math.hypot(cols["X"][i], cols["Y"][i]) <= r_int and r_int > 0]
+        if deep_pts:
+            max_db = max(math.sqrt(sum((cols["B" + d][i] - first_cols["B" + d][i])**2
+                                       for d in ("X", "Y", "Z")))
+                         for i in deep_pts)
+            logger.debug("    deep interior (%d nodes): max |B - B(t=0)| = %.3e",
+                         len(deep_pts), max_db)
+            if max_db > CONSTRAINT_TOL * scale_b:
+                return False, (f"The magnetic field is not frozen in the deep interior "
+                               f"(max |B - B(t=0)| = {max_db:.3e} > "
+                               f"{CONSTRAINT_TOL * scale_b:.3e})")
+
+    return True, ("Passed (particles excluded from reflecting body, "
+                  "E zero, interior B frozen)")

@@ -110,11 +110,11 @@ T                       doSmoothJ
 0.0                     uz [km/s]
 314000.0                T [K]
 0.0                     bx [T]
-0.0                     by [T]
-3.0e-9                  bz [T]
+3.0e-9                  by [T]         in-plane By
+0.0                     bz [T]
 0.0                     ex [V/m]
-3.0e-4                  ey [V/m]       motional field E = -u x B
-0.0                     ez [V/m]
+0.0                     ey [V/m]
+-3.0e-4                 ez [V/m]       motional field E = -u x B = (0, 0, -ux * By)
 
 The absorbing inner body: a sphere of radius 1.2 (code units, 12 cells) at
 the origin. The unit here is the code length unit, not SI.
@@ -137,7 +137,7 @@ T                       useFixedDt
 50                      dnReport
 
 #SAVELOG
-1                       dnSavePic
+10                      dnSavePic
 1                       dnSavePT
 
 #PARTICLES
@@ -149,7 +149,7 @@ T                       useFixedDt
 1                       nPlot
 z=0 var ascii pic       plotString
 -1                      dn
-0.5                     dt
+2.0                     dt
 1                       dx
 body rhoS0 rhoS1 Ex Ey Ez Bx By Bz   plotVar
 
