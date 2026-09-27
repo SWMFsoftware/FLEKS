@@ -710,6 +710,8 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
   const Real cz = bodyCenter[iz_];
   const auto& status = node_status(iLev);
 
+  const int activeDim = get_dim();
+
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     auto arr = mf[mfi].array();
@@ -721,8 +723,8 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
         return;
 
       const Real x = plo[ix_] + i * dx[ix_] - cx;
-      const Real y = (nDim > 1) ? plo[iy_] + j * dx[iy_] - cy : 0.0;
-      const Real z = (nDim > 2) ? plo[iz_] + k * dx[iz_] - cz : 0.0;
+      const Real y = (activeDim > 1) ? plo[iy_] + j * dx[iy_] - cy : 0.0;
+      const Real z = (activeDim > 2) ? plo[iz_] + k * dx[iz_] - cz : 0.0;
       const Real r = std::sqrt(x * x + y * y + z * z);
       if (r <= 0.0)
         return;
@@ -759,6 +761,7 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
   const Real cz = bodyCenter[iz_];
   // Cell centres sit half a cell above the lower node.
   const Real shift = isCell ? 0.5 : 0.0;
+  const int activeDim = get_dim();
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
@@ -771,8 +774,10 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
         return;
 
       const Real x = plo[ix_] + (i + shift) * dx[ix_] - cx;
-      const Real y = (nDim > 1) ? plo[iy_] + (j + shift) * dx[iy_] - cy : 0.0;
-      const Real z = (nDim > 2) ? plo[iz_] + (k + shift) * dx[iz_] - cz : 0.0;
+      const Real y =
+          (activeDim > 1) ? plo[iy_] + (j + shift) * dx[iy_] - cy : 0.0;
+      const Real z =
+          (activeDim > 2) ? plo[iz_] + (k + shift) * dx[iz_] - cz : 0.0;
       const Real r = std::sqrt(x * x + y * y + z * z);
       if (r <= 0.0)
         return;

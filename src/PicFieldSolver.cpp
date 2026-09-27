@@ -575,6 +575,15 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
       }
     });
   }
+
+  // Explicitly zero trailing slots up to the solver dimension to prevent
+  // uninitialized or stale memory from polluting GMRES Arnoldi inner products.
+  if (!isCenter) {
+    const int nSolve = eSolver.get_nSolve();
+    if (iCount < nSolve) {
+      std::fill(p + iCount, p + nSolve, 0.0);
+    }
+  }
 }
 
 //==========================================================

@@ -429,6 +429,10 @@ protected:
   bool isFake2D;
 
 public:
+  AMREX_GPU_HOST_DEVICE int get_dim() const {
+    return (isFake2D || nDim == 2) ? 2 : nDim;
+  }
+
   static constexpr int iup_ = 0;
   static constexpr int ivp_ = 1;
   static constexpr int iwp_ = 2;
@@ -678,12 +682,14 @@ public:
     const amrex::Real* c = grid->get_body_center();
     const amrex::Real radius = grid->get_body_radius();
 
+    const int activeDim = grid->get_dim();
+
     amrex::Real dr[3] = { 0.0, 0.0, 0.0 };
-    for (int d = 0; d < nDim; ++d)
+    for (int d = 0; d < activeDim; ++d)
       dr[d] = p.pos(d) - c[d];
 
     amrex::Real r2 = 0.0;
-    for (int d = 0; d < nDim; ++d)
+    for (int d = 0; d < activeDim; ++d)
       r2 += dr[d] * dr[d];
 
     const amrex::Real r = std::sqrt(r2);
@@ -692,21 +698,21 @@ public:
 
     const amrex::Real invR = 1.0 / r;
     amrex::Real n[3] = { 0.0, 0.0, 0.0 };
-    for (int d = 0; d < nDim; ++d)
+    for (int d = 0; d < activeDim; ++d)
       n[d] = dr[d] * invR;
 
     // Mirror the radial position about the surface.
     const amrex::Real rNew = 2.0 * radius - r;
-    for (int d = 0; d < nDim; ++d)
+    for (int d = 0; d < activeDim; ++d)
       p.pos(d) = c[d] + rNew * n[d];
 
     // Only an inward velocity is reversed; an outward one is kept.
     amrex::Real vn = 0.0;
-    for (int d = 0; d < nDim; ++d)
+    for (int d = 0; d < activeDim; ++d)
       vn += p.rdata(iup_ + d) * n[d];
 
     if (vn < 0.0) {
-      for (int d = 0; d < nDim; ++d)
+      for (int d = 0; d < activeDim; ++d)
         p.rdata(iup_ + d) -= 2.0 * vn * n[d];
     }
   }

@@ -176,6 +176,9 @@ public:
   }
   void set_inflow_state(const amrex::Vector<InflowVel>& s) { inflowState = s; }
   void set_inflow_defined(bool v) { inflowDefined = v; }
+  const amrex::Vector<double>& get_uniform_state() const {
+    return uniformState;
+  }
 };
 
 class FluidInterface : public Grid, public FluidInterfaceParameters {

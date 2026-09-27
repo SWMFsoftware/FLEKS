@@ -727,4 +727,24 @@ void Pic::convert_inflow_state() {
           << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
           << "  (Si2NoRho=" << Si2NoRho << ", Si2NoV=" << fi->get_Si2NoV()
           << ")\n";
+
+  const auto& unif = fi->get_uniform_state();
+  if (nSpecies > 1 && !unif.empty()) {
+    const double rawInflowN = inflowRho_ / (1.0e6 * cProtonMassSI * Si2NoRho);
+    for (int iS = 0; iS < nSpecies; ++iS) {
+      if (iS * 5 < static_cast<int>(unif.size()) && iS < fi->get_nS() &&
+          fi->get_species_mass(iS) > 0.0) {
+        const double speciesN =
+            unif[iS * 5] / (fi->get_species_mass(iS) * cProtonMassSI * 1.0e6);
+        if (std::abs(speciesN - rawInflowN) >
+            1e-4 * std::max(speciesN, rawInflowN)) {
+          Print()
+              << "  Warning: #INFLOW supplies a single uniform number density "
+              << "(n=" << rawInflowN << " /cc) for all species, but species "
+              << iS << " has #UNIFORMSTATE density n=" << speciesN << " /cc.\n";
+          break;
+        }
+      }
+    }
+  }
 }

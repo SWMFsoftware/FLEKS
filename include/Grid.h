@@ -119,6 +119,10 @@ public:
   // for most purposes.
   int n_lev_max() const { return maxLevel() + 1; }
 
+  AMREX_GPU_HOST_DEVICE int get_dim() const {
+    return (isFake2D || nDim == 2) ? 2 : nDim;
+  }
+
   int get_n_ghost() const { return nGst; }
 
   const amrex::AmrInfo& get_amr_info() const { return gridAmrInfo; }
@@ -235,13 +239,14 @@ public:
   }
 
   // Is the point 'loc' (code units) inside the body? The test uses the
-  // nDim active dimensions, so a fake-2D run measures the radius in x-y only.
+  // active dimensions, so a fake-2D run measures the radius in x-y only.
   AMREX_GPU_HOST_DEVICE bool is_inside_body(const amrex::Real* loc) const {
     if (!useBody)
       return false;
 
+    const int activeDim = get_dim();
     amrex::Real r2 = 0;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < activeDim; i++) {
       const amrex::Real delta = loc[i] - bodyCenter[i];
       r2 += delta * delta;
     }
