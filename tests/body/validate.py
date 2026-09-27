@@ -12,7 +12,8 @@ Four variants are discovered from this directory:
                              reflection on the sphere, nothing is absorbed)
 
 All of them use the same setup: a uniform plasma streams in +x through a
-periodic 2D box past an absorbing sphere of radius R_BODY at the origin.
+2D box (inflow at -x, outflow at +x) past an absorbing sphere of radius R_BODY
+at the origin.
 """
 import logging
 import math

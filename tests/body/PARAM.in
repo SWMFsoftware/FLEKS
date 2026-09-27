@@ -29,9 +29,32 @@ F                       initFromSWMF
 1                       maxBlockSizeZ
 
 #PERIODICITY
-T                       isPeriodicX
+F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+inflow                  fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+inflow                  particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#INFLOW
+5.0                     rho [amu/cc]
+100.0                   ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]
 
 BODY is only implemented for the full-PIC solver.
 #SOLVEEM

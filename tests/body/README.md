@@ -37,9 +37,10 @@ normal rather than the staircase face normal.
 
 ## Physics & Solver Setup
 
-- **Geometry & Boundaries**: 2D periodic grid (64 × 64 × 1), domain spans
+- **Geometry & Boundaries**: 2D grid (64 × 64 × 1), domain spans
   [-3.2, 3.2] code units in x and y, so `dx = 0.1` and the sphere radius is
-  12 cells. One cell in z (fake 2D).
+  12 cells. One cell in z (fake 2D). Open boundaries along x (inflow at -x,
+  outflow at +x); periodic in y and z.
 
 - **Inner Body**: declared with `#BODY` (radius 1.2, center at the origin,
   **code units** like `#REGION`). The values are read positionally one per
