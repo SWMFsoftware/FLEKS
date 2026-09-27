@@ -65,7 +65,7 @@ def _read_shadow_params():
                 if not line_s:
                     continue
                 parts = line_s.split()
-                if section == "#BODYSIZE" and len(parts) >= 1:
+                if section == "#PLANETRADIUS" and len(parts) >= 1:
                     try:
                         Rp_si = float(parts[0])
                     except ValueError:
@@ -86,7 +86,7 @@ def _read_shadow_params():
     if not useShadow:
         return None
 
-    # The output unit is PLANETARY: one plot unit is one #BODYSIZE radius
+    # The output unit is PLANETARY: one plot unit is one #PLANETRADIUS radius
     # (rPlanet), so the plot-coordinate value of any SI length is the length
     # divided by the body radius.
     per_body_radius = 1.0 / Rp_si

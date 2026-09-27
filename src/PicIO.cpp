@@ -341,6 +341,36 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           " is not supported by the hybrid-PIC solver (Mach number is a "
           "full-PIC-only diagnostic).");
   }
+  //--- Inner body (see #BODY) ---
+  // No plasma lives inside the body, so the particle-derived moments are
+  // reported as zero there and 'body' reports the mask itself. The electric
+  // field is zero inside the body by construction and the magnetic field
+  // keeps its initial value, so both are reported as they are.
+  bool isInsideBody = false;
+  if (useBody) {
+    Real xyz[3] = { 0.0, 0.0, 0.0 };
+    for (int d = 0; d < nDim; d++)
+      xyz[d] = Geom(iLev).LoEdge(ijk, d);
+    isInsideBody = is_inside_body(xyz);
+  }
+
+  // Decks spell the plot variables in mixed case ('RhoS0' and 'rhoS0' are
+  // both in use), so the body-related names are matched case-insensitively.
+  std::string varLower{ var };
+  for (char& c : varLower) {
+    if (c >= 'A' && c <= 'Z')
+      c = c - 'A' + 'a';
+  }
+
+  if (varLower == "body")
+    return isInsideBody ? 1.0 : 0.0;
+
+  // The particle-derived variables (rhoS0, uxS0, jHatx, nMM, ...) are zero
+  // inside the body. is_body_moment_var() matches them in both the PC ('S0')
+  // and the OH-PT ('Pop1') spelling.
+  if (isInsideBody && is_body_moment_var(varLower))
+    return 0.0;
+
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
@@ -659,6 +689,14 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       std::string sName = "Epart" + std::to_string(i);
       picLogStream << "\t" << std::setw(wCol) << sName;
     }
+    // Cumulative tallies of the particles absorbed by the inner body
+    // (#BODY). Appended at the end so that the existing columns keep their
+    // positions.
+    if (useBody) {
+      picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
+                   << std::setw(wCol) << "qBodyAbsorb" << "\t"
+                   << std::setw(wCol) << "mBodyAbsorb";
+    }
     picLogStream << std::endl;
   }
 
@@ -672,6 +710,21 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
     Real eEnergy = calc_E_field_energy();
     Real bEnergy = calc_B_field_energy();
+
+    // Cumulative number / charge / mass of the particles absorbed by the
+    // inner body (#BODY), summed over all species and all MPI ranks.
+    Vector<Real> bodyAbsorb(3, 0.0);
+    if (useBody) {
+      for (auto& part : parts) {
+        bodyAbsorb[0] += part->get_body_absorb_count();
+        bodyAbsorb[1] += part->get_body_absorb_charge();
+        bodyAbsorb[2] += part->get_body_absorb_mass();
+      }
+      ParallelDescriptor::ReduceRealSum(
+          bodyAbsorb.data(), bodyAbsorb.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
         picLogStream.open(logFile.c_str(), std::fstream::app);
@@ -686,6 +739,11 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                    << bEnergy << "\t" << std::setw(wCol) << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << plasmaEnergy[i];
+      if (useBody) {
+        picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
+                     << std::setw(wCol) << bodyAbsorb[1] << "\t"
+                     << std::setw(wCol) << bodyAbsorb[2];
+      }
       picLogStream << std::endl;
     }
   }
@@ -885,6 +943,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (usePIC && plotVars.find("plasma") != std::string::npos)
     nVarOut += nMoments * nSpecies;
 
+  // The body mask is only saved when a body exists, so that the plotfile
+  // variable list stays the same for every other run. (plotVars only selects
+  // the groups above -- X, E, B, plasma -- it does not list single variables.)
+  const bool saveBody = useBody;
+  if (saveBody)
+    nVarOut += 1;
+
   // Save cell-centered, instead of the nodal, values, because the AMReX
   // document says some visualization tools assumes the AMReX format outputs
   // are cell-centered.
@@ -1005,9 +1070,16 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
           const auto lo = lbound(box);
           const auto hi = ubound(box);
 
+          // There is no plasma inside the inner body (see #BODY), so the
+          // zero-density diagnostic below must not fire there.
+          const Array4<int const>& statusArr = nodeStatus[iLev][mfi].array();
+
           for (int k = lo.z; k <= hi.z; ++k)
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
+                if (useBody && bit::is_body(statusArr(i, j, k)))
+                  continue;
+
                 const Real rho = plasmaArr(i, j, k, iRho_);
                 if (rho > 0) {
                   uxArr(i, j, k) = plasmaArr(i, j, k, iUx_) / rho;
@@ -1049,10 +1121,35 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       }
     }
 
+    if (saveBody) {
+      //-------------body mask---------------------
+      const auto& status = saveNode ? nodeStatus[iLev] : cellStatus[iLev];
+
+      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& outArr = out[iLev][mfi].array();
+        const Array4<int const>& statusArr = status[mfi].array();
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          outArr(i, j, k, iStart) =
+              bit::is_body(statusArr(i, j, k)) ? 1.0 : 0.0;
+        });
+      }
+
+      iStart += 1;
+      varNames.push_back("body");
+    }
+
     for (int i = 0; i < out[iLev].nComp(); ++i) {
       Real no2out = pw.No2OutTable(varNames[i]);
       out[iLev].mult(no2out, i, 1);
     }
+
+    // No plasma lives inside the body: report the particle-derived variables
+    // as zero there, like Pic::get_var does for the .out files.
+    if (useBody)
+      mask_body_vars(out[iLev], saveNode ? nodeStatus[iLev] : cellStatus[iLev],
+                     varNames);
   }
 
   std::string filename;
@@ -1125,7 +1222,17 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
            "boundary."
         << "\n========================================================\n\n\n"
         << std::endl;
-    Abort();
+
+    // An absorbing inner body (#BODY) leaves regions without plasma behind it,
+    // so an empty node is expected there and must not stop the run.
+    if (useBody) {
+      AllPrint() << printPrefix
+                 << "Continuing: an empty region is expected downstream of an "
+                 << "absorbing body (#BODY).\n"
+                 << std::endl;
+    } else {
+      Abort();
+    }
   }
 #endif
 }

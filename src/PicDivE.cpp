@@ -117,6 +117,13 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       skip_cells_divE_correction(residual, cellStatus[iLev], iLev);
     }
 
+    // The div(E) equation cannot be satisfied inside a 'linetied' or
+    // 'conducting' body, where E is constrained, so those cells are dropped;
+    // for an 'insulating' body the charge inside is a real source and is kept.
+    if (useBody && bodyFieldBC != BodyFieldBC::insulating) {
+      mask_body(residual, cellStatus[iLev]);
+    }
+
     convert_3d_to_1d(residual, solver.rhs, iLev);
 
     BL_PROFILE_VAR("Pic::phi_iterate", solve);

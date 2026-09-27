@@ -141,9 +141,9 @@ def _check_beam_transverse_wave():
 
     # The plot is saved in PLANETARY units (#SAVEPLOT ... planet): x
     # coordinates are normalised by rPlanet.  Because this test sets no
-    # #BODYSIZE, rPlanet defaults to lNormSI (#NORMALIZATION), so physical
+    # #PLANETRADIUS, rPlanet defaults to lNormSI (#NORMALIZATION), so physical
     # length [m] = (output coordinate) * lNormSI.
-    l_norm_si = 1000.0  # lNormSI [m] from #NORMALIZATION (no #BODYSIZE -> rPlanet)
+    l_norm_si = 1000.0  # lNormSI [m] from #NORMALIZATION (no #PLANETRADIUS -> rPlanet)
 
     logger.debug("    [FFT] t=%.4f s (SI, .out header), N=%d cells", t_norm, n)
     logger.debug("    [FFT] |Bx|=%.4f nT, max|B_perp|=%.4e nT", bx_mean, bperp_max)

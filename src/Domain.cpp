@@ -22,7 +22,8 @@ static const ParameterCommand parameter_registry[] = {
   { "#ABSORB", ParameterOwner::Pic },
   { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
-  { "#BODYSIZE", ParameterOwner::FluidInterface },
+  { "#BODY", ParameterOwner::Pic },
+  { "#BODYBOUNDARY", ParameterOwner::Pic },
   { "#BSUBCYCLE", ParameterOwner::Pic },
   { "#CMAXE", ParameterOwner::Pic },
   { "#COMOVING", ParameterOwner::Pic },
@@ -61,6 +62,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#PARTICLES", ParameterOwner::Pic },
   { "#PARTMODE", ParameterOwner::Pic },
   { "#PIC", ParameterOwner::Pic },
+  { "#PLANETRADIUS", ParameterOwner::FluidInterface },
   { "#PLASMA", ParameterOwner::FluidInterface },
   { "#PRESPLITTING", ParameterOwner::Pic },
   { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
@@ -1048,6 +1050,7 @@ void Domain::init_time_ctr() {
 
       writer.set_scalarValue_I(scalarVar_I);
       writer.set_scalarName_I(scalarName_I);
+      writer.set_has_body(pic != nullptr && pic->use_body());
       //--------------------------------------------------
       writer.init();
       // writer.print();

@@ -1,10 +1,70 @@
 #include <iostream>
+#include <string>
 
 #include "Constants.h"
 #include "GridUtility.h"
 #include "Timer.h"
 
 using namespace amrex;
+
+// Prefixes of the plot variables that are derived from the particles. The
+// species tag is stripped before the comparison, so the entries are the bare
+// names ('rho', 'ux', ...) without the trailing 'S0' / 'Pop1'.
+static const std::vector<std::string>& body_moment_prefixes() {
+  static const std::vector<std::string> prefixes = {
+    "rho", "ux",  "uy", "uz",  "pxx",   "pyy",   "pzz",   "pxy", "pxz",
+    "pyz", "ppc", "p",  "num", "jhatx", "jhaty", "jhatz", "nmm"
+  };
+  return prefixes;
+}
+
+bool is_body_moment_var(const std::string& var) {
+  std::string name(var);
+  for (char& c : name) {
+    if (c >= 'A' && c <= 'Z')
+      c = c - 'A' + 'a';
+  }
+
+  // Remove the species tag: digits, preceded by 'S' (PC) or 'Pop' (OH-PT).
+  std::size_t iEnd = name.size();
+  while (iEnd > 0 && name[iEnd - 1] >= '0' && name[iEnd - 1] <= '9')
+    --iEnd;
+  if (iEnd > 0 && name[iEnd - 1] == 's') {
+    --iEnd;
+  } else if (iEnd >= 3 && name.compare(iEnd - 3, 3, "pop") == 0) {
+    iEnd -= 3;
+  }
+  name.resize(iEnd);
+
+  for (const auto& prefix : body_moment_prefixes()) {
+    if (name.compare(0, prefix.size(), prefix) == 0)
+      return true;
+  }
+  return false;
+}
+
+void mask_body_vars(amrex::MultiFab& dst, const amrex::iMultiFab& fstatus,
+                    const amrex::Vector<std::string>& varNames) {
+  const int nComp =
+      std::min<int>(dst.nComp(), static_cast<int>(varNames.size()));
+
+  for (int iVar = 0; iVar < nComp; ++iVar) {
+    if (!is_body_moment_var(varNames[iVar]))
+      continue;
+
+    for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+      const auto& box = mfi.fabbox();
+      auto data = dst[mfi].array();
+      const auto statusArr = fstatus[mfi].array();
+
+      amrex::ParallelFor(box,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           if (bit::is_body(statusArr(i, j, k)))
+                             data(i, j, k, iVar) = 0.0;
+                         });
+    }
+  }
+}
 
 void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
                       const DistributionMapping& dm, const Geometry& gm,

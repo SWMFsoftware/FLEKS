@@ -265,7 +265,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           for (int ix = 0; ix <= 1; ix++) {
             IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy,
                                          loIdx[iz_] + iz) };
-            if (bit::is_lev_boundary(status(ijk)))
+            if (bit::is_lev_boundary(status(ijk)) ||
+                (grid != nullptr && grid->use_body() &&
+                 bit::is_body(status(ijk))))
               isBoundaryPhysicalCell = true;
           }
       if (isBoundaryPhysicalCell && iLev == 0)
@@ -328,7 +330,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
 
         // Do not shift along z direction for both 2D and fake 2D cases.
-        int nD = isFake2D ? 2 : nDim;
+        int nD = get_dim();
 
 #if AMREX_SPACEDIM > 2
         constexpr int kEnd = 1;
