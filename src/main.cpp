@@ -57,21 +57,6 @@ std::string prepare_standalone_run() {
   return paramString;
 }
 
-bool has_stop_command(const std::vector<std::string>& lines, size_t start,
-                      size_t end) {
-  for (size_t i = start; i < end; ++i) {
-    const std::string& l = lines[i];
-    auto pos = l.find_first_not_of(" \t");
-    if (pos != std::string::npos && l.rfind("#STOP", pos) == pos) {
-      if (pos + 5 >= l.size() || l[pos + 5] == ' ' || l[pos + 5] == '\t' ||
-          l[pos + 5] == '\r' || l[pos + 5] == '\n') {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 std::vector<std::string> split_sessions(const std::string& paramString) {
   std::vector<std::string> lines;
   std::istringstream stream(paramString);
@@ -82,7 +67,6 @@ std::vector<std::string> split_sessions(const std::string& paramString) {
 
   std::vector<std::string> sessions;
   std::string currentSession;
-  size_t currentStart = 0;
 
   for (size_t i = 0; i < lines.size(); ++i) {
     const std::string& l = lines[i];
@@ -95,21 +79,13 @@ std::vector<std::string> split_sessions(const std::string& paramString) {
     currentSession += l;
 
     if (isRun) {
-      if (has_stop_command(lines, currentStart, i + 1) &&
-          has_stop_command(lines, i + 1, lines.size())) {
-        sessions.push_back(currentSession);
-        currentSession.clear();
-        currentStart = i + 1;
-      }
+      sessions.push_back(currentSession);
+      currentSession.clear();
     }
   }
 
   if (!currentSession.empty()) {
     sessions.push_back(currentSession);
-  }
-
-  if (sessions.empty()) {
-    sessions.push_back(paramString);
   }
 
   return sessions;

@@ -606,10 +606,6 @@ void Domain::regrid() {
 
   fi->regrid(activeRegion, refineRegions, gridEfficiency);
 
-  if (refineRegions.is_modified()) {
-    fi->fill_new_cells();
-  }
-
   if (source) {
     source->regrid(activeRegion, fi.get());
   }
