@@ -673,7 +673,6 @@ void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
 }
 
 //==========================================================
-//==========================================================
 // Inner body field boundary (see #BODY / #BODYBOUNDARY).
 //
 // All these operators work on the nodes/cells flagged with bit::iBody_ and use
