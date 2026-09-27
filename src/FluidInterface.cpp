@@ -540,6 +540,37 @@ void FluidInterface::distribute_arrays() {
 }
 
 //==========================================================
+void FluidInterface::fill_new_cells() {
+  if (isGridEmpty)
+    return;
+
+  if (!isnodeFluidReady)
+    return;
+
+  timing_func("FI::fill_new_cells");
+
+  for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    nodeFluid[iLev - 1].FillBoundary(Geom(iLev - 1).periodicity());
+
+    fill_fine_lev_new_from_coarse(nodeFluid[iLev - 1], nodeFluid[iLev], 0,
+                                  nodeFluid[iLev].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  amrex::node_bilinear_interp);
+
+    nodeFluid[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    fill_fine_lev_bny_from_coarse(nodeFluid[iLev - 1], nodeFluid[iLev], 0,
+                                  nodeFluid[iLev].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  amrex::node_bilinear_interp);
+
+    average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
+                               centerB[iLev].nComp(), centerB[iLev].nGrow());
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+//==========================================================
 void FluidInterface::find_mpi_rank_for_points(const int nPoint,
                                               const double* const xyz_I,
                                               int* const rank_I) {

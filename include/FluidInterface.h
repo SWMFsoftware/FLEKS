@@ -245,11 +245,13 @@ public:
 
   void post_process_param(const DomainParameters& parameters);
 
-  void set_var_idx();
-
-  void post_regrid() override { distribute_arrays(); }
+  void post_regrid() override {
+    distribute_arrays();
+    fill_new_cells();
+  }
 
   void distribute_arrays();
+  void fill_new_cells();
 
   int count_couple_node_number();
 
