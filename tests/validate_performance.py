@@ -62,7 +62,7 @@ BASELINES = {
     },
     "reconnection2d": {
         "total_pps": 0.96,   # total wall-clock rate
-        "mover_pps": 0.05,   # isolated particle mover rate
+        "mover_pps": 0.052,  # isolated particle mover rate
         "solver_pps": 0.02,  # isolated implicit field solver rate
         "speedup": 1.85,     # 2-core scaling floor
     },
