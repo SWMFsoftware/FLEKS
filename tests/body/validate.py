@@ -313,8 +313,8 @@ def _check_conducting(cols, inside, first_cols=None):
     reconstructed from the output.
     """
     n_pt = len(cols["BODY"])
-    scale_e = max(math.hypot(cols["EX"][i], cols["EY"][i]) for i in range(n_pt))
-    scale_b = max(math.hypot(cols["BX"][i], cols["BY"][i]) for i in range(n_pt))
+    scale_e = max(_norm(_vec(cols, "E", i)) for i in range(n_pt))
+    scale_b = max(_norm(_vec(cols, "B", i)) for i in range(n_pt))
     if scale_e <= 0 or scale_b <= 0:
         return False, "The ambient E or B field is zero (test is vacuous)"
 
@@ -335,11 +335,12 @@ def _check_conducting(cols, inside, first_cols=None):
         if r2 >= r_surf:
             n_surf += 1
 
-            # E x n = 0 gives Ex*y - Ey*x = 0, which does not involve z, so
-            # the in-plane tangential field must vanish exactly.
-            ex, ey = cols["EX"][i], cols["EY"][i]
+            # E x n = 0: in-plane tangential field must vanish, and since n_z = 0,
+            # Ez is also purely tangential to the cylinder surface.
+            ex, ey, ez = cols["EX"][i], cols["EY"][i], cols["EZ"][i]
             er = ex * n2[0] + ey * n2[1]
-            max_et = max(max_et, math.hypot(ex - er * n2[0], ey - er * n2[1]))
+            et_inplane = math.hypot(ex - er * n2[0], ey - er * n2[1])
+            max_et = max(max_et, math.hypot(et_inplane, ez))
 
             # B . n = 0 reads Bx*x + By*y + Bz*z = 0. The output plane carries
             # no z and a body node sits at z = +-dz/2, so the in-plane part may
@@ -386,8 +387,68 @@ def _check_conducting(cols, inside, first_cols=None):
         return False, (f"The magnetic field is not frozen inside the conducting "
                        f"body (max |B - B(t=0)| = {max_db_int:.3e})")
 
-    return True, (f"Passed (E radial and B tangential on the {n_surf} surface "
-                  f"nodes; E = 0 and B frozen on the {n_int} interior nodes)")
+    # Analytical solution comparison:
+    # A conducting cylinder of radius R in a transverse magnetic field B0*y
+    # gives the 2D potential field outside the cylinder:
+    #   Bx_an = -B0 * 2 * R^2 * x * y / r^4
+    #   By_an = B0 * (1 + R^2 * (x^2 - y^2) / r^4)
+    b0 = _median(first_cols["BY"]) if first_cols is not None else None
+    if b0 and b0 > 0:
+        x, y = cols["X"], cols["Y"]
+        bx, by = cols["BX"], cols["BY"]
+        r2_list = [_radial_in_plane(cols, i)[1] for i in range(n_pt)]
+
+        upstream_pts = [
+            i for i in range(n_pt)
+            if cols["BODY"][i] < 0.5 and x[i] < -0.2 and (R_BODY + 0.1) < r2_list[i] < 2.8
+        ]
+        if upstream_pts:
+            bx_sim = [bx[i] for i in upstream_pts]
+            by_sim = [by[i] for i in upstream_pts]
+            bx_an = [-b0 * 2.0 * R_BODY**2 * x[i] * y[i] / (r2_list[i]**4) for i in upstream_pts]
+            by_an = [b0 * (1.0 + R_BODY**2 * (x[i]**2 - y[i]**2) / (r2_list[i]**4)) for i in upstream_pts]
+
+            rel_errs = [
+                math.hypot(bx_sim[k] - bx_an[k], by_sim[k] - by_an[k]) / b0
+                for k in range(len(upstream_pts))
+            ]
+            med_err = _median(rel_errs)
+            logger.debug("    upstream B field vs 2D dipole analytical: median rel err = %.3f", med_err)
+
+            mean_sim = sum(bx_sim) / len(bx_sim)
+            mean_an = sum(bx_an) / len(bx_an)
+            num = sum((s - mean_sim) * (a - mean_an) for s, a in zip(bx_sim, bx_an))
+            den = math.sqrt(sum((s - mean_sim)**2 for s in bx_sim) * sum((a - mean_an)**2 for a in bx_an))
+            corr_bx = (num / den) if den > 0 else 0.0
+            logger.debug("    upstream Bx correlation with analytical dipole = %.3f", corr_bx)
+
+            if corr_bx < 0.7:
+                return False, (f"Upstream Bx does not match analytical draping "
+                               f"(correlation = {corr_bx:.3f} < 0.7)")
+            if med_err > 0.8:
+                return False, (f"Upstream B field deviates too much from analytical "
+                               f"solution (median rel err = {med_err:.3f} > 0.8)")
+
+    # Wake check: an absorbing body creates a wake cavity downstream
+    rho = cols.get("RHOS0")
+    if rho is not None:
+        x, y = cols["X"], cols["Y"]
+        def mean_rho(x_lo, x_hi):
+            sel = [rho[i] for i in range(n_pt)
+                   if x_lo <= x[i] <= x_hi and abs(y[i]) <= 0.5 * R_BODY and cols["BODY"][i] < 0.5]
+            return (sum(sel) / len(sel)) if sel else None
+
+        upstream_rho = mean_rho(-2.4, -1.3)
+        wake_rho = mean_rho(R_BODY + 0.1, 2.4)
+        if upstream_rho and wake_rho:
+            logger.debug("    rho: upstream %.4e, wake %.4e (wake/upstream = %.3f)",
+                         upstream_rho, wake_rho, wake_rho / upstream_rho)
+            if wake_rho >= WAKE_MAX_FRAC * upstream_rho:
+                return False, (f"No wake behind the body (wake/upstream = "
+                               f"{wake_rho / upstream_rho:.3f} >= {WAKE_MAX_FRAC})")
+
+    return True, (f"Passed (E radial and B tangential on {n_surf} surface nodes, "
+                  f"upstream B matches analytical 2D dipole, wake formed)")
 
 
 def _check_insulating(cols, inside):

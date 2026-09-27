@@ -136,7 +136,7 @@ faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 | Deck | `particleBoundary` | `fieldBoundary` | What it asserts |
 |------|--------------------|-----------------|-----------------|
 | `PARAM.in` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
-| `PARAM.in.conducting` | absorb | conducting | on the **surface layer** (`r > R − 1.5 dx`): the in-plane tangential `E` vanishes (`Ex*y - Ey*x = 0`) and the radial `B` vanishes (up to the fake-2D residual `|Bz| dz/2 / r`); in the **interior** (`r < R − 2.5 dx`): `E = 0` and `B` still equals `B(t = 0)`. Ambient `B` has an in-plane component `Bx = 2e-9 T` so that `B_r` is non-trivial |
+| `PARAM.in.conducting` | absorb | conducting | on the **surface layer** (`r > R − 1.5 dx`): tangential `E` vanishes (`E_t = 0`) and radial `B` vanishes (`B_r = 0`); in the **interior** (`r < R − 2.5 dx`): `E = 0` and `B` is frozen at `B(t = 0)`. Ambient `B` has in-plane `By = 3e-9 T` with motional `Ez = -ux * By`; upstream `B` compares against the analytical 2D conducting cylinder potential field, and a wake forms |
 | `PARAM.in.insulating` | absorb | insulating | `|B|` inside is within a factor of two of `|B|` just outside (no distortion) and `E` inside is *not* forced to zero; particles are still absorbed |
 | `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and the particle energy is kept; no particle is left inside the body |
 
