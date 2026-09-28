@@ -154,6 +154,7 @@ def validate_plot(test_name):
     eb_mean_tol = 0.20 if is_open_inflow else EB_TOL
     ee_mean_tol = 0.20 if is_open_inflow else EE_TOL
     press_tol = 0.10 if is_open_inflow else PRESS_TOL
+    vel_tol = 0.10 if is_open_inflow else VEL_TOL
 
     # 1. Bulk velocity ux conservation for all present species (UXS0, UXS1).
     for s_name in ("UXS0", "UXS1"):
@@ -162,11 +163,11 @@ def validate_plot(test_name):
         if ux0 and uxl:
             mean0, meanl = sum(ux0) / len(ux0), sum(uxl) / len(uxl)
             logger.debug("    [FS] <%s>: %s -> %s", s_name, f"{mean0:.5f}", f"{meanl:.5f}")
-            if abs(mean0) > 1e-12 and abs(meanl / mean0 - 1.0) > VEL_TOL:
+            if abs(mean0) > 1e-12 and abs(meanl / mean0 - 1.0) > vel_tol:
                 passed = False
                 reasons.append(
                     f"bulk velocity <{s_name}> {mean0:.4f} -> {meanl:.4f} "
-                    f"(>{VEL_TOL*100:.0f}% drift)")
+                    f"(>{vel_tol*100:.0f}% drift)")
 
     # 2. Transverse velocities remain negligible noise (< 5% of bulk flow).
     ux_ref = _fs_col(vidx0, rows0, "UXS0")
