@@ -351,7 +351,7 @@ private:
   void update_bc_flags() {
     hasConductingBC_ = bcField.has(FieldBC::conducting);
     hasAbsorbBC_ = bcField.has(FieldBC::absorb);
-    hasInflowBC_ = bcField.has(FieldBC::inflow);
+    hasInflowBC_ = bcField.has(FieldBC::inflow) || bcField.has(FieldBC::fixed);
   }
 
   // De-duplicated boundary-condition warnings

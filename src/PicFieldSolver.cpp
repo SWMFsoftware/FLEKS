@@ -230,8 +230,29 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   }
 
   if (useZeroBC) {
-    // The boundary nodes would not be filled in by convert_1d_3d. So, there
-    // is not need to apply zero boundary conditions again here.
+    // For Dirichlet physical boundaries (inflow, fixed), the correction in the
+    // Krylov subspace must be identically zero on the boundary nodes.
+    const BoundaryBounds bnd(Geom(iLev), vecMF.boxArray().ixType(), &bcField);
+    for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrVec = vecMF[mfi].array();
+      ParallelFor(bx, vecMF.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    for (int d = 0; d < nDim; ++d) {
+                      if (!bnd.isNode[d])
+                        continue;
+                      if (((bnd.bcLo[d] == FieldBC::inflow ||
+                            bnd.bcLo[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.loBnd[d]) ||
+                          ((bnd.bcHi[d] == FieldBC::inflow ||
+                            bnd.bcHi[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.hiBnd[d])) {
+                        arrVec(i, j, k, c) = 0.0;
+                      }
+                    }
+                  });
+    }
   } else {
     // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
@@ -370,6 +391,34 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
+  // Dirichlet physical boundaries (inflow, fixed): enforce A_ii = 1, A_ij = 0
+  // by copying vecMF to matvecMF on boundary nodes.
+  {
+    const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
+                             &bcField);
+    for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrOut = matvecMF[mfi].array();
+      const Array4<Real const>& arrIn = vecMF[mfi].array();
+      ParallelFor(bx, matvecMF.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    for (int d = 0; d < nDim; ++d) {
+                      if (!bnd.isNode[d])
+                        continue;
+                      if (((bnd.bcLo[d] == FieldBC::inflow ||
+                            bnd.bcLo[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.loBnd[d]) ||
+                          ((bnd.bcHi[d] == FieldBC::inflow ||
+                            bnd.bcHi[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.hiBnd[d])) {
+                        arrOut(i, j, k, c) = arrIn(i, j, k, c);
+                      }
+                    }
+                  });
+    }
+  }
+
   // 'conducting' body: keep the Krylov vectors inside the constrained space
   // by removing the tangential electric field on the body nodes. Together with
   // the same projection of the right-hand side and of the solution, this makes
@@ -504,6 +553,35 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
     update_E_M_dot_E(eBg[iLev], tempNode, iLev);
     MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(),
                   tempNode.nGrow());
+  }
+
+  // Dirichlet physical boundaries (inflow, fixed): the right-hand side for the
+  // total field must equal nodeE, so that the initial residual rhs - A(E_old)
+  // evaluates to exactly zero on Dirichlet boundary nodes.
+  {
+    const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
+                             &bcField);
+    for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrRHS = temp2Node[mfi].array();
+      const Array4<Real const>& arrE = nodeE[iLev][mfi].array();
+      ParallelFor(bx, temp2Node.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    for (int d = 0; d < nDim; ++d) {
+                      if (!bnd.isNode[d])
+                        continue;
+                      if (((bnd.bcLo[d] == FieldBC::inflow ||
+                            bnd.bcLo[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.loBnd[d]) ||
+                          ((bnd.bcHi[d] == FieldBC::inflow ||
+                            bnd.bcHi[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.hiBnd[d])) {
+                        arrRHS(i, j, k, c) = arrE(i, j, k, c);
+                      }
+                    }
+                  });
+    }
   }
 
   // 'conducting' body: project the right-hand side onto the radial direction

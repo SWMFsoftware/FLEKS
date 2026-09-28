@@ -415,7 +415,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
                             const int iStart, const int nComp, const int iLev,
                             const BoxBC<FieldBC::Type>& bc, bool isB,
                             GETVALUE func) {
-  (void)isB;
+  // isB indicates whether mf is magnetic (true) or electric (false).
 
   std::string nameFunc = "Pic::apply_inflow_wall";
   timing_func(nameFunc);
@@ -446,9 +446,11 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
           continue;
 
         const bool onLoWall =
-            (bnd.bcLo[d] == FieldBC::inflow) && (ijk[d] == bnd.loBnd[d]);
+            ((bnd.bcLo[d] == FieldBC::inflow || bnd.bcLo[d] == FieldBC::fixed) &&
+             (ijk[d] == bnd.loBnd[d]));
         const bool onHiWall =
-            (bnd.bcHi[d] == FieldBC::inflow) && (ijk[d] == bnd.hiBnd[d]);
+            ((bnd.bcHi[d] == FieldBC::inflow || bnd.bcHi[d] == FieldBC::fixed) &&
+             (ijk[d] == bnd.hiBnd[d]));
         if (onLoWall || onHiWall) {
           bool inValid = true;
           for (int od = 0; od < nDim; ++od) {
@@ -473,16 +475,57 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         }
       }
 
-      // 2. Ghost cells/nodes outside domain if func == nullptr
+      // 2. Boundary cells on physical inflow wall for cell-centred B (centerB).
+      // Enforcing prescribed B on the boundary cell prevents Faraday curl mismatch
+      // between the pinned inflow boundary node and the interior solution.
+      for (int d = 0; d < nDim; ++d) {
+        if (bnd.isNode[d] || !isB)
+          continue;
+
+        const bool onLoWall =
+            ((bnd.bcLo[d] == FieldBC::inflow || bnd.bcLo[d] == FieldBC::fixed) &&
+             (ijk[d] == bnd.loBnd[d]));
+        const bool onHiWall =
+            ((bnd.bcHi[d] == FieldBC::inflow || bnd.bcHi[d] == FieldBC::fixed) &&
+             (ijk[d] == bnd.hiBnd[d]));
+        if (onLoWall || onHiWall) {
+          bool inValid = true;
+          for (int od = 0; od < nDim; ++od) {
+            if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+              inValid = false;
+              break;
+            }
+          }
+          if (inValid) {
+            for (int iVar = 0; iVar < nComp; ++iVar) {
+              const int comp = iStart + iVar;
+              if (func != nullptr) {
+                arr(i, j, k, comp) = (this->*func)(
+                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+              } else {
+                int m[3] = { i, j, k };
+                m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
+                arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Ghost cells/nodes outside domain if func == nullptr
       // (When func != nullptr, fill_ext_dir handles them).
       if (func == nullptr && bit::is_lev_boundary(statusArr(i, j, k, 0))) {
         int m[3] = { i, j, k };
         bool touched = false;
         for (int d = 0; d < nDim; ++d) {
-          if (bnd.bcLo[d] == FieldBC::inflow && ijk[d] < bnd.loBnd[d]) {
+          if ((bnd.bcLo[d] == FieldBC::inflow ||
+               bnd.bcLo[d] == FieldBC::fixed) &&
+              ijk[d] < bnd.loBnd[d]) {
             m[d] = bnd.loBnd[d];
             touched = true;
-          } else if (bnd.bcHi[d] == FieldBC::inflow && ijk[d] > bnd.hiBnd[d]) {
+          } else if ((bnd.bcHi[d] == FieldBC::inflow ||
+                      bnd.bcHi[d] == FieldBC::fixed) &&
+                     ijk[d] > bnd.hiBnd[d]) {
             m[d] = bnd.hiBnd[d];
             touched = true;
           }
