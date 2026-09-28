@@ -68,7 +68,7 @@ F                       useHallTerm
 rk4                     fieldIntegrator
 
 #BSUBCYCLE
-10                      nBSubcycle
+1                       nBSubcycle
 
 #PLASMA
 1                       nS
@@ -102,11 +102,6 @@ sphere                  type
 #BODYBOUNDARY
 absorb                  particleBoundary
 conducting              fieldBoundary
-
-#BODYRESISTIVITY
-1.0e8                   etaBodyResistivity  [m^2/s]
-1.8                     rOuter              [code units]
--1.0                    rInner              [code units, <0 defaults to body radius]
 
 #BODYHYPERRESISTIVITY
 0.0                     etaBodyHyperSI      [m^4/s]
