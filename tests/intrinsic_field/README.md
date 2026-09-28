@@ -1,8 +1,8 @@
 # Intrinsic Magnetic Field
 
 A static planetary magnetic field declared with `#DIPOLE` (analytic dipole)
-and/or `#CRUSTALFIELD` (spherical harmonic expansion read from a file, in the
-two BATSRUS layouts). The field is frozen: it never enters Faraday's law and it
+and/or `#CRUSTALFIELD` (spherical harmonic expansion read from a file, matching
+the BATSRUS layout). The field is frozen: it never enters Faraday's law and it
 is not written to the restart files. It is added to the evolved field B1
 wherever a *total* magnetic field is needed, B = B1 + B0: the particle push,
 the mass matrix, the generalized Ohm's law (convective and Hall terms), the
@@ -17,9 +17,8 @@ which act on `nodeB`/`centerB`, never touch B0.
 |------|--------|
 | `PARAM.in` | Tilted dipole, field solver off, `B1 = 0` |
 | `PARAM.in.body` | Dipole + absorbing `#BODY`: B0 must survive inside the body |
-| `PARAM.in.crustal` | Crustal field, new BATSRUS layout |
+| `PARAM.in.crustal` | Crustal field, BATSRUS layout (axial dipole) |
 | `PARAM.in.crustal_nm2` | Crustal field with several degrees and both g and h |
-| `PARAM.in.crustal_old` | Same coefficients, legacy `marsmgsp` layout |
 | `PARAM.in.dipole_crustal` | Dipole + crustal must be their superposition |
 
 All variants switch the field solver off (`#SOLVEEM F`) and set the
@@ -41,7 +40,7 @@ The tests are cheap: the whole suite runs in about a minute.
 4. **Dipole shape**: `r^-3` scaling, `Br/Btheta = 2 cot(theta)`, and the
    recovered dipole axis matches the requested tilt.
 5. **Crustal**: compared against an independent spherical harmonic evaluation
-   in `validate.py`; `crustal_nm2` and `crustal_old` must be identical.
+   in `validate.py`.
 6. **Superposition**: dipole + crustal is the sum of the two.
 7. **Body**: B0 is non-zero and unchanged inside the body mask.
 8. **Energies**: `Etot` and `Eb` stay constant (the test particles gyrate, and
@@ -67,8 +66,7 @@ planetary radius and the reference sphere sits at `r = 1` in the plot output.
   intrinsic field: it pins the radial field of the *evolved* part to zero on
   the body surface, which contradicts the radial field of a planet. FLEKS
   aborts on the combination; use `linetied` or `insulating`.
-- The hybrid solver uses the total field only for the convective and Hall
-  terms of the Ohm's law. The current is computed from B1 alone, because the
-  intrinsic field is current-free and the discrete curl of `B1 + B0` would
-  inject its truncation error into J. A dedicated hybrid test is left for
-  future work.
+- The hybrid solver uses the total field (B1 + B0) for the convective and Hall
+  terms of the Ohm's law, while the current J is computed from B1 alone because
+  the intrinsic field is current-free. Both the hybrid PIC solver and full PIC
+  solver support intrinsic magnetic fields and inner body boundaries.

@@ -1596,11 +1596,11 @@ The two intrinsic models, this one and #CRUSTALFIELD, are additive.
 </command>
 
 <command name="CRUSTALFIELD" alias="CRUSTALFIELD_FLEKS0,CRUSTALFIELD_FLEKS1,CRUSTALFIELD_FLEKS2" multiple="T">
-  <parameter name="fileName" type="string" default="marsmgsp.txt"/>
+  <parameter name="fileName" type="string" default="crustal_field.txt"/>
   <parameter name="nMax" type="integer" default="2"/>
 
 #CRUSTALFIELD
-marsmgsp.txt            fileName
+crustal_field.txt       fileName
 2                       nMax
 
 This command adds a static crustal field to the intrinsic (background) magnetic
@@ -1611,14 +1611,10 @@ nMax is the number of harmonic degrees in the file, i.e. the NNm of the
 BATSRUS #MARSB0 command; the highest retained degree is nMax - 1. It must be at
 least 2.
 
-Two file layouts are accepted, identified by the file name exactly as
-ModUserMars does it:
-
-* a file whose name contains 'marsmgsp' is read as the legacy layout: one line
-  per degree, carrying the degree followed by that degree's g coefficients and
-  then its h coefficients;
-* any other name is read as the newer layout: three header lines, then, for
-  every degree, one 'n m value' triple per coefficient.
+The file format matches the layout used in BATSRUS ModUserMars:
+three header lines (skipped by the reader), followed by one 'n m value' triple
+per coefficient (for each degree i = 1..n, g(i,0) followed by g/h pairs for
+m = 1..i).
 
 The expansion is written for the radius measured in planetary radii and returns
 nanotesla, so the coefficients are converted with #PLANETRADIUS (the radial

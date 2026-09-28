@@ -6,8 +6,7 @@ Six variants are discovered from this directory:
   - PARAM.in              -> "intrinsic_field"                tilted dipole
   - PARAM.in.body         -> "intrinsic_field_body"           dipole + #BODY
   - PARAM.in.crustal      -> "intrinsic_field_crustal"        g10-only file
-  - PARAM.in.crustal_nm2  -> "intrinsic_field_crustal_nm2"    new layout, many g/h
-  - PARAM.in.crustal_old  -> "intrinsic_field_crustal_old"    legacy layout
+  - PARAM.in.crustal_nm2  -> "intrinsic_field_crustal_nm2"    BATSRUS layout, many g/h
   - PARAM.in.dipole_crustal -> "intrinsic_field_dipole_crustal"
 
 Every deck runs with SOLVEEM F and a zero UNIFORMSTATE field, so the evolved
@@ -293,8 +292,7 @@ def validate_plot(test_name):
         return False, (f"The total field is not B0 (max |B - B0| = {dtot:.3e} "
                        f"nT > {TOTAL_TOL:g} * {b0max:.3e} nT)")
 
-    if test_name in ("intrinsic_field_crustal", "intrinsic_field_crustal_nm2",
-                     "intrinsic_field_crustal_old"):
+    if test_name in ("intrinsic_field_crustal", "intrinsic_field_crustal_nm2"):
         return _check_crustal(cols, rows, test_name)
     if test_name == "intrinsic_field_dipole_crustal":
         return _check_superposition(cols, rows)

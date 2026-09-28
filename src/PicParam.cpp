@@ -557,12 +557,6 @@ void Pic::post_process_param() {
     if (bodyRadius <= 0)
       Abort("Invalid #BODY: radius must be positive.");
 
-    // The body mask and the E-field Dirichlet condition are only wired into
-    // the full-PIC (implicit) solver for now.
-    if (useHybridPIC)
-      Abort("Invalid #BODY: the inner body is only implemented for the "
-            "full-PIC solver. It is not supported with #HYBRIDPIC.");
-
     if (n_lev_max() > 1 && !refineRegions.empty())
       Print() << "  Warning: #BODY has not been verified with AMR "
               << "(refinement regions are defined).\n";

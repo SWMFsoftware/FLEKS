@@ -33,6 +33,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     apply_field_bc(nodeStatus[iLev], nodeBstage[iLev], 0, 3, &Pic::get_node_B,
                    iLev, true);
   }
+  if (is_body_conducting()) {
+    project_body_B(nodeBstage[iLev], iLev);
+    nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
 
   // Moment time-interpolation weights:
   // X(hstep) = (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
@@ -143,6 +147,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   Eout.FillBoundary(Geom(iLev).periodicity());
   apply_field_bc(nodeStatus[iLev], Eout, 0, nDim3, &Pic::get_node_E, iLev,
                  false);
+  if (useBody) {
+    apply_body_E_bc(Eout, iLev);
+  }
 }
 
 //==========================================================
@@ -337,6 +344,9 @@ void Pic::compute_ambipolar_E(int iLev) {
   nodeEambi[iLev].FillBoundary(Geom(iLev).periodicity());
   apply_field_bc(nodeStatus[iLev], nodeEambi[iLev], 0, nDim3, &Pic::get_node_E,
                  iLev, false);
+  if (useBody) {
+    apply_body_E_bc(nodeEambi[iLev], iLev);
+  }
 }
 
 //==========================================================
@@ -403,6 +413,10 @@ void Pic::smooth_moments() {
         });
       }
     }
+
+    if (useBody) {
+      mask_body(moments, node_status(iLev));
+    }
   }
 }
 
@@ -452,6 +466,10 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
         Geom(iLev), cell_status(iLev), *get_cell_interp());
     apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
                    iLev, true);
+  }
+
+  if (is_body_conducting()) {
+    project_body_B(mfB, iLev);
   }
 
   if (isFake2D) {
@@ -532,8 +550,9 @@ void Pic::update_B_hybrid() {
 
     if (useHallTerm) {
       Real bMaxLev = 0.0;
+      const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
       for (int d = 0; d < 3; ++d) {
-        bMaxLev = amrex::max(bMaxLev, centerB[iLev].norm0(d, 0, false));
+        bMaxLev = amrex::max(bMaxLev, bForCfl.norm0(d, 0, false));
       }
       const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
       const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
@@ -580,6 +599,8 @@ void Pic::update_B_hybrid() {
                        nodeEstage[iLev], iLev, hstepStart, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
 
         // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
@@ -592,6 +613,8 @@ void Pic::update_B_hybrid() {
                        nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
 
         // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
@@ -604,6 +627,8 @@ void Pic::update_B_hybrid() {
                        nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
 
         // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
@@ -616,6 +641,8 @@ void Pic::update_B_hybrid() {
                        nodeEstage[iLev], iLev, hstepEnd, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][3], cellStatus[iLev]);
 
         // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
@@ -642,6 +669,8 @@ void Pic::update_B_hybrid() {
                        nodeEstage[iLev], iLev, hstepStart, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
                           kStage[iLev][0], 0, 0, nDim3, nGst);
 
@@ -653,6 +682,8 @@ void Pic::update_B_hybrid() {
                        nodeEstage[iLev], iLev, hstepEnd, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
@@ -667,6 +698,8 @@ void Pic::update_B_hybrid() {
                        nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
                           1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nGst);
         MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
@@ -695,6 +728,10 @@ void Pic::update_B_hybrid() {
     if (iLev == 0) {
       apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3, &Pic::get_node_B,
                      iLev, true);
+    }
+    if (is_body_conducting()) {
+      project_body_B(nodeB[iLev], iLev);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
 

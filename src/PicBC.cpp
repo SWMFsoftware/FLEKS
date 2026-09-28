@@ -798,6 +798,74 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
 }
 
 //==========================================================
+void Pic::fill_body_E_insulating(amrex::MultiFab& mf, const int iLev) {
+  // In hybrid PIC, no plasma exists inside the body. An uncharged dielectric
+  // obstacle does not shield electric fields; E satisfies Laplace's equation
+  // nabla^2(E) = 0 inside the body, matching the surrounding plasma field.
+  if (mf.nComp() < 3)
+    return;
+
+  const auto& status = node_status(iLev);
+  const int activeDim = get_dim();
+
+  if (smoothScratchMF[iLev].empty() ||
+      smoothScratchMF[iLev].boxArray() != mf.boxArray() ||
+      smoothScratchMF[iLev].DistributionMap() != mf.DistributionMap() ||
+      smoothScratchMF[iLev].nComp() != mf.nComp() ||
+      smoothScratchMF[iLev].nGrow() != mf.nGrow()) {
+    smoothScratchMF[iLev].define(mf.boxArray(), mf.DistributionMap(),
+                                 mf.nComp(), mf.nGrow());
+  }
+
+  MultiFab& mfOld = smoothScratchMF[iLev];
+
+  for (int iter = 0; iter < 30; ++iter) {
+    MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
+    mfOld.FillBoundary(Geom(iLev).periodicity());
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      auto arr = mf[mfi].array();
+      const auto arrOld = mfOld[mfi].array();
+      const auto statusArr = status[mfi].array();
+
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (!bit::is_body(statusArr(i, j, k)))
+          return;
+
+        Real numNeighbors = 0.0;
+        Real sumE[3] = { 0.0, 0.0, 0.0 };
+
+        sumE[0] += arrOld(i + 1, j, k, 0) + arrOld(i - 1, j, k, 0);
+        sumE[1] += arrOld(i + 1, j, k, 1) + arrOld(i - 1, j, k, 1);
+        sumE[2] += arrOld(i + 1, j, k, 2) + arrOld(i - 1, j, k, 2);
+        numNeighbors += 2.0;
+
+        if (activeDim > 1) {
+          sumE[0] += arrOld(i, j + 1, k, 0) + arrOld(i, j - 1, k, 0);
+          sumE[1] += arrOld(i, j + 1, k, 1) + arrOld(i, j - 1, k, 1);
+          sumE[2] += arrOld(i, j + 1, k, 2) + arrOld(i, j - 1, k, 2);
+          numNeighbors += 2.0;
+        }
+        if (activeDim > 2) {
+          sumE[0] += arrOld(i, j, k + 1, 0) + arrOld(i, j, k - 1, 0);
+          sumE[1] += arrOld(i, j, k + 1, 1) + arrOld(i, j, k - 1, 1);
+          sumE[2] += arrOld(i, j, k + 1, 2) + arrOld(i, j, k - 1, 2);
+          numNeighbors += 2.0;
+        }
+
+        if (numNeighbors > 0.0) {
+          arr(i, j, k, 0) = sumE[0] / numNeighbors;
+          arr(i, j, k, 1) = sumE[1] / numNeighbors;
+          arr(i, j, k, 2) = sumE[2] / numNeighbors;
+        }
+      });
+    }
+    mf.FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+//==========================================================
 void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
   if (!useBody)
     return;
@@ -810,6 +878,11 @@ void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
     // E = 0 in the interior, E_t = 0 on the surface layer.
     zero_body_interior_E(mf, iLev);
     project_body_E(mf, iLev);
+  } else if (bodyFieldBC == BodyFieldBC::insulating) {
+    // In hybrid PIC, harmonic relaxation fills E into the body cavity.
+    if (useHybridPIC) {
+      fill_body_E_insulating(mf, iLev);
+    }
   }
-  // insulating: no constraint, the fields pass through the body.
 }
+

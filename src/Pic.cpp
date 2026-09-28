@@ -547,18 +547,30 @@ void Pic::fill_E_B_fields() {
       }
     }
   }
+
+  if (is_body_conducting()) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      project_body_B(centerB[iLev], iLev);
+      project_body_B(nodeB[iLev], iLev);
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
 }
 
 //==========================================================
 // Fill the frozen intrinsic field B0 from the analytic model, at
-// initialization and after every regrid. The loop runs on the host because the
-// spherical harmonic evaluation needs O(nMax^2) scratch per point.
+// initialization and after every regrid. Dipole-only evaluations run in
+// parallel (ParallelFor), while spherical harmonic evaluations use host scratch.
 //==========================================================
 void Pic::fill_intrinsic_B() {
   if (!use_intrinsic_B())
     return;
 
   const IntrinsicBField &field = *intrinsicB_;
+  const auto p = field.get_params();
+  const int activeDim = get_dim();
+  const bool onlyDipole = !field.use_crustal();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (nodeB0[iLev].empty())
@@ -571,38 +583,87 @@ void Pic::fill_intrinsic_B() {
     const auto plo = Geom(iLev).ProbLo();
     const auto dx = Geom(iLev).CellSize();
 
-    // Nodes: node (i,j,k) sits at plo + (i,j,k)*dx.
-    for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
-      const Box &box = mfi.fabbox();
-      const Array4<Real> &arr = nodeB0[iLev][mfi].array();
-      for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
-        for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
-          for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-            Real b[3] = {0.0, 0.0, 0.0};
-            field.eval(plo[ix_] + i * dx[ix_], plo[iy_] + j * dx[iy_],
-                       plo[iz_] + k * dx[iz_], b);
-            arr(i, j, k, ix_) = b[0];
-            arr(i, j, k, iy_) = b[1];
-            arr(i, j, k, iz_) = b[2];
+    if (onlyDipole) {
+      // Dipole evaluation is scratch-free and device-callable: run in ParallelFor.
+      for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
+        const Box &box = mfi.fabbox();
+        const Array4<Real> &arr = nodeB0[iLev][mfi].array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          Real b[3] = {0.0, 0.0, 0.0};
+          const Real x = plo[ix_] + i * dx[ix_];
+          const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
+#if (AMREX_SPACEDIM > 2)
+          const Real z = (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : p.center[2];
+#else
+          const Real z = p.center[2];
+#endif
+          eval_dipole_b(p, x, y, z, b);
+          arr(i, j, k, ix_) = b[0];
+          arr(i, j, k, iy_) = b[1];
+          arr(i, j, k, iz_) = b[2];
+        });
+      }
+
+      for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
+        const Box &box = mfi.fabbox();
+        const Array4<Real> &arr = centerB0[iLev][mfi].array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          Real b[3] = {0.0, 0.0, 0.0};
+          const Real x = plo[ix_] + (i + 0.5) * dx[ix_];
+          const Real y = (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
+#if (AMREX_SPACEDIM > 2)
+          const Real z = (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : p.center[2];
+#else
+          const Real z = p.center[2];
+#endif
+          eval_dipole_b(p, x, y, z, b);
+          arr(i, j, k, ix_) = b[0];
+          arr(i, j, k, iy_) = b[1];
+          arr(i, j, k, iz_) = b[2];
+        });
+      }
+    } else {
+      // Crustal evaluation uses host scratch workspace.
+      for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
+        const Box &box = mfi.fabbox();
+        const Array4<Real> &arr = nodeB0[iLev][mfi].array();
+        for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+#if (AMREX_SPACEDIM > 2)
+          const Real z = (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : p.center[2];
+#else
+          const Real z = p.center[2];
+#endif
+          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+            const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
+            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+              Real b[3] = {0.0, 0.0, 0.0};
+              field.eval(plo[ix_] + i * dx[ix_], y, z, b);
+              arr(i, j, k, ix_) = b[0];
+              arr(i, j, k, iy_) = b[1];
+              arr(i, j, k, iz_) = b[2];
+            }
           }
         }
       }
-    }
 
-    // Cells: cell (i,j,k) is centered at plo + (i+1/2, j+1/2, k+1/2)*dx.
-    for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
-      const Box &box = mfi.fabbox();
-      const Array4<Real> &arr = centerB0[iLev][mfi].array();
-      for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
-        for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
-          for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-            Real b[3] = {0.0, 0.0, 0.0};
-            field.eval(plo[ix_] + (i + 0.5) * dx[ix_],
-                       plo[iy_] + (j + 0.5) * dx[iy_],
-                       plo[iz_] + (k + 0.5) * dx[iz_], b);
-            arr(i, j, k, ix_) = b[0];
-            arr(i, j, k, iy_) = b[1];
-            arr(i, j, k, iz_) = b[2];
+      for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
+        const Box &box = mfi.fabbox();
+        const Array4<Real> &arr = centerB0[iLev][mfi].array();
+        for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+#if (AMREX_SPACEDIM > 2)
+          const Real z = (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : p.center[2];
+#else
+          const Real z = p.center[2];
+#endif
+          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+            const Real y = (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
+            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+              Real b[3] = {0.0, 0.0, 0.0};
+              field.eval(plo[ix_] + (i + 0.5) * dx[ix_], y, z, b);
+              arr(i, j, k, ix_) = b[0];
+              arr(i, j, k, iy_) = b[1];
+              arr(i, j, k, iz_) = b[2];
+            }
           }
         }
       }
@@ -616,13 +677,14 @@ amrex::MultiFab &Pic::total_center_B(amrex::MultiFab &src, const int iLev) {
     return src;
 
   amrex::MultiFab &dst = centerBtotal[iLev];
-  if (dst.empty())
+  const int nG = std::max(src.nGrow(), nGst);
+  if (dst.empty() || dst.nGrow() < src.nGrow())
     distribute_FabArray(dst, cGrids[iLev], DistributionMap(iLev), nDim3,
-                        src.nGrow(), false);
+                        nG, false);
 
-  amrex::MultiFab::Copy(dst, src, 0, 0, nDim3, src.nGrow());
   const int nGrow = std::min(dst.nGrow(), centerB0[iLev].nGrow());
-  amrex::MultiFab::Add(dst, centerB0[iLev], 0, 0, nDim3, nGrow);
+  amrex::MultiFab::LinComb(dst, 1.0, src, 0, 1.0, centerB0[iLev], 0, 0, nDim3,
+                           nGrow);
   return dst;
 }
 

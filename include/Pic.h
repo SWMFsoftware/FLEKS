@@ -326,10 +326,11 @@ private:
   amrex::Vector<amrex::MultiFab> centerBtotal;
 
   // The interior of the body (the body minus its one-cell-thick surface layer)
-  // is a cavity: E = 0 and B frozen at its initial value. Only an 'insulating'
-  // body lets the fields evolve inside.
+  // is a cavity: E = 0 and B frozen at its initial value. In full-PIC, an
+  // 'insulating' body lets EM waves propagate inside via the wave equation;
+  // in hybrid PIC, vacuum cavities have no wave propagation and stay frozen.
   bool is_body_interior_frozen() const {
-    return useBody && bodyFieldBC != BodyFieldBC::insulating;
+    return useBody && (!useHybridPIC ? (bodyFieldBC != BodyFieldBC::insulating) : true);
   }
 
   void update_bc_flags() {
@@ -734,6 +735,7 @@ public:
   void zero_body_interior_E(amrex::MultiFab &mf, const int iLev);
   void project_body_E(amrex::MultiFab &mf, const int iLev);
   void project_body_B(amrex::MultiFab &mf, const int iLev);
+  void fill_body_E_insulating(amrex::MultiFab &mf, const int iLev);
 
   // Dispatch the electric-field condition selected by #BODYBOUNDARY.
   void apply_body_E_bc(amrex::MultiFab &mf, const int iLev);

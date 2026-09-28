@@ -1,9 +1,7 @@
 #DESCRIPTION
 Intrinsic magnetic field: crustal field from a spherical harmonic file
-(BATSRUS new layout, three header lines + 'n m value' triples), carrying
-several degrees and both g and h. The same coefficients are in
-marsmgsp_small.txt in the legacy layout, so this deck and 'crustal_old' must
-produce identical fields.
+(BATSRUS layout, three header lines + 'n m value' triples), carrying
+several degrees and both g and h.
 
 Same isolated setup as the dipole deck: SOLVEEM F and a zero UNIFORMSTATE
 field, so the only field in the domain is the static crustal field B0 and the

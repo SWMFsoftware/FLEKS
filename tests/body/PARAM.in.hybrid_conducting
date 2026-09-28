@@ -1,11 +1,10 @@
 #DESCRIPTION
-Inner-body (absorbing sphere) test: a uniform plasma streams in +x past an
-absorbing sphere of radius 1.2 at the origin, declared with BODY.
+Inner-body (absorbing sphere) test using the hybrid PIC solver: a uniform
+plasma streams in +x past an absorbing sphere of radius 1.2 at the origin,
+declared with BODY.
 
-Particles that enter a body cell are removed and tallied, no particle is
-created inside the body, the electric field is pinned to zero inside the body
-and the particle moments are reported as zero there, so the body must show up
-as an empty hole with a wake downstream.
+Variant: BODYBOUNDARY absorb + conducting.
+Tangential E = 0 and radial B = 0 on the surface layer, interior B frozen.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -57,45 +56,28 @@ periodic                particleBoxBoundaryHi
 314000.0                T [K]
 
 #SOLVEEM
-T                       solveEM
+F                       solveEM
 
 #HYBRIDPIC
-F                       useHybridPIC
+T                       useHybridPIC
 
-#EFIELDSOLVER
-1.0e-8                  tol
-30                      nIter
+#HALLTERM
+F                       useHallTerm
 
-#DISCRETIZATION
-0.5                     theta
-0.0                     coefDiff
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
 
-#COMOVING
-T                       solveFieldInCoMov
-5                       nSmoothBackGroundU
-
-Lax-Friedrichs upwind viscosity on the E equation (minmod limiter theta=1).
-#UPWINDE
-T                       useUpwindE
-1                       limiterThetaE
-
-Lax-Friedrichs upwind viscosity on the B equation + hyperbolic div-B cleaning.
-#UPWINDB
-T                       useUpwindB
-1                       limiterThetaB
-
-Digital-filter smoothing of the current density J.
-#SMOOTHJ
-T                       doSmoothJ
-1                       nSmoothJ
-0.5                     coefSmoothJ
+#BSUBCYCLE
+10                      nBSubcycle
 
 #PLASMA
-2                       nS
+1                       nS
 1.0                     mass           Species 0: ions
 1.0                     charge
-0.04                    mass           Species 1: electrons
--1.0                    charge
+
+#ELECTRON
+1.0                     gamma
+0.0                     temperature    [eV]
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0: ions
@@ -103,20 +85,13 @@ T                       doSmoothJ
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 314000.0                T [K]
-0.2                     rho [amu/cc]   Species 1: electrons (n_e = n_i)
-100.0                   ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-314000.0                T [K]
 0.0                     bx [T]
-3.0e-9                  by [T]         in-plane By
+3.0e-9                  by [T]         in-plane By: field lines drape around the cylinder
 0.0                     bz [T]
 0.0                     ex [V/m]
 0.0                     ey [V/m]
 -3.0e-4                 ez [V/m]       motional field E = -u x B = (0, 0, -ux * By)
 
-The absorbing inner body: a sphere of radius 1.2 (code units, 12 cells) at
-the origin. The unit here is the code length unit, not SI.
 #BODY
 sphere                  type
 1.2                     radius [code units]
@@ -126,7 +101,7 @@ sphere                  type
 
 #BODYBOUNDARY
 absorb                  particleBoundary
-linetied                fieldBoundary
+conducting              fieldBoundary
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -154,7 +129,7 @@ z=0 var ascii pic       plotString
 -1                      dn
 2.0                     dt
 1                       dx
-body rhoS0 rhoS1 Ex Ey Ez Bx By Bz   plotVar
+body rhoS0 Ex Ey Ez Bx By Bz   plotVar
 
 #STOP
 -1                      MaxIter

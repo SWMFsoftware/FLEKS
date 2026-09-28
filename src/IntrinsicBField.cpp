@@ -38,16 +38,14 @@ void IntrinsicBField::read_dipole(Real bEqNT, Real thetaDeg, Real phiDeg,
 void IntrinsicBField::read_crustal(const std::string &fileName, int nMax) {
   fileName_ = fileName;
   nMax_ = nMax;
-  // The two BATSRUS layouts are told apart by the file name, exactly like
-  // ModUserMars does it: the legacy files are called marsmgsp.txt.
-  isOldFormat_ = fileName_.find("marsmgsp") != std::string::npos;
 }
 
 //==========================================================
-// Read the spherical harmonic coefficients. Both the newer
-// (three header lines + one 'n m value' triple per coefficient) and the legacy
-// marsmgsp.txt (one line per degree, carrying that degree's coefficients)
-// layouts are accepted, mirroring ModUserMars::user_init_session.
+// Read the spherical harmonic coefficients from the crustal field file,
+// matching the latest layout in BATSRUS ModUserMars:
+// - 3 header lines (skipped)
+// - For each degree i = 1..n:
+//     one 'n m value' triple for g(i,0) followed by a g/h pair for each m = 1..i.
 //
 // Only rank 0 touches the file; the result is broadcast so that every rank
 // holds an identical copy.
@@ -66,58 +64,33 @@ void IntrinsicBField::read_coefficients() {
             fileName_ + "'.");
     }
 
-    if (isOldFormat_) {
-      // One record per degree i = 0..n: the degree is echoed first, then that
-      // degree's g coefficients, then its h coefficients (Fortran stores them
-      // in row n-1, m = 0..n-1).
-      for (int iRow = 0; iRow <= n; ++iRow) {
-        std::string line;
-        if (!std::getline(inFile, line))
-          break;
-        std::istringstream iss(line);
-        int id = -1;
-        if (!(iss >> id) || id <= 0)
-          continue;
-        const int row = id - 1;
-        if (row >= n)
-          continue;
-        for (int m = 0; m < id; ++m)
-          if (!(iss >> c[row * n + m]))
-            c[row * n + m] = 0.0;
-        for (int m = 0; m < id; ++m)
-          if (!(iss >> d[row * n + m]))
-            d[row * n + m] = 0.0;
-        ++nRead;
-      }
-    } else {
-      std::string line;
-      // Skip the three header lines.
-      for (int i = 0; i < 3 && std::getline(inFile, line); ++i) {
-      }
-      // Then, per degree i = 1..n, one 'n m value' triple for g(i,0) followed
-      // by a g/h pair for every m = 1..i.
-      for (int iRow = 1; iRow <= n; ++iRow) {
-        int nn = -1, mm = -1;
-        Real val = 0.0;
+    std::string line;
+    // Skip the three header lines.
+    for (int i = 0; i < 3 && std::getline(inFile, line); ++i) {
+    }
+    // Then, per degree i = 1..n, one 'n m value' triple for g(i,0) followed
+    // by a g/h pair for every m = 1..i.
+    for (int iRow = 1; iRow <= n; ++iRow) {
+      int nn = -1, mm = -1;
+      Real val = 0.0;
+      if (!(inFile >> nn >> mm >> val))
+        break;
+      // Degrees 1..n-1 feed the evaluation, which loops n = 0..n-1 exactly
+      // like the reference implementation; the last row of the file is
+      // therefore skipped, again like the reference.
+      if (nn >= 1 && nn < n && mm == 0)
+        c[nn * n + 0] = val;
+      for (int m = 1; m <= iRow; ++m) {
         if (!(inFile >> nn >> mm >> val))
           break;
-        // Degrees 1..n-1 feed the evaluation, which loops n = 0..n-1 exactly
-        // like the reference implementation; the last row of the file is
-        // therefore skipped, again like the reference.
-        if (nn >= 1 && nn < n && mm == 0)
-          c[nn * n + 0] = val;
-        for (int m = 1; m <= iRow; ++m) {
-          if (!(inFile >> nn >> mm >> val))
-            break;
-          if (nn >= 1 && nn < n && mm >= 0 && mm < n)
-            c[nn * n + mm] = val;
-          if (!(inFile >> nn >> mm >> val))
-            break;
-          if (nn >= 1 && nn < n && mm >= 0 && mm < n)
-            d[nn * n + mm] = val;
-        }
-        ++nRead;
+        if (nn >= 1 && nn < n && mm >= 0 && mm < n)
+          c[nn * n + mm] = val;
+        if (!(inFile >> nn >> mm >> val))
+          break;
+        if (nn >= 1 && nn < n && mm >= 0 && mm < n)
+          d[nn * n + mm] = val;
       }
+      ++nRead;
     }
     inFile.close();
   }
@@ -217,10 +190,7 @@ void IntrinsicBField::convert_units(double si2NoB, double si2NoL,
 // of ModUserMars::set_mars_b0, adapted to take r in code units (the powers of
 // the planetary radius are already folded into the coefficients).
 //==========================================================
-void IntrinsicBField::eval_crustal(Real x, Real y, Real z,
-                                   Real bsph[3]) const {
-  bsph[0] = bsph[1] = bsph[2] = 0.0;
-
+void IntrinsicBField::eval_crustal(Real x, Real y, Real z, Real b[3]) const {
   const int n = nMax_;
   const int NN = n - 1;
   if (NN < 0 || params_.coefC == nullptr || params_.coefD == nullptr)
@@ -287,6 +257,7 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z,
     }
   }
 
+  Real bsph[3] = {0.0, 0.0, 0.0};
   for (int m = 0; m <= NN; ++m) {
     for (int nn = m; nn <= NN; ++nn) {
       Real dRnm;
@@ -310,35 +281,28 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z,
             aorn[nn + 2] * RN(nn, m) * m / xtsin * (-cc * xpsin[m] + dd * xpcos[m]);
     }
   }
-}
-
-//==========================================================
-void IntrinsicBField::eval(Real x, Real y, Real z, Real b[3]) const {
-  eval_dipole_b(params_, x, y, z, b);
-
-  if (nMax_ <= 0)
-    return;
-
-  Real bsph[3];
-  eval_crustal(x, y, z, bsph);
 
   // Spherical -> Cartesian with the rows of the rotation matrix being the unit
   // vectors r^, theta^, phi^ (this is BATSRUS rot_xyz_sph).
-  const Real xc = x - params_.center[0];
-  const Real yc = y - params_.center[1];
-  const Real zc = (nDim_ > 2) ? (z - params_.center[2]) : 0.0;
-  const Real r = std::sqrt(xc * xc + yc * yc + zc * zc);
-  if (r <= 0.0)
-    return;
-
-  const Real st = std::sqrt(std::max(0.0, 1.0 - (zc / r) * (zc / r)));
-  const Real ct = zc / r;
-  const Real cp = (xc * xc + yc * yc > 0.0) ? xc / std::sqrt(xc * xc + yc * yc) : 1.0;
-  const Real sp = (xc * xc + yc * yc > 0.0) ? yc / std::sqrt(xc * xc + yc * yc) : 0.0;
+  const Real cp = xpcos[1];
+  const Real sp = xpsin[1];
+  const Real st = xtsin;
+  const Real ct = xtcos;
 
   b[0] += bsph[0] * (st * cp) + bsph[1] * (ct * cp) + bsph[2] * (-sp);
   b[1] += bsph[0] * (st * sp) + bsph[1] * (ct * sp) + bsph[2] * cp;
   b[2] += bsph[0] * ct + bsph[1] * (-st);
+}
+
+//==========================================================
+void IntrinsicBField::eval(Real x, Real y, Real z, Real b[3]) const {
+  const Real zEval = (nDim_ > 2) ? z : params_.center[2];
+  eval_dipole_b(params_, x, y, zEval, b);
+
+  if (nMax_ <= 0)
+    return;
+
+  eval_crustal(x, y, z, b);
 }
 
 //==========================================================
@@ -357,8 +321,7 @@ std::string IntrinsicBField::describe() const {
     os << "    dipole                = off\n";
   }
   if (nMax_ > 0) {
-    os << "    crustal file          = " << fileName_ << " ("
-       << (isOldFormat_ ? "legacy marsmgsp" : "new") << " layout)\n";
+    os << "    crustal file          = " << fileName_ << "\n";
     os << "    crustal degrees       = " << nMax_ << " (n = 0.." << nMax_ - 1
        << ")\n";
   } else {

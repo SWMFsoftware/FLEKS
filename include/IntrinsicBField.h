@@ -103,14 +103,14 @@ public:
   std::string describe() const;
 
 private:
-  // Read either BATSRUS layout into coefC_/coefD_ and broadcast.
+  // Read BATSRUS crustal field layout into coefC_/coefD_ and broadcast.
   void read_coefficients();
   // Fold the rPlanet^(n+2) power and the unit conversion into the coefficients
   // so that the evaluation works in code units.
   void rescale_coefficients(double si2NoB);
-  // (Br, Btheta, Bphi) of the crustal part for a code-unit position.
+  // Add Cartesian crustal field into b[] for a code-unit position.
   void eval_crustal(amrex::Real x, amrex::Real y, amrex::Real z,
-                    amrex::Real bsph[3]) const;
+                    amrex::Real b[3]) const;
 
   bool useDipole_ = false;
   amrex::Real bEqNT_ = 0.0;
@@ -123,7 +123,6 @@ private:
   // degree is nMax_ - 1. 0 disables the crustal field.
   int nMax_ = 0;
   std::string fileName_;
-  bool isOldFormat_ = false;
 
   double rRefCode_ = 0.0;
   double rPlanetCode_ = 1.0;

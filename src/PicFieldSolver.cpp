@@ -1062,12 +1062,13 @@ Real Pic::calc_E_field_energy() {
 
       sum += sumLoc * 0.5 * avg * get_cell_volume(iLev) / fourPI;
     }
-    ParallelDescriptor::ReduceRealSum(sum,
-                                      ParallelDescriptor::IOProcessorNumber());
-
-    if (!ParallelDescriptor::IOProcessor())
-      sum = 0;
   }
+  ParallelDescriptor::ReduceRealSum(sum,
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if (!ParallelDescriptor::IOProcessor())
+    sum = 0;
+
   return sum;
 }
 

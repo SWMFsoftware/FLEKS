@@ -1,0 +1,12 @@
+# Body test variants excluded from default CI runs to keep test execution fast.
+# In CI, only the conducting versions (PARAM.in.conducting and PARAM.in.hybrid_conducting)
+# run by default.
+# Non-conducting variants can be executed explicitly via:
+#   python3 tests/validate_tests.py --test=body.<variant>
+# or by passing `--all` / `--include-expensive`.
+linetied
+insulating
+reflect
+hybrid_linetied
+hybrid_insulating
+hybrid_reflect
