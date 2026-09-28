@@ -112,6 +112,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
+    // Keep old theta-field values where grids overlap and initialize nodes
+    // introduced by AMR before the next field solve.
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, true, 0.0);
 
@@ -509,6 +511,8 @@ void Pic::fill_E_B_fields() {
                                   Geom(iLev), cell_status(iLev), cellInterp);
   }
 
+  // Seed the theta field from E on all levels after newly refined E nodes have
+  // been filled, so the first field solve on the new mesh has valid data.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());

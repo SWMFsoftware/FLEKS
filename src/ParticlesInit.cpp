@@ -340,6 +340,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
   timing_func("Pts::add_particles_domain");
+  // A changed refinement selector can expose new cells on any fine level.
+  // Inject only leaf cells so covered coarse cells are not populated twice.
   const int iLevMax = n_lev() - 1;
   for (int iLev = 0; iLev <= iLevMax; iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {

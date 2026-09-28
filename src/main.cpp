@@ -58,6 +58,8 @@ std::string prepare_standalone_run() {
 }
 
 std::vector<std::string> split_sessions(const std::string& paramString) {
+  // #RUN ends one parameter session. The final commands also form a session
+  // when the input has no trailing #RUN.
   std::vector<std::string> lines;
   std::istringstream stream(paramString);
   std::string line;
@@ -139,7 +141,8 @@ int main(int argc, char* argv[]) {
     // 3. Set Initial Conditions
     domain.set_ic();
 
-    // 4. Run Loop across sessions
+    // #STOP cycle and time limits are absolute endpoints; each later session
+    // updates the same Domain before advancing it to its next endpoint.
     for (size_t iSession = 0; iSession < sessions.size(); ++iSession) {
       if (iSession > 0) {
         domain.update_param(sessions[iSession]);

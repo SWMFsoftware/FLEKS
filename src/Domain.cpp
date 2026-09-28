@@ -451,6 +451,8 @@ void Domain::update_param(const std::string &paramString) {
   readParam = paramString;
   parameterText = paramString;
   parameterCommandLocations.clear();
+  // Initial parsing builds the first mesh; only later sessions can dirty an
+  // existing refinement hierarchy.
   readingSessionUpdate = true;
   read_param(false);
   readingSessionUpdate = false;
@@ -513,6 +515,8 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
   // blocking_factor because of how blocking_factor is used in the gridding
   // algorithm).
   amrInfo.blocking_factor.clear();
+  // Fake 2D has one z cell at every level, so neither blocking nor refinement
+  // may require an additional z cell on a fine level.
   for (int iLev = 0; iLev <= amrInfo.max_level; iLev++) {
     amrInfo.blocking_factor.push_back(isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1))
                                                : IntVect(2));
@@ -572,7 +576,8 @@ void Domain::regrid() {
 
   std::string nameFunc = "Domain::regrid";
 
-  // If the PIC grid does not change, then return.
+  // A changed #REFINEREGION needs a regrid even if the coupled base region is
+  // unchanged.
   // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is
   // false, but it is still required to run the rest of the function to
   // initialize variables. That's why we need isNewGrid here.
@@ -1507,6 +1512,8 @@ void Domain::read_param(const bool readGridInfo) {
   if (!readGridInfo) {
     validate_configuration();
 
+    // New #REGION definitions become available to selectors, but defining a
+    // shape alone must not change the current AMR mesh.
     rebuild_refine_regions();
     if (readingSessionUpdate &&
         (refineSelectorsChanged || gridEfficiencyChanged))

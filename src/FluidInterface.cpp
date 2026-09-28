@@ -550,6 +550,8 @@ void FluidInterface::fill_new_cells() {
   timing_func("FI::fill_new_cells");
 
   for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    // Interpolate newly created nodes before filling fine-level boundaries;
+    // the latter need valid coarse values after a dynamic regrid.
     nodeFluid[iLev - 1].FillBoundary(Geom(iLev - 1).periodicity());
 
     fill_fine_lev_new_from_coarse(nodeFluid[iLev - 1], nodeFluid[iLev], 0,
@@ -564,6 +566,8 @@ void FluidInterface::fill_new_cells() {
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   amrex::node_bilinear_interp);
 
+    // centerB is derived from nodeFluid, so refresh it only after the fine
+    // nodes and their boundaries have been filled.
     if (iBx >= 0) {
       average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
                                  centerB[iLev].nComp(), centerB[iLev].nGrow());

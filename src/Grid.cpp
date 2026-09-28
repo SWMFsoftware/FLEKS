@@ -91,7 +91,8 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
       SetGridEff(grid->gridEff());
     }
 
-    // Why need 'isNewGrid'? See the explanation in Domain::regrid().
+    // The base boxes can be identical while new refinement tags require a
+    // different fine hierarchy. isNewGrid also forces first initialization.
     if (region == activeRegion && !isNewGrid &&
         !(refineRegions && refineRegions->is_modified()))
       return;

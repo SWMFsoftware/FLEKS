@@ -60,6 +60,8 @@ protected:
   std::string printPrefix;
   std::string gridName;
 
+  // Shapes persist across parameter sessions. A selector may start using a
+  // previously defined shape, but a name never acquires new geometry.
   amrex::Vector<std::shared_ptr<Shape> > shapeList;
   std::set<std::string> shapeNames;
   amrex::Vector<std::string> refineRegionsStr;
@@ -94,9 +96,11 @@ protected:
     if (hasNone && tokenCount > 1)
       amrex::Abort("Cannot combine 'none' with other regions in #REFINEREGION");
 
+    // An empty selector tags no cells; "none" is the input spelling for it.
     if (normalized == "none")
       normalized.clear();
 
+    // Repeating a selector does not request another AMR rebuild.
     if (refineRegionsStr[iLev] == normalized)
       return false;
     refineRegionsStr[iLev] = normalized;

@@ -246,6 +246,8 @@ public:
   void post_process_param(const DomainParameters& parameters);
 
   void post_regrid() override {
+    // Array redistribution creates fine nodes before their fluid state can be
+    // interpolated from the retained coarse level.
     distribute_arrays();
     fill_new_cells();
   }

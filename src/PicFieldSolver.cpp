@@ -31,6 +31,8 @@ void Pic::update_E_expl() {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    // Physical boundary conditions apply at the base domain; fine-level
+    // boundaries instead take their values from the coarser level.
     if (iLev == 0) {
       apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
                      &Pic::get_center_B, iLev, true);
@@ -460,6 +462,8 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
 
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+  // The same base-versus-fine distinction applies to both B layouts used by
+  // the implicit field solve after a regrid.
   if (iLev == 0) {
     apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
                    &Pic::get_center_B, iLev, true);
