@@ -132,7 +132,7 @@ box                     shape
 #RUN
 
 #REGION
-left                    name
+right                   name
 box                     shape
  0.0                    min
  1000.0                 max
@@ -140,6 +140,10 @@ box                     shape
  10.0                   max
 -10.0                   min
  10.0                   max
+
+#REFINEREGION
+0                       iLev
++right                  regions
 
 #STOP
 10                      MaxIter

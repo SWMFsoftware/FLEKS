@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstring>
 #include <iomanip>
-#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -1116,9 +1115,7 @@ void Domain::read_param(const bool readGridInfo) {
 
   std::string command;
   std::size_t commandSearchPosition = 0;
-  std::set<std::string> shapeNamesSeen;
   std::set<int> refineLevelsSeen;
-  amrex::Vector<std::string> changedShapeNames;
   bool refineSelectorsChanged = false;
   bool gridEfficiencyChanged = false;
   if (readGridInfo)
@@ -1254,13 +1251,7 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("name", name);
       readParam.read_var("shape", type);
 
-      if (!shapeNamesSeen.insert(name).second)
-        Abort("Duplicate #REGION name in one session: " + name);
-
       std::shared_ptr<Shape> shape;
-      std::ostringstream signature;
-      signature << type
-                << std::setprecision(std::numeric_limits<Real>::max_digits10);
 
       if (type == "box") {
         Real lo[nDim], hi[nDim];
@@ -1275,8 +1266,6 @@ void Domain::read_param(const bool readGridInfo) {
         }
 
         shape = std::make_shared<BoxShape>(name, lo, hi);
-        for (int i = 0; i < nDim; ++i)
-          signature << ' ' << lo[i] << ' ' << hi[i];
       } else if (type == "sphere") {
 
         Real center[nDim], radius;
@@ -1290,9 +1279,6 @@ void Domain::read_param(const bool readGridInfo) {
         }
 
         shape = std::make_shared<Sphere>(name, center, radius);
-        for (int i = 0; i < nDim; ++i)
-          signature << ' ' << center[i];
-        signature << ' ' << radius;
 
       } else if (type == "shell") {
 
@@ -1308,9 +1294,6 @@ void Domain::read_param(const bool readGridInfo) {
         }
 
         shape = std::make_shared<Shell>(name, center, rInner, rOuter);
-        for (int i = 0; i < nDim; ++i)
-          signature << ' ' << center[i];
-        signature << ' ' << rInner << ' ' << rOuter;
       } else if (type == "paraboloid") {
         int iAxis;
         Real center[nDim], height, r1, r2;
@@ -1330,16 +1313,11 @@ void Domain::read_param(const bool readGridInfo) {
 
         shape =
             std::make_shared<Paraboloid>(name, center, r1, r2, height, iAxis);
-        signature << ' ' << iAxis;
-        for (int i = 0; i < nDim; ++i)
-          signature << ' ' << center[i];
-        signature << ' ' << r1 << ' ' << r2 << ' ' << height;
       } else {
         Abort("Unknown #REGION shape: " + type);
       }
 
-      if (upsert_shape(shape, signature.str()))
-        changedShapeNames.push_back(name);
+      add_shape(shape);
 
     } else if (command == "#REFINEREGION") {
       int iLev;
@@ -1530,12 +1508,8 @@ void Domain::read_param(const bool readGridInfo) {
     validate_configuration();
 
     rebuild_refine_regions();
-    bool shapeAffectsRefinement = false;
-    for (const auto &name : changedShapeNames)
-      shapeAffectsRefinement |= is_shape_used_for_refinement(name);
     if (readingSessionUpdate &&
-        (refineSelectorsChanged || shapeAffectsRefinement ||
-         gridEfficiencyChanged))
+        (refineSelectorsChanged || gridEfficiencyChanged))
       refineRegions.mark_modified();
 
     if (pic) {

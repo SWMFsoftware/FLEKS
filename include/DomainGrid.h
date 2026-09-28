@@ -1,8 +1,8 @@
 #ifndef _DOMAINGRID_H_
 #define _DOMAINGRID_H_
 
-#include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -61,29 +61,15 @@ protected:
   std::string gridName;
 
   amrex::Vector<std::shared_ptr<Shape> > shapeList;
-  std::map<std::string, std::string> shapeSignatures;
+  std::set<std::string> shapeNames;
   amrex::Vector<std::string> refineRegionsStr;
   RefineRegions refineRegions;
 
-  bool upsert_shape(const std::shared_ptr<Shape>& shape,
-                    const std::string& signature) {
+  void add_shape(const std::shared_ptr<Shape>& shape) {
     const std::string name = shape->get_name();
-    const auto signatureIt = shapeSignatures.find(name);
-    if (signatureIt != shapeSignatures.end() &&
-        signatureIt->second == signature)
-      return false;
-
-    for (auto& existing : shapeList) {
-      if (existing->get_name() == name) {
-        existing = shape;
-        shapeSignatures[name] = signature;
-        return true;
-      }
-    }
-
+    if (!shapeNames.insert(name).second)
+      amrex::Abort("Duplicate #REGION name: " + name);
     shapeList.push_back(shape);
-    shapeSignatures[name] = signature;
-    return true;
   }
 
   bool set_refine_region(int iLev, const std::string& selector) {
@@ -117,18 +103,6 @@ protected:
     return true;
   }
 
-  bool is_shape_used_for_refinement(const std::string& name) const {
-    for (const auto& selector : refineRegionsStr) {
-      std::stringstream input(selector);
-      std::string token;
-      while (input >> token) {
-        if (token.size() > 1 && token.substr(1) == name)
-          return true;
-      }
-    }
-    return false;
-  }
-
   void rebuild_refine_regions() {
     for (int i = 0; i < static_cast<int>(refineRegionsStr.size()); ++i) {
       std::stringstream input(refineRegionsStr[i]);
@@ -137,7 +111,7 @@ protected:
         if (token.size() < 2 || (token[0] != '+' && token[0] != '-'))
           amrex::Abort("Invalid shape prefix in #REFINEREGION: '" + token +
                        "' (must start with '+' or '-')");
-        if (shapeSignatures.count(token.substr(1)) == 0)
+        if (shapeNames.count(token.substr(1)) == 0)
           amrex::Abort("Unknown shape in #REFINEREGION: '" + token.substr(1) +
                        "'");
       }

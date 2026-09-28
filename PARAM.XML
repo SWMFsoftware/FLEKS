@@ -1108,7 +1108,8 @@ paraboloid   	  shape
  10.0			      radius2
 
 The regions defined here can be used for setting refinement areas. 
-In a later session, a #REGION with an existing name replaces that shape.
+Each #REGION name may be defined only once, including across later sessions.
+To use a different shape, give it a new name and update #REFINEREGION.
 Shapes not mentioned in the session keep their previous definitions.
 
 For a 'paraboloid', the iAxis is the axis of the paraboloid, and it can 
