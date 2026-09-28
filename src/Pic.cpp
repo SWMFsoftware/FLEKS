@@ -110,6 +110,17 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
+    if (use_intrinsic_B()) {
+      // B0 is analytic: there is nothing to copy on a regrid, the array is
+      // simply rebuilt and refilled by fill_intrinsic_B().
+      distribute_FabArray(nodeB0[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, false);
+      distribute_FabArray(centerB0[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, false);
+      // The Ohm's-law scratch is rebuilt on demand, and must not survive a
+      // regrid with a stale BoxArray.
+      centerBtotal[iLev].clear();
+    }
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -271,6 +282,11 @@ void Pic::pre_regrid() {
 void Pic::post_regrid() {
 
   distribute_arrays(cGridsOld);
+
+  // B0 lives on the same grids as B1 and is analytic, so the new boxes are
+  // filled by re-evaluating the model rather than by interpolating the old
+  // grid. This is the one place a regrid could silently leave B0 at zero.
+  fill_intrinsic_B();
 
   {
     iTot = nSpecies;
@@ -484,6 +500,8 @@ void Pic::fill_E_B_fields() {
   fill_new_node_B();
   fill_new_center_B();
 
+  fill_intrinsic_B();
+
   //-----Coarse (iLev=0) grid boundary/internal ghost cells are filled----
 
   nodeE[0].FillBoundary(Geom(0).periodicity());
@@ -529,6 +547,98 @@ void Pic::fill_E_B_fields() {
       }
     }
   }
+}
+
+//==========================================================
+// Fill the frozen intrinsic field B0 from the analytic model, at
+// initialization and after every regrid. The loop runs on the host because the
+// spherical harmonic evaluation needs O(nMax^2) scratch per point.
+//==========================================================
+void Pic::fill_intrinsic_B() {
+  if (!use_intrinsic_B())
+    return;
+
+  const IntrinsicBField &field = *intrinsicB_;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (nodeB0[iLev].empty())
+      distribute_FabArray(nodeB0[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, false);
+    if (centerB0[iLev].empty())
+      distribute_FabArray(centerB0[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, false);
+
+    const auto plo = Geom(iLev).ProbLo();
+    const auto dx = Geom(iLev).CellSize();
+
+    // Nodes: node (i,j,k) sits at plo + (i,j,k)*dx.
+    for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
+      const Box &box = mfi.fabbox();
+      const Array4<Real> &arr = nodeB0[iLev][mfi].array();
+      for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+        for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+          for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+            Real b[3] = {0.0, 0.0, 0.0};
+            field.eval(plo[ix_] + i * dx[ix_], plo[iy_] + j * dx[iy_],
+                       plo[iz_] + k * dx[iz_], b);
+            arr(i, j, k, ix_) = b[0];
+            arr(i, j, k, iy_) = b[1];
+            arr(i, j, k, iz_) = b[2];
+          }
+        }
+      }
+    }
+
+    // Cells: cell (i,j,k) is centered at plo + (i+1/2, j+1/2, k+1/2)*dx.
+    for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
+      const Box &box = mfi.fabbox();
+      const Array4<Real> &arr = centerB0[iLev][mfi].array();
+      for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+        for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+          for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+            Real b[3] = {0.0, 0.0, 0.0};
+            field.eval(plo[ix_] + (i + 0.5) * dx[ix_],
+                       plo[iy_] + (j + 0.5) * dx[iy_],
+                       plo[iz_] + (k + 0.5) * dx[iz_], b);
+            arr(i, j, k, ix_) = b[0];
+            arr(i, j, k, iy_) = b[1];
+            arr(i, j, k, iz_) = b[2];
+          }
+        }
+      }
+    }
+  }
+}
+
+//==========================================================
+amrex::MultiFab &Pic::total_center_B(amrex::MultiFab &src, const int iLev) {
+  if (!use_intrinsic_B() || centerB0[iLev].empty())
+    return src;
+
+  amrex::MultiFab &dst = centerBtotal[iLev];
+  if (dst.empty())
+    distribute_FabArray(dst, cGrids[iLev], DistributionMap(iLev), nDim3,
+                        src.nGrow(), false);
+
+  amrex::MultiFab::Copy(dst, src, 0, 0, nDim3, src.nGrow());
+  const int nGrow = std::min(dst.nGrow(), centerB0[iLev].nGrow());
+  amrex::MultiFab::Add(dst, centerB0[iLev], 0, 0, nDim3, nGrow);
+  return dst;
+}
+
+//==========================================================
+void Pic::add_intrinsic_B(amrex::MultiFab &dst, const int iLev) {
+  if (!use_intrinsic_B())
+    return;
+
+  const amrex::MultiFab &src =
+      dst.ixType().cellCentered() ? centerB0[iLev] : nodeB0[iLev];
+  if (src.empty())
+    return;
+
+  const int nComp = std::min(dst.nComp(), src.nComp());
+  const int nGrow = std::min(dst.nGrow(), src.nGrow());
+  amrex::MultiFab::Add(dst, src, 0, 0, nComp, nGrow);
 }
 
 //==========================================================
@@ -603,7 +713,7 @@ void Pic::particle_mover() {
   const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeE : nodeEth;
 
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEpush, nodeB, eBg, uBg, dt, dtnext);
+    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext);
   }
 
   for (int i : kineticSpecies_) {
@@ -855,12 +965,15 @@ void Pic::calc_mass_matrix() {
       nodeMM[iLev].setVal(mm0);
     }
 
+    const MultiFab* nodeB0Lev =
+        (use_intrinsic_B() && !nodeB0[iLev].empty()) ? &nodeB0[iLev] : nullptr;
+
     for (int i = 0; i < nSpecies; ++i) {
       if (useExplicitPIC) {
-        parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
+        parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], nodeB0Lev, tc->get_dt());
       } else {
         parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
-                                   uBg[iLev], tc->get_dt(), iLev,
+                                   nodeB0Lev, uBg[iLev], tc->get_dt(), iLev,
                                    solveFieldInCoMov);
       }
     }
@@ -967,9 +1080,13 @@ void Pic::calc_mass_matrix_amr() {
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
+      const MultiFab* nodeB0Lev = (use_intrinsic_B() && !nodeB0[iLev].empty())
+                                      ? &nodeB0[iLev]
+                                      : nullptr;
       parts[i]->calc_mass_matrix_amr(nodeMM[iLev], nmmc, nmmf, jHat[iLev], jhc,
-                                     jhf, nodeB[iLev], uBg[iLev], tc->get_dt(),
-                                     iLev, solveFieldInCoMov, cellStatus);
+                                     jhf, nodeB[iLev], nodeB0Lev, uBg[iLev],
+                                     tc->get_dt(), iLev, solveFieldInCoMov,
+                                     cellStatus);
     }
   }
   //////////////////////////////////////////////////////////////////////

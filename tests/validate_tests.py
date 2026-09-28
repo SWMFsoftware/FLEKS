@@ -203,6 +203,16 @@ def run_test(test_dir, nprocs=1, param_text=None):
     else:
         shutil.copy(param_file, RUN_DIR + "/PARAM.in")
 
+    # Copy the test's own data files (coefficient tables, lookup tables, ...)
+    # into the run directory: the decks reference them by a relative name.
+    for entry in sorted(os.listdir(test_dir)):
+        if entry.startswith(".") or entry.startswith("PARAM.in") or \
+                entry in ("validate.py", "README.md"):
+            continue
+        src = os.path.join(test_dir, entry)
+        if os.path.isfile(src):
+            shutil.copy(src, os.path.join(RUN_DIR, entry))
+
     if nprocs <= 1:
         cmd = ["./FLEKS.exe"]
         logger.debug("  Running in serial mode (no MPI)...")

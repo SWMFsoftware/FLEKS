@@ -1,0 +1,11 @@
+Test crustal coefficients, BATSRUS new layout: the three lines above the data
+are the header that the reader skips, then one 'n m value' triple per line.
+Deck nMax = 3; only g(1,0) is non-zero so the field is the axial dipole.
+ 1 0 100.0
+ 1 1 0.0
+ 1 1 0.0
+ 2 0 0.0
+ 2 1 0.0
+ 2 1 0.0
+ 2 2 0.0
+ 2 2 0.0

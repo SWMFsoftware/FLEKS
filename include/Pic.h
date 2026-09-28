@@ -14,6 +14,7 @@
 #include "FluidInterface.h"
 #include "Grid.h"
 #include "InitialCondition.h"
+#include "IntrinsicBField.h"
 #include "LinearSolver.h"
 #include "OHInterface.h"
 #include "Particles.h"
@@ -313,6 +314,17 @@ private:
   bool is_body_insulating() const {
     return useBody && bodyFieldBC == BodyFieldBC::insulating;
   }
+  // Static intrinsic field of the planet (#DIPOLE / #CRUSTALFIELD), on the
+  // same grids as the evolved field. Filled at init and after every regrid,
+  // never advanced by Faraday's law.
+  amrex::Vector<amrex::MultiFab> nodeB0;
+  amrex::Vector<amrex::MultiFab> centerB0;
+  // Scratch for the cell-centred total field B1 + B0 used by the convective
+  // and Hall terms of the hybrid Ohm's law. The current is computed from B1
+  // alone: the intrinsic field is current-free, and the discrete curl of
+  // B1 + B0 would feed its truncation error into J.
+  amrex::Vector<amrex::MultiFab> centerBtotal;
+
   // The interior of the body (the body minus its one-cell-thick surface layer)
   // is a cavity: E = 0 and B frozen at its initial value. Only an 'insulating'
   // body lets the fields evolve inside.
@@ -346,6 +358,15 @@ private:
   amrex::Real inflowUx_ = 0.0, inflowUy_ = 0.0, inflowUz_ = 0.0;
   amrex::Real inflowT_ = 0.0;
 
+  // Static intrinsic magnetic field B0 of the planet (#DIPOLE /
+  // #CRUSTALFIELD). It never evolves: it is added to the evolved field B1
+  // wherever a *total* magnetic field is needed.
+  std::unique_ptr<IntrinsicBField> intrinsicB_;
+  // True once either model is enabled and its coefficients are in code units.
+  bool use_intrinsic_B() const {
+    return intrinsicB_ != nullptr && intrinsicB_->is_active();
+  }
+
   // select particle params
   bool doSelectParticle = false;
   std::string selectParticleInputFile;
@@ -375,6 +396,9 @@ public:
     //-----------------------------------------------------
     centerB.resize(n_lev_max());
     nodeB.resize(n_lev_max());
+    nodeB0.resize(n_lev_max());
+    centerB0.resize(n_lev_max());
+    centerBtotal.resize(n_lev_max());
     dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
@@ -512,6 +536,17 @@ public:
   void convert_resistivity();
   void convert_electron_density0();
   void convert_inflow_state();
+  // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
+  // spherical harmonic coefficients.
+  void convert_intrinsic_B();
+  // Fill the frozen B0 arrays (nodeB0 / centerB0) from the analytic field.
+  void fill_intrinsic_B();
+  // dst <- dst + B0, for a MultiFab living on the same centering as dst.
+  void add_intrinsic_B(amrex::MultiFab &dst, int iLev);
+  // Cell-centred total field: returns `src + B0` built in a scratch array, or
+  // `src` itself when no intrinsic field is configured.
+  amrex::MultiFab &total_center_B(amrex::MultiFab &src, int iLev);
+  const IntrinsicBField *get_intrinsic_B() const { return intrinsicB_.get(); }
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();

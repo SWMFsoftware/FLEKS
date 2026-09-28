@@ -186,13 +186,34 @@ void ParticleTracker::update_field(Pic& pic, bool needJacobian) {
                    nodeE[iLev].nGrow());
     MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
                    nodeB[iLev].nGrow());
+    // The tracker pushes with the total field, so the frozen intrinsic field
+    // of the #DIPOLE / #CRUSTALFIELD commands is folded in here rather than at
+    // the gather.
+    if (pic.use_intrinsic_B() && !pic.nodeB0[iLev].empty()) {
+      MultiFab::Add(nodeB[iLev], pic.nodeB0[iLev], 0, 0, nodeB[iLev].nComp(),
+                    nodeB[iLev].nGrow());
+    }
   }
 
   // If magnetic field gradient is requested AND needed this step, compute
   // Jacobian from centerB
   if (needJacobian && ptRecordSize > 13) {
+    if (static_cast<int>(centerBtotal.size()) < n_lev())
+      centerBtotal.resize(n_lev());
+
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      jacobian_center_to_node(pic.centerB[iLev], nodeJacB[iLev],
+      // The Jacobian is the gradient of the total field too: build B1 + B0 in
+      // the scratch array and differentiate that.
+      MultiFab& centerBt = centerBtotal[iLev];
+      if (centerBt.empty()) {
+        distribute_FabArray(centerBt, cGrids[iLev], DistributionMap(iLev), 3,
+                            nodeJacB[iLev].nGrow(), false);
+      }
+      MultiFab::Copy(centerBt, pic.centerB[iLev], 0, 0, 3, 0);
+      if (pic.use_intrinsic_B() && !pic.centerB0[iLev].empty())
+        MultiFab::Add(centerBt, pic.centerB0[iLev], 0, 0, 3, 0);
+
+      jacobian_center_to_node(centerBt, nodeJacB[iLev],
                               Geom(iLev).InvCellSize());
       nodeJacB[iLev].FillBoundary(Geom(iLev).periodicity());
     }

@@ -55,6 +55,8 @@ public:
     return nPicPartReal + ptRecordSize * iPart + iVar;
   }
 
+  // nodeBMF is the *total* magnetic field: the caller (ParticleTracker) adds
+  // the frozen intrinsic field B0 into its own copy before calling.
   void move_and_save_particles(int iLev, const amrex::MultiFab& nodeEMF,
                                const amrex::MultiFab& nodeBMF, amrex::Real dt,
                                amrex::Real dtNext, amrex::Real tNow,

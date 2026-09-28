@@ -54,6 +54,10 @@ private:
   // jacobian_center_to_node.
   amrex::Vector<amrex::MultiFab> nodeJacB;
 
+  // Scratch holding the total cell-centred field B1 + B0 when an intrinsic
+  // field is configured; the Jacobian is the gradient of the total field.
+  amrex::Vector<amrex::MultiFab> centerBtotal;
+
   std::unique_ptr<PlotCtr> savectr;
 
   std::string logFile;

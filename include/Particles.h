@@ -503,8 +503,11 @@ public:
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
+  // nodeB0MF is the optional frozen intrinsic magnetic field; it may be
+  // nullptr, in which case only the evolved field is used.
   void calc_mass_matrix(NodeMMFab& nodeMM, amrex::MultiFab& jHat,
-                        amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
+                        amrex::MultiFab& nodeBMF,
+                        const amrex::MultiFab* nodeB0MF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
   void calc_mass_matrix_amr(NodeMMFab& nodeMM,
@@ -513,12 +516,14 @@ public:
                             amrex::MultiFab& jHat,
                             amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
                             amrex::Vector<amrex::MultiFab>& jhf,
-                            amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
-                            amrex::Real dt, int iLev, bool solveInCoMov,
+                            amrex::MultiFab& nodeBMF,
+                            const amrex::MultiFab* nodeB0MF,
+                            amrex::MultiFab& u0MF, amrex::Real dt, int iLev,
+                            bool solveInCoMov,
                             amrex::Vector<amrex::iMultiFab>& cellstatus);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
-                 amrex::Real dt);
+                 const amrex::MultiFab* nodeB0MF, amrex::Real dt);
 
   void apply_jhat_mirror(amrex::MultiFab& jHat, int iLev = 0);
 
@@ -567,14 +572,19 @@ public:
   void add_source_particles(std::unique_ptr<PicParticles>& sourcePart,
                             amrex::IntVect ppc, const bool adaptivePPC);
 
+  // nodeB0 is the frozen intrinsic magnetic field (see #DIPOLE /
+  // #CRUSTALFIELD). It is the static part of the total field the particles are
+  // pushed with and may be empty when no intrinsic field is configured.
   void mover(const amrex::Vector<amrex::MultiFab>& nodeE,
              const amrex::Vector<amrex::MultiFab>& nodeB,
+             const amrex::Vector<amrex::MultiFab>& nodeB0,
              const amrex::Vector<amrex::MultiFab>& eBg,
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
+                              const amrex::Vector<amrex::MultiFab>& nodeB0,
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext);

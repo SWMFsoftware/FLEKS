@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,40 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("T", tmp);
     inflowT_ = tmp; // [K]
     inflowDefined_ = true;
+  } else if (command == "#DIPOLE") {
+    // Static dipole of the inner body. Everything is SI; convert_intrinsic_B()
+    // turns it into code units once the normalization is known.
+    double bEq = 0.0, theta = 0.0, phi = 0.0, rRef = -1.0;
+    param.read_var("strength", bEq);
+    param.read_var("theta", theta);
+    param.read_var("phi", phi);
+    param.read_var("rRef", rRef);
+
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->read_dipole(bEq, theta, phi, rRef);
+
+    Print() << "  intrinsic field: dipole, strength = " << bEq
+            << " [nT] at rRef, tilt = (" << theta << ", " << phi << ") [deg], "
+            << "rRef = " << rRef << " [m, <0 = from #BODY/#PLANETRADIUS]\n";
+  } else if (command == "#CRUSTALFIELD") {
+    // Static crustal field from a BATSRUS spherical harmonic coefficient file.
+    std::string fileName;
+    int nMax = 0;
+    param.read_var("fileName", fileName);
+    param.read_var("nMax", nMax);
+
+    if (nMax < 2)
+      Abort("Error: #CRUSTALFIELD nMax must be at least 2 (the number of "
+            "harmonic degrees, i.e. the BATSRUS NNm), got " +
+            std::to_string(nMax) + ".");
+
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->read_crustal(fileName, nMax);
+
+    Print() << "  intrinsic field: crustal, file = " << fileName
+            << ", nMax = " << nMax << "\n";
   } else if (command == "#BODY") {
     std::string type;
     param.read_var("type", type);
@@ -557,6 +592,18 @@ void Pic::post_process_param() {
     bodyBoundarySet_ = false;
   }
 
+  // A conducting inner body pins the radial component of the *evolved* field
+  // to zero on the body surface (project_body_B). A planetary intrinsic field
+  // has a radial component that necessarily crosses the surface, so the two
+  // conditions contradict each other. Reject the combination instead of
+  // silently dropping one of them; use 'linetied' or 'insulating' instead.
+  if (useBody && bodyFieldBC == BodyFieldBC::conducting &&
+      intrinsicB_ != nullptr && intrinsicB_->is_active()) {
+    Abort("Invalid combination: #BODYBOUNDARY fieldBoundary 'conducting' "
+          "cannot be used together with an intrinsic magnetic field "
+          "(#DIPOLE / #CRUSTALFIELD). Use 'linetied' or 'insulating'.");
+  }
+
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
   // Species without a #PARTICLEBOXBOUNDARY block keep the default (coupled),
@@ -627,6 +674,29 @@ void Pic::finalize_units_conversion() {
   convert_resistivity();
   convert_electron_density0();
   convert_inflow_state();
+  convert_intrinsic_B();
+}
+
+//==========================================================
+void Pic::convert_intrinsic_B() {
+  if (intrinsicB_ == nullptr)
+    return;
+
+  if (!intrinsicB_->is_active()) {
+    // Neither model was actually requested; drop the object so that every
+    // consumer keeps its fast path.
+    intrinsicB_.reset();
+    return;
+  }
+
+  const double bodyCenterTmp[3] = {bodyCenter[ix_], bodyCenter[iy_],
+                                   bodyCenter[iz_]};
+
+  intrinsicB_->convert_units(fi->get_Si2NoB(), fi->get_Si2NoL(),
+                             fi->get_rPlanet_SI(), bodyCenterTmp, bodyRadius,
+                             useBody, nDim);
+
+  Print() << intrinsicB_->describe() << "\n";
 }
 
 //==========================================================

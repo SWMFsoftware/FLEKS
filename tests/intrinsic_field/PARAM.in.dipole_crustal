@@ -1,0 +1,111 @@
+#DESCRIPTION
+Intrinsic magnetic field: crustal field from a spherical harmonic file
+(BATSRUS new layout, three header lines + 'n m value' triples).
+
+Dipole and crustal field together. The validator checks that the sum
+equals the dipole-only deck plus the crustal-only deck (linear superposition
+of two static fields).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-4.0                    xMin   [code units: 1 unit = 1 planetary radius]
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-2.0                    zMin   four cells so that z = 0 is a node
+ 2.0                    zMax   plane and the body fits inside
+
+#NCELL
+32                      nCellX
+32                      nCellY
+4                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+4                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nS
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+0.2                     rho [amu/cc]   Species 1: electrons (n_e = n_i)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#PLANETRADIUS
+1.0e5                   radius [m]
+
+#DIPOLE
+100.0                   strength [nT]
+30.0                    theta [deg]
+0.0                     phi [deg]
+-1.0                    rRef [m, <0 = take it from the body/planet radius]
+
+#CRUSTALFIELD
+crustal_nm2.txt         fileName
+3                       nMax
+
+#TIMESTEPPING
+F                       useFixedDt
+0.2                     cfl
+
+#NORMALIZATION
+1.0e5                   lNormSI [m]
+1.0e5                   uNormSI [m/s]
+
+#MONITOR
+10                      dnReport
+
+#PARTICLES
+2                       npcelx
+2                       npcely
+1                       npcelz
+
+#SAVELOG
+10                      dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+10.0                    dt
+1                       dx
+B0x B0y B0z Bx By Bz Ex Ey Ez   plotVar
+
+#STOP
+-1                      MaxIter
+10.0                    TimeMax
+
+#RUN

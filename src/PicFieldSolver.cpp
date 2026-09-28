@@ -1076,8 +1076,15 @@ Real Pic::calc_B_field_energy() {
   Real sum = 0;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = centerB[iLev][mfi];
+    // The magnetic energy is that of the *total* field, so the frozen
+    // intrinsic field B0 is folded in here when it is configured.
+    const bool hasB0 = use_intrinsic_B() && !centerB0[iLev].empty();
+    MultiFab* const centerBt =
+        hasB0 ? &total_center_B(centerB[iLev], iLev) : nullptr;
+    MultiFab& mfB = hasB0 ? *centerBt : centerB[iLev];
+
+    for (MFIter mfi(mfB); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = mfB[mfi];
       const auto& status = cell_status(iLev)[mfi].array();
 
       const Box& box = mfi.validbox();

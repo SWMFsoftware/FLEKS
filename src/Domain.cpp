@@ -28,6 +28,8 @@ static const ParameterCommand parameter_registry[] = {
   { "#CMAXE", ParameterOwner::Pic },
   { "#COMOVING", ParameterOwner::Pic },
   { "#CONSTANTPPV", ParameterOwner::Pic },
+  { "#CRUSTALFIELD", ParameterOwner::Pic },
+  { "#DIPOLE", ParameterOwner::Pic },
   { "#DISCRETIZATION", ParameterOwner::Pic },
   { "#DISCRETIZE", ParameterOwner::Pic },
   { "#DIVB", ParameterOwner::Pic },

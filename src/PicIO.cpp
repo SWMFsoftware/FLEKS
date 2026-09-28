@@ -69,9 +69,15 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
       }
     }
 
+    // The fluid component receives the total field, so the frozen intrinsic
+    // field is added here.
+    const bool hasB0 = use_intrinsic_B() && !nodeB0[iLev].empty();
     for (int iDir = ix_; iDir <= iz_; iDir++) {
       dataPIC_I[iBx_ + iDir] =
           get_value_at_loc(nodeB[iLev], Geom(iLev), xyz, iDir);
+      if (hasB0)
+        dataPIC_I[iBx_ + iDir] +=
+            get_value_at_loc(nodeB0[iLev], Geom(iLev), xyz, iDir);
     }
     for (int iDir = ix_; iDir <= iz_; iDir++) {
       dataPIC_I[iEx_ + iDir] =
@@ -344,8 +350,10 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   //--- Inner body (see #BODY) ---
   // No plasma lives inside the body, so the particle-derived moments are
   // reported as zero there and 'body' reports the mask itself. The electric
-  // field is zero inside the body by construction and the magnetic field
-  // keeps its initial value, so both are reported as they are.
+  // field is zero inside the body by construction, while the magnetic field is
+  // reported as it is: the evolved part B1 keeps its initial value in the
+  // frozen cavity and the static intrinsic field B0 (see #DIPOLE /
+  // #CRUSTALFIELD) exists inside the body just like outside it.
   bool isInsideBody = false;
   if (useBody) {
     Real xyz[3] = { 0.0, 0.0, 0.0 };
@@ -371,6 +379,10 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   if (isInsideBody && is_body_moment_var(varLower))
     return 0.0;
 
+  // True when the frozen intrinsic field is available for this level.
+  const bool hasB0 =
+      isValidMFI && use_intrinsic_B() && !nodeB0[iLev].empty();
+
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
@@ -393,14 +405,28 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "Bx") {
+      // The plotted magnetic field is the total field B1 + B0.
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ijk, ix_);
+      if (hasB0)
+        value += nodeB0[iLev][mfi].array()(ijk, ix_);
     } else if (var.substr(0, 2) == "By") {
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ijk, iy_);
+      if (hasB0)
+        value += nodeB0[iLev][mfi].array()(ijk, iy_);
     } else if (var.substr(0, 2) == "Bz") {
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ijk, iz_);
+      if (hasB0)
+        value += nodeB0[iLev][mfi].array()(ijk, iz_);
+    } else if (var.substr(0, 3) == "B0x") {
+      // The frozen intrinsic field alone, for checking the model.
+      value = hasB0 ? nodeB0[iLev][mfi].array()(ijk, ix_) : 0.0;
+    } else if (var.substr(0, 3) == "B0y") {
+      value = hasB0 ? nodeB0[iLev][mfi].array()(ijk, iy_) : 0.0;
+    } else if (var.substr(0, 3) == "B0z") {
+      value = hasB0 ? nodeB0[iLev][mfi].array()(ijk, iz_) : 0.0;
     } else if (var.substr(0, 5) == "jHatx") {
       const Array4<Real const>& arr = jHat[iLev][mfi].array();
       value = arr(ijk, ix_);
@@ -1012,12 +1038,19 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("B") != std::string::npos) {
       //------------------B---------------
+      // The AMReX plot file carries the total field, B1 + B0.
       if (saveNode) {
         MultiFab::Copy(out[iLev], nodeB[iLev], 0, iStart, nodeB[iLev].nComp(),
                        0);
+        if (use_intrinsic_B() && !nodeB0[iLev].empty())
+          MultiFab::Add(out[iLev], nodeB0[iLev], 0, iStart,
+                        nodeB0[iLev].nComp(), 0);
       } else {
         MultiFab::Copy(out[iLev], centerB[iLev], 0, iStart, nodeB[iLev].nComp(),
                        0);
+        if (use_intrinsic_B() && !centerB0[iLev].empty())
+          MultiFab::Add(out[iLev], centerB0[iLev], 0, iStart,
+                        centerB0[iLev].nComp(), 0);
       }
 
       iStart += nodeB[iLev].nComp();
