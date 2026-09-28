@@ -1672,6 +1672,67 @@ because it is shielded by the surface layer:
               there the interior simply evolves as vacuum.
 </command>
 
+<command name="BODYRESISTIVITY" alias="BODYRESISTIVITY_FLEKS0,BODYRESISTIVITY_FLEKS1,BODYRESISTIVITY_FLEKS2" multiple="T">
+  <parameter name="etaBodyResistivity" type="real" default="0.0"/>
+  <parameter name="rOuter" type="real" default="-1.0"/>
+  <parameter name="rInner" type="real" default="-1.0"/>
+
+#BODYRESISTIVITY
+0.0               etaBodyResistivity
+-1.0              rOuter
+-1.0              rInner
+
+[Inner body: localized resistivity] Localized second-order resistivity eta(r)*J
+applied in an extended spherical shell around the inner body declared by #BODY.
+Damps numerical boundary oscillations and allows magnetic field lines to smoothly
+drape and slip past the obstacle.
+
+etaBodyResistivity is the SI magnetic diffusivity [m^2/s] (converted to code
+units internally, identical to #RESISTIVITY).
+
+rOuter is the outer radius of the resistive spherical shell in code units.
+If <= 0, defaults to 1.5 * bodyRadius.
+
+rInner is the inner radius in code units. If <= 0, defaults to bodyRadius.
+For r <= rInner, the full etaBodyResistivity applies. For r between rInner and
+rOuter, eta(r) smoothly transitions to zero with a C^1 cosine profile:
+  w(r) = 0.5 * (1 + cos(pi * (r - rInner)/(rOuter - rInner)))
+For r >= rOuter, eta(r) = 0 (ideal plasma).
+
+Only used when #HYBRIDPIC is T and #BODY is present.
+</command>
+
+<command name="BODYHYPERRESISTIVITY" alias="BODYHYPERRESISTIVITY_FLEKS0,BODYHYPERRESISTIVITY_FLEKS1,BODYHYPERRESISTIVITY_FLEKS2" multiple="T">
+  <parameter name="etaBodyHyperSI" type="real" default="0.0"/>
+  <parameter name="etaBodyHyperMode" type="string" default="grid"/>
+  <parameter name="etaBodyHyperCh" type="real" default="0.0"/>
+  <parameter name="rOuter" type="real" default="-1.0"/>
+  <parameter name="rInner" type="real" default="-1.0"/>
+
+#BODYHYPERRESISTIVITY
+0.0               etaBodyHyperSI
+grid              etaBodyHyperMode
+0.0               etaBodyHyperCh
+-1.0              rOuter
+-1.0              rInner
+
+[Inner body: localized hyper-resistivity] Localized fourth-order hyper-resistivity
+-(eta_h(r)/4*pi) * curl(nabla^2 B) applied in an extended spherical shell around
+the inner body declared by #BODY. Damps 2*dx staircase grid modes near the body
+surface without introducing second-order diffusion in the ideal flow.
+
+etaBodyHyperSI is the SI hyper-diffusivity [m^4/s] used when etaBodyHyperMode="si".
+When etaBodyHyperMode="grid", eta_h is CFL-scaled to the finest cell size and time
+step via the dimensionless coefficient etaBodyHyperCh (e.g. 0.01 - 0.1):
+  eta_h = 4*pi * C_h * dx_min^4 / dt.
+
+rOuter and rInner define the spherical shell in code units (see #BODYRESISTIVITY).
+If <= 0, rInner defaults to bodyRadius, and rOuter defaults to #BODYRESISTIVITY's
+rOuter (or 1.5 * bodyRadius).
+
+Only used when #HYBRIDPIC is T and #BODY is present.
+</command>
+
 <command name="PLANETRADIUS" alias="PLANETRADIUS_FLEKS0,PLANETRADIUS_FLEKS1,PLANETRADIUS_FLEKS2" multiple="T">
   <parameter name="radius" type="real" default="1.0"/>
 

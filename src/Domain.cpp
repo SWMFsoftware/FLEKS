@@ -24,6 +24,8 @@ static const ParameterCommand parameter_registry[] = {
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#BODY", ParameterOwner::Pic },
   { "#BODYBOUNDARY", ParameterOwner::Pic },
+  { "#BODYHYPERRESISTIVITY", ParameterOwner::Pic },
+  { "#BODYRESISTIVITY", ParameterOwner::Pic },
   { "#BSUBCYCLE", ParameterOwner::Pic },
   { "#CMAXE", ParameterOwner::Pic },
   { "#COMOVING", ParameterOwner::Pic },
