@@ -79,7 +79,6 @@ amrex::Vector<amrex::BCRec> FieldBC::create_bcrec(
               break;
             case FieldBC::outflow:
             case FieldBC::vacuum:
-            case FieldBC::inflow:
             case FieldBC::absorb:
             case FieldBC::wave:
               mathType = amrex::BCType::foextrap;
@@ -97,6 +96,7 @@ amrex::Vector<amrex::BCRec> FieldBC::create_bcrec(
               break;
             case FieldBC::coupled:
             case FieldBC::fixed:
+            case FieldBC::inflow:
               mathType = amrex::BCType::ext_dir;
               break;
             default:

@@ -730,10 +730,11 @@ public:
                             const int iStart, const int nComp, const int iLev,
                             const BoxBC<FieldBC::Type> &bc, bool isB);
 
-  // Inflow wall: zero-gradient copy of adjacent edge cell into ghost cells.
+  // Inflow wall: pin physical boundary face nodes and fill ghost cells/nodes.
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
-                         const BoxBC<FieldBC::Type> &bc, bool isB);
+                         const BoxBC<FieldBC::Type> &bc, bool isB,
+                         GETVALUE func = nullptr);
 
   //--- Inner body field boundary (see #BODY / #BODYBOUNDARY) ---
   // These act on the nodes/cells flagged with bit::iBody_ and use the radial

@@ -65,6 +65,10 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
     apply_conducting_wall(status, mf, iStart, nComp, iLev, bcField, isB);
   }
 
+  if (hasInflowBC_) {
+    apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB, func);
+  }
+
   if (hasAbsorbBC_)
     apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB);
 
@@ -108,10 +112,8 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
         bool skipForPhysWall = false;
         for (int d = 0; d < nDim; ++d) {
           if ((ijk[d] < bnd.loBnd[d] && (bnd.bcLo[d] == FieldBC::outflow ||
-                                         bnd.bcLo[d] == FieldBC::inflow ||
                                          bnd.bcLo[d] == FieldBC::conducting)) ||
               (ijk[d] > bnd.hiBnd[d] && (bnd.bcHi[d] == FieldBC::outflow ||
-                                         bnd.bcHi[d] == FieldBC::inflow ||
                                          bnd.bcHi[d] == FieldBC::conducting))) {
             skipForPhysWall = true;
             break;
@@ -411,8 +413,9 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
                             const int iStart, const int nComp, const int iLev,
-                            const BoxBC<FieldBC::Type>& bc, bool isB) {
-  (void)isB; // zero-gradient copy is component-agnostic
+                            const BoxBC<FieldBC::Type>& bc, bool isB,
+                            GETVALUE func) {
+  (void)isB;
 
   std::string nameFunc = "Pic::apply_inflow_wall";
   timing_func(nameFunc);
@@ -428,30 +431,67 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
+    const Box& bxValid = mfi.validbox();
+    const Dim3 vLo = bxValid.smallEnd().dim3();
+    const Dim3 vHi = bxValid.bigEnd().dim3();
+    const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+    const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
-    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
-        return;
-
+    ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
       const int ijk[3] = { i, j, k };
-      int m[3] = { i, j, k };
-      bool touched = false;
 
+      // 1. Boundary nodes on physical inflow wall (node-centred only).
       for (int d = 0; d < nDim; ++d) {
-        if (bnd.bcLo[d] == FieldBC::inflow && ijk[d] < bnd.loBnd[d]) {
-          m[d] = bnd.loBnd[d];
-          touched = true;
-        } else if (bnd.bcHi[d] == FieldBC::inflow && ijk[d] > bnd.hiBnd[d]) {
-          m[d] = bnd.hiBnd[d];
-          touched = true;
+        if (!bnd.isNode[d])
+          continue;
+
+        const bool onLoWall =
+            (bnd.bcLo[d] == FieldBC::inflow) && (ijk[d] == bnd.loBnd[d]);
+        const bool onHiWall =
+            (bnd.bcHi[d] == FieldBC::inflow) && (ijk[d] == bnd.hiBnd[d]);
+        if (onLoWall || onHiWall) {
+          bool inValid = true;
+          for (int od = 0; od < nDim; ++od) {
+            if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+              inValid = false;
+              break;
+            }
+          }
+          if (inValid) {
+            for (int iVar = 0; iVar < nComp; ++iVar) {
+              const int comp = iStart + iVar;
+              if (func != nullptr) {
+                arr(i, j, k, comp) = (this->*func)(
+                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+              } else {
+                int m[3] = { i, j, k };
+                m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
+                arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
+              }
+            }
+          }
         }
       }
 
-      if (!touched)
-        return;
-
-      for (int iVar = 0; iVar < nComp; ++iVar) {
-        arr(i, j, k, iStart + iVar) = arr(m[0], m[1], m[2], iStart + iVar);
+      // 2. Ghost cells/nodes outside domain if func == nullptr
+      // (When func != nullptr, fill_ext_dir handles them).
+      if (func == nullptr && bit::is_lev_boundary(statusArr(i, j, k, 0))) {
+        int m[3] = { i, j, k };
+        bool touched = false;
+        for (int d = 0; d < nDim; ++d) {
+          if (bnd.bcLo[d] == FieldBC::inflow && ijk[d] < bnd.loBnd[d]) {
+            m[d] = bnd.loBnd[d];
+            touched = true;
+          } else if (bnd.bcHi[d] == FieldBC::inflow && ijk[d] > bnd.hiBnd[d]) {
+            m[d] = bnd.hiBnd[d];
+            touched = true;
+          }
+        }
+        if (touched) {
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            arr(i, j, k, iStart + iVar) = arr(m[0], m[1], m[2], iStart + iVar);
+          }
+        }
       }
     });
   }

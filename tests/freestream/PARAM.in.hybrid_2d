@@ -1,14 +1,11 @@
 #DESCRIPTION
-Free-stream (uniform-equilibrium) regression test of the HYBRID field solver
-(generalized Ohm's law + Faraday) with the Hall term OFF: solveEM=F,
-useHybridPIC=T, useHallTerm=F.
+2D Free-stream uniform-equilibrium regression test of the HYBRID field solver
+with open inflow/outflow boundary conditions in x and periodic in y:
+solveEM=F, useHybridPIC=T, useHallTerm=F.
 
-The initial condition is a uniform plasma with 1 kinetic ion species (electrons
-are an implicit neutralizing fluid), uniform bulk flow ux = 100 km/s (Mach 1, Alfven speed),
-a 3D oblique magnetic field (Bx, By, Bz), plasma beta ~ 1 (T = 314000 K), and the
-corresponding convective electric field E = -u x B.  Shares the identical grid,
-plasma, normalization, timestepping, and output with PARAM.in (full PIC),
-differing only in the field-solver block.
+Validates that the inflow Dirichlet boundary condition maintains a strictly
+uniform state at the upstream boundary without generating transverse stripes or
+numerical wiggles in Bx, By, and Ez.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -16,28 +13,49 @@ F                       initFromSWMF
 #GEOMETRY
 -3.2                    xMin  [code units; Lx = 6.4 d_i]
  3.2                    xMax
--0.05                   yMin
- 0.05                   yMax
--0.05                   zMin
+-1.6                    yMin  [code units; Ly = 3.2 d_i]
+ 1.6                    yMax
+-0.05                   zMin  one cell: the invariant direction
  0.05                   zMax
 
 #NCELL
 32                      nCellX
-1                       nCellY
+16                      nCellY
 1                       nCellZ
 
 #MAXBLOCKSIZE
 8                       maxBlockSizeX
-1                       maxBlockSizeY
+8                       maxBlockSizeY
 1                       maxBlockSizeZ
 
 #PERIODICITY
-T                       isPeriodicX
+F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-Standard Maxwell/GMRES solver disabled; use the Ohm's-law + Faraday hybrid
-field advance instead.
+#FIELDBOXBOUNDARY
+inflow                  fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+inflow                  particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#INFLOW
+5.0                     rho [amu/cc]
+100.0                   ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]
+
 #SOLVEEM
 F                       solveEM
 
@@ -58,8 +76,6 @@ F                       useHallTerm
 #BSUBCYCLE
 1                       nBSubcycle
 
-Single kinetic ion species (q = m = 1); the electron is an implicit
-neutralizing massless fluid, so no electron particle species is present.
 #PLASMA
 1                       nS
 1.0                     mass
@@ -67,7 +83,7 @@ neutralizing massless fluid, so no electron particle species is present.
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
-100.0                   ux [km/s]      fast bulk flow (U_code = 1.0 = v_A)
+100.0                   ux [km/s]      fast bulk flow (u_code = 1.0 = v_A)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 314000.0                T [K]          beta ~ 1 (T_code ~ 0.26)
@@ -94,20 +110,20 @@ T                       useFixedDt
 1                       dnSavePT
 
 #PARTICLES
-2000                    npcelx
-1                       npcely
+4                       npcelx
+4                       npcely
 1                       npcelz
 
 #SAVEPLOT
 1                       nPlot
 z=0 fluid ascii pic     plotString
 -1                      dn
-10.0                    dt
+2.0                     dt
 1                       dx
-Bx By Bz Ex Ey Ez       varName
+Bx By Bz Ex Ey Ez RhoS0 UXS0 UYS0 UZS0 pS0   varName
 
 #STOP
 -1                      MaxIter
-10.0                    TimeMax   ~1.6 ion gyroperiods (stability)
+2.0                     TimeMax
 
 #RUN
