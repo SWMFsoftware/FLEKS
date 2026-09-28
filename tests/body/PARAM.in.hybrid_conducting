@@ -70,6 +70,16 @@ rk4                     fieldIntegrator
 #BSUBCYCLE
 1                       nBSubcycle
 
+#HYPERRESISTIVITY
+0.0                     etaHyperSI
+grid                    etaHyperMode
+0.02                    etaHyperCh
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+2                       nSmoothMoments
+0.5                     coefSmoothMoments
+
 #PLASMA
 1                       nS
 1.0                     mass           Species 0: ions
@@ -126,8 +136,8 @@ T                       useFixedDt
 1                       dnSavePT
 
 #PARTICLES
-4                       npcelx
-4                       npcely
+10                      npcelx
+10                      npcely
 1                       npcelz
 
 #SAVEPLOT
