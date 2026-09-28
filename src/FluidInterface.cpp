@@ -564,9 +564,11 @@ void FluidInterface::fill_new_cells() {
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   amrex::node_bilinear_interp);
 
-    average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
-                               centerB[iLev].nComp(), centerB[iLev].nGrow());
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iBx >= 0) {
+      average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
+                                 centerB[iLev].nComp(), centerB[iLev].nGrow());
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
   }
 }
 
