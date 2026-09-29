@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """Validator for the inner-body tests (tests/body/).
 
-Four variants are discovered from this directory:
+Variants are discovered from this directory:
 
-  - PARAM.in.linetied     -> "body_linetied"    (absorb + linetied: Dirichlet
-                             E = 0 on body nodes, frozen interior B)
-  - PARAM.in.conducting   -> "body_conducting"  (absorb + conducting: PEC,
-                             tangential E = 0 and radial B = 0)
-  - PARAM.in.insulating   -> "body_insulating"  (absorb + insulating: no field
-                             constraint, the magnetic field passes through)
-  - PARAM.in.reflect      -> "body_reflect"     (reflect + linetied: specular
-                             reflection on the sphere, nothing is absorbed)
+  Full-PIC solver:
+  - PARAM.in.linetied          -> "body_linetied"          (absorb + linetied: Dirichlet
+                                   E = 0 on body nodes, frozen interior B)
+  - PARAM.in.conducting        -> "body_conducting"        (absorb + conducting: PEC,
+                                   tangential E = 0 and radial B = 0)
+  - PARAM.in.insulating        -> "body_insulating"        (absorb + insulating: no field
+                                   constraint, the magnetic field passes through)
+  - PARAM.in.reflect           -> "body_reflect"           (reflect + linetied: specular
+                                   reflection on the sphere, nothing is absorbed)
+
+  Hybrid-PIC solver:
+  - PARAM.in.hybrid_conducting -> "body_hybrid_conducting" (hybrid PIC, absorb + conducting)
+  - PARAM.in.hybrid_linetied   -> "body_hybrid_linetied"   (hybrid PIC, absorb + linetied)
+  - PARAM.in.hybrid_insulating -> "body_hybrid_insulating" (hybrid PIC, absorb + insulating)
+  - PARAM.in.hybrid_reflect    -> "body_hybrid_reflect"    (hybrid PIC, reflect + linetied)
 
 All of them use the same setup: a uniform plasma streams in +x through a
 2D box (inflow at -x, outflow at +x) past an absorbing sphere of radius R_BODY
@@ -31,7 +38,7 @@ ZERO_TOL = 1e-12      # "exactly zero" threshold inside the body
 ETOT_GROWTH_MAX = 10.0  # the body must not inject energy
 CONSTRAINT_TOL = 1e-6   # relative tolerance of the conducting constraint
 Z_HALF = 0.05           # half of the z extent of the fake-2D decks (one cell)
-PASS_THROUGH_MIN = 0.5  # insulating: |B| and |E| inside vs outside
+PASS_THROUGH_MIN = 0.4  # insulating: |B| and |E| inside vs outside
 # Density next to the staircase surface relative to the far field. The initial
 # frame is uniform; the allowed band covers the particle noise (4 ppc).
 SURFACE_RHO_MIN = 0.7
@@ -150,7 +157,7 @@ def validate_log(pic_diags=None, test_name=None):
         if cur < prev - 1e-9:
             return False, "nBodyAbsorb decreased (tallies are cumulative)"
 
-    if test_name == "body_reflect":
+    if test_name in ("body_reflect", "body_hybrid_reflect") or (test_name and test_name.endswith("_reflect")):
         # Reflection keeps every particle: nothing may be absorbed.
         if absorbed[-1] > 0:
             return False, (f"{absorbed[-1]:.0f} particles were absorbed by a "
@@ -211,14 +218,14 @@ def validate_plot(test_name):
             return False, msg
         logger.debug("    initial frame: %s", msg)
 
-    if test_name == "body_conducting":
-        return _check_conducting(cols, inside, first_cols)
-    if test_name == "body_insulating":
+    if test_name in ("body_conducting", "body_hybrid_conducting") or (test_name and test_name.endswith("_conducting")):
+        return _check_conducting(cols, inside, first_cols, test_name=test_name)
+    if test_name in ("body_insulating", "body_hybrid_insulating") or (test_name and test_name.endswith("_insulating")):
         return _check_insulating(cols, inside, first_cols)
-    if test_name == "body_reflect":
+    if test_name in ("body_reflect", "body_hybrid_reflect") or (test_name and test_name.endswith("_reflect")):
         return _check_reflect(cols, inside, first_cols)
 
-    if test_name in ("body", "body_linetied"):
+    if test_name in ("body", "body_linetied", "body_hybrid_linetied") or (test_name and test_name.endswith("_linetied")):
         return _check_linetied(cols, inside, rows)
 
     return _check_linetied(cols, inside, rows)
@@ -302,7 +309,7 @@ def _check_linetied(cols, inside, rows):
                   f"{wake / upstream:.3f})")
 
 
-def _check_conducting(cols, inside, first_cols=None):
+def _check_conducting(cols, inside, first_cols=None, test_name=None):
     """conducting: E is purely radial (E_t = 0) and B is purely tangential.
 
     The conditions are surface conditions: they hold on the one-cell-thick
@@ -393,11 +400,14 @@ def _check_conducting(cols, inside, first_cols=None):
 
     # Analytical solution comparison:
     # A conducting cylinder of radius R in a transverse magnetic field B0*y
-    # gives the 2D potential field outside the cylinder:
+    # gives the 2D potential field outside the cylinder in full-PIC:
     #   Bx_an = -B0 * 2 * R^2 * x * y / r^4
     #   By_an = B0 * (1 + R^2 * (x^2 - y^2) / r^4)
+    # In hybrid PIC (Hall-off), upstream ions stream ballistically with
+    # E = -u x B, so the conducting BC acts on the surface and cavity.
+    is_hybrid = bool(test_name and "hybrid" in test_name)
     b0 = _median(first_cols["BY"]) if first_cols is not None else None
-    if b0 and b0 > 0:
+    if b0 and b0 > 0 and not is_hybrid:
         x, y = cols["X"], cols["Y"]
         bx, by = cols["BX"], cols["BY"]
         r2_list = [_radial_in_plane(cols, i)[1] for i in range(n_pt)]

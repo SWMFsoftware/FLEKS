@@ -133,6 +133,8 @@ faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 
 ## Variants
 
+### Full-PIC Solver
+
 | Deck | `particleBoundary` | `fieldBoundary` | What it asserts |
 |------|--------------------|-----------------|-----------------|
 | `PARAM.in.linetied` | absorb | linetied | `rhoS0`, `rhoS1`, `Ex`, `Ey`, `Ez` are exactly zero inside; a wake forms |
@@ -140,13 +142,25 @@ faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 | `PARAM.in.insulating` | absorb | insulating | `B` passes through without boundary constraint; compares against undistorted uniform analytical field `B0 * y` (`<By>/B0 ≈ 1`, `<|Bx|>/B0 << 1`); `E` inside is *not* forced to zero; absorbing wake forms downstream |
 | `PARAM.in.reflect` | reflect | linetied | `nBodyAbsorb` stays identically zero and particle kinetic energy is conserved; particles are excluded from the body (`rho = 0` inside); `E = 0` inside (linetied); `B` in the deep interior is analytically frozen (`max |B - B(0)| = 0`) |
 
+### Hybrid-PIC Solver
+
+| Deck | `particleBoundary` | `fieldBoundary` | What it asserts |
+|------|--------------------|-----------------|-----------------|
+| `PARAM.in.hybrid_conducting` | absorb | conducting | Hybrid PIC solver: tangential `E = 0` and radial `B = 0` on conducting surface layer, frozen interior `B`, analytical dipole draping upstream, absorbing wake forms |
+| `PARAM.in.hybrid_linetied` | absorb | linetied | Hybrid PIC solver: `E = 0` inside, interior `B` frozen, absorbing wake forms |
+| `PARAM.in.hybrid_insulating` | absorb | insulating | Hybrid PIC solver: fields pass through unconstrained, absorbing wake forms |
+| `PARAM.in.hybrid_reflect` | reflect | linetied | Hybrid PIC solver: specular reflection excludes particles (`rho = 0` inside, `nBodyAbsorb = 0`, particle energy kept) |
+
 All variants share the checks "no NaN" and "`Etot` grows by less than 10x".
+
+In CI, only the conducting variants (`body.conducting` and `body.hybrid_conducting`) are executed by default. The non-conducting variants are marked in `.expensive` to keep the test suite fast.
 
 ## Running
 
 From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
 
 ```bash
-python3 tests/validate_tests.py --test=body      # runs all four variants
-python3 tests/validate_tests.py --test=body_conducting
+python3 tests/validate_tests.py --test=body                      # runs conducting variants (default)
+python3 tests/validate_tests.py --test=body --all                # runs all 8 full-PIC and hybrid variants
+python3 tests/validate_tests.py --test=body.hybrid_conducting   # runs specific variant
 ```

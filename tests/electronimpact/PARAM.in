@@ -18,7 +18,7 @@ F                       initFromSWMF
 1                       nCellZ
 
 #MAXBLOCKSIZE
-32                      maxBlockSizeX
+8                       maxBlockSizeX
 1                       maxBlockSizeY
 1                       maxBlockSizeZ
 
@@ -130,9 +130,6 @@ T
 #DIVE
 T
 1
-
-#SAVEPLOT
-0                       nPlot
 
 #STOP
 10                      MaxIter

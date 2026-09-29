@@ -203,6 +203,16 @@ def run_test(test_dir, nprocs=1, param_text=None):
     else:
         shutil.copy(param_file, RUN_DIR + "/PARAM.in")
 
+    # Copy the test's own data files (coefficient tables, lookup tables, ...)
+    # into the run directory: the decks reference them by a relative name.
+    for entry in sorted(os.listdir(test_dir)):
+        if entry.startswith(".") or entry.startswith("PARAM.in") or \
+                entry in ("validate.py", "README.md"):
+            continue
+        src = os.path.join(test_dir, entry)
+        if os.path.isfile(src):
+            shutil.copy(src, os.path.join(RUN_DIR, entry))
+
     if nprocs <= 1:
         cmd = ["./FLEKS.exe"]
         logger.debug("  Running in serial mode (no MPI)...")
@@ -927,7 +937,7 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
         variants.append((pf, display_name, base_name))
 
     if name == "freestream":
-        # Free-stream test variants: full (original GMRES), upwind, and hybrid.
+        # Free-stream test variants: full (original GMRES), upwind, hybrid, and 2D hybrid.
         variants = [
             (os.path.join(test_dir, "PARAM.in.full"),
              "FREESTREAM (FULL PIC GMRES)", "freestream_full"),
@@ -935,6 +945,8 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
              "FREESTREAM (FULL PIC UPWIND)", "freestream_upwind"),
             (os.path.join(test_dir, "PARAM.in.hybrid"),
              "FREESTREAM (HYBRID HALL-OFF)", "freestream_hybrid"),
+            (os.path.join(test_dir, "PARAM.in.hybrid_2d"),
+             "FREESTREAM (HYBRID 2D INFLOW)", "freestream_hybrid_2d"),
         ]
 
     # Restrict to a single PARAM variant when requested.  The variant token is

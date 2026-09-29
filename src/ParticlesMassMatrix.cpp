@@ -121,14 +121,18 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
-    NodeMMFab& nodeMM, MultiFab& jHat, MultiFab& nodeBMF, MultiFab& u0MF,
-    Real dt, int iLev, bool solveInCoMov) {
+    NodeMMFab& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
+    const MultiFab* nodeB0MF, MultiFab& u0MF, Real dt, int iLev,
+    bool solveInCoMov) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
+  const bool useB0 = (nodeB0MF != nullptr);
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    const Array4<Real const> nodeB0Arr =
+        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
     Array4<Real> const& jArr = jHat[pti].array();
     Array4<RealMM> const& mmArr = nodeMM[pti].array();
 
@@ -161,10 +165,28 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      if (solveInCoMov) {
+      if (solveInCoMov && useB0) {
+        // The gyro frequency that enters the mass matrix is the one of the
+        // total field B1 + B0.
+        const Array4<Real const> fields[3] = { nodeBArr, u0Arr, nodeB0Arr };
+        Real b0[3] = { 0, 0, 0 };
+        Real* values[3] = { bp, u0, b0 };
+        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+        bp[ix_] += b0[ix_];
+        bp[iy_] += b0[iy_];
+        bp[iz_] += b0[iz_];
+      } else if (solveInCoMov) {
         const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
         Real* values[2] = { bp, u0 };
         interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+      } else if (useB0) {
+        const Array4<Real const> fields[2] = { nodeBArr, nodeB0Arr };
+        Real b0[3] = { 0, 0, 0 };
+        Real* values[2] = { bp, b0 };
+        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+        bp[ix_] += b0[ix_];
+        bp[iy_] += b0[iy_];
+        bp[iz_] += b0[iz_];
       } else {
         interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
       }
@@ -316,15 +338,18 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     NodeMMFab& nodeMM, amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
     amrex::Vector<NodeMMFab>& nmmf, MultiFab& jHat,
     amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
-    amrex::Vector<amrex::MultiFab>& jhf, MultiFab& nodeBMF, MultiFab& u0MF,
-    Real dt, int iLev, bool solveInCoMov,
-    amrex::Vector<amrex::iMultiFab>& cellstatus) {
+    amrex::Vector<amrex::MultiFab>& jhf, MultiFab& nodeBMF,
+    const MultiFab* nodeB0MF, MultiFab& u0MF, Real dt, int iLev,
+    bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& cellstatus) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
+  const bool useB0 = (nodeB0MF != nullptr);
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    const Array4<Real const> nodeB0Arr =
+        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
     Array4<Real> const& jArr = jHat[pti].array();
     Array4<RealMM> const& mmArr = nodeMM[pti].array();
     Array4<Real const> const& u0Arr = u0MF[pti].array();
@@ -391,11 +416,29 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      if (solveInCoMov) {
+      if (solveInCoMov && useB0) {
+        const Array4<Real const> fields[3] = { nodeBArr, u0Arr, nodeB0Arr };
+        Real b0[3] = { 0, 0, 0 };
+        Real* values[3] = { bp, u0, b0 };
+        interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
+                                  values);
+        bp[ix_] += b0[ix_];
+        bp[iy_] += b0[iy_];
+        bp[iz_] += b0[iz_];
+      } else if (solveInCoMov) {
         const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
         Real* values[2] = { bp, u0 };
         interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
                                   values);
+      } else if (useB0) {
+        const Array4<Real const> fields[2] = { nodeBArr, nodeB0Arr };
+        Real b0[3] = { 0, 0, 0 };
+        Real* values[2] = { bp, b0 };
+        interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
+                                  values);
+        bp[ix_] += b0[ix_];
+        bp[iy_] += b0[iy_];
+        bp[iz_] += b0[iz_];
       } else {
         interpolate_vector_field(nodeBArr, loIdx[iLev], coef[iLev], lo, hi, bp);
       }
@@ -492,14 +535,19 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
-                                                   MultiFab& nodeBMF, Real dt) {
+                                                   MultiFab& nodeBMF,
+                                                   const MultiFab* nodeB0MF,
+                                                   Real dt) {
   timing_func("Pts::calc_jhat");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
+  const bool useB0 = (nodeB0MF != nullptr);
 
   const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    const Array4<Real const> nodeB0Arr =
+        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
     Array4<Real> const& jArr = jHat[pti].array();
 
     const AoS& particles = pti.GetArrayOfStructs();
@@ -538,6 +586,23 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
                             iz_) *
                    coef[ii][jj][kk];
           }
+
+      if (useB0) {
+        // Same gather for the frozen intrinsic field.
+        for (int kk = 0; kk < 2; ++kk)
+          for (int jj = 0; jj < 2; ++jj)
+            for (int ii = 0; ii < 2; ++ii) {
+              Bxl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                               loIdx[iz_] + kk, ix_) *
+                     coef[ii][jj][kk];
+              Byl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                               loIdx[iz_] + kk, iy_) *
+                     coef[ii][jj][kk];
+              Bzl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                               loIdx[iz_] + kk, iz_) *
+                     coef[ii][jj][kk];
+            }
+      }
 
       const Real omx = qdto2mc * Bxl;
       const Real omy = qdto2mc * Byl;
@@ -632,12 +697,13 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
   template void T::accumulate_mass_matrix_contribution(                        \
       int, const IntVect&, const RealVect&, Real, Array4<RealCMM> const&);     \
   template void T::calc_mass_matrix(NodeMMFab&, MultiFab&, MultiFab&,          \
-                                    MultiFab&, Real, int, bool);               \
+                                    MultiFab const*, MultiFab&, Real, int,     \
+                                    bool);                                     \
   template void T::calc_mass_matrix_amr(                                       \
       NodeMMFab&, Vector<Vector<NodeMMFab> >&, Vector<NodeMMFab>&, MultiFab&,  \
-      Vector<Vector<MultiFab> >&, Vector<MultiFab>&, MultiFab&, MultiFab&,     \
-      Real, int, bool, Vector<iMultiFab>&);                                    \
-  template void T::calc_jhat(MultiFab&, MultiFab&, Real);                      \
+      Vector<Vector<MultiFab> >&, Vector<MultiFab>&, MultiFab&, MultiFab       \
+      const*, MultiFab&, Real, int, bool, Vector<iMultiFab>&);                 \
+  template void T::calc_jhat(MultiFab&, MultiFab&, MultiFab const*, Real);     \
   template void T::apply_jhat_mirror(MultiFab&, int);
 
 INSTANTIATE_PARTICLES_MASS_MATRIX(PicParticles)

@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,40 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("T", tmp);
     inflowT_ = tmp; // [K]
     inflowDefined_ = true;
+  } else if (command == "#DIPOLE") {
+    // Static dipole of the inner body. Everything is SI; convert_intrinsic_B()
+    // turns it into code units once the normalization is known.
+    double bEq = 0.0, theta = 0.0, phi = 0.0, rRef = -1.0;
+    param.read_var("strength", bEq);
+    param.read_var("theta", theta);
+    param.read_var("phi", phi);
+    param.read_var("rRef", rRef);
+
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->read_dipole(bEq, theta, phi, rRef);
+
+    Print() << "  intrinsic field: dipole, strength = " << bEq
+            << " [nT] at rRef, tilt = (" << theta << ", " << phi << ") [deg], "
+            << "rRef = " << rRef << " [m, <0 = from #BODY/#PLANETRADIUS]\n";
+  } else if (command == "#CRUSTALFIELD") {
+    // Static crustal field from a BATSRUS spherical harmonic coefficient file.
+    std::string fileName;
+    int nMax = 0;
+    param.read_var("fileName", fileName);
+    param.read_var("nMax", nMax);
+
+    if (nMax < 2)
+      Abort("Error: #CRUSTALFIELD nMax must be at least 2 (the number of "
+            "harmonic degrees, i.e. the BATSRUS NNm), got " +
+            std::to_string(nMax) + ".");
+
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->read_crustal(fileName, nMax);
+
+    Print() << "  intrinsic field: crustal, file = " << fileName
+            << ", nMax = " << nMax << "\n";
   } else if (command == "#BODY") {
     std::string type;
     param.read_var("type", type);
@@ -118,6 +153,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     Print() << "  inner body BC: particles = "
             << ParticleBC::to_string(bodyParticleBC)
             << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
+  } else if (command == "#BODYRESISTIVITY") {
+    param.read_var("etaBodyResistivity", etaBodyResistivitySI);
+    param.read_var("rOuter", rBodyResistivityOuter);
+    param.read_var("rInner", rBodyResistivityInner);
+  } else if (command == "#BODYHYPERRESISTIVITY") {
+    param.read_var("etaBodyHyperSI", etaBodyHyperSI);
+    param.read_var("etaBodyHyperMode", etaBodyHyperMode);
+    param.read_var("etaBodyHyperCh", etaBodyHyperCh);
+    param.read_var("rOuter", rBodyHyperOuter);
+    param.read_var("rInner", rBodyHyperInner);
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -522,12 +567,6 @@ void Pic::post_process_param() {
     if (bodyRadius <= 0)
       Abort("Invalid #BODY: radius must be positive.");
 
-    // The body mask and the E-field Dirichlet condition are only wired into
-    // the full-PIC (implicit) solver for now.
-    if (useHybridPIC)
-      Abort("Invalid #BODY: the inner body is only implemented for the "
-            "full-PIC solver. It is not supported with #HYBRIDPIC.");
-
     if (n_lev_max() > 1 && !refineRegions.empty())
       Print() << "  Warning: #BODY has not been verified with AMR "
               << "(refinement regions are defined).\n";
@@ -555,6 +594,58 @@ void Pic::post_process_param() {
     bodyParticleBC = ParticleBC::absorb;
     bodyFieldBC = BodyFieldBC::linetied;
     bodyBoundarySet_ = false;
+  }
+
+  // A conducting inner body pins the radial component of the *evolved* field
+  // to zero on the body surface (project_body_B). A planetary intrinsic field
+  // has a radial component that necessarily crosses the surface, so the two
+  // conditions contradict each other. Reject the combination instead of
+  // silently dropping one of them; use 'linetied' or 'insulating' instead.
+  if (useBody && bodyFieldBC == BodyFieldBC::conducting &&
+      intrinsicB_ != nullptr && intrinsicB_->is_active()) {
+    Abort("Invalid combination: #BODYBOUNDARY fieldBoundary 'conducting' "
+          "cannot be used together with an intrinsic magnetic field "
+          "(#DIPOLE / #CRUSTALFIELD). Use 'linetied' or 'insulating'.");
+  }
+
+  const bool hasBodyRes = (etaBodyResistivitySI > 0);
+  const bool hasBodyHyper =
+      (etaBodyHyperSI > 0 ||
+       (etaBodyHyperMode == "grid" && etaBodyHyperCh > 0));
+
+  if (hasBodyRes || hasBodyHyper) {
+    if (!useBody)
+      Abort("Invalid configuration: #BODYRESISTIVITY and #BODYHYPERRESISTIVITY "
+            "require an inner body (#BODY).");
+    if (!useHybridPIC)
+      Abort("Invalid configuration: #BODYRESISTIVITY and #BODYHYPERRESISTIVITY "
+            "are only supported for the hybrid PIC solver (#HYBRIDPIC T).");
+  }
+
+  if (etaBodyHyperMode != "si" && etaBodyHyperMode != "grid") {
+    Abort("Invalid #BODYHYPERRESISTIVITY etaBodyHyperMode '" +
+          etaBodyHyperMode + "'. Expected 'si' or 'grid'.");
+  }
+
+  if (useBody) {
+    if (rBodyResistivityInner <= 0.0)
+      rBodyResistivityInner = bodyRadius;
+    if (rBodyResistivityOuter <= 0.0 && hasBodyRes)
+      rBodyResistivityOuter = 1.5 * bodyRadius;
+
+    if (rBodyHyperInner <= 0.0)
+      rBodyHyperInner = bodyRadius;
+    if (rBodyHyperOuter <= 0.0 && hasBodyHyper) {
+      rBodyHyperOuter = (rBodyResistivityOuter > bodyRadius)
+                            ? rBodyResistivityOuter
+                            : 1.5 * bodyRadius;
+    }
+
+    if (hasBodyRes && rBodyResistivityOuter <= rBodyResistivityInner)
+      Abort("Invalid #BODYRESISTIVITY: rOuter must be greater than rInner.");
+    if (hasBodyHyper && rBodyHyperOuter <= rBodyHyperInner)
+      Abort(
+          "Invalid #BODYHYPERRESISTIVITY: rOuter must be greater than rInner.");
   }
 
   fi->set_plasma_charge_and_mass(qomEl);
@@ -627,6 +718,29 @@ void Pic::finalize_units_conversion() {
   convert_resistivity();
   convert_electron_density0();
   convert_inflow_state();
+  convert_intrinsic_B();
+}
+
+//==========================================================
+void Pic::convert_intrinsic_B() {
+  if (intrinsicB_ == nullptr)
+    return;
+
+  if (!intrinsicB_->is_active()) {
+    // Neither model was actually requested; drop the object so that every
+    // consumer keeps its fast path.
+    intrinsicB_.reset();
+    return;
+  }
+
+  const double bodyCenterTmp[3] = { bodyCenter[ix_], bodyCenter[iy_],
+                                    bodyCenter[iz_] };
+
+  intrinsicB_->convert_units(fi->get_Si2NoB(), fi->get_Si2NoL(),
+                             fi->get_rPlanet_SI(), bodyCenterTmp, bodyRadius,
+                             useBody, nDim);
+
+  Print() << intrinsicB_->describe() << "\n";
 }
 
 //==========================================================
@@ -646,6 +760,14 @@ void Pic::convert_resistivity() {
             << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL << ")\n";
   }
 
+  // Localized body resistivity
+  if (etaBodyResistivitySI > 0) {
+    etaBodyResistivity = fourPI * etaBodyResistivitySI * Si2NoV * Si2NoL;
+    Print() << "  etaBodyResistivity: " << etaBodyResistivitySI
+            << " [m^2/s] -> " << etaBodyResistivity << " [code units], r in ["
+            << rBodyResistivityInner << ", " << rBodyResistivityOuter << "]\n";
+  }
+
   // Hyper-resistive term eta_h*nabla^2 J: [eta_h] = [U]*[L]^3, so
   // eta_h_code = 4*pi * eta_h_SI * Si2NoV * Si2NoL^3. A single physical value
   // is used on every level (the same choice as grid mode in update_B_hybrid).
@@ -657,11 +779,25 @@ void Pic::convert_resistivity() {
             << " [code units]\n";
   }
 
+  // Localized body hyper-resistivity (si mode)
+  if (etaBodyHyperSI > 0 && etaBodyHyperMode == "si") {
+    const Real etaBodyHyper =
+        fourPI * etaBodyHyperSI * Si2NoV * std::pow(Si2NoL, 3);
+    for (int iLev = 0; iLev < n_lev_max(); ++iLev)
+      etaBodyHyperLev[iLev] = etaBodyHyper;
+    Print() << "  etaBodyHyper: " << etaBodyHyperSI << " [m^4/s, si] -> "
+            << etaBodyHyper << " [code units], r in [" << rBodyHyperInner
+            << ", " << rBodyHyperOuter << "]\n";
+  }
+
   // Guard against uninitialized normalization producing non-positive
   // coefficients.
   if ((etaResistivitySI > 0 && !(etaResistivity > 0)) ||
+      (etaBodyResistivitySI > 0 && !(etaBodyResistivity > 0)) ||
       (etaHyperSI > 0 && etaHyperMode == "si" &&
-       (etaHyperLev.empty() || !(etaHyperLev[0] > 0)))) {
+       (etaHyperLev.empty() || !(etaHyperLev[0] > 0))) ||
+      (etaBodyHyperSI > 0 && etaBodyHyperMode == "si" &&
+       (etaBodyHyperLev.empty() || !(etaBodyHyperLev[0] > 0)))) {
     Abort("Pic::convert_resistivity: the SI->code conversion produced a "
           "non-positive resistivity. Check the normalization "
           "(#NORMALIZATION lNormSI / uNormSI).");

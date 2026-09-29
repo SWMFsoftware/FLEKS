@@ -1558,6 +1558,73 @@ surface.
 Only the 'sphere' shape is implemented so far.
 </command>
 
+<command name="DIPOLE" alias="DIPOLE_FLEKS0,DIPOLE_FLEKS1,DIPOLE_FLEKS2" multiple="T">
+  <parameter name="strength" type="real" default="0.0"/>
+  <parameter name="theta" type="real" default="0.0"/>
+  <parameter name="phi" type="real" default="0.0"/>
+  <parameter name="rRef" type="real" default="-1.0"/>
+
+#DIPOLE
+0.0                     strength  [nT]
+0.0                     theta     [deg]
+0.0                     phi       [deg]
+-1.0                    rRef      [m]
+
+This command adds a static dipole field to the intrinsic (background)
+magnetic field B0 of the planet.
+
+strength is the field strength at the magnetic equator on the reference sphere
+r = rRef, in nanotesla; the field on the pole of that sphere is twice as large,
+as it is for any dipole. theta and phi are the spherical angles, in degrees, of
+the magnetic axis measured from the +z direction; with phi = 0 a positive theta
+tips the axis towards -x, which is the same sense as the dipole tilt of
+BATSRUS. A negative strength flips the axis.
+
+rRef is the radius of the reference sphere in SI units. A negative value (the
+default) selects the radius of the inner body declared by #BODY when there is
+one, and the planetary radius #PLANETRADIUS otherwise.
+
+B0 does not evolve: it is not advanced by Faraday's law, it is not touched by
+the div(B) cleaning and it is not written to the restart files. It is a
+background field that is added to the evolved field B1 wherever a total
+magnetic field is needed: the initial state, the domain boundary conditions,
+the particle pusher, the hybrid Ohm's law, the diagnostics and the plot output.
+The plot files carry it both as part of the total Bx/By/Bz and separately as
+B0x/B0y/B0z.
+
+The two intrinsic models, this one and #CRUSTALFIELD, are additive.
+</command>
+
+<command name="CRUSTALFIELD" alias="CRUSTALFIELD_FLEKS0,CRUSTALFIELD_FLEKS1,CRUSTALFIELD_FLEKS2" multiple="T">
+  <parameter name="fileName" type="string" default="crustal_field.txt"/>
+  <parameter name="nMax" type="integer" default="2"/>
+
+#CRUSTALFIELD
+crustal_field.txt       fileName
+2                       nMax
+
+This command adds a static crustal field to the intrinsic (background) magnetic
+field B0, given by a spherical harmonic expansion whose coefficients are read
+from fileName. See #DIPOLE for what 'static' means.
+
+nMax is the number of harmonic degrees in the file, i.e. the NNm of the
+BATSRUS #MARSB0 command; the highest retained degree is nMax - 1. It must be at
+least 2.
+
+The file format matches the layout used in BATSRUS ModUserMars:
+three header lines (skipped by the reader), followed by one 'n m value' triple
+per coefficient (for each degree i = 1..n, g(i,0) followed by g/h pairs for
+m = 1..i).
+
+The expansion is written for the radius measured in planetary radii and returns
+nanotesla, so the coefficients are converted with #PLANETRADIUS (the radial
+unit) and with the magnetic normalization of #NORMALIZATION. When
+#PLANETRADIUS is absent the planetary radius defaults to lNormSI, so one code
+length unit is then one planetary radius.
+
+Only rank zero reads the file and the coefficients are then broadcast.
+</command>
+
 <command name="BODYBOUNDARY" alias="BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2" multiple="T">
   <parameter name="particleBoundary" type="string" default="absorb"/>
   <parameter name="fieldBoundary" type="string" default="linetied"/>
@@ -1603,6 +1670,67 @@ because it is shielded by the surface layer:
               Discretely this means no field constraint at all: E and B are
               solved inside the body as usual, and since no particle survives
               there the interior simply evolves as vacuum.
+</command>
+
+<command name="BODYRESISTIVITY" alias="BODYRESISTIVITY_FLEKS0,BODYRESISTIVITY_FLEKS1,BODYRESISTIVITY_FLEKS2" multiple="T">
+  <parameter name="etaBodyResistivity" type="real" default="0.0"/>
+  <parameter name="rOuter" type="real" default="-1.0"/>
+  <parameter name="rInner" type="real" default="-1.0"/>
+
+#BODYRESISTIVITY
+0.0               etaBodyResistivity
+-1.0              rOuter
+-1.0              rInner
+
+[Inner body: localized resistivity] Localized second-order resistivity eta(r)*J
+applied in an extended spherical shell around the inner body declared by #BODY.
+Damps numerical boundary oscillations and allows magnetic field lines to smoothly
+drape and slip past the obstacle.
+
+etaBodyResistivity is the SI magnetic diffusivity [m\^2/s] (converted to code
+units internally, identical to #RESISTIVITY).
+
+rOuter is the outer radius of the resistive spherical shell in code units.
+If <= 0, defaults to 1.5 * bodyRadius.
+
+rInner is the inner radius in code units. If <= 0, defaults to bodyRadius.
+For r <= rInner, the full etaBodyResistivity applies. For r between rInner and
+rOuter, eta(r) smoothly transitions to zero with a C\^1 cosine profile:
+  w(r) = 0.5 * (1 + cos(pi * (r - rInner)/(rOuter - rInner)))
+For r >= rOuter, eta(r) = 0 (ideal plasma).
+
+Only used when #HYBRIDPIC is T and #BODY is present.
+</command>
+
+<command name="BODYHYPERRESISTIVITY" alias="BODYHYPERRESISTIVITY_FLEKS0,BODYHYPERRESISTIVITY_FLEKS1,BODYHYPERRESISTIVITY_FLEKS2" multiple="T">
+  <parameter name="etaBodyHyperSI" type="real" default="0.0"/>
+  <parameter name="etaBodyHyperMode" type="string" default="grid"/>
+  <parameter name="etaBodyHyperCh" type="real" default="0.0"/>
+  <parameter name="rOuter" type="real" default="-1.0"/>
+  <parameter name="rInner" type="real" default="-1.0"/>
+
+#BODYHYPERRESISTIVITY
+0.0               etaBodyHyperSI
+grid              etaBodyHyperMode
+0.0               etaBodyHyperCh
+-1.0              rOuter
+-1.0              rInner
+
+[Inner body: localized hyper-resistivity] Localized fourth-order hyper-resistivity
+-(eta_h(r)/4*pi) * curl(nabla\^2 B) applied in an extended spherical shell around
+the inner body declared by #BODY. Damps 2*dx staircase grid modes near the body
+surface without introducing second-order diffusion in the ideal flow.
+
+etaBodyHyperSI is the SI hyper-diffusivity [m\^4/s] used when etaBodyHyperMode="si".
+When etaBodyHyperMode="grid", eta_h is CFL-scaled to the finest cell size and time
+step via the dimensionless coefficient etaBodyHyperCh (e.g. 0.01 - 0.1):
+  eta_h = 4*pi * C_h * dx_min\^4 / dt.
+
+rOuter and rInner define the spherical shell in code units (see #BODYRESISTIVITY).
+If <= 0, rInner defaults to bodyRadius, and rOuter defaults to #BODYRESISTIVITY's
+rOuter (or 1.5 * bodyRadius).
+
+Only used when #HYBRIDPIC is T and #BODY is present.
 </command>
 
 <command name="PLANETRADIUS" alias="PLANETRADIUS_FLEKS0,PLANETRADIUS_FLEKS1,PLANETRADIUS_FLEKS2" multiple="T">
