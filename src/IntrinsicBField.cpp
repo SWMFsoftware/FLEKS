@@ -1,5 +1,3 @@
-#include "IntrinsicBField.h"
-
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -12,6 +10,7 @@
 #include <AMReX_ParallelDescriptor.H>
 
 #include "Constants.h"
+#include "IntrinsicBField.h"
 
 using namespace amrex;
 
@@ -22,7 +21,7 @@ constexpr double cDegToRad = dPI / 180.0;
 constexpr double cThetaSinMin = 1.0e-6;
 // nanotesla -> tesla, the unit of #DIPOLE / #CRUSTALFIELD input.
 constexpr double cNTToT = 1.0e-9;
-}
+} // namespace
 
 //==========================================================
 void IntrinsicBField::read_dipole(Real bEqNT, Real thetaDeg, Real phiDeg,
@@ -45,7 +44,8 @@ void IntrinsicBField::read_crustal(const std::string &fileName, int nMax) {
 // matching the latest layout in BATSRUS ModUserMars:
 // - 3 header lines (skipped)
 // - For each degree i = 1..n:
-//     one 'n m value' triple for g(i,0) followed by a g/h pair for each m = 1..i.
+//     one 'n m value' triple for g(i,0) followed by a g/h pair for each m
+//     = 1..i.
 //
 // Only rank 0 touches the file; the result is broadcast so that every rank
 // holds an identical copy.
@@ -257,7 +257,7 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z, Real b[3]) const {
     }
   }
 
-  Real bsph[3] = {0.0, 0.0, 0.0};
+  Real bsph[3] = { 0.0, 0.0, 0.0 };
   for (int m = 0; m <= NN; ++m) {
     for (int nn = m; nn <= NN; ++nn) {
       Real dRnm;
@@ -277,8 +277,8 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z, Real b[3]) const {
       bsph[0] += (nn + 1) * aorn[nn + 2] * RN(nn, m) * cd;
       bsph[1] -= aorn[nn + 2] * dRnm * cd;
       if (xtsin > cThetaSinMin)
-        bsph[2] -=
-            aorn[nn + 2] * RN(nn, m) * m / xtsin * (-cc * xpsin[m] + dd * xpcos[m]);
+        bsph[2] -= aorn[nn + 2] * RN(nn, m) * m / xtsin *
+                   (-cc * xpsin[m] + dd * xpcos[m]);
     }
   }
 
@@ -330,7 +330,3 @@ std::string IntrinsicBField::describe() const {
   os << "    rPlanet [code]        = " << rPlanetCode_;
   return os.str();
 }
-
-
-
-

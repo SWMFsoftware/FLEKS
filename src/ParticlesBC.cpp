@@ -275,7 +275,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real* probHi = geom.ProbHi();
   const Real* cellSize = geom.CellSize();
 
-
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
@@ -310,13 +309,14 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
         // Mean influx per boundary-transverse cell per step, in
         // macroparticles.
-        // For a multi-species plasma flow, the convective flux across the inflow
-        // face is determined by the bulk drift speed:
+        // For a multi-species plasma flow, the convective flux across the
+        // inflow face is determined by the bulk drift speed:
         //   dn = nppc * (uOut * inward) * dt / dx
-        // Using the unmagnetized 1D half-space thermal flux vtherm * g(vd) causes
-        // light species (electrons, where vtherm >> uOut) to be injected at a much
-        // higher rate than heavy species (ions), creating a strong charge imbalance
-        // and electrostatic sheath that triggers lower hybrid drift instabilities.
+        // Using the unmagnetized 1D half-space thermal flux vtherm * g(vd)
+        // causes light species (electrons, where vtherm >> uOut) to be injected
+        // at a much higher rate than heavy species (ions), creating a strong
+        // charge imbalance and electrostatic sheath that triggers lower hybrid
+        // drift instabilities.
         const Real fluxRate = nppc * (uOut * inward) * dt / dxn;
         if (fluxRate <= 0.0)
           continue;
@@ -372,7 +372,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
             // Inward normal velocity with thermal spread
             wIn += sigma * (R1 * std::cos(phi1));
-            // Inward-directed speed into the domain (reflected if moving outward)
+            // Inward-directed speed into the domain (reflected if moving
+            // outward)
             wIn = std::abs(wIn);
 
             vel[trans1] = uIn[trans1] + sigma * (R1 * std::sin(phi1));
