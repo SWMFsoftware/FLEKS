@@ -1,0 +1,142 @@
+#DESCRIPTION
+2D Free-stream uniform-equilibrium regression test of the HYBRID field solver
+with open inflow/outflow boundary conditions in x and periodic in y:
+solveEM=F, useHybridPIC=T, useHallTerm=F.
+
+Validates that the inflow Dirichlet boundary condition maintains a strictly
+uniform state at the upstream boundary without generating transverse stripes or
+numerical wiggles in Bx, By, and Ez.
+
+The hybrid Ohm-Faraday loop amplifies PIC shot noise in the ion moments into a
+grid-scale (3-6 cell) magnetic dynamo unless it is controlled, so this deck runs
+with 100 particles/cell plus #SMOOTHMOMENTS and grid-mode #HYPERRESISTIVITY.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-1.6                    yMin  [code units; Ly = 3.2 d_i]
+ 1.6                    yMax
+-0.05                   zMin  one cell: the invariant direction
+ 0.05                   zMax
+
+#NCELL
+32                      nCellX
+16                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+inflow                  fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+inflow                  particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#INFLOW
+5.0                     rho [amu/cc]
+100.0                   ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI
+grid                    etaHyperMode
+0.02                    etaHyperCh
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature  [eV]
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+2                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#PLASMA
+1                       nS
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+100.0                   ux [km/s]      fast bulk flow (u_code = 1.0 = v_A)
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+314000.0                T [K]          beta ~ 1 (T_code ~ 0.26)
+8.0e-9                  bx [T]         3D oblique magnetic field (|B| ~ 10.44 nT)
+6.0e-9                  by [T]
+3.0e-9                  bz [T]
+0.0                     ex [V/m]       convective electric field E = -u x B
+3.0e-4                  ey [V/m]       Ey = ux * Bz
+-6.0e-4                 ez [V/m]       Ez = -ux * By
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+10                      npcelx
+10                      npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+2.0                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax
+
+#RUN

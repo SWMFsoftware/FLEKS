@@ -75,8 +75,8 @@ T                       useHallTerm
 0.0                     uz [km/s]
 6.28e5                  T [K]
 
-motional E = -u x B = (0, -ux*Bz, 0); ux=-713e3 m/s, Bz=7.382e-9 T
-   -> Ey = -ux*Bz = +5.263e-3 V/m
+motional E = -u x B = (0, ux*Bz, 0); ux=-713e3 m/s, Bz=7.382e-9 T
+   -> Ey = ux*Bz = -5.263e-3 V/m
 #UNIFORMSTATE
 5.0                     rho
 -713.0                  ux
@@ -87,7 +87,7 @@ motional E = -u x B = (0, -ux*Bz, 0); ux=-713e3 m/s, Bz=7.382e-9 T
 0.0                     by
 7.382e-9                bz
 0.0                     ex
-5.263e-3                ey
+-5.263e-3               ey
 0.0                     ez
 
 #TIMESTEPPING
@@ -100,6 +100,8 @@ T                       useFixedDt
 
 #MONITOR
 200                     dnReport
+400                     dnReportLB
+T                       doCompact
 
 #SAVELOG
 10                      dnSavePic

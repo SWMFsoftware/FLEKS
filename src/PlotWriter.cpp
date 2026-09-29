@@ -626,6 +626,11 @@ double PlotWriter::No2OutTable(std::string_view var) const {
   } else if (var.substr(0, 4) == "divB") {
     // div(B)
     value = No2OutB / No2OutL;
+  } else if (var.substr(0, 4) == "body") {
+    // Mask of the cells/nodes inside the inner body (#BODY): dimensionless, so
+    // it must stay 0/1 in every output unit. Without this branch it would be
+    // caught by the 'B' rule below and scaled like a magnetic field.
+    value = 1;
   } else if (var.substr(0, 1) == "E") {
     // E field
     value = No2OutV * No2OutB;

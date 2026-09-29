@@ -240,8 +240,29 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   }
 
   if (useZeroBC) {
-    // The boundary nodes would not be filled in by convert_1d_3d. So, there
-    // is not need to apply zero boundary conditions again here.
+    // For Dirichlet physical boundaries (inflow, fixed), the correction in the
+    // Krylov subspace must be identically zero on the boundary nodes.
+    const BoundaryBounds bnd(Geom(iLev), vecMF.boxArray().ixType(), &bcField);
+    for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrVec = vecMF[mfi].array();
+      ParallelFor(bx, vecMF.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    for (int d = 0; d < nDim; ++d) {
+                      if (!bnd.isNode[d])
+                        continue;
+                      if (((bnd.bcLo[d] == FieldBC::inflow ||
+                            bnd.bcLo[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.loBnd[d]) ||
+                          ((bnd.bcHi[d] == FieldBC::inflow ||
+                            bnd.bcHi[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.hiBnd[d])) {
+                        arrVec(i, j, k, c) = 0.0;
+                      }
+                    }
+                  });
+    }
   } else {
     // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
@@ -379,6 +400,34 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
+
+  // Dirichlet physical boundaries (inflow, fixed): enforce A_ii = 1, A_ij = 0
+  // by copying vecMF to matvecMF on boundary nodes.
+  {
+    const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
+                             &bcField);
+    for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrOut = matvecMF[mfi].array();
+      const Array4<Real const>& arrIn = vecMF[mfi].array();
+      ParallelFor(bx, matvecMF.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    for (int d = 0; d < nDim; ++d) {
+                      if (!bnd.isNode[d])
+                        continue;
+                      if (((bnd.bcLo[d] == FieldBC::inflow ||
+                            bnd.bcLo[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.loBnd[d]) ||
+                          ((bnd.bcHi[d] == FieldBC::inflow ||
+                            bnd.bcHi[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.hiBnd[d])) {
+                        arrOut(i, j, k, c) = arrIn(i, j, k, c);
+                      }
+                    }
+                  });
+    }
+  }
 
   // 'conducting' body: keep the Krylov vectors inside the constrained space
   // by removing the tangential electric field on the body nodes. Together with
@@ -518,6 +567,35 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
     update_E_M_dot_E(eBg[iLev], tempNode, iLev);
     MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(),
                   tempNode.nGrow());
+  }
+
+  // Dirichlet physical boundaries (inflow, fixed): the right-hand side for the
+  // total field must equal nodeE, so that the initial residual rhs - A(E_old)
+  // evaluates to exactly zero on Dirichlet boundary nodes.
+  {
+    const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
+                             &bcField);
+    for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrRHS = temp2Node[mfi].array();
+      const Array4<Real const>& arrE = nodeE[iLev][mfi].array();
+      ParallelFor(bx, temp2Node.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    for (int d = 0; d < nDim; ++d) {
+                      if (!bnd.isNode[d])
+                        continue;
+                      if (((bnd.bcLo[d] == FieldBC::inflow ||
+                            bnd.bcLo[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.loBnd[d]) ||
+                          ((bnd.bcHi[d] == FieldBC::inflow ||
+                            bnd.bcHi[d] == FieldBC::fixed) &&
+                           ijk[d] == bnd.hiBnd[d])) {
+                        arrRHS(i, j, k, c) = arrE(i, j, k, c);
+                      }
+                    }
+                  });
+    }
   }
 
   // 'conducting' body: project the right-hand side onto the radial direction
@@ -1076,12 +1154,13 @@ Real Pic::calc_E_field_energy() {
 
       sum += sumLoc * 0.5 * avg * get_cell_volume(iLev) / fourPI;
     }
-    ParallelDescriptor::ReduceRealSum(sum,
-                                      ParallelDescriptor::IOProcessorNumber());
-
-    if (!ParallelDescriptor::IOProcessor())
-      sum = 0;
   }
+  ParallelDescriptor::ReduceRealSum(sum,
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if (!ParallelDescriptor::IOProcessor())
+    sum = 0;
+
   return sum;
 }
 
@@ -1090,8 +1169,15 @@ Real Pic::calc_B_field_energy() {
   Real sum = 0;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = centerB[iLev][mfi];
+    // The magnetic energy is that of the *total* field, so the frozen
+    // intrinsic field B0 is folded in here when it is configured.
+    const bool hasB0 = use_intrinsic_B() && !centerB0[iLev].empty();
+    MultiFab* const centerBt =
+        hasB0 ? &total_center_B(centerB[iLev], iLev) : nullptr;
+    MultiFab& mfB = hasB0 ? *centerBt : centerB[iLev];
+
+    for (MFIter mfi(mfB); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = mfB[mfi];
       const auto& status = cell_status(iLev)[mfi].array();
 
       const Box& box = mfi.validbox();

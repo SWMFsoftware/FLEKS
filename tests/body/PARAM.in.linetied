@@ -56,7 +56,6 @@ periodic                particleBoxBoundaryHi
 0.0                     uz [km/s]
 314000.0                T [K]
 
-BODY is only implemented for the full-PIC solver.
 #SOLVEEM
 T                       solveEM
 

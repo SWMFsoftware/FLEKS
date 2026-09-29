@@ -348,6 +348,7 @@ public:
   double get_Si2NoM() const { return (1. / mNormSI); }
   double get_Si2NoRho() const { return normParams->Si2NoRho; }
   double get_Si2NoV() const { return normParams->Si2NoV; }
+  double get_Si2NoB() const { return normParams->Si2NoB; }
   double get_Si2NoP() const { return normParams->Si2NoP; }
 
   double get_lnorm_si() const { return lNormSI; }

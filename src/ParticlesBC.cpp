@@ -259,7 +259,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
   const Real nDens = inv->nDens;
   const Real sigma = inv->vth;
-  const Real vtherm = std::sqrt(2.0) * sigma;
   const Real uIn[3] = { inv->ux, inv->uy, inv->uz };
 
   // Macroparticle weight identical to the interior cell particles
@@ -276,11 +275,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real* probHi = geom.ProbHi();
   const Real* cellSize = geom.CellSize();
 
-  // Cache speed samplers for each inflow face (iDim, side)
-  InflowSpeedSampler speedSamplers[3][2];
-  bool samplerInit[3][2] = { { false, false },
-                             { false, false },
-                             { false, false } };
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
@@ -313,19 +307,17 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         // Inward drift speed = bulk velocity dotted with the inward unit
         // normal (uOut * inward; > 0 when plasma flows into the domain).
         const Real uOut = uIn[iDim];
-        const Real vd = (sigma > 0) ? (uOut * inward / vtherm) : 1.0e30;
-
-        if (vtherm > 0 && !samplerInit[iDim][side]) {
-          speedSamplers[iDim][side].init(vd);
-          samplerInit[iDim][side] = true;
-        }
 
         // Mean influx per boundary-transverse cell per step, in
-        // macroparticles (Hybrid-VPIC shock deck, bright() accumulator):
-        //   dn = nppc * vtherm * g(vd) * dt / dx
-        const Real fluxRate =
-            (vtherm > 0) ? nppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn
-                         : nppc * (uOut * inward) * dt / dxn;
+        // macroparticles.
+        // For a multi-species plasma flow, the convective flux across the inflow
+        // face is determined by the bulk drift speed:
+        //   dn = nppc * (uOut * inward) * dt / dx
+        // Using the unmagnetized 1D half-space thermal flux vtherm * g(vd) causes
+        // light species (electrons, where vtherm >> uOut) to be injected at a much
+        // higher rate than heavy species (ions), creating a strong charge imbalance
+        // and electrostatic sheath that triggers lower hybrid drift instabilities.
+        const Real fluxRate = nppc * (uOut * inward) * dt / dxn;
         if (fluxRate <= 0.0)
           continue;
 
@@ -363,16 +355,33 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
 
         for (int np = 0; np < nInject; ++np) {
-          // Velocity: inward normal speed from speed sampler; transverse
-          // components from paired Box-Muller. All 3 velocity components
-          // are sampled so 2D3V (AMREX_SPACEDIM=2) has correct out-of-plane
-          // velocity vz and thermal pressure.
-          Real wIn;
-          if (vtherm > 0) {
-            wIn = vtherm * speedSamplers[iDim][side].draw(randNum());
+          // Velocity: normal and transverse components sampled from a 3D
+          // isotropic drifting Maxwellian with thermal std sigma.
+          Real wIn = uOut * inward;
+          Real vel[3] = { 0.0, 0.0, 0.0 };
+          if (sigma > 0) {
+            const Real r1 = randNum();
+            const Real r2 = randNum();
+            const Real R1 = std::sqrt(-2.0 * std::log(std::max(r1, 1e-300)));
+            const Real phi1 = 2.0 * injPI * r2;
+
+            const Real r3 = randNum();
+            const Real r4 = randNum();
+            const Real R2 = std::sqrt(-2.0 * std::log(std::max(r3, 1e-300)));
+            const Real phi2 = 2.0 * injPI * r4;
+
+            // Inward normal velocity with thermal spread
+            wIn += sigma * (R1 * std::cos(phi1));
+            // Inward-directed speed into the domain (reflected if moving outward)
+            wIn = std::abs(wIn);
+
+            vel[trans1] = uIn[trans1] + sigma * (R1 * std::sin(phi1));
+            vel[trans2] = uIn[trans2] + sigma * (R2 * std::cos(phi2));
           } else {
-            wIn = uOut * inward; // cold beam
+            vel[trans1] = uIn[trans1];
+            vel[trans2] = uIn[trans2];
           }
+          vel[iDim] = inward * wIn;
 
           // Fractional ingress advancement: particles crossed the face at
           // random times t' in [0, dt], so at dt they have penetrated
@@ -389,20 +398,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           pos[t1] = base1 + randNum() * span1;
           if (nDim > 2) {
             pos[t2] = base2 + randNum() * span2;
-          }
-
-          Real vel[3] = { 0.0, 0.0, 0.0 };
-          vel[iDim] = inward * wIn;
-          if (sigma > 0) {
-            const Real r1 = randNum();
-            const Real r2 = randNum();
-            const Real R = std::sqrt(-2.0 * std::log(std::max(r1, 1e-300)));
-            const Real phi = 2.0 * injPI * r2;
-            vel[trans1] = uIn[trans1] + sigma * (R * std::cos(phi));
-            vel[trans2] = uIn[trans2] + sigma * (R * std::sin(phi));
-          } else {
-            vel[trans1] = uIn[trans1];
-            vel[trans2] = uIn[trans2];
           }
 
           auto p = make_particle();

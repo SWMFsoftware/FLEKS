@@ -54,13 +54,14 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
                                                const Vector<MultiFab>& nodeB,
+                                               const Vector<MultiFab>& nodeB0,
                                                const Vector<MultiFab>& eBg,
                                                const Vector<MultiFab>& uBg,
                                                Real dt, Real dtNext) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
-    charged_particle_mover(nodeE, nodeB, eBg, uBg, dt, dtNext);
+    charged_particle_mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext);
   }
 }
 
@@ -69,9 +70,12 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
-    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext) {
+    const Vector<MultiFab>& nodeB0, const Vector<MultiFab>& eBg,
+    const Vector<MultiFab>& uBg, Real dt, Real dtNext) {
   timing_func("Pts::charged_particle_mover");
+
+  // nodeB0 is empty when no intrinsic field is configured.
+  const bool useB0 = nodeB0.size() == nodeB.size() && !nodeB0[0].empty();
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
   Real dtLoc = 0.5 * (dt + dtNext);
@@ -84,6 +88,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real const>& EArr = nodeE[iLev][pti].array();
       const Array4<Real const>& BArr = nodeB[iLev][pti].array();
+      const Array4<Real const>& B0Arr =
+          useB0 ? nodeB0[iLev][pti].array() : Array4<Real const>();
 
       const Box& bx = cell_status(iLev)[pti].box();
       const Array4<int const>& status = cell_status(iLev)[pti].array();
@@ -120,9 +126,19 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         Real bp[3] = { 0, 0, 0 };
         Real ep[3] = { 0, 0, 0 };
         Real u0p[3] = { 0, 0, 0 };
-        const Array4<Real const> fields[2] = { BArr, EArr };
-        Real* values[2] = { bp, ep };
-        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+        Real b0p[3] = { 0, 0, 0 };
+        if (useB0) {
+          const Array4<Real const> fields[3] = { BArr, EArr, B0Arr };
+          Real* values[3] = { bp, ep, b0p };
+          interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+          bp[ix_] += b0p[ix_];
+          bp[iy_] += b0p[iy_];
+          bp[iz_] += b0p[iz_];
+        } else {
+          const Array4<Real const> fields[2] = { BArr, EArr };
+          Real* values[2] = { bp, ep };
+          interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+        }
 
         up = up - u0p[ix_];
         vp = vp - u0p[iy_];
@@ -397,10 +413,11 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
                                                  const MultiFab&, Real);       \
   template void T::mover(const Vector<MultiFab>&, const Vector<MultiFab>&,     \
                          const Vector<MultiFab>&, const Vector<MultiFab>&,     \
-                         Real, Real);                                          \
+                         const Vector<MultiFab>&, Real, Real);                 \
   template void T::charged_particle_mover(                                     \
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
-      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
+      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
+      const Vector<MultiFab>&, Real, Real);                                    \
   template void T::neutral_mover(Real);                                        \
   template void T::divE_correct_position(const Vector<MultiFab>&, int);
 

@@ -226,6 +226,9 @@ void TestParticles::move_and_save_charged_particles(
     const bool hasJacB = (nodeJacBMF != nullptr);
     const Array4<Real const> nodeJacBArr =
         hasJacB ? (*nodeJacBMF)[pti].array() : Array4<Real const>{};
+    // NOTE: nodeBMF is the *total* field: ParticleTracker::update_field() adds
+    // the frozen intrinsic field B0 to its copy of pic.nodeB, so the gather
+    // below needs no extra term.
 
     auto& particles = pti.GetArrayOfStructs();
 

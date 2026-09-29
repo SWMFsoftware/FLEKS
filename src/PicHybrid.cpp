@@ -19,7 +19,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   // Nodal total current J = curl(B)/(4*pi) from trial B (compact 1*dx stencil
   // from cell centres to nodes). Only needed for physical resistivity and Hall.
-  const bool needJ = (etaResistivity > 0 || useHallTerm);
+  const bool needJ = (etaResistivity > 0 || useHallTerm ||
+                      (useBody && etaBodyResistivity > 0));
   if (needJ) {
     curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
     nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -33,12 +34,33 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     apply_field_bc(nodeStatus[iLev], nodeBstage[iLev], 0, 3, &Pic::get_node_B,
                    iLev, true);
   }
+  if (is_body_conducting()) {
+    project_body_B(nodeBstage[iLev], iLev);
+    nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
 
   // Moment time-interpolation weights:
   // X(hstep) = (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
   const Real wPrev = 0.5 - hstep;
   const Real wCur = 0.5 + hstep;
   const Real invFourPI = 1.0 / fourPI;
+
+  const auto dx = Geom(iLev).CellSizeArray();
+  const auto probLo = Geom(iLev).ProbLoArray();
+  const int activeDim = (nDim == 3 && isFake2D) ? 2 : nDim;
+  const Real bcx = bodyCenter[0];
+  const Real bcy = bodyCenter[1];
+  const Real bcz = bodyCenter[2];
+
+  const bool hasBodyEta =
+      (useBody && etaBodyResistivity > 0 && rBodyResistivityOuter > 0);
+  const Real rBodyEtaOuter2 = rBodyResistivityOuter * rBodyResistivityOuter;
+  const Real rBodyEtaInner = rBodyResistivityInner;
+  const Real invDrEta =
+      (rBodyResistivityOuter > rBodyResistivityInner)
+          ? 1.0 / (rBodyResistivityOuter - rBodyResistivityInner)
+          : 0.0;
+  const Real etaBodyRes = etaBodyResistivity;
 
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -52,6 +74,23 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrEambi = (electronTemperature > 0)
                                             ? nodeEambi[iLev][mfi].array()
                                             : Array4<Real const>();
+
+    bool boxHasBodyEta = false;
+    if (hasBodyEta) {
+      Real d2Min = 0.0;
+      for (int d = 0; d < activeDim; ++d) {
+        Real xLo = probLo[d] + box.smallEnd(d) * dx[d];
+        Real xHi = probLo[d] + box.bigEnd(d) * dx[d];
+        if (bodyCenter[d] < xLo) {
+          Real diff = xLo - bodyCenter[d];
+          d2Min += diff * diff;
+        } else if (bodyCenter[d] > xHi) {
+          Real diff = bodyCenter[d] - xHi;
+          d2Min += diff * diff;
+        }
+      }
+      boxHasBodyEta = (d2Min < rBodyEtaOuter2);
+    }
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rhoPrev = momentsPrev(i, j, k, iRho_);
@@ -88,11 +127,32 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         jz = arrJ(i, j, k, iz_) * invFourPI;
       }
 
-      // eta * J
-      if (etaResistivity > 0) {
-        ex += etaResistivity * jx;
-        ey += etaResistivity * jy;
-        ez += etaResistivity * jz;
+      // eta * J (global + localized body resistivity)
+      Real etaTotal = etaResistivity;
+      if (boxHasBodyEta) {
+        Real r2 = 0.0;
+        Real xn = probLo[0] + i * dx[0] - bcx;
+        r2 += xn * xn;
+        Real yn = probLo[1] + j * dx[1] - bcy;
+        r2 += yn * yn;
+        if (activeDim > 2) {
+          Real zn = probLo[2] + k * dx[2] - bcz;
+          r2 += zn * zn;
+        }
+        if (r2 < rBodyEtaOuter2) {
+          Real r = std::sqrt(r2);
+          Real w = 1.0;
+          if (r > rBodyEtaInner && invDrEta > 0.0) {
+            Real s = (r - rBodyEtaInner) * invDrEta;
+            w = 0.5 * (1.0 + std::cos(M_PI * s));
+          }
+          etaTotal += etaBodyRes * w;
+        }
+      }
+      if (etaTotal > 0.0) {
+        ex += etaTotal * jx;
+        ey += etaTotal * jy;
+        ez += etaTotal * jz;
       }
 
       // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
@@ -124,7 +184,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B).
   // centerLapB = Laplacian(centerBin);
   // nodeHyperE = curl_center_to_node(centerLapB).
-  if (etaHyperLev[iLev] > 0) {
+  const bool doHyper =
+      (etaHyperLev[iLev] > 0 || (useBody && etaBodyHyperLev[iLev] > 0));
+  if (doHyper) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
@@ -136,13 +198,86 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     apply_field_bc(nodeStatus[iLev], nodeHyperE[iLev], 0,
                    nodeHyperE[iLev].nComp(), &Pic::get_node_E, iLev, false);
 
-    const Real f = etaHyperLev[iLev] / fourPI;
-    MultiFab::Saxpy(Eout, -f, nodeHyperE[iLev], 0, 0, nDim3, 0);
+    const bool hasBodyHyper =
+        (useBody && etaBodyHyperLev[iLev] > 0 && rBodyHyperOuter > 0);
+    const Real fGlobal = etaHyperLev[iLev] / fourPI;
+
+    if (!hasBodyHyper) {
+      MultiFab::Saxpy(Eout, -fGlobal, nodeHyperE[iLev], 0, 0, nDim3, 0);
+    } else {
+      const Real rBodyHypOuter2 = rBodyHyperOuter * rBodyHyperOuter;
+      const Real rBodyHypInner = rBodyHyperInner;
+      const Real invDrHyp = (rBodyHyperOuter > rBodyHypInner)
+                                ? 1.0 / (rBodyHyperOuter - rBodyHypInner)
+                                : 0.0;
+      const Real etaBodyH = etaBodyHyperLev[iLev];
+
+      for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        Real d2Min = 0.0;
+        for (int d = 0; d < activeDim; ++d) {
+          Real xLo = probLo[d] + box.smallEnd(d) * dx[d];
+          Real xHi = probLo[d] + box.bigEnd(d) * dx[d];
+          if (bodyCenter[d] < xLo) {
+            Real diff = xLo - bodyCenter[d];
+            d2Min += diff * diff;
+          } else if (bodyCenter[d] > xHi) {
+            Real diff = bodyCenter[d] - xHi;
+            d2Min += diff * diff;
+          }
+        }
+        if (d2Min >= rBodyHypOuter2) {
+          if (fGlobal > 0.0) {
+            const Array4<Real>& arrE = Eout[mfi].array();
+            const Array4<Real const>& arrHyp = nodeHyperE[iLev][mfi].array();
+            ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+              arrE(i, j, k, ix_) -= fGlobal * arrHyp(i, j, k, ix_);
+              arrE(i, j, k, iy_) -= fGlobal * arrHyp(i, j, k, iy_);
+              arrE(i, j, k, iz_) -= fGlobal * arrHyp(i, j, k, iz_);
+            });
+          }
+          continue;
+        }
+
+        const Array4<Real>& arrE = Eout[mfi].array();
+        const Array4<Real const>& arrHyp = nodeHyperE[iLev][mfi].array();
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          Real f = fGlobal;
+          Real r2 = 0.0;
+          Real xn = probLo[0] + i * dx[0] - bcx;
+          r2 += xn * xn;
+          Real yn = probLo[1] + j * dx[1] - bcy;
+          r2 += yn * yn;
+          if (activeDim > 2) {
+            Real zn = probLo[2] + k * dx[2] - bcz;
+            r2 += zn * zn;
+          }
+          if (r2 < rBodyHypOuter2) {
+            Real r = std::sqrt(r2);
+            Real w = 1.0;
+            if (r > rBodyHypInner && invDrHyp > 0.0) {
+              Real s = (r - rBodyHypInner) * invDrHyp;
+              w = 0.5 * (1.0 + std::cos(M_PI * s));
+            }
+            f += (etaBodyH * w) * invFourPI;
+          }
+          if (f > 0.0) {
+            arrE(i, j, k, ix_) -= f * arrHyp(i, j, k, ix_);
+            arrE(i, j, k, iy_) -= f * arrHyp(i, j, k, iy_);
+            arrE(i, j, k, iz_) -= f * arrHyp(i, j, k, iz_);
+          }
+        });
+      }
+    }
   }
 
   Eout.FillBoundary(Geom(iLev).periodicity());
   apply_field_bc(nodeStatus[iLev], Eout, 0, nDim3, &Pic::get_node_E, iLev,
                  false);
+  if (useBody) {
+    apply_body_E_bc(Eout, iLev);
+  }
 }
 
 //==========================================================
@@ -337,6 +472,9 @@ void Pic::compute_ambipolar_E(int iLev) {
   nodeEambi[iLev].FillBoundary(Geom(iLev).periodicity());
   apply_field_bc(nodeStatus[iLev], nodeEambi[iLev], 0, nDim3, &Pic::get_node_E,
                  iLev, false);
+  if (useBody) {
+    apply_body_E_bc(nodeEambi[iLev], iLev);
+  }
 }
 
 //==========================================================
@@ -403,6 +541,10 @@ void Pic::smooth_moments() {
         });
       }
     }
+
+    if (useBody) {
+      mask_body(moments, node_status(iLev));
+    }
   }
 }
 
@@ -454,6 +596,10 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
                    iLev, true);
   }
 
+  if (is_body_conducting()) {
+    project_body_B(mfB, iLev);
+  }
+
   if (isFake2D) {
     const int nComp = mfB.nComp();
     for (amrex::MFIter mfi(mfB); mfi.isValid(); ++mfi) {
@@ -498,12 +644,28 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // CFL stability check for explicit resistive and hyper-resistive diffusion.
+  // Grid-mode localized body hyper-resistivity
+  if (useBody && etaBodyHyperMode == "grid" && etaBodyHyperCh > 0) {
+    const int iFinest = n_lev() - 1;
+    const auto dxFine = Geom(iFinest).CellSizeArray();
+    Real dxMinFine = dxFine[0];
+    for (int d = 1; d < nDim; ++d)
+      dxMinFine = amrex::min(dxMinFine, dxFine[d]);
+
+    const Real etaBodyHyper =
+        fourPI * etaBodyHyperCh * std::pow(dxMinFine, 4) / dt;
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      etaBodyHyperLev[iLev] = etaBodyHyper;
+    }
+  }
+
   // CFL stability check for explicit resistive, hyper-resistive, and whistler
   // terms.
   const Real cflLimit = useRK4 ? 2.785 : 2.513;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0 && !useHallTerm)
+    const Real maxEta = amrex::max(etaResistivity, etaBodyResistivity);
+    const Real maxHyper = amrex::max(etaHyperLev[iLev], etaBodyHyperLev[iLev]);
+    if (maxEta <= 0 && maxHyper <= 0 && !useHallTerm)
       continue;
 
     const auto dx = Geom(iLev).CellSizeArray();
@@ -518,8 +680,8 @@ void Pic::update_B_hybrid() {
       if (nCellDim >= 3)
         sMax += invDx2;
     }
-    const Real cflEta = (etaResistivity / fourPI) * sMax * subDt;
-    const Real cflHyper = (etaHyperLev[iLev] / fourPI) * sMax * lMax * subDt;
+    const Real cflEta = (maxEta / fourPI) * sMax * subDt;
+    const Real cflHyper = (maxHyper / fourPI) * sMax * lMax * subDt;
     if (cflEta > cflLimit)
       amrex::Print()
           << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
@@ -532,8 +694,9 @@ void Pic::update_B_hybrid() {
 
     if (useHallTerm) {
       Real bMaxLev = 0.0;
+      const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
       for (int d = 0; d < 3; ++d) {
-        bMaxLev = amrex::max(bMaxLev, centerB[iLev].norm0(d, 0, false));
+        bMaxLev = amrex::max(bMaxLev, bForCfl.norm0(d, 0, false));
       }
       const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
       const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
@@ -573,11 +736,15 @@ void Pic::update_B_hybrid() {
       const Real dtThird = -subDt / 3.0;
 
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Stage 1: k1 = curl(E(B^n))
-        assemble_ohm_E(centerB[iLev], centerB[iLev], nodeEstage[iLev], iLev,
-                       hstepStart, false);
+        // Stage 1: k1 = curl(E(B^n)). The Ohm's law uses the total field.
+        // J comes from the evolved field alone (the intrinsic field is
+        // current-free), the cross products use the total field.
+        assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
+                       nodeEstage[iLev], iLev, hstepStart, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
 
         // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
@@ -586,10 +753,13 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], nodeEstage[iLev],
-                       iLev, hstepHalf, false);
+        assemble_ohm_E(centerBstage[iLev],
+                       total_center_B(centerBstar[iLev], iLev),
+                       nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
 
         // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
@@ -598,10 +768,13 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], nodeEstage[iLev],
-                       iLev, hstepHalf, false);
+        assemble_ohm_E(centerBstage[iLev],
+                       total_center_B(centerBstar[iLev], iLev),
+                       nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
 
         // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
@@ -610,10 +783,13 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], nodeEstage[iLev],
-                       iLev, hstepEnd, false);
+        assemble_ohm_E(centerBstage[iLev],
+                       total_center_B(centerBstar[iLev], iLev),
+                       nodeEstage[iLev], iLev, hstepEnd, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][3], cellStatus[iLev]);
 
         // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
@@ -636,10 +812,12 @@ void Pic::update_B_hybrid() {
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
 
         // Stage 1: B1 = B_n - subDt * curl(E(B_n))
-        assemble_ohm_E(centerB[iLev], centerB[iLev], nodeEstage[iLev], iLev,
-                       hstepStart, false);
+        assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
+                       nodeEstage[iLev], iLev, hstepStart, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
                           kStage[iLev][0], 0, 0, nDim3, nGst);
 
@@ -647,10 +825,13 @@ void Pic::update_B_hybrid() {
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], nodeEstage[iLev],
-                       iLev, hstepEnd, false);
+        assemble_ohm_E(centerBstar[iLev],
+                       total_center_B(centerBstar[iLev], iLev),
+                       nodeEstage[iLev], iLev, hstepEnd, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
@@ -661,10 +842,13 @@ void Pic::update_B_hybrid() {
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], nodeEstage[iLev],
-                       iLev, hstepHalf, false);
+        assemble_ohm_E(centerBstar[iLev],
+                       total_center_B(centerBstar[iLev], iLev),
+                       nodeEstage[iLev], iLev, hstepHalf, false);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
+        if (is_body_interior_frozen())
+          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
                           1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nGst);
         MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
@@ -694,6 +878,10 @@ void Pic::update_B_hybrid() {
       apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3, &Pic::get_node_B,
                      iLev, true);
     }
+    if (is_body_conducting()) {
+      project_body_B(nodeB[iLev], iLev);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
   }
 
   // Fill coarse-fine interface ghost cells for nodeB.
@@ -707,7 +895,8 @@ void Pic::update_B_hybrid() {
 
   // Evaluate E^{n+1} into nodeE for the next push.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    assemble_ohm_E(centerB[iLev], centerB[iLev], nodeE[iLev], iLev, 1.0);
+    assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
+                   nodeE[iLev], iLev, 1.0);
   }
 
   // Fill coarse-fine interface ghost cells for nodeE.

@@ -109,9 +109,6 @@ T                       useFixedDt
 10                      nParticle per cell in Y
 1                       nParticle per cell in Z
 
-#SAVEPLOT
-0                       nPlot
-
 #STOP
 150                     MaxIter
 -1.0                    TimeMax

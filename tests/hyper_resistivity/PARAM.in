@@ -20,7 +20,7 @@ F                       initFromSWMF
 1                       nCellZ
 
 #MAXBLOCKSIZE
-32                      maxBlockSizeX
+8                       maxBlockSizeX
 1                       maxBlockSizeY
 1                       maxBlockSizeZ
 
@@ -119,7 +119,6 @@ z=0 fluid ascii pic     plotString
 -1                      dn
 0.8                     dt
 1                       dx
-Bx By Bz Ex Ey Ez       varName
 
 #STOP
 -1                      MaxIter
