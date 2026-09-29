@@ -62,13 +62,16 @@ F                       solveEM
 T                       useHybridPIC
 
 #HALLTERM
-F                       useHallTerm
+T                       useHallTerm
+
+#MINIMUMDENSITY
+0.05                    rhoMinOhm
 
 #FIELDINTEGRATOR
 rk4                     fieldIntegrator
 
 #BSUBCYCLE
-1                       nBSubcycle
+10                      nBSubcycle
 
 #HYPERRESISTIVITY
 0.0                     etaHyperSI
@@ -85,9 +88,10 @@ T                       doSmoothMoments
 1.0                     mass           Species 0: ions
 1.0                     charge
 
-#ELECTRON
-1.0                     gamma
-0.0                     temperature    [eV]
+#ELECTRONTEMPERATURE
+27.06                   electronTemperature [eV]
+1.6666666667            electronGamma
+5.0                     electronDensity0
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0: ions
