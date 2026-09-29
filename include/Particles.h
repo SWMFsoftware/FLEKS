@@ -603,11 +603,8 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
-  // Hoisted per-level geometry.  Everything here depends only on the level, so
-  // it is read once instead of once per particle per dimension (the original
-  // code went through the plo/phi/invDx member vectors and Geom(iLev) inside
-  // the particle loop, where nothing could be kept in registers because the
-  // loop writes through `this`).
+  // Per-level geometry, hoisted so the particle loop does not go through the
+  // plo/phi/invDx vectors or Geom() per particle per dimension.
   struct LevelGeomBox {
     amrex::Real plo[3];
     amrex::Real phi[3];
@@ -618,26 +615,21 @@ public:
     int iLev;
   };
 
-  // Per-tile context for the particle position tests below (with the current
-  // tiling, tile_size == 1, one tile is one cell).
+  // Per-tile context of the position tests below (tile_size == 1: one cell).
   struct ActiveRegionBox : LevelGeomBox {
-    // Real-space box accepted outright: every point in it is known to be
-    // inside the active region.  It is the valid region of the level box this
-    // tile lives in, because a valid cell never carries the domain_boundary
+    // Real-space box of the level box the tile lives in.  Every point in it
+    // lies in a valid cell, and a valid cell never carries the domain_boundary
     // bit (Grid::update_cell_status only marks level-boundary cells outside
-    // the active region).  A point here is settled with three comparisons per
-    // dimension: no multiplication, no floor, no status lookup.  The box is
-    // shrunk by a few ULP so round-off can never make it claim a point that
-    // actually belongs to a domain-boundary cell.
+    // the active region), so such a point is inside the active region by
+    // construction.  Shrunk by a few ULP so round-off cannot claim a point
+    // that belongs to a ghost cell.
     amrex::Real lo[3];
     amrex::Real hi[3];
-    // Index range on which the status array may be queried: this is the box of
-    // the status fab, i.e. the level box grown by its ghost cells.
+    // Index range of the status fab: the level box grown by its ghost cells.
     int loIdx[3];
     int hiIdx[3];
   };
 
-  // Hoist the geometry of level `iLev`.
   LevelGeomBox make_level_geom_box(int iLev) const {
     LevelGeomBox lb;
     lb.iLev = iLev;
@@ -664,9 +656,7 @@ public:
     return lb;
   }
 
-  // Build the per-tile context for level `iLev` and the tile whose status fab
-  // box is `statusBox` (its valid region being `validBox`).  Called once per
-  // tile, outside the particle loop.
+  // Built once per tile, outside the particle loop.
   ActiveRegionBox make_active_region_box(int iLev, const amrex::Box& validBox,
                                          const amrex::Box& statusBox) const {
     constexpr amrex::Real eps = std::numeric_limits<amrex::Real>::epsilon();
@@ -699,10 +689,7 @@ public:
     return ab;
   }
 
-  // True when `p` lies inside the accept box of the tile described by `ab`
-  // (the valid region of the level box) and is therefore known to be inside
-  // the active region (see ActiveRegionBox).  No multiplication, no floor, no
-  // status lookup.
+  // Cheap accept: see ActiveRegionBox.lo/hi.  No arithmetic, no status lookup.
   inline bool is_inside_valid_box(const ParticleType& p,
                                   const ActiveRegionBox& ab) const {
     return AMREX_D_TERM(p.pos(0) >= ab.lo[0] && p.pos(0) < ab.hi[0],
@@ -710,11 +697,8 @@ public:
                      && p.pos(2) >= ab.lo[2] && p.pos(2) < ab.hi[2]);
   }
 
-  // Locate the cell that contains particle `p` and read its status bitmask in
-  // one shot: `(p.pos - plo) * invDx` -> floor -> single `status` load.
-  // `isInside` is false when the cell index falls outside the index range of
-  // the status fab; the status array must not be queried in that case and
-  // `mask` is set to 0.
+  // Cell index of `p` plus its status bitmask.  `isInside` is false when the
+  // index is outside the status fab; `mask` is then 0.
   inline void locate_particle_cell(const ParticleType& p,
                                    const ActiveRegionBox& ab,
                                    amrex::Array4<int const> const& status,
@@ -739,10 +723,9 @@ public:
   inline bool reflect_or_delete_particle(ParticleType& p,
                                          amrex::Array4<int const> const& status,
                                          const ActiveRegionBox& ab) {
-    // The cell index of the particle and its status bitmask are computed at
-    // most once per call: both the #BODY absorption test and the "outside the
-    // active region" test at the end need them.  They go stale whenever the
-    // position is changed by a reflection, see `isLocateValid`.
+    // The cell location is computed at most once and shared by the #BODY test
+    // and the active-region test; a reflection moves the particle and
+    // invalidates it (see `isLocateValid`).
     const amrex::Real* const ploLoc = ab.plo;
     const amrex::Real* const phiLoc = ab.phi;
     bool isInsideBox = false;
@@ -750,11 +733,8 @@ public:
     int cellMask = 0;
     bool isLocateValid = false;
 
-    // Absorbing inner body (see #BODY): a particle that is pushed into a body
-    // cell is removed and tallied. The test uses the cell that contains the
-    // particle, i.e., the same cell-based staircase as the field/moment mask,
-    // so the absorption surface and the mask are the same object and no
-    // charge is silently discarded at the surface.
+    // Absorbing inner body (see #BODY).  The test uses the cell containing the
+    // particle, i.e. the same cell-based staircase as the field/moment mask.
     if (grid != nullptr && grid->use_body()) {
       if (grid->bodyParticleBC == ParticleBC::reflect) {
         // Specular reflection on the smooth sphere: the test uses the exact
@@ -805,8 +785,6 @@ public:
       }
     }
 
-    // Nothing located yet (or the reflection invalidated the cached location):
-    // the tile-based test settles it.
     if (!isLocateValid)
       return is_outside_active_region(p, status, ab);
 
@@ -821,12 +799,8 @@ public:
     absorbTallyMass[face] += weight * mass;
   }
 
-  // Specular reflection of a particle that is inside the inner body (see
-  // #BODYBOUNDARY with particleBoundary = reflect). The surface normal is the
-  // radial direction from the body center, so the reflection uses the smooth
-  // sphere: with n = (x - c)/|x - c| the position is mirrored to r -> 2R - r
-  // and an inward velocity is reflected as v -> v - 2(v.n)n. The particle and
-  // its charge are kept, so nothing is tallied.
+  // Specular reflection on the smooth body sphere (#BODYBOUNDARY reflect);
+  // unlike absorption it keeps the particle, so nothing is tallied.
   inline void reflect_particle_at_body(ParticleType& p) {
     if (grid == nullptr)
       return;
@@ -1060,11 +1034,8 @@ public:
     for (int iDim = 0; iDim < nDim; ++iDim) {
       loc[iDim] = p.pos(iDim);
       if (lb.periodic[iDim]) {
-        // Fix index/loc for periodic BC in O(1) without unbounded iteration.
-        // A particle only ever overshoots by a fraction of the domain length
-        // per step, so one addition or subtraction folds it back; the floor
-        // -based fold is kept as a fallback for the pathological case (this
-        // whole path is only reached by particles that left their tile box).
+        // Divide/std::floor only when the point is more than one domain length
+        // out, which a single push cannot produce.
         const amrex::Real L = lb.periodicL[iDim];
         if (loc[iDim] < lb.plo[iDim] || loc[iDim] >= lb.phi[iDim]) {
           if (loc[iDim] < lb.plo[iDim] + L && loc[iDim] >= lb.plo[iDim] - L) {
@@ -1088,22 +1059,9 @@ public:
     return !grid->is_inside_domain(loc.begin());
   }
 
-  /**
-   * @brief Checks if a particle is outside the active region at a given level.
-   *
-   * Fast (tile-based) variant used by the hot particle loops: the per-tile
-   * geometry is passed in `ab` (see make_active_region_box).  A particle that
-   * is still inside the valid region of the level box is accepted with a few
-   * position comparisons; only the ones that left it pay for the index
-   * computation and the status lookup, and only those outside the status fab
-   * fall back to the geometric test below.
-   *
-   * @param p The particle to check.
-   * @param status Status bitmask array of the local tile (including ghost
-   * cells).
-   * @param ab Hoisted geometry of the level box this tile lives in.
-   * @return True if the particle is outside the active region, false otherwise.
-   */
+  // Tile-based variant used by the hot particle loops: particles still inside
+  // the level box are accepted by position, those outside the status fab fall
+  // back to the geometric test above.
   inline bool is_outside_active_region(const ParticleType& p,
                                        amrex::Array4<int const> const& status,
                                        const ActiveRegionBox& ab) const {
