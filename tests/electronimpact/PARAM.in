@@ -131,9 +131,6 @@ T
 T
 1
 
-#SAVEPLOT
-0                       nPlot
-
 #STOP
 10                      MaxIter
 1.0                     TimeMax

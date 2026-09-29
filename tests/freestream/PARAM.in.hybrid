@@ -104,7 +104,6 @@ z=0 fluid ascii pic     plotString
 -1                      dn
 10.0                    dt
 1                       dx
-Bx By Bz Ex Ey Ez       varName
 
 #STOP
 -1                      MaxIter
