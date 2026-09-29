@@ -49,10 +49,10 @@ BASELINES = {
         "speedup": 1.5,      # 2-core scaling floor
     },
     "hybrid": {
-        "total_pps": 0.3,    # total wall-clock
-        "mover_pps": 0.05,   # isolated particle mover
-        "solver_pps": 0.09,  # explicit hybrid field advance is cheaper
-        "speedup": 1.5,      # 2-core scaling floor
+        "total_pps": 0.31,   # total wall-clock
+        "mover_pps": 0.052,  # isolated particle mover
+        "solver_pps": 0.091, # explicit hybrid field advance is cheaper
+        "speedup": 1.48,      # 2-core scaling floor
     },
     "pt": {
         "total_pps": 3.2,    # total wall-clock rate
@@ -61,8 +61,8 @@ BASELINES = {
         "speedup": 1.9,      # 2-core mover speedup floor
     },
     "reconnection2d": {
-        "total_pps": 0.96,   # total wall-clock rate
-        "mover_pps": 0.052,  # isolated particle mover rate
+        "total_pps": 0.97,   # total wall-clock rate
+        "mover_pps": 0.056,  # isolated particle mover rate
         "solver_pps": 0.02,  # isolated implicit field solver rate
         "speedup": 1.85,     # 2-core scaling floor
     },
