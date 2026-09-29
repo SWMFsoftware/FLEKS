@@ -621,13 +621,11 @@ public:
   // Per-tile context for the particle position tests below (with the current
   // tiling, tile_size == 1, one tile is one cell).
   struct ActiveRegionBox : LevelGeomBox {
-    // Real-space box that may be accepted outright: every point in it is known
-    // to be inside the active region.  By default it is the *valid* region of
-    // the level box this tile lives in (a valid cell never carries the
-    // domain_boundary bit, see Grid::update_cell_status, which only marks
-    // level-boundary cells outside the active region).  When even the ghost
-    // cells of this tile are inside the active region, it is grown to the whole
-    // status box.  A point here is settled with three comparisons per
+    // Real-space box accepted outright: every point in it is known to be
+    // inside the active region.  It is the valid region of the level box this
+    // tile lives in, because a valid cell never carries the domain_boundary
+    // bit (Grid::update_cell_status only marks level-boundary cells outside
+    // the active region).  A point here is settled with three comparisons per
     // dimension: no multiplication, no floor, no status lookup.  The box is
     // shrunk by a few ULP so round-off can never make it claim a point that
     // actually belongs to a domain-boundary cell.
@@ -701,9 +699,10 @@ public:
     return ab;
   }
 
-  // True when `p` lies inside the valid region of the level box described by
-  // `ab` and is therefore known to be inside the active region (see
-  // ActiveRegionBox).  No multiplication, no floor, no status lookup.
+  // True when `p` lies inside the accept box of the tile described by `ab`
+  // (the valid region of the level box) and is therefore known to be inside
+  // the active region (see ActiveRegionBox).  No multiplication, no floor, no
+  // status lookup.
   inline bool is_inside_valid_box(const ParticleType& p,
                                   const ActiveRegionBox& ab) const {
     return AMREX_D_TERM(p.pos(0) >= ab.lo[0] && p.pos(0) < ab.hi[0],
@@ -1062,8 +1061,18 @@ public:
       loc[iDim] = p.pos(iDim);
       if (lb.periodic[iDim]) {
         // Fix index/loc for periodic BC in O(1) without unbounded iteration.
+        // A particle only ever overshoots by a fraction of the domain length
+        // per step, so one addition or subtraction folds it back; the floor
+        // -based fold is kept as a fallback for the pathological case (this
+        // whole path is only reached by particles that left their tile box).
         const amrex::Real L = lb.periodicL[iDim];
-        loc[iDim] -= std::floor((loc[iDim] - lb.plo[iDim]) / L) * L;
+        if (loc[iDim] < lb.plo[iDim] || loc[iDim] >= lb.phi[iDim]) {
+          if (loc[iDim] < lb.plo[iDim] + L && loc[iDim] >= lb.plo[iDim] - L) {
+            loc[iDim] += (loc[iDim] < lb.plo[iDim]) ? L : -L;
+          } else {
+            loc[iDim] -= std::floor((loc[iDim] - lb.plo[iDim]) / L) * L;
+          }
+        }
         if (loc[iDim] >= lb.phi[iDim]) {
           loc[iDim] = lb.plo[iDim];
         }
@@ -1101,13 +1110,13 @@ public:
     if (is_inside_valid_box(p, ab))
       return false;
 
-      bool isInside = false;
-      amrex::IntVect cellIdx;
-      int cellMask = 0;
-      locate_particle_cell(p, ab, status, isInside, cellIdx, cellMask);
+    bool isInside = false;
+    amrex::IntVect cellIdx;
+    int cellMask = 0;
+    locate_particle_cell(p, ab, status, isInside, cellIdx, cellMask);
 
-      return isInside ? bit::is_domain_boundary(cellMask)
-                      : is_outside_active_region(p, ab);
+    return isInside ? bit::is_domain_boundary(cellMask)
+                    : is_outside_active_region(p, ab);
   }
 
   inline void label_particles_outside_active_region() {
