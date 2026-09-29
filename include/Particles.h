@@ -602,6 +602,34 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
+  // Locate the cell that contains particle `p` and read its status bitmask in
+  // one shot: `(p.pos - plo) * invDx` -> floor -> single `status` load.
+  // `isInside` is false when the cell index falls outside [low, high]; the
+  // status array must not be queried in that case and `mask` is set to 0.
+  // Shared by reflect_or_delete_particle() so that the #BODY test and the
+  // "outside the active region" test locate the particle only once.
+  inline void locate_particle_cell(const ParticleType& p,
+                                   const amrex::Real* const ploLoc,
+                                   const amrex::Real* const invDxLoc,
+                                   const amrex::IntVect& low,
+                                   const amrex::IntVect& high,
+                                   amrex::Array4<int const> const& status,
+                                   bool& isInside, amrex::IntVect& idx,
+                                   int& mask) const {
+    for (int d = 0; d < nDim; ++d) {
+      const amrex::Real dShift = (p.pos(d) - ploLoc[d]) * invDxLoc[d];
+      idx[d] = fastfloor(dShift);
+      if (idx[d] > high[d] || idx[d] < low[d]) {
+        isInside = false;
+        mask = 0;
+        return;
+      }
+    }
+
+    isInside = true;
+    mask = status(idx);
+  }
+
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
   // tallies; `reflect` mirrors.  Only acts at iLev == 0.
   inline bool reflect_or_delete_particle(ParticleType& p,
@@ -610,6 +638,16 @@ public:
                                          const amrex::IntVect& high, int iLev,
                                          const amrex::Real* const ploLoc,
                                          const amrex::Real* const phiLoc) {
+    // The cell index of the particle and its status bitmask are computed at
+    // most once per call: both the #BODY absorption test and the "outside the
+    // active region" test at the end need them.  They go stale whenever the
+    // position is changed by a reflection, see `isLocateValid`.
+    const amrex::Real* const invDxLoc = invDx[iLev].begin();
+    bool isInsideBox = false;
+    amrex::IntVect cellIdx;
+    int cellMask = 0;
+    bool isLocateValid = false;
+
     // Absorbing inner body (see #BODY): a particle that is pushed into a body
     // cell is removed and tallied. The test uses the cell that contains the
     // particle, i.e., the same cell-based staircase as the field/moment mask,
@@ -624,21 +662,15 @@ public:
         for (int d = 0; d < nDim; ++d)
           xyz[d] = p.pos(d);
 
+        // The reflection moves the particle, so nothing may be cached here.
         if (grid->is_inside_body(xyz))
           reflect_particle_at_body(p);
       } else {
-        bool isInsideBox = true;
-        amrex::IntVect cellIdx;
-        for (int d = 0; d < nDim; ++d) {
-          const amrex::Real dShift = (p.pos(d) - ploLoc[d]) * invDx[iLev][d];
-          cellIdx[d] = fastfloor(dShift);
-          if (cellIdx[d] > high[d] || cellIdx[d] < low[d]) {
-            isInsideBox = false;
-            break;
-          }
-        }
+        locate_particle_cell(p, ploLoc, invDxLoc, low, high, status,
+                             isInsideBox, cellIdx, cellMask);
+        isLocateValid = true;
 
-        if (isInsideBox && bit::is_body(status(cellIdx))) {
+        if (isInsideBox && bit::is_body(cellMask)) {
           body_absorb_tally(p.rdata(iqp_));
           return true;
         }
@@ -664,12 +696,20 @@ public:
       if (bcLo == ParticleBC::reflect && p.pos(d) < ploLoc[d]) {
         p.pos(d) = 2.0 * ploLoc[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        isLocateValid = false;
       } else if (bcHi == ParticleBC::reflect && p.pos(d) > phiLoc[d]) {
         p.pos(d) = 2.0 * phiLoc[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        isLocateValid = false;
       }
     }
-    return is_outside_active_region(p, status, low, high, iLev);
+
+    if (!isLocateValid)
+      locate_particle_cell(p, ploLoc, invDxLoc, low, high, status, isInsideBox,
+                           cellIdx, cellMask);
+
+    return isInsideBox ? bit::is_domain_boundary(cellMask)
+                       : is_outside_active_region(p, iLev);
   }
 
   // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
