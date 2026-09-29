@@ -248,11 +248,12 @@ public:
   void post_regrid() override {
     // Array redistribution creates fine nodes before their fluid state can be
     // interpolated from the retained coarse level.
-    distribute_arrays();
+    distribute_arrays(cGridsOld);
     fill_new_cells();
   }
 
-  void distribute_arrays();
+  void distribute_arrays(const amrex::Vector<amrex::BoxArray>& cGridsOldIn =
+                             amrex::Vector<amrex::BoxArray>());
   void fill_new_cells();
 
   int count_couple_node_number();

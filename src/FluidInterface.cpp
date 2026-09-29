@@ -517,7 +517,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
 }
 
 //==========================================================
-void FluidInterface::distribute_arrays() {
+void FluidInterface::distribute_arrays(
+    const amrex::Vector<amrex::BoxArray>& cGridsOldIn) {
   if (nodeFluid.empty())
     nodeFluid.resize(n_lev_max());
 
@@ -536,7 +537,8 @@ void FluidInterface::distribute_arrays() {
                         nGst, doCopy, 0.0);
   }
 
-  distribute_grid_arrays();
+  const auto& oldGrids = cGridsOldIn.empty() ? cGridsOld : cGridsOldIn;
+  distribute_grid_arrays(oldGrids);
 }
 
 //==========================================================
