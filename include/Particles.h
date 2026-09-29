@@ -603,30 +603,68 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
-  // Per-tile context for the particle position tests below (with the current
-  // tiling, tile_size == 1, one tile is one cell).  Everything here depends
-  // only on (level, tile), so it is computed once per tile instead of once per
-  // particle.
-  struct ActiveRegionBox {
-    // Real-space extent of the *valid* region of the level box that this tile
-    // lives in.  A point inside it lies in a valid cell, and Grid's status
-    // array never flags a valid cell as a domain boundary
-    // (Grid::update_cell_status only sets that bit on level-boundary cells),
-    // so such a point is known to be inside the active region with three
-    // comparisons per dimension and no index arithmetic at all.  The box is
-    // shrunk by a few ULP so that round-off can never make it claim a point
-    // that actually belongs to a ghost cell.
-    amrex::Real lo[3];
-    amrex::Real hi[3];
+  // Hoisted per-level geometry.  Everything here depends only on the level, so
+  // it is read once instead of once per particle per dimension (the original
+  // code went through the plo/phi/invDx member vectors and Geom(iLev) inside
+  // the particle loop, where nothing could be kept in registers because the
+  // loop writes through `this`).
+  struct LevelGeomBox {
     amrex::Real plo[3];
     amrex::Real phi[3];
     amrex::Real invDx[3];
+    // Domain length along a periodic dimension, 0 otherwise.
+    amrex::Real periodicL[3];
+    bool periodic[3];
+    int iLev;
+  };
+
+  // Per-tile context for the particle position tests below (with the current
+  // tiling, tile_size == 1, one tile is one cell).
+  struct ActiveRegionBox : LevelGeomBox {
+    // Real-space box that may be accepted outright: every point in it is known
+    // to be inside the active region.  By default it is the *valid* region of
+    // the level box this tile lives in (a valid cell never carries the
+    // domain_boundary bit, see Grid::update_cell_status, which only marks
+    // level-boundary cells outside the active region).  When even the ghost
+    // cells of this tile are inside the active region, it is grown to the whole
+    // status box.  A point here is settled with three comparisons per
+    // dimension: no multiplication, no floor, no status lookup.  The box is
+    // shrunk by a few ULP so round-off can never make it claim a point that
+    // actually belongs to a domain-boundary cell.
+    amrex::Real lo[3];
+    amrex::Real hi[3];
     // Index range on which the status array may be queried: this is the box of
     // the status fab, i.e. the level box grown by its ghost cells.
     int loIdx[3];
     int hiIdx[3];
-    int iLev;
   };
+
+  // Hoist the geometry of level `iLev`.
+  LevelGeomBox make_level_geom_box(int iLev) const {
+    LevelGeomBox lb;
+    lb.iLev = iLev;
+    for (int d = 0; d < 3; ++d) {
+      lb.plo[d] = 0.0;
+      lb.phi[d] = 0.0;
+      lb.invDx[d] = 0.0;
+      lb.periodicL[d] = 0.0;
+      lb.periodic[d] = false;
+    }
+
+    const amrex::Real* const ploLoc = plo[iLev].begin();
+    const amrex::Real* const phiLoc = phi[iLev].begin();
+    const amrex::Real* const invDxLoc = invDx[iLev].begin();
+
+    for (int d = 0; d < nDim; ++d) {
+      lb.plo[d] = ploLoc[d];
+      lb.phi[d] = phiLoc[d];
+      lb.invDx[d] = invDxLoc[d];
+      lb.periodic[d] = Geom(iLev).isPeriodic(d);
+      lb.periodicL[d] = lb.periodic[d] ? (phiLoc[d] - ploLoc[d]) : 0.0;
+    }
+
+    return lb;
+  }
 
   // Build the per-tile context for level `iLev` and the tile whose status fab
   // box is `statusBox` (its valid region being `validBox`).  Called once per
@@ -636,27 +674,19 @@ public:
     constexpr amrex::Real eps = std::numeric_limits<amrex::Real>::epsilon();
 
     ActiveRegionBox ab;
-    ab.iLev = iLev;
+    static_cast<LevelGeomBox&>(ab) = make_level_geom_box(iLev);
     for (int d = 0; d < 3; ++d) {
       // Empty by default: an inactive dimension never accepts anything.
       ab.lo[d] = 1.0;
       ab.hi[d] = -1.0;
-      ab.plo[d] = 0.0;
-      ab.phi[d] = 0.0;
-      ab.invDx[d] = 0.0;
       ab.loIdx[d] = 0;
       ab.hiIdx[d] = 0;
     }
 
     const amrex::Real* const ploLoc = plo[iLev].begin();
-    const amrex::Real* const phiLoc = phi[iLev].begin();
     const amrex::Real* const dxLoc = dx[iLev].begin();
-    const amrex::Real* const invDxLoc = invDx[iLev].begin();
 
     for (int d = 0; d < nDim; ++d) {
-      ab.plo[d] = ploLoc[d];
-      ab.phi[d] = phiLoc[d];
-      ab.invDx[d] = invDxLoc[d];
       ab.loIdx[d] = statusBox.smallEnd(d);
       ab.hiIdx[d] = statusBox.bigEnd(d);
 
@@ -782,7 +812,7 @@ public:
       return is_outside_active_region(p, status, ab);
 
     return isInsideBox ? bit::is_domain_boundary(cellMask)
-                       : is_outside_active_region(p, ab.iLev);
+                       : is_outside_active_region(p, ab);
   }
 
   // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
@@ -1025,21 +1055,22 @@ public:
 
   void set_is_target_ppc_defined(bool in) { isTargetPPCDefined = in; }
 
-  inline bool is_outside_active_region(const ParticleType& p, int iLev) const {
+  inline bool is_outside_active_region(const ParticleType& p,
+                                       const LevelGeomBox& lb) const {
     amrex::RealVect loc;
     for (int iDim = 0; iDim < nDim; ++iDim) {
       loc[iDim] = p.pos(iDim);
-      if (Geom(iLev).isPeriodic(iDim)) {
+      if (lb.periodic[iDim]) {
         // Fix index/loc for periodic BC in O(1) without unbounded iteration.
-        const amrex::Real L = phi[iLev][iDim] - plo[iLev][iDim];
-        loc[iDim] -= std::floor((loc[iDim] - plo[iLev][iDim]) / L) * L;
-        if (loc[iDim] >= phi[iLev][iDim]) {
-          loc[iDim] = plo[iLev][iDim];
+        const amrex::Real L = lb.periodicL[iDim];
+        loc[iDim] -= std::floor((loc[iDim] - lb.plo[iDim]) / L) * L;
+        if (loc[iDim] >= lb.phi[iDim]) {
+          loc[iDim] = lb.plo[iDim];
         }
       } else {
         // Fast bounding-box check: if outside global [plo, phi], cannot be
         // inside activeRegion.
-        if (loc[iDim] < plo[iLev][iDim] || loc[iDim] > phi[iLev][iDim]) {
+        if (loc[iDim] < lb.plo[iDim] || loc[iDim] > lb.phi[iDim]) {
           return true;
         }
       }
@@ -1076,7 +1107,7 @@ public:
       locate_particle_cell(p, ab, status, isInside, cellIdx, cellMask);
 
       return isInside ? bit::is_domain_boundary(cellMask)
-                      : is_outside_active_region(p, ab.iLev);
+                      : is_outside_active_region(p, ab);
   }
 
   inline void label_particles_outside_active_region() {
@@ -1109,10 +1140,11 @@ public:
   inline void label_particles_outside_active_region_general() {
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+        const LevelGeomBox lb = make_level_geom_box(iLev);
         for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
           AoS& particles = pti.GetArrayOfStructs();
           for (auto& p : particles) {
-            if (is_outside_active_region(p, iLev)) {
+            if (is_outside_active_region(p, lb)) {
               p.id() = -1;
             }
           }
