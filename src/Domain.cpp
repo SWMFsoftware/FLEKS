@@ -1128,7 +1128,6 @@ void Domain::read_param(const bool readGridInfo) {
 
   std::string command;
   std::size_t commandSearchPosition = 0;
-  std::set<int> refineLevelsSeen;
   bool refineSelectorsChanged = false;
   bool gridEfficiencyChanged = false;
   if (readGridInfo)
@@ -1338,8 +1337,6 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("iLev", iLev);
 
       readParam.read_var("regions", s);
-      if (!refineLevelsSeen.insert(iLev).second)
-        Abort("Duplicate #REFINEREGION level in one session");
       refineSelectorsChanged |= set_refine_region(iLev, s);
 
     } else if (command == "#REFINEMENTRATIO") {
