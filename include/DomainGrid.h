@@ -59,6 +59,7 @@ protected:
   int gridID;
   std::string printPrefix;
   std::string gridName;
+  int refinementRatio = 2;
 
   // Shapes persist across parameter sessions. A selector may start using a
   // previously defined shape, but a name never acquires new geometry.

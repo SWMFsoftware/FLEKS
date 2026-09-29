@@ -524,8 +524,9 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 
   amrInfo.ref_ratio.clear();
   for (int iLev = 0; iLev < amrInfo.max_level; iLev++) {
-    amrInfo.ref_ratio.push_back(isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1))
-                                         : IntVect(2));
+    amrInfo.ref_ratio.push_back(
+        isFake2D ? IntVect(AMREX_D_DECL(refinementRatio, refinementRatio, 1))
+                 : IntVect(refinementRatio));
   }
 
   amrInfo.max_grid_size.clear();
@@ -1335,14 +1336,9 @@ void Domain::read_param(const bool readGridInfo) {
       refineSelectorsChanged |= set_refine_region(iLev, s);
 
     } else if (command == "#REFINEMENTRATIO") {
-      int rr;
-      readParam.read_var("refineRatio", rr);
-      int size = amrInfo.ref_ratio.size();
-      amrInfo.ref_ratio.clear();
-      for (int i = 0; i < size; ++i) {
-        amrInfo.ref_ratio.push_back(isFake2D ? IntVect(AMREX_D_DECL(rr, rr, 1))
-                                             : IntVect(rr));
-      }
+      readParam.read_var("refineRatio", refinementRatio);
+      if (refinementRatio <= 1)
+        Abort("Error: #REFINEMENTRATIO must be > 1");
     } else if (command == "#NOUTFILE") {
       readParam.read_var("nFileField", domainParameters.nFileField);
       readParam.read_var("nFileParticle", domainParameters.nFileParticle);
