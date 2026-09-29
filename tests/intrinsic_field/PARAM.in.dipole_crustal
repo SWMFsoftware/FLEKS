@@ -1,10 +1,12 @@
 #DESCRIPTION
-Intrinsic magnetic field: crustal field from a spherical harmonic file
-(BATSRUS new layout, three header lines + 'n m value' triples).
+Intrinsic magnetic field: dipole and crustal field together, the crustal part
+from a spherical harmonic file (BATSRUS layout, three header lines + 'n m
+value' triples).
 
-Dipole and crustal field together. The validator checks that the sum
-equals the dipole-only deck plus the crustal-only deck (linear superposition
-of two static fields).
+Same isolated setup as the dipole deck: SOLVEEM F and a zero UNIFORMSTATE
+field, so the only field in the domain is the static intrinsic field B0. The
+validator checks that B0 equals the sum of the dipole-only deck and the
+crustal-only deck, i.e. that the two static fields superpose linearly.
 
 #INITFROMSWMF
 F                       initFromSWMF

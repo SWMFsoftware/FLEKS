@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validator for the intrinsic-magnetic-field tests (tests/intrinsic_field/).
 
-Six variants are discovered from this directory:
+Five variants are discovered from this directory:
 
   - PARAM.in              -> "intrinsic_field"                tilted dipole
   - PARAM.in.body         -> "intrinsic_field_body"           dipole + #BODY
@@ -155,9 +155,9 @@ def crustal_b0(coeffs, x, y, z=0.0):
             br * ct - bth * st)
 
 
-# The coefficients of crustal_nm2.txt / marsmgsp_small.txt (nMax = 3). Only
-# degrees with m <= n-1 are present, because the legacy marsmgsp layout cannot
-# carry the m = n terms and the two decks must stay comparable.
+# The coefficients of crustal_nm2.txt (nMax = 3). Only degrees with m <= n-1
+# are present, because the evaluation loops n = 0..nMax-1 and the highest
+# degree of the file is dropped, so the two crustal decks stay comparable.
 CRUSTAL_NM2 = {
     (1, 0): (100.0, 0.0),
     (2, 0): (-18.0, 0.0),

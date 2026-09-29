@@ -627,7 +627,16 @@ void Pic::fill_intrinsic_B() {
       for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
         const Box &box = mfi.fabbox();
         const Array4<Real> &arr = nodeB0[iLev][mfi].array();
-        for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+        // Under a 2D build index 2 of a Box is out of range, so the z loop
+        // collapses to a single pass and z comes from the model center.
+#if (AMREX_SPACEDIM > 2)
+        const int kLo = box.smallEnd(2);
+        const int kHi = box.bigEnd(2);
+#else
+        const int kLo = 0;
+        const int kHi = 0;
+#endif
+        for (int k = kLo; k <= kHi; ++k) {
 #if (AMREX_SPACEDIM > 2)
           const Real z = (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : p.center[2];
 #else
@@ -649,7 +658,14 @@ void Pic::fill_intrinsic_B() {
       for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
         const Box &box = mfi.fabbox();
         const Array4<Real> &arr = centerB0[iLev][mfi].array();
-        for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+#if (AMREX_SPACEDIM > 2)
+        const int kLo = box.smallEnd(2);
+        const int kHi = box.bigEnd(2);
+#else
+        const int kLo = 0;
+        const int kHi = 0;
+#endif
+        for (int k = kLo; k <= kHi; ++k) {
 #if (AMREX_SPACEDIM > 2)
           const Real z = (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : p.center[2];
 #else

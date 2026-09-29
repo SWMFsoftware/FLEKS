@@ -1,7 +1,7 @@
 #DESCRIPTION
 Intrinsic magnetic field: crustal field from a spherical harmonic file
-(BATSRUS new layout, three header lines + 'n m value' triples), with only
-g(1,0) non-zero so that the field is the closed-form axial dipole
+(BATSRUS layout, three header lines + 'n m value' triples), with only g(1,0)
+non-zero so that the field is the closed-form axial dipole
 Br = 2*g10*cos(theta)/r^3.
 
 Same isolated setup as the dipole deck: SOLVEEM F and a zero UNIFORMSTATE

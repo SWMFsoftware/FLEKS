@@ -1,6 +1,6 @@
 Test crustal coefficients, BATSRUS new layout: the three lines above the data
 are the header the reader skips, then one 'n m value' triple per coefficient.
-Deck nMax = 3; same numbers as marsmgsp_small.txt (legacy layout).
+Deck nMax = 3; g and h of the degrees 1 and 2 (m <= n-1).
  1 0 100.0
  1 1 0.0
  1 1 0.0
