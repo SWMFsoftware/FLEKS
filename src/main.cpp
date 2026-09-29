@@ -20,6 +20,28 @@ Domains& fleksDomains = *new Domains;
 extern "C" {
 void timing_start_c(size_t* nameLen, char* name) {}
 void timing_stop_c(size_t* nameLen, char* name) {}
+
+#ifdef _PT_COMPONENT_
+void OH_get_charge_exchange_wrapper(double* /*rhoIon*/, double* /*cs2Ion*/,
+                                    double /*uIon_D*/[3], double* /*rhoNeu*/,
+                                    double* /*cs2Neu*/, double /*uNeu_D*/[3],
+                                    double /*sourceIon_V*/[5],
+                                    double /*sourceNeu_V*/[5]) {}
+
+void OH_get_charge_exchange_region(int* iRegion, double* /*r*/,
+                                   double* /*rhoDim*/, double* /*u2Dim*/,
+                                   double* /*uSW2Dim*/, double* /*tempDim*/,
+                                   double* /*tempPu2Dim*/, double* /*mach2*/,
+                                   double* /*machPUI2*/, double* /*machSW2*/,
+                                   double* /*levHP*/) {
+  if (iRegion)
+    *iRegion = -1;
+}
+
+void OH_get_solar_wind(double* /*x*/, double* /*y*/, double* /*z*/,
+                       double* /*numDen*/, double* /*ur*/, double* /*temp*/,
+                       double /*b*/[3]) {}
+#endif
 }
 
 namespace {
@@ -67,6 +89,10 @@ std::vector<std::string> split_sessions(const std::string& paramString) {
     lines.push_back(line + "\n");
   }
 
+  auto has_content = [](const std::string& s) {
+    return s.find_first_not_of(" \t\r\n") != std::string::npos;
+  };
+
   std::vector<std::string> sessions;
   std::string currentSession;
 
@@ -81,13 +107,19 @@ std::vector<std::string> split_sessions(const std::string& paramString) {
     currentSession += l;
 
     if (isRun) {
-      sessions.push_back(currentSession);
+      if (has_content(currentSession)) {
+        sessions.push_back(currentSession);
+      }
       currentSession.clear();
     }
   }
 
-  if (!currentSession.empty()) {
+  if (has_content(currentSession)) {
     sessions.push_back(currentSession);
+  }
+
+  if (sessions.empty()) {
+    sessions.push_back(paramString);
   }
 
   return sessions;
@@ -151,6 +183,10 @@ int main(int argc, char* argv[]) {
       int maxIter = -1;
       double timeMax = 0.0;
       read_stop_criteria(sessions[iSession], maxIter, timeMax);
+
+      if (maxIter < 0 && timeMax <= 0.0) {
+        continue;
+      }
 
       while ((maxIter < 0 || domain.tc->get_cycle() < maxIter) &&
              (timeMax <= 0.0 || domain.tc->get_time_si() < timeMax - 1e-10)) {

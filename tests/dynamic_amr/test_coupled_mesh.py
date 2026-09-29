@@ -1,6 +1,10 @@
-"""Checks for the coupled dynamic AMR run-log assertion."""
-
+import pathlib
+import sys
 import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from tests.dynamic_amr.check_coupled_mesh import check_mesh_change
 
