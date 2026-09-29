@@ -19,16 +19,14 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   Real dtLoc = 0.5 * dt;
 
   const int iLev = 0;
-  const Real* const ploLoc = plo[iLev].begin();
-  const Real* const phiLoc = phi[iLev].begin();
+
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     AoS& particles = pti.GetArrayOfStructs();
 
     const Box& bx = cell_status(iLev)[pti].box();
     const Array4<int const>& status = cell_status(iLev)[pti].array();
 
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
+    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
 
     for (auto& p : particles) {
       if (p.id() < 0)
@@ -39,8 +37,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       }
 
       // Mark for deletion
-      if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev,
-                                     ploLoc, phiLoc)) {
+      if (reflect_or_delete_particle(p, status, ab)) {
         p.id() = -1;
       }
     } // for p
@@ -82,7 +79,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const Real* const ploLoc = plo[iLev].begin();
-    const Real* const phiLoc = phi[iLev].begin();
     const Real* const invDxLoc = invDx[iLev].begin();
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
@@ -94,8 +90,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Box& bx = cell_status(iLev)[pti].box();
       const Array4<int const>& status = cell_status(iLev)[pti].array();
 
-      const IntVect lowCorner = bx.smallEnd();
-      const IntVect highCorner = bx.bigEnd();
+      const ActiveRegionBox ab =
+          make_active_region_box(iLev, pti.validbox(), bx);
 
       AoS& particles = pti.GetArrayOfStructs();
 
@@ -179,8 +175,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.pos(iz_) = zp + wnp1 * dtLoc;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev,
-                                       ploLoc, phiLoc)) {
+        if (reflect_or_delete_particle(p, status, ab)) {
           p.id() = -1;
         }
       } // for p
@@ -195,17 +190,15 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
   timing_func("Pts::neutral_mover");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const Real* const ploLoc = plo[iLev].begin();
-    const Real* const phiLoc = phi[iLev].begin();
-
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
 
       const Box& bx = cell_status(iLev)[pti].box();
       const Array4<int const>& status = cell_status(iLev)[pti].array();
 
-      const IntVect lowCorner = bx.smallEnd();
-      const IntVect highCorner = bx.bigEnd();
+      const ActiveRegionBox ab =
+          make_active_region_box(iLev, pti.validbox(), bx);
+
       for (auto& p : particles) {
         if (p.id() < 0)
           continue;
@@ -222,8 +215,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         p.pos(iz_) = zp + wp * dt;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev,
-                                       ploLoc, phiLoc)) {
+        if (reflect_or_delete_particle(p, status, ab)) {
           p.id() = -1;
         }
       } // for p
@@ -252,12 +244,10 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     AoS& particles = pti.GetArrayOfStructs();
 
     const Box& bx = cell_status(iLev)[pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
+    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
 
     for (auto& p : particles) {
-      if (p.id() == -1 ||
-          is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+      if (p.id() == -1 || is_outside_active_region(p, status, ab)) {
         p.id() = -1;
         continue;
       }
@@ -392,7 +382,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           p.pos(iDim) += eps_D[iDim];
         }
 
-        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+        if (is_outside_active_region(p, status, ab)) {
           // Do not allow moving particles from physical cells to ghost cells
           // during divE correction.
           for (int iDim = 0; iDim < nDim; iDim++) {

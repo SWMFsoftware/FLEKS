@@ -118,12 +118,10 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
       const Box& bx = other.cell_status(iLev)[mfi].box();
       const Array4<int const>& status = other.cell_status(iLev)[mfi].array();
 
-      const IntVect lowCorner = bx.smallEnd();
-      const IntVect highCorner = bx.bigEnd();
+      const auto ab = other.make_active_region_box(iLev, mfi.validbox(), bx);
 
       for (auto p : aosOther) {
-        if (other.is_outside_active_region(p, status, lowCorner, highCorner,
-                                           iLev)) {
+        if (other.is_outside_active_region(p, status, ab)) {
           // redistribute_particles() may fail if the ghost cell particles'
           // IDs are not -1 (marked for deletion);
           p.id() = -1;

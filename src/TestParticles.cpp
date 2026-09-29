@@ -235,8 +235,7 @@ void TestParticles::move_and_save_charged_particles(
     const Box& bx = cell_status(iLev)[pti].box();
     const Array4<int const>& status = cell_status(iLev)[pti].array();
 
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
+    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
 
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
@@ -408,7 +407,7 @@ void TestParticles::move_and_save_charged_particles(
                              ep, (ptRecordSize > 13) ? gradB : nullptr);
       }
       // Mark for deletion
-      if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+      if (is_outside_active_region(p, status, ab)) {
         p.id() = -1;
       }
     } // for p
@@ -428,8 +427,7 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
     const Box& bx = cell_status(iLev)[pti].box();
     const Array4<int const>& status = cell_status(iLev)[pti].array();
 
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
+    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
 
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
@@ -458,7 +456,7 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
       }
 
       // Mark for deletion
-      if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+      if (is_outside_active_region(p, status, ab)) {
         p.id() = -1;
       }
     }
