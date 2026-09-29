@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Validator for the intrinsic-magnetic-field tests (tests/intrinsic_field/).
 
-Five variants are discovered from this directory:
+Four variants are discovered from this directory:
 
-  - PARAM.in              -> "intrinsic_field"                tilted dipole
   - PARAM.in.body         -> "intrinsic_field_body"           dipole + #BODY
   - PARAM.in.crustal      -> "intrinsic_field_crustal"        g10-only file
   - PARAM.in.crustal_nm2  -> "intrinsic_field_crustal_nm2"    BATSRUS layout, many g/h
   - PARAM.in.dipole_crustal -> "intrinsic_field_dipole_crustal"
+
+There is no bare "dipole only" deck: in practice a planetary dipole never runs
+alone, it always comes with an inner body, so the body deck *is* the dipole
+deck and it carries the analytic-dipole comparison.
 
 Every deck runs with SOLVEEM F and a zero UNIFORMSTATE field, so the evolved
 field is identically zero and the total field equals the static intrinsic
@@ -33,8 +36,10 @@ set_run_dir = _run_dir.set_run_dir
 # The decks: equatorial surface field [nT], tilt [deg] and the reference
 # radius, which is 1 planetary radius by construction (rRef < 0 in the deck).
 B_EQ_NT = 100.0
-THETA_DEG = 30.0
-PHI_DEG = 0.0
+# theta = 90 deg tips the axis out of +z into the XY plane (the plane the plot
+# writes) and phi = 180 deg points it along +x; phi = 0 would give -x.
+THETA_DEG = 90.0
+PHI_DEG = 180.0
 R_REF = 1.0
 
 # Hybrid deck: the uniform drift of #UNIFORMSTATE is 100 km/s, and the plot
@@ -296,6 +301,16 @@ def validate_plot(test_name):
         return _check_crustal(cols, rows, test_name)
     if test_name == "intrinsic_field_dipole_crustal":
         return _check_superposition(cols, rows)
+
+    # The body deck is the dipole deck: check the body mask as well as the
+    # analytic dipole, so that "B0 survives inside the body" stays covered
+    # now that the bare dipole deck is gone.
+    if test_name == "intrinsic_field_body":
+        ok, msg = _check_body(cols, rows)
+        if not ok:
+            return False, msg
+        ok_dip, msg_dip = _check_dipole(cols, rows, test_name)
+        return ok_dip, f"{msg}; {msg_dip}"
 
     return _check_dipole(cols, rows, test_name)
 

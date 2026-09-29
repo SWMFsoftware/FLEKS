@@ -68,10 +68,15 @@ F                       useHybridPIC
 #PLANETRADIUS
 1.0e5                   radius [m]
 
+The dipole axis is put in the plane the plot writes: theta = 90 tips it from
++z into the XY plane, and phi = 180 points it along +x (phi = 0 would give -x,
+the BATSRUS tilt sense). The z = 0 cut then shows the full dipole pattern
+instead of the equatorial plane, where B is everywhere anti-parallel to the
+axis.
 #DIPOLE
 100.0                   strength [nT]
-30.0                    theta [deg]
-0.0                     phi [deg]
+90.0                    theta [deg]
+180.0                   phi [deg]
 -1.0                    rRef [m, <0 = take it from the body/planet radius]
 
 The inner body: the absorbing sphere at the origin, radius 1 code unit.

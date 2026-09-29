@@ -24,11 +24,14 @@ to the total) shows up immediately.
 
 | Variant | File | Physics | Validation |
 |---------|------|---------|------------|
-| `intrinsic_field` | `PARAM.in` | Tilted dipole: 100 nT on the reference sphere `r = 1`, axis 30° from `+z` towards `-x`; `B1 = 0` | Median relative error against the analytic dipole `< 1e-6`; `\|B0\| r^3` constant; `\|B0\| = 100 nT` at the magnetic equator on `r = 1` |
-| `intrinsic_field_body` | `PARAM.in.body` | Same dipole plus an absorbing `#BODY` (radius 1, `absorb` + `linetied`) | `B0` non-zero and unchanged inside the body mask, `\|E\| = 0` there; only `Eb` checked in the log (absorbed particles leave the domain) |
+| `intrinsic_field_body` | `PARAM.in.body` | Dipole: 100 nT on the reference sphere `r = 1`, axis along `+x`, i.e. *in* the `z = 0` plane the plot writes; plus an absorbing `#BODY` (radius 1, `absorb` + `linetied`); `B1 = 0` | Median relative error against the analytic dipole `< 1e-6`; `\|B0\| r^3` constant; `\|B0\| = 100 nT` at the magnetic equator on `r = 1`; `B0` non-zero and unchanged inside the body mask, `\|E\| = 0` there; only `Eb` checked in the log (absorbed particles leave the domain) |
 | `intrinsic_field_crustal` | `PARAM.in.crustal` | Crustal field `crustal_nm1.txt`, `nMax = 3`, only `g(1,0) = 100 nT` non-zero | Closed-form axial dipole: `Br = 2 g10 cos(theta)/r^3` exact, `Btheta ∝ sin(theta)/r^3`, no `Bphi` |
 | `intrinsic_field_crustal_nm2` | `PARAM.in.crustal_nm2` | Crustal field `crustal_nm2.txt`, `nMax = 3`, several degrees with both `g` and `h` | Matches an independent Schmidt semi-normalized evaluation in `validate.py` (median relative error `< 1e-8`) |
 | `intrinsic_field_dipole_crustal` | `PARAM.in.dipole_crustal` | Dipole + crustal field together | Linear superposition: `B0` equals the sum of the dipole-only and crustal-only fields (median relative error `< 1e-6`) |
+
+There is deliberately no bare "dipole only" deck: a planetary dipole never runs
+alone, it always comes with an inner body, so the body deck carries the
+analytic-dipole comparison.
 
 All variants run in about a minute in total.
 
@@ -50,13 +53,24 @@ All variants run in about a minute in total.
 
   | Species | Mass [amu] | Charge [e] | n [amu/cc] | u [km/s] | T [K] | Role |
   |---------|------------|------------|------------|----------|-------|------|
-  | 0 | 1.0 | +1 | 5.0 | 0 (20 in y for `PARAM.in`) | 1.0e4 | Ions |
-  | 1 | 0.04 | −1 | 0.2 | 0 (20 in y for `PARAM.in`) | 1.0e4 | Electrons (n_e = n_i) |
+  | 0 | 1.0 | +1 | 5.0 | 0 | 1.0e4 | Ions |
+  | 1 | 0.04 | −1 | 0.2 | 0 | 1.0e4 | Electrons (n_e = n_i) |
 
 - **Electromagnetic Fields**: `#SOLVEEM F`, so the evolved field stays at its
   initial value (zero) and `E = 0`: the only field acting on the particles is
-  the intrinsic one. The dipole deck gives the plasma a 20 km/s drift in y so
-  that the test particles gyrate.
+  the intrinsic one.
+
+- **Dipole orientation**: `#DIPOLE` takes the tilt `theta` from `+z` and the
+  azimuth `phi`, and the axis is `[-sin(theta) cos(phi), -sin(theta) sin(phi),
+  cos(theta)]` (the BATSRUS sense: `theta` tips the axis towards `-x` at
+  `phi = 0`). The decks use `theta = 90°`, `phi = 180°`, which puts the axis
+  along `+x`, i.e. *inside* the `z = 0` plane that the plot writes. That cut is
+  then the meridian plane of the dipole and shows the whole `r^-3` pattern
+  (200 nT at the poles, 100 nT at the equator on `r = 1`, field lines looping
+  in the plane). With the axis along `z` — the natural first guess — the same
+  cut is the magnetic equator, where `B` is everywhere anti-parallel to the
+  axis and the structure is invisible. `phi = 0` at `theta = 90°` would give
+  `-x`.
 
 - **Output**: `planet` units, so the magnetic field comes out in nT and the
   coordinates in planetary radii. Two frames are written (`t = 0` and
@@ -82,8 +96,9 @@ From the plot frames:
 4. **Surface round trip**: at `r ≈ 1` on the magnetic equator, `|B0|` equals
    the `#DIPOLE` strength in nT — an identity check of the
    SI → code → SI conversion.
-5. **Dipole shape**: `r^-3` scaling, `Br/Btheta = 2 cot(theta)`, and the
-   recovered dipole axis matches the requested tilt.
+5. **Dipole shape**: `r^-3` scaling, and agreement with the analytic tilted
+   dipole (the reference carries the requested `theta`/`phi`, so a wrong tilt
+   or a missing rotation of the axis fails here).
 6. **Crustal**: compared against an independent spherical harmonic evaluation
    in `validate.py`.
 7. **Superposition**: dipole + crustal is the sum of the two.

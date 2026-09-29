@@ -68,10 +68,12 @@ F                       useHybridPIC
 #PLANETRADIUS
 1.0e5                   radius [m]
 
+Same orientation as the dipole + body deck: theta = 90 and phi = 180 put the
+dipole axis along +x, inside the plane the plot writes.
 #DIPOLE
 100.0                   strength [nT]
-30.0                    theta [deg]
-0.0                     phi [deg]
+90.0                    theta [deg]
+180.0                   phi [deg]
 -1.0                    rRef [m, <0 = take it from the body/planet radius]
 
 #CRUSTALFIELD
