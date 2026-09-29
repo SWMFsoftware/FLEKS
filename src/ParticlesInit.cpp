@@ -340,9 +340,14 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
   timing_func("Pts::add_particles_domain");
-  // A changed refinement selector can expose new cells on any fine level.
-  // Inject only leaf cells so covered coarse cells are not populated twice.
-  const int iLevMax = n_lev() - 1;
+  // Full-domain seeding occurs only at cycle 0.
+  // Dynamic AMR regrids rely on AMReX Redistribute() to migrate existing particles
+  // to newly refined levels; re-seeding iLev > 0 would duplicate particles.
+  // After cycle 0, only newly activated level-0 base domain cells (if any) are seeded.
+  int iLevMax = 0;
+  if (tc->get_cycle() == 0) {
+    iLevMax = n_lev() - 1;
+  }
   for (int iLev = 0; iLev <= iLevMax; iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
 
