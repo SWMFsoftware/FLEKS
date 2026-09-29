@@ -15,11 +15,11 @@
 struct B0Params {
   // Center of both the dipole and the spherical harmonic expansion, code
   // units.
-  amrex::Real center[3] = {0.0, 0.0, 0.0};
+  amrex::Real center[3] = { 0.0, 0.0, 0.0 };
 
   // Dipole moment m in code units: B = [3 (m.r^) r^ - m] / r^3, so
   // |m| = Bc * rRef^3 for the equatorial strength Bc at the reference radius.
-  amrex::Real moment[3] = {0.0, 0.0, 0.0};
+  amrex::Real moment[3] = { 0.0, 0.0, 0.0 };
 
   // Crustal coefficients, flat layout coef[n * nMax + m], already rescaled to
   // code units. Null when the crustal field is off.
@@ -32,9 +32,11 @@ struct B0Params {
 
 // Dipole part of B0 at the code-unit position (x, y, z), added into b[].
 // Device callable and scratch free, so it may run inside a ParallelFor.
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
-eval_dipole_b(const B0Params &p, amrex::Real x, amrex::Real y, amrex::Real z,
-              amrex::Real b[3]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void eval_dipole_b(const B0Params &p,
+                                                            amrex::Real x,
+                                                            amrex::Real y,
+                                                            amrex::Real z,
+                                                            amrex::Real b[3]) {
   const amrex::Real xc = x - p.center[0];
   const amrex::Real yc = y - p.center[1];
   const amrex::Real zc = z - p.center[2];
@@ -134,4 +136,3 @@ private:
 };
 
 #endif
-

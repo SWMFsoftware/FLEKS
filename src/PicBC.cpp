@@ -445,12 +445,12 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         if (!bnd.isNode[d])
           continue;
 
-        const bool onLoWall =
-            ((bnd.bcLo[d] == FieldBC::inflow || bnd.bcLo[d] == FieldBC::fixed) &&
-             (ijk[d] == bnd.loBnd[d]));
-        const bool onHiWall =
-            ((bnd.bcHi[d] == FieldBC::inflow || bnd.bcHi[d] == FieldBC::fixed) &&
-             (ijk[d] == bnd.hiBnd[d]));
+        const bool onLoWall = ((bnd.bcLo[d] == FieldBC::inflow ||
+                                bnd.bcLo[d] == FieldBC::fixed) &&
+                               (ijk[d] == bnd.loBnd[d]));
+        const bool onHiWall = ((bnd.bcHi[d] == FieldBC::inflow ||
+                                bnd.bcHi[d] == FieldBC::fixed) &&
+                               (ijk[d] == bnd.hiBnd[d]));
         if (onLoWall || onHiWall) {
           bool inValid = true;
           for (int od = 0; od < nDim; ++od) {
@@ -476,18 +476,19 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       }
 
       // 2. Boundary cells on physical inflow wall for cell-centred B (centerB).
-      // Enforcing prescribed B on the boundary cell prevents Faraday curl mismatch
-      // between the pinned inflow boundary node and the interior solution.
+      // Enforcing prescribed B on the boundary cell prevents Faraday curl
+      // mismatch between the pinned inflow boundary node and the interior
+      // solution.
       for (int d = 0; d < nDim; ++d) {
         if (bnd.isNode[d] || !isB)
           continue;
 
-        const bool onLoWall =
-            ((bnd.bcLo[d] == FieldBC::inflow || bnd.bcLo[d] == FieldBC::fixed) &&
-             (ijk[d] == bnd.loBnd[d]));
-        const bool onHiWall =
-            ((bnd.bcHi[d] == FieldBC::inflow || bnd.bcHi[d] == FieldBC::fixed) &&
-             (ijk[d] == bnd.hiBnd[d]));
+        const bool onLoWall = ((bnd.bcLo[d] == FieldBC::inflow ||
+                                bnd.bcLo[d] == FieldBC::fixed) &&
+                               (ijk[d] == bnd.loBnd[d]));
+        const bool onHiWall = ((bnd.bcHi[d] == FieldBC::inflow ||
+                                bnd.bcHi[d] == FieldBC::fixed) &&
+                               (ijk[d] == bnd.hiBnd[d]));
         if (onLoWall || onHiWall) {
           bool inValid = true;
           for (int od = 0; od < nDim; ++od) {
@@ -968,4 +969,3 @@ void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
     }
   }
 }
-

@@ -510,17 +510,13 @@ public:
                         const amrex::MultiFab* nodeB0MF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
-  void calc_mass_matrix_amr(NodeMMFab& nodeMM,
-                            amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
-                            amrex::Vector<NodeMMFab>& nmmf,
-                            amrex::MultiFab& jHat,
-                            amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
-                            amrex::Vector<amrex::MultiFab>& jhf,
-                            amrex::MultiFab& nodeBMF,
-                            const amrex::MultiFab* nodeB0MF,
-                            amrex::MultiFab& u0MF, amrex::Real dt, int iLev,
-                            bool solveInCoMov,
-                            amrex::Vector<amrex::iMultiFab>& cellstatus);
+  void calc_mass_matrix_amr(
+      NodeMMFab& nodeMM, amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
+      amrex::Vector<NodeMMFab>& nmmf, amrex::MultiFab& jHat,
+      amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
+      amrex::Vector<amrex::MultiFab>& jhf, amrex::MultiFab& nodeBMF,
+      const amrex::MultiFab* nodeB0MF, amrex::MultiFab& u0MF, amrex::Real dt,
+      int iLev, bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& cellstatus);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  const amrex::MultiFab* nodeB0MF, amrex::Real dt);

@@ -380,8 +380,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     return 0.0;
 
   // True when the frozen intrinsic field is available for this level.
-  const bool hasB0 =
-      isValidMFI && use_intrinsic_B() && !nodeB0[iLev].empty();
+  const bool hasB0 = isValidMFI && use_intrinsic_B() && !nodeB0[iLev].empty();
 
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
