@@ -83,23 +83,6 @@ F                       useFixedDt
 1                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
-#COMOVING
-T                       solvePartInCoMov
-5                       nSmoothBackGroundU
-
-#UPWINDE
-T                       useUpwindE
-1                       limiterTheta
-
-#UPWINDB
-T                       doSmoothB
-1                       theta
-
-#SMOOTHJ
-T
-1
-0.5
-
 #EFIELDSOLVER
 1.0e-6                  EFieldTol
 200                     EFieldIter

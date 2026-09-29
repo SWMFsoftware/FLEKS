@@ -42,7 +42,10 @@ def validate_log(pic_diags=None, test_name=None):
     if cycles[-1] < 15:
         return False, f"Final cycle {cycles[-1]} < 15"
 
-    # Check finite, non-zero energies at every step across all 3 sessions
+    e0 = pic_diags[0].get("Etot", 0.0)
+    max_energy_drift = 0.05  # 5% max drift across all dynamic AMR sessions
+
+    # Check finite, non-zero energies and strict conservation across all 3 sessions
     for r in pic_diags:
         cyc = r["cycle"]
         etot = r.get("Etot", 0.0)
@@ -63,6 +66,18 @@ def validate_log(pic_diags=None, test_name=None):
                 ep,
             )
             return False, f"Non-positive energy at cycle {cyc}"
+
+        drift = abs(etot - e0) / e0
+        if drift > max_energy_drift:
+            logger.error(
+                "  FAIL: Excessive energy drift at cycle %d: Etot=%g (initial=%g, drift=%.2f%%, limit=%.2f%%)",
+                cyc,
+                etot,
+                e0,
+                drift * 100,
+                max_energy_drift * 100,
+            )
+            return False, f"Energy drift too large at cycle {cyc} ({drift * 100:.2f}%)"
 
     logger.debug(
         "  All 15 cycles completed across 3 sessions with finite positive energies."
