@@ -21,7 +21,7 @@ F                       initFromSWMF
 
 #MAXBLOCKSIZE
 16                      maxBlockSizeX
-16                      maxBlockSizeY
+8                       maxBlockSizeY
 1                       maxBlockSizeZ
 
 #PERIODICITY

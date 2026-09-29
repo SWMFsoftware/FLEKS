@@ -19,7 +19,7 @@ F                       initFromSWMF
 1                       nCellZ
 
 #MAXBLOCKSIZE
-64                      maxBlockSizeX
+16                      maxBlockSizeX
 1                       maxBlockSizeY
 1                       maxBlockSizeZ
 
