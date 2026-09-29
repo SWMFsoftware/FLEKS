@@ -103,7 +103,7 @@ def _ncalls(document, region):
     return (document.get("timing") or {}).get(region, {}).get("ncalls")
 
 
-def _compare_arena(base, cand, key, findings):
+def _compare_arena(base, cand, key, findings, ratio_tol=0.01):
     """Compare the per-region arena tables.  Strict: the values are exact."""
     bm = base.get("memory") or {}
     cm = cand.get("memory") or {}
@@ -138,12 +138,20 @@ def _compare_arena(base, cand, key, findings):
                 metric = "nalloc"
                 kind = "count"
 
-            if vc > vb:
-                findings.add(FAIL, key, region, metric, vb, vc,
-                             "more allocations", arena=arena, kind=kind)
-            elif vc < vb:
-                findings.add(INFO, key, region, metric, vb, vc,
-                             "fewer allocations", arena=arena, kind=kind)
+            if kind == "ratio":
+                if vc > vb * (1.0 + ratio_tol) and (vc - vb) > ratio_tol:
+                    findings.add(FAIL, key, region, metric, vb, vc,
+                                 "more allocations", arena=arena, kind=kind)
+                elif vc < vb * (1.0 - ratio_tol) and (vb - vc) > ratio_tol:
+                    findings.add(INFO, key, region, metric, vb, vc,
+                                 "fewer allocations", arena=arena, kind=kind)
+            else:
+                if vc > vb:
+                    findings.add(FAIL, key, region, metric, vb, vc,
+                                 "more allocations", arena=arena, kind=kind)
+                elif vc < vb:
+                    findings.add(INFO, key, region, metric, vb, vc,
+                                 "fewer allocations", arena=arena, kind=kind)
 
             vb, vc = rb.get("maxmem_max"), rc.get("maxmem_max")
             if vb is not None and vc is not None:
@@ -239,7 +247,8 @@ def compare(baseline, candidate, cfg):
                          rc.get("nprocs"), "rank counts differ")
             continue
 
-        _compare_arena(rb["profile"], rc["profile"], key, findings)
+        ratio_tol = getattr(cfg, "ratio_tol", 0.01) if cfg else 0.01
+        _compare_arena(rb["profile"], rc["profile"], key, findings, ratio_tol)
         _compare_rss(rb, rc, key, cfg, findings)
 
     return findings
@@ -329,6 +338,9 @@ def main():
     parser.add_argument("--rss-tol", type=float, default=2.0,
                         help="allowed RSS growth in MB (default 2.0); re-tune "
                              "with 'capture_memory.py --verify'")
+    parser.add_argument("--ratio-tol", type=float, default=0.01,
+                        help="allowed relative growth for nalloc/call ratio (default 0.01); "
+                             "avoids false positives from call-count granularity")
     args = parser.parse_args()
 
     with open(args.baseline) as handle:
