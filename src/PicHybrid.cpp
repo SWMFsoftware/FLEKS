@@ -19,9 +19,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   // Nodal total current J = curl(B)/(4*pi) from trial B (compact 1*dx stencil
   // from cell centres to nodes). Only needed for physical resistivity and Hall.
-  const bool needJ = (etaResistivity > 0 || useHallTerm ||
-                      (useBody && etaBodyResistivity > 0) ||
-                      hasRegionalResistivity_);
+  const bool needJ = (etaResistivity > 0 || useHallTerm || hasRegionalResistivity_);
   if (needJ) {
     curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
     nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -47,22 +45,6 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   const Real invFourPI = 1.0 / fourPI;
 
   const auto dx = Geom(iLev).CellSizeArray();
-  const auto probLo = Geom(iLev).ProbLoArray();
-  const int activeDim = (nDim == 3 && isFake2D) ? 2 : nDim;
-  const Real bcx = bodyCenter[0];
-  const Real bcy = bodyCenter[1];
-  const Real bcz = bodyCenter[2];
-
-  const bool hasBodyEta =
-      (useBody && etaBodyResistivity > 0 && rBodyResistivityOuter > 0);
-  const Real rBodyEtaOuter2 = rBodyResistivityOuter * rBodyResistivityOuter;
-  const Real rBodyEtaInner = rBodyResistivityInner;
-  const Real invDrEta =
-      (rBodyResistivityOuter > rBodyResistivityInner)
-          ? 1.0 / (rBodyResistivityOuter - rBodyResistivityInner)
-          : 0.0;
-  const Real etaBodyRes = etaBodyResistivity;
-
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
@@ -78,23 +60,6 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrEtaReg =
         hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
                                 : Array4<Real const>();
-
-    bool boxHasBodyEta = false;
-    if (hasBodyEta) {
-      Real d2Min = 0.0;
-      for (int d = 0; d < activeDim; ++d) {
-        Real xLo = probLo[d] + box.smallEnd(d) * dx[d];
-        Real xHi = probLo[d] + box.bigEnd(d) * dx[d];
-        if (bodyCenter[d] < xLo) {
-          Real diff = xLo - bodyCenter[d];
-          d2Min += diff * diff;
-        } else if (bodyCenter[d] > xHi) {
-          Real diff = bodyCenter[d] - xHi;
-          d2Min += diff * diff;
-        }
-      }
-      boxHasBodyEta = (d2Min < rBodyEtaOuter2);
-    }
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rhoPrev = momentsPrev(i, j, k, iRho_);
@@ -131,28 +96,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         jz = arrJ(i, j, k, iz_) * invFourPI;
       }
 
-      // eta * J (global + localized body resistivity)
+      // eta * J (global + regional resistivity)
       Real etaTotal = etaResistivity;
-      if (boxHasBodyEta) {
-        Real r2 = 0.0;
-        Real xn = probLo[0] + i * dx[0] - bcx;
-        r2 += xn * xn;
-        Real yn = probLo[1] + j * dx[1] - bcy;
-        r2 += yn * yn;
-        if (activeDim > 2) {
-          Real zn = probLo[2] + k * dx[2] - bcz;
-          r2 += zn * zn;
-        }
-        if (r2 < rBodyEtaOuter2) {
-          Real r = std::sqrt(r2);
-          Real w = 1.0;
-          if (r > rBodyEtaInner && invDrEta > 0.0) {
-            Real s = (r - rBodyEtaInner) * invDrEta;
-            w = 0.5 * (1.0 + std::cos(M_PI * s));
-          }
-          etaTotal += etaBodyRes * w;
-        }
-      }
       if (hasRegionalResistivity_) {
         etaTotal += arrEtaReg(i, j, k);
       }
@@ -191,9 +136,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B).
   // centerLapB = Laplacian(centerBin);
   // nodeHyperE = curl_center_to_node(centerLapB).
-  const bool doHyper =
-      (etaHyperLev[iLev] > 0 || (useBody && etaBodyHyperLev[iLev] > 0) ||
-       hasRegionalHyper_);
+  const bool doHyper = (etaHyperLev[iLev] > 0 || hasRegionalHyper_);
   if (doHyper) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -206,53 +149,20 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     apply_field_bc(nodeStatus[iLev], nodeHyperE[iLev], 0,
                    nodeHyperE[iLev].nComp(), &Pic::get_node_E, iLev, false);
 
-    const bool hasBodyHyper =
-        (useBody && etaBodyHyperLev[iLev] > 0 && rBodyHyperOuter > 0);
     const Real fGlobal = etaHyperLev[iLev] / fourPI;
 
-    if (!hasBodyHyper && !hasRegionalHyper_) {
+    if (!hasRegionalHyper_) {
       MultiFab::Saxpy(Eout, -fGlobal, nodeHyperE[iLev], 0, 0, nDim3, 0);
     } else {
-      const Real rBodyHypOuter2 = rBodyHyperOuter * rBodyHyperOuter;
-      const Real rBodyHypInner = rBodyHyperInner;
-      const Real invDrHyp = (rBodyHyperOuter > rBodyHypInner)
-                                ? 1.0 / (rBodyHyperOuter - rBodyHypInner)
-                                : 0.0;
-      const Real etaBodyH = etaBodyHyperLev[iLev];
-
       for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& arrE = Eout[mfi].array();
         const Array4<Real const>& arrHyp = nodeHyperE[iLev][mfi].array();
         const Array4<Real const> arrHyperReg =
-            hasRegionalHyper_ ? nodeEtaHyperRegional[iLev][mfi].array()
-                              : Array4<Real const>();
+            nodeEtaHyperRegional[iLev][mfi].array();
 
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-          Real f = fGlobal;
-          if (hasBodyHyper) {
-            Real r2 = 0.0;
-            Real xn = probLo[0] + i * dx[0] - bcx;
-            r2 += xn * xn;
-            Real yn = probLo[1] + j * dx[1] - bcy;
-            r2 += yn * yn;
-            if (activeDim > 2) {
-              Real zn = probLo[2] + k * dx[2] - bcz;
-              r2 += zn * zn;
-            }
-            if (r2 < rBodyHypOuter2) {
-              Real r = std::sqrt(r2);
-              Real w = 1.0;
-              if (r > rBodyHypInner && invDrHyp > 0.0) {
-                Real s = (r - rBodyHypInner) * invDrHyp;
-                w = 0.5 * (1.0 + std::cos(M_PI * s));
-              }
-              f += (etaBodyH * w) * invFourPI;
-            }
-          }
-          if (hasRegionalHyper_) {
-            f += arrHyperReg(i, j, k) * invFourPI;
-          }
+          Real f = fGlobal + arrHyperReg(i, j, k) * invFourPI;
           if (f > 0.0) {
             arrE(i, j, k, ix_) -= f * arrHyp(i, j, k, ix_);
             arrE(i, j, k, iy_) -= f * arrHyp(i, j, k, iy_);
@@ -635,20 +545,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Grid-mode localized body hyper-resistivity
-  if (useBody && etaBodyHyperMode == "grid" && etaBodyHyperCh > 0) {
-    const int iFinest = n_lev() - 1;
-    const auto dxFine = Geom(iFinest).CellSizeArray();
-    Real dxMinFine = dxFine[0];
-    for (int d = 1; d < nDim; ++d)
-      dxMinFine = amrex::min(dxMinFine, dxFine[d]);
 
-    const Real etaBodyHyper =
-        fourPI * etaBodyHyperCh * std::pow(dxMinFine, 4) / dt;
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      etaBodyHyperLev[iLev] = etaBodyHyper;
-    }
-  }
 
   // Grid-mode localized regional hyper-resistivity
   if (hasRegionalHyper_) {
@@ -669,9 +566,9 @@ void Pic::update_B_hybrid() {
         maxRegionalHyperLev = amrex::max(maxRegionalHyperLev, cfg.etaLev[iLev]);
       }
     }
-    const Real maxEta = amrex::max(etaResistivity, etaBodyResistivity, maxRegionalEta);
+    const Real maxEta = amrex::max(etaResistivity, maxRegionalEta);
     const Real maxHyper =
-        amrex::max(etaHyperLev[iLev], etaBodyHyperLev[iLev], maxRegionalHyperLev);
+        amrex::max(etaHyperLev[iLev], maxRegionalHyperLev);
     if (maxEta <= 0 && maxHyper <= 0 && !useHallTerm)
       continue;
 

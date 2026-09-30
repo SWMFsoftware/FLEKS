@@ -1976,6 +1976,8 @@ void Pic::charge_exchange() {
 
 //==========================================================
 void Pic::init_regional_fields() {
+  if (!useHybridPIC || (!hasRegionalResistivity_ && !hasRegionalHyper_))
+    return;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     init_regional_fields(iLev);
   }
@@ -1983,6 +1985,8 @@ void Pic::init_regional_fields() {
 
 //==========================================================
 void Pic::init_regional_fields(int iLev) {
+  if (!useHybridPIC || (!hasRegionalResistivity_ && !hasRegionalHyper_))
+    return;
   fill_regional_resistivity_field(iLev);
   fill_regional_hyper_field(iLev);
 }
@@ -2083,7 +2087,7 @@ void Pic::fill_regional_hyper_field(int iLev) {
 
 //==========================================================
 void Pic::update_regional_hyper_grid_mode(Real dt) {
-  if (!hasRegionalHyper_ || dt <= 0.0)
+  if (!useHybridPIC || !hasRegionalHyper_ || dt <= 0.0)
     return;
 
   bool changed = false;

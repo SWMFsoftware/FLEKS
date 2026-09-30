@@ -125,21 +125,7 @@ private:
   amrex::Real etaHyperCh = 0.01;
   amrex::Vector<amrex::Real> etaHyperLev;
 
-  // Localized body resistivity and hyper-resistivity in an extended spherical
-  // region around the inner body declared by #BODY.
-  amrex::Real etaBodyResistivitySI = 0.0;
-  amrex::Real etaBodyResistivity = 0.0;
-  amrex::Real rBodyResistivityOuter = -1.0;
-  amrex::Real rBodyResistivityInner = -1.0;
-
-  amrex::Real etaBodyHyperSI = 0.0;
-  std::string etaBodyHyperMode = "grid";
-  amrex::Real etaBodyHyperCh = 0.0;
-  amrex::Vector<amrex::Real> etaBodyHyperLev;
-  amrex::Real rBodyHyperOuter = -1.0;
-  amrex::Real rBodyHyperInner = -1.0;
-
-  // Regional resistivity and hyper-resistivity (#REGIONRESISTIVITY, #REGIONHYPERRESISTIVITY)
+  // Regional resistivity and hyper-resistivity
   struct RegionalResistivityConfig {
     std::string regionStr;
     amrex::Real etaSI = 0.0;
@@ -460,9 +446,6 @@ public:
     for (int iL = 0; iL < n_lev_max(); ++iL)
       kStage[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);
-    etaBodyHyperLev.resize(n_lev_max(), 0.0);
-    nodeEtaRegional.resize(n_lev_max());
-    nodeEtaHyperRegional.resize(n_lev_max());
     targetPPC.resize(n_lev_max());
     if (reportParticleQuality) {
       particleQuality.resize(n_lev_max());
@@ -587,7 +570,9 @@ public:
   void fill_intrinsic_B();
   // Regional resistivity / hyper-resistivity setup and update methods.
   void set_region_shapes(const amrex::Vector<std::shared_ptr<Shape>>& shapes) {
-    regionShapes = shapes;
+    if (useHybridPIC && (hasRegionalResistivity_ || hasRegionalHyper_)) {
+      regionShapes = shapes;
+    }
   }
   void init_regional_fields();
   void init_regional_fields(int iLev);

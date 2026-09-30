@@ -153,16 +153,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     Print() << "  inner body BC: particles = "
             << ParticleBC::to_string(bodyParticleBC)
             << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
-  } else if (command == "#BODYRESISTIVITY") {
-    param.read_var("etaBodyResistivity", etaBodyResistivitySI);
-    param.read_var("rOuter", rBodyResistivityOuter);
-    param.read_var("rInner", rBodyResistivityInner);
-  } else if (command == "#BODYHYPERRESISTIVITY") {
-    param.read_var("etaBodyHyperSI", etaBodyHyperSI);
-    param.read_var("etaBodyHyperMode", etaBodyHyperMode);
-    param.read_var("etaBodyHyperCh", etaBodyHyperCh);
-    param.read_var("rOuter", rBodyHyperOuter);
-    param.read_var("rInner", rBodyHyperInner);
   } else if (command == "#REGIONRESISTIVITY") {
     RegionalResistivityConfig cfg;
     param.read_var("region", cfg.regionStr);
@@ -620,25 +610,6 @@ void Pic::post_process_param() {
           "(#DIPOLE / #CRUSTALFIELD). Use 'linetied' or 'insulating'.");
   }
 
-  const bool hasBodyRes = (etaBodyResistivitySI > 0);
-  const bool hasBodyHyper =
-      (etaBodyHyperSI > 0 ||
-       (etaBodyHyperMode == "grid" && etaBodyHyperCh > 0));
-
-  if (hasBodyRes || hasBodyHyper) {
-    if (!useBody)
-      Abort("Invalid configuration: #BODYRESISTIVITY and #BODYHYPERRESISTIVITY "
-            "require an inner body (#BODY).");
-    if (!useHybridPIC)
-      Abort("Invalid configuration: #BODYRESISTIVITY and #BODYHYPERRESISTIVITY "
-            "are only supported for the hybrid PIC solver (#HYBRIDPIC T).");
-  }
-
-  if (etaBodyHyperMode != "si" && etaBodyHyperMode != "grid") {
-    Abort("Invalid #BODYHYPERRESISTIVITY etaBodyHyperMode '" +
-          etaBodyHyperMode + "'. Expected 'si' or 'grid'.");
-  }
-
   hasRegionalResistivity_ = !regionalResistivityConfigs.empty();
   hasRegionalHyper_ = !regionalHyperResistivityConfigs.empty();
 
@@ -647,6 +618,13 @@ void Pic::post_process_param() {
       Abort("Invalid configuration: #REGIONRESISTIVITY and #REGIONHYPERRESISTIVITY "
             "are only supported for the hybrid PIC solver (#HYBRIDPIC T).");
     }
+  }
+
+  if (useHybridPIC) {
+    if (hasRegionalResistivity_)
+      nodeEtaRegional.resize(n_lev_max());
+    if (hasRegionalHyper_)
+      nodeEtaHyperRegional.resize(n_lev_max());
   }
 
   for (const auto& cfg : regionalResistivityConfigs) {
@@ -668,26 +646,7 @@ void Pic::post_process_param() {
       Abort("Invalid #REGIONHYPERRESISTIVITY: etaHyperCh must be >= 0.");
   }
 
-  if (useBody) {
-    if (rBodyResistivityInner <= 0.0)
-      rBodyResistivityInner = bodyRadius;
-    if (rBodyResistivityOuter <= 0.0 && hasBodyRes)
-      rBodyResistivityOuter = 1.5 * bodyRadius;
 
-    if (rBodyHyperInner <= 0.0)
-      rBodyHyperInner = bodyRadius;
-    if (rBodyHyperOuter <= 0.0 && hasBodyHyper) {
-      rBodyHyperOuter = (rBodyResistivityOuter > bodyRadius)
-                            ? rBodyResistivityOuter
-                            : 1.5 * bodyRadius;
-    }
-
-    if (hasBodyRes && rBodyResistivityOuter <= rBodyResistivityInner)
-      Abort("Invalid #BODYRESISTIVITY: rOuter must be greater than rInner.");
-    if (hasBodyHyper && rBodyHyperOuter <= rBodyHyperInner)
-      Abort(
-          "Invalid #BODYHYPERRESISTIVITY: rOuter must be greater than rInner.");
-  }
 
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
@@ -801,13 +760,7 @@ void Pic::convert_resistivity() {
             << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL << ")\n";
   }
 
-  // Localized body resistivity
-  if (etaBodyResistivitySI > 0) {
-    etaBodyResistivity = fourPI * etaBodyResistivitySI * Si2NoV * Si2NoL;
-    Print() << "  etaBodyResistivity: " << etaBodyResistivitySI
-            << " [m^2/s] -> " << etaBodyResistivity << " [code units], r in ["
-            << rBodyResistivityInner << ", " << rBodyResistivityOuter << "]\n";
-  }
+
 
   // Hyper-resistive term eta_h*nabla^2 J: [eta_h] = [U]*[L]^3, so
   // eta_h_code = 4*pi * eta_h_SI * Si2NoV * Si2NoL^3. A single physical value
@@ -820,18 +773,9 @@ void Pic::convert_resistivity() {
             << " [code units]\n";
   }
 
-  // Localized body hyper-resistivity (si mode)
-  if (etaBodyHyperSI > 0 && etaBodyHyperMode == "si") {
-    const Real etaBodyHyper =
-        fourPI * etaBodyHyperSI * Si2NoV * std::pow(Si2NoL, 3);
-    for (int iLev = 0; iLev < n_lev_max(); ++iLev)
-      etaBodyHyperLev[iLev] = etaBodyHyper;
-    Print() << "  etaBodyHyper: " << etaBodyHyperSI << " [m^4/s, si] -> "
-            << etaBodyHyper << " [code units], r in [" << rBodyHyperInner
-            << ", " << rBodyHyperOuter << "]\n";
-  }
 
-  // Regional resistivity (#REGIONRESISTIVITY)
+
+  // Regional resistivity
   for (auto& cfg : regionalResistivityConfigs) {
     if (cfg.etaSI > 0) {
       cfg.etaCode = fourPI * cfg.etaSI * Si2NoV * Si2NoL;
@@ -840,7 +784,7 @@ void Pic::convert_resistivity() {
     }
   }
 
-  // Regional hyper-resistivity (#REGIONHYPERRESISTIVITY, si mode)
+  // Regional hyper-resistivity (si mode)
   for (auto& cfg : regionalHyperResistivityConfigs) {
     cfg.etaLev.resize(n_lev_max(), 0.0);
     if (cfg.etaSI > 0 && cfg.mode == "si") {
@@ -857,11 +801,8 @@ void Pic::convert_resistivity() {
   // Guard against uninitialized normalization producing non-positive
   // coefficients.
   if ((etaResistivitySI > 0 && !(etaResistivity > 0)) ||
-      (etaBodyResistivitySI > 0 && !(etaBodyResistivity > 0)) ||
       (etaHyperSI > 0 && etaHyperMode == "si" &&
-       (etaHyperLev.empty() || !(etaHyperLev[0] > 0))) ||
-      (etaBodyHyperSI > 0 && etaBodyHyperMode == "si" &&
-       (etaBodyHyperLev.empty() || !(etaBodyHyperLev[0] > 0)))) {
+       (etaHyperLev.empty() || !(etaHyperLev[0] > 0)))) {
     Abort("Pic::convert_resistivity: the SI->code conversion produced a "
           "non-positive resistivity. Check the normalization "
           "(#NORMALIZATION lNormSI / uNormSI).");
