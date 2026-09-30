@@ -255,8 +255,7 @@ public:
   // 2. Set cellStatus and nodeStatus. If cGridsOld is not empty, it will also
   // decide if a cell/node is new or not.
   void distribute_grid_arrays();
-  void distribute_grid_arrays(
-      const amrex::Vector<amrex::BoxArray>& cGridsOld);
+  void distribute_grid_arrays(const amrex::Vector<amrex::BoxArray>& cGridsOld);
 
   // If cGridsOld is provided, it will also decide if a cell is new or not.
   void update_cell_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
