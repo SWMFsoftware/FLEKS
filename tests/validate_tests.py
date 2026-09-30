@@ -365,7 +365,7 @@ AMREX2D_TESTS = {"reconnection_amr"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
-    "chemistry", "hyper_resistivity",
+    "chemistry",
 }
 
 

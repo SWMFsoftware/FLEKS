@@ -1739,6 +1739,49 @@ rOuter (or 1.5 * bodyRadius).
 Only used when #HYBRIDPIC is T and #BODY is present.
 </command>
 
+<command name="REGIONRESISTIVITY" alias="REGIONRESISTIVITY_FLEKS0,REGIONRESISTIVITY_FLEKS1,REGIONRESISTIVITY_FLEKS2" multiple="T">
+  <parameter name="region" type="string"/>
+  <parameter name="etaResistivitySI" type="real" default="0.0"/>
+
+#REGIONRESISTIVITY
++region_name      region
+0.0               etaResistivitySI
+
+[Regional resistivity] Localized second-order resistivity eta(x)*J applied in a
+geometric region defined by #REGION.
+
+region is the shape expression (e.g. '+box1' or '+box1 -sphere1').
+etaResistivitySI is the SI magnetic diffusivity [m^2/s] (converted to code units
+internally, identical to #RESISTIVITY).
+
+Only used when #HYBRIDPIC is T. Multiple #REGIONRESISTIVITY commands can be given.
+</command>
+
+<command name="REGIONHYPERRESISTIVITY" alias="REGIONHYPERRESISTIVITY_FLEKS0,REGIONHYPERRESISTIVITY_FLEKS1,REGIONHYPERRESISTIVITY_FLEKS2" multiple="T">
+  <parameter name="region" type="string"/>
+  <parameter name="etaHyperSI" type="real" default="0.0"/>
+  <parameter name="etaHyperMode" type="string" default="grid"/>
+  <parameter name="etaHyperCh" type="real" default="0.0"/>
+
+#REGIONHYPERRESISTIVITY
++region_name      region
+0.0               etaHyperSI
+grid              etaHyperMode
+0.0               etaHyperCh
+
+[Regional hyper-resistivity] Localized fourth-order hyper-resistivity
+-(eta_h(x)/4*pi) * curl(nabla^2 B) applied in a geometric region defined by #REGION.
+
+region is the shape expression (e.g. '+sponge_box').
+etaHyperSI is the SI hyper-diffusivity [m^4/s] used when etaHyperMode="si".
+When etaHyperMode="grid", eta_h is CFL-scaled to the finest cell size and time step
+via the dimensionless coefficient etaHyperCh:
+  eta_h = 4*pi * C_h * dx_min^4 / dt.
+
+Only used when #HYBRIDPIC is T. Multiple #REGIONHYPERRESISTIVITY commands can be given.
+</command>
+
+
 <command name="PLANETRADIUS" alias="PLANETRADIUS_FLEKS0,PLANETRADIUS_FLEKS1,PLANETRADIUS_FLEKS2" multiple="T">
   <parameter name="radius" type="real" default="1.0"/>
 

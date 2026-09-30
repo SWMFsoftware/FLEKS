@@ -163,6 +163,18 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("etaBodyHyperCh", etaBodyHyperCh);
     param.read_var("rOuter", rBodyHyperOuter);
     param.read_var("rInner", rBodyHyperInner);
+  } else if (command == "#REGIONRESISTIVITY") {
+    RegionalResistivityConfig cfg;
+    param.read_var("region", cfg.regionStr);
+    param.read_var("etaResistivitySI", cfg.etaSI);
+    regionalResistivityConfigs.push_back(cfg);
+  } else if (command == "#REGIONHYPERRESISTIVITY") {
+    RegionalHyperResistivityConfig cfg;
+    param.read_var("region", cfg.regionStr);
+    param.read_var("etaHyperSI", cfg.etaSI);
+    param.read_var("etaHyperMode", cfg.mode);
+    param.read_var("etaHyperCh", cfg.ch);
+    regionalHyperResistivityConfigs.push_back(cfg);
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -627,6 +639,35 @@ void Pic::post_process_param() {
           etaBodyHyperMode + "'. Expected 'si' or 'grid'.");
   }
 
+  hasRegionalResistivity_ = !regionalResistivityConfigs.empty();
+  hasRegionalHyper_ = !regionalHyperResistivityConfigs.empty();
+
+  if (hasRegionalResistivity_ || hasRegionalHyper_) {
+    if (!useHybridPIC) {
+      Abort("Invalid configuration: #REGIONRESISTIVITY and #REGIONHYPERRESISTIVITY "
+            "are only supported for the hybrid PIC solver (#HYBRIDPIC T).");
+    }
+  }
+
+  for (const auto& cfg : regionalResistivityConfigs) {
+    if (cfg.regionStr.empty())
+      Abort("Invalid #REGIONRESISTIVITY: region expression cannot be empty.");
+    if (cfg.etaSI < 0.0)
+      Abort("Invalid #REGIONRESISTIVITY: etaResistivitySI must be >= 0.");
+  }
+
+  for (const auto& cfg : regionalHyperResistivityConfigs) {
+    if (cfg.regionStr.empty())
+      Abort("Invalid #REGIONHYPERRESISTIVITY: region expression cannot be empty.");
+    if (cfg.mode != "si" && cfg.mode != "grid")
+      Abort("Invalid #REGIONHYPERRESISTIVITY etaHyperMode '" + cfg.mode +
+            "'. Expected 'si' or 'grid'.");
+    if (cfg.etaSI < 0.0)
+      Abort("Invalid #REGIONHYPERRESISTIVITY: etaHyperSI must be >= 0.");
+    if (cfg.ch < 0.0)
+      Abort("Invalid #REGIONHYPERRESISTIVITY: etaHyperCh must be >= 0.");
+  }
+
   if (useBody) {
     if (rBodyResistivityInner <= 0.0)
       rBodyResistivityInner = bodyRadius;
@@ -790,6 +831,29 @@ void Pic::convert_resistivity() {
             << ", " << rBodyHyperOuter << "]\n";
   }
 
+  // Regional resistivity (#REGIONRESISTIVITY)
+  for (auto& cfg : regionalResistivityConfigs) {
+    if (cfg.etaSI > 0) {
+      cfg.etaCode = fourPI * cfg.etaSI * Si2NoV * Si2NoL;
+      Print() << "  regionalResistivity [" << cfg.regionStr << "]: "
+              << cfg.etaSI << " [m^2/s] -> " << cfg.etaCode << " [code units]\n";
+    }
+  }
+
+  // Regional hyper-resistivity (#REGIONHYPERRESISTIVITY, si mode)
+  for (auto& cfg : regionalHyperResistivityConfigs) {
+    cfg.etaLev.resize(n_lev_max(), 0.0);
+    if (cfg.etaSI > 0 && cfg.mode == "si") {
+      const Real etaHyper =
+          fourPI * cfg.etaSI * Si2NoV * std::pow(Si2NoL, 3);
+      for (int iLev = 0; iLev < n_lev_max(); ++iLev)
+        cfg.etaLev[iLev] = etaHyper;
+      Print() << "  regionalHyper [" << cfg.regionStr << "]: "
+              << cfg.etaSI << " [m^4/s, si] -> " << etaHyper
+              << " [code units]\n";
+    }
+  }
+
   // Guard against uninitialized normalization producing non-positive
   // coefficients.
   if ((etaResistivitySI > 0 && !(etaResistivity > 0)) ||
@@ -801,6 +865,20 @@ void Pic::convert_resistivity() {
     Abort("Pic::convert_resistivity: the SI->code conversion produced a "
           "non-positive resistivity. Check the normalization "
           "(#NORMALIZATION lNormSI / uNormSI).");
+  }
+
+  for (const auto& cfg : regionalResistivityConfigs) {
+    if (cfg.etaSI > 0 && !(cfg.etaCode > 0)) {
+      Abort("Pic::convert_resistivity: #REGIONRESISTIVITY produced a "
+            "non-positive resistivity. Check the normalization (#NORMALIZATION).");
+    }
+  }
+  for (const auto& cfg : regionalHyperResistivityConfigs) {
+    if (cfg.etaSI > 0 && cfg.mode == "si" &&
+        (cfg.etaLev.empty() || !(cfg.etaLev[0] > 0))) {
+      Abort("Pic::convert_resistivity: #REGIONHYPERRESISTIVITY produced a "
+            "non-positive hyper-resistivity. Check the normalization (#NORMALIZATION).");
+    }
   }
 }
 

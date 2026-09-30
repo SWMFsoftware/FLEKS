@@ -73,6 +73,8 @@ static const ParameterCommand parameter_registry[] = {
   { "#PLASMA", ParameterOwner::FluidInterface },
   { "#PRESPLITTING", ParameterOwner::Pic },
   { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
+  { "#REGIONHYPERRESISTIVITY", ParameterOwner::Pic },
+  { "#REGIONRESISTIVITY", ParameterOwner::Pic },
   { "#RESAMPLING", ParameterOwner::Pic },
   { "#RESISTIVITY", ParameterOwner::Pic },
   { "#SCALINGFACTOR", ParameterOwner::FluidInterface },
@@ -1530,8 +1532,10 @@ void Domain::read_param(const bool readGridInfo) {
     if (fi)
       fi->post_process_param(domainParameters);
 
-    if (pic)
+    if (pic) {
       pic->finalize_units_conversion();
+      pic->set_region_shapes(shapes);
+    }
 
     // Final sync of source's FluidInterfaceParameters from fi, now that
     // fi->post_process_param() has finalized the derived arrays (MoMi_S,

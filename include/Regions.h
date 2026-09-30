@@ -58,7 +58,7 @@ public:
   }
 
   // Is the point 'xyz' inside the include list but outside the exclude list?
-  bool is_inside(amrex::Real* xyz) const {
+  bool is_inside(const amrex::Real* xyz) const {
     bool isIncluded = false;
     for (auto& shape : shapes) {
       if (is_include(shape.get()))

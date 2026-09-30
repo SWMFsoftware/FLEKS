@@ -57,15 +57,22 @@ def _named_number(text, command, name):
     return None
 
 
-def _analytic_gamma():
+def _analytic_gamma(param_path=None):
     """Return (gamma, gamma_as_measured) for the seeded mode.
 
     gamma = (eta_h/4pi) * 16*sin^4(theta/2)/dx^4 for the staggered-grid
     bi-Laplacian operator, times the RK4 amplification factor
     R(-z) = 1 - z + z^2/2 - z^3/6 + z^4/24 with z = gamma*dt.
     """
+    if param_path is None:
+        run_param = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "run_test", "PARAM.in"
+        )
+        param_path = run_param if os.path.isfile(run_param) else PARAM_PATH
+
     try:
-        with open(PARAM_PATH, "r") as f:
+        with open(param_path, "r") as f:
             text = f.read()
     except OSError:
         return None, None
@@ -75,6 +82,8 @@ def _analytic_gamma():
     n_cell = _block_numbers(text, "#NCELL", 1)[0]
     mode = _named_number(text, "#WAVEIC", "waveMode")
     eta_si = _named_number(text, "#HYPERRESISTIVITY", "etaHyperSI")
+    if eta_si is None:
+        eta_si = _named_number(text, "#REGIONHYPERRESISTIVITY", "etaHyperSI")
     dt = _named_number(text, "#TIMESTEPPING", "dt")
     if None in (mode, eta_si, dt) or n_cell <= 0:
         return None, None
@@ -165,7 +174,13 @@ def validate_log(pic_diags=None, test_name=None):
     if eb[-1] > eb[0]:
         return False, "Eb grew: hyper-resistive term is not dissipative"
 
-    g_exact, g_expect = _analytic_gamma()
+    param_path = None
+    if test_name and (test_name.endswith(".region") or test_name.endswith("_region")):
+        reg_param = os.path.join(os.path.dirname(os.path.abspath(__file__)), "PARAM.in.region")
+        if os.path.isfile(reg_param):
+            param_path = reg_param
+
+    g_exact, g_expect = _analytic_gamma(param_path)
     if g_exact is None:
         return False, "Could not derive analytic decay rate from PARAM.in"
     if g_exact <= 0.0:
