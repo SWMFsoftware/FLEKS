@@ -361,7 +361,7 @@ AMR_TESTS = {"dynamic_amr", "lightwave", "reconnection_amr"}
 AMREX3D_TESTS = {"lightwave"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
-AMREX2D_TESTS = {"reconnection_amr"}
+AMREX2D_TESTS = {"reconnection_amr", "photoionization", "body"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
