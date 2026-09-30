@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 
@@ -598,19 +599,152 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
+  // Per-level geometry, hoisted so the particle loop does not go through the
+  // plo/phi/invDx vectors or Geom() per particle per dimension.
+  struct LevelGeomBox {
+    amrex::Real plo[3];
+    amrex::Real phi[3];
+    amrex::Real invDx[3];
+    amrex::Real dx[3];
+    // Domain length along a periodic dimension, 0 otherwise.
+    amrex::Real periodicL[3];
+    bool periodic[3];
+    int iLev;
+  };
+
+  // Per-tile context of the position tests below (tile_size == 1: one cell).
+  struct ActiveRegionBox : LevelGeomBox {
+    // Real-space box of the level box the tile lives in.  Every point in it
+    // lies in a valid cell, and a valid cell never carries the domain_boundary
+    // bit (Grid::update_cell_status only marks level-boundary cells outside
+    // the active region), so such a point is inside the active region by
+    // construction.  Shrunk by a few ULP so round-off cannot claim a point
+    // that belongs to a ghost cell.
+    amrex::Real lo[3];
+    amrex::Real hi[3];
+    // Index range of the status fab: the level box grown by its ghost cells.
+    int loIdx[3];
+    int hiIdx[3];
+  };
+
+  LevelGeomBox make_level_geom_box(int iLev) const {
+    LevelGeomBox lb;
+    lb.iLev = iLev;
+    for (int d = 0; d < 3; ++d) {
+      lb.plo[d] = 0.0;
+      lb.phi[d] = 0.0;
+      lb.invDx[d] = 0.0;
+      lb.dx[d] = 0.0;
+      lb.periodicL[d] = 0.0;
+      lb.periodic[d] = false;
+    }
+
+    const amrex::Real* const ploLoc = plo[iLev].begin();
+    const amrex::Real* const phiLoc = phi[iLev].begin();
+    const amrex::Real* const invDxLoc = invDx[iLev].begin();
+    const amrex::Real* const dxLoc = dx[iLev].begin();
+
+    for (int d = 0; d < nDim; ++d) {
+      lb.plo[d] = ploLoc[d];
+      lb.phi[d] = phiLoc[d];
+      lb.invDx[d] = invDxLoc[d];
+      lb.dx[d] = dxLoc[d];
+      lb.periodic[d] = Geom(iLev).isPeriodic(d);
+      lb.periodicL[d] = lb.periodic[d] ? (phiLoc[d] - ploLoc[d]) : 0.0;
+    }
+
+    return lb;
+  }
+
+  // Built once per FAB, outside the particle loop.
+  ActiveRegionBox make_active_region_box(const LevelGeomBox& lb,
+                                         const amrex::Box& validBox,
+                                         const amrex::Box& statusBox) const {
+    constexpr amrex::Real eps = std::numeric_limits<amrex::Real>::epsilon();
+
+    ActiveRegionBox ab;
+    static_cast<LevelGeomBox&>(ab) = lb;
+    for (int d = 0; d < 3; ++d) {
+      // Empty by default: an inactive dimension never accepts anything.
+      ab.lo[d] = 1.0;
+      ab.hi[d] = -1.0;
+      ab.loIdx[d] = 0;
+      ab.hiIdx[d] = 0;
+    }
+
+    for (int d = 0; d < nDim; ++d) {
+      ab.loIdx[d] = statusBox.smallEnd(d);
+      ab.hiIdx[d] = statusBox.bigEnd(d);
+
+      const amrex::Real xLo = lb.plo[d] + validBox.smallEnd(d) * lb.dx[d];
+      const amrex::Real xHi = lb.plo[d] + (validBox.bigEnd(d) + 1) * lb.dx[d];
+      const amrex::Real tol =
+          16 * eps * (std::abs(xLo) + std::abs(xHi) + lb.dx[d]);
+      ab.lo[d] = xLo + tol;
+      ab.hi[d] = xHi - tol;
+    }
+
+    return ab;
+  }
+
+  ActiveRegionBox make_active_region_box(int iLev, const amrex::Box& validBox,
+                                         const amrex::Box& statusBox) const {
+    return make_active_region_box(make_level_geom_box(iLev), validBox, statusBox);
+  }
+
+  // Cheap accept: see ActiveRegionBox.lo/hi.  No arithmetic, no status lookup.
+  inline bool is_inside_valid_box(const ParticleType& p,
+                                  const ActiveRegionBox& ab) const {
+    return AMREX_D_TERM(p.pos(0) >= ab.lo[0] && p.pos(0) < ab.hi[0],
+                     && p.pos(1) >= ab.lo[1] && p.pos(1) < ab.hi[1],
+                     && p.pos(2) >= ab.lo[2] && p.pos(2) < ab.hi[2]);
+  }
+
+  // Cell index of `p` plus its status bitmask.  `isInside` is false when the
+  // index is outside the status fab; `mask` is then 0.
+  inline void locate_particle_cell(const ParticleType& p,
+                                   const ActiveRegionBox& ab,
+                                   amrex::Array4<int const> const& status,
+                                   bool& isInside, amrex::IntVect& idx,
+                                   int& mask) const {
+    for (int d = 0; d < nDim; ++d) {
+      const amrex::Real dShift = (p.pos(d) - ab.plo[d]) * ab.invDx[d];
+      idx[d] = fastfloor(dShift);
+      if (idx[d] > ab.hiIdx[d] || idx[d] < ab.loIdx[d]) {
+        isInside = false;
+        mask = 0;
+        return;
+      }
+    }
+
+    isInside = true;
+    mask = status(idx);
+  }
+
+  inline void locate_particle_cell(const ParticleType& p,
+                                   const ActiveRegionBox& ab,
+                                   amrex::Array4<int const> const& status,
+                                   bool& isInside, int& mask) const {
+    amrex::IntVect idx;
+    locate_particle_cell(p, ab, status, isInside, idx, mask);
+  }
+
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
   // tallies; `reflect` mirrors.  Only acts at iLev == 0.
   inline bool reflect_or_delete_particle(ParticleType& p,
                                          amrex::Array4<int const> const& status,
-                                         const amrex::IntVect& low,
-                                         const amrex::IntVect& high, int iLev,
-                                         const amrex::Real* const ploLoc,
-                                         const amrex::Real* const phiLoc) {
-    // Absorbing inner body (see #BODY): a particle that is pushed into a body
-    // cell is removed and tallied. The test uses the cell that contains the
-    // particle, i.e., the same cell-based staircase as the field/moment mask,
-    // so the absorption surface and the mask are the same object and no
-    // charge is silently discarded at the surface.
+                                         const ActiveRegionBox& ab) {
+    // The cell location is computed at most once and shared by the #BODY test
+    // and the active-region test; a reflection moves the particle and
+    // invalidates it (see `isLocateValid`).
+    const amrex::Real* const ploLoc = ab.plo;
+    const amrex::Real* const phiLoc = ab.phi;
+    bool isInsideBox = false;
+    int cellMask = 0;
+    bool isLocateValid = false;
+
+    // Absorbing inner body (see #BODY).  The test uses the cell containing the
+    // particle, i.e. the same cell-based staircase as the field/moment mask.
     if (grid != nullptr && grid->use_body()) {
       if (grid->bodyParticleBC == ParticleBC::reflect) {
         // Specular reflection on the smooth sphere: the test uses the exact
@@ -620,21 +754,14 @@ public:
         for (int d = 0; d < nDim; ++d)
           xyz[d] = p.pos(d);
 
+        // The reflection moves the particle, so nothing may be cached here.
         if (grid->is_inside_body(xyz))
           reflect_particle_at_body(p);
       } else {
-        bool isInsideBox = true;
-        amrex::IntVect cellIdx;
-        for (int d = 0; d < nDim; ++d) {
-          const amrex::Real dShift = (p.pos(d) - ploLoc[d]) * invDx[iLev][d];
-          cellIdx[d] = fastfloor(dShift);
-          if (cellIdx[d] > high[d] || cellIdx[d] < low[d]) {
-            isInsideBox = false;
-            break;
-          }
-        }
+        locate_particle_cell(p, ab, status, isInsideBox, cellMask);
+        isLocateValid = true;
 
-        if (isInsideBox && bit::is_body(status(cellIdx))) {
+        if (isInsideBox && bit::is_body(cellMask)) {
           body_absorb_tally(p.rdata(iqp_));
           return true;
         }
@@ -660,12 +787,19 @@ public:
       if (bcLo == ParticleBC::reflect && p.pos(d) < ploLoc[d]) {
         p.pos(d) = 2.0 * ploLoc[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        isLocateValid = false;
       } else if (bcHi == ParticleBC::reflect && p.pos(d) > phiLoc[d]) {
         p.pos(d) = 2.0 * phiLoc[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        isLocateValid = false;
       }
     }
-    return is_outside_active_region(p, status, low, high, iLev);
+
+    if (!isLocateValid)
+      return is_outside_active_region(p, status, ab);
+
+    return isInsideBox ? bit::is_domain_boundary(cellMask)
+                       : is_outside_active_region(p, ab);
   }
 
   // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
@@ -675,12 +809,8 @@ public:
     absorbTallyMass[face] += weight * mass;
   }
 
-  // Specular reflection of a particle that is inside the inner body (see
-  // #BODYBOUNDARY with particleBoundary = reflect). The surface normal is the
-  // radial direction from the body center, so the reflection uses the smooth
-  // sphere: with n = (x - c)/|x - c| the position is mirrored to r -> 2R - r
-  // and an inward velocity is reflected as v -> v - 2(v.n)n. The particle and
-  // its charge are kept, so nothing is tallied.
+  // Specular reflection on the smooth body sphere (#BODYBOUNDARY reflect);
+  // unlike absorption it keeps the particle, so nothing is tallied.
   inline void reflect_particle_at_body(ParticleType& p) {
     if (grid == nullptr)
       return;
@@ -908,21 +1038,29 @@ public:
 
   void set_is_target_ppc_defined(bool in) { isTargetPPCDefined = in; }
 
-  inline bool is_outside_active_region(const ParticleType& p, int iLev) {
+  inline bool is_outside_active_region(const ParticleType& p,
+                                       const LevelGeomBox& lb) const {
     amrex::RealVect loc;
     for (int iDim = 0; iDim < nDim; ++iDim) {
       loc[iDim] = p.pos(iDim);
-      if (Geom(iLev).isPeriodic(iDim)) {
-        // Fix index/loc for periodic BC in O(1) without unbounded iteration.
-        const amrex::Real L = phi[iLev][iDim] - plo[iLev][iDim];
-        loc[iDim] -= std::floor((loc[iDim] - plo[iLev][iDim]) / L) * L;
-        if (loc[iDim] >= phi[iLev][iDim]) {
-          loc[iDim] = plo[iLev][iDim];
+      if (lb.periodic[iDim]) {
+        // Divide/std::floor only when the point is more than one domain length
+        // out, which a single push cannot produce.
+        const amrex::Real L = lb.periodicL[iDim];
+        if (loc[iDim] < lb.plo[iDim] || loc[iDim] >= lb.phi[iDim]) {
+          if (loc[iDim] >= lb.plo[iDim] - L && loc[iDim] < lb.phi[iDim] + L) {
+            loc[iDim] += (loc[iDim] < lb.plo[iDim]) ? L : -L;
+          } else {
+            loc[iDim] -= std::floor((loc[iDim] - lb.plo[iDim]) / L) * L;
+          }
+        }
+        if (loc[iDim] >= lb.phi[iDim]) {
+          loc[iDim] = lb.plo[iDim];
         }
       } else {
         // Fast bounding-box check: if outside global [plo, phi], cannot be
         // inside activeRegion.
-        if (loc[iDim] < plo[iLev][iDim] || loc[iDim] > phi[iLev][iDim]) {
+        if (loc[iDim] < lb.plo[iDim] || loc[iDim] > lb.phi[iDim]) {
           return true;
         }
       }
@@ -931,58 +1069,30 @@ public:
     return !grid->is_inside_domain(loc.begin());
   }
 
-  /**
-   * @brief Checks if a particle is outside the active region at a given level.
-   *
-   * This function determines whether a particle is outside the active region
-   * at a specified level (`iLev`). It takes into account periodic boundary
-   * conditions and adjusts the particle's position accordingly.
-   *
-   * @param p The particle to check.
-   * @param status Status bitmask array of the local tile (including ghost
-   * cells).
-   * @param low Lower index bound of the status array.
-   * @param high Upper index bound of the status array.
-   * @param iLev The level at which to check the particle's position.
-   * @return True if the particle is outside the active region, false otherwise.
-   */
+  // Tile-based variant used by the hot particle loops: particles still inside
+  // the level box are accepted by position, those outside the status fab fall
+  // back to the geometric test above.
   inline bool is_outside_active_region(const ParticleType& p,
                                        amrex::Array4<int const> const& status,
-                                       const amrex::IntVect& low,
-                                       const amrex::IntVect& high, int iLev) {
-    bool isInsideBox = true;
-    amrex::IntVect cellIdx;
-    for (int i = 0; i < nDim; ++i) {
-      const amrex::Real dShift = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-      cellIdx[i] = fastfloor(dShift);
-      if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
-        isInsideBox = false;
-        break;
-      }
-    }
+                                       const ActiveRegionBox& ab) const {
+    if (is_inside_valid_box(p, ab))
+      return false;
 
-    if (isInsideBox) {
-      return bit::is_domain_boundary(status(cellIdx));
-    } else {
-      return is_outside_active_region(p, iLev);
-    }
-  }
+    bool isInside = false;
+    int cellMask = 0;
+    locate_particle_cell(p, ab, status, isInside, cellMask);
 
-  inline bool is_outside_level(const ParticleType& p, int iLev,
-                               amrex::Array4<int const> const& status,
-                               const amrex::IntVect cellIdx) {
-    bool isOutsideLevel = false;
-    if (bit::is_refined(status(cellIdx)) ||
-        bit::is_lev_boundary(status(cellIdx))) {
-      isOutsideLevel = true;
-    }
-
-    return isOutsideLevel;
+    return isInside ? bit::is_domain_boundary(cellMask)
+                    : is_outside_active_region(p, ab);
   }
 
   inline void label_particles_outside_active_region() {
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+        const LevelGeomBox lb = make_level_geom_box(iLev);
+        int lastFab = -1;
+        ActiveRegionBox ab;
+
         for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
           AoS& particles = pti.GetArrayOfStructs();
           if (cell_status(iLev).empty()) {
@@ -990,16 +1100,16 @@ public:
               p.id() = -1;
             }
           } else {
-            const amrex::Box& bx = cell_status(iLev)[pti].box();
+            if (pti.index() != lastFab) {
+              lastFab = pti.index();
+              const amrex::Box& bx = cell_status(iLev)[pti].box();
+              ab = make_active_region_box(lb, pti.validbox(), bx);
+            }
             const amrex::Array4<int const>& status =
                 cell_status(iLev)[pti].array();
 
-            const amrex::IntVect lowCorner = bx.smallEnd();
-            const amrex::IntVect highCorner = bx.bigEnd();
-
             for (auto& p : particles) {
-              if (is_outside_active_region(p, status, lowCorner, highCorner,
-                                           iLev)) {
+              if (is_outside_active_region(p, status, ab)) {
                 p.id() = -1;
               }
             }
@@ -1011,10 +1121,11 @@ public:
   inline void label_particles_outside_active_region_general() {
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+        const LevelGeomBox lb = make_level_geom_box(iLev);
         for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
           AoS& particles = pti.GetArrayOfStructs();
           for (auto& p : particles) {
-            if (is_outside_active_region(p, iLev)) {
+            if (is_outside_active_region(p, lb)) {
               p.id() = -1;
             }
           }
