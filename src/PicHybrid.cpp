@@ -44,7 +44,6 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   const Real wCur = 0.5 + hstep;
   const Real invFourPI = 1.0 / fourPI;
 
-  const auto dx = Geom(iLev).CellSizeArray();
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
