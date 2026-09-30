@@ -19,14 +19,20 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   Real dtLoc = 0.5 * dt;
 
   const int iLev = 0;
+  const LevelGeomBox lb = make_level_geom_box(iLev);
+  int lastFab = -1;
+  ActiveRegionBox ab;
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     AoS& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    if (pti.index() != lastFab) {
+      lastFab = pti.index();
+      const Box& bx = cell_status(iLev)[pti].box();
+      ab = make_active_region_box(lb, pti.validbox(), bx);
+    }
 
-    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
 
     for (auto& p : particles) {
       if (p.id() < 0)
@@ -80,6 +86,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const Real* const ploLoc = plo[iLev].begin();
     const Real* const invDxLoc = invDx[iLev].begin();
+    const LevelGeomBox lb = make_level_geom_box(iLev);
+    int lastFab = -1;
+    ActiveRegionBox ab;
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real const>& EArr = nodeE[iLev][pti].array();
@@ -87,11 +96,13 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Array4<Real const>& B0Arr =
           useB0 ? nodeB0[iLev][pti].array() : Array4<Real const>();
 
-      const Box& bx = cell_status(iLev)[pti].box();
-      const Array4<int const>& status = cell_status(iLev)[pti].array();
+      if (pti.index() != lastFab) {
+        lastFab = pti.index();
+        const Box& bx = cell_status(iLev)[pti].box();
+        ab = make_active_region_box(lb, pti.validbox(), bx);
+      }
 
-      const ActiveRegionBox ab =
-          make_active_region_box(iLev, pti.validbox(), bx);
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
 
       AoS& particles = pti.GetArrayOfStructs();
 
@@ -190,14 +201,20 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
   timing_func("Pts::neutral_mover");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const LevelGeomBox lb = make_level_geom_box(iLev);
+    int lastFab = -1;
+    ActiveRegionBox ab;
+
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
 
-      const Box& bx = cell_status(iLev)[pti].box();
-      const Array4<int const>& status = cell_status(iLev)[pti].array();
+      if (pti.index() != lastFab) {
+        lastFab = pti.index();
+        const Box& bx = cell_status(iLev)[pti].box();
+        ab = make_active_region_box(lb, pti.validbox(), bx);
+      }
 
-      const ActiveRegionBox ab =
-          make_active_region_box(iLev, pti.validbox(), bx);
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
 
       for (auto& p : particles) {
         if (p.id() < 0)
@@ -236,6 +253,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
   const Real* const ploLoc = plo[iLev].begin();
   const Real* const invDxLoc = invDx[iLev].begin();
+  const LevelGeomBox lb = make_level_geom_box(iLev);
+  int lastFab = -1;
+  ActiveRegionBox ab;
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
@@ -243,8 +263,11 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
     AoS& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
+    if (pti.index() != lastFab) {
+      lastFab = pti.index();
+      const Box& bx = cell_status(iLev)[pti].box();
+      ab = make_active_region_box(lb, pti.validbox(), bx);
+    }
 
     for (auto& p : particles) {
       if (p.id() == -1 || is_outside_active_region(p, status, ab)) {

@@ -219,6 +219,9 @@ void TestParticles::move_and_save_charged_particles(
   const Real dtLoc = 0.5 * (dt + dtNext);
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
+  const LevelGeomBox lb = make_level_geom_box(iLev);
+  int lastFab = -1;
+  ActiveRegionBox ab;
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
@@ -232,10 +235,13 @@ void TestParticles::move_and_save_charged_particles(
 
     auto& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    if (pti.index() != lastFab) {
+      lastFab = pti.index();
+      const Box& bx = cell_status(iLev)[pti].box();
+      ab = make_active_region_box(lb, pti.validbox(), bx);
+    }
 
-    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
 
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
@@ -421,13 +427,20 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
                                            bool doSave) {
   timing_func("TestParticles::move_neutrals");
 
+  const LevelGeomBox lb = make_level_geom_box(iLev);
+  int lastFab = -1;
+  ActiveRegionBox ab;
+
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    if (pti.index() != lastFab) {
+      lastFab = pti.index();
+      const Box& bx = cell_status(iLev)[pti].box();
+      ab = make_active_region_box(lb, pti.validbox(), bx);
+    }
 
-    const ActiveRegionBox ab = make_active_region_box(iLev, pti.validbox(), bx);
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
 
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {

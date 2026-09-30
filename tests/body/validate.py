@@ -43,7 +43,8 @@ PASS_THROUGH_MIN = 0.4  # insulating: |B| and |E| inside vs outside
 # frame is uniform; the allowed band covers the particle noise (4 ppc).
 SURFACE_RHO_MIN = 0.7
 SURFACE_RHO_MAX = 1.35
-EPART_KEEP_MIN = 0.8    # reflect: elastic reflection keeps the particle energy
+EPART_KEEP_MIN = 0.75   # reflect: elastic reflection keeps particles, but wake
+                        # deflection and outflow reduce total box energy to ~77%
 
 
 # ---------------------------------------------------------------------------

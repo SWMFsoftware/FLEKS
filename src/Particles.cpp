@@ -102,6 +102,9 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto& plevelOther = other.GetParticles(iLev);
     auto& plevel = GetParticles(iLev);
+    const auto lb = other.make_level_geom_box(iLev);
+    int lastFab = -1;
+    ActiveRegionBox ab;
     for (MFIter mfi = other.MakeMFIter(iLev); mfi.isValid(); ++mfi) {
       auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
 
@@ -115,10 +118,12 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
 
       const AoS& aosOther = tileOther.GetArrayOfStructs();
 
-      const Box& bx = other.cell_status(iLev)[mfi].box();
+      if (mfi.index() != lastFab) {
+        lastFab = mfi.index();
+        const Box& bx = other.cell_status(iLev)[mfi].box();
+        ab = other.make_active_region_box(lb, mfi.validbox(), bx);
+      }
       const Array4<int const>& status = other.cell_status(iLev)[mfi].array();
-
-      const auto ab = other.make_active_region_box(iLev, mfi.validbox(), bx);
 
       for (auto p : aosOther) {
         if (other.is_outside_active_region(p, status, ab)) {
