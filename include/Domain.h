@@ -33,6 +33,7 @@ private:
   ParticleTrackerInfo ptInfo;
 
   bool isTCInitialized = false;
+  bool readingSessionUpdate = false;
 
   bool find_parameter_owner(const std::string &command,
                             ParameterOwner &owner) const;

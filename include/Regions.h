@@ -9,15 +9,13 @@ class Regions {
 public:
   Regions() = default;
 
-  Regions(amrex::Vector<std::shared_ptr<Shape> >& in, std::string list) {
+  Regions(const amrex::Vector<std::shared_ptr<Shape> >& in, std::string list) {
     define(in, list);
   }
 
-  void define(amrex::Vector<std::shared_ptr<Shape> >& in, std::string list) {
-    shapes.clear();
-    for (auto& shape : in) {
-      shapes.push_back(shape.get());
-    }
+  void define(const amrex::Vector<std::shared_ptr<Shape> >& in,
+              std::string list) {
+    shapes = in;
 
     includeList.clear();
     excludeList.clear();
@@ -63,7 +61,7 @@ public:
   bool is_inside(amrex::Real* xyz) const {
     bool isIncluded = false;
     for (auto& shape : shapes) {
-      if (is_include(shape))
+      if (is_include(shape.get()))
         isIncluded = shape->is_inside(xyz);
 
       if (isIncluded)
@@ -72,7 +70,7 @@ public:
 
     bool isExcluded = false;
     for (auto& shape : shapes) {
-      if (is_exclude(shape))
+      if (is_exclude(shape.get()))
         isExcluded = shape->is_inside(xyz);
 
       if (isExcluded)
@@ -83,7 +81,7 @@ public:
   }
 
 private:
-  amrex::Vector<Shape*> shapes;
+  amrex::Vector<std::shared_ptr<Shape> > shapes;
   amrex::Vector<std::string> includeList;
   amrex::Vector<std::string> excludeList;
 };

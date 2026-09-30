@@ -155,6 +155,12 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
         iBy = i;
       } else if (name.compare(0, 2, "bz") == 0) {
         iBz = i;
+      } else if (name == "ex") {
+        iEx = i;
+      } else if (name == "ey") {
+        iEy = i;
+      } else if (name == "ez") {
+        iEz = i;
       }
     }
 
@@ -533,7 +539,44 @@ void FluidInterface::distribute_arrays() {
                         nGst, doCopy, 0.0);
   }
 
-  distribute_grid_arrays();
+  distribute_grid_arrays(cGridsOld);
+}
+
+//==========================================================
+void FluidInterface::fill_new_cells() {
+  if (isGridEmpty)
+    return;
+
+  if (!isnodeFluidReady)
+    return;
+
+  timing_func("FI::fill_new_cells");
+
+  for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    // Interpolate newly created nodes before filling fine-level boundaries;
+    // the latter need valid coarse values after a dynamic regrid.
+    nodeFluid[iLev - 1].FillBoundary(Geom(iLev - 1).periodicity());
+
+    fill_fine_lev_new_from_coarse(nodeFluid[iLev - 1], nodeFluid[iLev], 0,
+                                  nodeFluid[iLev].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  amrex::node_bilinear_interp);
+
+    nodeFluid[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    fill_fine_lev_bny_from_coarse(nodeFluid[iLev - 1], nodeFluid[iLev], 0,
+                                  nodeFluid[iLev].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  amrex::node_bilinear_interp);
+
+    // centerB is derived from nodeFluid, so refresh it only after the fine
+    // nodes and their boundaries have been filled.
+    if (iBx >= 0) {
+      average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
+                                 centerB[iLev].nComp(), centerB[iLev].nGrow());
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
 }
 
 //==========================================================

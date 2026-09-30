@@ -1,6 +1,8 @@
 #ifndef _Grid_H_
 #define _Grid_H_
 
+#include <algorithm>
+
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
@@ -22,7 +24,7 @@
 #include "Array1D.h"
 #include "BC.h"
 #include "Constants.h"
-#include "Regions.h"
+#include "RefineRegions.h"
 #include "TimeCtr.h"
 
 // This class define the grid information, but NOT the data on the grid.
@@ -60,7 +62,7 @@ protected:
 
   amrex::Vector<amrex::MultiFab> cellCost;
 
-  amrex::Vector<Regions> refineRegions;
+  const RefineRegions* refineRegions = nullptr;
 
   bool doNeedFillNewCell = true;
 
@@ -149,13 +151,10 @@ public:
     return vol;
   }
 
-  const amrex::Vector<Regions>& get_refine_regions() const {
-    return refineRegions;
-  }
+  const RefineRegions* get_refine_regions() const { return refineRegions; }
 
-  void set_refine_regions(const amrex::Vector<Regions>& in) {
-    refineRegions = in;
-  }
+  void set_refine_regions(const RefineRegions& in) { refineRegions = &in; }
+  void set_refine_regions(const RefineRegions&&) = delete;
 
   const amrex::Vector<amrex::RealBox>& domain_range() const {
     return domainRange;
@@ -173,17 +172,18 @@ public:
   amrex::Vector<amrex::DistributionMapping> calc_balanced_maps(
       bool doSplitLevs = false);
 
-  void regrid(const amrex::BoxArray& region,
-              const amrex::Vector<Regions>& refine = amrex::Vector<Regions>(),
+  void regrid(const amrex::BoxArray& region, const RefineRegions& refine,
               const amrex::Real eff = 0.7) {
-    refineRegions = refine;
-
-    if (refineRegions.empty()) {
-      refineRegions.resize(n_lev_max());
-    }
-
+    refineRegions = &refine;
     SetGridEff(eff);
+    regrid(region, nullptr);
+  }
+  void regrid(const amrex::BoxArray& region, const RefineRegions&&,
+              const amrex::Real = 0.7) = delete;
 
+  void regrid(const amrex::BoxArray& region, const amrex::Real eff = 0.7) {
+    refineRegions = nullptr;
+    SetGridEff(eff);
     regrid(region, nullptr);
   }
 
@@ -202,10 +202,6 @@ public:
       SetBoxArray(iLev, grid->boxArray(iLev));
       SetDistributionMap(iLev, grid->DistributionMap(iLev));
     }
-  }
-
-  void update_refine_region(const amrex::Vector<Regions>& in) {
-    refineRegions = in;
   }
 
   bool is_inside_domain(const amrex::Real* loc) const {
@@ -258,8 +254,9 @@ public:
   // 1. Allocate memory for Fab declared in this class.
   // 2. Set cellStatus and nodeStatus. If cGridsOld is not empty, it will also
   // decide if a cell/node is new or not.
-  void distribute_grid_arrays(const amrex::Vector<amrex::BoxArray>& cGridsOld =
-                                  amrex::Vector<amrex::BoxArray>());
+  void distribute_grid_arrays();
+  void distribute_grid_arrays(
+      const amrex::Vector<amrex::BoxArray>& cGridsOld);
 
   // If cGridsOld is provided, it will also decide if a cell is new or not.
   void update_cell_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
@@ -413,6 +410,11 @@ public:
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
                    << std::endl;
+    if (refineRegions == nullptr)
+      return;
+
+    const int maxRegionLevel =
+        std::min(n_lev_max() - 2, static_cast<int>(refineRegions->size()) - 1);
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
       const auto tagArr = tags.array(mfi);
@@ -427,8 +429,8 @@ public:
             // Loop through all levels from the finest to the current level.
             // If a cell is required to be refined at lev=n (n>=iLev), this
             // cell should be also refined at lev=iLev.
-            for (int il = n_lev_max() - 2; il >= iLev; il--)
-              if (refineRegions[il].is_inside(xyz)) {
+            for (int il = maxRegionLevel; il >= iLev; il--)
+              if ((*refineRegions)[il].is_inside(xyz)) {
                 tagArr(i, j, k) = amrex::TagBox::SET;
                 break;
               }

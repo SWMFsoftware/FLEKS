@@ -242,7 +242,7 @@ The unit and frequence of saving test particles, and the threshold for relaunchi
 0.1                        dtSave
 
 Save test particles at fixed time intervals (in SI seconds) using sub-step trajectory linear interpolation.
-If dtSave <= 0 (default), saving falls back to the step-based dnSave set by #TPSAVE.
+If dtSave &lt;= 0 (default), saving falls back to the step-based dnSave set by #TPSAVE.
 
 </command>
 
@@ -1112,6 +1112,9 @@ paraboloid   	  shape
  10.0			      radius2
 
 The regions defined here can be used for setting refinement areas. 
+Each #REGION name may be defined only once, including across later sessions.
+To use a different shape, give it a new name and update #REFINEREGION.
+Shapes not mentioned in the session keep their previous definitions.
 
 For a 'paraboloid', the iAxis is the axis of the paraboloid, and it can 
 be 0 (x-dir), 1 (y-dir), or 2 (z-dir). Its height can be negative, which 
@@ -1139,6 +1142,9 @@ level refineLev. The cells inside the '+' shapes but outside the '-'
 shapes will be refined.
 
 Multiple #REFINEREGION commands can be used for different levels.
+In a later session, a #REFINEREGION command replaces the definition for its
+level. Levels not mentioned keep their previous definitions. Use `none` as
+the refinement area to remove refinement from one level.
 
 </command>
 
@@ -1691,10 +1697,10 @@ etaBodyResistivity is the SI magnetic diffusivity [m\^2/s] (converted to code
 units internally, identical to #RESISTIVITY).
 
 rOuter is the outer radius of the resistive spherical shell in code units.
-If <= 0, defaults to 1.5 * bodyRadius.
+If &lt;= 0, defaults to 1.5 * bodyRadius.
 
-rInner is the inner radius in code units. If <= 0, defaults to bodyRadius.
-For r <= rInner, the full etaBodyResistivity applies. For r between rInner and
+rInner is the inner radius in code units. If &lt;= 0, defaults to bodyRadius.
+For r &lt;= rInner, the full etaBodyResistivity applies. For r between rInner and
 rOuter, eta(r) smoothly transitions to zero with a C\^1 cosine profile:
   w(r) = 0.5 * (1 + cos(pi * (r - rInner)/(rOuter - rInner)))
 For r >= rOuter, eta(r) = 0 (ideal plasma).
@@ -1727,7 +1733,7 @@ step via the dimensionless coefficient etaBodyHyperCh (e.g. 0.01 - 0.1):
   eta_h = 4*pi * C_h * dx_min\^4 / dt.
 
 rOuter and rInner define the spherical shell in code units (see #BODYRESISTIVITY).
-If <= 0, rInner defaults to bodyRadius, and rOuter defaults to #BODYRESISTIVITY's
+If &lt;= 0, rInner defaults to bodyRadius, and rOuter defaults to #BODYRESISTIVITY's
 rOuter (or 1.5 * bodyRadius).
 
 Only used when #HYBRIDPIC is T and #BODY is present.
@@ -1749,7 +1755,7 @@ It is a length scale only:
 
 * it is the reference radius of the exosphere: the neutral density of
   #EXOSPHERE is defined with n0 at r = r_reference and is zero for
-  r < r_reference;
+  r &lt; r_reference;
 * it is the unit of the 'planet' output (lengths are divided by this radius)
   and it is written as the 'rPlanet' scalar in the output header.
 

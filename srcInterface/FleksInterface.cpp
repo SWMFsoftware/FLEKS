@@ -45,6 +45,9 @@ int fleks_init_(double *time) {
   }
 
 #ifdef _PT_COMPONENT_
+  if (isInitialized)
+    return 0;
+
   int nDomain = 1;
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();

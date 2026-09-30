@@ -51,7 +51,7 @@ BASELINES = {
     "hybrid": {
         "total_pps": 0.31,   # total wall-clock
         "mover_pps": 0.052,  # isolated particle mover
-        "solver_pps": 0.091, # explicit hybrid field advance is cheaper
+        "solver_pps": 0.105, # explicit hybrid field advance is cheaper
         "speedup": 1.48,      # 2-core scaling floor
     },
     "pt": {

@@ -1,6 +1,11 @@
 #ifndef _DOMAINGRID_H_
 #define _DOMAINGRID_H_
 
+#include <memory>
+#include <set>
+#include <sstream>
+#include <string>
+
 #include <AMReX_AmrMesh.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
@@ -18,7 +23,7 @@
 #include "Constants.h"
 #include "FleksDistributionMap.h"
 #include "GridInfo.h"
-#include "Regions.h"
+#include "RefineRegions.h"
 
 class DomainGrid {
 
@@ -54,10 +59,71 @@ protected:
   int gridID;
   std::string printPrefix;
   std::string gridName;
+  int refinementRatio = 2;
 
-  amrex::Vector<std::shared_ptr<Shape> > shapes;
+  // Shapes persist across parameter sessions. A selector may start using a
+  // previously defined shape, but a name never acquires new geometry.
+  amrex::Vector<std::shared_ptr<Shape> > shapeList;
+  std::set<std::string> shapeNames;
   amrex::Vector<std::string> refineRegionsStr;
-  amrex::Vector<Regions> refineRegions;
+  RefineRegions refineRegions;
+
+  void add_shape(const std::shared_ptr<Shape>& shape) {
+    const std::string name = shape->get_name();
+    if (!shapeNames.insert(name).second)
+      amrex::Abort("Duplicate #REGION name: " + name);
+    shapeList.push_back(shape);
+  }
+
+  bool set_refine_region(int iLev, const std::string& selector) {
+    if (iLev < 0 || iLev >= static_cast<int>(refineRegionsStr.size()) - 1)
+      amrex::Abort(
+          "Invalid refinement level " + std::to_string(iLev) +
+          " in #REFINEREGION: max allowed level is " +
+          std::to_string(static_cast<int>(refineRegionsStr.size()) - 2));
+
+    std::stringstream input(selector);
+    std::string token, normalized;
+    bool hasNone = false;
+    int tokenCount = 0;
+    while (input >> token) {
+      tokenCount++;
+      if (token == "none")
+        hasNone = true;
+      if (!normalized.empty())
+        normalized += ' ';
+      normalized += token;
+    }
+    if (hasNone && tokenCount > 1)
+      amrex::Abort("Cannot combine 'none' with other regions in #REFINEREGION");
+
+    // An empty selector tags no cells; "none" is the input spelling for it.
+    if (normalized == "none")
+      normalized.clear();
+
+    // Repeating a selector does not request another AMR rebuild.
+    if (refineRegionsStr[iLev] == normalized)
+      return false;
+    refineRegionsStr[iLev] = normalized;
+    return true;
+  }
+
+  void rebuild_refine_regions() {
+    for (int i = 0; i < static_cast<int>(refineRegionsStr.size()); ++i) {
+      std::stringstream input(refineRegionsStr[i]);
+      std::string token;
+      while (input >> token) {
+        if (token.size() < 2 || (token[0] != '+' && token[0] != '-'))
+          amrex::Abort("Invalid shape prefix in #REFINEREGION: '" + token +
+                       "' (must start with '+' or '-')");
+        if (shapeNames.count(token.substr(1)) == 0)
+          amrex::Abort("Unknown shape in #REFINEREGION: '" + token.substr(1) +
+                       "'");
+      }
+      if (i < static_cast<int>(refineRegions.size()))
+        refineRegions[i].define(shapeList, refineRegionsStr[i]);
+    }
+  }
 
   // "This threshold value, which defaults to 0.7 (or 70%), is used to ensure
   // that grids do not contain too large a fraction of un-tagged cells." - AMReX
@@ -67,7 +133,6 @@ protected:
   // If the grid has not been initialized or the grid changed due to AMR,
   // isNewGrid is true.
   bool isNewGrid = true;
-  bool isNewRefinement = false;
 
   bool doSplitLevs = false;
 

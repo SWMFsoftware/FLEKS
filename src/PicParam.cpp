@@ -567,7 +567,7 @@ void Pic::post_process_param() {
     if (bodyRadius <= 0)
       Abort("Invalid #BODY: radius must be positive.");
 
-    if (n_lev_max() > 1 && !refineRegions.empty())
+    if (n_lev_max() > 1 && refineRegions && !refineRegions->empty())
       Print() << "  Warning: #BODY has not been verified with AMR "
               << "(refinement regions are defined).\n";
 

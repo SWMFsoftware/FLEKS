@@ -1,0 +1,145 @@
+#DESCRIPTION
+Dynamic AMR multi-session test: move and clear refinement across sessions
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1e3                    xMin
+ 1e3                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#NCELL
+64                      nCellX
+4                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+4                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#PLASMA
+2                       nSpecies
+0.01                    mass        Species 0: electron
+-1.0                    charge
+1.0                     mass        Species 1: H+
+1.0                     charge
+
+#UNIFORMSTATE
+0.05                    rho [amu/cc]   Species 0: electron (quasi-neutral)
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [amu/cc]   Species 1: H+
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0e-9                  bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+Beam
+1                       iSpecies
+0.01                    ratio
+0.4                     vel
+0.0                     vel
+0.0                     vel
+
+#TIMESTEPPING
+F                       useFixedDt
+0.2                     cfl
+
+#NORMALIZATION
+1000.0                  lNormSI
+1.0e6                   uNormSI
+
+#MONITOR
+1                       dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+4                       nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#DIVE
+T
+1
+
+#REGION
+left                    name
+box                     shape
+-1000.0                 min
+ 0.0                    max
+-10.0                   min
+ 10.0                   max
+-10.0                   min
+ 10.0                   max
+
+#REFINEREGION
+0                       iLev
++left                   regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#STOP
+5                       MaxIter
+-1.0                    TimeMax
+
+#RUN
+
+#REGION
+right                   name
+box                     shape
+ 0.0                    min
+ 1000.0                 max
+-10.0                   min
+ 10.0                   max
+-10.0                   min
+ 10.0                   max
+
+#REFINEREGION
+0                       iLev
++right                  regions
+
+#STOP
+10                      MaxIter
+-1.0                    TimeMax
+
+#RUN
+
+#REFINEREGION
+0                       iLev
+none                    regions
+
+#STOP
+15                      MaxIter
+-1.0                    TimeMax
+
+#RUN
