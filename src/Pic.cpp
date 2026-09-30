@@ -334,6 +334,12 @@ void Pic::post_regrid() {
       parts[i]->label_particles_outside_active_region_general();
 
       parts[i]->redistribute_particles();
+      if (i < sourceParts.size() && sourceParts[i]) {
+        // sourceParts is emptied after charge exchange. Redistribute also
+        // resizes its AMReX level storage; otherwise get_particle_tile() can
+        // access a missing level when refinement adds a finer grid.
+        sourceParts[i]->redistribute_particles();
+      }
     }
   }
 

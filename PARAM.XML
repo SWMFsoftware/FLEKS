@@ -2613,6 +2613,15 @@ to indicate that the test particle information of the FLEKS region is
 restarted from a file.
 </command>
 
+<command name="REGRIDONRESTART" alias="REGRIDONRESTART_FLEKS0,REGRIDONRESTART_FLEKS1,REGRIDONRESTART_FLEKS2" multiple="T">
+  <parameter name="doRegridOnRestart" type="logical" default="F"/>
+
+#REGRIDONRESTART
+F                 doRegridOnRestart
+
+If true, apply refinement regions immediately after loading restart data.
+</command>
+
 <command name="FLUIDVARNAMES" alias="FLUIDVARNAMES_FLEKS0,FLUIDVARNAMES_FLEKS1,FLUIDVARNAMES_FLEKS2" multiple="T">
   <parameter name="nVar" type="integer" min="0" max="100" default="0"/>
   <for from="1" to="$nVar">
