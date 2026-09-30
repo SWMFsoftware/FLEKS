@@ -72,11 +72,13 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       const Real mz =
           wPrev * momentsPrev(i, j, k, iMz_) + wCur * moments(i, j, k, iMz_);
       Real ui = 0, vi = 0, wi = 0;
+      const Real invRhoEff =
+          (rho > 0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
 
       if (rho > 0) {
-        ui = mx / rho;
-        vi = my / rho;
-        wi = mz / rho;
+        ui = mx * invRhoEff;
+        vi = my * invRhoEff;
+        wi = mz * invRhoEff;
       }
 
       Real bx = arrB(i, j, k, ix_);
@@ -117,7 +119,6 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
       // Hall term: (J x B) / rho_q
       if (rho > 0 && useHallTerm) {
-        const Real invRhoEff = 1.0 / amrex::max(rho, rhoMinOhm);
         Real hall_x = (jy * bz - jz * by) * invRhoEff;
         Real hall_y = (jz * bx - jx * bz) * invRhoEff;
         Real hall_z = (jx * by - jy * bx) * invRhoEff;
