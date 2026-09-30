@@ -12,6 +12,7 @@ struct DomainParameters {
   bool doRestart = false;
   bool doRestartPT = false;
   bool doRestartFIOnly = false;
+  bool doRegridOnRestart = false;
 
   // Coupling / initialization mode.
   bool isStandalone = false;

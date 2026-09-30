@@ -841,6 +841,10 @@ void Domain::read_restart() {
       pt->write_log(true, true);
     }
   }
+
+  if (domainParameters.doRegridOnRestart) {
+    refineRegions.mark_modified();
+  }
 }
 
 //========================================================
@@ -1091,6 +1095,8 @@ void Domain::read_domain_parameters(ReadParam &rp) {
       rp.read_var("doTPRestart", domainParameters.doRestartPT);
     } else if (command == "#RESTARTFIONLY") {
       rp.read_var("doRestartFIOnly", domainParameters.doRestartFIOnly);
+    } else if (command == "#REGRIDONRESTART") {
+      rp.read_var("doRegridOnRestart", domainParameters.doRegridOnRestart);
     } else if (command == "#INITFROMSWMF") {
       rp.read_var("initFromSWMF", domainParameters.initFromSWMF);
     } else if (command == "#RECEIVEICONLY") {
@@ -1232,6 +1238,9 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("doTPRestart", domainParameters.doRestartPT);
     } else if (command == "#RESTARTFIONLY") {
       readParam.read_var("doRestartFIOnly", domainParameters.doRestartFIOnly);
+    } else if (command == "#REGRIDONRESTART") {
+      readParam.read_var("doRegridOnRestart",
+                         domainParameters.doRegridOnRestart);
     } else if (command == "#INITFROMSWMF") {
       readParam.read_var("initFromSWMF", domainParameters.initFromSWMF);
     } else if (command == "#RECEIVEICONLY") {
