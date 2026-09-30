@@ -42,6 +42,8 @@ box                     shape
  4.0                    max
 -0.1                    min
  0.1                    max
+-0.1                    min
+ 0.1                    max
 
 #REGIONHYPERRESISTIVITY
 +sponge_box             region

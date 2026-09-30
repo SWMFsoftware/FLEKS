@@ -2096,7 +2096,7 @@ void Pic::update_regional_hyper_grid_mode(Real dt) {
   for (auto& cfg : regionalHyperResistivityConfigs) {
     if (cfg.mode == "grid" && cfg.ch > 0.0) {
       const Real etaHyper = fourPI * cfg.ch * std::pow(dxMinFine, 4) / dt;
-      if (cfg.etaLev.size() != static_cast<size_t>(n_lev_max()) ||
+      if (cfg.etaLev.size() != static_cast<amrex::Long>(n_lev_max()) ||
           std::abs(cfg.etaLev[0] - etaHyper) > 1e-14 * etaHyper) {
         cfg.etaLev.assign(n_lev_max(), etaHyper);
         changed = true;
