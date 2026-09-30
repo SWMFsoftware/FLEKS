@@ -1751,7 +1751,7 @@ Only used when #HYBRIDPIC is T and #BODY is present.
 geometric region defined by #REGION.
 
 region is the shape expression (e.g. '+box1' or '+box1 -sphere1').
-etaResistivitySI is the SI magnetic diffusivity [m^2/s] (converted to code units
+etaResistivitySI is the SI magnetic diffusivity [m\^2/s] (converted to code units
 internally, identical to #RESISTIVITY).
 
 Only used when #HYBRIDPIC is T. Multiple #REGIONRESISTIVITY commands can be given.
@@ -1770,13 +1770,13 @@ grid              etaHyperMode
 0.0               etaHyperCh
 
 [Regional hyper-resistivity] Localized fourth-order hyper-resistivity
--(eta_h(x)/4*pi) * curl(nabla^2 B) applied in a geometric region defined by #REGION.
+-(eta_h(x)/4*pi) * curl(nabla\^2 B) applied in a geometric region defined by #REGION.
 
 region is the shape expression (e.g. '+sponge_box').
-etaHyperSI is the SI hyper-diffusivity [m^4/s] used when etaHyperMode="si".
+etaHyperSI is the SI hyper-diffusivity [m\^4/s] used when etaHyperMode="si".
 When etaHyperMode="grid", eta_h is CFL-scaled to the finest cell size and time step
 via the dimensionless coefficient etaHyperCh:
-  eta_h = 4*pi * C_h * dx_min^4 / dt.
+  eta_h = 4*pi * C_h * dx_min\^4 / dt.
 
 Only used when #HYBRIDPIC is T. Multiple #REGIONHYPERRESISTIVITY commands can be given.
 </command>

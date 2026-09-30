@@ -1534,7 +1534,7 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (pic) {
       pic->finalize_units_conversion();
-      pic->set_region_shapes(shapes);
+      pic->set_region_shapes(shapeList);
     }
 
     // Final sync of source's FluidInterfaceParameters from fi, now that
