@@ -19,11 +19,11 @@
 #include "OHInterface.h"
 #include "Particles.h"
 #include "ReadParam.h"
+#include "Regions.h"
+#include "Shape.h"
 #include "SourceInterface.h"
 #include "TimeCtr.h"
 #include "WaveBC.h"
-#include "Regions.h"
-#include "Shape.h"
 
 class ParticleTracker;
 class Pic;
@@ -144,7 +144,7 @@ private:
   amrex::Vector<RegionalHyperResistivityConfig> regionalHyperResistivityConfigs;
   bool hasRegionalResistivity_ = false;
   bool hasRegionalHyper_ = false;
-  amrex::Vector<std::shared_ptr<Shape>> regionShapes;
+  amrex::Vector<std::shared_ptr<Shape> > regionShapes;
   amrex::Vector<amrex::MultiFab> nodeEtaRegional;
   amrex::Vector<amrex::MultiFab> nodeEtaHyperRegional;
 
@@ -569,7 +569,7 @@ public:
   // Fill the frozen B0 arrays (nodeB0 / centerB0) from the analytic field.
   void fill_intrinsic_B();
   // Regional resistivity / hyper-resistivity setup and update methods.
-  void set_region_shapes(const amrex::Vector<std::shared_ptr<Shape>>& shapes) {
+  void set_region_shapes(const amrex::Vector<std::shared_ptr<Shape> > &shapes) {
     if (useHybridPIC && (hasRegionalResistivity_ || hasRegionalHyper_)) {
       regionShapes = shapes;
     }

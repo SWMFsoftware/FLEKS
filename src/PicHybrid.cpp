@@ -19,7 +19,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   // Nodal total current J = curl(B)/(4*pi) from trial B (compact 1*dx stencil
   // from cell centres to nodes). Only needed for physical resistivity and Hall.
-  const bool needJ = (etaResistivity > 0 || useHallTerm || hasRegionalResistivity_);
+  const bool needJ =
+      (etaResistivity > 0 || useHallTerm || hasRegionalResistivity_);
   if (needJ) {
     curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
     nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -544,8 +545,6 @@ void Pic::update_B_hybrid() {
     }
   }
 
-
-
   // Grid-mode localized regional hyper-resistivity
   if (hasRegionalHyper_) {
     update_regional_hyper_grid_mode(dt);
@@ -566,8 +565,7 @@ void Pic::update_B_hybrid() {
       }
     }
     const Real maxEta = amrex::max(etaResistivity, maxRegionalEta);
-    const Real maxHyper =
-        amrex::max(etaHyperLev[iLev], maxRegionalHyperLev);
+    const Real maxHyper = amrex::max(etaHyperLev[iLev], maxRegionalHyperLev);
     if (maxEta <= 0 && maxHyper <= 0 && !useHallTerm)
       continue;
 

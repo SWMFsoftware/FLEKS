@@ -615,7 +615,8 @@ void Pic::post_process_param() {
 
   if (hasRegionalResistivity_ || hasRegionalHyper_) {
     if (!useHybridPIC) {
-      Abort("Invalid configuration: #REGIONRESISTIVITY and #REGIONHYPERRESISTIVITY "
+      Abort("Invalid configuration: #REGIONRESISTIVITY and "
+            "#REGIONHYPERRESISTIVITY "
             "are only supported for the hybrid PIC solver (#HYBRIDPIC T).");
     }
   }
@@ -636,7 +637,8 @@ void Pic::post_process_param() {
 
   for (const auto& cfg : regionalHyperResistivityConfigs) {
     if (cfg.regionStr.empty())
-      Abort("Invalid #REGIONHYPERRESISTIVITY: region expression cannot be empty.");
+      Abort("Invalid #REGIONHYPERRESISTIVITY: region expression cannot be "
+            "empty.");
     if (cfg.mode != "si" && cfg.mode != "grid")
       Abort("Invalid #REGIONHYPERRESISTIVITY etaHyperMode '" + cfg.mode +
             "'. Expected 'si' or 'grid'.");
@@ -645,8 +647,6 @@ void Pic::post_process_param() {
     if (cfg.ch < 0.0)
       Abort("Invalid #REGIONHYPERRESISTIVITY: etaHyperCh must be >= 0.");
   }
-
-
 
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
@@ -760,8 +760,6 @@ void Pic::convert_resistivity() {
             << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL << ")\n";
   }
 
-
-
   // Hyper-resistive term eta_h*nabla^2 J: [eta_h] = [U]*[L]^3, so
   // eta_h_code = 4*pi * eta_h_SI * Si2NoV * Si2NoL^3. A single physical value
   // is used on every level (the same choice as grid mode in update_B_hybrid).
@@ -773,14 +771,13 @@ void Pic::convert_resistivity() {
             << " [code units]\n";
   }
 
-
-
   // Regional resistivity
   for (auto& cfg : regionalResistivityConfigs) {
     if (cfg.etaSI > 0) {
       cfg.etaCode = fourPI * cfg.etaSI * Si2NoV * Si2NoL;
-      Print() << "  regionalResistivity [" << cfg.regionStr << "]: "
-              << cfg.etaSI << " [m^2/s] -> " << cfg.etaCode << " [code units]\n";
+      Print() << "  regionalResistivity [" << cfg.regionStr
+              << "]: " << cfg.etaSI << " [m^2/s] -> " << cfg.etaCode
+              << " [code units]\n";
     }
   }
 
@@ -788,13 +785,11 @@ void Pic::convert_resistivity() {
   for (auto& cfg : regionalHyperResistivityConfigs) {
     cfg.etaLev.resize(n_lev_max(), 0.0);
     if (cfg.etaSI > 0 && cfg.mode == "si") {
-      const Real etaHyper =
-          fourPI * cfg.etaSI * Si2NoV * std::pow(Si2NoL, 3);
+      const Real etaHyper = fourPI * cfg.etaSI * Si2NoV * std::pow(Si2NoL, 3);
       for (int iLev = 0; iLev < n_lev_max(); ++iLev)
         cfg.etaLev[iLev] = etaHyper;
-      Print() << "  regionalHyper [" << cfg.regionStr << "]: "
-              << cfg.etaSI << " [m^4/s, si] -> " << etaHyper
-              << " [code units]\n";
+      Print() << "  regionalHyper [" << cfg.regionStr << "]: " << cfg.etaSI
+              << " [m^4/s, si] -> " << etaHyper << " [code units]\n";
     }
   }
 
@@ -811,14 +806,16 @@ void Pic::convert_resistivity() {
   for (const auto& cfg : regionalResistivityConfigs) {
     if (cfg.etaSI > 0 && !(cfg.etaCode > 0)) {
       Abort("Pic::convert_resistivity: #REGIONRESISTIVITY produced a "
-            "non-positive resistivity. Check the normalization (#NORMALIZATION).");
+            "non-positive resistivity. Check the normalization "
+            "(#NORMALIZATION).");
     }
   }
   for (const auto& cfg : regionalHyperResistivityConfigs) {
     if (cfg.etaSI > 0 && cfg.mode == "si" &&
         (cfg.etaLev.empty() || !(cfg.etaLev[0] > 0))) {
       Abort("Pic::convert_resistivity: #REGIONHYPERRESISTIVITY produced a "
-            "non-positive hyper-resistivity. Check the normalization (#NORMALIZATION).");
+            "non-positive hyper-resistivity. Check the normalization "
+            "(#NORMALIZATION).");
     }
   }
 }
