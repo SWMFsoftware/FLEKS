@@ -81,21 +81,23 @@ public:
 
     radiusInner = rInner;
     radiusOuter = rOuter;
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < nDim; ++i)
       center[i] = c[i];
   }
 
   bool is_inside(const amrex::Real* xyz) const override {
-    const amrex::Real dx = xyz[0] - center[0];
-    const amrex::Real dy = xyz[1] - center[1];
-    const amrex::Real dz = xyz[2] - center[2];
-    amrex::Real l = sqrt(dx * dx + dy * dy + dz * dz);
+    amrex::Real l2 = 0;
+    for (int i = 0; i < nDim; ++i) {
+      const amrex::Real delta = xyz[i] - center[i];
+      l2 += delta * delta;
+    }
+    const amrex::Real l = std::sqrt(l2);
     return l < radiusOuter && l > radiusInner;
   }
 
 private:
   amrex::Real radiusInner, radiusOuter;
-  amrex::Real center[3];
+  amrex::Real center[nDim];
 };
 
 //========= Paraboloid ==========//

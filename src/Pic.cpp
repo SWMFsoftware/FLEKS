@@ -50,6 +50,7 @@ void Pic::fill_new_cells() {
   if (initEM) {
     fill_E_B_fields();
   }
+  init_regional_fields();
 
   // Every registered InitialCondition plug-in seeds its fields through the
   // narrow PicICFields facade (LightWave, HybridWave, ConvectionWave, ...). The
@@ -221,6 +222,14 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           3, nGst, doMoveData);
       distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev],
                           DistributionMap(iLev), 1, nGst, doMoveData);
+      if (hasRegionalResistivity_) {
+        distribute_FabArray(nodeEtaRegional[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, false);
+      }
+      if (hasRegionalHyper_) {
+        distribute_FabArray(nodeEtaHyperRegional[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, false);
+      }
 
       // Hybrid-only node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
@@ -289,6 +298,7 @@ void Pic::post_regrid() {
   // filled by re-evaluating the model rather than by interpolating the old
   // grid. This is the one place a regrid could silently leave B0 at zero.
   fill_intrinsic_B();
+  init_regional_fields();
 
   {
     iTot = nSpecies;
@@ -1967,5 +1977,146 @@ void Pic::charge_exchange() {
 #endif
 
     source->convert_moment_to_velocity(true, false);
+  }
+}
+
+//==========================================================
+void Pic::init_regional_fields() {
+  if (!useHybridPIC || (!hasRegionalResistivity_ && !hasRegionalHyper_))
+    return;
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    init_regional_fields(iLev);
+  }
+}
+
+//==========================================================
+void Pic::init_regional_fields(int iLev) {
+  if (!useHybridPIC || (!hasRegionalResistivity_ && !hasRegionalHyper_))
+    return;
+  fill_regional_resistivity_field(iLev);
+  fill_regional_hyper_field(iLev);
+}
+
+//==========================================================
+void Pic::fill_regional_resistivity_field(int iLev) {
+  if (!hasRegionalResistivity_ || nodeEtaRegional.empty() ||
+      !nodeEtaRegional[iLev].isDefined())
+    return;
+
+  nodeEtaRegional[iLev].setVal(0.0);
+  const auto dx = Geom(iLev).CellSizeArray();
+  const auto probLo = Geom(iLev).ProbLoArray();
+
+  for (const auto& cfg : regionalResistivityConfigs) {
+    if (cfg.etaCode <= 0.0)
+      continue;
+    Regions reg(regionShapes, cfg.regionStr);
+
+    for (MFIter mfi(nodeEtaRegional[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.growntilebox();
+      const Array4<Real>& arr = nodeEtaRegional[iLev][mfi].array();
+      const auto lo = box.smallEnd();
+      const auto hi = box.bigEnd();
+
+#if (AMREX_SPACEDIM > 2)
+      for (int k = lo[2]; k <= hi[2]; ++k) {
+#else
+      int k = 0;
+      {
+#endif
+        for (int j = lo[1]; j <= hi[1]; ++j) {
+          for (int i = lo[0]; i <= hi[0]; ++i) {
+            Real xyz[nDim];
+            xyz[0] = probLo[0] + i * dx[0];
+            xyz[1] = probLo[1] + j * dx[1];
+#if (AMREX_SPACEDIM > 2)
+            xyz[2] = probLo[2] + k * dx[2];
+#endif
+            if (reg.is_inside(xyz)) {
+              arr(i, j, k) = amrex::max(arr(i, j, k), cfg.etaCode);
+            }
+          }
+        }
+      }
+    }
+  }
+  nodeEtaRegional[iLev].FillBoundary(Geom(iLev).periodicity());
+}
+
+//==========================================================
+void Pic::fill_regional_hyper_field(int iLev) {
+  if (!hasRegionalHyper_ || nodeEtaHyperRegional.empty() ||
+      !nodeEtaHyperRegional[iLev].isDefined())
+    return;
+
+  nodeEtaHyperRegional[iLev].setVal(0.0);
+  const auto dx = Geom(iLev).CellSizeArray();
+  const auto probLo = Geom(iLev).ProbLoArray();
+
+  for (const auto& cfg : regionalHyperResistivityConfigs) {
+    const Real etaVal =
+        (iLev < static_cast<int>(cfg.etaLev.size())) ? cfg.etaLev[iLev] : 0.0;
+    if (etaVal <= 0.0)
+      continue;
+    Regions reg(regionShapes, cfg.regionStr);
+
+    for (MFIter mfi(nodeEtaHyperRegional[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.growntilebox();
+      const Array4<Real>& arr = nodeEtaHyperRegional[iLev][mfi].array();
+      const auto lo = box.smallEnd();
+      const auto hi = box.bigEnd();
+
+#if (AMREX_SPACEDIM > 2)
+      for (int k = lo[2]; k <= hi[2]; ++k) {
+#else
+      int k = 0;
+      {
+#endif
+        for (int j = lo[1]; j <= hi[1]; ++j) {
+          for (int i = lo[0]; i <= hi[0]; ++i) {
+            Real xyz[nDim];
+            xyz[0] = probLo[0] + i * dx[0];
+            xyz[1] = probLo[1] + j * dx[1];
+#if (AMREX_SPACEDIM > 2)
+            xyz[2] = probLo[2] + k * dx[2];
+#endif
+            if (reg.is_inside(xyz)) {
+              arr(i, j, k) = amrex::max(arr(i, j, k), etaVal);
+            }
+          }
+        }
+      }
+    }
+  }
+  nodeEtaHyperRegional[iLev].FillBoundary(Geom(iLev).periodicity());
+}
+
+//==========================================================
+void Pic::update_regional_hyper_grid_mode(Real dt) {
+  if (!useHybridPIC || !hasRegionalHyper_ || dt <= 0.0)
+    return;
+
+  bool changed = false;
+  const int iFinest = n_lev() - 1;
+  const auto dxFine = Geom(iFinest).CellSizeArray();
+  Real dxMinFine = dxFine[0];
+  for (int d = 1; d < nDim; ++d)
+    dxMinFine = amrex::min(dxMinFine, dxFine[d]);
+
+  for (auto& cfg : regionalHyperResistivityConfigs) {
+    if (cfg.mode == "grid" && cfg.ch > 0.0) {
+      const Real etaHyper = fourPI * cfg.ch * std::pow(dxMinFine, 4) / dt;
+      if (cfg.etaLev.size() != static_cast<amrex::Long>(n_lev_max()) ||
+          std::abs(cfg.etaLev[0] - etaHyper) > 1e-14 * etaHyper) {
+        cfg.etaLev.assign(n_lev_max(), etaHyper);
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      fill_regional_hyper_field(iLev);
+    }
   }
 }

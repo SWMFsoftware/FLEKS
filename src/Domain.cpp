@@ -27,8 +27,6 @@ static const ParameterCommand parameter_registry[] = {
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#BODY", ParameterOwner::Pic },
   { "#BODYBOUNDARY", ParameterOwner::Pic },
-  { "#BODYHYPERRESISTIVITY", ParameterOwner::Pic },
-  { "#BODYRESISTIVITY", ParameterOwner::Pic },
   { "#BSUBCYCLE", ParameterOwner::Pic },
   { "#CMAXE", ParameterOwner::Pic },
   { "#COMOVING", ParameterOwner::Pic },
@@ -73,6 +71,8 @@ static const ParameterCommand parameter_registry[] = {
   { "#PLASMA", ParameterOwner::FluidInterface },
   { "#PRESPLITTING", ParameterOwner::Pic },
   { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
+  { "#REGIONHYPERRESISTIVITY", ParameterOwner::Pic },
+  { "#REGIONRESISTIVITY", ParameterOwner::Pic },
   { "#RESAMPLING", ParameterOwner::Pic },
   { "#RESISTIVITY", ParameterOwner::Pic },
   { "#SCALINGFACTOR", ParameterOwner::FluidInterface },
@@ -1323,7 +1323,6 @@ void Domain::read_param(const bool readGridInfo) {
         for (int i = 0; i < nDim; ++i) {
           readParam.read_var("center", center[i]);
         }
-
         readParam.read_var("height", height);
         readParam.read_var("r1", r1);
         readParam.read_var("r2", r2);
@@ -1539,8 +1538,10 @@ void Domain::read_param(const bool readGridInfo) {
     if (fi)
       fi->post_process_param(domainParameters);
 
-    if (pic)
+    if (pic) {
       pic->finalize_units_conversion();
+      pic->set_region_shapes(shapeList);
+    }
 
     // Final sync of source's FluidInterfaceParameters from fi, now that
     // fi->post_process_param() has finalized the derived arrays (MoMi_S,

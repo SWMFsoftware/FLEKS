@@ -117,12 +117,19 @@ sphere                  type
 absorb                  particleBoundary
 conducting              fieldBoundary
 
-#BODYHYPERRESISTIVITY
-0.0                     etaBodyHyperSI      [m^4/s]
-grid                    etaBodyHyperMode
-0.05                    etaBodyHyperCh
-1.8                     rOuter              [code units]
--1.0                    rInner              [code units, <0 defaults to body radius]
+#REGION
+body_shell              name
+shell                   shape
+0.0                     center [code units] x
+0.0                     center [code units] y
+1.2                     radiusInner
+1.8                     radius
+
+#REGIONHYPERRESISTIVITY
++body_shell             region
+0.0                     etaHyperSI      [m^4/s]
+grid                    etaHyperMode
+0.05                    etaHyperCh
 
 #TIMESTEPPING
 T                       useFixedDt

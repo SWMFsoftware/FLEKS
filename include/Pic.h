@@ -22,6 +22,8 @@
 #include "SourceInterface.h"
 #include "TimeCtr.h"
 #include "WaveBC.h"
+#include "Regions.h"
+#include "Shape.h"
 
 class ParticleTracker;
 class Pic;
@@ -123,19 +125,28 @@ private:
   amrex::Real etaHyperCh = 0.01;
   amrex::Vector<amrex::Real> etaHyperLev;
 
-  // Localized body resistivity and hyper-resistivity in an extended spherical
-  // region around the inner body declared by #BODY.
-  amrex::Real etaBodyResistivitySI = 0.0;
-  amrex::Real etaBodyResistivity = 0.0;
-  amrex::Real rBodyResistivityOuter = -1.0;
-  amrex::Real rBodyResistivityInner = -1.0;
+  // Regional resistivity and hyper-resistivity
+  struct RegionalResistivityConfig {
+    std::string regionStr;
+    amrex::Real etaSI = 0.0;
+    amrex::Real etaCode = 0.0;
+  };
 
-  amrex::Real etaBodyHyperSI = 0.0;
-  std::string etaBodyHyperMode = "grid";
-  amrex::Real etaBodyHyperCh = 0.0;
-  amrex::Vector<amrex::Real> etaBodyHyperLev;
-  amrex::Real rBodyHyperOuter = -1.0;
-  amrex::Real rBodyHyperInner = -1.0;
+  struct RegionalHyperResistivityConfig {
+    std::string regionStr;
+    amrex::Real etaSI = 0.0;
+    std::string mode = "grid";
+    amrex::Real ch = 0.0;
+    amrex::Vector<amrex::Real> etaLev;
+  };
+
+  amrex::Vector<RegionalResistivityConfig> regionalResistivityConfigs;
+  amrex::Vector<RegionalHyperResistivityConfig> regionalHyperResistivityConfigs;
+  bool hasRegionalResistivity_ = false;
+  bool hasRegionalHyper_ = false;
+  amrex::Vector<std::shared_ptr<Shape>> regionShapes;
+  amrex::Vector<amrex::MultiFab> nodeEtaRegional;
+  amrex::Vector<amrex::MultiFab> nodeEtaHyperRegional;
 
   // Minimum charge density in the Hall and electron pressure gradient term.
   // <= 0 means auto: 1e-6 * electronDensity0.
@@ -435,7 +446,6 @@ public:
     for (int iL = 0; iL < n_lev_max(); ++iL)
       kStage[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);
-    etaBodyHyperLev.resize(n_lev_max(), 0.0);
     targetPPC.resize(n_lev_max());
     if (reportParticleQuality) {
       particleQuality.resize(n_lev_max());
@@ -558,6 +568,17 @@ public:
   void convert_intrinsic_B();
   // Fill the frozen B0 arrays (nodeB0 / centerB0) from the analytic field.
   void fill_intrinsic_B();
+  // Regional resistivity / hyper-resistivity setup and update methods.
+  void set_region_shapes(const amrex::Vector<std::shared_ptr<Shape>>& shapes) {
+    if (useHybridPIC && (hasRegionalResistivity_ || hasRegionalHyper_)) {
+      regionShapes = shapes;
+    }
+  }
+  void init_regional_fields();
+  void init_regional_fields(int iLev);
+  void fill_regional_resistivity_field(int iLev);
+  void fill_regional_hyper_field(int iLev);
+  void update_regional_hyper_grid_mode(amrex::Real dt);
   // dst <- dst + B0, for a MultiFab living on the same centering as dst.
   void add_intrinsic_B(amrex::MultiFab &dst, int iLev);
   // Cell-centred total field: returns `src + B0` built in a scratch array, or
