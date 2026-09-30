@@ -122,7 +122,6 @@ body_shell              name
 shell                   shape
 0.0                     center [code units] x
 0.0                     center [code units] y
-0.0                     center [code units] z
 1.2                     radiusInner
 1.8                     radius
 

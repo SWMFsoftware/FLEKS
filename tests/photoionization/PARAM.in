@@ -160,7 +160,6 @@ sphere1                 nameRegion
 sphere                  shape
 5.0e3                   centerX   [code units]
 0.0                     centerY
-0.0                     centerZ
 3.0e3                   radius    [code units]
 
 #TPREGION

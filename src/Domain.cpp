@@ -1280,8 +1280,8 @@ void Domain::read_param(const bool readGridInfo) {
         shape = std::make_shared<BoxShape>(name, lo, hi);
       } else if (type == "sphere") {
 
-        Real center[3], radius;
-        for (int i = 0; i < 3; ++i) {
+        Real center[nDim], radius;
+        for (int i = 0; i < nDim; ++i) {
           readParam.read_var("center", center[i]);
         }
         readParam.read_var("radius", radius);
@@ -1294,8 +1294,8 @@ void Domain::read_param(const bool readGridInfo) {
 
       } else if (type == "shell") {
 
-        Real center[3], rInner, rOuter;
-        for (int i = 0; i < 3; ++i) {
+        Real center[nDim], rInner, rOuter;
+        for (int i = 0; i < nDim; ++i) {
           readParam.read_var("center", center[i]);
         }
         readParam.read_var("rInner", rInner);
@@ -1308,10 +1308,10 @@ void Domain::read_param(const bool readGridInfo) {
         shape = std::make_shared<Shell>(name, center, rInner, rOuter);
       } else if (type == "paraboloid") {
         int iAxis;
-        Real center[3], height, r1, r2;
+        Real center[nDim], height, r1, r2;
 
         readParam.read_var("iAxis", iAxis);
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < nDim; ++i) {
           readParam.read_var("center", center[i]);
         }
         readParam.read_var("height", height);
