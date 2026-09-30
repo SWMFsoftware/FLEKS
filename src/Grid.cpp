@@ -104,6 +104,10 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
     doNeedFillNewCell = true;
 
     activeRegion = region;
+  } else {
+    // Load balancing changes ownership, not the cells in the hierarchy.
+    // Keep the old boxes so retained nodes are not marked as new.
+    cGridsOld = cGrids;
   }
 
   isGridEmpty = activeRegion.empty();
@@ -172,6 +176,9 @@ void Grid::print_grid_info(bool printBoxes) {
 
   Print() << printPrefix << " =========================\n" << std::endl;
 }
+
+//============================================================================//
+void Grid::distribute_grid_arrays() { distribute_grid_arrays(cGridsOld); }
 
 //============================================================================//
 void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
