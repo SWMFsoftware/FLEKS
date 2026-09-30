@@ -689,15 +689,16 @@ public:
 
   ActiveRegionBox make_active_region_box(int iLev, const amrex::Box& validBox,
                                          const amrex::Box& statusBox) const {
-    return make_active_region_box(make_level_geom_box(iLev), validBox, statusBox);
+    return make_active_region_box(make_level_geom_box(iLev), validBox,
+                                  statusBox);
   }
 
   // Cheap accept: see ActiveRegionBox.lo/hi.  No arithmetic, no status lookup.
   inline bool is_inside_valid_box(const ParticleType& p,
                                   const ActiveRegionBox& ab) const {
     return AMREX_D_TERM(p.pos(0) >= ab.lo[0] && p.pos(0) < ab.hi[0],
-                     && p.pos(1) >= ab.lo[1] && p.pos(1) < ab.hi[1],
-                     && p.pos(2) >= ab.lo[2] && p.pos(2) < ab.hi[2]);
+                        &&p.pos(1) >= ab.lo[1] && p.pos(1) < ab.hi[1],
+                        &&p.pos(2) >= ab.lo[2] && p.pos(2) < ab.hi[2]);
   }
 
   // Cell index of `p` plus its status bitmask.  `isInside` is false when the
