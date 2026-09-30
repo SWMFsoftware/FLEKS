@@ -334,6 +334,9 @@ void Pic::post_regrid() {
       parts[i]->label_particles_outside_active_region_general();
 
       parts[i]->redistribute_particles();
+      if (i < sourceParts.size() && sourceParts[i]) {
+        sourceParts[i]->redistribute_particles();
+      }
     }
   }
 
