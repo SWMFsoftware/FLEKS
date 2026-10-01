@@ -316,6 +316,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             }
 #endif
             if (doAdd) {
+              IntVect ppcCell = ppc;
               if (adaptivePPC) {
                 // Adjust ppc so that the weight of the
                 // source particles is not too small.
@@ -336,13 +337,13 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                 if (avgSourceW < targetSourceW) {
                   Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
                   for (int iDim = 0; iDim < nDim; iDim++) {
-                    ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
+                    ppcCell[iDim] = std::max(1, int(ppc[iDim] * ratio));
                   }
                 }
               }
 
-              add_particles_cell(iLev, mfi, ijk, interface, false, ppc, Vel(),
-                                 dt);
+              add_particles_cell(iLev, mfi, ijk, interface, false, ppcCell,
+                                 Vel(), dt);
             }
           }
     }
@@ -389,19 +390,13 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
     std::unique_ptr<PicParticles>& sourcePart, IntVect ppc,
     const bool adaptivePPC) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PicParticles::PIter pti(*sourcePart, iLev); pti.isValid(); ++pti) {
       // It is assumed the tile size is 1x1x1.
       Box bx = pti.tilebox();
       auto cellIdx = bx.smallEnd();
 
       ParticleTileType& pTile = get_particle_tile(iLev, pti, cellIdx);
-      AoS& particles = pti.GetArrayOfStructs();
-
-      // ParticleTileType
-      auto& spTile = sourcePart->get_particle_tile(iLev, pti, cellIdx);
-
-      // AoS type
-      auto& sps = spTile.GetArrayOfStructs();
+      auto& sps = pti.GetArrayOfStructs();
 
       if (sps.size() == 0)
         continue;
@@ -411,13 +406,15 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
         rhoSource += p.rdata(iqp_);
       }
 
+      set_random_seed(iLev, cellIdx, IntVect(787));
+
+      IntVect ppcCell = ppc;
       if (adaptivePPC) {
-        set_random_seed(iLev, cellIdx, IntVect(787));
         // Adjust ppc so that the weight of the
         // source particles is not too small.
 
         Real rho = 0;
-        for (auto& p : particles) {
+        for (auto& p : pTile.GetArrayOfStructs()) {
           rho += p.rdata(iqp_);
         }
 
@@ -429,7 +426,7 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
         if (avgSourceW < targetSourceW) {
           Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
           for (int iDim = 0; iDim < nDim; iDim++) {
-            ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
+            ppcCell[iDim] = std::max(1, int(ppc[iDim] * ratio));
           }
         }
       }
@@ -441,7 +438,7 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
       }
 
       std::vector<int> idx =
-          random_select_weighted_n(weights, product(ppc), randNum);
+          random_select_weighted_n(weights, product(ppcCell), randNum);
 
       Real wTmp = 0;
       for (int i : idx) {
