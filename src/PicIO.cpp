@@ -2,6 +2,7 @@
 
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_RealVect.H>
+#include <AMReX_Utility.H>
 
 #include "GridUtility.h"
 #include "Pic.h"
@@ -511,7 +512,20 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       const Array4<Real const>& arr =
           plasma[extract_int(var)][iLev][mfi].array();
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
-
+    } else if (var.substr(0, 2) == "Pe") {
+      // Electron pressure actually used by the Ohm's law: the evolved field
+      // when #ELECTRONPRESSURE is on, the polytropic closure otherwise.
+      const Array4<Real const>& arr = centerPe[iLev][mfi].array();
+      value = arr(ijk);
+    } else if (var.substr(0, 2) == "Te") {
+      // Electron temperature in code units (Te = Pe/n_e); only meaningful
+      // when the electron pressure equation is evolved.
+      if (useElectronPressureEq) {
+        const Array4<Real const>& arr = centerPeTe[iLev][mfi].array();
+        value = arr(ijk);
+      } else {
+        value = 0.0;
+      }
     } else if (var.substr(0, 3) == "E0x") {
       const Array4<Real const>& arr = eBg[iLev][mfi].array();
       value = arr(ijk, ix_);
@@ -574,6 +588,11 @@ void Pic::save_restart_data() {
                  restartDir + gridName + "_nodeB" + lev_string(iLev));
     VisMF::Write(centerB[iLev],
                  restartDir + gridName + "_centerB" + lev_string(iLev));
+    if (useElectronPressureEq) {
+      VisMF::Write(centerPeState[iLev], restartDir + gridName +
+                                            "_centerPeState" +
+                                            lev_string(iLev));
+    }
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -625,6 +644,32 @@ void Pic::read_restart() {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  // The evolved electron pressure is only present in restarts written by a run
+  // that had #ELECTRONPRESSURE on. Older files start without it and the field
+  // is then seeded from the polytropic closure on the first step.
+  if (useElectronPressureEq) {
+    bool havePe = true;
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const std::string name =
+          restartDir + gridName + "_centerPeState" + lev_string(iLev);
+      if (!FileExists(name) && !FileExists(name + "_H"))
+        havePe = false;
+    }
+    if (havePe) {
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        VisMF::Read(centerPeState[iLev], restartDir + gridName +
+                                             "_centerPeState" +
+                                             lev_string(iLev));
+        centerPeState[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+      peStateInitialized_ = true;
+    } else {
+      Print() << "  restart: no electron pressure file found; Pe will be "
+              << "seeded from the polytropic closure on the first step.\n";
+      peStateInitialized_ = false;
+    }
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -975,6 +1020,12 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (saveBody)
     nVarOut += 1;
 
+  // The evolved electron pressure and temperature (#ELECTRONPRESSURE). They
+  // are cell-centred, so they are only meaningful in the cell-centred output.
+  const bool savePeVars = useElectronPressureEq && !saveNode;
+  if (savePeVars)
+    nVarOut += 2;
+
   // Save cell-centered, instead of the nodal, values, because the AMReX
   // document says some visualization tools assumes the AMReX format outputs
   // are cell-centered.
@@ -1170,6 +1221,14 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
       iStart += 1;
       varNames.push_back("body");
+    }
+
+    if (savePeVars) {
+      MultiFab::Copy(out[iLev], centerPe[iLev], 0, iStart, 1, 0);
+      MultiFab::Copy(out[iLev], centerPeTe[iLev], 0, iStart + 1, 1, 0);
+      iStart += 2;
+      varNames.push_back("Pe");
+      varNames.push_back("Te");
     }
 
     for (int i = 0; i < out[iLev].nComp(); ++i) {

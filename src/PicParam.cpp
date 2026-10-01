@@ -352,6 +352,17 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("etaHyperCh", etaHyperCh);
   } else if (command == "#MINIMUMDENSITY") {
     param.read_var("rhoMinOhm", rhoMinOhm);
+  } else if (command == "#ELECTRONPRESSURE") {
+    param.read_var("useElectronPressureEq", useElectronPressureEq);
+    if (useElectronPressureEq) {
+      param.read_var("heatCondKappa0SI", heatCondKappa0SI);
+      param.read_var("coulombLog", coulombLog);
+      param.read_var("fieldAlignedConduction", fieldAlignedConduction);
+      param.read_var("fieldAlignedFraction", fieldAlignedFraction);
+      param.read_var("heatFluxLimiter", heatFluxLimiter);
+      param.read_var("peMin", peMin);
+      param.read_var("ambipolarInStages", ambipolarInStages);
+    }
   } else if (command == "#FIELDINTEGRATOR") {
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#SELECTPARTICLE") {
@@ -558,6 +569,43 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
     Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+  if (useElectronPressureEq) {
+    if (!useHybridPIC)
+      Abort("Invalid #ELECTRONPRESSURE: the evolved electron pressure "
+            "equation is only supported by the hybrid PIC solver "
+            "(#HYBRIDPIC T).");
+    // gamma_e - 1 multiplies both the pdV term and every source term, so an
+    // isothermal index would silently reduce the equation to pure advection.
+    if (electronGamma <= 1.0)
+      Abort("Invalid #ELECTRONPRESSURE: #ELECTRONTEMPERATURE electronGamma "
+            "must be > 1 for the evolved electron pressure equation "
+            "(gamma_e = 1 removes the pdV term and the heat-flux source).");
+    if (electronTemperatureEV <= 0)
+      Abort("Invalid #ELECTRONPRESSURE: #ELECTRONTEMPERATURE "
+            "electronTemperature must be > 0 (it sets the initial Pe).");
+    if (heatCondKappa0SI < 0)
+      Abort("Invalid #ELECTRONPRESSURE: heatCondKappa0SI must be "
+            "non-negative.");
+    if (coulombLog <= 0)
+      Abort("Invalid #ELECTRONPRESSURE: coulombLog must be positive.");
+    if (fieldAlignedFraction < 0 || fieldAlignedFraction > 1)
+      Abort("Invalid #ELECTRONPRESSURE: fieldAlignedFraction must be "
+            "between 0 (isotropic) and 1 (field aligned).");
+    if (heatFluxLimiter < 0)
+      Abort("Invalid #ELECTRONPRESSURE: heatFluxLimiter must be "
+            "non-negative.");
+    if (peMin < 0)
+      Abort("Invalid #ELECTRONPRESSURE: peMin must be non-negative.");
+
+    // Sized here rather than in the constructor: the command has not been
+    // read when Pic is constructed.
+    centerPeState.resize(n_lev_max());
+    centerPeRho.resize(n_lev_max());
+    centerPeTe.resize(n_lev_max());
+    nodePeVec.resize(n_lev_max());
+    nodePeRho.resize(n_lev_max());
+    nodePeAux.resize(n_lev_max());
+  }
   if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3")
     Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
           "'. Expected 'rk4' or 'ssprk3'.");
@@ -717,6 +765,7 @@ void Pic::finalize_units_conversion() {
   // Convert input units to code units using normalization factors from fi.
   convert_resistivity();
   convert_electron_density0();
+  convert_electron_heat_conduction();
   convert_inflow_state();
   convert_intrinsic_B();
 }
@@ -833,6 +882,57 @@ void Pic::convert_electron_density0() {
   Print() << "  electronDensity0: " << electronDensity0In << " [amu/cc] -> "
           << electronDensity0
           << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho() << ")\n";
+}
+
+//==========================================================
+// SI -> code conversion of the Spitzer electron heat conduction coefficient.
+//
+// The heat flux is q = -kappa * grad(Te) with kappa = kappa0 * Te^2.5, so
+//   [kappa] = [energy flux] / ([T]^3.5 / [L]) = [EnergyDens]*[U]*[L]/[T]^3.5
+// (the same expression BATSRUS uses in ModHeatConduction.f90). In FLEKS code
+// units the energy density is rho*U^2 and the temperature is carried as
+// k_B*T/m_p in units of uNorm^2 (see the electronTemperature conversion
+// above), hence
+//   Si2No(EnergyDens) = Si2NoRho * Si2NoV^2
+//   Si2No(T)          = cBoltzmannSI / (cProtonMassSI * uNormSI^2)
+void Pic::convert_electron_heat_conduction() {
+  if (!useElectronPressureEq)
+    return;
+
+  const Real Si2NoV = fi->get_Si2NoV();
+  const Real Si2NoL = fi->get_Si2NoL();
+  const Real Si2NoRho = fi->get_Si2NoRho();
+  const Real uNormSI = fi->get_unorm_si();
+
+  const Real Si2NoEnergyDens = Si2NoRho * Si2NoV * Si2NoV;
+  const Real Si2NoTemperature =
+      cBoltzmannSI / (cProtonMassSI * uNormSI * uNormSI);
+
+  const Real kappa0SI = heatCondKappa0SI * (coulombLog / 20.0);
+  heatCondKappa0 = kappa0SI * Si2NoEnergyDens * Si2NoV * Si2NoL /
+                   std::pow(Si2NoTemperature, 3.5);
+
+  // heatCondKappa0SI = 0 is legitimate: it switches the electron heat flux
+  // off and leaves advection + pdV. Only a positive input that converts to a
+  // non-positive code value is an error.
+  if (heatCondKappa0SI > 0 && !(heatCondKappa0 > 0))
+    Abort("Pic::convert_electron_heat_conduction: the SI->code conversion "
+          "produced a non-positive heat conduction coefficient. Check the "
+          "normalization (#NORMALIZATION lNormSI / uNormSI).");
+
+  Print() << "  electron heat conduction: kappa0 = " << heatCondKappa0SI
+          << " [W/(m K^(7/2))] * (coulombLog/20 = " << coulombLog / 20.0
+          << ") -> " << heatCondKappa0 << " [code units]\n";
+  Print() << "    gamma_e = " << electronGamma
+          << (fieldAlignedConduction
+                  ? std::string(", field aligned (fraction ") +
+                        std::to_string(fieldAlignedFraction) + ")"
+                  : std::string(", isotropic"))
+          << (heatFluxLimiter > 0
+                  ? ", free-streaming limiter " +
+                        std::to_string(heatFluxLimiter)
+                  : ", no heat-flux limiter")
+          << "\n";
 }
 
 //==========================================================

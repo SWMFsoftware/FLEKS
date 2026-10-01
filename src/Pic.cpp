@@ -222,6 +222,22 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           3, nGst, doMoveData);
       distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev],
                           DistributionMap(iLev), 1, nGst, doMoveData);
+      if (useElectronPressureEq) {
+        // The evolved field must survive a regrid (doCopy = true); the
+        // scratch arrays are rebuilt and recomputed every step.
+        distribute_FabArray(centerPeState[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, true);
+        distribute_FabArray(centerPeRho[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, doMoveData);
+        distribute_FabArray(centerPeTe[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, doMoveData);
+        distribute_FabArray(nodePeVec[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(nodePeRho[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, doMoveData);
+        distribute_FabArray(nodePeAux[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 4, nGst, doMoveData);
+      }
       if (hasRegionalResistivity_) {
         distribute_FabArray(nodeEtaRegional[iLev], nGrids[iLev],
                             DistributionMap(iLev), 1, nGst, false);
@@ -299,6 +315,9 @@ void Pic::post_regrid() {
   // grid. This is the one place a regrid could silently leave B0 at zero.
   fill_intrinsic_B();
   init_regional_fields();
+
+  // Boxes created by the regrid have no electron-pressure history.
+  fill_new_electron_pressure();
 
   {
     iTot = nSpecies;
@@ -1555,6 +1574,10 @@ void Pic::update(bool doReportIn) {
     save_current_moments_to_prev();
     sum_moments(false);
     smooth_moments();
+    // Advance the electron pressure (no-op unless #ELECTRONPRESSURE is on).
+    // It must come after the fresh deposit and before update_B_hybrid(), which
+    // consumes Pe through compute_ambipolar_E().
+    update_Pe_hybrid();
     update_B_hybrid();
     isFirstHybridStep = false;
   }
