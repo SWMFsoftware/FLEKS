@@ -1,6 +1,7 @@
 #ifndef _DATAWRITER_H_
 #define _DATAWRITER_H_
 
+#include <algorithm>
 #include <cassert>
 #include <cctype>
 #include <cstdint>
@@ -35,16 +36,43 @@ public:
   }
 
 protected:
-  bool can_write() const {
-    std::error_code error;
-    // weakly_canonical resolves symlinks and normalises without requiring
-    // that the output file already exists (unlike std::filesystem::equivalent).
-    const auto src = std::filesystem::weakly_canonical(sourceFilename, error);
-    const auto dst = std::filesystem::weakly_canonical(filename, error);
-    if (src == dst) {
-      std::cerr << "Error: output aliases the input file: " << filename << "\n";
+  bool can_write() const { return can_write_to(filename); }
+
+  bool can_write_to(const std::filesystem::path& output) const {
+    const auto reject = [&](const std::string& reason) {
+      std::cerr << "Error: cannot write output " << output << ": " << reason
+                << "\n";
       return false;
-    }
+    };
+    std::error_code error;
+    // weakly_canonical cannot resolve a symlink whose target does not exist.
+    // Opening such an output could create a file inside the source directory.
+    const auto status = std::filesystem::symlink_status(output, error);
+    if (error && error != std::errc::no_such_file_or_directory)
+      return reject("cannot inspect path: " + error.message());
+    error.clear();
+    const bool exists = std::filesystem::exists(output, error);
+    if (error)
+      return reject("cannot inspect target: " + error.message());
+    if (std::filesystem::is_symlink(status) && !exists)
+      return reject("dangling symlink");
+
+    const auto src = std::filesystem::weakly_canonical(sourceFilename, error);
+    if (error)
+      return reject("cannot resolve input path: " + error.message());
+    const auto dst = std::filesystem::weakly_canonical(output, error);
+    if (error)
+      return reject("cannot resolve output path: " + error.message());
+    // Compare path components, so directory inputs cannot contain the output
+    // that -D would subsequently remove. Canonical paths also resolve symlinks.
+    const auto mismatch =
+        std::mismatch(src.begin(), src.end(), dst.begin(), dst.end());
+    if (mismatch.first == src.end())
+      return reject("aliases or lies inside the input");
+    if (exists && std::filesystem::equivalent(src, dst, error))
+      return reject("aliases the input file");
+    if (error)
+      return reject("cannot check file identity: " + error.message());
     return true;
   }
 
@@ -259,13 +287,17 @@ public:
   VTMWriter(DataContainer* dcIn, const std::string& filenameIn,
             bool useCompressionIn = false)
       : DataWriter(dcIn, filenameIn), useCompression(useCompressionIn) {
-    const std::filesystem::path srcPath(sourceFilename);
+    auto srcPath = std::filesystem::path(sourceFilename).lexically_normal();
+    // A trailing separator (including one left by /.) has an empty filename.
+    while (srcPath.has_relative_path() && srcPath.filename().empty())
+      srcPath = srcPath.parent_path();
     const std::string name = srcPath.filename().string();
     const std::string dirName = name + "_vtm";
     const std::filesystem::path parentDir = srcPath.parent_path();
     outputDir = parentDir.empty() ? std::filesystem::path(dirName)
                                   : parentDir / dirName;
     filename = (outputDir / (name + ".vtm")).string();
+    pieceFileName = name + "_0.vtu";
     fType = FileType::VTM;
   }
   ~VTMWriter() override = default;
@@ -289,24 +321,12 @@ public:
     const size_t nBrick = dc->count_zone();
     const int nVertex = zoneType.n_vertex();
 
-    const std::filesystem::path srcPath(sourceFilename);
-    const std::string name = srcPath.filename().string();
-    const std::string pieceFileName = name + "_0.vtu";
     const std::filesystem::path pieceFilePath = outputDir / pieceFileName;
-
-    // Check alias guard for output directory, vtm file, and piece file
-    std::error_code ec;
-    const auto src = std::filesystem::weakly_canonical(sourceFilename, ec);
-    const auto outDirCanon = std::filesystem::weakly_canonical(outputDir, ec);
-    const auto vtmCanon = std::filesystem::weakly_canonical(filename, ec);
-    const auto pieceCanon =
-        std::filesystem::weakly_canonical(pieceFilePath, ec);
-    if (src == outDirCanon || src == vtmCanon || src == pieceCanon) {
-      std::cerr << "Error: output aliases the input file: " << sourceFilename
-                << "\n";
+    if (!can_write_to(outputDir) || !can_write_to(filename) ||
+        !can_write_to(pieceFilePath))
       return iFail;
-    }
 
+    std::error_code ec;
     std::filesystem::create_directories(outputDir, ec);
     if (ec) {
       std::cerr << "Error: cannot create directory " << outputDir << ": "
@@ -480,8 +500,9 @@ public:
         << "      <PointData>\n";
 
     for (int i = 0; i < nVar; ++i) {
-      vtu << "        <DataArray type=\"Float32\" Name=\"" << cleanNames[i]
-          << "\" format=\"appended\" offset=\"" << varOffsets[i] << "\"/>\n";
+      vtu << "        <DataArray type=\"Float32\" Name=\""
+          << xml_attribute(cleanNames[i]) << "\" format=\"appended\" offset=\""
+          << varOffsets[i] << "\"/>\n";
     }
 
     vtu << "      </PointData>\n"
@@ -567,8 +588,8 @@ public:
            "byte_order=\""
         << endianStr << "\" header_type=\"UInt64\">\n"
         << "  <vtkMultiBlockDataSet>\n"
-        << "    <DataSet index=\"0\" name=\"Block0\" file=\"" << pieceFileName
-        << "\"/>\n"
+        << "    <DataSet index=\"0\" name=\"Block0\" file=\""
+        << xml_attribute(pieceFileName) << "\"/>\n"
         << "  </vtkMultiBlockDataSet>\n"
         << "</VTKFile>\n";
     vtm.close();
@@ -582,6 +603,43 @@ public:
   }
 
 private:
+  static std::string xml_attribute(const std::string& value) {
+    std::string escaped;
+    for (const char ch : value) {
+      switch (ch) {
+        case '&':
+          escaped += "&amp;";
+          break;
+        case '<':
+          escaped += "&lt;";
+          break;
+        case '>':
+          escaped += "&gt;";
+          break;
+        case '"':
+          escaped += "&quot;";
+          break;
+        case '\'':
+          escaped += "&apos;";
+          break;
+        case '\t':
+          escaped += "&#9;";
+          break;
+        case '\n':
+          escaped += "&#10;";
+          break;
+        case '\r':
+          escaped += "&#13;";
+          break;
+        default:
+          escaped += ch;
+          break;
+      }
+    }
+    return escaped;
+  }
+
+  std::string pieceFileName;
   std::filesystem::path outputDir;
   bool useCompression = false;
 };

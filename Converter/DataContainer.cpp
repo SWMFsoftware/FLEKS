@@ -107,6 +107,25 @@ std::vector<TecToken> tec_tokens(const std::string& text) {
   return tokens;
 }
 
+bool tec_has_coordinate_unit(const std::string& label) {
+  if (label.size() <= 1 ||
+      (!std::isspace(static_cast<unsigned char>(label[1])) && label[1] != '[' &&
+       label[1] != '(' && label[1] != '{'))
+    return false;
+  const auto unit = tec_trim(label.substr(1));
+  if (unit.empty())
+    return false;
+  const auto bracket = std::string("[({").find(unit[0]);
+  if (bracket != std::string::npos && unit.size() > 2 &&
+      unit.back() == std::string("])}")[bracket])
+    return true;
+  static constexpr const char* lengthUnits[] = { "AU", "R",  "RE", "RM",
+                                                 "RS", "M",  "KM", "CM",
+                                                 "MM", "UM", "NM" };
+  return std::find(std::begin(lengthUnits), std::end(lengthUnits), unit) !=
+         std::end(lengthUnits);
+}
+
 size_t tec_size(const std::string& text, const std::string& description) {
   size_t value = 0;
   if (text.empty())
@@ -294,16 +313,29 @@ int TECDataContainer::read() {
     if (elementType == ZoneType::Type::UNSET)
       throw std::runtime_error("missing BRICK or QUADRILATERAL element type");
 
+    // Exact axis labels take precedence over unit-bearing labels. A scalar
+    // such as "X Velocity" must never become a coordinate column.
+    bool exactCoordinates[3] = { false, false, false };
     for (int i = 0; i < nVar; ++i) {
       const auto label = tec_upper(tec_trim(varNames[i]));
-      if (label.empty())
+      if (label.size() != 1)
         continue;
       const auto coordinate = std::string("XYZ").find(label[0]);
       if (coordinate == std::string::npos)
         continue;
-      if (label.size() > 1 &&
-          !std::isspace(static_cast<unsigned char>(label[1])) &&
-          label[1] != '[' && label[1] != '(' && label[1] != '{')
+      if (coordinateColumns[coordinate] != -1)
+        throw std::runtime_error("duplicate coordinate variable " + label);
+      coordinateColumns[coordinate] = i;
+      exactCoordinates[coordinate] = true;
+    }
+    for (int i = 0; i < nVar; ++i) {
+      const auto label = tec_upper(tec_trim(varNames[i]));
+      if (label.size() <= 1)
+        continue;
+      const auto coordinate = std::string("XYZ").find(label[0]);
+      if (coordinate == std::string::npos || exactCoordinates[coordinate])
+        continue;
+      if (!tec_has_coordinate_unit(label))
         continue;
       if (coordinateColumns[coordinate] != -1)
         throw std::runtime_error("duplicate coordinate variable " + label);
