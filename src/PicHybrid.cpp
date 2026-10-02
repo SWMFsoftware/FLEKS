@@ -678,11 +678,29 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   //--------------------------------------------------------------------
   // 2) Advection + pdV:
   //      dPe/dt = -div(u_e Pe) - (gamma_e-1) Pe div(u_e)
-  //    First-order upwind flux, written into centerPe (a scratch here;
-  //    compute_ambipolar_E() overwrites it later in the step) so that the
-  //    update never reads the cells it has already written.
+  //    TVD/MUSCL reconstructed face states (upwind1, minmod, vanleer, mc)
+  //    and exponential or explicit compression, written into centerPe.
   //--------------------------------------------------------------------
   apply_centerPe_BC(iLev);
+
+  const int limType = peLimiterType;
+  const bool compExp = peCompressionExp;
+
+  auto eval_slope = [=] AMREX_GPU_DEVICE(Real dL, Real dR) noexcept -> Real {
+    if (limType == 0 || dL * dR <= 0.0)
+      return 0.0;
+    if (limType == 1) { // minmod
+      return (dL > 0.0) ? amrex::min(dL, dR) : amrex::max(dL, dR);
+    } else if (limType == 2) { // van leer
+      return 2.0 * dL * dR / (dL + dR);
+    } else if (limType == 3) { // mc
+      const Real c = 0.5 * (dL + dR);
+      const Real s = (dL > 0.0) ? 1.0 : -1.0;
+      return s * amrex::min(2.0 * std::abs(dL),
+                            amrex::min(2.0 * std::abs(dR), std::abs(c)));
+    }
+    return 0.0;
+  };
 
   for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -694,34 +712,117 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
       Real divFlux = 0.0;
       Real divUe = 0.0;
 
-      {
+      if (invDxX > 0.0) {
         const Real uLo = arrUe(i, j, k, ix_);
         const Real uHi = arrUe(i + 1, j, k, ix_);
-        const Real peLo = (uLo > 0.0) ? arrPe(i - 1, j, k) : arrPe(i, j, k);
-        const Real peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i + 1, j, k);
+
+        Real peLo;
+        if (limType == 0) {
+          peLo = (uLo > 0.0) ? arrPe(i - 1, j, k) : arrPe(i, j, k);
+        } else {
+          const Real sLoL = eval_slope(arrPe(i - 1, j, k) - arrPe(i - 2, j, k),
+                                       arrPe(i, j, k) - arrPe(i - 1, j, k));
+          const Real sLoR = eval_slope(arrPe(i, j, k) - arrPe(i - 1, j, k),
+                                       arrPe(i + 1, j, k) - arrPe(i, j, k));
+          const Real pL = amrex::max(arrPe(i - 1, j, k) + 0.5 * sLoL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k) - 0.5 * sLoR, peMin);
+          peLo = (uLo > 0.0) ? pL : ((uLo < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        Real peHi;
+        if (limType == 0) {
+          peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i + 1, j, k);
+        } else {
+          const Real sHiL = eval_slope(arrPe(i, j, k) - arrPe(i - 1, j, k),
+                                       arrPe(i + 1, j, k) - arrPe(i, j, k));
+          const Real sHiR = eval_slope(arrPe(i + 1, j, k) - arrPe(i, j, k),
+                                       arrPe(i + 2, j, k) - arrPe(i + 1, j, k));
+          const Real pL = amrex::max(arrPe(i, j, k) + 0.5 * sHiL, peMin);
+          const Real pR = amrex::max(arrPe(i + 1, j, k) - 0.5 * sHiR, peMin);
+          peHi = (uHi > 0.0) ? pL : ((uHi < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
         divFlux += (uHi * peHi - uLo * peLo) * invDxX;
         divUe += (uHi - uLo) * invDxX;
       }
-      {
+
+      if (invDxY > 0.0) {
         const Real uLo = arrUe(i, j, k, iy_);
         const Real uHi = arrUe(i, j + 1, k, iy_);
-        const Real peLo = (uLo > 0.0) ? arrPe(i, j - 1, k) : arrPe(i, j, k);
-        const Real peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i, j + 1, k);
+
+        Real peLo;
+        if (limType == 0) {
+          peLo = (uLo > 0.0) ? arrPe(i, j - 1, k) : arrPe(i, j, k);
+        } else {
+          const Real sLoL = eval_slope(arrPe(i, j - 1, k) - arrPe(i, j - 2, k),
+                                       arrPe(i, j, k) - arrPe(i, j - 1, k));
+          const Real sLoR = eval_slope(arrPe(i, j, k) - arrPe(i, j - 1, k),
+                                       arrPe(i, j + 1, k) - arrPe(i, j, k));
+          const Real pL = amrex::max(arrPe(i, j - 1, k) + 0.5 * sLoL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k) - 0.5 * sLoR, peMin);
+          peLo = (uLo > 0.0) ? pL : ((uLo < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        Real peHi;
+        if (limType == 0) {
+          peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i, j + 1, k);
+        } else {
+          const Real sHiL = eval_slope(arrPe(i, j, k) - arrPe(i, j - 1, k),
+                                       arrPe(i, j + 1, k) - arrPe(i, j, k));
+          const Real sHiR = eval_slope(arrPe(i, j + 1, k) - arrPe(i, j, k),
+                                       arrPe(i, j + 2, k) - arrPe(i, j + 1, k));
+          const Real pL = amrex::max(arrPe(i, j, k) + 0.5 * sHiL, peMin);
+          const Real pR = amrex::max(arrPe(i, j + 1, k) - 0.5 * sHiR, peMin);
+          peHi = (uHi > 0.0) ? pL : ((uHi < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
         divFlux += (uHi * peHi - uLo * peLo) * invDxY;
         divUe += (uHi - uLo) * invDxY;
       }
-      if (nDim > 2) {
+
+      if (nDim > 2 && invDxZ > 0.0) {
         const Real uLo = arrUe(i, j, k, iz_);
         const Real uHi = arrUe(i, j, k + 1, iz_);
-        const Real peLo = (uLo > 0.0) ? arrPe(i, j, k - 1) : arrPe(i, j, k);
-        const Real peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i, j, k + 1);
+
+        Real peLo;
+        if (limType == 0) {
+          peLo = (uLo > 0.0) ? arrPe(i, j, k - 1) : arrPe(i, j, k);
+        } else {
+          const Real sLoL = eval_slope(arrPe(i, j, k - 1) - arrPe(i, j, k - 2),
+                                       arrPe(i, j, k) - arrPe(i, j, k - 1));
+          const Real sLoR = eval_slope(arrPe(i, j, k) - arrPe(i, j, k - 1),
+                                       arrPe(i, j, k + 1) - arrPe(i, j, k));
+          const Real pL = amrex::max(arrPe(i, j, k - 1) + 0.5 * sLoL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k) - 0.5 * sLoR, peMin);
+          peLo = (uLo > 0.0) ? pL : ((uLo < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        Real peHi;
+        if (limType == 0) {
+          peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i, j, k + 1);
+        } else {
+          const Real sHiL = eval_slope(arrPe(i, j, k) - arrPe(i, j, k - 1),
+                                       arrPe(i, j, k + 1) - arrPe(i, j, k));
+          const Real sHiR = eval_slope(arrPe(i, j, k + 1) - arrPe(i, j, k),
+                                       arrPe(i, j, k + 2) - arrPe(i, j, k + 1));
+          const Real pL = amrex::max(arrPe(i, j, k) + 0.5 * sHiL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k + 1) - 0.5 * sHiR, peMin);
+          peHi = (uHi > 0.0) ? pL : ((uHi < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
         divFlux += (uHi * peHi - uLo * peLo) * invDxZ;
         divUe += (uHi - uLo) * invDxZ;
       }
 
       const Real pe = arrPe(i, j, k);
-      arrPeNew(i, j, k) =
-          amrex::max(pe - dt * (divFlux + gammaM1 * pe * divUe), peMin);
+      if (compExp) {
+        const Real pAdv = amrex::max(pe - dt * divFlux, peMin);
+        arrPeNew(i, j, k) =
+            amrex::max(pAdv * std::exp(-gammaM1 * divUe * dt), peMin);
+      } else {
+        arrPeNew(i, j, k) =
+            amrex::max(pe - dt * (divFlux + gammaM1 * pe * divUe), peMin);
+      }
     });
   }
   MultiFab::Copy(centerPeState[iLev], centerPe[iLev], 0, 0, 1, 0);

@@ -509,6 +509,27 @@ Nothing is allocated and no extra work is done when useElectronPressureEq is F,
 so the default configuration is unaffected. Only used when HYBRIDPIC is T.
 </command>
 
+<command name="ELECTRONADVECTION" alias="ELECTRONADVECTION_FLEKS0,ELECTRONADVECTION_FLEKS1,ELECTRONADVECTION_FLEKS2" multiple="T">
+  <parameter name="peAdvectionLimiter" type="string" default="vanleer"/>
+  <parameter name="peCompressionScheme" type="string" default="exponential"/>
+
+#ELECTRONADVECTION
+vanleer          peAdvectionLimiter (upwind1, minmod, vanleer, mc)
+exponential      peCompressionScheme (explicit, exponential)
+
+Configure the numerical advection and compression schemes for the evolved
+electron pressure equation (#ELECTRONPRESSURE).
+peAdvectionLimiter selects the TVD slope limiter for face reconstruction:
+  - upwind1: 1st-order donor-cell upwind
+  - minmod:  2nd-order minmod limiter
+  - vanleer: 2nd-order Van Leer harmonic limiter (default)
+  - mc:      monotonized central limiter
+peCompressionScheme selects how the -(gamma_e - 1) Pe div(u_e) compression
+term is integrated:
+  - explicit:    standard forward Euler step
+  - exponential: exact exponential integration over dt, guaranteeing positivity.
+</command>
+
 <command name="BSUBCYCLE" alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2" multiple="T">
   <parameter name="nBSubcycle" type="integer" min="1" default="1"/>
 

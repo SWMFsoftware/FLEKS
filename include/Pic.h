@@ -175,6 +175,11 @@ private:
   amrex::Real heatFluxLimiter = 0.0;
   // Floor applied to the evolved Pe.
   amrex::Real peMin = 0.0;
+  // Numerical scheme for Pe advection and compression (see #ELECTRONADVECTION)
+  std::string peAdvectionLimiter = "vanleer";
+  std::string peCompressionScheme = "exponential";
+  int peLimiterType = 2; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
+  bool peCompressionExp = true;
   // Add the ambipolar E to the Runge-Kutta stages of the B update. Physically
   // required once Pe is not a polytropic function of the density.
   bool ambipolarInStages = true;

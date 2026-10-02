@@ -364,6 +364,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("peMin", peMin);
       param.read_var("ambipolarInStages", ambipolarInStages);
     }
+  } else if (command == "#ELECTRONADVECTION") {
+    param.read_var("peAdvectionLimiter", peAdvectionLimiter);
+    param.read_var("peCompressionScheme", peCompressionScheme);
   } else if (command == "#FIELDINTEGRATOR") {
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#SELECTPARTICLE") {
@@ -600,6 +603,28 @@ void Pic::post_process_param() {
             "non-negative.");
     if (peMin < 0)
       Abort("Invalid #ELECTRONPRESSURE: peMin must be non-negative.");
+
+    if (peAdvectionLimiter == "upwind1") {
+      peLimiterType = 0;
+    } else if (peAdvectionLimiter == "minmod") {
+      peLimiterType = 1;
+    } else if (peAdvectionLimiter == "vanleer") {
+      peLimiterType = 2;
+    } else if (peAdvectionLimiter == "mc") {
+      peLimiterType = 3;
+    } else {
+      Abort("Invalid #ELECTRONADVECTION: peAdvectionLimiter must be "
+            "'upwind1', 'minmod', 'vanleer', or 'mc'.");
+    }
+
+    if (peCompressionScheme == "exponential") {
+      peCompressionExp = true;
+    } else if (peCompressionScheme == "explicit") {
+      peCompressionExp = false;
+    } else {
+      Abort("Invalid #ELECTRONADVECTION: peCompressionScheme must be "
+            "'exponential' or 'explicit'.");
+    }
 
     // Sized here rather than in the constructor: the command has not been
     // read when Pic is constructed.
