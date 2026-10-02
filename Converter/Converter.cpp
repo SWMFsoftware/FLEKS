@@ -26,7 +26,7 @@ void print_help() {
             << "  -f <file...>       Specify input file(s) or directory(s) to "
                "convert.\n"
             << "                     Multiple files can be specified.\n"
-            << "  -d <format>        Destination file format: VTK, TEC\n\n"
+            << "  -d <format>        Destination file format: VTK, TEC, VTM\n\n"
             << "Optional options:\n"
             << "  -s <format>        Source file format: AMReX, IDL, TEC "
                "(ASCII .dat)\n"
@@ -43,10 +43,11 @@ void print_help() {
             << "Notes:\n"
             << "  - Format names are case-sensitive.\n"
             << "  - Output paths append an extension to the input path: "
-               "<file>.vtk or <file>.dat.\n"
+               "<file>.vtk, <file>.dat, or <file>.vtm.\n"
             << "  - Output will not overwrite or alias the source file.\n\n"
             << "Examples:\n"
             << "  ./bin/converter.exe -f 3d.dat -d VTK\n"
+            << "  ./bin/converter.exe -f 3d.dat -d VTM\n"
             << "  ./bin/converter.exe -f 3d.dat -s TEC -d VTK\n"
             << "  ./bin/converter.exe -f first.dat second.dat -d VTK\n"
             << "  ./bin/converter.exe -f 3d.dat -d TEC\n"
@@ -109,8 +110,9 @@ int main(int argc, char* argv[]) {
       } else {
         const auto type = stringToFileType.find(cdl[i++]);
         if (type == stringToFileType.end() ||
-            (type->second != FileType::VTK && type->second != FileType::TEC)) {
-          std::cerr << "Error: destination format must be VTK or TEC.\n";
+            (type->second != FileType::VTK && type->second != FileType::TEC &&
+             type->second != FileType::VTM)) {
+          std::cerr << "Error: destination format must be VTK, TEC, or VTM.\n";
           return EXIT_FAILURE;
         }
         dType = type->second;

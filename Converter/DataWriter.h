@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -250,6 +251,254 @@ public:
 
 private:
   bool saveBinary;
+};
+
+class VTMWriter : public DataWriter {
+public:
+  VTMWriter(DataContainer* dcIn, const std::string& filenameIn)
+      : DataWriter(dcIn, filenameIn) {
+    const std::filesystem::path srcPath(sourceFilename);
+    const std::string name = srcPath.filename().string();
+    const std::string dirName = name + "_vtm";
+    const std::filesystem::path parentDir = srcPath.parent_path();
+    outputDir = parentDir.empty() ? std::filesystem::path(dirName)
+                                  : parentDir / dirName;
+    filename = (outputDir / (name + ".vtm")).string();
+    fType = FileType::VTM;
+  }
+  ~VTMWriter() override = default;
+
+  int write() override {
+    zoneType.set_type(dc->zone_type());
+    if (zoneType.n_vertex() <= 0) {
+      std::cerr << "Error: unsupported zone topology.\n";
+      return iFail;
+    }
+
+    const size_t nCell = dc->count_cell();
+    const size_t nBrick = dc->count_zone();
+    const int nVertex = zoneType.n_vertex();
+
+    const std::filesystem::path srcPath(sourceFilename);
+    const std::string name = srcPath.filename().string();
+    const std::string pieceFileName = name + "_0.vtu";
+    const std::filesystem::path pieceFilePath = outputDir / pieceFileName;
+
+    // Check alias guard for output directory, vtm file, and piece file
+    std::error_code ec;
+    const auto src = std::filesystem::weakly_canonical(sourceFilename, ec);
+    const auto outDirCanon = std::filesystem::weakly_canonical(outputDir, ec);
+    const auto vtmCanon = std::filesystem::weakly_canonical(filename, ec);
+    const auto pieceCanon =
+        std::filesystem::weakly_canonical(pieceFilePath, ec);
+    if (src == outDirCanon || src == vtmCanon || src == pieceCanon) {
+      std::cerr << "Error: output aliases the input file: " << sourceFilename
+                << "\n";
+      return iFail;
+    }
+
+    std::filesystem::create_directories(outputDir, ec);
+    if (ec) {
+      std::cerr << "Error: cannot create directory " << outputDir << ": "
+                << ec.message() << "\n";
+      return iFail;
+    }
+
+    // Points
+    amrex::Vector<float> xyz;
+    xyz.resize(3 * nCell);
+    dc->get_loc(xyz);
+    assert(xyz.size() == 3 * nCell);
+
+    // Connectivity
+    amrex::Vector<size_t> zones;
+    zones.resize(nBrick * nVertex);
+    dc->get_zones(zones);
+    amrex::Vector<int64_t> connectivity;
+    connectivity.reserve(zones.size());
+    for (const auto index : zones) {
+      if (index == 0 || index > nCell) {
+        std::cerr << "Error: invalid mesh connectivity.\n";
+        return iFail;
+      }
+      connectivity.push_back(static_cast<int64_t>(index - 1));
+    }
+
+    // Offsets and cell types
+    amrex::Vector<int64_t> offsets(nBrick);
+    for (size_t i = 0; i < nBrick; ++i) {
+      offsets[i] = static_cast<int64_t>((i + 1) * nVertex);
+    }
+    const uint8_t vtkType = static_cast<uint8_t>(zoneType.vtk_index());
+    amrex::Vector<uint8_t> cellTypes(nBrick, vtkType);
+
+    // Variables
+    const int nVar = dc->n_var();
+    const auto varNames = dc->var_names();
+    std::vector<std::string> cleanNames(nVar);
+    std::set<std::string> usedNames;
+    for (int i = 0; i < nVar; ++i) {
+      std::string base = varNames[i];
+      for (auto& ch : base)
+        if (std::isspace(static_cast<unsigned char>(ch)))
+          ch = '_';
+      if (base.empty())
+        base = "variable";
+      std::string name = base;
+      for (size_t suffix = 2; !usedNames.insert(name).second; ++suffix)
+        name = base + "_" + std::to_string(suffix);
+      if (name != varNames[i])
+        std::cout << "VTK variable: \"" << varNames[i] << "\" -> \"" << name
+                  << "\"\n";
+      cleanNames[i] = name;
+    }
+
+    amrex::Vector<float> vars;
+    vars.resize(nCell * nVar);
+    dc->get_cell(vars);
+
+    // Determine machine endianness
+    const uint16_t endianTest = 1;
+    const char* endianStr =
+        (*reinterpret_cast<const uint8_t*>(&endianTest) == 1) ? "LittleEndian"
+                                                              : "BigEndian";
+
+    // Compute appended raw binary block offsets
+    const uint64_t headerBytes = sizeof(uint64_t);
+    uint64_t currentOffset = 0;
+
+    std::vector<uint64_t> varOffsets(nVar);
+    for (int i = 0; i < nVar; ++i) {
+      varOffsets[i] = currentOffset;
+      const uint64_t byteSize = static_cast<uint64_t>(nCell) * sizeof(float);
+      currentOffset += headerBytes + byteSize;
+    }
+
+    const uint64_t pointsOffset = currentOffset;
+    const uint64_t pointsBytes =
+        static_cast<uint64_t>(3 * nCell) * sizeof(float);
+    currentOffset += headerBytes + pointsBytes;
+
+    const uint64_t connOffset = currentOffset;
+    const uint64_t connBytes =
+        static_cast<uint64_t>(connectivity.size()) * sizeof(int64_t);
+    currentOffset += headerBytes + connBytes;
+
+    const uint64_t offsetsOffset = currentOffset;
+    const uint64_t offsetsBytes =
+        static_cast<uint64_t>(offsets.size()) * sizeof(int64_t);
+    currentOffset += headerBytes + offsetsBytes;
+
+    const uint64_t typesOffset = currentOffset;
+    const uint64_t typesBytes =
+        static_cast<uint64_t>(cellTypes.size()) * sizeof(uint8_t);
+    currentOffset += headerBytes + typesBytes;
+
+    // 1. Write the .vtu Piece file
+    std::ofstream vtu(pieceFilePath.string(),
+                      std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!vtu) {
+      std::cerr << "Error: cannot open piece file for writing: "
+                << pieceFilePath << "\n";
+      return iFail;
+    }
+
+    vtu << "<?xml version=\"1.0\"?>\n"
+        << "<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\""
+        << endianStr << "\" header_type=\"UInt64\">\n"
+        << "  <UnstructuredGrid>\n"
+        << "    <Piece NumberOfPoints=\"" << nCell << "\" NumberOfCells=\""
+        << nBrick << "\">\n"
+        << "      <PointData>\n";
+
+    for (int i = 0; i < nVar; ++i) {
+      vtu << "        <DataArray type=\"Float32\" Name=\"" << cleanNames[i]
+          << "\" format=\"appended\" offset=\"" << varOffsets[i] << "\"/>\n";
+    }
+
+    vtu << "      </PointData>\n"
+        << "      <CellData>\n"
+        << "      </CellData>\n"
+        << "      <Points>\n"
+        << "        <DataArray type=\"Float32\" Name=\"Points\" "
+           "NumberOfComponents=\"3\" format=\"appended\" offset=\""
+        << pointsOffset << "\"/>\n"
+        << "      </Points>\n"
+        << "      <Cells>\n"
+        << "        <DataArray type=\"Int64\" Name=\"connectivity\" "
+           "format=\"appended\" offset=\""
+        << connOffset << "\"/>\n"
+        << "        <DataArray type=\"Int64\" Name=\"offsets\" "
+           "format=\"appended\" offset=\""
+        << offsetsOffset << "\"/>\n"
+        << "        <DataArray type=\"UInt8\" Name=\"types\" "
+           "format=\"appended\" offset=\""
+        << typesOffset << "\"/>\n"
+        << "      </Cells>\n"
+        << "    </Piece>\n"
+        << "  </UnstructuredGrid>\n"
+        << "  <AppendedData encoding=\"raw\">\n"
+        << "    _";
+
+    auto write_block = [&](const void* data, uint64_t sizeInBytes) {
+      vtu.write(reinterpret_cast<const char*>(&sizeInBytes), sizeof(uint64_t));
+      vtu.write(reinterpret_cast<const char*>(data), sizeInBytes);
+    };
+
+    // Write PointData arrays
+    amrex::Vector<float> varBuf(nCell);
+    for (int i = 0; i < nVar; ++i) {
+      for (size_t j = 0; j < nCell; ++j) {
+        varBuf[j] = vars[j * nVar + i];
+      }
+      write_block(varBuf.data(), static_cast<uint64_t>(nCell) * sizeof(float));
+    }
+
+    // Write Points, connectivity, offsets, types
+    write_block(xyz.data(), pointsBytes);
+    write_block(connectivity.data(), connBytes);
+    write_block(offsets.data(), offsetsBytes);
+    write_block(cellTypes.data(), typesBytes);
+
+    vtu << "\n  </AppendedData>\n</VTKFile>\n";
+    vtu.close();
+
+    if (!vtu) {
+      std::cerr << "Error: writing piece file failed: " << pieceFilePath
+                << "\n";
+      return iFail;
+    }
+
+    // 2. Write the .vtm Manifest file
+    std::ofstream vtm(filename.c_str(),
+                      std::ofstream::out | std::ofstream::trunc);
+    if (!vtm) {
+      std::cerr << "Error: cannot open VTM file for writing: " << filename
+                << "\n";
+      return iFail;
+    }
+
+    vtm << "<?xml version=\"1.0\"?>\n"
+        << "<VTKFile type=\"vtkMultiBlockDataSet\" version=\"1.0\" "
+           "byte_order=\""
+        << endianStr << "\" header_type=\"UInt64\">\n"
+        << "  <vtkMultiBlockDataSet>\n"
+        << "    <DataSet index=\"0\" name=\"Block0\" file=\"" << pieceFileName
+        << "\"/>\n"
+        << "  </vtkMultiBlockDataSet>\n"
+        << "</VTKFile>\n";
+    vtm.close();
+
+    if (!vtm) {
+      std::cerr << "Error: writing VTM file failed: " << filename << "\n";
+      return iFail;
+    }
+
+    return iSuccess;
+  }
+
+private:
+  std::filesystem::path outputDir;
 };
 
 #endif

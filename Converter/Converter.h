@@ -77,6 +77,10 @@ public:
         writer = std::make_unique<VTKWriter>(dc.get(), sourceFile);
         break;
       }
+      case FileType::VTM: {
+        writer = std::make_unique<VTMWriter>(dc.get(), sourceFile);
+        break;
+      }
       case FileType::IDL: {
         amrex::Abort("Error: IDL output is not supported yet!");
         break;
