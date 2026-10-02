@@ -143,7 +143,8 @@ void write_point_mesh(const char *filename, int useBinary, int npts, float *pts,
 #define VTK_WEDGE 13
 #define VTK_PYRAMID 14
 
-void write_unstructured_mesh(const char *filename, int useBinary, int npts,
+// Returns false on an output open, write, or close failure.
+bool write_unstructured_mesh(const char *filename, int useBinary, int npts,
                              float *pts, int ncells, int *celltypes, int *conn,
                              int nvars, int *vardim, int *centering,
                              const char *const *varnames, float **vars);

@@ -1,6 +1,8 @@
 #ifndef _CONVERTER_H_
 #define _CONVERTER_H_
 
+#include <memory>
+
 #include "DataWriter.h"
 
 class Converter {
@@ -47,7 +49,7 @@ public:
         break;
       }
       case FileType::TEC: {
-        amrex::Abort("Error: TEC input is not supported yet!");
+        dc = std::make_unique<TECDataContainer>(sourceFile);
         break;
       }
       case FileType::VTK: {

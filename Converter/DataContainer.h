@@ -2,6 +2,10 @@
 #define _DATACONTAINER_H_
 
 #include <cassert>
+#include <fstream>
+#include <map>
+#include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -114,7 +118,7 @@ public:
 
   int n_dim() { return nDim; }
 
-  ZoneType::Type zone_type() {
+  virtual ZoneType::Type zone_type() {
     if (nDim == 3) {
       return ZoneType::Type::BRICK;
     } else if (nDim == 2) {
@@ -153,6 +157,34 @@ protected:
   amrex::Real rPlanet;
 
   bool isStructured;
+};
+
+// A single nodal, point-packed Tecplot finite-element zone.
+class TECDataContainer : public DataContainer {
+public:
+  explicit TECDataContainer(const std::string& in) {
+    filename = in;
+    dataType = FileType::TEC;
+    nVar = nDim = iter = 0;
+    time = rPlanet = 0;
+    isStructured = false;
+  }
+
+  int read() override;
+  size_t count_cell() override { return nCell; }
+  size_t count_zone() override { return nBrick; }
+  ZoneType::Type zone_type() override { return elementType; }
+  void get_cell(amrex::Vector<float>& vars) override { vars = pointValues; }
+  void get_zones(amrex::Vector<size_t>& zones) override {
+    zones = connectivity;
+  }
+  void get_loc(amrex::Vector<float>& vars) override;
+
+private:
+  amrex::Vector<float> pointValues;
+  amrex::Vector<size_t> connectivity;
+  int coordinateColumns[3] = { -1, -1, -1 };
+  ZoneType::Type elementType = ZoneType::Type::UNSET;
 };
 
 class IDLDataContainer : public DataContainer {

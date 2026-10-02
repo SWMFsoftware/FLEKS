@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 
 #include "VisitWriter.h"
 
@@ -52,15 +53,14 @@ static void end_line(void) {
  *
  * ************************************************************************* */
 
-static void open_file(const char *filename) {
-  char full_filename[1024];
-  if (strstr(filename, ".vtk") != nullptr) {
-    strcpy(full_filename, filename);
-  } else {
-    snprintf(full_filename, sizeof full_filename, "%s.vtk", filename);
-  }
-
-  fp = fopen(full_filename, "w+");
+static bool open_file(const char *filename, int binary) {
+  std::string full_filename(filename);
+  if (full_filename.size() < 4 ||
+      full_filename.substr(full_filename.size() - 4) != ".vtk")
+    full_filename += ".vtk";
+  numInColumn = 0;
+  fp = fopen(full_filename.c_str(), binary ? "wb" : "w");
+  return fp != nullptr;
 }
 
 /* ****************************************************************************
@@ -74,10 +74,15 @@ static void open_file(const char *filename) {
  *
  * ************************************************************************* */
 
-static void close_file(void) {
+static bool close_file(void) {
+  if (useBinary && numInColumn != 0)
+    fputc('\n', fp);
   end_line();
-  fclose(fp);
+  const bool success = ferror(fp) == 0;
+  const int status = fclose(fp);
   fp = nullptr;
+  numInColumn = 0;
+  return success && status == 0;
 }
 
 /* ****************************************************************************
@@ -126,7 +131,13 @@ static void force_big_endian(unsigned char *bytes) {
  *
  * ************************************************************************* */
 
-static void write_string(const char *str) { fprintf(fp, "%s", str); }
+static void write_string(const char *str) {
+  if (useBinary && numInColumn != 0) {
+    fputc('\n', fp);
+    numInColumn = 0;
+  }
+  fprintf(fp, "%s", str);
+}
 
 /* ****************************************************************************
  *  Function: new_section
@@ -141,7 +152,9 @@ static void write_string(const char *str) { fprintf(fp, "%s", str); }
  * ************************************************************************* */
 
 static void new_section(void) {
-  if (numInColumn != 0)
+  if (useBinary && numInColumn != 0)
+    fputc('\n', fp);
+  else if (numInColumn != 0)
     end_line();
   numInColumn = 0;
 }
@@ -162,6 +175,7 @@ static void write_int(int val) {
   if (useBinary) {
     force_big_endian((unsigned char *)&val);
     fwrite(&val, sizeof(int), 1, fp);
+    numInColumn = 1;
   } else {
     fprintf(fp, "%d ", val);
     if (((numInColumn++) % 9) == 8) {
@@ -192,6 +206,7 @@ static void write_float(float val) {
   if (useBinary) {
     force_big_endian((unsigned char *)&val);
     fwrite(&val, sizeof(float), 1, fp);
+    numInColumn = 1;
   } else {
     fprintf(fp, "%20.12e ", val);
     if (((numInColumn++) % 9) == 8) {
@@ -269,8 +284,9 @@ void write_variables(int nvars, int *vardim, int *centering,
       if (vardim[i] == 1) {
         if (first_scalar == 0) {
           should_write = 1;
-          snprintf(str, sizeof str, "SCALARS %s float\n", varname[i]);
-          write_string(str);
+          const std::string header =
+              "SCALARS " + std::string(varname[i]) + " float\n";
+          write_string(header.c_str());
           write_string("LOOKUP_TABLE default\n");
           first_scalar = 1;
         } else
@@ -278,8 +294,9 @@ void write_variables(int nvars, int *vardim, int *centering,
       } else if (vardim[i] == 3) {
         if (first_vector == 0) {
           should_write = 1;
-          snprintf(str, sizeof str, "VECTORS %s float\n", varname[i]);
-          write_string(str);
+          const std::string header =
+              "VECTORS " + std::string(varname[i]) + " float\n";
+          write_string(header.c_str());
           first_vector = 1;
         } else
           num_vectors++;
@@ -311,8 +328,9 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_scalar = 1;
           } else {
             should_write = 1;
-            snprintf(str, sizeof str, "%s 1 %d float\n", varname[i], ncells);
-            write_string(str);
+            const std::string header = std::string(varname[i]) + " 1 " +
+                                       std::to_string(ncells) + " float\n";
+            write_string(header.c_str());
           }
         }
       }
@@ -341,8 +359,9 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_vector = 1;
           } else {
             should_write = 1;
-            snprintf(str, sizeof str, "%s 3 %d float\n", varname[i], ncells);
-            write_string(str);
+            const std::string header = std::string(varname[i]) + " 3 " +
+                                       std::to_string(ncells) + " float\n";
+            write_string(header.c_str());
           }
         }
       }
@@ -377,8 +396,9 @@ void write_variables(int nvars, int *vardim, int *centering,
       if (vardim[i] == 1) {
         if (first_scalar == 0) {
           should_write = 1;
-          snprintf(str, sizeof str, "SCALARS %s float\n", varname[i]);
-          write_string(str);
+          const std::string header =
+              "SCALARS " + std::string(varname[i]) + " float\n";
+          write_string(header.c_str());
           write_string("LOOKUP_TABLE default\n");
           first_scalar = 1;
         } else
@@ -386,8 +406,9 @@ void write_variables(int nvars, int *vardim, int *centering,
       } else if (vardim[i] == 3) {
         if (first_vector == 0) {
           should_write = 1;
-          snprintf(str, sizeof str, "VECTORS %s float\n", varname[i]);
-          write_string(str);
+          const std::string header =
+              "VECTORS " + std::string(varname[i]) + " float\n";
+          write_string(header.c_str());
           first_vector = 1;
         } else
           num_vectors++;
@@ -419,8 +440,9 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_scalar = 1;
           } else {
             should_write = 1;
-            snprintf(str, sizeof str, "%s 1 %d float\n", varname[i], npts);
-            write_string(str);
+            const std::string header = std::string(varname[i]) + " 1 " +
+                                       std::to_string(npts) + " float\n";
+            write_string(header.c_str());
           }
         }
       }
@@ -449,8 +471,9 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_vector = 1;
           } else {
             should_write = 1;
-            snprintf(str, sizeof str, "%s 3 %d float\n", varname[i], npts);
-            write_string(str);
+            const std::string header = std::string(varname[i]) + " 3 " +
+                                       std::to_string(npts) + " float\n";
+            write_string(header.c_str());
           }
         }
       }
@@ -500,7 +523,8 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
   int *centering = nullptr;
 
   useBinary = ub;
-  open_file(filename);
+  if (!open_file(filename, useBinary))
+    return;
   write_header();
 
   write_string("DATASET UNSTRUCTURED_GRID\n");
@@ -623,7 +647,7 @@ static int num_points_for_cell(int celltype) {
 //
 // ***************************************************************************/
 
-void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
+bool write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
                              int ncells, int *celltypes, int *conn, int nvars,
                              int *vardim, int *centering,
                              const char *const *varnames, float **vars) {
@@ -633,7 +657,8 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
   int *curr_conn = conn;
 
   useBinary = ub;
-  open_file(filename);
+  if (!open_file(filename, useBinary))
+    return false;
   write_header();
 
   write_string("DATASET UNSTRUCTURED_GRID\n");
@@ -669,7 +694,7 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
 
   write_variables(nvars, vardim, centering, varnames, vars, npts, ncells);
 
-  close_file();
+  return close_file();
 }
 
 /* ****************************************************************************
@@ -723,7 +748,8 @@ void write_rectilinear_mesh(const char *filename, int ub, int *dims, float *x,
   int ncells = ncX * ncY * ncZ;
 
   useBinary = ub;
-  open_file(filename);
+  if (!open_file(filename, useBinary))
+    return;
   write_header();
 
   write_string("DATASET RECTILINEAR_GRID\n");
@@ -865,7 +891,8 @@ void write_curvilinear_mesh(const char *filename, int ub, int *dims, float *pts,
   int ncells = ncX * ncY * ncZ;
 
   useBinary = ub;
-  open_file(filename);
+  if (!open_file(filename, useBinary))
+    return;
   write_header();
 
   write_string("DATASET STRUCTURED_GRID\n");
