@@ -11,6 +11,7 @@
 #include <set>
 
 #include "DataContainer.h"
+#include "ZLibCompressor.h"
 
 class DataWriter {
 public:
@@ -26,7 +27,7 @@ public:
 
   std::string type_string() { return fileTypeString.at(fType); }
 
-  void print() {
+  virtual void print() {
     std::cout << "========DataWriter========\n";
     std::cout << "Write data to: " << filename << "\n";
     std::cout << "File type: " << type_string() << "\n";
@@ -255,8 +256,9 @@ private:
 
 class VTMWriter : public DataWriter {
 public:
-  VTMWriter(DataContainer* dcIn, const std::string& filenameIn)
-      : DataWriter(dcIn, filenameIn) {
+  VTMWriter(DataContainer* dcIn, const std::string& filenameIn,
+            bool useCompressionIn = false)
+      : DataWriter(dcIn, filenameIn), useCompression(useCompressionIn) {
     const std::filesystem::path srcPath(sourceFilename);
     const std::string name = srcPath.filename().string();
     const std::string dirName = name + "_vtm";
@@ -267,6 +269,14 @@ public:
     fType = FileType::VTM;
   }
   ~VTMWriter() override = default;
+
+  void print() override {
+    std::cout << "========DataWriter========\n";
+    std::cout << "Write data to: " << filename << "\n";
+    std::cout << "File type: " << type_string()
+              << (useCompression ? " (compressed)" : "") << "\n";
+    std::cout << "================================" << std::endl;
+  }
 
   int write() override {
     zoneType.set_type(dc->zone_type());
@@ -364,35 +374,91 @@ public:
                                                               : "BigEndian";
 
     // Compute appended raw binary block offsets
-    const uint64_t headerBytes = sizeof(uint64_t);
-    uint64_t currentOffset = 0;
-
     std::vector<uint64_t> varOffsets(nVar);
-    for (int i = 0; i < nVar; ++i) {
-      varOffsets[i] = currentOffset;
-      const uint64_t byteSize = static_cast<uint64_t>(nCell) * sizeof(float);
-      currentOffset += headerBytes + byteSize;
-    }
+    uint64_t pointsOffset = 0;
+    uint64_t connOffset = 0;
+    uint64_t offsetsOffset = 0;
+    uint64_t typesOffset = 0;
 
-    const uint64_t pointsOffset = currentOffset;
     const uint64_t pointsBytes =
         static_cast<uint64_t>(3 * nCell) * sizeof(float);
-    currentOffset += headerBytes + pointsBytes;
-
-    const uint64_t connOffset = currentOffset;
     const uint64_t connBytes =
         static_cast<uint64_t>(connectivity.size()) * sizeof(int64_t);
-    currentOffset += headerBytes + connBytes;
-
-    const uint64_t offsetsOffset = currentOffset;
     const uint64_t offsetsBytes =
         static_cast<uint64_t>(offsets.size()) * sizeof(int64_t);
-    currentOffset += headerBytes + offsetsBytes;
-
-    const uint64_t typesOffset = currentOffset;
     const uint64_t typesBytes =
         static_cast<uint64_t>(cellTypes.size()) * sizeof(uint8_t);
-    currentOffset += headerBytes + typesBytes;
+
+    std::vector<std::vector<uint8_t> > varBuffers;
+    std::vector<uint8_t> pointsBuf;
+    std::vector<uint8_t> connBuf;
+    std::vector<uint8_t> offsetsBuf;
+    std::vector<uint8_t> typesBuf;
+
+    if (useCompression) {
+      ZLibCompressor comp;
+      varBuffers.resize(nVar);
+      uint64_t currentOffset = 0;
+      amrex::Vector<float> varBuf(nCell);
+      for (int i = 0; i < nVar; ++i) {
+        for (size_t j = 0; j < nCell; ++j) {
+          varBuf[j] = vars[j * nVar + i];
+        }
+        varOffsets[i] = currentOffset;
+        if (!comp.compress_vtk_block(
+                varBuf.data(), static_cast<uint64_t>(nCell) * sizeof(float),
+                varBuffers[i])) {
+          std::cerr << "Error: failed to compress variable " << cleanNames[i]
+                    << "\n";
+          return iFail;
+        }
+        currentOffset += varBuffers[i].size();
+      }
+
+      pointsOffset = currentOffset;
+      if (!comp.compress_vtk_block(xyz.data(), pointsBytes, pointsBuf)) {
+        std::cerr << "Error: failed to compress points.\n";
+        return iFail;
+      }
+      currentOffset += pointsBuf.size();
+
+      connOffset = currentOffset;
+      if (!comp.compress_vtk_block(connectivity.data(), connBytes, connBuf)) {
+        std::cerr << "Error: failed to compress connectivity.\n";
+        return iFail;
+      }
+      currentOffset += connBuf.size();
+
+      offsetsOffset = currentOffset;
+      if (!comp.compress_vtk_block(offsets.data(), offsetsBytes, offsetsBuf)) {
+        std::cerr << "Error: failed to compress offsets.\n";
+        return iFail;
+      }
+      currentOffset += offsetsBuf.size();
+
+      typesOffset = currentOffset;
+      if (!comp.compress_vtk_block(cellTypes.data(), typesBytes, typesBuf)) {
+        std::cerr << "Error: failed to compress cell types.\n";
+        return iFail;
+      }
+      currentOffset += typesBuf.size();
+    } else {
+      const uint64_t headerBytes = sizeof(uint64_t);
+      uint64_t currentOffset = 0;
+      for (int i = 0; i < nVar; ++i) {
+        varOffsets[i] = currentOffset;
+        const uint64_t byteSize = static_cast<uint64_t>(nCell) * sizeof(float);
+        currentOffset += headerBytes + byteSize;
+      }
+      pointsOffset = currentOffset;
+      currentOffset += headerBytes + pointsBytes;
+      connOffset = currentOffset;
+      currentOffset += headerBytes + connBytes;
+      offsetsOffset = currentOffset;
+      currentOffset += headerBytes + offsetsBytes;
+      typesOffset = currentOffset;
+      currentOffset += headerBytes + typesBytes;
+    }
 
     // 1. Write the .vtu Piece file
     std::ofstream vtu(pieceFilePath.string(),
@@ -405,7 +471,9 @@ public:
 
     vtu << "<?xml version=\"1.0\"?>\n"
         << "<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\""
-        << endianStr << "\" header_type=\"UInt64\">\n"
+        << endianStr << "\" header_type=\"UInt64\""
+        << (useCompression ? " compressor=\"vtkZLibDataCompressor\"" : "")
+        << ">\n"
         << "  <UnstructuredGrid>\n"
         << "    <Piece NumberOfPoints=\"" << nCell << "\" NumberOfCells=\""
         << nBrick << "\">\n"
@@ -440,25 +508,41 @@ public:
         << "  <AppendedData encoding=\"raw\">\n"
         << "    _";
 
-    auto write_block = [&](const void* data, uint64_t sizeInBytes) {
-      vtu.write(reinterpret_cast<const char*>(&sizeInBytes), sizeof(uint64_t));
-      vtu.write(reinterpret_cast<const char*>(data), sizeInBytes);
-    };
-
-    // Write PointData arrays
-    amrex::Vector<float> varBuf(nCell);
-    for (int i = 0; i < nVar; ++i) {
-      for (size_t j = 0; j < nCell; ++j) {
-        varBuf[j] = vars[j * nVar + i];
+    if (useCompression) {
+      for (int i = 0; i < nVar; ++i) {
+        vtu.write(reinterpret_cast<const char*>(varBuffers[i].data()),
+                  varBuffers[i].size());
       }
-      write_block(varBuf.data(), static_cast<uint64_t>(nCell) * sizeof(float));
-    }
+      vtu.write(reinterpret_cast<const char*>(pointsBuf.data()),
+                pointsBuf.size());
+      vtu.write(reinterpret_cast<const char*>(connBuf.data()), connBuf.size());
+      vtu.write(reinterpret_cast<const char*>(offsetsBuf.data()),
+                offsetsBuf.size());
+      vtu.write(reinterpret_cast<const char*>(typesBuf.data()),
+                typesBuf.size());
+    } else {
+      auto write_block = [&](const void* data, uint64_t sizeInBytes) {
+        vtu.write(reinterpret_cast<const char*>(&sizeInBytes),
+                  sizeof(uint64_t));
+        vtu.write(reinterpret_cast<const char*>(data), sizeInBytes);
+      };
 
-    // Write Points, connectivity, offsets, types
-    write_block(xyz.data(), pointsBytes);
-    write_block(connectivity.data(), connBytes);
-    write_block(offsets.data(), offsetsBytes);
-    write_block(cellTypes.data(), typesBytes);
+      // Write PointData arrays
+      amrex::Vector<float> varBuf(nCell);
+      for (int i = 0; i < nVar; ++i) {
+        for (size_t j = 0; j < nCell; ++j) {
+          varBuf[j] = vars[j * nVar + i];
+        }
+        write_block(varBuf.data(),
+                    static_cast<uint64_t>(nCell) * sizeof(float));
+      }
+
+      // Write Points, connectivity, offsets, types
+      write_block(xyz.data(), pointsBytes);
+      write_block(connectivity.data(), connBytes);
+      write_block(offsets.data(), offsetsBytes);
+      write_block(cellTypes.data(), typesBytes);
+    }
 
     vtu << "\n  </AppendedData>\n</VTKFile>\n";
     vtu.close();
@@ -499,6 +583,7 @@ public:
 
 private:
   std::filesystem::path outputDir;
+  bool useCompression = false;
 };
 
 #endif

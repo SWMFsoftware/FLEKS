@@ -5,7 +5,13 @@ default: CONVERTER
 -include ../Makefile.def
 include ../Makefile.conf
 
-SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
+# Converter-only zlib settings. Leave ZLIBROOT empty for the system library.
+# Override ZLIBSEARCH/ZLIBLIB for installations with a different layout.
+ZLIBROOT   ?=
+ZLIBSEARCH ?= $(if $(strip ${ZLIBROOT}),-I${ZLIBROOT}/include)
+ZLIBLIB    ?= $(if $(strip ${ZLIBROOT}),-L${ZLIBROOT}/lib) -lz
+
+SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH} ${ZLIBSEARCH}
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
 
 -include Makefile.DEPEND
@@ -38,10 +44,12 @@ CONVERTER: ${CONVERTEREXE}
 ${CONVERTEREXE}: ${OBJECTS} ${SHARED_OBJECTS}
 	mkdir -p ../bin
 	${LINK.f90} -o ${CONVERTEREXE} ${OBJECTS} ${SHARED_OBJECTS} \
-		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
+		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG} ${ZLIBLIB}
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo
+
+Converter.o: Converter.h DataWriter.h ZLibCompressor.h
 
 # The shared sources live in ../src; build their objects here so that they do
 # not collide with the ones libFLEKS.a is built from.

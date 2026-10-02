@@ -39,6 +39,7 @@ void print_help() {
                "successful conversion.\n"
             << "  -smooth <n>        Smooth the data n times (nonnegative "
                "integer; AMReX only).\n"
+            << "  -c, -compress      Enable zlib compression for VTM output.\n"
             << "  -h, --help         Print this help message.\n\n"
             << "Notes:\n"
             << "  - Format names are case-sensitive.\n"
@@ -48,6 +49,7 @@ void print_help() {
             << "Examples:\n"
             << "  ./bin/converter.exe -f 3d.dat -d VTK\n"
             << "  ./bin/converter.exe -f 3d.dat -d VTM\n"
+            << "  ./bin/converter.exe -f 3d.dat -d VTM -compress\n"
             << "  ./bin/converter.exe -f 3d.dat -s TEC -d VTK\n"
             << "  ./bin/converter.exe -f first.dat second.dat -d VTK\n"
             << "  ./bin/converter.exe -f 3d.dat -d TEC\n"
@@ -68,6 +70,7 @@ int main(int argc, char* argv[]) {
   FileType dType = FileType::UNSET;
 
   bool deleteSource = false;
+  bool useCompression = false;
 
   int nSmooth = 0;
 
@@ -137,6 +140,10 @@ int main(int argc, char* argv[]) {
           return EXIT_FAILURE;
         }
       }
+    } else if (cdl[i] == "-c" || cdl[i] == "-compress" ||
+               cdl[i] == "--compress") {
+      useCompression = true;
+      ++i;
     } else {
       std::cerr << "Error: unknown option: " << cdl[i] << "\n";
       return EXIT_FAILURE;
@@ -146,6 +153,11 @@ int main(int argc, char* argv[]) {
   if (dType == FileType::UNSET) {
     std::cout << "Error: destination file format is required! Set the format "
                  "with -d option.\n";
+    return EXIT_FAILURE;
+  }
+  if (useCompression && dType != FileType::VTM) {
+    std::cerr
+        << "Error: compression is only supported for VTM destination format.\n";
     return EXIT_FAILURE;
   }
   if (fileNames.empty()) {
@@ -167,7 +179,7 @@ int main(int argc, char* argv[]) {
       continue;
     }
     try {
-      Converter cv(filename, sType, dType);
+      Converter cv(filename, sType, dType, useCompression);
       if (cv.read() == iFail) {
         std::cerr << "Error: reading file failed: " << filename << "\n";
         status = EXIT_FAILURE;

@@ -7,7 +7,8 @@
 
 class Converter {
 public:
-  Converter(const std::string& in, FileType sType, FileType dType)
+  Converter(const std::string& in, FileType sType, FileType dType,
+            bool useCompression = false)
       : sourceFile(in), sourceType(sType), destType(dType) {
 
     if (sourceType == FileType::UNSET)
@@ -78,7 +79,8 @@ public:
         break;
       }
       case FileType::VTM: {
-        writer = std::make_unique<VTMWriter>(dc.get(), sourceFile);
+        writer =
+            std::make_unique<VTMWriter>(dc.get(), sourceFile, useCompression);
         break;
       }
       case FileType::IDL: {
