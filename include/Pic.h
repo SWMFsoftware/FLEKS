@@ -184,6 +184,10 @@ private:
   std::string heatCondMethod = "point-implicit";
   int nCondIter = 1;
   int nCondSubcycleMax = 100;
+  // Electron-ion collisional heat exchange (#ELECTRONCOLLISION)
+  bool useHeatExchange = false;
+  amrex::Real collisionFactor = 1.0;
+  amrex::Real collisionCoefEi = 0.0; // code units
   // Add the ambipolar E to the Runge-Kutta stages of the B update. Physically
   // required once Pe is not a polytropic function of the density.
   bool ambipolarInStages = true;
@@ -612,6 +616,7 @@ public:
   void convert_resistivity();
   void convert_electron_density0();
   void convert_electron_heat_conduction();
+  void convert_electron_collision();
   void convert_inflow_state();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
@@ -740,12 +745,9 @@ public:
   // Zero-gradient (foextrap) ghosts, used by the pressure field and scratch.
   void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab& mf);
   void apply_centerPe_BC(int iLev);
-  // Pluggable H_ei hook: the collisional energy the ions return to the local
-  // electron fluid. FLEKS has no Coulomb collision operator yet, so this
-  // returns false and does no work. A future collisional model should fill
-  // peRate with dPe/dt (code units) and return true; the ion temperature it
-  // needs is available from the ion pressure moments in nodePlasma.
-  bool add_electron_ion_heating(int iLev, amrex::MultiFab& peRate);
+  // Electron-ion collisional thermal equilibration (heat exchange) hook:
+  // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation from BATSRUS.
+  bool add_electron_ion_heating(int iLev, amrex::Real dt);
 
   //-------------Electric field solver end-------------
 

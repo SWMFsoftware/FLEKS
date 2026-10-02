@@ -592,13 +592,59 @@ void Pic::fill_new_electron_pressure() {
 }
 
 //==========================================================
-bool Pic::add_electron_ion_heating(int iLev, MultiFab& peRate) {
-  // No Coulomb collision model in FLEKS yet, so the collisional energy the
-  // ions return to the local electron fluid is identically zero. A future
-  // collisional model should fill peRate with dPe/dt in code units and return
-  // true; the ion temperature it needs is available from the ion pressure
-  // moments (iPxx_/iPyy_/iPzz_) in nodePlasma[nSpecies].
-  return false;
+// Electron-ion collisional thermal equilibration (heat exchange) hook:
+// dPe/dt = (Pi - Pe) / tau_eq following the BATSRUS point-implicit formulation.
+bool Pic::add_electron_ion_heating(int iLev, Real dt) {
+  if (!useHeatExchange || collisionCoefEi <= 0.0)
+    return false;
+
+  // 1) Compute scalar ion pressure Pi = Tr(P_i)/3 at nodes in nodePeRho
+  for (MFIter mfi(nodePeRho[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPiN = nodePeRho[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      arrPiN(i, j, k) = (moments(i, j, k, iPxx_) +
+                         moments(i, j, k, iPyy_) +
+                         moments(i, j, k, iPzz_)) / 3.0;
+    });
+  }
+  nodePeRho[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  // 2) Average scalar ion pressure to cell centres in centerPe (scratch here)
+  average_node_to_center(nodePeRho[iLev], centerPe[iLev]);
+  apply_pe_zero_gradient_bc(iLev, centerPe[iLev]);
+
+  // 3) Point-implicit energy exchange following BATSRUS:
+  //    H = collisionCoefEi * ne / Te^1.5
+  //    PePImpl = H / (1 + 2 * dt * H)
+  //    DeltaPe = dt * PePImpl * (Pi - Pe)
+  const Real cEi = collisionCoefEi;
+  const Real peMinLocal = peMin;
+  const Real rhoFloor = rhoMinOhm;
+
+  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
+    const Array4<Real const>& arrPi = centerPe[iLev][mfi].array();
+    const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
+      const Real pe = amrex::max(arrPe(i, j, k), peMinLocal);
+      const Real pi = amrex::max(arrPi(i, j, k), 0.0);
+      const Real te = pe / ne;
+
+      if (te > 0.0) {
+        const Real H = cEi * ne / std::pow(te, 1.5);
+        const Real pePImpl = H / (1.0 + 2.0 * dt * H);
+        const Real deltaPe = dt * pePImpl * (pi - pe);
+        arrPe(i, j, k) = amrex::max(pe + deltaPe, peMinLocal);
+      }
+    });
+  }
+
+  return true;
 }
 
 //==========================================================
@@ -1031,21 +1077,13 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   }
 
   //--------------------------------------------------------------------
-  // 6) H_ei hook. Returns false (and does nothing) until a collisional model
-  //    exists.
+  // 5) Electron-ion collisional thermal equilibration (#ELECTRONCOLLISION):
+  //      dPe/dt = (Pi - Pe) / tau_eq
+  //    Point-implicit energy-conserving formulation from BATSRUS.
   //--------------------------------------------------------------------
-  if (add_electron_ion_heating(iLev, centerPeRho[iLev])) {
-    for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
-      const Array4<Real const>& arrSrc = centerPeRho[iLev][mfi].array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        arrPe(i, j, k) = amrex::max(arrPe(i, j, k) + dt * arrSrc(i, j, k), peMin);
-      });
-    }
+  if (add_electron_ion_heating(iLev, dt)) {
+    apply_centerPe_BC(iLev);
   }
-
-  apply_centerPe_BC(iLev);
 }
 
 //==========================================================

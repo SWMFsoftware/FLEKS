@@ -371,6 +371,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("heatCondMethod", heatCondMethod);
     param.read_var("nCondIter", nCondIter);
     param.read_var("nCondSubcycleMax", nCondSubcycleMax);
+  } else if (command == "#ELECTRONCOLLISION") {
+    param.read_var("useHeatExchange", useHeatExchange);
+    if (useHeatExchange) {
+      param.read_var("collisionFactor", collisionFactor);
+    }
   } else if (command == "#FIELDINTEGRATOR") {
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#SELECTPARTICLE") {
@@ -639,6 +644,9 @@ void Pic::post_process_param() {
     if (nCondSubcycleMax < 1)
       Abort("Invalid #ELECTRONCONDUCTION: nCondSubcycleMax must be at least 1.");
 
+    if (collisionFactor < 0)
+      Abort("Invalid #ELECTRONCOLLISION: collisionFactor must be non-negative.");
+
     // Sized here rather than in the constructor: the command has not been
     // read when Pic is constructed.
     centerPeState.resize(n_lev_max());
@@ -808,6 +816,7 @@ void Pic::finalize_units_conversion() {
   convert_resistivity();
   convert_electron_density0();
   convert_electron_heat_conduction();
+  convert_electron_collision();
   convert_inflow_state();
   convert_intrinsic_B();
 }
@@ -981,6 +990,41 @@ void Pic::convert_electron_heat_conduction() {
                         std::to_string(heatFluxLimiter)
                   : ", no heat-flux limiter")
           << "\n";
+}
+
+//==========================================================
+// SI -> code conversion of the electron-ion thermal equilibration coefficient
+// following the BATSRUS Braginskii formulation.
+void Pic::convert_electron_collision() {
+  if (!useElectronPressureEq || !useHeatExchange)
+    return;
+
+  const Real Si2NoV = fi->get_Si2NoV();
+  const Real Si2NoL = fi->get_Si2NoL();
+  const Real Si2NoRho = fi->get_Si2NoRho();
+  const Real uNormSI = fi->get_unorm_si();
+
+  const Real reducedMassSI = (cElectronMassSI * cProtonMassSI) /
+                             (cElectronMassSI + cProtonMassSI);
+  const Real twoPiKB = 2.0 * dPI * cBoltzmannSI;
+  const Real e2OverEps = (cUnitChargeSI * cUnitChargeSI) / cEps0SI;
+
+  const Real coefSI = coulombLog * std::sqrt(reducedMassSI / cProtonMassSI) *
+                      (e2OverEps * e2OverEps) /
+                      (3.0 * std::pow(twoPiKB, 1.5));
+
+  const Real Si2NoT = Si2NoL / Si2NoV;
+  const Real No2SiN = 1.0 / (Si2NoRho * cProtonMassSI);
+  const Real Si2NoTemperature =
+      cBoltzmannSI / (cProtonMassSI * uNormSI * uNormSI);
+
+  collisionCoefEi = 2.0 * collisionFactor * coefSI * No2SiN *
+                    std::pow(Si2NoTemperature, 1.5) / Si2NoT;
+
+  Print() << "  electron-ion collision (heat exchange): factor = "
+          << collisionFactor << ", coulombLog = " << coulombLog
+          << " -> collisionCoefEi = " << collisionCoefEi
+          << " [code units]\n";
 }
 
 //==========================================================

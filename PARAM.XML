@@ -552,6 +552,27 @@ electron pressure equation (#ELECTRONPRESSURE):
                     time is completed with point-implicit to ensure stability.
 </command>
 
+<command name="ELECTRONCOLLISION" alias="ELECTRONCOLLISION_FLEKS0,ELECTRONCOLLISION_FLEKS1,ELECTRONCOLLISION_FLEKS2" multiple="T">
+  <parameter name="useHeatExchange" type="logical" default="F"/>
+  <if expr="$useHeatExchange">
+    <parameter name="collisionFactor" type="real" min="0" default="1.0"/>
+  </if>
+
+#ELECTRONCOLLISION
+F                 useHeatExchange
+1.0               collisionFactor
+
+Enable electron-ion collisional thermal equilibration (heat exchange)
+in the evolved electron pressure equation (#ELECTRONPRESSURE), following
+the BATSRUS Braginskii model:
+    dPe/dt = (Pi - Pe) / tau_eq
+where 1/tau_eq = 2 * C_ei * collisionFactor * rho / Te^1.5.
+Solved using the BATSRUS point-implicit relaxation:
+    DeltaPe = dt * H / (1 + 2 * dt * H) * (Pi - Pe)
+which is unconditionally stable and strictly preserves thermal balance.
+Pi is computed from the scalar ion pressure Tr(P_i)/3 in nodePlasma.
+</command>
+
 <command name="BSUBCYCLE" alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2" multiple="T">
   <parameter name="nBSubcycle" type="integer" min="1" default="1"/>
 
