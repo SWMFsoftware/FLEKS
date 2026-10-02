@@ -359,6 +359,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("coulombLog", coulombLog);
       param.read_var("fieldAlignedConduction", fieldAlignedConduction);
       param.read_var("fieldAlignedFraction", fieldAlignedFraction);
+      param.read_var("fieldAlignedBMinSI", fieldAlignedBMinSI);
       param.read_var("heatFluxLimiter", heatFluxLimiter);
       param.read_var("peMin", peMin);
       param.read_var("ambipolarInStages", ambipolarInStages);
@@ -588,6 +589,9 @@ void Pic::post_process_param() {
             "non-negative.");
     if (coulombLog <= 0)
       Abort("Invalid #ELECTRONPRESSURE: coulombLog must be positive.");
+    if (fieldAlignedBMinSI < 0)
+      Abort("Invalid #ELECTRONPRESSURE: fieldAlignedBMinSI must be "
+            "non-negative.");
     if (fieldAlignedFraction < 0 || fieldAlignedFraction > 1)
       Abort("Invalid #ELECTRONPRESSURE: fieldAlignedFraction must be "
             "between 0 (isotropic) and 1 (field aligned).");
@@ -915,6 +919,12 @@ void Pic::convert_electron_heat_conduction() {
   // heatCondKappa0SI = 0 is legitimate: it switches the electron heat flux
   // off and leaves advection + pdV. Only a positive input that converts to a
   // non-positive code value is an error.
+  // Minimum field strength for the field-aligned direction to be meaningful.
+  // Without it a globally unmagnetized run still carries round-off level B,
+  // whose normalised direction is arbitrary and would silently steer the heat
+  // flux along a noise direction.
+  fieldAlignedBMin = fieldAlignedBMinSI * fi->get_Si2NoB();
+
   if (heatCondKappa0SI > 0 && !(heatCondKappa0 > 0))
     Abort("Pic::convert_electron_heat_conduction: the SI->code conversion "
           "produced a non-positive heat conduction coefficient. Check the "

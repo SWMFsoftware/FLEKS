@@ -166,6 +166,11 @@ private:
   bool fieldAlignedConduction = true;
   // Blend between the field-aligned (1) and the isotropic (0) dyad.
   amrex::Real fieldAlignedFraction = 1.0;
+  // Magnetic field strength [T] below which the field direction is treated as
+  // meaningless (round-off), so the conduction falls back to isotropic instead
+  // of locking onto a noise direction.
+  amrex::Real fieldAlignedBMinSI = 1.0e-15;
+  amrex::Real fieldAlignedBMin = 0.0;
   // Free-streaming heat-flux limiter fraction; 0 disables the limiter.
   amrex::Real heatFluxLimiter = 0.0;
   // Floor applied to the evolved Pe.

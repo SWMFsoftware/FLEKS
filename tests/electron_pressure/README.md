@@ -31,6 +31,14 @@ conductive that Te would flatten within a single step. The chosen value still
 violates the explicit parabolic limit `dt < dx^2/(2 chi)` by orders of
 magnitude, which is what the point-implicit update is there to survive.
 
+`fieldAlignedBMinSI` (1e-15 T) is the field strength below which the field
+direction is treated as meaningless. It matters here: an unmagnetized run
+still carries round-off level `B` (~1e-18 in code units), and normalising it
+gives an arbitrary direction that would silently steer the heat flux away
+from `grad(Te)` and switch the conduction off. Real fields (the `crossfield`
+deck has `|B|` ~ 1e-2 in code units) are many orders of magnitude above the
+cutoff.
+
 ## Validation
 
 Both scale-free ratios

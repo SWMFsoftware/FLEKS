@@ -73,6 +73,7 @@ T                       useElectronPressureEq
 20.0                    coulombLog
 T                       fieldAlignedConduction
 1.0                     fieldAlignedFraction
+1.0e-15                 fieldAlignedBMinSI  [T]  weaker = isotropic
 0.0                     heatFluxLimiter
 0.0                     peMin
 T                       ambipolarInStages

@@ -446,6 +446,7 @@ units (default 1.0 = reference charge density).
     <parameter name="coulombLog" type="real" default="20.0"/>
     <parameter name="fieldAlignedConduction" type="logical" default="T"/>
     <parameter name="fieldAlignedFraction" type="real" default="1.0"/>
+    <parameter name="fieldAlignedBMinSI" type="real" default="1.0e-15"/>
     <parameter name="heatFluxLimiter" type="real" default="0.0"/>
     <parameter name="peMin" type="real" default="0.0"/>
     <parameter name="ambipolarInStages" type="logical" default="T"/>
@@ -457,6 +458,7 @@ F                 useElectronPressureEq (rest is read if true)
 20.0              coulombLog
 T                 fieldAlignedConduction
 1.0               fieldAlignedFraction
+1.0e-15           fieldAlignedBMinSI
 0.0               heatFluxLimiter
 0.0               peMin
 T                 ambipolarInStages
@@ -481,7 +483,11 @@ kappa = kappa0 * Te\^2.5, kappa0 = heatCondKappa0SI [W/(m K\^(7/2))] scaled by
 coulombLog/20 (the default 9.2e-12 corresponds to coulombLog 20). With
 fieldAlignedConduction T the conduction is along the magnetic field only,
 kappa_hat = kappa b b; fieldAlignedFraction f in [0,1] blends it towards the
-isotropic form, kappa_hat = kappa [f b b + (1 - f) I]. heatFluxLimiter > 0
+isotropic form, kappa_hat = kappa [f b b + (1 - f) I]. The direction is only
+trusted where the field is stronger than fieldAlignedBMinSI [T], below which
+the dyad blends smoothly back to isotropic: an unmagnetized run still carries
+round-off level B whose normalised direction is arbitrary, and locking the
+heat flux to it would silently suppress the conduction. heatFluxLimiter > 0
 applies the free-streaming saturation q_sat = f_lim n_e Te sqrt(Te m_p/m_e)
 (BATSRUS uses 0.06); 0 disables it. The conduction step is point-implicit, so
 it is stable for any time step.

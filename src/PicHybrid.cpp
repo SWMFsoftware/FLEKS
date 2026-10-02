@@ -776,19 +776,23 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
       const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
       Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
 
-      // Unit vector along B; with no field the dyad degenerates to isotropic.
+      // Unit vector along B, and a smooth weak-field weight: a field at
+      // round-off level still has bmag > 0, but its direction is arbitrary,
+      // so the conduction must not be locked to it. The weight blends the
+      // dyad towards isotropic as |B| drops below fieldAlignedBMin.
       Real bhat[3] = {0.0, 0.0, 0.0};
       Real fEff = 0.0;
       if (fAlign > 0.0) {
         const Real bx = arrB(i, j, k, ix_);
         const Real by = arrB(i, j, k, iy_);
         const Real bz = arrB(i, j, k, iz_);
-        const Real bmag = std::sqrt(bx * bx + by * by + bz * bz);
-        if (bmag > 0.0) {
+        const Real b2 = bx * bx + by * by + bz * bz;
+        if (b2 > 0.0) {
+          const Real bmag = std::sqrt(b2);
           bhat[ix_] = bx / bmag;
           bhat[iy_] = by / bmag;
           bhat[iz_] = bz / bmag;
-          fEff = fAlign;
+          fEff = fAlign * b2 / (b2 + fieldAlignedBMin * fieldAlignedBMin);
         }
       }
 
