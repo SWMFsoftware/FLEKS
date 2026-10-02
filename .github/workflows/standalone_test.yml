@@ -113,3 +113,53 @@ jobs:
           amrex-dim: 2d
           warning-summary: warning_check_2d.md
           summary-title: FLEKS 2D AMReX Compiler Warning Check
+
+  # Validate all standalone FLEKS PARAM.in* test files against PARAM.XML.
+  # Uses CheckParam.pl -S (standalone mode), the same approach as
+  # BATSRUS/TestParam.pl, but without the SWMF component map overhead.
+  # This is a lightweight job: no AMReX build or FLEKS compilation required.
+  param-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout FLEKS (for local composite actions)
+        uses: actions/checkout@v6
+
+      - name: Setup SWMF dependency tree
+        uses: ./.github/actions/setup-swmf
+        with:
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          # No AMReX build needed for param check; use a minimal suffix so we
+          # don't evict any real build cache.
+          amrex-cache-suffix: 3d
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'false'
+
+      - name: Validate standalone FLEKS PARAM files (CheckParam.pl)
+        working-directory: SWMF/PC/FLEKS
+        run: |
+          # Validate every standalone PARAM.in* file in tests/ against
+          # FLEKS's own PARAM.XML using CheckParam.pl in standalone mode (-S).
+          # This mirrors what BATSRUS/TestParam.pl does (CheckParam.pl -S -c=GM),
+          # but for FLEKS: the -c flag is omitted because FLEKS PARAM.XML does
+          # not segment by component (all commands are in the root context).
+          CHECK_SCRIPT="share/Scripts/CheckParam.pl"
+          XML_FILE="PARAM.XML"
+
+          FAILED=0
+          while IFS= read -r -d '' param_file; do
+            echo "Checking $param_file ..."
+            if ! "$CHECK_SCRIPT" -S -x="$XML_FILE" "$param_file" 2>&1; then
+              echo "::error::PARAM validity check failed for $param_file"
+              FAILED=1
+            fi
+          done < <(find tests -name "PARAM.in*" \
+                    -not -path "tests/performance/*" \
+                    -print0 | sort -z)
+
+          if [ $FAILED -ne 0 ]; then
+            exit 1
+          fi

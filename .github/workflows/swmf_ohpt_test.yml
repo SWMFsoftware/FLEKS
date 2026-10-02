@@ -56,6 +56,35 @@ jobs:
         run: |
           make -j$(nproc) test22
 
+      - name: Validate PARAM files (TestParam.pl)
+        working-directory: SWMF
+        run: |
+          # Run TestParam.pl without the Makefile '-' suppression prefix so that
+          # any parameter-validity error in a FLEKS-coupled PARAM deck fails CI.
+          # Re-configure to the OH+PT setup before running the checks.
+          ./Config.pl -default -v=Empty,OH/BATSRUS,PT/FLEKS
+          ./Config.pl -o=OH:u=OuterHelio,e=SwhPui,ng=2,g=4,4,4 -o=PT:lev=5
+
+          FAILED=0
+          for param_file in \
+            Param/PARAM.in.test.OHPT.FLEKS.shocktube \
+            Param/PARAM.in.test.OHPT.FLEKS.outerhelio.4neu.start \
+            Param/PARAM.in.test.OHPT.FLEKS.outerhelio.4neu.couple \
+            Param/PARAM.in.test.OHPT.FLEKS.outerhelio.swh \
+            Param/PARAM.in.test.OHPT.FLEKS.outerhelio.pui.4neu.start \
+            Param/PARAM.in.test.OHPT.FLEKS.outerhelio.pui.4neu.couple \
+            Param/PARAM.in.test.OHPT.FLEKS.outerhelio.swhpui; do
+            echo "Checking $param_file ..."
+            if ! Scripts/TestParam.pl "$param_file"; then
+              echo "::error::PARAM validity check failed for $param_file"
+              FAILED=1
+            fi
+          done
+
+          if [ $FAILED -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Verify Test Results
         working-directory: SWMF
         run: |
