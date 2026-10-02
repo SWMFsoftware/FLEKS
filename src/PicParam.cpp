@@ -367,6 +367,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ELECTRONADVECTION") {
     param.read_var("peAdvectionLimiter", peAdvectionLimiter);
     param.read_var("peCompressionScheme", peCompressionScheme);
+  } else if (command == "#ELECTRONCONDUCTION") {
+    param.read_var("heatCondMethod", heatCondMethod);
+    param.read_var("nCondIter", nCondIter);
+    param.read_var("nCondSubcycleMax", nCondSubcycleMax);
   } else if (command == "#FIELDINTEGRATOR") {
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#SELECTPARTICLE") {
@@ -625,6 +629,15 @@ void Pic::post_process_param() {
       Abort("Invalid #ELECTRONADVECTION: peCompressionScheme must be "
             "'exponential' or 'explicit'.");
     }
+
+    if (heatCondMethod != "point-implicit" && heatCondMethod != "subcycle") {
+      Abort("Invalid #ELECTRONCONDUCTION: heatCondMethod must be "
+            "'point-implicit' or 'subcycle'.");
+    }
+    if (nCondIter < 1)
+      Abort("Invalid #ELECTRONCONDUCTION: nCondIter must be at least 1.");
+    if (nCondSubcycleMax < 1)
+      Abort("Invalid #ELECTRONCONDUCTION: nCondSubcycleMax must be at least 1.");
 
     // Sized here rather than in the constructor: the command has not been
     // read when Pic is constructed.

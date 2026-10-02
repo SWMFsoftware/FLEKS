@@ -180,6 +180,10 @@ private:
   std::string peCompressionScheme = "exponential";
   int peLimiterType = 2; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
   bool peCompressionExp = true;
+  // Solving strategy for Pe heat conduction (see #ELECTRONCONDUCTION)
+  std::string heatCondMethod = "point-implicit";
+  int nCondIter = 1;
+  int nCondSubcycleMax = 100;
   // Add the ambipolar E to the Runge-Kutta stages of the B update. Physically
   // required once Pe is not a polytropic function of the density.
   bool ambipolarInStages = true;

@@ -40,6 +40,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#EFIELDSOLVER", ParameterOwner::Pic },
   { "#ELECTRON", ParameterOwner::Pic },
   { "#ELECTRONADVECTION", ParameterOwner::Pic },
+  { "#ELECTRONCONDUCTION", ParameterOwner::Pic },
   { "#ELECTRONPRESSURE", ParameterOwner::Pic },
   { "#ELECTRONTEMPERATURE", ParameterOwner::Pic },
   { "#EXOSPHERE", ParameterOwner::FluidInterface },
@@ -118,7 +119,7 @@ const ParameterCommand *find_parameter_command(const std::string &command) {
 bool is_singleton_command(const std::string &command) {
   static const char *const singletonCommands[] = {
     "#BSUBCYCLE",        "#DISCRETIZE",       "#ELECTRONADVECTION",
-    "#ELECTRONPRESSURE", "#ELECTRONTEMPERATURE",
+    "#ELECTRONCONDUCTION", "#ELECTRONPRESSURE", "#ELECTRONTEMPERATURE",
     "#FIELDBOXBOUNDARY", "#FIELDINTEGRATOR",  "#GEOMETRY",
     "#HYBRIDPIC",        "#HYPERRESISTIVITY", "#INITFROMSWMF",
     "#LOADBALANCE",      "#MINIMUMDENSITY",   "#NCELL",

@@ -855,125 +855,179 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   apply_pe_zero_gradient_bc(iLev, centerPeTe[iLev]);
 
   //--------------------------------------------------------------------
-  // 4) Electron heat flux q = -kappa_hat . grad(Te) on the nodes, with the
-  //    Spitzer kappa = kappa0 * Te^2.5. nodePeAux keeps Te (comp 0) and the
-  //    diagonal of the conductivity dyad (comps 1..3) for the point-implicit
-  //    denominator; nodePeVec holds grad(Te) and is then overwritten by q.
+  // 4) Electron heat conduction:
+  //      dPe/dt = (gamma_e-1) [ div(kappa_hat . grad Te) ]
+  //             = (gamma_e-1) [ -div(q) ]
+  //    Controlled by #ELECTRONCONDUCTION (point-implicit or subcycle).
   //--------------------------------------------------------------------
-  average_center_to_node(centerPeTe[iLev], nodePeAux[iLev]);
-  grad_center_to_node(centerPeTe[iLev], nodePeVec[iLev],
-                      Geom(iLev).InvCellSize());
-  average_center_to_node(centerB[iLev], nodeBstage[iLev]);
-  nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+  if (heatCondKappa0 > 0.0) {
+    const bool isExplicit = (heatCondMethod == "subcycle");
+    const int nPasses = isExplicit ? 1 : nCondIter;
+    Real dtRem = dt;
+    int pass = 0;
 
-  for (MFIter mfi(nodePeVec[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrQ = nodePeVec[iLev][mfi].array();
-    const Array4<Real>& arrAux = nodePeAux[iLev][mfi].array();
-    const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
-    const Array4<Real const>& arrRhoN = nodePeRho[iLev][mfi].array();
+    while (dtRem > 0.0 && pass < (isExplicit ? nCondSubcycleMax : nPasses)) {
+      pass++;
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
-      Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
-
-      // Unit vector along B, and a smooth weak-field weight: a field at
-      // round-off level still has bmag > 0, but its direction is arbitrary,
-      // so the conduction must not be locked to it. The weight blends the
-      // dyad towards isotropic as |B| drops below fieldAlignedBMin.
-      Real bhat[3] = {0.0, 0.0, 0.0};
-      Real fEff = 0.0;
-      if (fAlign > 0.0) {
-        const Real bx = arrB(i, j, k, ix_);
-        const Real by = arrB(i, j, k, iy_);
-        const Real bz = arrB(i, j, k, iz_);
-        const Real b2 = bx * bx + by * by + bz * bz;
-        if (b2 > 0.0) {
-          const Real bmag = std::sqrt(b2);
-          bhat[ix_] = bx / bmag;
-          bhat[iy_] = by / bmag;
-          bhat[iz_] = bz / bmag;
-          fEff = fAlign * b2 / (b2 + fieldAlignedBMin * fieldAlignedBMin);
+      if (pass > 1) {
+        for (MFIter mfi(centerPeTe[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
+          const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
+          const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+            arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMin) / ne;
+          });
         }
+        apply_pe_zero_gradient_bc(iLev, centerPeTe[iLev]);
       }
 
-      Real gT[3] = {0.0, 0.0, 0.0};
-      for (int d = 0; d < nDim; ++d)
-        gT[d] = arrQ(i, j, k, d);
-      const Real bdotg =
-          bhat[ix_] * gT[ix_] + bhat[iy_] * gT[iy_] + bhat[iz_] * gT[iz_];
+      average_center_to_node(centerPeTe[iLev], nodePeAux[iLev]);
+      grad_center_to_node(centerPeTe[iLev], nodePeVec[iLev],
+                          Geom(iLev).InvCellSize());
+      average_center_to_node(centerB[iLev], nodeBstage[iLev]);
+      nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      Real q[3] = {0.0, 0.0, 0.0};
-      for (int d = 0; d < 3; ++d) {
-        if (d >= nDim || domLen[d] <= 1) {
-          q[d] = 0.0;
-          continue;
-        }
-        q[d] = -kappa * (fEff * bhat[d] * bdotg + (1.0 - fEff) * gT[d]);
-      }
+      for (MFIter mfi(nodePeVec[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arrQ = nodePeVec[iLev][mfi].array();
+        const Array4<Real>& arrAux = nodePeAux[iLev][mfi].array();
+        const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
+        const Array4<Real const>& arrRhoN = nodePeRho[iLev][mfi].array();
 
-      // Free-streaming saturation: |q| <= f * n_e * Te * v_th,e with
-      // v_th,e = sqrt(Te * m_p/m_e) in code units.
-      if (heatFluxLimiter > 0.0) {
-        const Real qmag = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
-        if (qmag > 0.0) {
-          const Real ne = amrex::max(arrRhoN(i, j, k), rhoMinOhm);
-          const Real qsat = heatFluxLimiter * ne * teN *
-                            std::sqrt(teN * massRatioPe);
-          if (qmag > qsat) {
-            const Real scale = qsat / qmag;
-            for (int d = 0; d < 3; ++d)
-              q[d] *= scale;
-            kappa *= scale;
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
+          Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
+
+          // Unit vector along B, and a smooth weak-field weight: a field at
+          // round-off level still has bmag > 0, but its direction is arbitrary,
+          // so the conduction must not be locked to it. The weight blends the
+          // dyad towards isotropic as |B| drops below fieldAlignedBMin.
+          Real bhat[3] = {0.0, 0.0, 0.0};
+          Real fEff = 0.0;
+          if (fAlign > 0.0) {
+            const Real bx = arrB(i, j, k, ix_);
+            const Real by = arrB(i, j, k, iy_);
+            const Real bz = arrB(i, j, k, iz_);
+            const Real b2 = bx * bx + by * by + bz * bz;
+            if (b2 > 0.0) {
+              const Real bmag = std::sqrt(b2);
+              bhat[ix_] = bx / bmag;
+              bhat[iy_] = by / bmag;
+              bhat[iz_] = bz / bmag;
+              fEff = fAlign * b2 / (b2 + fieldAlignedBMin * fieldAlignedBMin);
+            }
           }
+
+          Real gT[3] = {0.0, 0.0, 0.0};
+          for (int d = 0; d < nDim; ++d)
+            gT[d] = arrQ(i, j, k, d);
+          const Real bdotg =
+              bhat[ix_] * gT[ix_] + bhat[iy_] * gT[iy_] + bhat[iz_] * gT[iz_];
+
+          Real q[3] = {0.0, 0.0, 0.0};
+          for (int d = 0; d < 3; ++d) {
+            if (d >= nDim || domLen[d] <= 1) {
+              q[d] = 0.0;
+              continue;
+            }
+            q[d] = -kappa * (fEff * bhat[d] * bdotg + (1.0 - fEff) * gT[d]);
+          }
+
+          // Free-streaming saturation: |q| <= f * n_e * Te * v_th,e with
+          // v_th,e = sqrt(Te * m_p/m_e) in code units.
+          if (heatFluxLimiter > 0.0) {
+            const Real qmag = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
+            if (qmag > 0.0) {
+              const Real ne = amrex::max(arrRhoN(i, j, k), rhoMinOhm);
+              const Real qsat = heatFluxLimiter * ne * teN *
+                                std::sqrt(teN * massRatioPe);
+              if (qmag > qsat) {
+                const Real scale = qsat / qmag;
+                for (int d = 0; d < 3; ++d)
+                  q[d] *= scale;
+                kappa *= scale;
+              }
+            }
+          }
+
+          for (int d = 0; d < 3; ++d) {
+            arrQ(i, j, k, d) = q[d];
+            arrAux(i, j, k, 1 + d) =
+                kappa * (fEff * bhat[d] * bhat[d] + (1.0 - fEff));
+          }
+        });
+      }
+      apply_pe_zero_gradient_bc(iLev, nodePeVec[iLev]);
+      apply_pe_zero_gradient_bc(iLev, nodePeAux[iLev]);
+
+      div_node_to_center(nodePeVec[iLev], centerPe[iLev], Geom(iLev).InvCellSize());
+
+      Real subDt = dt / static_cast<Real>(nPasses);
+      bool useExplicitThisStep = isExplicit;
+
+      if (isExplicit) {
+        Real maxDiffRate = 0.0;
+        for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+          const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
+          Real localMaxRate = 0.0;
+          amrex::Loop(box, [&](int i, int j, int k) {
+            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+            Real lam = (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+            lam += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
+            if (nDim > 2)
+              lam += (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
+            localMaxRate = amrex::max(localMaxRate, gammaM1 * lam / ne);
+          });
+          maxDiffRate = amrex::max(maxDiffRate, localMaxRate);
+        }
+        amrex::ParallelDescriptor::ReduceRealMax(maxDiffRate);
+
+        if (maxDiffRate > 0.0) {
+          const Real dtCFL = 0.45 / maxDiffRate;
+          subDt = amrex::min(dtRem, dtCFL);
+        } else {
+          subDt = dtRem;
+        }
+
+        if (pass == nCondSubcycleMax && subDt < dtRem) {
+          subDt = dtRem;
+          useExplicitThisStep = false;
         }
       }
 
-      for (int d = 0; d < 3; ++d) {
-        arrQ(i, j, k, d) = q[d];
-        arrAux(i, j, k, 1 + d) =
-            kappa * (fEff * bhat[d] * bhat[d] + (1.0 - fEff));
+      for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
+        const Array4<Real const>& arrDivQ = centerPe[iLev][mfi].array();
+        const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+        const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+
+          Real lambda = (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+          lambda += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
+          if (nDim > 2)
+            lambda +=
+                (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
+
+          const Real src = -arrDivQ(i, j, k);
+          const Real denom = useExplicitThisStep
+                                 ? 1.0
+                                 : (1.0 + subDt * gammaM1 * lambda / ne);
+
+          arrPe(i, j, k) =
+              amrex::max(arrPe(i, j, k) + subDt * gammaM1 * src / denom, peMin);
+        });
       }
-    });
-  }
-  apply_pe_zero_gradient_bc(iLev, nodePeVec[iLev]);
-  apply_pe_zero_gradient_bc(iLev, nodePeAux[iLev]);
 
-  //--------------------------------------------------------------------
-  // 5) dPe/dt = (gamma_e-1) [ div(kappa_hat . grad Te) + H_ei ]
-  //           = (gamma_e-1) [ -div(q) + H_ei ]
-  //    The conduction part is point-implicit: the diagonal of the discrete
-  //    diffusion operator is treated implicitly (the BATSRUS
-  //    PointCoef = H/(1 + dt*H/Cv) pattern with Cv = n_e/(gamma_e-1)), which
-  //    is unconditionally stable and reduces to the explicit update as dt->0.
-  //--------------------------------------------------------------------
-  // div(q) at the cell centres. It goes into centerPe, which is free here (it
-  // was the advection destination and compute_ambipolar_E() rebuilds it later
-  // in the step), so that centerPeTe keeps Te for the diagnostics.
-  div_node_to_center(nodePeVec[iLev], centerPe[iLev], Geom(iLev).InvCellSize());
-
-  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
-    const Array4<Real const>& arrDivQ = centerPe[iLev][mfi].array();
-    const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-    const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
-
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
-
-      Real lambda = (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
-      lambda += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
-      if (nDim > 2)
-        lambda +=
-            (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
-
-      const Real src = -arrDivQ(i, j, k);
-      const Real denom = 1.0 + dt * gammaM1 * lambda / ne;
-
-      arrPe(i, j, k) =
-          amrex::max(arrPe(i, j, k) + dt * gammaM1 * src / denom, peMin);
-    });
+      dtRem -= subDt;
+      apply_centerPe_BC(iLev);
+    }
   }
 
   //--------------------------------------------------------------------
