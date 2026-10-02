@@ -152,11 +152,13 @@ the fields. But they can not save particles. The 'amrex' format supports
  
  Paraview's 'contour' filter does not work well for both 'amrex' and 'hdf5' files. 
  Since Paraview contour each block individually, there are cracks across the block 
- interface. This is a long standing issue of Paraview
-(https://public.kitware.com/pipermail/paraview/2013-October/029492.html 
-https://discourse.paraview.org/t/amrex-output-contour-plot/4723), and it looks like
-Paraview developers will not fix it. So a compromised solution is to convert the files 
-to vtm (Paraview) with the scripts in FLEKS/tools. 
+ interface. This is a long standing issue of Paraview:
+\begin{verbatim}
+https://public.kitware.com/pipermail/paraview/2013-October/029492.html
+https://discourse.paraview.org/t/amrex-output-contour-plot/4723
+\end{verbatim}
+ So a compromised solution is to convert the files to vtm (Paraview) with the 
+ scripts in FLEKS/tools. 
 
 The 'unit' can be:
 \begin{verbatim}
@@ -547,7 +549,7 @@ electron pressure equation (#ELECTRONPRESSURE):
                     with sub-step dt/nCondIter to accelerate physical diffusion
                     towards thermal equilibrium.
   - subcycle:       explicit parabolic subcycling subject to the local diffusion
-                    CFL limit dt_diff = 0.45 ne / (sum kappa_dd / dx^2), capped
+                    CFL limit dt_diff = 0.45 ne / (sum kappa_dd / dx\^2), capped
                     at nCondSubcycleMax sub-steps per PIC step. Any remaining
                     time is completed with point-implicit to ensure stability.
 </command>
@@ -566,7 +568,7 @@ Enable electron-ion collisional thermal equilibration (heat exchange)
 in the evolved electron pressure equation (#ELECTRONPRESSURE), following
 the BATSRUS Braginskii model:
     dPe/dt = (Pi - Pe) / tau_eq
-where 1/tau_eq = 2 * C_ei * collisionFactor * rho / Te^1.5.
+where 1/tau_eq = 2 * C_ei * collisionFactor * rho / Te\^1.5.
 Solved using the BATSRUS point-implicit relaxation:
     DeltaPe = dt * H / (1 + 2 * dt * H) * (Pi - Pe)
 which is unconditionally stable and strictly preserves thermal balance.

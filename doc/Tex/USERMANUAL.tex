@@ -8,6 +8,12 @@
 \DefineVerbatimEnvironment{verbatim}{Verbatim}{breaklines=true,breakanywhere=true,fontsize=\small}
 \makeindex
 
+% Last-resort stretchability: lets TeX fit paragraphs that would otherwise
+% produce overfull lines (long unbreakable tokens such as script/URL names).
+% It is only used by the emergency pass, so well-behaving paragraphs are
+% typeset exactly as before.
+\emergencystretch=3em
+
 \title{FLEKS User Manual}
 \author{FLEKS Development Team}
 
