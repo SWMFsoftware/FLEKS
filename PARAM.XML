@@ -2656,9 +2656,57 @@ This command should only exist in the restart file FLEKSX_restart.H
 T                                                                                                         
 PC/select_particle.in
 
-This is the command to select particles with supid and id. The first line 
+This is the command to select particles with supid and id. The first line
 of the input file PC/select_particle.in is the number of particles to select.
 Then each line is the supid and id separated by space.
+
+</command>
+
+</commandgroup>
+
+<commandgroup name="Stand Alone">
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!! STAND ALONE PARAMETERS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+These commands belong to the stand alone FLEKS executable only. Inside the
+SWMF the equivalent CON level commands (see SWMF/PARAM.XML) are used, so
+they are hidden from CheckParam.pl unless it runs in stand alone mode (-S).
+
+<command name="DESCRIPTION" multiple="T" if="$_IsStandAlone">
+  <parameter name="StringDescription" type="string" length="400" />
+
+#DESCRIPTION
+Free-stream test with a uniform plasma.
+
+A one line, free-form comment describing the run. FLEKS ignores it: it is
+only a reminder for whoever reads the PARAM.in file.
+
+</command>
+
+<command name="STOP" if="$_IsStandAlone">
+  <parameter name="MaxIter" type="integer" min="-1" default="-1"/>
+  <parameter name="TimeMax" type="real" min="-1" default="-1"/>
+
+#STOP
+-1                      MaxIter
+10.0                    TimeMax
+
+End point of the current session: FLEKS stops as soon as the cycle counter
+reaches MaxIter or the simulation time reaches TimeMax (in seconds), whichever
+comes first. A negative value switches that limit off. Note that the limits are
+absolute end points: when several sessions are used, each session advances the
+same Domain towards the end point given by its own #STOP command.
+
+</command>
+
+<command name="RUN" if="$_IsStandAlone">
+#RUN
+
+Ends the current session. There are no parameters: FLEKS advances the same
+Domain up to the end point set by the #STOP command of the session, then reads
+the commands of the next session (if any) and continues from there. A session
+without a usable #STOP command is skipped.
 
 </command>
 

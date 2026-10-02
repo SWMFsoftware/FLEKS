@@ -114,6 +114,47 @@ runs:
       working-directory: SWMF
       shell: bash
       run: |
+        # Map each COMPONENT/VERSION passed through config-components onto the
+        # model name that SWMF's Config.pl accepts in -install=MODEL1,MODEL2.
+        # Config.pl only clones the repositories listed in -install=...; any
+        # component used in -v=... that was not cloned dies later in
+        # set_versions() with "directory COMPONENT/VERSION does not exist".
+        component_to_model() {
+          case "$1" in
+            GM/BATSRUS|EE/BATSRUS|SC/BATSRUS|IH/BATSRUS|OH/BATSRUS) echo BATSRUS ;;
+            IE/Ridley_serial)  echo Ridley_serial ;;
+            IM/CIMI)           echo CIMI ;;
+            IM/HEIDI)          echo HEIDI ;;
+            IM/RCM2)           echo RCM2 ;;
+            PC/FLEKS)          echo FLEKS ;;
+            PT/FLEKS)          echo FLEKS_PT ;;
+            PT/AMPS)           echo AMPS_PT ;;
+            PT/MITTENS)        echo MITTENS ;;
+            PW/PWOM)           echo PWOM ;;
+            RB/RBE)            echo RBE ;;
+            SP/MFLAMPA)        echo MFLAMPA ;;
+            UA/MGITM)          echo MGITM ;;
+            *)                 echo "" ;;
+          esac
+        }
+
+        INSTALL_MODELS=""
+        IFS=',' read -ra CONFIG_COMPONENTS <<< "${{ inputs.config-components }}"
+        for component in "${CONFIG_COMPONENTS[@]}"; do
+          component="$(echo "$component" | xargs)" # trim spaces
+          [ -n "$component" ] || continue
+          model="$(component_to_model "$component")"
+          if [ -z "$model" ]; then
+            echo "::error::Cannot map SWMF component '$component' to a Config.pl -install= model."
+            echo "::error::Known components: GM/BATSRUS EE/BATSRUS SC/BATSRUS IH/BATSRUS OH/BATSRUS IE/Ridley_serial IM/CIMI IM/HEIDI IM/RCM2 PC/FLEKS PT/FLEKS PT/AMPS PT/MITTENS PW/PWOM RB/RBE SP/MFLAMPA UA/MGITM"
+            exit 1
+          fi
+          case ",$INSTALL_MODELS," in
+            *",$model,"*) ;; # already added
+            *) INSTALL_MODELS="${INSTALL_MODELS:+$INSTALL_MODELS,}$model" ;;
+          esac
+        done
+        echo "Config.pl -install=$INSTALL_MODELS"
         if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
           echo "Cache hit. Updating components..."
           ./share/Scripts/gitall pull
@@ -150,10 +191,14 @@ runs:
 
         # Configure the SWMF component tree, which populates the share/ and
         # util/ (including AMReX) dependencies that the FLEKS build needs.
+        # The -install flag is idempotent: Config.pl only clones a repository
+        # if its directory is missing, so this also repairs a partially
+        # restored SWMF cache (e.g. IE/Ridley_serial missing while
+        # GM/BATSRUS is present).
         if [ -n "${{ inputs.config-extra }}" ]; then
-          ./Config.pl -install=BATSRUS $AMREX_DIM_FLAG -v=Empty,${{ inputs.config-components }} -o=${{ inputs.config-extra }}
+          ./Config.pl -install="$INSTALL_MODELS" $AMREX_DIM_FLAG -v=Empty,${{ inputs.config-components }} -o=${{ inputs.config-extra }}
         else
-          ./Config.pl -install=BATSRUS $AMREX_DIM_FLAG -v=Empty,${{ inputs.config-components }}
+          ./Config.pl -install="$INSTALL_MODELS" $AMREX_DIM_FLAG -v=Empty,${{ inputs.config-components }}
         fi
 
     - name: Verify & Fix AMReX Build Cache

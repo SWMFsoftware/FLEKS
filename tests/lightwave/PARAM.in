@@ -71,6 +71,8 @@ CAVEAT: line mirrors SWMF test25 (PARAM.in.test.FLEKS.AMR.LightWave.3D) for
 
 #MONITOR
 10                      dnReport
+100                     dnReportLB
+T                       doCompact
 
 #DIVE
 F                       doCorrectDivE

@@ -114,10 +114,10 @@ jobs:
           warning-summary: warning_check_2d.md
           summary-title: FLEKS 2D AMReX Compiler Warning Check
 
-  # Validate all standalone FLEKS PARAM.in* test files against PARAM.XML.
-  # Uses CheckParam.pl -S (standalone mode), the same approach as
-  # BATSRUS/TestParam.pl, but without the SWMF component map overhead.
-  # This is a lightweight job: no AMReX build or FLEKS compilation required.
+  # Validate the standalone FLEKS PARAM decks against PARAM.XML with
+  # share/Scripts/CheckParam.pl in standalone mode (-S), the same script that
+  # BATSRUS/TestParam.pl calls. This is a lightweight job: no AMReX build or
+  # FLEKS compilation is required.
   param-check:
     runs-on: ubuntu-latest
     permissions:
@@ -132,8 +132,8 @@ jobs:
         with:
           fleks-path: SWMF/PC/FLEKS
           fleks-cache-exclude: PC/FLEKS
-          # No AMReX build needed for param check; use a minimal suffix so we
-          # don't evict any real build cache.
+          # No AMReX build is needed for the PARAM check; reuse the 3d cache
+          # prefix so we do not evict any real build cache.
           amrex-cache-suffix: 3d
           config-components: PC/FLEKS,GM/BATSRUS
           verify-amrex: 'false'
@@ -141,24 +141,61 @@ jobs:
       - name: Validate standalone FLEKS PARAM files (CheckParam.pl)
         working-directory: SWMF/PC/FLEKS
         run: |
-          # Validate every standalone PARAM.in* file in tests/ against
-          # FLEKS's own PARAM.XML using CheckParam.pl in standalone mode (-S).
-          # This mirrors what BATSRUS/TestParam.pl does (CheckParam.pl -S -c=GM),
-          # but for FLEKS: the -c flag is omitted because FLEKS PARAM.XML does
-          # not segment by component (all commands are in the root context).
+          # CheckParam.pl needs share/Scripts (it pulls XmlRead.pl from there).
+          # In this job FLEKS sits inside the SWMF tree and has no local share/,
+          # so fall back to the SWMF level copy exactly like BATSRUS/TestParam.pl
+          # does ("../../$CheckParamScript").
           CHECK_SCRIPT="share/Scripts/CheckParam.pl"
-          XML_FILE="PARAM.XML"
+          [ -x "$CHECK_SCRIPT" ] || CHECK_SCRIPT="../../share/Scripts/CheckParam.pl"
+          if [ ! -x "$CHECK_SCRIPT" ]; then
+            echo "::error::Could not find CheckParam.pl in share/Scripts or ../../share/Scripts"
+            exit 1
+          fi
 
+          # $_Value{nDim} drives the per-dimension <for> loops of PARAM.XML
+          # (#FIELDBOXBOUNDARY, #PARTICLEBOXBOUNDARY, ...). Every deck checked
+          # here spells out all three components, so check them with nDim=3
+          # instead of the dimension of whatever AMReX happens to be cached.
+          CHECK_NDIM=3
+
+          # CheckParam.pl is positional: each documented parameter of a used
+          # command needs its own line, so these decks list even the parameters
+          # that fall back to their documented default. The other test decks
+          # still rely on the defaults and are therefore not checked yet; extend
+          # the list below when a deck is brought into CheckParam.pl form (see
+          # tests/README.md).
+          PARAM_FILES=(
+            tests/bc_absorb/PARAM.in.fields
+            tests/bc_absorb/PARAM.in.particles
+            tests/bc_inflow/PARAM.in
+            tests/bc_reflecting/PARAM.in.fields
+            tests/freestream/PARAM.in.hybrid
+            tests/freestream/PARAM.in.hybrid_2d
+            tests/lightwave/PARAM.in
+            tests/shock/PARAM.in.hybrid
+          )
+
+          # Note on the exit status: CheckParam.pl's param_error() flags its
+          # error status even while the message itself is suppressed, which
+          # happens during the unordered matching of every multi-part "strings"
+          # parameter such as #SAVEPLOT's StringPlot. Every deck below therefore
+          # exits non-zero without reporting anything, so this step judges
+          # CheckParam.pl by its printed output - the same criterion that SWMF's
+          # Scripts/TestParam.pl uses - and only a reported error fails the job.
           FAILED=0
-          while IFS= read -r -d '' param_file; do
+          for param_file in "${PARAM_FILES[@]}"; do
             echo "Checking $param_file ..."
-            if ! "$CHECK_SCRIPT" -S -x="$XML_FILE" "$param_file" 2>&1; then
+            if ! check_output="$("$CHECK_SCRIPT" -S -p=double -s="nDim:$CHECK_NDIM" \
+                 -x=PARAM.XML "$param_file" 2>&1)"; then
+              :
+            fi
+
+            if [ -n "$check_output" ]; then
+              printf '%s\n' "$check_output"
               echo "::error::PARAM validity check failed for $param_file"
               FAILED=1
             fi
-          done < <(find tests -name "PARAM.in*" \
-                    -not -path "tests/performance/*" \
-                    -print0 | sort -z)
+          done
 
           if [ $FAILED -ne 0 ]; then
             exit 1

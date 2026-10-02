@@ -1,6 +1,7 @@
 
 #DESCRIPTION
 1D oblique shock test: flow along x into a reflecting left wall, open inflow
+
 right boundary.  The upstream magnetic field is inclined at 45 deg to the shock
 normal (the x axis). Hybrid mode.
 
@@ -115,7 +116,7 @@ T                       doCompact
 #SAVEPLOT
 1                       nPlot
 y=0 fluid ascii planet     plotString
--50                     dn
+-1                      dn
 5.0                     dt
 1                       dx
 
