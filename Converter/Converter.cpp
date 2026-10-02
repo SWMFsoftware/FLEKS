@@ -17,7 +17,50 @@ void timing_start_c(size_t*, char*) {}
 void timing_stop_c(size_t*, char*) {}
 }
 
+void print_help() {
+  std::cout << "Convert FLEKS and BATSRUS simulation data between formats.\n\n"
+            << "Usage:\n"
+            << "  ./bin/converter.exe -f <file...> -d <dest_format> [-s "
+               "<source_format>] [options]\n\n"
+            << "Required options:\n"
+            << "  -f <file...>       Specify input file(s) or directory(s) to "
+               "convert.\n"
+            << "                     Multiple files can be specified.\n"
+            << "  -d <format>        Destination file format: VTK, TEC\n\n"
+            << "Optional options:\n"
+            << "  -s <format>        Source file format: AMReX, IDL, TEC "
+               "(ASCII .dat)\n"
+            << "                     Inferred automatically from extension if "
+               "omitted:\n"
+            << "                       *_amrex -> AMReX\n"
+            << "                       *.out   -> IDL\n"
+            << "                       *.dat   -> TEC\n"
+            << "  -D                 Delete the source file(s) after "
+               "successful conversion.\n"
+            << "  -smooth <n>        Smooth the data n times (nonnegative "
+               "integer; AMReX only).\n"
+            << "  -h, --help         Print this help message.\n\n"
+            << "Notes:\n"
+            << "  - Format names are case-sensitive.\n"
+            << "  - Output paths append an extension to the input path: "
+               "<file>.vtk or <file>.dat.\n"
+            << "  - Output will not overwrite or alias the source file.\n\n"
+            << "Examples:\n"
+            << "  ./bin/converter.exe -f 3d.dat -d VTK\n"
+            << "  ./bin/converter.exe -f 3d.dat -s TEC -d VTK\n"
+            << "  ./bin/converter.exe -f first.dat second.dat -d VTK\n"
+            << "  ./bin/converter.exe -f 3d.dat -d TEC\n"
+            << "  ./bin/converter.exe -f f1_amrex f2_amrex -d VTK\n"
+            << "  ./bin/converter.exe -f 3d*_amrex -d TEC -smooth 3\n"
+            << "  ./bin/converter.exe -f 3d.out -d VTK\n";
+}
+
 int main(int argc, char* argv[]) {
+  if (argc <= 1) {
+    print_help();
+    return 0;
+  }
+
   const std::vector<std::string> cdl(argv, argv + argc);
   std::vector<std::string> fileNames;
   FileType sType = FileType::UNSET;
@@ -40,33 +83,8 @@ int main(int argc, char* argv[]) {
         std::cout << "Error: -f option requires an argument.\n";
         return EXIT_FAILURE;
       }
-    } else if (cdl[i] == "-h") {
-      ++i;
-
-      printf("Convert FLEKS/BATSRUS data to other formats.\n\n");
-      printf(" Usage:\n ");
-      printf(
-          " ./Converter.exe -f filename -d dest_format -s source_format\n\n");
-
-      printf(" Options:\n");
-      printf("  -h        : Print help message.\n");
-      printf("  -f        : Specify the file name to convert. Multiple files "
-             "can be converted at a time.\n");
-      printf("  -d        : Specify the destination file format.\n");
-      printf("               Options : VTK, TEC\n");
-      printf("  -s [optional]: Specify the source file format.\n");
-      printf("               Options: AMReX, IDL, TEC (ASCII .dat)\n");
-      printf("  -D        : Delete the source files\n");
-      printf("  -smooth n : Smooth the data n times\n");
-
-      printf("\n");
-
-      printf(" Examples:\n");
-      printf("  ./Converter.exe -f f1_amrex f2_amrex -d VTK\n");
-      printf("  ./Converter.exe -f 3d*_amrex -d TEC\n");
-      printf("  ./Converter.exe -f 3d*_amrex -d TEC -smooth 3\n");
-      printf("  ./Converter.exe -f 3d.dat -s TEC -d VTK\n");
-
+    } else if (cdl[i] == "-h" || cdl[i] == "--help") {
+      print_help();
       return 0;
     } else if (cdl[i] == "-s") {
       ++i;
