@@ -207,6 +207,9 @@ void Pic::compute_ambipolar_E() {
       fill_fine_lev_bny_from_coarse(
           nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      fill_fine_lev_edge_from_coarse(
+          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
 }
@@ -220,7 +223,7 @@ void Pic::compute_ambipolar_E(int iLev) {
 
   // Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
   for (MFIter mfi(nodeRhoTemp[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
+    const Box& box = mfi.growntilebox();
     const Array4<Real>& arrRho = nodeRhoTemp[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
@@ -253,6 +256,12 @@ void Pic::compute_ambipolar_E(int iLev) {
     });
   }
   centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  if (iLev > 0) {
+    fill_fine_lev_bny_from_coarse(
+        centerPe[iLev - 1], centerPe[iLev], 0, 1, ref_ratio[iLev - 1],
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+  }
 
   // Zero-gradient (Neumann / foextrap) BC across non-periodic domain boundaries
   if (!Geom(iLev).isAllPeriodic() && centerPe[iLev].nGrow() > 0) {
@@ -801,10 +810,14 @@ void Pic::update_B_hybrid() {
                    nodeE[iLev], iLev, 1.0);
   }
 
-  // Fill coarse-fine interface ghost cells for nodeE.
+  // Fill coarse-fine interface ghost cells and synchronize edge nodes for
+  // nodeE.
   if (finest_level > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(
+          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      fill_fine_lev_edge_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }

@@ -355,7 +355,7 @@ EXO_SOURCE_TESTS = {
 }
 
 # Tests that require AMR (nLevMax >= 2).
-AMR_TESTS = {"dynamic_amr", "lightwave", "reconnection_amr"}
+AMR_TESTS = {"amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr"}
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
 AMREX3D_TESTS = {"lightwave"}

@@ -1,0 +1,136 @@
+#DESCRIPTION
+Standalone Full PIC AMR Test: Uniform Thermal Equilibrium across a Stationary Central Refined Slab
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-16.0                   xMin
+ 16.0                   xMax
+-8.0                    yMin
+ 8.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#NCELL
+32                      nCellX
+16                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic
+periodic
+periodic
+periodic
+periodic
+periodic
+
+#PARTICLEBOXBOUNDARY
+periodic
+periodic
+periodic
+periodic
+periodic
+periodic
+
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nSpecies
+1.0                     mass
+1.0                     charge
+0.04                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+1.0                     rho [amu/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+116045.0                T [K]
+0.04                    rho [amu/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+116045.0                T [K]
+0.0                     bx [T]
+0.0                     by [T]
+1.0e-9                  bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#PARTICLES
+16                      nParticle per cell in X
+16                      nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+5                       dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii planet  plotString
+-1                      dnSavePlot
+0.2                     dtSavePlot
+-1                      dxSavePlot
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     ratioDivC2C
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#REGION
+center_slab             name
+box                     shape
+-8.0                    min
+ 8.0                    max
+-4.0                    min
+ 4.0                    max
+-1.0                    min
+ 1.0                    max
+
+#REFINEREGION
+0                       iLev
++center_slab            regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#CONSTANTPPV
+F                       isPPVconstant
+
+#STOP
+20                      MaxIter
+-1.0                    TimeMax
+
+#RUN
