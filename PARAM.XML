@@ -825,12 +825,20 @@ cleaning is time consuming, reducing nDivECorrection to 1 may also work.
 <command name="DIVB" alias="DIVB_FLEKS0,DIVB_FLEKS1,DIVB_FLEKS2" multiple="T">
   <parameter name="useHyperbolicCleaning" type="logical" default="F"/>
   <parameter name="hypDecay" type="real" default="0.1" if="$useHyperbolicCleaning"/>
+  <parameter name="alwaysComputeDivB" type="logical" default="F"/>
 
 #DIVB
 T                         useHyperbolicCleaning
 0.1                       hypDecay (read if useHyperbolicCleaning=T)
+T                         alwaysComputeDivB
 
 This command enables hyperbolic divergence cleaning for the magnetic field.
+
+The optional alwaysComputeDivB fills the cell-centred div(B) every step even
+when the cleaning is off, so that divB can be written out as a plot variable
+(see the plotVar list of the SAVEPLOT command). The hybrid-PIC solver has no
+div(B) cleaning at all, so there this is the only way to obtain the diagnostic.
+Nothing is computed when both are false, which is the default.
 
 </command>
 

@@ -247,6 +247,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (useHyperbolicCleaning) {
       param.read_var("hypDecay", hypDecay);
     }
+    // Optional, so that every existing deck keeps its current behaviour: fill
+    // the cell-centred div(B) even without the cleaning, so that it can be
+    // written out as the plot variable 'divB'.
+    param.read_optional("alwaysComputeDivB", alwaysComputeDivB);
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {

@@ -143,8 +143,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerPhi[iLev], cGrids[iLev], DistributionMap(iLev),
                           1, nGst);
 
+      // div(B) is a diagnostic: it must read as zero, not as uninitialised
+      // memory, in the decks that plot 'divB' without the cleaning.
       distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
+                          nGst, doMoveData, 0.0);
       distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
 

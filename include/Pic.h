@@ -173,6 +173,12 @@ private:
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
   amrex::Vector<amrex::MultiFab> nodeB;
+  // Cell-centred div(B) diagnostic (component 0). It is the quantity the
+  // hyperbolic/upwind cleaning acts on in the full-PIC solver, and it is also
+  // written out as the plot variable 'divB'. In the full-PIC solver it is
+  // allocated in distribute_arrays; in the hybrid-PIC solver, which has no
+  // div(B) cleaning at all, it is allocated on demand by ensure_divB() so that
+  // decks that do not ask for the diagnostic keep their memory footprint.
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
   // Hybrid hyper-resistivity scratch fields.
@@ -194,6 +200,19 @@ private:
   bool useHyperbolicCleaning = false;
   amrex::Vector<amrex::MultiFab> hypPhi;
   amrex::Real hypDecay = 0.1;
+  // Compute the cell-centred div(B) every step even when no div(B) cleaning is
+  // requested, so that 'divB' can be plotted. Without it the diagnostic is only
+  // filled as a by-product of the hyperbolic cleaning.
+  bool alwaysComputeDivB = false;
+  // True when the div(B) diagnostic has to be refreshed this step. In the
+  // full-PIC solver it is a by-product of the hyperbolic cleaning, so it comes
+  // for free whenever the cleaning is on. The hybrid-PIC solver never runs
+  // correct_B(), so there useHyperbolicCleaning has no effect at all and only
+  // the explicit switch applies: that keeps the memory footprint of every
+  // existing hybrid deck unchanged.
+  bool need_divB() const {
+    return alwaysComputeDivB || (useHyperbolicCleaning && !useHybridPIC);
+  }
 
   // Background velocity and electric field.
   amrex::Vector<amrex::MultiFab> uBg;
@@ -682,6 +701,14 @@ public:
   void correct_B(int iLev);
 
   void solve_hyp_phi(int iLev);
+
+  //-------------div(B) diagnostic begin----------------
+  // Allocate divB[iLev] if it does not exist yet (hybrid-PIC solver, where
+  // distribute_arrays() does not create it) or if the grids changed.
+  void ensure_divB(int iLev);
+  // Refresh the cell-centred div(B) from the node-centred B.
+  void compute_divB(int iLev);
+  //-------------div(B) diagnostic end------------------
 
   //-------------div(E) correction begin----------------
   void divE_correction();

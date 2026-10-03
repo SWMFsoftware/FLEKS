@@ -331,9 +331,11 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
        var.substr(0, 3) == "E0z" || var.substr(0, 3) == "u0x" ||
        var.substr(0, 3) == "u0y" || var.substr(0, 3) == "u0z" ||
        var.substr(0, 2) == "qc" || var.substr(0, 5) == "divEc" ||
-       var.substr(0, 4) == "divB" || var.substr(0, 3) == "phi")) {
+       var.substr(0, 3) == "phi")) {
     return value;
   }
+  // 'divB' is deliberately not in that list: it is the one div(B) diagnostic
+  // the hybrid-PIC solver can provide (allocated on demand by ensure_divB()).
   if (useHybridPIC &&
       (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
        var.substr(0, 5) == "dBzdt")) {
@@ -537,8 +539,12 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 4) == "divB") {
-      const Array4<Real const>& arr = divB[iLev][mfi].array();
-      value = arr(ijk);
+      // Only allocated on demand in the hybrid-PIC solver; report a zero rather
+      // than indexing an empty MultiFab when the diagnostic was not requested.
+      if (iLev < divB.size() && !divB[iLev].empty()) {
+        const Array4<Real const>& arr = divB[iLev][mfi].array();
+        value = arr(ijk);
+      }
     } else if (var.substr(0, 3) == "phi") {
       const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
       value = arr(ijk);

@@ -679,6 +679,33 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 }
 
 //==========================================================
+void Pic::ensure_divB(int iLev) {
+  // The full-PIC solver allocates divB in distribute_arrays() together with the
+  // other div(E)/div(B) correction arrays, because the hyperbolic cleaning
+  // needs it. The hybrid-PIC solver never calls correct_B(), so there it is
+  // created on demand, and only by a deck that asks for the diagnostic, so that
+  // every other hybrid deck keeps its current memory footprint.
+  if (static_cast<int>(divB.size()) != n_lev_max()) {
+    divB.resize(n_lev_max());
+  }
+  if (divB[iLev].empty() || divB[iLev].boxArray() != cGrids[iLev] ||
+      divB[iLev].DistributionMap() != DistributionMap(iLev)) {
+    // div_node_to_center() only fills component 0, so one component is enough.
+    distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                        nGst, false, 0.0);
+  }
+}
+
+//==========================================================
+void Pic::compute_divB(int iLev) {
+  std::string nameFunc = "Pic::compute_divB";
+  timing_func(nameFunc);
+
+  ensure_divB(iLev);
+  div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
+}
+
+//==========================================================
 void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
@@ -721,7 +748,10 @@ void Pic::update_B() {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
-    if (useHyperbolicCleaning) {
+    // The cleaning needs div(B) of the field it is about to correct; a deck
+    // that only wants to plot 'divB' gets the same quantity without the
+    // cleaning (see alwaysComputeDivB).
+    if (need_divB()) {
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
     }
 

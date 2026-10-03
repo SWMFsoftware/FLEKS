@@ -795,6 +795,16 @@ void Pic::update_B_hybrid() {
     }
   }
 
+  // div(B) diagnostic. The hybrid solver has no div(B) cleaning at all, so this
+  // is the only place where the plot variable 'divB' can be filled. It is taken
+  // after the last ghost-cell synchronisation of nodeB, i.e. on exactly the
+  // field the next step's Ohm's law will see.
+  if (need_divB()) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      compute_divB(iLev);
+    }
+  }
+
   // Evaluate E^{n+1} into nodeE for the next push.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
