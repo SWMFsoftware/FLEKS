@@ -9,11 +9,14 @@ inline constexpr double fourPI = 3.14159265359 * 4;
 inline constexpr double dPI = 3.14159265358979323846;
 
 inline constexpr double cProtonMassSI = 1.67262192e-27; // kg
+inline constexpr double cElectronMassSI = 9.1093837e-31; // kg
 inline constexpr double cUnitChargeSI = 1.60217663e-19; // C
 
 inline constexpr double cBoltzmannSI = 1.380649e-23;
+inline constexpr double cLightSpeedSI = 299792458.0; // m/s
 
 inline constexpr double mu0 = fourPI * 1e-7; // unit N/A^2
+inline constexpr double cEps0SI = 1.0 / (mu0 * cLightSpeedSI * cLightSpeedSI); // F/m
 
 inline constexpr double cAUSI = 1.495978707e11; // m
 

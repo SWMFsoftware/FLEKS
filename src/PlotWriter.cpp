@@ -611,6 +611,11 @@ double PlotWriter::No2OutTable(std::string_view var) const {
   } else if (var.substr(0, 3) == "rgS") {
     // gyro-radius
     value = No2OutL;
+  } else if (var.substr(0, 2) == "Te") {
+    // Electron temperature (#ELECTRONPRESSURE). FLEKS carries it as k_B*T/m_p
+    // in units of uNorm^2, i.e. a squared velocity, and there is no dedicated
+    // output temperature unit, so it is written in code units.
+    value = No2OutV * No2OutV;
   } else if (var.substr(0, 1) == "p") {
     // pressure
     value = No2OutP;

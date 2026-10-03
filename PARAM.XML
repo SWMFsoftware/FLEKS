@@ -152,11 +152,13 @@ the fields. But they can not save particles. The 'amrex' format supports
  
  Paraview's 'contour' filter does not work well for both 'amrex' and 'hdf5' files. 
  Since Paraview contour each block individually, there are cracks across the block 
- interface. This is a long standing issue of Paraview
-(https://public.kitware.com/pipermail/paraview/2013-October/029492.html 
-https://discourse.paraview.org/t/amrex-output-contour-plot/4723), and it looks like
-Paraview developers will not fix it. So a compromised solution is to convert the files 
-to vtm (Paraview) with the scripts in FLEKS/tools. 
+ interface. This is a long standing issue of Paraview:
+\begin{verbatim}
+https://public.kitware.com/pipermail/paraview/2013-October/029492.html
+https://discourse.paraview.org/t/amrex-output-contour-plot/4723
+\end{verbatim}
+ So a compromised solution is to convert the files to vtm (Paraview) with the 
+ scripts in FLEKS/tools. 
 
 The 'unit' can be:
 \begin{verbatim}
@@ -437,6 +439,140 @@ code units internally
 0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
 otherwise adiabatic Pe = P0 (rho/rho0)\^gamma. electronDensity0 is in code
 units (default 1.0 = reference charge density).
+</command>
+
+<command name="ELECTRONPRESSURE" alias="ELECTRONPRESSURE_FLEKS0,ELECTRONPRESSURE_FLEKS1,ELECTRONPRESSURE_FLEKS2" multiple="T">
+  <parameter name="useElectronPressureEq" type="logical" default="F"/>
+  <if expr="$useElectronPressureEq">
+    <parameter name="heatCondKappa0SI" type="real" default="9.2e-12"/>
+    <parameter name="coulombLog" type="real" default="20.0"/>
+    <parameter name="fieldAlignedConduction" type="logical" default="T"/>
+    <parameter name="fieldAlignedFraction" type="real" default="1.0"/>
+    <parameter name="fieldAlignedBMinSI" type="real" default="1.0e-15"/>
+    <parameter name="heatFluxLimiter" type="real" default="0.0"/>
+    <parameter name="peMin" type="real" default="0.0"/>
+    <parameter name="ambipolarInStages" type="logical" default="T"/>
+  </if>
+
+#ELECTRONPRESSURE
+F                 useElectronPressureEq (rest is read if true)
+9.2e-12           heatCondKappa0SI
+20.0              coulombLog
+T                 fieldAlignedConduction
+1.0               fieldAlignedFraction
+1.0e-15           fieldAlignedBMinSI
+0.0               heatFluxLimiter
+0.0               peMin
+T                 ambipolarInStages
+
+[Hybrid PIC: evolved electron pressure] Replace the algebraic polytropic
+electron pressure closure Pe = P0 (rho/rho0)\^gamma of ELECTRONTEMPERATURE by
+a time-evolved scalar electron pressure field. The field is advanced once per
+PIC step with an operator-split update of
+\begin{verbatim}
+    dPe/dt + div(u_e Pe) + (gamma_e - 1) Pe div(u_e)
+        = (gamma_e - 1) [ div(kappa_hat . grad(Te)) + H_ei ]
+\end{verbatim}
+where u_e = U_i - J/(e n_e) is the electron fluid velocity (the ion velocity
+minus the Hall drift), Te = Pe/n_e, n_e is the quasi-neutral electron density
+taken from the ion charge density, and gamma_e is ELECTRONTEMPERATURE
+electronGamma (it must be greater than 1 here; gamma_e = 1 would remove both
+the pdV term and the source term). ELECTRONTEMPERATURE still supplies the
+initial state Pe = P0 (rho/rho0)\^gamma and the reference density.
+
+Electron heat flux: q_e = -kappa_hat . grad(Te) with the Spitzer form
+kappa = kappa0 * Te\^2.5, kappa0 = heatCondKappa0SI [W/(m K\^(7/2))] scaled by
+coulombLog/20 (the default 9.2e-12 corresponds to coulombLog 20). With
+fieldAlignedConduction T the conduction is along the magnetic field only,
+kappa_hat = kappa b b; fieldAlignedFraction f in [0,1] blends it towards the
+isotropic form, kappa_hat = kappa [f b b + (1 - f) I]. The direction is only
+trusted where the field is stronger than fieldAlignedBMinSI [T], below which
+the dyad blends smoothly back to isotropic: an unmagnetized run still carries
+round-off level B whose normalised direction is arbitrary, and locking the
+heat flux to it would silently suppress the conduction. heatFluxLimiter > 0
+applies the free-streaming saturation q_sat = f_lim n_e Te sqrt(Te m_p/m_e)
+(BATSRUS uses 0.06); 0 disables it. The conduction step is point-implicit, so
+it is stable for any time step.
+
+H_ei, the collisional energy returned to the electron fluid by the ions, is a
+documented source-term hook only: FLEKS has no Coulomb collision operator yet,
+so it is identically zero. It will be filled in once a collisional model is
+added.
+
+ambipolarInStages T (default) adds the ambipolar field -grad(Pe)/(e n_e) to the
+Ohm's law at every Runge-Kutta stage of the magnetic update. This is required
+once Pe is not a polytropic function of the density, because then
+curl(-grad(Pe)/(e n_e)) is no longer zero and the electron pressure gradient
+acts back on B (the Biermann-battery-like term). The ambipolar field itself is
+computed once per PIC step, so it is held frozen during the magnetic
+sub-steps (a first-order approximation, documented in the source).
+
+Nothing is allocated and no extra work is done when useElectronPressureEq is F,
+so the default configuration is unaffected. Only used when HYBRIDPIC is T.
+</command>
+
+<command name="ELECTRONADVECTION" alias="ELECTRONADVECTION_FLEKS0,ELECTRONADVECTION_FLEKS1,ELECTRONADVECTION_FLEKS2" multiple="T">
+  <parameter name="peAdvectionLimiter" type="string" default="vanleer"/>
+  <parameter name="peCompressionScheme" type="string" default="exponential"/>
+
+#ELECTRONADVECTION
+vanleer          peAdvectionLimiter (upwind1, minmod, vanleer, mc)
+exponential      peCompressionScheme (explicit, exponential)
+
+Configure the numerical advection and compression schemes for the evolved
+electron pressure equation (#ELECTRONPRESSURE).
+peAdvectionLimiter selects the TVD slope limiter for face reconstruction:
+  - upwind1: 1st-order donor-cell upwind
+  - minmod:  2nd-order minmod limiter
+  - vanleer: 2nd-order Van Leer harmonic limiter (default)
+  - mc:      monotonized central limiter
+peCompressionScheme selects how the -(gamma_e - 1) Pe div(u_e) compression
+term is integrated:
+  - explicit:    standard forward Euler step
+  - exponential: exact exponential integration over dt, guaranteeing positivity.
+</command>
+
+<command name="ELECTRONCONDUCTION" alias="ELECTRONCONDUCTION_FLEKS0,ELECTRONCONDUCTION_FLEKS1,ELECTRONCONDUCTION_FLEKS2" multiple="T">
+  <parameter name="heatCondMethod" type="string" default="point-implicit"/>
+  <parameter name="nCondIter" type="integer" min="1" default="1"/>
+  <parameter name="nCondSubcycleMax" type="integer" min="1" default="100"/>
+
+#ELECTRONCONDUCTION
+point-implicit    heatCondMethod (point-implicit, subcycle)
+1                 nCondIter
+100               nCondSubcycleMax
+
+Configure the solving strategy for electron heat conduction in the evolved
+electron pressure equation (#ELECTRONPRESSURE):
+  - point-implicit: diagonal Jacobi implicit damping (unconditionally stable).
+                    When nCondIter > 1, executes multi-pass relaxation sweeps
+                    with sub-step dt/nCondIter to accelerate physical diffusion
+                    towards thermal equilibrium.
+  - subcycle:       explicit parabolic subcycling subject to the local diffusion
+                    CFL limit dt_diff = 0.45 ne / (sum kappa_dd / dx\^2), capped
+                    at nCondSubcycleMax sub-steps per PIC step. Any remaining
+                    time is completed with point-implicit to ensure stability.
+</command>
+
+<command name="ELECTRONCOLLISION" alias="ELECTRONCOLLISION_FLEKS0,ELECTRONCOLLISION_FLEKS1,ELECTRONCOLLISION_FLEKS2" multiple="T">
+  <parameter name="useHeatExchange" type="logical" default="F"/>
+  <if expr="$useHeatExchange">
+    <parameter name="collisionFactor" type="real" min="0" default="1.0"/>
+  </if>
+
+#ELECTRONCOLLISION
+F                 useHeatExchange
+1.0               collisionFactor
+
+Enable electron-ion collisional thermal equilibration (heat exchange)
+in the evolved electron pressure equation (#ELECTRONPRESSURE), following
+the BATSRUS Braginskii model:
+    dPe/dt = (Pi - Pe) / tau_eq
+where 1/tau_eq = 2 * C_ei * collisionFactor * rho / Te\^1.5.
+Solved using the BATSRUS point-implicit relaxation:
+    DeltaPe = dt * H / (1 + 2 * dt * H) * (Pi - Pe)
+which is unconditionally stable and strictly preserves thermal balance.
+Pi is computed from the scalar ion pressure Tr(P_i)/3 in nodePlasma.
 </command>
 
 <command name="BSUBCYCLE" alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2" multiple="T">

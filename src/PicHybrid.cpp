@@ -218,41 +218,50 @@ void Pic::compute_ambipolar_E(int iLev) {
     return;
   }
 
-  // Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
-  for (MFIter mfi(nodeRhoTemp[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrRho = nodeRhoTemp[iLev][mfi].array();
-    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      arrRho(i, j, k) = moments(i, j, k, iRho_);
-    });
+  if (useElectronPressureEq) {
+    // Pe is an evolved field: take it as it is instead of rebuilding it from
+    // the density with the polytropic closure.
+    MultiFab::Copy(centerPe[iLev], centerPeState[iLev], 0, 0, 1,
+                   centerPe[iLev].nGrow());
+    centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+  } else {
+    // Copy nodal ion density to nodeRhoTemp and fill periodic boundaries
+    for (MFIter mfi(nodeRhoTemp[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrRho = nodeRhoTemp[iLev][mfi].array();
+      const Array4<Real const>& moments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        arrRho(i, j, k) = moments(i, j, k, iRho_);
+      });
+    }
+    nodeRhoTemp[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    // Average nodal density to cell centres
+    average_node_to_center(nodeRhoTemp[iLev], centerPe[iLev]);
+    centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    // Evaluate electron pressure Pe at cell centres via EOS
+    const Real p0 = electronDensity0 * electronTemperature;
+    const Real invRho0 =
+        (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
+    const Real gamma = electronGamma;
+    const Real Te = electronTemperature;
+
+    for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        Real r = arrPe(i, j, k);
+        if (gamma == 1.0) {
+          arrPe(i, j, k) = Te * r;
+        } else {
+          arrPe(i, j, k) = (r > 0) ? p0 * std::pow(r * invRho0, gamma) : 0.0;
+        }
+      });
+    }
+    centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
   }
-  nodeRhoTemp[iLev].FillBoundary(Geom(iLev).periodicity());
-
-  // Average nodal density to cell centres
-  average_node_to_center(nodeRhoTemp[iLev], centerPe[iLev]);
-  centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
-
-  // Evaluate electron pressure Pe at cell centres via EOS
-  const Real p0 = electronDensity0 * electronTemperature;
-  const Real invRho0 =
-      (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
-  const Real gamma = electronGamma;
-  const Real Te = electronTemperature;
-
-  for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      Real r = arrPe(i, j, k);
-      if (gamma == 1.0) {
-        arrPe(i, j, k) = Te * r;
-      } else {
-        arrPe(i, j, k) = (r > 0) ? p0 * std::pow(r * invRho0, gamma) : 0.0;
-      }
-    });
-  }
-  centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
   // Zero-gradient (Neumann / foextrap) BC across non-periodic domain boundaries
   if (!Geom(iLev).isAllPeriodic() && centerPe[iLev].nGrow() > 0) {
@@ -478,6 +487,606 @@ void Pic::seed_first_hybrid_step() {
 }
 
 //==========================================================
+// Zero-gradient (foextrap) ghost cells for the electron-pressure field and its
+// scratch arrays. Same recipe as the one compute_ambipolar_E() uses for
+// centerPe: Neumann on every non-periodic face, then FillBoundary.
+void Pic::apply_pe_zero_gradient_bc(int iLev, MultiFab& mf) {
+  if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0) {
+    mf.FillBoundary(Geom(iLev).periodicity());
+    return;
+  }
+
+  Vector<BCRec> bcr(mf.nComp());
+  for (int c = 0; c < mf.nComp(); ++c) {
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+      if (Geom(iLev).isPeriodic(d)) {
+        bcr[c].setLo(d, BCType::int_dir);
+        bcr[c].setHi(d, BCType::int_dir);
+      } else {
+        bcr[c].setLo(d, BCType::foextrap);
+        bcr[c].setHi(d, BCType::foextrap);
+      }
+    }
+  }
+  GpuBndryFuncFab<FabFillNoOp> bfunc(FabFillNoOp{});
+  PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
+  physbcf(mf, 0, mf.nComp(), mf.nGrowVect(), 0.0, 0);
+  mf.FillBoundary(Geom(iLev).periodicity());
+}
+
+//==========================================================
+void Pic::apply_centerPe_BC(int iLev) {
+  apply_pe_zero_gradient_bc(iLev, centerPeState[iLev]);
+
+  if (isFake2D) {
+    for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+      const auto& vbox = mfi.validbox();
+      const auto& fbox = mfi.fabbox();
+      auto arr = centerPeState[iLev][mfi].array();
+      const int klo = vbox.smallEnd(2);
+      const int khi = vbox.bigEnd(2);
+      ParallelFor(fbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const int k_src = std::clamp(k, klo, khi);
+        if (k != k_src)
+          arr(i, j, k) = arr(i, j, k_src);
+      });
+    }
+  }
+}
+
+//==========================================================
+void Pic::init_electron_pressure() {
+  for (int iLev = 0; iLev < n_lev(); ++iLev)
+    init_electron_pressure(iLev);
+  peStateInitialized_ = true;
+}
+
+//==========================================================
+void Pic::init_electron_pressure(int iLev) {
+  // Start from the algebraic polytropic closure evaluated on the current ion
+  // density, i.e. exactly the state the evolved equation replaces. Electrons
+  // then depart from it through advection, compression and conduction.
+  for (MFIter mfi(nodePeRho[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrRho = nodePeRho[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      arrRho(i, j, k) = moments(i, j, k, iRho_);
+    });
+  }
+  nodePeRho[iLev].FillBoundary(Geom(iLev).periodicity());
+  average_node_to_center(nodePeRho[iLev], centerPeRho[iLev]);
+
+  const Real p0 = electronDensity0 * electronTemperature;
+  const Real invRho0 = (electronDensity0 > 0.0) ? 1.0 / electronDensity0 : 0.0;
+  const Real gamma = electronGamma;
+  const Real Te = electronTemperature;
+
+  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
+    const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      const Real r = arrRho(i, j, k);
+      arrPe(i, j, k) = (gamma == 1.0)
+                           ? Te * r
+                           : ((r > 0) ? p0 * std::pow(r * invRho0, gamma) : 0.0);
+    });
+  }
+  apply_centerPe_BC(iLev);
+}
+
+//==========================================================
+void Pic::fill_new_electron_pressure() {
+  if (!useElectronPressureEq || finest_level <= 0)
+    return;
+
+  // Boxes created by a regrid have no history; interpolate them from the next
+  // coarser level (boxes that already existed keep their copied values).
+  auto& cellInterp = *get_cell_interp();
+  for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    fill_fine_lev_new_from_coarse(centerPeState[iLev - 1], centerPeState[iLev],
+                                  0, 1, ref_ratio[iLev - 1], Geom(iLev - 1),
+                                  Geom(iLev), cell_status(iLev), cellInterp);
+  }
+}
+
+//==========================================================
+// Electron-ion collisional thermal equilibration (heat exchange) hook:
+// dPe/dt = (Pi - Pe) / tau_eq following the BATSRUS point-implicit formulation.
+bool Pic::add_electron_ion_heating(int iLev, Real dt) {
+  if (!useHeatExchange || collisionCoefEi <= 0.0)
+    return false;
+
+  // 1) Compute scalar ion pressure Pi = Tr(P_i)/3 at nodes in nodePeRho
+  for (MFIter mfi(nodePeRho[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPiN = nodePeRho[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      arrPiN(i, j, k) = (moments(i, j, k, iPxx_) +
+                         moments(i, j, k, iPyy_) +
+                         moments(i, j, k, iPzz_)) / 3.0;
+    });
+  }
+  nodePeRho[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  // 2) Average scalar ion pressure to cell centres in centerPe (scratch here)
+  average_node_to_center(nodePeRho[iLev], centerPe[iLev]);
+  apply_pe_zero_gradient_bc(iLev, centerPe[iLev]);
+
+  // 3) Point-implicit energy exchange following BATSRUS:
+  //    H = collisionCoefEi * ne / Te^1.5
+  //    PePImpl = H / (1 + 2 * dt * H)
+  //    DeltaPe = dt * PePImpl * (Pi - Pe)
+  const Real cEi = collisionCoefEi;
+  const Real peMinLocal = peMin;
+  const Real rhoFloor = rhoMinOhm;
+
+  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
+    const Array4<Real const>& arrPi = centerPe[iLev][mfi].array();
+    const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
+      const Real pe = amrex::max(arrPe(i, j, k), peMinLocal);
+      const Real pi = amrex::max(arrPi(i, j, k), 0.0);
+      const Real te = pe / ne;
+
+      if (te > 0.0) {
+        const Real H = cEi * ne / std::pow(te, 1.5);
+        const Real pePImpl = H / (1.0 + 2.0 * dt * H);
+        const Real deltaPe = dt * pePImpl * (pi - pe);
+        arrPe(i, j, k) = amrex::max(pe + deltaPe, peMinLocal);
+      }
+    });
+  }
+
+  return true;
+}
+
+//==========================================================
+void Pic::update_Pe_hybrid() {
+  if (!useElectronPressureEq)
+    return;
+
+  std::string nameFunc = "Pic::update_Pe_hybrid";
+  timing_func(nameFunc);
+
+  const Real dt = tc->get_dt();
+
+  if (!peStateInitialized_)
+    init_electron_pressure();
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev)
+    update_Pe_hybrid(iLev, dt);
+
+  if (projectDownEmFields && finest_level > 0) {
+    for (int iLev = finest_level; iLev > 0; iLev--)
+      average_down(centerPeState[iLev], centerPeState[iLev - 1], 0, 1,
+                   ref_ratio[iLev - 1]);
+  }
+}
+
+//==========================================================
+void Pic::update_Pe_hybrid(int iLev, Real dt) {
+  BL_PROFILE("Pic::update_Pe_hybrid");
+
+  const Real* invDxGeom = Geom(iLev).InvCellSize();
+  const IntVect domLen = Geom(iLev).Domain().length();
+  // A dimension with a single cell carries no flux: zero its inverse spacing.
+  const Real invDxX = (domLen[ix_] > 1) ? invDxGeom[ix_] : 0.0;
+  const Real invDxY = (domLen[iy_] > 1) ? invDxGeom[iy_] : 0.0;
+  const Real invDxZ =
+      (nDim > 2 && domLen[iz_] > 1) ? invDxGeom[iz_] : 0.0;
+
+  const Real gammaM1 = electronGamma - 1.0;
+  const Real invFourPILocal = 1.0 / fourPI;
+  // Fraction of the conductivity dyad that is field aligned: 1 = kappa*b*b,
+  // 0 = isotropic.
+  const Real fAlign = fieldAlignedConduction ? fieldAlignedFraction : 0.0;
+  // m_p/m_e, needed by the free-streaming heat-flux limiter. |qomEl| is
+  // |q/m| in units of e/m_p, so for the electron it is exactly m_p/m_e.
+  const Real massRatioPe = std::abs(qomEl);
+
+  //--------------------------------------------------------------------
+  // 1) Electron velocity u_e = U_i - J/(e*n_e) on the NODES. A node at
+  // (i+1,j,k) is the x-face between cells i and i+1, so the nodal values are
+  // exactly the face-normal velocities the upwind fluxes need, and their
+  // difference across a cell is div(u_e).
+  //--------------------------------------------------------------------
+  curl_center_to_node(centerB[iLev], nodeJ[iLev], Geom(iLev).InvCellSize());
+  nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  for (MFIter mfi(nodePeVec[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrUe = nodePeVec[iLev][mfi].array();
+    const Array4<Real const>& arrMom = nodePlasma[nSpecies][iLev][mfi].array();
+    const Array4<Real const>& arrJ = nodeJ[iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      const Real rho = arrMom(i, j, k, iRho_);
+      if (rho > 0) {
+        const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
+        for (int d = 0; d < nDim; ++d)
+          arrUe(i, j, k, d) =
+              (arrMom(i, j, k, iMx_ + d) - arrJ(i, j, k, d) * invFourPILocal) *
+              invRho;
+      } else {
+        for (int d = 0; d < nDim; ++d)
+          arrUe(i, j, k, d) = 0.0;
+      }
+    });
+  }
+  apply_pe_zero_gradient_bc(iLev, nodePeVec[iLev]);
+
+  //--------------------------------------------------------------------
+  // 2) Advection + pdV:
+  //      dPe/dt = -div(u_e Pe) - (gamma_e-1) Pe div(u_e)
+  //    TVD/MUSCL reconstructed face states (upwind1, minmod, vanleer, mc)
+  //    and exponential or explicit compression, written into centerPe.
+  //--------------------------------------------------------------------
+  apply_centerPe_BC(iLev);
+
+  const int limType = peLimiterType;
+  const bool compExp = peCompressionExp;
+
+  auto eval_slope = [=] AMREX_GPU_DEVICE(Real dL, Real dR) noexcept -> Real {
+    if (limType == 0 || dL * dR <= 0.0)
+      return 0.0;
+    if (limType == 1) { // minmod
+      return (dL > 0.0) ? amrex::min(dL, dR) : amrex::max(dL, dR);
+    } else if (limType == 2) { // van leer
+      return 2.0 * dL * dR / (dL + dR);
+    } else if (limType == 3) { // mc
+      const Real c = 0.5 * (dL + dR);
+      const Real s = (dL > 0.0) ? 1.0 : -1.0;
+      return s * amrex::min(2.0 * std::abs(dL),
+                            amrex::min(2.0 * std::abs(dR), std::abs(c)));
+    }
+    return 0.0;
+  };
+
+  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
+    const Array4<Real>& arrPeNew = centerPe[iLev][mfi].array();
+    const Array4<Real const>& arrUe = nodePeVec[iLev][mfi].array();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      Real divFlux = 0.0;
+      Real divUe = 0.0;
+
+      if (invDxX > 0.0) {
+        const Real uLo = arrUe(i, j, k, ix_);
+        const Real uHi = arrUe(i + 1, j, k, ix_);
+
+        Real peLo;
+        if (limType == 0) {
+          peLo = (uLo > 0.0) ? arrPe(i - 1, j, k) : arrPe(i, j, k);
+        } else {
+          const Real sLoL = eval_slope(arrPe(i - 1, j, k) - arrPe(i - 2, j, k),
+                                       arrPe(i, j, k) - arrPe(i - 1, j, k));
+          const Real sLoR = eval_slope(arrPe(i, j, k) - arrPe(i - 1, j, k),
+                                       arrPe(i + 1, j, k) - arrPe(i, j, k));
+          const Real pL = amrex::max(arrPe(i - 1, j, k) + 0.5 * sLoL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k) - 0.5 * sLoR, peMin);
+          peLo = (uLo > 0.0) ? pL : ((uLo < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        Real peHi;
+        if (limType == 0) {
+          peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i + 1, j, k);
+        } else {
+          const Real sHiL = eval_slope(arrPe(i, j, k) - arrPe(i - 1, j, k),
+                                       arrPe(i + 1, j, k) - arrPe(i, j, k));
+          const Real sHiR = eval_slope(arrPe(i + 1, j, k) - arrPe(i, j, k),
+                                       arrPe(i + 2, j, k) - arrPe(i + 1, j, k));
+          const Real pL = amrex::max(arrPe(i, j, k) + 0.5 * sHiL, peMin);
+          const Real pR = amrex::max(arrPe(i + 1, j, k) - 0.5 * sHiR, peMin);
+          peHi = (uHi > 0.0) ? pL : ((uHi < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        divFlux += (uHi * peHi - uLo * peLo) * invDxX;
+        divUe += (uHi - uLo) * invDxX;
+      }
+
+      if (invDxY > 0.0) {
+        const Real uLo = arrUe(i, j, k, iy_);
+        const Real uHi = arrUe(i, j + 1, k, iy_);
+
+        Real peLo;
+        if (limType == 0) {
+          peLo = (uLo > 0.0) ? arrPe(i, j - 1, k) : arrPe(i, j, k);
+        } else {
+          const Real sLoL = eval_slope(arrPe(i, j - 1, k) - arrPe(i, j - 2, k),
+                                       arrPe(i, j, k) - arrPe(i, j - 1, k));
+          const Real sLoR = eval_slope(arrPe(i, j, k) - arrPe(i, j - 1, k),
+                                       arrPe(i, j + 1, k) - arrPe(i, j, k));
+          const Real pL = amrex::max(arrPe(i, j - 1, k) + 0.5 * sLoL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k) - 0.5 * sLoR, peMin);
+          peLo = (uLo > 0.0) ? pL : ((uLo < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        Real peHi;
+        if (limType == 0) {
+          peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i, j + 1, k);
+        } else {
+          const Real sHiL = eval_slope(arrPe(i, j, k) - arrPe(i, j - 1, k),
+                                       arrPe(i, j + 1, k) - arrPe(i, j, k));
+          const Real sHiR = eval_slope(arrPe(i, j + 1, k) - arrPe(i, j, k),
+                                       arrPe(i, j + 2, k) - arrPe(i, j + 1, k));
+          const Real pL = amrex::max(arrPe(i, j, k) + 0.5 * sHiL, peMin);
+          const Real pR = amrex::max(arrPe(i, j + 1, k) - 0.5 * sHiR, peMin);
+          peHi = (uHi > 0.0) ? pL : ((uHi < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        divFlux += (uHi * peHi - uLo * peLo) * invDxY;
+        divUe += (uHi - uLo) * invDxY;
+      }
+
+      if (nDim > 2 && invDxZ > 0.0) {
+        const Real uLo = arrUe(i, j, k, iz_);
+        const Real uHi = arrUe(i, j, k + 1, iz_);
+
+        Real peLo;
+        if (limType == 0) {
+          peLo = (uLo > 0.0) ? arrPe(i, j, k - 1) : arrPe(i, j, k);
+        } else {
+          const Real sLoL = eval_slope(arrPe(i, j, k - 1) - arrPe(i, j, k - 2),
+                                       arrPe(i, j, k) - arrPe(i, j, k - 1));
+          const Real sLoR = eval_slope(arrPe(i, j, k) - arrPe(i, j, k - 1),
+                                       arrPe(i, j, k + 1) - arrPe(i, j, k));
+          const Real pL = amrex::max(arrPe(i, j, k - 1) + 0.5 * sLoL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k) - 0.5 * sLoR, peMin);
+          peLo = (uLo > 0.0) ? pL : ((uLo < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        Real peHi;
+        if (limType == 0) {
+          peHi = (uHi > 0.0) ? arrPe(i, j, k) : arrPe(i, j, k + 1);
+        } else {
+          const Real sHiL = eval_slope(arrPe(i, j, k) - arrPe(i, j, k - 1),
+                                       arrPe(i, j, k + 1) - arrPe(i, j, k));
+          const Real sHiR = eval_slope(arrPe(i, j, k + 1) - arrPe(i, j, k),
+                                       arrPe(i, j, k + 2) - arrPe(i, j, k + 1));
+          const Real pL = amrex::max(arrPe(i, j, k) + 0.5 * sHiL, peMin);
+          const Real pR = amrex::max(arrPe(i, j, k + 1) - 0.5 * sHiR, peMin);
+          peHi = (uHi > 0.0) ? pL : ((uHi < 0.0) ? pR : 0.5 * (pL + pR));
+        }
+
+        divFlux += (uHi * peHi - uLo * peLo) * invDxZ;
+        divUe += (uHi - uLo) * invDxZ;
+      }
+
+      const Real pe = arrPe(i, j, k);
+      if (compExp) {
+        const Real pAdv = amrex::max(pe - dt * divFlux, peMin);
+        arrPeNew(i, j, k) =
+            amrex::max(pAdv * std::exp(-gammaM1 * divUe * dt), peMin);
+      } else {
+        arrPeNew(i, j, k) =
+            amrex::max(pe - dt * (divFlux + gammaM1 * pe * divUe), peMin);
+      }
+    });
+  }
+  MultiFab::Copy(centerPeState[iLev], centerPe[iLev], 0, 0, 1, 0);
+
+  //--------------------------------------------------------------------
+  // 3) n_e at the cell centres and Te = Pe/n_e.
+  //--------------------------------------------------------------------
+  for (MFIter mfi(nodePeRho[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrRho = nodePeRho[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      arrRho(i, j, k) = moments(i, j, k, iRho_);
+    });
+  }
+  nodePeRho[iLev].FillBoundary(Geom(iLev).periodicity());
+  average_node_to_center(nodePeRho[iLev], centerPeRho[iLev]);
+
+  apply_centerPe_BC(iLev);
+  for (MFIter mfi(centerPeTe[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
+    const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
+    const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+      arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMin) / ne;
+    });
+  }
+  apply_pe_zero_gradient_bc(iLev, centerPeTe[iLev]);
+
+  //--------------------------------------------------------------------
+  // 4) Electron heat conduction:
+  //      dPe/dt = (gamma_e-1) [ div(kappa_hat . grad Te) ]
+  //             = (gamma_e-1) [ -div(q) ]
+  //    Controlled by #ELECTRONCONDUCTION (point-implicit or subcycle).
+  //--------------------------------------------------------------------
+  if (heatCondKappa0 > 0.0) {
+    const bool isExplicit = (heatCondMethod == "subcycle");
+    const int nPasses = isExplicit ? 1 : nCondIter;
+    Real dtRem = dt;
+    int pass = 0;
+
+    while (dtRem > 0.0 && pass < (isExplicit ? nCondSubcycleMax : nPasses)) {
+      pass++;
+
+      if (pass > 1) {
+        for (MFIter mfi(centerPeTe[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
+          const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
+          const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+            arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMin) / ne;
+          });
+        }
+        apply_pe_zero_gradient_bc(iLev, centerPeTe[iLev]);
+      }
+
+      average_center_to_node(centerPeTe[iLev], nodePeAux[iLev]);
+      grad_center_to_node(centerPeTe[iLev], nodePeVec[iLev],
+                          Geom(iLev).InvCellSize());
+      average_center_to_node(centerB[iLev], nodeBstage[iLev]);
+      nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      for (MFIter mfi(nodePeVec[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arrQ = nodePeVec[iLev][mfi].array();
+        const Array4<Real>& arrAux = nodePeAux[iLev][mfi].array();
+        const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
+        const Array4<Real const>& arrRhoN = nodePeRho[iLev][mfi].array();
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
+          Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
+
+          // Unit vector along B, and a smooth weak-field weight: a field at
+          // round-off level still has bmag > 0, but its direction is arbitrary,
+          // so the conduction must not be locked to it. The weight blends the
+          // dyad towards isotropic as |B| drops below fieldAlignedBMin.
+          Real bhat[3] = {0.0, 0.0, 0.0};
+          Real fEff = 0.0;
+          if (fAlign > 0.0) {
+            const Real bx = arrB(i, j, k, ix_);
+            const Real by = arrB(i, j, k, iy_);
+            const Real bz = arrB(i, j, k, iz_);
+            const Real b2 = bx * bx + by * by + bz * bz;
+            if (b2 > 0.0) {
+              const Real bmag = std::sqrt(b2);
+              bhat[ix_] = bx / bmag;
+              bhat[iy_] = by / bmag;
+              bhat[iz_] = bz / bmag;
+              fEff = fAlign * b2 / (b2 + fieldAlignedBMin * fieldAlignedBMin);
+            }
+          }
+
+          Real gT[3] = {0.0, 0.0, 0.0};
+          for (int d = 0; d < nDim; ++d)
+            gT[d] = arrQ(i, j, k, d);
+          const Real bdotg =
+              bhat[ix_] * gT[ix_] + bhat[iy_] * gT[iy_] + bhat[iz_] * gT[iz_];
+
+          Real q[3] = {0.0, 0.0, 0.0};
+          for (int d = 0; d < 3; ++d) {
+            if (d >= nDim || domLen[d] <= 1) {
+              q[d] = 0.0;
+              continue;
+            }
+            q[d] = -kappa * (fEff * bhat[d] * bdotg + (1.0 - fEff) * gT[d]);
+          }
+
+          // Free-streaming saturation: |q| <= f * n_e * Te * v_th,e with
+          // v_th,e = sqrt(Te * m_p/m_e) in code units.
+          if (heatFluxLimiter > 0.0) {
+            const Real qmag = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
+            if (qmag > 0.0) {
+              const Real ne = amrex::max(arrRhoN(i, j, k), rhoMinOhm);
+              const Real qsat = heatFluxLimiter * ne * teN *
+                                std::sqrt(teN * massRatioPe);
+              if (qmag > qsat) {
+                const Real scale = qsat / qmag;
+                for (int d = 0; d < 3; ++d)
+                  q[d] *= scale;
+                kappa *= scale;
+              }
+            }
+          }
+
+          for (int d = 0; d < 3; ++d) {
+            arrQ(i, j, k, d) = q[d];
+            arrAux(i, j, k, 1 + d) =
+                kappa * (fEff * bhat[d] * bhat[d] + (1.0 - fEff));
+          }
+        });
+      }
+      apply_pe_zero_gradient_bc(iLev, nodePeVec[iLev]);
+      apply_pe_zero_gradient_bc(iLev, nodePeAux[iLev]);
+
+      div_node_to_center(nodePeVec[iLev], centerPe[iLev], Geom(iLev).InvCellSize());
+
+      Real subDt = dt / static_cast<Real>(nPasses);
+      bool useExplicitThisStep = isExplicit;
+
+      if (isExplicit) {
+        Real maxDiffRate = 0.0;
+        for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+          const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
+          Real localMaxRate = 0.0;
+          amrex::Loop(box, [&](int i, int j, int k) {
+            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+            Real lam = (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+            lam += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
+            if (nDim > 2)
+              lam += (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
+            localMaxRate = amrex::max(localMaxRate, gammaM1 * lam / ne);
+          });
+          maxDiffRate = amrex::max(maxDiffRate, localMaxRate);
+        }
+        amrex::ParallelDescriptor::ReduceRealMax(maxDiffRate);
+
+        if (maxDiffRate > 0.0) {
+          const Real dtCFL = 0.45 / maxDiffRate;
+          subDt = amrex::min(dtRem, dtCFL);
+        } else {
+          subDt = dtRem;
+        }
+
+        if (pass == nCondSubcycleMax && subDt < dtRem) {
+          subDt = dtRem;
+          useExplicitThisStep = false;
+        }
+      }
+
+      for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
+        const Array4<Real const>& arrDivQ = centerPe[iLev][mfi].array();
+        const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
+        const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+
+          Real lambda = (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+          lambda += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
+          if (nDim > 2)
+            lambda +=
+                (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
+
+          const Real src = -arrDivQ(i, j, k);
+          const Real denom = useExplicitThisStep
+                                 ? 1.0
+                                 : (1.0 + subDt * gammaM1 * lambda / ne);
+
+          arrPe(i, j, k) =
+              amrex::max(arrPe(i, j, k) + subDt * gammaM1 * src / denom, peMin);
+        });
+      }
+
+      dtRem -= subDt;
+      apply_centerPe_BC(iLev);
+    }
+  }
+
+  //--------------------------------------------------------------------
+  // 5) Electron-ion collisional thermal equilibration (#ELECTRONCOLLISION):
+  //      dPe/dt = (Pi - Pe) / tau_eq
+  //    Point-implicit energy-conserving formulation from BATSRUS.
+  //--------------------------------------------------------------------
+  if (add_electron_ion_heating(iLev, dt)) {
+    apply_centerPe_BC(iLev);
+  }
+}
+
+//==========================================================
 // BCs for the cell-centred B, applied to the RK trial states and to the new
 // state at the end of each B sub-step.
 void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
@@ -622,6 +1231,15 @@ void Pic::update_B_hybrid() {
   // once per PIC timestep outside the magnetic subcycling steps.
   compute_ambipolar_E();
 
+  // For a polytropic electron pressure curl(-grad(Pe)/(e*n_e)) = 0, so the
+  // ambipolar field does not enter dB/dt and every stage can skip it (the
+  // existing behaviour). An evolved Pe is not a function of the density alone,
+  // so the curl is non-zero (the Biermann-battery-like term) and the field
+  // must be included at every stage. When the flag is false the argument
+  // passed below is exactly the same false as before, so polytropic runs are
+  // bit-for-bit unchanged.
+  const bool ambiInStages = useElectronPressureEq && ambipolarInStages;
+
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
@@ -642,7 +1260,7 @@ void Pic::update_B_hybrid() {
         // J comes from the evolved field alone (the intrinsic field is
         // current-free), the cross products use the total field.
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepStart, false);
+                       nodeEstage[iLev], iLev, hstepStart, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
@@ -657,7 +1275,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev],
                        total_center_B(centerBstar[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepHalf, false);
+                       nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
@@ -672,7 +1290,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev],
                        total_center_B(centerBstar[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepHalf, false);
+                       nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
@@ -687,7 +1305,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev],
                        total_center_B(centerBstar[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepEnd, false);
+                       nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
@@ -715,7 +1333,7 @@ void Pic::update_B_hybrid() {
 
         // Stage 1: B1 = B_n - subDt * curl(E(B_n))
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepStart, false);
+                       nodeEstage[iLev], iLev, hstepStart, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
@@ -729,7 +1347,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev],
                        total_center_B(centerBstar[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepEnd, false);
+                       nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
@@ -746,7 +1364,7 @@ void Pic::update_B_hybrid() {
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev],
                        total_center_B(centerBstar[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepHalf, false);
+                       nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
