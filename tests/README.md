@@ -191,8 +191,11 @@ identifies the exact baseline and candidate commits, includes absolute and
 relative changes, and warns if both profiles come from the same commit.
 
 Arena counts and peak bytes are exact integers across runs, so any increase
-fails. RSS drifts by up to 0.4 MB between runs, so it gets a tolerance
-(`--rss-tol`, default 2 MB) and only the per-rank maximum is gated.
+fails (0 tolerance). RSS drifts naturally between runs due to OS page
+allocation and allocator fragmentation, so it gets a tolerance (`--rss-tol`,
+default 2 MB). An RSS increase above `--rss-tol` is treated as a warning unless
+it is accompanied by arena allocation growth or exceeds a wider failure
+margin (`--rss-fail-tol`, default 10 MB).
 
 CI runs both steps on the same runner and comments on the PR:
 `.github/workflows/memory_test.yml`.
