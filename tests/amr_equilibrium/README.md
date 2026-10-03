@@ -17,10 +17,10 @@ This test verifies the stability and accuracy of a uniform plasma thermal equili
 
 - **Domain**: 2D periodic box with $x \in [-16, 16]$, $y \in [-8, 8]$, $z \in [-1, 1]$.
 - **Base Level (Level 0)**: $32 \times 16 \times 1$ cells ($\Delta x_0 = \Delta y_0 = 1.0$).
-- **Refinement Region (Level 1)**: Central slab (`center_slab`) covering $x \in [-8, 8]$, $y \in [-8, 8]$ with refinement ratio 2:
+- **Refinement Region (Level 1)**: Central box (`center_slab`) covering $x \in [-8, 8]$, $y \in [-4, 4]$ with refinement ratio 2:
   - Fine grid cell size: $\Delta x_1 = \Delta y_1 = 0.5$.
-  - Two symmetric, internal coarse-fine interfaces at $x = -8.0$ and $x = +8.0$.
-  - Periodic domain boundaries at $x = \pm 16.0$ remain purely coarse-to-coarse, cleanly decoupling the AMR interface from periodic boundary wrapping.
+  - Internal coarse-fine interfaces at $x = \pm 8.0$ and $y = \pm 4.0$.
+  - Periodic domain boundaries at $x = \pm 16.0, y = \pm 8.0$ remain purely coarse-to-coarse, cleanly decoupling the AMR interfaces from periodic boundary wrapping.
 
 ## Validation Criteria
 

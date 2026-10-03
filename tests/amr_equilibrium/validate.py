@@ -7,8 +7,8 @@ Verifies uniform thermal equilibrium across a stationary coarse-fine AMR interfa
      - Strict total energy conservation (< 1% drift).
      - Bounded magnetic energy Eb without numerical Hall/whistler growth.
   2. Spatial fluid profiles (PostIDL .out):
-     - Detection of coarse (dx ~ 1.0) and fine (dx ~ 0.5) AMR grids.
-     - Verification that the fine grid occupies the central slab |x| <= 8.0.
+     - Detection of coarse (dx, dy ~ 1.0) and fine (dx, dy ~ 0.5) AMR grids.
+     - Verification that the fine grid occupies the central box |x| <= 8.0, |y| <= 4.0.
      - Uniform ion density across both interfaces (residual within statistical noise).
      - Reflection symmetry of profiles across the midplane (x = 0).
 """
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 DX_COARSE = 1.0
 DX_FINE = 0.5
 SLAB_X_HALF = 8.0
+SLAB_Y_HALF = 4.0
 NHEADER = 5
 
 
@@ -144,28 +145,40 @@ def validate_plot(test_name=None):
     if rho is None:
         return False, "rhoS0 column missing in fluid .out frame"
 
-    # 1. Grid structure check: detect coarse and fine spacings
-    xs_fine = np.sort(np.unique(x[np.abs(x) < SLAB_X_HALF - 0.5]))
-    xs_coarse = np.sort(np.unique(x[np.abs(x) > SLAB_X_HALF + 0.5]))
+    # 1. Grid structure check: detect coarse and fine spacings in x and y
+    in_fine = (np.abs(x) < SLAB_X_HALF - 0.5) & (np.abs(y) < SLAB_Y_HALF - 0.5)
+    in_coarse = (np.abs(x) > SLAB_X_HALF + 0.5) | (np.abs(y) > SLAB_Y_HALF + 0.5)
 
-    if len(xs_fine) < 2 or len(xs_coarse) < 2:
-        return False, "Could not identify coarse and fine x regions"
+    xs_fine = np.sort(np.unique(x[in_fine]))
+    xs_coarse = np.sort(np.unique(x[in_coarse]))
+    ys_fine = np.sort(np.unique(y[in_fine]))
+    ys_coarse = np.sort(np.unique(y[in_coarse]))
+
+    if len(xs_fine) < 2 or len(xs_coarse) < 2 or len(ys_fine) < 2 or len(ys_coarse) < 2:
+        return False, "Could not identify coarse and fine x/y regions"
 
     dx_fine_meas = np.median(np.diff(xs_fine))
     dx_coarse_meas = np.median(np.diff(xs_coarse))
+    dy_fine_meas = np.median(np.diff(ys_fine))
+    dy_coarse_meas = np.median(np.diff(ys_coarse))
 
     logger.debug(
-        "  Measured dx_fine=%.4f (expected ~%.1f), dx_coarse=%.4f (expected ~%.1f)",
+        "  Measured fine grid: dx=%.4f, dy=%.4f (expected ~%.1f)",
         dx_fine_meas,
+        dy_fine_meas,
         DX_FINE,
+    )
+    logger.debug(
+        "  Measured coarse grid: dx=%.4f, dy=%.4f (expected ~%.1f)",
         dx_coarse_meas,
+        dy_coarse_meas,
         DX_COARSE,
     )
 
-    if abs(dx_fine_meas - DX_FINE) > 0.1:
-        return False, f"Fine grid spacing dx={dx_fine_meas:.3f} differs from expected {DX_FINE}"
-    if abs(dx_coarse_meas - DX_COARSE) > 0.2:
-        return False, f"Coarse grid spacing dx={dx_coarse_meas:.3f} differs from expected {DX_COARSE}"
+    if abs(dx_fine_meas - DX_FINE) > 0.1 or abs(dy_fine_meas - DX_FINE) > 0.1:
+        return False, f"Fine grid spacing (dx={dx_fine_meas:.3f}, dy={dy_fine_meas:.3f}) differs from expected {DX_FINE}"
+    if abs(dx_coarse_meas - DX_COARSE) > 0.2 or abs(dy_coarse_meas - DX_COARSE) > 0.2:
+        return False, f"Coarse grid spacing (dx={dx_coarse_meas:.3f}, dy={dy_coarse_meas:.3f}) differs from expected {DX_COARSE}"
 
     # 2. Density profile uniformity across interfaces
     # Bin by x coordinates and compute mean density profile <rho>(x)

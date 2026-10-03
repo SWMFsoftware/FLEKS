@@ -114,8 +114,8 @@ center_slab             name
 box                     shape
 -8.0                    min
  8.0                    max
--8.0                    min
- 8.0                    max
+-4.0                    min
+ 4.0                    max
 -1.0                    min
  1.0                    max
 
