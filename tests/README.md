@@ -212,3 +212,40 @@ To inspect a single run report outside the regression workflow:
 python3 tests/profiler.py prof.txt --top 10          # timing + arena memory
 python3 tests/profiler.py run.log --load-balance     # RSS series
 ```
+
+### PARAM Validity Check (CI)
+
+The `param-check` job of `.github/workflows/standalone_test.yml` checks the
+test decks against `PARAM.XML` with `SWMF/share/Scripts/CheckParam.pl` in
+standalone mode:
+
+```bash
+# From the FLEKS root of an SWMF tree (the ../.. path is the SWMF share/):
+../../share/Scripts/CheckParam.pl -S -p=double -s=nDim:3 -x=PARAM.XML \
+    tests/<name>/PARAM.in
+```
+
+`CheckParam.pl` is *positional*: every documented parameter of a command that
+the deck uses needs its own line, in the order given by `PARAM.XML`, even when
+the value equals the documented default. That is how the SWMF `Param/PARAM.in*`
+decks are written, but most standalone FLEKS decks leave defaulted parameters
+out, so they cannot be checked as they stand. The CI job therefore validates a
+curated list (`PARAM_FILES` in the workflow); decks are added to it as they are
+put into `CheckParam.pl` form.
+
+Two things to know when extending the list:
+
+* `-s=nDim:3` feeds `$_Value{nDim}`, which drives the per-dimension `<for>`
+  loops of `PARAM.XML` (`#FIELDBOXBOUNDARY`, `#PARTICLEBOXBOUNDARY`, ...). The
+  dimension must match the number of entries the deck writes, which is three
+  even for the 1D decks.
+* A command owns exactly the lines of its own parameters, so nothing may follow
+  them except a blank line: `#DESCRIPTION` takes one line, hence multi-line
+  descriptions need a blank line after the first one (the rest of the prose is
+  outside the command and ignored by the checker). Likewise for the described
+  values of any other command.
+
+The step fails only on reported errors, not on the exit status: `param_error()`
+sets the status even while its message is suppressed, which happens for every
+multi-part `strings` parameter, e.g. the `plotString` of `#SAVEPLOT`. SWMF's
+`Scripts/TestParam.pl` judges `CheckParam.pl` by its output too.

@@ -1,5 +1,6 @@
 #DESCRIPTION
 2D Free-stream uniform-equilibrium regression test of the HYBRID field solver
+
 with open inflow/outflow boundary conditions in x and periodic in y:
 solveEM=F, useHybridPIC=T, useHallTerm=F.
 
@@ -118,6 +119,8 @@ T                       useFixedDt
 
 #MONITOR
 50                      dnReport
+100                     dnReportLB
+T                       doCompact
 
 #SAVELOG
 1                       dnSavePic

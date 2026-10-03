@@ -1,5 +1,6 @@
 #DESCRIPTION
 Free-stream (uniform-equilibrium) regression test of the HYBRID field solver
+
 (generalized Ohm's law + Faraday) with the Hall term OFF: solveEM=F,
 useHybridPIC=T, useHallTerm=F.
 
@@ -88,6 +89,8 @@ T                       useFixedDt
 
 #MONITOR
 50                      dnReport
+100                     dnReportLB
+T                       doCompact
 
 #SAVELOG
 1                       dnSavePic

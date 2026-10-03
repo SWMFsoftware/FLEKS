@@ -80,6 +80,8 @@ T                       useFixedDt
 
 #MONITOR
 200                     dnReport
+100                     dnReportLB
+T                       doCompact
 
 #SAVELOG
 1                       dnSavePic

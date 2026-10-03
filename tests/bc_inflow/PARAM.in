@@ -1,5 +1,6 @@
 #DESCRIPTION
 Inflow / outflow open-boundary regression test for the hybrid solver:
+
 a uniform magnetized plasma streams along +x through a 1D domain with
 inflow at -x and outflow at +x.
 
@@ -102,6 +103,8 @@ T                       useFixedDt
 
 #MONITOR
 50                      dnReport
+100                     dnReportLB
+T                       doCompact
 
 #SAVELOG
 1                       dnSavePic
