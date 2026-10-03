@@ -4,7 +4,7 @@
 Verifies uniform thermal equilibrium across a stationary coarse-fine AMR interface:
   1. Energy log:
      - Finite, strictly positive energies (Etot, Eb, Epart).
-     - Strict total energy conservation (< 1% drift).
+     - Strict total energy conservation (< 0.1% drift).
      - Bounded magnetic energy Eb without numerical Hall/whistler growth.
   2. Spatial fluid profiles (PostIDL .out):
      - Detection of coarse (dx, dy ~ 1.0) and fine (dx, dy ~ 0.5) AMR grids.
@@ -93,7 +93,7 @@ def validate_log(pic_diags=None, test_name=None):
 
     e0 = pic_diags[0].get("Etot", 0.0)
     eb0 = pic_diags[0].get("Eb", 0.0)
-    max_energy_drift = 0.02  # 2% max drift
+    max_energy_drift = 0.001  # 0.1% max drift
 
     for r in pic_diags:
         cyc = r["cycle"]
@@ -110,7 +110,7 @@ def validate_log(pic_diags=None, test_name=None):
 
         drift = abs(etot - e0) / e0
         if drift > max_energy_drift:
-            return False, f"Energy drift too large at cycle {cyc}: {drift * 100:.3f}% (limit {max_energy_drift * 100:.1f}%)"
+            return False, f"Energy drift too large at cycle {cyc}: {drift * 100:.3f}% (limit {max_energy_drift * 100:.2f}%)"
 
         if eb0 > 0 and eb > eb0 * 1.5:
             return False, f"Magnetic energy grew excessively at cycle {cyc} (Eb={eb:.3e}, initial={eb0:.3e})"

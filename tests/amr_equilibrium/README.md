@@ -26,7 +26,7 @@ This test verifies the stability and accuracy of a uniform plasma thermal equili
 
 The test validator (`validate.py`) enforces:
 1. **Energy Conservation & Stability**:
-   - Total energy drift $|\Delta E_{\text{tot}}| / E_0 < 2\%$ across the run.
+   - Total energy drift $|\Delta E_{\text{tot}}| / E_0 < 0.1\%$ across the run.
    - Magnetic energy $E_b$ remains bounded without unphysical growth.
 2. **AMR Hierarchy Detection**:
    - Both coarse ($\Delta x \approx 1.0$) and fine ($\Delta x \approx 0.5$) spacings are identified.
