@@ -56,16 +56,18 @@ jobs:
         run: |
           make -j$(nproc) test22
 
-      - name: Validate PARAM files (TestParam.pl)
+      - name: Validate PARAM files (CheckParam.pl -c=PT)
         working-directory: SWMF
         run: |
-          # Run TestParam.pl without the Makefile '-' suppression prefix so that
-          # any parameter-validity error in a FLEKS-coupled PARAM deck fails CI.
-          # Re-configure to the OH+PT setup before running the checks.
-          ./Config.pl -default -v=Empty,OH/BATSRUS,PT/FLEKS
-          ./Config.pl -o=OH:u=OuterHelio,e=SwhPui,ng=2,g=4,4,4 -o=PT:lev=5
-
+          # Check only the PT (FLEKS) component sections of every FLEKS-coupled
+          # OH-PT PARAM file against FLEKS's own PARAM.XML.  Using -c=PT means
+          # CheckParam only parses #BEGIN_COMP PT ... #END_COMP PT blocks, so it
+          # is insensitive to OH equation modules or grid sizes that vary per test
+          # and are already exercised by the overnight SWMF regression suite.
+          CHECK="share/Scripts/CheckParam.pl"
+          XML="PT/FLEKS/PARAM.XML"
           FAILED=0
+
           for param_file in \
             Param/PARAM.in.test.OHPT.FLEKS.shocktube \
             Param/PARAM.in.test.OHPT.FLEKS.outerhelio.4neu.start \
@@ -74,9 +76,9 @@ jobs:
             Param/PARAM.in.test.OHPT.FLEKS.outerhelio.pui.4neu.start \
             Param/PARAM.in.test.OHPT.FLEKS.outerhelio.pui.4neu.couple \
             Param/PARAM.in.test.OHPT.FLEKS.outerhelio.swhpui; do
-            echo "Checking $param_file ..."
-            if ! Scripts/TestParam.pl "$param_file"; then
-              echo "::error::PARAM validity check failed for $param_file"
+            echo "Checking PT section of $param_file ..."
+            if ! "$CHECK" -c=PT -x="$XML" "$param_file"; then
+              echo "::error::PT PARAM validity check failed for $param_file"
               FAILED=1
             fi
           done

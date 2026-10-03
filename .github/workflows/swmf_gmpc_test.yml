@@ -79,19 +79,27 @@ jobs:
         run: |
           make -j$(nproc) test_swpc_aepic
 
-      - name: Validate PARAM files (TestParam.pl)
+      - name: Validate PARAM files (CheckParam.pl -c=PC)
         working-directory: SWMF
         run: |
-          # Run TestParam.pl without the Makefile '-' suppression prefix so that
-          # any parameter-validity error in a FLEKS-coupled PARAM deck fails CI.
-          # Each call re-reads Config.pl, so we ensure the final SWMF config
-          # (GM+PC, the last thing compiled) is active when we check.
-          #
-          # Re-configure to the standard GM+PC setup before running the checks.
-          ./Config.pl -default -amrex -v=Empty,PC/FLEKS,GM/BATSRUS
-          ./Config.pl -o=GM:u=Default,e=MultiIonPe,ng=2,g=8,8,1 -o=PC:lev=9
-
+          # Check only the PC (FLEKS) component sections of every FLEKS-coupled
+          # PARAM file against FLEKS's own PARAM.XML.  Using -c=PC means CheckParam
+          # only parses #BEGIN_COMP PC ... #END_COMP PC blocks, so it is insensitive
+          # to GM equation modules, grid sizes, or IE/IM settings that vary per test
+          # and are already exercised by the overnight SWMF regression suite.
+          CHECK="share/Scripts/CheckParam.pl"
+          XML="PC/FLEKS/PARAM.XML"
           FAILED=0
+
+          check_pc() {
+            local f="$1"
+            echo "Checking PC section of $f ..."
+            if ! "$CHECK" -c=PC -x="$XML" "$f"; then
+              echo "::error::PC PARAM validity check failed for $f"
+              FAILED=1
+            fi
+          }
+
           for param_file in \
             Param/PARAM.in.test.GMPC.FLEKS.periodic \
             Param/PARAM.in.test.GMPC.FLEKS.2D.2steps \
@@ -101,22 +109,10 @@ jobs:
             Param/PARAM.in.test.GMPC.FLEKS.3D \
             Param/PARAM.in.test.GMPC.FLEKS.AMR.FASTWAVE.2D \
             Param/PARAM.in.test.GMPC.FLEKS.AMR.FASTWAVE.3D \
-            Param/PARAM.in.test.FLEKS.AMR.LightWave.3D; do
-            echo "Checking $param_file ..."
-            if ! Scripts/TestParam.pl "$param_file"; then
-              echo "::error::PARAM validity check failed for $param_file"
-              FAILED=1
-            fi
+            Param/PARAM.in.test.FLEKS.AMR.LightWave.3D \
+            Param/SWPC/PARAM.in_aepic_init; do
+            check_pc "$param_file"
           done
-
-          # Check the SWPC AEPIC PARAM file with the GM+IE+IM+PC configuration.
-          ./Config.pl -default -amrex
-          ./Config.pl -v=Empty,GM/BATSRUS,IE/Ridley_serial,IM/RCM2,PC/FLEKS
-          ./Config.pl -o=GM:u=Default,e=Mhd,ng=2,g=8,8,8,IE:g=91,181
-          if ! Scripts/TestParam.pl Param/SWPC/PARAM.in_aepic_init; then
-            echo "::error::PARAM validity check failed for Param/SWPC/PARAM.in_aepic_init"
-            FAILED=1
-          fi
 
           if [ $FAILED -ne 0 ]; then
             exit 1
