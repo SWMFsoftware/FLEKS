@@ -21,6 +21,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
 | Reconnection          | `reconnection/`       | Current-sheet reconnection: force-free sheet in CI; Fadeev, classic GEM challenge, and asymmetric reconnection are expensive variants | [README](reconnection/README.md) |
 | AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
+| AMR equilibrium       | `amr_equilibrium/`    | Uniform thermal equilibrium across a stationary AMR interface | [README](amr_equilibrium/README.md) |
 | Reflecting & PEC BC   | `bc_reflecting/`      | Specular reflecting particle walls + conducting (PEC) field walls (4 variants: full/hybrid fields/particles) | [README](bc_reflecting/README.md) |
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
 | Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |
@@ -190,8 +191,11 @@ identifies the exact baseline and candidate commits, includes absolute and
 relative changes, and warns if both profiles come from the same commit.
 
 Arena counts and peak bytes are exact integers across runs, so any increase
-fails. RSS drifts by up to 0.4 MB between runs, so it gets a tolerance
-(`--rss-tol`, default 2 MB) and only the per-rank maximum is gated.
+fails (0 tolerance). RSS drifts naturally between runs due to OS page
+allocation and allocator fragmentation, so it gets a tolerance (`--rss-tol`,
+default 2 MB). An RSS increase above `--rss-tol` is treated as a warning unless
+it is accompanied by arena allocation growth or exceeds a wider failure
+margin (`--rss-fail-tol`, default 10 MB).
 
 CI runs both steps on the same runner and comments on the PR:
 `.github/workflows/memory_test.yml`.

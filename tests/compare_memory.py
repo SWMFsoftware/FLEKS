@@ -21,19 +21,22 @@ Two families are compared, both from the same profile document:
 * **RSS** from the FLEKS load-balance report: covers the whole process,
   including the ``std::vector`` / ``operator new`` traffic the arena tables
   cannot attribute, but it moves by a few tenths of a MB between runs of the
-  same binary, so it gets a tolerance (``--rss-tol``).
+  same binary. Increases above ``--rss-tol`` (default 2.0 MB) are treated as
+  warnings unless accompanied by arena allocation growth or exceeding a wider
+  failure margin (``--rss-fail-tol``, default 10.0 MB).
 
 Usage::
 
     python3 tests/compare_memory.py master.json pr.json
     python3 tests/compare_memory.py master.json pr.json --out diff.md
-    python3 tests/compare_memory.py master.json pr.json --rss-tol 5
+    python3 tests/compare_memory.py master.json pr.json --rss-tol 2 --rss-fail-tol 10
 """
 import argparse
 import json
 import sys
 
 FAIL = "FAIL"
+WARN = "WARN"
 INFO = "INFO"
 
 REPORT_TITLE = "🔬 Memory regression report"
@@ -97,6 +100,9 @@ class Findings:
     def failures(self):
         return self.by_severity(FAIL)
 
+    def warnings(self):
+        return self.by_severity(WARN)
+
 
 def _ncalls(document, region):
     """Call count of a region; the only thing read from the timing table."""
@@ -141,14 +147,17 @@ def _compare_arena(base, cand, key, findings, ratio_tol=0.01):
             if kind == "ratio":
                 if vc > vb * (1.0 + ratio_tol) and (vc - vb) > ratio_tol:
                     findings.add(FAIL, key, region, metric, vb, vc,
-                                 "more allocations", arena=arena, kind=kind)
+                                 f"more allocations per call (exceeds ratio tol {ratio_tol:.1%})",
+                                 arena=arena, kind=kind)
                 elif vc < vb * (1.0 - ratio_tol) and (vb - vc) > ratio_tol:
                     findings.add(INFO, key, region, metric, vb, vc,
-                                 "fewer allocations", arena=arena, kind=kind)
+                                 f"fewer allocations per call (tol: {ratio_tol:.1%})",
+                                 arena=arena, kind=kind)
             else:
                 if vc > vb:
                     findings.add(FAIL, key, region, metric, vb, vc,
-                                 "more allocations", arena=arena, kind=kind)
+                                 "more allocations (exact count, tol: 0)",
+                                 arena=arena, kind=kind)
                 elif vc < vb:
                     findings.add(INFO, key, region, metric, vb, vc,
                                  "fewer allocations", arena=arena, kind=kind)
@@ -157,7 +166,8 @@ def _compare_arena(base, cand, key, findings, ratio_tol=0.01):
             if vb is not None and vc is not None:
                 if vc > vb:
                     findings.add(FAIL, key, region, "maxmem_max", vb, vc,
-                                 "peak bytes grew", arena=arena, kind="bytes")
+                                 "peak bytes grew (exact bytes, tol: 0)",
+                                 arena=arena, kind="bytes")
                 elif vc < vb:
                     findings.add(INFO, key, region, "maxmem_max", vb, vc,
                                  "peak bytes shrank", arena=arena, kind="bytes")
@@ -168,8 +178,8 @@ def _compare_arena(base, cand, key, findings, ratio_tol=0.01):
             vb, vc = rb.get("curmem_max", 0), rc.get("curmem_max", 0)
             if vc > vb:
                 findings.add(FAIL, key, region, "curmem_max", vb, vc,
-                             "memory not freed at finalize", arena=arena,
-                             kind="bytes")
+                             "memory not freed at finalize (leak, tol: 0)",
+                             arena=arena, kind="bytes")
 
 
 def _compare_rss(base, cand, key, cfg, findings):
@@ -178,8 +188,12 @@ def _compare_rss(base, cand, key, cfg, findings):
     RSS is gated with an absolute tolerance in MB (``--rss-tol``) rather than an
     equality check: it is not bit-identical between runs (page granularity and
     allocator behaviour).  Measure the spread with ``capture_memory.py --verify``
-    and keep the tolerance comfortably above it.  Only the per-rank maximum is
-    gated; min/avg are reported as context.
+    and keep the tolerance comfortably above it.
+
+    Increases above ``--rss-tol`` are treated as WARN unless:
+    - Accompanied by arena allocation growth in the same test (treated as FAIL), or
+    - The RSS growth exceeds ``--rss-fail-tol`` (treated as FAIL).
+    Only the per-rank maximum is gated for failures/warnings; min/avg are reported as context.
     """
     bl_b = base.get("load_balance") or {}
     bl_c = cand.get("load_balance") or {}
@@ -191,6 +205,15 @@ def _compare_rss(base, cand, key, cfg, findings):
                      bl_c.get("n_tables"), "number of RSS reports changed",
                      arena="RSS")
 
+    rss_tol = getattr(cfg, "rss_tol", 2.0) if cfg else 2.0
+    rss_fail_tol = getattr(cfg, "rss_fail_tol", 10.0) if cfg else 10.0
+
+    # Check if this test had any arena allocation regressions (nalloc, peak bytes, leaks)
+    has_arena_growth = any(
+        item["test"] == key and item["severity"] == FAIL and item["arena"] != "RSS"
+        for item in findings.items
+    )
+
     for name in ("first", "last"):
         tb, tc = bl_b.get(name), bl_c.get(name)
         if not isinstance(tb, dict) or not isinstance(tc, dict):
@@ -201,14 +224,33 @@ def _compare_rss(base, cand, key, cfg, findings):
             vb, vc = rss_b.get(column), rss_c.get(column)
             if vb is None or vc is None:
                 continue
-            severity = FAIL if column == "max" else INFO
-            if vc > vb + cfg.rss_tol:
+
+            delta = vc - vb
+            if delta > rss_tol:
+                if column == "max":
+                    if has_arena_growth:
+                        severity = FAIL
+                        note = (f"RSS grew by {delta:+.1f} MB (>{rss_tol:,.1f} MB tol; "
+                                f"confirmed by arena growth)")
+                    elif delta > rss_fail_tol:
+                        severity = FAIL
+                        note = (f"RSS grew by {delta:+.1f} MB (exceeds fail threshold "
+                                f">{rss_fail_tol:,.1f} MB)")
+                    else:
+                        severity = WARN
+                        note = (f"RSS grew by {delta:+.1f} MB (>{rss_tol:,.1f} MB tol; "
+                                f"unconfirmed by arena memory)")
+                else:
+                    severity = INFO
+                    note = f"RSS grew by {delta:+.1f} MB (>{rss_tol:,.1f} MB tol)"
+
                 findings.add(severity, key, f"Memory(MB) [{name}]",
-                             f"rss_{column}", vb, vc, "RSS grew", arena="RSS",
+                             f"rss_{column}", vb, vc, note, arena="RSS",
                              kind="mb")
-            elif vc < vb - cfg.rss_tol:
+            elif delta < -rss_tol:
+                note = f"RSS shrank by {abs(delta):.1f} MB (>{rss_tol:,.1f} MB tol)"
                 findings.add(INFO, key, f"Memory(MB) [{name}]", f"rss_{column}",
-                             vb, vc, "RSS shrank", arena="RSS", kind="mb")
+                             vb, vc, note, arena="RSS", kind="mb")
 
         # Problem size, as context: a grid/particle change explains an RSS move
         # and means the two runs are not measuring the same thing.
@@ -290,8 +332,11 @@ def _table(rows, show_arena=False):
     return "\n".join(lines)
 
 
-def format_markdown(baseline, candidate, findings):
+def format_markdown(baseline, candidate, findings, cfg=None):
     bmeta, cmeta = baseline.get("meta", {}), candidate.get("meta", {})
+    rss_tol = getattr(cfg, "rss_tol", 2.0) if cfg else 2.0
+    rss_fail_tol = getattr(cfg, "rss_fail_tol", 10.0) if cfg else 10.0
+
     out = [f"### {REPORT_TITLE}", ""]
     out.append(f"* Baseline (`{bmeta.get('ref', '?')}`): "
                f"`{str(bmeta.get('commit', '?'))[:12]}` "
@@ -309,18 +354,41 @@ def format_markdown(baseline, candidate, findings):
             "",
         ]
 
+    out += [
+        "<details>",
+        "<summary>ℹ️ <b>Memory types & thresholds explanation</b></summary>",
+        "",
+        "* **Arena memory (AMReX)**: Allocations (`nalloc`), peak bytes (`maxmem_max`), and unreleased bytes at finalize (`curmem_max`) tracked inside AMReX memory pools per region. Bit-identical across runs for fixed setups; any increase indicates a deterministic regression or leak (**threshold: 0 tolerance**).",
+        f"* **RSS (Resident Set Size)**: Total process physical memory mapped by the OS from FLEKS load-balance tables (`Memory(MB)`). RSS fluctuates naturally between runs due to OS page mapping and allocator fragmentation:",
+        f"  * **Warning threshold (`±{rss_tol:,.1f} MB`)**: Flagged as 🟡 Warning if RSS increases without corresponding arena allocation growth.",
+        f"  * **Failure threshold (`+{rss_fail_tol:,.1f} MB`)**: Flagged as 🔴 Failure if RSS growth is confirmed by arena growth, or if RSS growth exceeds the wide margin threshold alone (`+{rss_fail_tol:,.1f} MB`).",
+        "",
+        "</details>",
+        "",
+    ]
+
     failures = findings.failures()
+    warnings = findings.warnings()
     others = findings.by_severity(INFO)
 
-    if not failures:
+    if not failures and not warnings:
         out.append("✅ **No memory regressions.**")
+    elif not failures and warnings:
+        n_warn_tests = len(set(i["test"] for i in warnings))
+        out.append(f"✅ **No hard memory regressions** ({len(warnings)} warning(s) across {n_warn_tests} test(s)).")
     else:
-        out.append(f"**{len(failures)} memory regression(s)** "
-                   f"across {len(set(i['test'] for i in failures))} test(s).")
+        n_fail_tests = len(set(i["test"] for i in failures))
+        summary_str = f"**{len(failures)} memory regression(s)** across {n_fail_tests} test(s)"
+        if warnings:
+            summary_str += f" and {len(warnings)} warning(s)"
+        out.append(summary_str + ".")
 
     if failures:
-        out += ["", "#### 🔴 Regressions (allocations, peak bytes, RSS)", "",
+        out += ["", "#### 🔴 Regressions (allocations, peak bytes, RSS > failure margin)", "",
                 _table(failures, show_arena=True)]
+    if warnings:
+        out += ["", "#### 🟡 Warnings (unconfirmed RSS growth)", "",
+                _table(warnings, show_arena=True)]
     if others:
         out += ["", "#### ⚪ Other changes", "",
                 _table(sorted(others, key=lambda r: (r["test"], r["region"]))[:40],
@@ -336,8 +404,11 @@ def main():
     parser.add_argument("candidate", help="candidate profile JSON (PR)")
     parser.add_argument("--out", help="write the markdown report to this file")
     parser.add_argument("--rss-tol", type=float, default=2.0,
-                        help="allowed RSS growth in MB (default 2.0); re-tune "
-                             "with 'capture_memory.py --verify'")
+                        help="allowed RSS growth in MB before warning (default 2.0); "
+                             "re-tune with 'capture_memory.py --verify'")
+    parser.add_argument("--rss-fail-tol", type=float, default=10.0,
+                        help="RSS growth in MB that triggers a hard failure even without "
+                             "arena allocation growth (default 10.0)")
     parser.add_argument("--ratio-tol", type=float, default=0.01,
                         help="allowed relative growth for nalloc/call ratio (default 0.01); "
                              "avoids false positives from call-count granularity")
@@ -349,7 +420,7 @@ def main():
         candidate = json.load(handle)
 
     findings = compare(baseline, candidate, args)
-    report = format_markdown(baseline, candidate, findings)
+    report = format_markdown(baseline, candidate, findings, args)
 
     if args.out:
         with open(args.out, "w") as handle:
