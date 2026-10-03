@@ -1,17 +1,17 @@
-# Hybrid PIC AMR Thermal Equilibrium Test
+# AMR Plasma Thermal Equilibrium Test
 
-This test verifies the stability and accuracy of a uniform plasma thermal equilibrium across a stationary coarse-fine AMR interface using the Hybrid PIC solver (`#HYBRIDPIC T`, `#SOLVEEM F`).
+This test verifies the stability and accuracy of a uniform plasma thermal equilibrium across a stationary coarse-fine AMR interface using both the Full PIC solver (`PARAM.in`) and the Hybrid PIC solver (`PARAM.in.hybrid`).
 
 ## Physical Setup
 
-- **Plasma**: Single kinetic ion species ($q = 1, m = 1$) in a uniform Maxwellian thermal distribution with neutralizing massless fluid electrons ($n_e = n_i$).
-- **Equilibrium**:
-  - Uniform ion density: $n_0 = 1.0\ \text{amu/cc}$.
-  - Ion temperature: $T_i = 10\ \text{eV}$ ($116045\ \text{K}$).
-  - Electron temperature: $T_e = 10\ \text{eV}$ (isothermal $\gamma = 1.0$).
-  - Perpendicular uniform guide field: $B_{z0} = 1.0\ \text{nT}$ ($B_0 \sim 1.0$ in normalized code units).
-  - Bulk velocity: $\mathbf{u}_i = 0$, current $\mathbf{J} = 0$, ambipolar field $\mathbf{E}_{\text{ambi}} = -\nabla P_e / (e n_e) = 0$.
-- **Analytic state**: Exact steady state ($\partial/\partial t = 0$). Macroparticle thermal motion tests kinetic fluxes and discrete noise across the AMR interface.
+- **Hybrid PIC (`PARAM.in.hybrid`)**:
+  - Kinetic ions ($q = 1, m = 1$, $n_0 = 1.0\ \text{amu/cc}$, $T_i = 10\ \text{eV}$) and neutralizing massless fluid electrons ($T_e = 10\ \text{eV}$, isothermal $\gamma = 1.0$).
+  - Perpendicular uniform guide field: $B_{z0} = 1.0\ \text{nT}$.
+  - Tests the generalized Ohm's law and ambipolar field $\mathbf{E}_{\text{ambi}} = -\nabla P_e / (e n_e)$ across AMR interfaces.
+- **Full PIC (`PARAM.in`)**:
+  - Kinetic ions ($m_i = 1.0, q_i = 1$) and kinetic electrons ($m_e = 0.04, q_e = -1$, $m_i/m_e = 25$).
+  - Charge neutral ($n_e = n_i = 1.0$) and equal initial temperature ($T_i = T_e = 10\ \text{eV}$).
+  - Semi-implicit field solver with GMRES.
 
 ## Mesh Refinement Geometry
 
@@ -27,7 +27,7 @@ This test verifies the stability and accuracy of a uniform plasma thermal equili
 The test validator (`validate.py`) enforces:
 1. **Energy Conservation & Stability**:
    - Total energy drift $|\Delta E_{\text{tot}}| / E_0 < 2\%$ across the run.
-   - Magnetic energy $E_b$ remains bounded without unphysical Hall/whistler growth.
+   - Magnetic energy $E_b$ remains bounded without unphysical growth.
 2. **AMR Hierarchy Detection**:
    - Both coarse ($\Delta x \approx 1.0$) and fine ($\Delta x \approx 0.5$) spacings are identified.
    - Fine cells are strictly confined to the central slab $|x| \le 8.0$.
@@ -35,8 +35,15 @@ The test validator (`validate.py`) enforces:
    - Mean density profile $\bar{\rho}(x)$ across the interfaces remains flat within PIC shot noise ($\max |\bar{\rho} - 1.0| < 0.10$).
    - Midplane reflection symmetry: $|\bar{\rho}(x) - \bar{\rho}(-x)| < 0.08$.
 
-## Running the Test
+## Running the Tests
 
 ```bash
+# Run both variants:
 python3 tests/validate_tests.py --test=amr_equilibrium -v
+
+# Run only Full PIC:
+python3 tests/validate_tests.py --test=amr_equilibrium.full -v
+
+# Run only Hybrid PIC:
+python3 tests/validate_tests.py --test=amr_equilibrium.hybrid -v
 ```

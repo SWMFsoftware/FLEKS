@@ -1,5 +1,5 @@
 #DESCRIPTION
-Standalone Full PIC AMR Test: Uniform Thermal Equilibrium across a Stationary Central Refined Slab
+Standalone Hybrid PIC AMR Test: Uniform Thermal Equilibrium across a Stationary Central Refined Slab
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -44,25 +44,32 @@ periodic
 periodic
 
 #SOLVEEM
-T                       solveEM
+F                       solveEM
 
 #HYBRIDPIC
-F                       useHybridPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+10.0                    electronTemperature
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#BSUBCYCLE
+2                       nBSubcycle
 
 #PLASMA
-2                       nSpecies
+1                       nSpecies
 1.0                     mass
 1.0                     charge
-0.04                    mass
--1.0                    charge
 
 #UNIFORMSTATE
 1.0                     rho [amu/cc]
-0.0                     ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-116045.0                T [K]
-0.04                    rho [amu/cc]
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -81,7 +88,7 @@ F                       useHybridPIC
 
 #TIMESTEPPING
 T                       useFixedDt
-0.01                    dt
+0.05                    dt
 
 #NORMALIZATION
 1.0e5                   lNormSI
@@ -98,16 +105,8 @@ T                       useFixedDt
 1                       nPlot
 z=0 fluid ascii planet  plotString
 -1                      dnSavePlot
-0.2                     dtSavePlot
+1.0                     dtSavePlot
 -1                      dxSavePlot
-
-#DISCRETIZATION
-0.51                    theta
-0.0                     ratioDivC2C
-
-#EFIELDSOLVER
-1.0e-6                  EFieldTol
-200                     EFieldIter
 
 #REGION
 center_slab             name
