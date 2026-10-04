@@ -375,6 +375,27 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   if (varLower == "body")
     return isInsideBody ? 1.0 : 0.0;
 
+  // Split the body into the one-cell-thick surface layer, where the field
+  // boundary condition (#BODYBOUNDARY) acts and which is therefore the place to
+  // look for a div(B) error, and the frozen interior. Unlike 'body', which is
+  // the analytic sphere evaluated at the printed coordinate, these are the
+  // staircase masks of the CELLS, i.e. of the same index the cell-centred
+  // div(B) is stored at, so a plot can separate the shell from the bulk
+  // exactly. The printed X/Y/Z are the lower node of that cell (see above), so
+  // the value belongs to the cell spanning X..X+dx.
+  if (varLower == "bodysurf" || varLower == "bodyint") {
+    if (!useBody || !isValidMFI || iLev >= cellStatus.size() ||
+        cellStatus[iLev].empty())
+      return 0.0;
+    const auto& statusArr = cellStatus[iLev][mfi].array();
+    if (varLower == "bodyint")
+      return bit::is_body_interior(statusArr(ijk)) ? 1.0 : 0.0;
+    return (bit::is_body(statusArr(ijk)) &&
+            !bit::is_body_interior(statusArr(ijk)))
+               ? 1.0
+               : 0.0;
+  }
+
   // The particle-derived variables (rhoS0, uxS0, jHatx, nMM, ...) are zero
   // inside the body. is_body_moment_var() matches them in both the PC ('S0')
   // and the OH-PT ('Pop1') spelling.

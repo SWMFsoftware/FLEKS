@@ -37,6 +37,13 @@ WAKE_MAX_FRAC = 0.5   # wake density must stay below 50% of the upstream value
 ZERO_TOL = 1e-12      # "exactly zero" threshold inside the body
 ETOT_GROWTH_MAX = 10.0  # the body must not inject energy
 CONSTRAINT_TOL = 1e-6   # relative tolerance of the conducting constraint
+# Max |divB|*dx/|B| on the body surface shell. Measured with
+# scratch/body_divb/scan.py at the 64-cell resolution of these decks:
+# 'conducting' 0.36, 'linetied' 0.028, 'insulating' 0.002. The bounds are
+# deliberately loose (about 2.5x the measurement) so that they catch a real
+# regression without being sensitive to the particle noise of a 4 ppc run.
+DIVB_SHELL_MAX_CONDUCTING = 1.0
+DIVB_SHELL_MAX_CONTROL = 0.2
 Z_HALF = 0.05           # half of the z extent of the fake-2D decks (one cell)
 PASS_THROUGH_MIN = 0.4  # insulating: |B| and |E| inside vs outside
 # Density next to the staircase surface relative to the far field. The initial
@@ -54,7 +61,7 @@ def _columns(vidx, rows):
     """Return the columns needed by the field checks, or None if missing."""
     out = {}
     for name in ("BODY", "X", "Y", "Z", "EX", "EY", "EZ", "BX", "BY", "BZ",
-                 "RHOS0"):
+                 "RHOS0", "DIVB", "BODYSURF"):
         out[name] = _run_dir.col(vidx, rows, name)
     return out
 
@@ -208,6 +215,13 @@ def validate_plot(test_name):
     if not inside:
         return False, "No point is marked as inside the body (mask is empty)"
 
+    # div(B) on the surface shell: the 'conducting' projection injects a
+    # grid-scale divergence there that no operator removes.
+    ok, msg = _check_divb(cols, test_name)
+    if not ok:
+        return False, msg
+    logger.debug("    div(B): %s", msg)
+
     # The initial frame is uniform, so it shows whether the moments next to the
     # staircase surface are diluted by the empty body cells.
     first_vidx, first_rows = _run_dir.load_first_out()
@@ -270,6 +284,62 @@ def _check_surface_density(cols):
 
     return True, (f"surface density uniform (rho/rho_far in "
                   f"[{min(ratios):.3f}, {max(ratios):.3f}])")
+
+
+def _check_divb(cols, test_name):
+    """Divergence of B on the one-cell-thick surface shell.
+
+    The 'conducting' body condition enforces B_r = 0 as a pointwise projection
+    B <- B - (B.n)n on the staircase shell, using the smooth spherical normal.
+    In the full-PIC solver that projection is the last write of the step, so it
+    happens after the div(B) cleaning, and in the hybrid-PIC solver there is no
+    cleaning at all. The measured error (see scratch/body_divb/report.md) is
+
+        L = max|divB| * dx / |B_ref|   on the shell
+
+    with |B_ref| the median far-field |B|: 0.36 for 'conducting' against 0.002
+    ('insulating') and 0.028 ('linetied') at the 64-cell resolution used here,
+    and it does NOT converge with dx (0.38 / 0.36 / 0.45 for dx = 0.2 / 0.1 /
+    0.05), which is why a gate on it is worth having.
+
+    The hybrid-PIC variants are not gated: with no field condition at all
+    ('hybrid_insulating') the noise-driven field distortion already reaches
+    L = 0.45...1.48, so the hybrid number measures the hybrid noise problem
+    rather than the body condition. See scratch/body_divb/report.md.
+    """
+    divb = cols.get("DIVB")
+    surf = cols.get("BODYSURF")
+    if divb is None or surf is None:
+        return True, "no divB/bodySurf column (not checked)"
+
+    is_hybrid = bool(test_name and "hybrid" in test_name)
+    if is_hybrid:
+        return True, "hybrid-PIC: dominated by the noise background (not gated)"
+
+    dx = _grid_spacing(cols)
+    if dx <= 0:
+        return True, "cannot determine the grid spacing (not checked)"
+
+    far = [_norm(_vec(cols, "B", i)) for i in range(len(divb))
+           if _radial_in_plane(cols, i)[1] > R_BODY + 0.6]
+    far.sort()
+    if not far:
+        return True, "no far-field sample (not checked)"
+    b_ref = far[len(far) // 2]
+    if b_ref <= 0:
+        return True, "no ambient magnetic field (not checked)"
+
+    shell = [abs(divb[i]) for i in range(len(divb)) if surf[i] > 0.5]
+    if not shell:
+        return True, "no surface-shell point in the frame (not checked)"
+
+    peak = max(shell) * dx / b_ref
+    limit = (DIVB_SHELL_MAX_CONDUCTING if (test_name or "").endswith("conducting")
+             else DIVB_SHELL_MAX_CONTROL)
+    if peak > limit:
+        return False, (f"div(B) on the body surface shell is too large "
+                       f"(max |divB|*dx/|B| = {peak:.3f} > {limit:g})")
+    return True, f"max |divB|*dx/|B| on the shell = {peak:.3f} (<= {limit:g})"
 
 
 def _check_linetied(cols, inside, rows):
