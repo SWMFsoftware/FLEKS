@@ -152,6 +152,37 @@ private:
   // <= 0 means auto: 1e-6 * electronDensity0.
   amrex::Real rhoMinOhm = 0.0;
 
+  // ---- Evolved electron pressure (see #ELECTRONPRESSURE) ----
+  bool useElectronPressureEq = false;
+  // Spitzer kappa0 [W/(m K^(7/2))]; 9.2e-12 is for coulombLog = 20.
+  amrex::Real heatCondKappa0SI = 9.2e-12;
+  amrex::Real heatCondKappa0 = 0.0; // code units (convert_electron_heat_cond)
+  amrex::Real coulombLog = 20.0;
+  // kappa_hat = kappa [f b b + (1-f) I] with f = fieldAlignedFraction.
+  bool fieldAlignedConduction = true;
+  amrex::Real fieldAlignedFraction = 1.0;
+  // |B| [T] under which the direction is treated as noise: use isotropic.
+  amrex::Real fieldAlignedBMinSI = 1.0e-15;
+  amrex::Real fieldAlignedBMin = 0.0;
+  amrex::Real heatFluxLimiter = 0.0; // free-streaming limiter; 0 disables it
+  amrex::Real peMin = 0.0; // floor on the evolved Pe
+  // Numerical scheme for Pe advection and compression (see #ELECTRONADVECTION)
+  std::string peAdvectionLimiter = "vanleer";
+  std::string peCompressionScheme = "exponential";
+  int peLimiterType = 2; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
+  bool peCompressionExp = true;
+  // Solving strategy for Pe heat conduction (see #ELECTRONCONDUCTION)
+  std::string heatCondMethod = "point-implicit";
+  int nCondIter = 1;
+  int nCondSubcycleMax = 100;
+  // Electron-ion collisional heat exchange (#ELECTRONCOLLISION)
+  bool useHeatExchange = false;
+  amrex::Real collisionFactor = 1.0;
+  amrex::Real collisionCoefEi = 0.0; // code units
+  // Add the ambipolar E to the RK stages; needed once Pe is not polytropic.
+  bool ambipolarInStages = true;
+  bool peStateInitialized_ = false; // centerPeState holds a valid field
+
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
@@ -253,6 +284,16 @@ private:
                                             // -grad(Pe)/(e*ne) at nodes
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated
                                               // density
+  // ---- Evolved electron pressure (#ELECTRONPRESSURE) ----
+  // centerPeState is the evolved field (written to / read from the restart
+  // files and is copied on a regrid); everything else is per-step scratch.
+  amrex::Vector<amrex::MultiFab> centerPeState; // Pe at cell centres (state)
+  amrex::Vector<amrex::MultiFab> centerPeRho;   // n_e at cell centres
+  amrex::Vector<amrex::MultiFab> centerPeTe;    // Te at cell centres, then
+                                                // div(q) scratch
+  amrex::Vector<amrex::MultiFab> nodePeVec;     // u_e, then grad(Te), then q
+  amrex::Vector<amrex::MultiFab> nodePeRho;     // nodal ion charge density
+  amrex::Vector<amrex::MultiFab> nodePeAux;     // (0) Te, (1..3) kappa_hat_dd
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -562,6 +603,8 @@ public:
   void finalize_units_conversion();
   void convert_resistivity();
   void convert_electron_density0();
+  void convert_electron_heat_conduction();
+  void convert_electron_collision();
   void convert_inflow_state();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
@@ -674,6 +717,24 @@ public:
   void compute_ambipolar_E(int iLev);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
+
+  //-------------Evolved electron pressure (#ELECTRONPRESSURE)-----------------
+  // Advance the scalar electron pressure by one PIC step, operator split:
+  //   dPe/dt + div(u_e Pe) + (gamma_e-1) Pe div(u_e)
+  //       = (gamma_e-1) [ div(kappa_hat . grad(Te)) + H_ei ]
+  void update_Pe_hybrid();
+  void update_Pe_hybrid(int iLev, amrex::Real dt);
+  // Seed Pe from the algebraic polytropic closure using the current density.
+  void init_electron_pressure();
+  void init_electron_pressure(int iLev);
+  // Interpolate the state onto boxes created by a regrid.
+  void fill_new_electron_pressure();
+  // Zero-gradient ghosts, used by the pressure field and scratch.
+  void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab& mf);
+  void apply_centerPe_BC(int iLev);
+  // Electron-ion collisional thermal equilibration (heat exchange) hook:
+  // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation from BATSRUS.
+  bool add_electron_ion_heating(int iLev, amrex::Real dt);
 
   //-------------Electric field solver end-------------
 

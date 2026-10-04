@@ -222,6 +222,22 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           3, nGst, doMoveData);
       distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev],
                           DistributionMap(iLev), 1, nGst, doMoveData);
+      if (useElectronPressureEq) {
+        // The evolved field must survive a regrid (doCopy = true); the
+        // scratch arrays are rebuilt and recomputed every step.
+        distribute_FabArray(centerPeState[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, true);
+        distribute_FabArray(centerPeRho[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, doMoveData);
+        distribute_FabArray(centerPeTe[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, doMoveData);
+        distribute_FabArray(nodePeVec[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(nodePeRho[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 1, nGst, doMoveData);
+        distribute_FabArray(nodePeAux[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 4, nGst, doMoveData);
+      }
       if (hasRegionalResistivity_) {
         distribute_FabArray(nodeEtaRegional[iLev], nGrids[iLev],
                             DistributionMap(iLev), 1, nGst, false);
@@ -299,6 +315,9 @@ void Pic::post_regrid() {
   // grid. This is the one place a regrid could silently leave B0 at zero.
   fill_intrinsic_B();
   init_regional_fields();
+
+  // Boxes created by the regrid have no electron-pressure history.
+  fill_new_electron_pressure();
 
   {
     iTot = nSpecies;
@@ -1555,17 +1574,10 @@ void Pic::update(bool doReportIn) {
     save_current_moments_to_prev();
     sum_moments(false);
     smooth_moments();
+    update_Pe_hybrid();
     update_B_hybrid();
     isFirstHybridStep = false;
   }
-
-  // Only to be turned on if DivE error needs to be visulaized when DivE
-  // cleaning is not turned on
-
-  // for (int i = 0; i < 2; i++) {
-  //   sum_moments(true);
-  //   sum_moments(false);
-  // }
 
   if (solveEM && doCorrectDivE) {
     if (finest_level == 0) {
