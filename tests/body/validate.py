@@ -37,12 +37,11 @@ WAKE_MAX_FRAC = 0.5   # wake density must stay below 50% of the upstream value
 ZERO_TOL = 1e-12      # "exactly zero" threshold inside the body
 ETOT_GROWTH_MAX = 10.0  # the body must not inject energy
 CONSTRAINT_TOL = 1e-6   # relative tolerance of the conducting constraint
-# Max |divB|*dx/|B| on the body surface shell. Measured with
-# scratch/body_divb/scan.py at the 64-cell resolution of these decks:
-# 'conducting' 0.119, 'linetied' 0.028, 'insulating' 0.002. Before the
-# div(B) lag fix in update_B() 'conducting' measured 0.362, so these bounds
-# catch a return to that behaviour while still leaving ~2.5x headroom for the
-# particle noise of a 4 ppc run.
+# Max |divB|*dx/|B| on the body surface shell, measured at the 64-cell
+# resolution of these decks: 'conducting' ~0.1, 'linetied' 0.028,
+# 'insulating' 0.002. Before the div(B) lag fix in update_B() 'conducting'
+# measured 0.362, so these bounds catch a return to that behaviour while
+# leaving ~2.5x headroom for the particle noise of a 4 ppc run.
 DIVB_SHELL_MAX_CONDUCTING = 0.3
 DIVB_SHELL_MAX_CONTROL = 0.1
 Z_HALF = 0.05           # half of the z extent of the fake-2D decks (one cell)
@@ -291,22 +290,21 @@ def _check_divb(cols, test_name):
     """Divergence of B on the one-cell-thick surface shell.
 
     The 'conducting' body condition enforces B_r = 0 as a pointwise projection
-    B <- B - (B.n)n on the staircase shell, using the smooth spherical normal.
-    In the full-PIC solver that projection is the last write of the step, so it
-    happens after the div(B) cleaning, and in the hybrid-PIC solver there is no
-    cleaning at all. The measured error (see scratch/body_divb/report.md) is
+    B <- B - (B.n)n on the staircase shell, using the smooth spherical normal,
+    and that projection is the last write of the step. It leaves a standing
+    error
 
         L = max|divB| * dx / |B_ref|   on the shell
 
-    with |B_ref| the median far-field |B|: 0.36 for 'conducting' against 0.002
-    ('insulating') and 0.028 ('linetied') at the 64-cell resolution used here,
-    and it does NOT converge with dx (0.38 / 0.36 / 0.45 for dx = 0.2 / 0.1 /
-    0.05), which is why a gate on it is worth having.
+    with |B_ref| the far-field |B|. L is about 0.1 for 'conducting' against
+    0.002 ('insulating') and 0.028 ('linetied') at the 64-cell resolution used
+    here, and it does NOT converge with dx, which is why a gate on it is worth
+    having.
 
     The hybrid-PIC variants are not gated: with no field condition at all
     ('hybrid_insulating') the noise-driven field distortion already reaches
-    L = 0.45...1.48, so the hybrid number measures the hybrid noise problem
-    rather than the body condition. See scratch/body_divb/report.md.
+    L ~ 1, so the hybrid number measures the hybrid noise problem rather than
+    the body condition.
     """
     divb = cols.get("DIVB")
     surf = cols.get("BODYSURF")

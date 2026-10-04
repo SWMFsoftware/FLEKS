@@ -584,7 +584,7 @@ void Pic::fill_E_B_fields() {
       // order |B| inside the body, which contradicts n.B = 0 on the surface it
       // is supposed to bound, and leaks into the surface nodes through the
       // nodal average -- that leak is what the per-step projection of nodeB has
-      // to keep removing. See scratch/body_divb/report.md.
+      // to keep removing.
       mask_body_interior(centerB[iLev], cellStatus[iLev]);
       mask_body_interior(nodeB[iLev], nodeStatus[iLev]);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
