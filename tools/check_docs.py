@@ -339,7 +339,8 @@ def check_param_xml_tex(errors: list[str]) -> None:
                 if char == "^" and not math and line[i - 1:i] != "\\":
                     errors.append(
                         f"PARAM.XML:{n}: unescaped '^' in text typeset by "
-                        "XmlToTex.pl (use ch*ch, \\^, or wrap it in $...$)"
+                        "XmlToTex.pl (write it as \\^, as elsewhere in this "
+                        "file, or wrap it in $...$)"
                     )
                     break
                 i += 1
