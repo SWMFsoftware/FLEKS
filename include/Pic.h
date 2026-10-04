@@ -180,6 +180,14 @@ private:
   // div(B) cleaning at all, it is allocated on demand by ensure_divB() so that
   // decks that do not ask for the diagnostic keep their memory footprint.
   amrex::Vector<amrex::MultiFab> divB;
+  // Cell-centred divergence OF THE CELL-CENTRED FIELD, i.e. div(centerB), the
+  // quantity the B update dB/dt = -curl(E) could conserve exactly if the
+  // discrete curl and divergence were an adjoint pair. 'divB' above is instead
+  // div of the *nodal* field, so the two differ by an interpolation and only one
+  // of them is potentially conserved by the update. Written out as 'divBc';
+  // allocated on demand by ensure_centerDivB(). This is a diagnostic only: no
+  // solver path consumes it.
+  amrex::Vector<amrex::MultiFab> centerDivB;
   amrex::Vector<amrex::MultiFab> centerB;
   // Hybrid hyper-resistivity scratch fields.
   amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (stage A)
@@ -703,10 +711,12 @@ public:
   void solve_hyp_phi(int iLev);
 
   //-------------div(B) diagnostic begin----------------
-  // Allocate divB[iLev] if it does not exist yet (hybrid-PIC solver, where
-  // distribute_arrays() does not create it) or if the grids changed.
+  // Allocate divB[iLev] / centerDivB[iLev] if they do not exist yet (hybrid-PIC
+  // solver, where distribute_arrays() does not create them) or if the grids
+  // changed.
   void ensure_divB(int iLev);
-  // Refresh the cell-centred div(B) from the node-centred B.
+  void ensure_centerDivB(int iLev);
+  // Refresh both div(B) diagnostics from the current B.
   void compute_divB(int iLev);
   //-------------div(B) diagnostic end------------------
 

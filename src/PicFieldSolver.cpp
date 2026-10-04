@@ -697,6 +697,22 @@ void Pic::ensure_divB(int iLev) {
 }
 
 //==========================================================
+void Pic::ensure_centerDivB(int iLev) {
+  // Diagnostic only, so it is always created on demand and never in
+  // distribute_arrays(): a deck that does not ask for it keeps its memory
+  // footprint, and no existing behaviour changes.
+  if (static_cast<int>(centerDivB.size()) != n_lev_max()) {
+    centerDivB.resize(n_lev_max());
+  }
+  if (centerDivB[iLev].empty() || centerDivB[iLev].boxArray() != cGrids[iLev] ||
+      centerDivB[iLev].DistributionMap() != DistributionMap(iLev)) {
+    // div_center_to_center() only fills component 0.
+    distribute_FabArray(centerDivB[iLev], cGrids[iLev], DistributionMap(iLev),
+                        1, nGst, false, 0.0);
+  }
+}
+
+//==========================================================
 void Pic::compute_divB(int iLev) {
   std::string nameFunc = "Pic::compute_divB";
   timing_func(nameFunc);
@@ -706,6 +722,13 @@ void Pic::compute_divB(int iLev) {
   // thing in both solvers.
   ensure_divB(iLev);
   div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
+
+  // The same divergence taken on the cell-centred field the B update actually
+  // advances. Comparing the two tells whether the update conserves its own
+  // divergence or only the interpolated one.
+  ensure_centerDivB(iLev);
+  div_center_to_center(centerB[iLev], centerDivB[iLev],
+                       Geom(iLev).InvCellSize());
 }
 
 //==========================================================
@@ -764,6 +787,12 @@ void Pic::update_B() {
       average_center_to_node(centerB[iLev], nodeB[iLev]);
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
+      // div(centerB): the divergence of the field the update advances, i.e. the
+      // quantity the cleaning could conserve if the discrete curl and
+      // divergence were an adjoint pair. Diagnostic only.
+      ensure_centerDivB(iLev);
+      div_center_to_center(centerB[iLev], centerDivB[iLev],
+                           Geom(iLev).InvCellSize());
     }
 
     if (useUpwindB || useHyperbolicCleaning) {

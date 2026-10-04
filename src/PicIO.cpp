@@ -334,8 +334,9 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
        var.substr(0, 3) == "phi")) {
     return value;
   }
-  // 'divB' is deliberately not in that list: it is the one div(B) diagnostic
-  // the hybrid-PIC solver can provide (allocated on demand by ensure_divB()).
+  // 'divB' and 'divBc' are deliberately not in that list: they are the div(B)
+  // diagnostics the hybrid-PIC solver can provide (allocated on demand by
+  // ensure_divB() / ensure_centerDivB()).
   if (useHybridPIC &&
       (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
        var.substr(0, 5) == "dBzdt")) {
@@ -559,6 +560,14 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 5) == "divEc") {
       const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
       value = arr(ijk);
+    } else if (var.substr(0, 5) == "divBc") {
+      // div(centerB): the divergence of the cell-centred field, i.e. the
+      // quantity the B update could conserve exactly. Diagnostic only, so it
+      // reads as zero when it was never requested.
+      if (iLev < centerDivB.size() && !centerDivB[iLev].empty()) {
+        const Array4<Real const>& arr = centerDivB[iLev][mfi].array();
+        value = arr(ijk);
+      }
     } else if (var.substr(0, 4) == "divB") {
       // Only allocated on demand in the hybrid-PIC solver; report a zero rather
       // than indexing an empty MultiFab when the diagnostic was not requested.

@@ -163,7 +163,7 @@ z=0 var ascii pic       plotString
 -1                      dn
 2.0                     dt
 1                       dx
-body bodySurf bodyInt rhoS0 Ex Ey Ez Bx By Bz divB   plotVar
+body bodySurf bodyInt rhoS0 Ex Ey Ez Bx By Bz divB divBc   plotVar
 
 #STOP
 -1                      MaxIter
