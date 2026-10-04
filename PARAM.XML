@@ -835,7 +835,7 @@ T                         alwaysComputeDivB
 This command enables hyperbolic divergence cleaning for the magnetic field: a
 Munz-type correction
 
-    phi += -dt * ch^2 * div(B),     B -= dt * grad(phi),     ch = 0.8*dx/dt
+    phi += -dt * ch*ch * div(B),    B -= dt * grad(phi),     ch = 0.8*dx/dt
 
 which transports and damps the divergence error rather than solving for it. It
 is the only div(B) control available to the hybrid-PIC solver.

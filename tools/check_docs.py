@@ -297,6 +297,57 @@ def check_canonical(errors: list[str]) -> None:
             errors.append(f"canonical document missing: {name}")
 
 
+def check_param_xml_tex(errors: list[str]) -> None:
+    """PARAM.XML command text is typeset by share/Scripts/XmlToTex.pl.
+
+    That script escapes &, <, >, # and _, but not ^. A bare ^ outside math mode
+    makes pdflatex stop with 'Missing $ inserted', which fails the PDF job.
+    Reproduce its verbatim state machine: a line starting with #COMMAND opens a
+    verbatim block that the first empty line closes, and \\begin{verbatim}
+    forces one open until its matching \\end{verbatim}.
+    """
+    path = REPO_ROOT / "PARAM.XML"
+    if not path.is_file():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    # Drop XML tags first: attribute values such as if="$plotform =~ /amrex/" are
+    # never typeset and would put the math state out of step. Newlines inside a
+    # tag are kept so the line numbers still match the file.
+    text = re.sub(r"<[^>]*>", lambda m: "\n" * m.group(0).count("\n"), text)
+
+    forced = verbatim = display = False
+    for n, line in enumerate(text.split("\n"), 1):
+        if re.match(r"\\begin\{verbatim\}", line):
+            forced = True
+        elif re.match(r"\\end\{verbatim\}", line):
+            forced = False
+        elif not (forced or verbatim) and re.match(r"#\w", line):
+            verbatim = True
+
+        if not (forced or verbatim):
+            # $$ on its own line opens or closes a display-math block.
+            if line.strip() == "$$":
+                display = not display
+            i, math = 0, display
+            while i < len(line):
+                char = line[i]
+                if char == "$":
+                    i += 2 if line[i + 1:i + 2] == "$" else 1
+                    math = not math
+                    continue
+                if char == "^" and not math and line[i - 1:i] != "\\":
+                    errors.append(
+                        f"PARAM.XML:{n}: unescaped '^' in text typeset by "
+                        "XmlToTex.pl (use ch*ch, \\^, or wrap it in $...$)"
+                    )
+                    break
+                i += 1
+
+        if verbatim and not forced and not line.strip():
+            verbatim = False
+
+
 def main() -> int:
     errors: list[str] = []
     check_agent_md(errors)
@@ -304,6 +355,7 @@ def main() -> int:
     check_references(errors)
     check_paths(errors)
     check_canonical(errors)
+    check_param_xml_tex(errors)
 
     if not errors:
         print("docs check: OK")
