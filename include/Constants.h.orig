@@ -13,10 +13,9 @@ inline constexpr double cElectronMassSI = 9.1093837e-31; // kg
 inline constexpr double cUnitChargeSI = 1.60217663e-19; // C
 
 inline constexpr double cBoltzmannSI = 1.380649e-23;
-inline constexpr double cLightSpeedSI = 299792458.0; // m/s
 
-inline constexpr double mu0 = fourPI * 1e-7; // unit N/A^2
-inline constexpr double cEps0SI = 1.0 / (mu0 * cLightSpeedSI * cLightSpeedSI); // F/m
+// Vacuum permittivity [F/m] = 1/(mu0*c^2).
+inline constexpr double cEps0SI = 8.8541878176198092e-12;
 
 inline constexpr double cAUSI = 1.495978707e11; // m
 

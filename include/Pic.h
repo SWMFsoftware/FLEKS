@@ -153,28 +153,20 @@ private:
   amrex::Real rhoMinOhm = 0.0;
 
   // ---- Evolved electron pressure (see #ELECTRONPRESSURE) ----
-  // Everything in this block is inert unless useElectronPressureEq is true:
-  // no MultiFab is allocated and update_Pe_hybrid() returns immediately, so a
-  // default run is unaffected.
+  // Inert unless useElectronPressureEq: update_Pe_hybrid() returns immediately.
   bool useElectronPressureEq = false;
-  // Spitzer electron heat conduction coefficient kappa0 in SI units
-  // [W/(m K^(7/2))]; 9.2e-12 corresponds to coulombLog = 20.
+  // Spitzer kappa0 [W/(m K^(7/2))]; 9.2e-12 is for coulombLog = 20.
   amrex::Real heatCondKappa0SI = 9.2e-12;
   amrex::Real heatCondKappa0 = 0.0; // code units (convert_electron_heat_cond)
   amrex::Real coulombLog = 20.0;
-  // kappa_hat = kappa * b_hat b_hat (field aligned) when true.
+  // kappa_hat = kappa [f b b + (1-f) I] with f = fieldAlignedFraction.
   bool fieldAlignedConduction = true;
-  // Blend between the field-aligned (1) and the isotropic (0) dyad.
   amrex::Real fieldAlignedFraction = 1.0;
-  // Magnetic field strength [T] below which the field direction is treated as
-  // meaningless (round-off), so the conduction falls back to isotropic instead
-  // of locking onto a noise direction.
+  // |B| [T] under which the direction is treated as noise: use isotropic.
   amrex::Real fieldAlignedBMinSI = 1.0e-15;
   amrex::Real fieldAlignedBMin = 0.0;
-  // Free-streaming heat-flux limiter fraction; 0 disables the limiter.
-  amrex::Real heatFluxLimiter = 0.0;
-  // Floor applied to the evolved Pe.
-  amrex::Real peMin = 0.0;
+  amrex::Real heatFluxLimiter = 0.0; // free-streaming limiter; 0 disables it
+  amrex::Real peMin = 0.0; // floor on the evolved Pe
   // Numerical scheme for Pe advection and compression (see #ELECTRONADVECTION)
   std::string peAdvectionLimiter = "vanleer";
   std::string peCompressionScheme = "exponential";
@@ -188,11 +180,9 @@ private:
   bool useHeatExchange = false;
   amrex::Real collisionFactor = 1.0;
   amrex::Real collisionCoefEi = 0.0; // code units
-  // Add the ambipolar E to the Runge-Kutta stages of the B update. Physically
-  // required once Pe is not a polytropic function of the density.
+  // Add the ambipolar E to the RK stages; needed once Pe is not polytropic.
   bool ambipolarInStages = true;
-  // True once centerPeState holds a valid field (EOS seeding or restart).
-  bool peStateInitialized_ = false;
+  bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
