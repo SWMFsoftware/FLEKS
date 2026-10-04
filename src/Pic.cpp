@@ -1574,21 +1574,10 @@ void Pic::update(bool doReportIn) {
     save_current_moments_to_prev();
     sum_moments(false);
     smooth_moments();
-    // Advance the electron pressure (no-op unless #ELECTRONPRESSURE is on).
-    // It must come after the fresh deposit and before update_B_hybrid(), which
-    // consumes Pe through compute_ambipolar_E().
     update_Pe_hybrid();
     update_B_hybrid();
     isFirstHybridStep = false;
   }
-
-  // Only to be turned on if DivE error needs to be visulaized when DivE
-  // cleaning is not turned on
-
-  // for (int i = 0; i < 2; i++) {
-  //   sum_moments(true);
-  //   sum_moments(false);
-  // }
 
   if (solveEM && doCorrectDivE) {
     if (finest_level == 0) {

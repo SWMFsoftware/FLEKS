@@ -153,7 +153,6 @@ private:
   amrex::Real rhoMinOhm = 0.0;
 
   // ---- Evolved electron pressure (see #ELECTRONPRESSURE) ----
-  // Inert unless useElectronPressureEq: update_Pe_hybrid() returns immediately.
   bool useElectronPressureEq = false;
   // Spitzer kappa0 [W/(m K^(7/2))]; 9.2e-12 is for coulombLog = 20.
   amrex::Real heatCondKappa0SI = 9.2e-12;
@@ -286,9 +285,8 @@ private:
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated
                                               // density
   // ---- Evolved electron pressure (#ELECTRONPRESSURE) ----
-  // Allocated only when useElectronPressureEq is true. centerPeState is the
-  // evolved field (it is written to / read from the restart files and is
-  // copied on a regrid); everything else is per-step scratch.
+  // centerPeState is the evolved field (written to / read from the restart
+  // files and is copied on a regrid); everything else is per-step scratch.
   amrex::Vector<amrex::MultiFab> centerPeState; // Pe at cell centres (state)
   amrex::Vector<amrex::MultiFab> centerPeRho;   // n_e at cell centres
   amrex::Vector<amrex::MultiFab> centerPeTe;    // Te at cell centres, then
@@ -724,7 +722,6 @@ public:
   // Advance the scalar electron pressure by one PIC step, operator split:
   //   dPe/dt + div(u_e Pe) + (gamma_e-1) Pe div(u_e)
   //       = (gamma_e-1) [ div(kappa_hat . grad(Te)) + H_ei ]
-  // No-op unless useElectronPressureEq is true.
   void update_Pe_hybrid();
   void update_Pe_hybrid(int iLev, amrex::Real dt);
   // Seed Pe from the algebraic polytropic closure using the current density.
@@ -732,7 +729,7 @@ public:
   void init_electron_pressure(int iLev);
   // Interpolate the state onto boxes created by a regrid.
   void fill_new_electron_pressure();
-  // Zero-gradient (foextrap) ghosts, used by the pressure field and scratch.
+  // Zero-gradient ghosts, used by the pressure field and scratch.
   void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab& mf);
   void apply_centerPe_BC(int iLev);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
