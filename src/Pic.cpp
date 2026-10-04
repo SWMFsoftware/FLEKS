@@ -579,6 +579,14 @@ void Pic::fill_E_B_fields() {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       project_body_B(centerB[iLev], iLev);
       project_body_B(nodeB[iLev], iLev);
+      // The cavity behind a perfect conductor carries no field. Leaving the
+      // initial uniform B in the frozen interior keeps a radial component of
+      // order |B| inside the body, which contradicts n.B = 0 on the surface it
+      // is supposed to bound, and leaks into the surface nodes through the
+      // nodal average -- that leak is what the per-step projection of nodeB has
+      // to keep removing. See scratch/body_divb/report.md.
+      mask_body_interior(centerB[iLev], cellStatus[iLev]);
+      mask_body_interior(nodeB[iLev], nodeStatus[iLev]);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     }

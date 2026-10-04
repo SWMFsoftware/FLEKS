@@ -385,10 +385,13 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
     """conducting: E is purely radial (E_t = 0) and B is purely tangential.
 
     The conditions are surface conditions: they hold on the one-cell-thick
-    surface layer of the body, while the interior is a cavity with E = 0 and B
-    frozen at its initial value. The two layers are told apart by the radius,
-    with a band of ambiguous nodes in between that is not checked (the
-    staircase surface sits at R_BODY - 1.5 dx to R_BODY - 2.5 dx).
+    surface layer of the body, while the interior is a field-free cavity (E = 0
+    and B = 0, the frozen interior of a perfect conductor). The surface layer is
+    selected with the 'bodySurf' mask, which is the staircase shell itself; the
+    radius band that was used before is ambiguous, because the staircase surface
+    sits anywhere between R_BODY - 1.5 dx and R_BODY - 2.5 dx and the two layers
+    have opposite B_r. The radius band is kept as a fallback for decks that do
+    not write the mask.
 
     The check uses the in-plane (x, y) components: the run is fake 2D (one
     cell in z), the plot output carries no z coordinate, and the radial
@@ -402,12 +405,15 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
         return False, "The ambient E or B field is zero (test is vacuous)"
 
     dx = _grid_spacing(cols)
-    r_surf = R_BODY - 1.5 * dx   # solidly in the surface layer
-    r_int = R_BODY - 2.5 * dx    # solidly in the frozen interior
+    surf_mask = cols.get("BODYSURF")
+    int_mask = cols.get("BODYINT")
+    r_surf = R_BODY - 1.5 * dx   # fallback band, solidly in the surface layer
+    r_int = R_BODY - 2.5 * dx    # fallback band, solidly in the interior
 
     max_et = 0.0
     max_br = 0.0
     max_e_int = 0.0
+    max_b_int = 0.0
     max_db_int = 0.0
     n_surf = n_int = 0
     for i in inside:
@@ -415,7 +421,12 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
         if n2 is None:
             continue
 
-        if r2 >= r_surf:
+        is_surface = (surf_mask[i] > 0.5) if surf_mask is not None \
+            else (r2 >= r_surf)
+        is_interior = (int_mask[i] > 0.5) if int_mask is not None \
+            else (r2 <= r_int)
+
+        if is_surface:
             n_surf += 1
 
             # E x n = 0: in-plane tangential field must vanish, and since n_z = 0,
@@ -432,13 +443,16 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
             br = abs(bx * n2[0] + by * n2[1])
             allowed = abs(cols["BZ"][i]) * Z_HALF / r2
             max_br = max(max_br, max(0.0, br - allowed))
-        elif r2 <= r_int:
+        elif is_interior:
             n_int += 1
 
-            # The interior is shielded: no electric field and the magnetic
-            # field keeps its initial value.
+            # The interior is a field-free cavity: no electric field, and no
+            # magnetic field either -- a perfect conductor shields it, so the
+            # initial uniform B must not be left in there (it is not tangential
+            # and it leaks into the surface nodes through the nodal average).
             max_e_int = max(max_e_int, math.hypot(cols["EX"][i], cols["EY"][i],
                                                   cols["EZ"][i]))
+            max_b_int = max(max_b_int, _norm(_vec(cols, "B", i)))
             if first_cols is not None:
                 db = math.sqrt(sum((cols["B" + d][i] - first_cols["B" + d][i]) ** 2
                                    for d in ("X", "Y", "Z")))
@@ -447,8 +461,9 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
     logger.debug("    surface: %d nodes, max |E_t| = %.3e (|E| = %.3e), "
                  "max |B_r| beyond the fake-2D residual = %.3e (|B| = %.3e)",
                  n_surf, max_et, scale_e, max_br, scale_b)
-    logger.debug("    interior: %d nodes, max |E| = %.3e, max |B - B(t=0)| = %.3e",
-                 n_int, max_e_int, max_db_int)
+    logger.debug("    interior: %d nodes, max |E| = %.3e, max |B| = %.3e, "
+                 "max |B - B(t=0)| = %.3e",
+                 n_int, max_e_int, max_b_int, max_db_int)
 
     if n_surf == 0 or n_int == 0:
         return False, ("The conducting body is too small to separate the "
@@ -466,6 +481,11 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
     if max_e_int > CONSTRAINT_TOL * scale_e:
         return False, (f"The electric field is not zero inside the conducting "
                        f"body (max |E| = {max_e_int:.3e})")
+    if max_b_int > CONSTRAINT_TOL * scale_b:
+        return False, (f"The magnetic field is not zero inside the conducting "
+                       f"body (max |B| = {max_b_int:.3e} > "
+                       f"{CONSTRAINT_TOL} * |B| = {CONSTRAINT_TOL * scale_b:.3e}) "
+                       f"-- the cavity of a perfect conductor has to be empty")
     if first_cols is not None and max_db_int > CONSTRAINT_TOL * scale_b:
         return False, (f"The magnetic field is not frozen inside the conducting "
                        f"body (max |B - B(t=0)| = {max_db_int:.3e})")
