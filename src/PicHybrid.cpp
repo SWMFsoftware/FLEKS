@@ -772,6 +772,31 @@ void Pic::update_B_hybrid() {
     apply_centerB_BC(iLev);
   }
 
+  // div(B) control for the hybrid solver. It used to have none at all: the
+  // hyperbolic cleaner below is only reachable through update_B(), which is
+  // gated by solveEM. WarpX has the same hole (its G-field cleaner is not wired
+  // into the Ohm solver either), and its answer for the evolved field is the
+  // same Munz-type correction that FLEKS already applies in full PIC:
+  //     phi += -dt ch^2 div(B),     B -= dt grad(phi)
+  // so the fix is to call the existing machinery rather than to invent one.
+  //
+  // Following the A0 lesson, the cleaner is fed the divergence of the field it
+  // is about to correct: nodeB is refreshed from the current centerB first and
+  // then averaged again below, so the correction reaches the nodal field too.
+  if (useHyperbolicCleaning) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3,
+                       &Pic::get_node_B, iLev, true);
+      }
+      compute_divB(iLev);
+      correct_B(iLev);
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
   // Update nodeB from centerB on all levels.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     average_center_to_node(centerB[iLev], nodeB[iLev]);

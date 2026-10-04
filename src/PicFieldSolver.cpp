@@ -713,6 +713,22 @@ void Pic::ensure_centerDivB(int iLev) {
 }
 
 //==========================================================
+void Pic::ensure_hypPhi(int iLev) {
+  // The hyperbolic cleaner's scalar potential. Allocated on demand so that the
+  // hybrid-PIC solver, which distribute_arrays() does not provision, can use
+  // the cleaner too, and so that every other hybrid deck keeps its memory
+  // footprint.
+  if (static_cast<int>(hypPhi.size()) != n_lev_max()) {
+    hypPhi.resize(n_lev_max());
+  }
+  if (hypPhi[iLev].empty() || hypPhi[iLev].boxArray() != cGrids[iLev] ||
+      hypPhi[iLev].DistributionMap() != DistributionMap(iLev)) {
+    distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev),
+                        nDim3, nGst, false, 0.0);
+  }
+}
+
+//==========================================================
 void Pic::compute_divB(int iLev) {
   std::string nameFunc = "Pic::compute_divB";
   timing_func(nameFunc);
@@ -864,6 +880,18 @@ void Pic::correct_B(int iLev) {
     return;
   }
 
+  // The upwind diffusion needs the comoving background velocity uBg, which is
+  // allocated for the full-PIC solver only. In hybrid PIC only the hyperbolic
+  // part runs; #UPWINDB therefore stays a full-PIC-only option there.
+  const bool doUpwind = useUpwindB && !useHybridPIC;
+  if (!doUpwind && !useHyperbolicCleaning) {
+    return;
+  }
+
+  if (useHyperbolicCleaning) {
+    ensure_hypPhi(iLev);
+  }
+
   if (centerDB[iLev].empty()) {
     distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
                         nDim3, nGst);
@@ -871,7 +899,7 @@ void Pic::correct_B(int iLev) {
   MultiFab& cDB = centerDB[iLev];
   cDB.setVal(0.0);
 
-  if (useUpwindB) {
+  if (doUpwind) {
     Real coef[nDim3];
     for (int i = 0; i < nDim3; ++i) {
       coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];

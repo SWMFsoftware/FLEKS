@@ -832,7 +832,22 @@ T                         useHyperbolicCleaning
 0.1                       hypDecay (read if useHyperbolicCleaning=T)
 T                         alwaysComputeDivB
 
-This command enables hyperbolic divergence cleaning for the magnetic field.
+This command enables hyperbolic divergence cleaning for the magnetic field:
+a Munz-type correction
+
+    phi += -dt * ch^2 * div(B),     B -= dt * grad(phi),     ch = 0.8*dx/dt
+
+which transports and damps the divergence error instead of solving for it.
+It is the tool to reach for in the hybrid-PIC solver, which has no div(B)
+control of its own otherwise. Measured on tests/body (ncell 64) it cuts
+max|divB|*dx/|B| on the body surface shell from 0.56 to 0.15 at t = 0.2 s and
+from 0.85 to 0.50 at t = 2 s for 'conducting', and from 0.94 to 0.012 at t = 2 s
+for 'insulating', where the field growth is the known hybrid noise dynamo: it
+turns a growing Eb into a slightly decaying one. See
+scratch/body_divb/report.md.
+
+The upwind diffusion of #UPWINDB remains a full-PIC-only option, because it
+needs the comoving background velocity, which hybrid PIC does not allocate.
 
 The optional alwaysComputeDivB fills the cell-centred div(B) every step even
 when the cleaning is off, so that divB can be written out as a plot variable

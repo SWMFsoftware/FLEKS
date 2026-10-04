@@ -183,8 +183,8 @@ private:
   // Cell-centred divergence OF THE CELL-CENTRED FIELD, i.e. div(centerB), the
   // quantity the B update dB/dt = -curl(E) could conserve exactly if the
   // discrete curl and divergence were an adjoint pair. 'divB' above is instead
-  // div of the *nodal* field, so the two differ by an interpolation and only one
-  // of them is potentially conserved by the update. Written out as 'divBc';
+  // div of the *nodal* field, so the two differ by an interpolation and only
+  // one of them is potentially conserved by the update. Written out as 'divBc';
   // allocated on demand by ensure_centerDivB(). This is a diagnostic only: no
   // solver path consumes it.
   amrex::Vector<amrex::MultiFab> centerDivB;
@@ -212,15 +212,13 @@ private:
   // requested, so that 'divB' can be plotted. Without it the diagnostic is only
   // filled as a by-product of the hyperbolic cleaning.
   bool alwaysComputeDivB = false;
-  // True when the div(B) diagnostic has to be refreshed this step. In the
-  // full-PIC solver it is a by-product of the hyperbolic cleaning, so it comes
-  // for free whenever the cleaning is on. The hybrid-PIC solver never runs
-  // correct_B(), so there useHyperbolicCleaning has no effect at all and only
-  // the explicit switch applies: that keeps the memory footprint of every
-  // existing hybrid deck unchanged.
-  bool need_divB() const {
-    return alwaysComputeDivB || (useHyperbolicCleaning && !useHybridPIC);
-  }
+  // True when the div(B) diagnostic has to be refreshed this step. Both solvers
+  // consume it: the full-PIC one inside correct_B(), the hybrid-PIC one because
+  // update_B_hybrid() now runs the same cleaner. With the cleaning on it comes
+  // for free; a deck that only wants to plot 'divB' asks for it with
+  // alwaysComputeDivB. When both are false nothing is computed, so every
+  // existing deck keeps its memory footprint and its timings.
+  bool need_divB() const { return alwaysComputeDivB || useHyperbolicCleaning; }
 
   // Background velocity and electric field.
   amrex::Vector<amrex::MultiFab> uBg;
@@ -711,11 +709,12 @@ public:
   void solve_hyp_phi(int iLev);
 
   //-------------div(B) diagnostic begin----------------
-  // Allocate divB[iLev] / centerDivB[iLev] if they do not exist yet (hybrid-PIC
-  // solver, where distribute_arrays() does not create them) or if the grids
-  // changed.
+  // Allocate divB[iLev] / centerDivB[iLev] / hypPhi[iLev] if they do not exist
+  // yet (hybrid-PIC solver, where distribute_arrays() does not create them) or
+  // if the grids changed.
   void ensure_divB(int iLev);
   void ensure_centerDivB(int iLev);
+  void ensure_hypPhi(int iLev);
   // Refresh both div(B) diagnostics from the current B.
   void compute_divB(int iLev);
   //-------------div(B) diagnostic end------------------
