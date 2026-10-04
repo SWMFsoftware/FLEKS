@@ -602,17 +602,12 @@ void Pic::post_process_param() {
     bodyBoundarySet_ = false;
   }
 
-  // A conducting inner body pins the radial component of the *evolved* field
-  // to zero on the body surface (project_body_B). A planetary intrinsic field
-  // has a radial component that necessarily crosses the surface, so the two
-  // conditions contradict each other. Reject the combination instead of
-  // silently dropping one of them; use 'linetied' or 'insulating' instead.
-  if (useBody && bodyFieldBC == BodyFieldBC::conducting &&
-      intrinsicB_ != nullptr && intrinsicB_->is_active()) {
-    Abort("Invalid combination: #BODYBOUNDARY fieldBoundary 'conducting' "
-          "cannot be used together with an intrinsic magnetic field "
-          "(#DIPOLE / #CRUSTALFIELD). Use 'linetied' or 'insulating'.");
-  }
+  // A conducting inner body makes the *total* field tangential on the body
+  // surface: project_body_B() sets B1.n = -B0.n, so the intrinsic field passes
+  // through the surface while the surface current n x (B1 + B0) closes on it.
+  // That is the same split BATSRUS makes with its 'reflectb' boundary type,
+  // where the ghost state is built from B + B0 before being reflected.
+  // 'linetied' and 'insulating' constrain nothing, so they are unaffected.
 
   hasRegionalResistivity_ = !regionalResistivityConfigs.empty();
   hasRegionalHyper_ = !regionalHyperResistivityConfigs.empty();

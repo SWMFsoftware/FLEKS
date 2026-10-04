@@ -4,6 +4,9 @@
 Four variants are discovered from this directory:
 
   - PARAM.in.body         -> "intrinsic_field_body"           dipole + #BODY
+  - PARAM.in.body_conducting -> "intrinsic_field_body_conducting"
+                            dipole + a conducting #BODY: the total field is
+                            made tangential, so B1 = -B0.n n-hat on the shell
   - PARAM.in.crustal      -> "intrinsic_field_crustal"        g10-only file
   - PARAM.in.crustal_nm2  -> "intrinsic_field_crustal_nm2"    BATSRUS layout, many g/h
   - PARAM.in.dipole_crustal -> "intrinsic_field_dipole_crustal"
@@ -49,9 +52,15 @@ HYBRID_U_OUT = (100.0, 0.0, 0.0)
 
 R_MIN = 0.6            # skip the dipole singularity at the origin
 R_MAX = 3.5            # and the periodic seam far outside
+R_BODY = 1.0           # #BODY radius in the decks, in planetary radii
 ANALYTIC_TOL = 1e-6    # median relative error against the analytic dipole
 STATIC_TOL = 1e-6      # B0 must not change between frames
 TOTAL_TOL = 1e-10      # total field == B0 when B1 == 0
+# Purity of B1 on a conducting surface, relative to |B1| there. It is
+# a cancellation of two ~1e2 nT numbers, so the 11 significant digits
+# of the .out frames limit it to about 1e-8; anything above 1e-6 means
+# the projection left a tangential component.
+TANGENTIAL_TOL = 1e-6
 ROUNDTRIP_TOL = 1e-3   # limited by the grid spacing near r = 1
 CRUSTAL_TOL = 1e-8     # C++ vs independent Python evaluation
 ETOT_TOL = 1e-6        # relative drift of the total energy
@@ -180,7 +189,7 @@ def _load(pattern="*.out"):
 def _columns(vidx, rows):
     cols = {}
     for name in ("X", "Y", "Z", "B0X", "B0Y", "B0Z", "BX", "BY", "BZ",
-                 "EX", "EY", "EZ", "BODY"):
+                 "EX", "EY", "EZ", "BODY", "BODYSURFN"):
         cols[name] = _run_dir.col(vidx, rows, name)
     return cols
 
@@ -198,6 +207,39 @@ def _radius(cols, i):
 
 def _mag(vec):
     return math.sqrt(sum(v * v for v in vec))
+
+
+def _grid_spacing(cols):
+    """Cell size from the printed X coordinates (the .out frames are nodal)."""
+    xs = sorted(set(cols["X"]))
+    if len(xs) < 2:
+        return 0.0
+    return min(b - a for a, b in zip(xs, xs[1:]))
+
+
+def _is_shell(cols, i):
+    """True when point i is on the one-cell-thick surface shell of the body.
+
+    Uses the 'bodySurfN' mask, the node mask, which is what project_body_B()
+    acts on for the nodal field; the cell mask ('bodySurf') is offset from it by
+    one node along the surface. Without it (a deck that does not write the mask)
+    this falls back to a radius band, which is ambiguous because the staircase
+    surface sits anywhere within a cell or two of R = 1 and the shell and the
+    interior have opposite B_r.
+    """
+    mask = cols.get("BODYSURFN") or cols.get("BODYSURF")
+    if mask is not None:
+        return mask[i] > 0.5
+    return 0.6 < _radius(cols, i) < 1.0
+
+
+def _outward(cols, i):
+    """Outward radial unit vector of point i (the body sits at the origin)."""
+    x, y, z = _xyz(cols, i)
+    r = math.sqrt(x * x + y * y + z * z)
+    if r <= 0.0:
+        return None
+    return (x / r, y / r, z / r)
 
 
 def _field(cols, prefix, i):
@@ -239,7 +281,7 @@ def validate_log(pic_diags=None, test_name=None):
         return False, (f"Eb changed by {abs(b1 - b0) / abs(b0):.3e}; the "
                        "magnetic energy of a static field must be constant")
 
-    if test_name == "intrinsic_field_body":
+    if test_name in ("intrinsic_field_body", "intrinsic_field_body_conducting"):
         return True, "Passed (energies finite, Eb constant, body absorbs)"
 
     e0, e1 = pic_diags[0]["Etot"], pic_diags[-1]["Etot"]
@@ -290,17 +332,34 @@ def validate_plot(test_name):
                                "intrinsic field must not evolve")
 
     # -- 3. total == B0 ------------------------------------------------------
-    dtot = max(_mag(tuple(cols["B" + d][i] - cols["B0" + d][i] for d in "XYZ"))
-               for i in range(len(rows)))
-    logger.debug("    max |B_total - B0| = %.3e nT", dtot)
-    if dtot > TOTAL_TOL * b0max:
-        return False, (f"The total field is not B0 (max |B - B0| = {dtot:.3e} "
+    # On a 'conducting' surface the total field is deliberately NOT B0: the
+    # evolved field picks up exactly the normal component that cancels B0, so
+    # the shell is excluded here and checked separately below.
+    conducting = (test_name == "intrinsic_field_body_conducting")
+    worst, where = 0.0, -1
+    for i, _ in enumerate(rows):
+        if conducting and _is_shell(cols, i):
+            continue
+        d = _mag(tuple(cols["B" + d][i] - cols["B0" + d][i] for d in "XYZ"))
+        if d > worst:
+            worst, where = d, i
+    logger.debug("    max |B_total - B0| = %.3e nT%s", worst,
+                 " (excluding the surface shell)" if conducting else "")
+    if worst > TOTAL_TOL * b0max:
+        return False, (f"The total field is not B0 (max |B - B0| = {worst:.3e} "
                        f"nT > {TOTAL_TOL:g} * {b0max:.3e} nT)")
 
     if test_name in ("intrinsic_field_crustal", "intrinsic_field_crustal_nm2"):
         return _check_crustal(cols, rows, test_name)
     if test_name == "intrinsic_field_dipole_crustal":
         return _check_superposition(cols, rows)
+
+    if test_name == "intrinsic_field_body_conducting":
+        ok, msg = _check_conducting_total(cols, rows)
+        if not ok:
+            return False, msg
+        ok_dip, msg_dip = _check_dipole(cols, rows, test_name)
+        return ok_dip, f"{msg}; {msg_dip}"
 
     # The body deck is the dipole deck: check the body mask as well as the
     # analytic dipole, so that "B0 survives inside the body" stays covered
@@ -373,6 +432,89 @@ def _check_dipole(cols, rows, test_name):
 
     return True, (f"Passed (analytic dipole, median rel err {med:.1e}; "
                   f"|B0| r=1 = {B_EQ_NT:.1f} nT)")
+
+
+def _check_conducting_total(cols, rows):
+    """A conducting body makes the TOTAL field tangential, not B1.
+
+    With an intrinsic planetary field the evolved field B1 is set to
+    B1 = -B0.n n-hat on the surface shell, so that (B1 + B0).n = 0 there and the
+    intrinsic field passes through the conductor. This is the condition BATSRUS
+    calls 'reflectb'. Since B1 starts at zero and nothing else drives it, the
+    deck checks three things:
+
+      1. on the shell, the total field has no radial component,
+      2. on the shell, B1 is purely normal (it cancels B0 and adds nothing
+         tangential),
+      3. off the shell, B1 is still zero, so the dipole is undisturbed.
+    """
+    shell = [i for i, _ in enumerate(rows) if _is_shell(cols, i)]
+    if not shell:
+        return False, ("No point is marked as on the surface shell "
+                       "(bodySurf mask is empty)")
+
+    b0max = max(_mag(_field(cols, "B0", i)) for i in range(len(rows)))
+
+    # 1. the total field is tangential on the shell
+    worst_br, worst_at = 0.0, -1
+    for i in shell:
+        n = _outward(cols, i)
+        if n is None:
+            continue
+        b = _field(cols, "B", i)
+        br = abs(sum(b[k] * n[k] for k in range(3)))
+        if br > worst_br:
+            worst_br, worst_at = br, i
+    logger.debug("    shell: %d points, max |B_total . n| = %.3e nT "
+                 "(|B0|max = %.3e nT)", len(shell), worst_br, b0max)
+    if worst_br > TOTAL_TOL * b0max:
+        return False, (f"The total field is not tangential on the conducting "
+                       f"surface (max |B.n| = {worst_br:.3e} nT > "
+                       f"{TOTAL_TOL:g} * {b0max:.3e} nT)")
+
+    # 2. B1 on the shell is purely normal: it cancels B0 and nothing else
+    worst_tan, worst_b1 = 0.0, 0.0
+    for i in shell:
+        n = _outward(cols, i)
+        if n is None:
+            continue
+        b1 = tuple(cols["B" + d][i] - cols["B0" + d][i] for d in "XYZ")
+        worst_tan = max(worst_tan, _mag(tuple(b1[k] -
+                                              sum(b1[m] * n[m] for m in range(3)) *
+                                              n[k] for k in range(3))))
+        worst_b1 = max(worst_b1, _mag(b1))
+    logger.debug("    shell: max |B1_tangential| = %.3e nT, max |B1| = %.3e nT",
+                 worst_tan, worst_b1)
+    if worst_b1 <= 0.0:
+        return False, ("B1 is zero on the conducting surface; the evolved field "
+                       "did not pick up the component that cancels B0")
+    if worst_tan > TANGENTIAL_TOL * worst_b1:
+        return False, (f"B1 on the conducting surface is not purely normal "
+                       f"(max |B1_tangential| = {worst_tan:.3e} nT > "
+                       f"{TANGENTIAL_TOL:g} * |B1| = {TANGENTIAL_TOL * worst_b1:.3e} nT); "
+                       "it must cancel B0 and nothing else")
+
+    # 3. off the shell nothing changed: B1 is still zero there. The staircase
+    # fringe (nodes of the outermost shell cells that sit just outside the
+    # analytic sphere) is skipped: those nodes carry the projection but cannot be
+    # picked out with a radius test, so requiring B1 = 0 there would be a
+    # statement about the mask rather than about the physics.
+    dx = _grid_spacing(cols)
+    fringe = R_BODY + (1.5 * dx if dx > 0 else 0.0)
+    outside = [i for i, _ in enumerate(rows)
+               if not _is_shell(cols, i) and cols["BODY"][i] < 0.5
+               and _radius(cols, i) > fringe]
+    worst_off = max((_mag(tuple(cols["B" + d][i] - cols["B0" + d][i]
+                            for d in "XYZ")) for i in outside), default=0.0)
+    logger.debug("    outside the shell (r > %.3f): %d points, "
+                 "max |B_total - B0| = %.3e nT", fringe, len(outside), worst_off)
+    if worst_off > TOTAL_TOL * b0max:
+        return False, (f"The evolved field leaked outside the surface shell "
+                       f"(max |B - B0| = {worst_off:.3e} nT > "
+                       f"{TOTAL_TOL:g} * {b0max:.3e} nT)")
+
+    return True, (f"Passed (total field tangential on {len(shell)} shell points, "
+                  f"B1 = -B0.n n-hat there and zero elsewhere)")
 
 
 def _check_body(cols, rows):

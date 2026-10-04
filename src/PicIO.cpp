@@ -384,12 +384,22 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   // div(B) is stored at, so a plot can separate the shell from the bulk
   // exactly. The printed X/Y/Z are the lower node of that cell (see above), so
   // the value belongs to the cell spanning X..X+dx.
-  if (varLower == "bodysurf" || varLower == "bodyint") {
-    if (!useBody || !isValidMFI || iLev >= cellStatus.size() ||
-        cellStatus[iLev].empty())
+  //
+  // The 'N' variants ('bodySurfN', 'bodyIntN') are the NODE masks instead. They
+  // are the ones that match the projection applied to the nodal field in
+  // project_body_B(), which uses node_status: a node is projected when it
+  // belongs to a shell cell, whereas the cell mask read at the same index
+  // describes the cell that *starts* there. The two sets differ by one node
+  // along the surface, so a validator that checks a condition on the nodal
+  // field has to use the node mask.
+  if (varLower == "bodysurf" || varLower == "bodyint" ||
+      varLower == "bodysurfn" || varLower == "bodyintn") {
+    const bool useNode = (varLower == "bodysurfn" || varLower == "bodyintn");
+    if (!useBody || !isValidMFI)
       return 0.0;
-    const auto& statusArr = cellStatus[iLev][mfi].array();
-    if (varLower == "bodyint")
+    const auto& stat = useNode ? node_status(iLev) : cell_status(iLev);
+    const auto& statusArr = stat[mfi].array();
+    if (varLower == "bodyint" || varLower == "bodyintn")
       return bit::is_body_interior(statusArr(ijk)) ? 1.0 : 0.0;
     return (bit::is_body(statusArr(ijk)) &&
             !bit::is_body_interior(statusArr(ijk)))

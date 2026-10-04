@@ -830,8 +830,18 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
 
 //==========================================================
 void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
-  // conducting: B <- B - (B.n) n, i.e. the radial (normal) magnetic field
-  // vanishes while the tangential component carries the surface current.
+  // conducting: the TOTAL field is made tangential to the surface, i.e.
+  //     (B1 + B0).n = 0
+  // so that the evolved field B1 is set to B1.n = -B0.n and the surface current
+  // n x (B1 + B0) / mu0 closes on the intrinsic field. Without an intrinsic
+  // field this is the plain B1 <- B1 - (B1.n) n.
+  //
+  // The distinction matters: a planetary intrinsic field necessarily crosses
+  // the surface, so pinning B1.n to zero would leave a radial component of the
+  // total field there. BATSRUS makes the same split, through the 'reflectb'
+  // boundary type, where the ghost state is built from B + B0 before being
+  // reflected (ModFaceBoundary.f90, "Borig_D = Borig_D + B0Face_D"), so the
+  // face average of the TOTAL field is tangential and B0 passes through.
   if (mf.nComp() < 3)
     return;
 
@@ -846,10 +856,22 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
   const Real shift = isCell ? 0.5 : 0.0;
   const int activeDim = get_dim();
 
+  // The intrinsic field on the same grid as mf, if there is one.
+  const amrex::MultiFab* b0 = nullptr;
+  if (use_intrinsic_B()) {
+    const auto& src = isCell ? centerB0 : nodeB0;
+    if (iLev < static_cast<int>(src.size()) && !src[iLev].empty()) {
+      b0 = &src[iLev];
+    }
+  }
+  const bool hasB0 = (b0 != nullptr);
+
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     auto arr = mf[mfi].array();
     const auto statusArr = status[mfi].array();
+    const Array4<amrex::Real const> b0Arr =
+        b0 ? (*b0)[mfi].array() : Array4<amrex::Real const>();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (!bit::is_body(statusArr(i, j, k)) ||
@@ -872,7 +894,13 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
       const Real bx = arr(i, j, k, ix_);
       const Real by = arr(i, j, k, iy_);
       const Real bz = arr(i, j, k, iz_);
-      const Real br = bx * nx + by * ny + bz * nz;
+      // Normal component of the total field: B1.n + B0.n. Subtracting it from
+      // B1 leaves B1.n = -B0.n, i.e. a tangential total field.
+      Real br = bx * nx + by * ny + bz * nz;
+      if (hasB0) {
+        br += b0Arr(i, j, k, ix_) * nx + b0Arr(i, j, k, iy_) * ny +
+              b0Arr(i, j, k, iz_) * nz;
+      }
 
       arr(i, j, k, ix_) = bx - br * nx;
       arr(i, j, k, iy_) = by - br * ny;

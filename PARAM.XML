@@ -1669,11 +1669,17 @@ because it is shielded by the surface layer:
               implicit E solve, so the body is a field-free cavity and B is
               frozen at its initial value in the interior.
   conducting- perfect conductor: on the surface layer the tangential electric
-              field and the radial magnetic field vanish,
-              n x E = 0  and  n . B = 0,
+              field and the radial magnetic field of the TOTAL field vanish,
+              n x E = 0  and  n . (B1 + B0) = 0,
               while the radial E remains an unknown of the solve and the
               tangential B carries the surface current. The interior nodes are
               dropped from the solve like for 'linetied', so E = 0 there.
+              With an intrinsic planetary field (#DIPOLE, #CRUSTALFIELD) this
+              sets the evolved field to B1.n = -B0.n, i.e. the intrinsic field
+              passes through the surface and the surface current closes on the
+              total field, which is what BATSRUS does with its 'reflectb'
+              boundary type. Without an intrinsic field it is the plain
+              n . B1 = 0.
   insulating- perfect insulator: the body conducts no current and sustains no
               macroscopic surface shielding current, so the magnetic field
               passes through undistorted,
