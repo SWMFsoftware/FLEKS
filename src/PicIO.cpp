@@ -589,9 +589,8 @@ void Pic::save_restart_data() {
     VisMF::Write(centerB[iLev],
                  restartDir + gridName + "_centerB" + lev_string(iLev));
     if (useElectronPressureEq) {
-      VisMF::Write(centerPeState[iLev], restartDir + gridName +
-                                            "_centerPeState" +
-                                            lev_string(iLev));
+      VisMF::Write(centerPeState[iLev],
+                   restartDir + gridName + "_centerPeState" + lev_string(iLev));
     }
   }
 

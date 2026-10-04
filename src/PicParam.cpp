@@ -642,10 +642,12 @@ void Pic::post_process_param() {
     if (nCondIter < 1)
       Abort("Invalid #ELECTRONCONDUCTION: nCondIter must be at least 1.");
     if (nCondSubcycleMax < 1)
-      Abort("Invalid #ELECTRONCONDUCTION: nCondSubcycleMax must be at least 1.");
+      Abort(
+          "Invalid #ELECTRONCONDUCTION: nCondSubcycleMax must be at least 1.");
 
     if (collisionFactor < 0)
-      Abort("Invalid #ELECTRONCOLLISION: collisionFactor must be non-negative.");
+      Abort(
+          "Invalid #ELECTRONCOLLISION: collisionFactor must be non-negative.");
 
     // Sized here rather than in the constructor: the command has not been
     // read when Pic is constructed.
@@ -985,10 +987,9 @@ void Pic::convert_electron_heat_conduction() {
                   ? std::string(", field aligned (fraction ") +
                         std::to_string(fieldAlignedFraction) + ")"
                   : std::string(", isotropic"))
-          << (heatFluxLimiter > 0
-                  ? ", free-streaming limiter " +
-                        std::to_string(heatFluxLimiter)
-                  : ", no heat-flux limiter")
+          << (heatFluxLimiter > 0 ? ", free-streaming limiter " +
+                                        std::to_string(heatFluxLimiter)
+                                  : ", no heat-flux limiter")
           << "\n";
 }
 
@@ -1004,14 +1005,13 @@ void Pic::convert_electron_collision() {
   const Real Si2NoRho = fi->get_Si2NoRho();
   const Real uNormSI = fi->get_unorm_si();
 
-  const Real reducedMassSI = (cElectronMassSI * cProtonMassSI) /
-                             (cElectronMassSI + cProtonMassSI);
+  const Real reducedMassSI =
+      (cElectronMassSI * cProtonMassSI) / (cElectronMassSI + cProtonMassSI);
   const Real twoPiKB = 2.0 * dPI * cBoltzmannSI;
   const Real e2OverEps = (cUnitChargeSI * cUnitChargeSI) / cEps0SI;
 
   const Real coefSI = coulombLog * std::sqrt(reducedMassSI / cProtonMassSI) *
-                      (e2OverEps * e2OverEps) /
-                      (3.0 * std::pow(twoPiKB, 1.5));
+                      (e2OverEps * e2OverEps) / (3.0 * std::pow(twoPiKB, 1.5));
 
   const Real Si2NoT = Si2NoL / Si2NoV;
   const Real No2SiN = 1.0 / (Si2NoRho * cProtonMassSI);
@@ -1023,8 +1023,7 @@ void Pic::convert_electron_collision() {
 
   Print() << "  electron-ion collision (heat exchange): factor = "
           << collisionFactor << ", coulombLog = " << coulombLog
-          << " -> collisionCoefEi = " << collisionCoefEi
-          << " [code units]\n";
+          << " -> collisionCoefEi = " << collisionCoefEi << " [code units]\n";
 }
 
 //==========================================================

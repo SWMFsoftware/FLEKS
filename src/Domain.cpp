@@ -118,17 +118,30 @@ const ParameterCommand *find_parameter_command(const std::string &command) {
 }
 
 bool is_singleton_command(const std::string &command) {
-  static const char *const singletonCommands[] = {
-    "#BSUBCYCLE",        "#DISCRETIZE",       "#ELECTRONADVECTION",
-    "#ELECTRONCOLLISION", "#ELECTRONCONDUCTION", "#ELECTRONPRESSURE",
-    "#ELECTRONTEMPERATURE",
-    "#FIELDBOXBOUNDARY", "#FIELDINTEGRATOR",  "#GEOMETRY",
-    "#HYBRIDPIC",        "#HYPERRESISTIVITY", "#INITFROMSWMF",
-    "#LOADBALANCE",      "#MINIMUMDENSITY",   "#NCELL",
-    "#NOUTFILE",         "#PARTICLETRACKER",  "#PERIODICITY",
-    "#RECEIVEICONLY",    "#RESTART",          "#SOURCE",
-    "#TIMESTEP",         "#TIMESTEPPING"
-  };
+  static const char *const singletonCommands[] = { "#BSUBCYCLE",
+                                                   "#DISCRETIZE",
+                                                   "#ELECTRONADVECTION",
+                                                   "#ELECTRONCOLLISION",
+                                                   "#ELECTRONCONDUCTION",
+                                                   "#ELECTRONPRESSURE",
+                                                   "#ELECTRONTEMPERATURE",
+                                                   "#FIELDBOXBOUNDARY",
+                                                   "#FIELDINTEGRATOR",
+                                                   "#GEOMETRY",
+                                                   "#HYBRIDPIC",
+                                                   "#HYPERRESISTIVITY",
+                                                   "#INITFROMSWMF",
+                                                   "#LOADBALANCE",
+                                                   "#MINIMUMDENSITY",
+                                                   "#NCELL",
+                                                   "#NOUTFILE",
+                                                   "#PARTICLETRACKER",
+                                                   "#PERIODICITY",
+                                                   "#RECEIVEICONLY",
+                                                   "#RESTART",
+                                                   "#SOURCE",
+                                                   "#TIMESTEP",
+                                                   "#TIMESTEPPING" };
 
   for (const char *singleton : singletonCommands) {
     if (command == singleton)

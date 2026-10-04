@@ -577,9 +577,9 @@ void Pic::init_electron_pressure(int iLev) {
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real r = arrRho(i, j, k);
-      arrPe(i, j, k) = (gamma == 1.0)
-                           ? Te * r
-                           : ((r > 0) ? p0 * std::pow(r * invRho0, gamma) : 0.0);
+      arrPe(i, j, k) =
+          (gamma == 1.0) ? Te * r
+                         : ((r > 0) ? p0 * std::pow(r * invRho0, gamma) : 0.0);
     });
   }
   apply_centerPe_BC(iLev);
@@ -613,9 +613,9 @@ bool Pic::add_electron_ion_heating(int iLev, Real dt) {
     const Array4<Real>& arrPiN = nodePeRho[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      arrPiN(i, j, k) = (moments(i, j, k, iPxx_) +
-                         moments(i, j, k, iPyy_) +
-                         moments(i, j, k, iPzz_)) / 3.0;
+      arrPiN(i, j, k) = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
+                         moments(i, j, k, iPzz_)) /
+                        3.0;
     });
   }
   nodePeRho[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -688,8 +688,7 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   // A dimension with a single cell carries no flux: zero its inverse spacing.
   const Real invDxX = (domLen[ix_] > 1) ? invDxGeom[ix_] : 0.0;
   const Real invDxY = (domLen[iy_] > 1) ? invDxGeom[iy_] : 0.0;
-  const Real invDxZ =
-      (nDim > 2 && domLen[iz_] > 1) ? invDxGeom[iz_] : 0.0;
+  const Real invDxZ = (nDim > 2 && domLen[iz_] > 1) ? invDxGeom[iz_] : 0.0;
 
   const Real gammaM1 = electronGamma - 1.0;
   const Real invFourPILocal = 1.0 / fourPI;
@@ -959,7 +958,7 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
           // round-off level still has bmag > 0, but its direction is arbitrary,
           // so the conduction must not be locked to it. The weight blends the
           // dyad towards isotropic as |B| drops below fieldAlignedBMin.
-          Real bhat[3] = {0.0, 0.0, 0.0};
+          Real bhat[3] = { 0.0, 0.0, 0.0 };
           Real fEff = 0.0;
           if (fAlign > 0.0) {
             const Real bx = arrB(i, j, k, ix_);
@@ -975,13 +974,13 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
             }
           }
 
-          Real gT[3] = {0.0, 0.0, 0.0};
+          Real gT[3] = { 0.0, 0.0, 0.0 };
           for (int d = 0; d < nDim; ++d)
             gT[d] = arrQ(i, j, k, d);
           const Real bdotg =
               bhat[ix_] * gT[ix_] + bhat[iy_] * gT[iy_] + bhat[iz_] * gT[iz_];
 
-          Real q[3] = {0.0, 0.0, 0.0};
+          Real q[3] = { 0.0, 0.0, 0.0 };
           for (int d = 0; d < 3; ++d) {
             if (d >= nDim || domLen[d] <= 1) {
               q[d] = 0.0;
@@ -993,11 +992,12 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
           // Free-streaming saturation: |q| <= f * n_e * Te * v_th,e with
           // v_th,e = sqrt(Te * m_p/m_e) in code units.
           if (heatFluxLimiter > 0.0) {
-            const Real qmag = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
+            const Real qmag =
+                std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
             if (qmag > 0.0) {
               const Real ne = amrex::max(arrRhoN(i, j, k), rhoMinOhm);
-              const Real qsat = heatFluxLimiter * ne * teN *
-                                std::sqrt(teN * massRatioPe);
+              const Real qsat =
+                  heatFluxLimiter * ne * teN * std::sqrt(teN * massRatioPe);
               if (qmag > qsat) {
                 const Real scale = qsat / qmag;
                 for (int d = 0; d < 3; ++d)
@@ -1017,7 +1017,8 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
       apply_pe_zero_gradient_bc(iLev, nodePeVec[iLev]);
       apply_pe_zero_gradient_bc(iLev, nodePeAux[iLev]);
 
-      div_node_to_center(nodePeVec[iLev], centerPe[iLev], Geom(iLev).InvCellSize());
+      div_node_to_center(nodePeVec[iLev], centerPe[iLev],
+                         Geom(iLev).InvCellSize());
 
       Real subDt = dt / static_cast<Real>(nPasses);
       bool useExplicitThisStep = isExplicit;
@@ -1031,10 +1032,12 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
           Real localMaxRate = 0.0;
           amrex::Loop(box, [&](int i, int j, int k) {
             const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
-            Real lam = (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+            Real lam =
+                (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
             lam += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
             if (nDim > 2)
-              lam += (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
+              lam +=
+                  (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
             localMaxRate = amrex::max(localMaxRate, gammaM1 * lam / ne);
           });
           maxDiffRate = amrex::max(maxDiffRate, localMaxRate);
@@ -1064,16 +1067,16 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
 
-          Real lambda = (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+          Real lambda =
+              (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
           lambda += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
           if (nDim > 2)
             lambda +=
                 (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
 
           const Real src = -arrDivQ(i, j, k);
-          const Real denom = useExplicitThisStep
-                                 ? 1.0
-                                 : (1.0 + subDt * gammaM1 * lambda / ne);
+          const Real denom =
+              useExplicitThisStep ? 1.0 : (1.0 + subDt * gammaM1 * lambda / ne);
 
           arrPe(i, j, k) =
               amrex::max(arrPe(i, j, k) + subDt * gammaM1 * src / denom, peMin);

@@ -165,7 +165,7 @@ private:
   amrex::Real fieldAlignedBMinSI = 1.0e-15;
   amrex::Real fieldAlignedBMin = 0.0;
   amrex::Real heatFluxLimiter = 0.0; // free-streaming limiter; 0 disables it
-  amrex::Real peMin = 0.0; // floor on the evolved Pe
+  amrex::Real peMin = 0.0;           // floor on the evolved Pe
   // Numerical scheme for Pe advection and compression (see #ELECTRONADVECTION)
   std::string peAdvectionLimiter = "vanleer";
   std::string peCompressionScheme = "exponential";
@@ -730,7 +730,7 @@ public:
   // Interpolate the state onto boxes created by a regrid.
   void fill_new_electron_pressure();
   // Zero-gradient ghosts, used by the pressure field and scratch.
-  void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab& mf);
+  void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab &mf);
   void apply_centerPe_BC(int iLev);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
   // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation from BATSRUS.
