@@ -39,11 +39,12 @@ ETOT_GROWTH_MAX = 10.0  # the body must not inject energy
 CONSTRAINT_TOL = 1e-6   # relative tolerance of the conducting constraint
 # Max |divB|*dx/|B| on the body surface shell. Measured with
 # scratch/body_divb/scan.py at the 64-cell resolution of these decks:
-# 'conducting' 0.36, 'linetied' 0.028, 'insulating' 0.002. The bounds are
-# deliberately loose (about 2.5x the measurement) so that they catch a real
-# regression without being sensitive to the particle noise of a 4 ppc run.
-DIVB_SHELL_MAX_CONDUCTING = 1.0
-DIVB_SHELL_MAX_CONTROL = 0.2
+# 'conducting' 0.119, 'linetied' 0.028, 'insulating' 0.002. Before the
+# div(B) lag fix in update_B() 'conducting' measured 0.362, so these bounds
+# catch a return to that behaviour while still leaving ~2.5x headroom for the
+# particle noise of a 4 ppc run.
+DIVB_SHELL_MAX_CONDUCTING = 0.3
+DIVB_SHELL_MAX_CONTROL = 0.1
 Z_HALF = 0.05           # half of the z extent of the fake-2D decks (one cell)
 PASS_THROUGH_MIN = 0.4  # insulating: |B| and |E| inside vs outside
 # Density next to the staircase surface relative to the far field. The initial

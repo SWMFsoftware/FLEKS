@@ -701,6 +701,9 @@ void Pic::compute_divB(int iLev) {
   std::string nameFunc = "Pic::compute_divB";
   timing_func(nameFunc);
 
+  // The cell-centred divergence of the nodal field, i.e. exactly the quantity
+  // the full-PIC hyperbolic cleaning consumes, so that 'divB' means the same
+  // thing in both solvers.
   ensure_divB(iLev);
   div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
 }
@@ -748,10 +751,18 @@ void Pic::update_B() {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
-    // The cleaning needs div(B) of the field it is about to correct; a deck
-    // that only wants to plot 'divB' gets the same quantity without the
-    // cleaning (see alwaysComputeDivB).
     if (need_divB()) {
+      // The cleaning must be fed the divergence of the field it is about to
+      // correct. It used to be computed from nodeB, which at this point still
+      // holds the PREVIOUS step's field (nodeB is only rebuilt by
+      // average_center_to_node() further down), so the cleaning lagged one step
+      // behind the field it was correcting. Average the current centerB into
+      // nodeB first and take its divergence; the average further down repeats
+      // the work so that nodeB also carries the cleaning correction. A deck
+      // that only wants to plot 'divB' gets the same quantity, without the
+      // cleaning: see alwaysComputeDivB.
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
     }
 
