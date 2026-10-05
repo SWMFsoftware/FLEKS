@@ -94,6 +94,6 @@ python3 tests/validate_tests.py --test=iaw
    plot output);
 2. The **ambipolar electric field `Ex` is non-zero at the last plot frame**
    (the initial `Ex` is zero by construction; a non-zero late-time `Ex` guards
-   against the structured plot reading a stale/zero node-centred E)
+   against the structured plot reading a stale/zero node-centered E)
 3. The density-perturbation amplitude stays bounded (the IAW damps rather than
    blowing up).

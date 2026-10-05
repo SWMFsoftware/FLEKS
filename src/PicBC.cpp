@@ -237,7 +237,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
       const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
       const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
-      // 1. Boundary nodes on physical wall (node-centred only).
+      // 1. Boundary nodes on physical wall (node-centered only).
       for (int d = 0; d < nDim; ++d) {
         if (!bnd.isNode[d])
           continue;
@@ -440,7 +440,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
     ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
       const int ijk[3] = { i, j, k };
 
-      // 1. Boundary nodes on physical inflow wall (node-centred only).
+      // 1. Boundary nodes on physical inflow wall (node-centered only).
       for (int d = 0; d < nDim; ++d) {
         if (!bnd.isNode[d])
           continue;
@@ -475,7 +475,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         }
       }
 
-      // 2. Boundary cells on physical inflow wall for cell-centred B (centerB).
+      // 2. Boundary cells on physical inflow wall for cell-centered B (centerB).
       // Enforcing prescribed B on the boundary cell prevents Faraday curl
       // mismatch between the pinned inflow boundary node and the interior
       // solution.
@@ -658,7 +658,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
             isGhost && ((side == 0 && idx < bxValid.smallEnd(d)) ||
                         (side == 1 && idx > bxValid.bigEnd(d)));
 
-        // Boundary node on physical wall (node-centred only).
+        // Boundary node on physical wall (node-centered only).
         bool onNodeWall = false;
         if (bnd.isNode[d]) {
           const bool onLoNode = (side == 0 && idx == bnd.loBnd[d]);
@@ -842,7 +842,7 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
   const Real cx = bodyCenter[ix_];
   const Real cy = bodyCenter[iy_];
   const Real cz = bodyCenter[iz_];
-  // Cell centres sit half a cell above the lower node.
+  // Cell centers sit half a cell above the lower node.
   const Real shift = isCell ? 0.5 : 0.0;
   const int activeDim = get_dim();
 

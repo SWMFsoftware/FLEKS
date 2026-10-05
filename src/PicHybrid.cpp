@@ -14,9 +14,7 @@ using namespace amrex;
 namespace {
 
 //==========================================================
-// File-local device helpers for the evolved electron pressure
-// (#ELECTRONPRESSURE). Force-inlined so they cost nothing over the inline
-// expressions they replace.
+// Helpers for the evolved electron pressure.
 
 // Cell (i,j,k) shifted by `off` cells along direction DIR.
 template <int DIR>
@@ -137,7 +135,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   BL_PROFILE("Pic::assemble_ohm_E");
 
   // Nodal total current J = curl(B)/(4*pi) from trial B (compact 1*dx stencil
-  // from cell centres to nodes). Only needed for physical resistivity and Hall.
+  // from cell centers to nodes). Only needed for physical resistivity and Hall.
   const bool needJ =
       (etaResistivity > 0 || useHallTerm || hasRegionalResistivity_);
   if (needJ) {
@@ -145,7 +143,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 
-  // Magnetic field interpolated from cell centres to nodes for vector cross
+  // Magnetic field interpolated from cell centers to nodes for vector cross
   // products.
   average_center_to_node(centerBtimeAvg, nodeBstage[iLev]);
   nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -347,14 +345,14 @@ void Pic::compute_ambipolar_E(int iLev) {
                    centerPe[iLev].nGrow());
     centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
   } else {
-    // Copy nodal ion density to nodeRhoTemp and average it to cell centres.
+    // Copy nodal ion density to nodeRhoTemp and average it to cell centers.
     // The nodes are filled over the grown tile so the coarse-fine interface
     // nodes are covered as well (unlike the evolved path, which owns its
     // density already).
     compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], true);
     centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    // Evaluate electron pressure Pe at cell centres via EOS
+    // Evaluate electron pressure Pe at cell centers via EOS
     const Real p0 = electronDensity0 * electronTemperature;
     const Real invRho0 =
         (electronDensity0 > 0) ? (1.0 / electronDensity0) : 0.0;
@@ -676,7 +674,7 @@ void Pic::fill_new_electron_pressure() {
 }
 
 //==========================================================
-// Nodal ion density -> cell-centred n_e, into (nodalRho, cellRho).
+// Nodal ion density -> cell-centered n_e, into (nodalRho, cellRho).
 // useGrownTile also covers the coarse-fine interface nodes, which
 // compute_ambipolar_E() needs; the evolved-Pe path only reads valid nodes back.
 void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
@@ -694,7 +692,7 @@ void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
 }
 
 //==========================================================
-// Te = Pe/n_e at the cell centres, with fresh ghosts. Solver scratch for the
+// Te = Pe/n_e at the cell centers, with fresh ghosts. Solver scratch for the
 // conductivity, not a diagnostic source; see the Te block in
 // write_amrex_field().
 void Pic::compute_electron_temperature(int iLev) {
@@ -734,7 +732,7 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
   }
   nodePeRho[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  // 2) Average scalar ion pressure to cell centres in centerPe (scratch here)
+  // 2) Average scalar ion pressure to cell centers in centerPe (scratch here)
   average_node_to_center(nodePeRho[iLev], centerPe[iLev]);
   apply_pe_zero_gradient_bc(iLev, centerPe[iLev]);
 
@@ -1128,7 +1126,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 }
 
 //==========================================================
-// BCs for the cell-centred B, applied to the RK trial states and to the new
+// BCs for the cell-centered B, applied to the RK trial states and to the new
 // state at the end of each B sub-step.
 void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 
@@ -1368,7 +1366,7 @@ void Pic::update_B_hybrid() {
     }
 
     if (fieldIntegrator == "ssprk3") {
-      // Strong-stability-preserving RK3 with time-centred E evaluation.
+      // Strong-stability-preserving RK3 with time-centered E evaluation.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
 

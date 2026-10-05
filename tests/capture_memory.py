@@ -48,7 +48,7 @@ from tests import validate_tests  # noqa: E402
 
 # The profiling selection: (test directory, PARAM.in suffix or None, nprocs).
 #
-# Chosen to cover the dominant cost centres of both field solvers while
+# Chosen to cover the dominant cost centers of both field solvers while
 # staying short: full-PIC implicit E solve + particle mover (beam), hybrid
 # Ohm assembly + Faraday advance (performance/PARAM.in.hybrid), 2D moment
 # deposition and current calculation (reconnection.fadeev_pic, the 32x16

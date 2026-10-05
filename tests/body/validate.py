@@ -87,7 +87,7 @@ def _vec(cols, prefix, i):
 
 
 def _grid_spacing(cols):
-    """Grid spacing of the output frame (the .out files are node centred)."""
+    """Grid spacing of the output frame (the .out files are node centered)."""
     xs = sorted(set(cols["X"]))
     if len(xs) < 2:
         return 0.0
@@ -235,7 +235,7 @@ def validate_plot(test_name):
 def _check_surface_density(cols):
     """The density next to the body must be the density of the plasma there.
 
-    A node-centred CIC moment averages over the cells around the node and the
+    A node-centered CIC moment averages over the cells around the node and the
     cells inside the body are empty, so without a correction the nodes on the
     staircase surface report only a half or three quarters of the plasma
     density. The moments are rescaled by the fraction of the surrounding cells

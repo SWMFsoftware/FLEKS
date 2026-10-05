@@ -1026,7 +1026,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     nVarOut += 1;
 
   // The evolved electron pressure and temperature (#ELECTRONPRESSURE). They
-  // are cell-centred, so they are only meaningful in the cell-centred output.
+  // are cell-centered, so they are only meaningful in the cell-centered output.
   const bool savePeVars = useElectronPressureEq && !saveNode;
   if (savePeVars)
     nVarOut += 2;

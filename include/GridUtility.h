@@ -822,10 +822,10 @@ void mask_body_interior(amrex::FabArray<FAB>& dst,
   }
 }
 
-// Undo the geometric dilution of the node-centred moments at the staircase
+// Undo the geometric dilution of the node-centered moments at the staircase
 // surface of the inner body (see the #BODY command).
 //
-// A node-centred CIC moment is the average over the 2^nDim cells around the
+// A node-centered CIC moment is the average over the 2^nDim cells around the
 // node, and the cells inside the body are empty, so a node on the staircase
 // surface reports only a fraction of the plasma density (1/2 or 3/4 in 2D).
 // Dividing by the fraction of the surrounding cells that are outside the body
@@ -1082,9 +1082,9 @@ void sum_coarse_to_fine_lev_bny_node(
   }
 }
 
-// Sum from fine level to coarse level for cell-centred data.
-// Uses amrex::average_down (volume-weighted, cell-centred) to coarsen the fine
-// contribution and Add() it to the coarse level. This is the cell-centred
+// Sum from fine level to coarse level for cell-centered data.
+// Uses amrex::average_down (volume-weighted, cell-centered) to coarsen the fine
+// contribution and Add() it to the coarse level. This is the cell-centered
 // analogue of sum_fine_to_coarse_lev_bny_node (which uses average_down_nodal).
 template <class FAB>
 void sum_fine_to_coarse_lev_bny_cell(amrex::FabArray<FAB>& coarse,
@@ -1103,7 +1103,7 @@ void sum_fine_to_coarse_lev_bny_cell(amrex::FabArray<FAB>& coarse,
   amrex::Add(c, ctmp, 0, 0, nComp, 0);
 }
 
-// Sum from coarse level to fine level for cell-centred data at level edges.
+// Sum from coarse level to fine level for cell-centered data at level edges.
 // Interpolates coarse values to the fine grid and overwrites the fine
 // level-edge cells (which are unreliable after particle deposit because
 // particles near the coarse-fine boundary deposit across both levels).
@@ -1141,7 +1141,7 @@ void sum_coarse_to_fine_lev_bny_cell(
   }
 }
 
-// Combined cell-centred coarse-fine interface summation for moments.
+// Combined cell-centered coarse-fine interface summation for moments.
 template <class FAB, class Interp>
 void sum_two_lev_interface_cell(amrex::FabArray<FAB>& coarse,
                                 amrex::FabArray<FAB>& fine, int iStart,

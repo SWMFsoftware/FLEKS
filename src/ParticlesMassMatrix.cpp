@@ -633,7 +633,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
 }
 
 //==========================================================
-// Apply mirror BC for node-centred current at reflect and inflow domain faces.
+// Apply mirror BC for node-centered current at reflect and inflow domain faces.
 // For reflect faces, specular symmetry zeroes normal current and doubles
 // tangential current. For inflow faces, all components double to compensate
 // for half-space node weighting.

@@ -595,7 +595,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
 void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
                            const Real* invDx) {
-  // Collocated 2*dx central difference on a cell-centred field. The box is
+  // Collocated 2*dx central difference on a cell-centered field. The box is
   // grown by one cell on each side (the output cell (i,j,k) reads neighbours
   // at +/-1). Requires the input to have >= 1 ghost cell (nGst >= 1).
   const Real dyInv = 0.5 * invDx[iy_];
@@ -667,7 +667,7 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
 }
 
 void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
-  // Average the 2^nDim corner nodes into each cell centre. The node index at a
+  // Average the 2^nDim corner nodes into each cell center. The node index at a
   // cell (i,j,k) is: (i,j,k), (i+1,j,k), (i,j+1,k), ... For 2D (nDim == 2) the
   // z extent is a dummy (k is constant), so the average reduces to the 4 corner
   // nodes. The factor is 1/(2^nDim).

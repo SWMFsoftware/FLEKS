@@ -304,7 +304,7 @@ In the hybrid PIC approach, ions are treated as kinetic particles and electrons 
 
 \subsection{The generalized Ohm's law}
 
-The electric field is assembled on the node grid from the node-centred ion fluid moments and the cell-centred magnetic field:
+The electric field is assembled on the node grid from the node-centered ion fluid moments and the cell-centered magnetic field:
 \begin{equation}
 \mathbf{E} = -\mathbf{U}_i \times \mathbf{B}
            + \eta\,\mathbf{J}
@@ -338,7 +338,7 @@ where $C_{\text{CFL}} = 2.785$ for RK4 and $2.513$ for SSPRK3.
 
 \subsection{Collocated field layout}
 
-The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centres. The generalized Ohm's law is therefore assembled at the nodes from the node-centred moments and the cell-centred $\mathbf{B}$, and the Faraday update advances the cell-centred $\mathbf{B}$; the node-centred $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values. The cell-centred field is differentiated with the compact $2\,\Delta x$ central-difference stencil
+The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centers. The generalized Ohm's law is therefore assembled at the nodes from the node-centered moments and the cell-centered $\mathbf{B}$, and the Faraday update advances the cell-centered $\mathbf{B}$; the node-centered $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values. The cell-centered field is differentiated with the compact $2\,\Delta x$ central-difference stencil
 \begin{equation}
 (\nabla \times \mathbf{B})_{i,j,k} \propto \frac{\mathbf{B}_{i+1} - \mathbf{B}_{i-1}}{2\Delta x},
 \end{equation}
@@ -369,8 +369,8 @@ The complete hybrid PIC time step proceeds through the following stages:
   \item \textbf{Particle Boris push:} Ions are advanced $\mathbf{v}^n \to \mathbf{v}^{n+1}$ using integer-step fields $\mathbf{E}^n, \mathbf{B}^n$; positions are updated as $\mathbf{x}^{n+1/2} = \mathbf{x}^{n-1/2} + \Delta t\,\mathbf{v}^n$.
   \item \textbf{Kinetic source and boundary updates:} Particle boundary conditions, chemistry, charge exchange, and physical inflow flux injection are evaluated.
   \item \textbf{Moment deposition:} Ion charge $\rho_q^{n+1/2}$ and mass momentum $(\rho\mathbf{u})_i^{n+1/2}$ are deposited on the node grid. A digital-filter smoothing can be applied to reduce particle noise.
-  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances the cell-centred $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments; the node-centred $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
-  \item \textbf{Electric field assembly:} The node-centred $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} and stored for the subsequent Boris push.
+  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances the cell-centered $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments; the node-centered $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
+  \item \textbf{Electric field assembly:} The node-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} and stored for the subsequent Boris push.
 \end{enumerate}
 
 \section{Miscellaneous}
