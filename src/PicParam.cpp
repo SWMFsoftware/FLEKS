@@ -247,9 +247,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (useHyperbolicCleaning) {
       param.read_var("hypDecay", hypDecay);
     }
-    // Optional, so that every existing deck keeps its current behaviour: fill
-    // the cell-centred div(B) even without the cleaning, so that it can be
-    // written out as the plot variable 'divB'.
+    // Optional, so existing decks are unaffected: fill divB without cleaning.
     param.read_optional("alwaysComputeDivB", alwaysComputeDivB);
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
@@ -602,12 +600,9 @@ void Pic::post_process_param() {
     bodyBoundarySet_ = false;
   }
 
-  // A conducting inner body makes the *total* field tangential on the body
-  // surface: project_body_B() sets B1.n = -B0.n, so the intrinsic field passes
-  // through the surface while the surface current n x (B1 + B0) closes on it.
-  // That is the same split BATSRUS makes with its 'reflectb' boundary type,
-  // where the ghost state is built from B + B0 before being reflected.
-  // 'linetied' and 'insulating' constrain nothing, so they are unaffected.
+  // A conducting inner body makes the *total* field tangential (see
+  // project_body_B), so an intrinsic field is allowed and the combination is no
+  // longer rejected here.
 
   hasRegionalResistivity_ = !regionalResistivityConfigs.empty();
   hasRegionalHyper_ = !regionalHyperResistivityConfigs.empty();

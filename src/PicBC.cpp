@@ -830,18 +830,10 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
 
 //==========================================================
 void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
-  // conducting: the TOTAL field is made tangential to the surface, i.e.
-  //     (B1 + B0).n = 0
-  // so that the evolved field B1 is set to B1.n = -B0.n and the surface current
-  // n x (B1 + B0) / mu0 closes on the intrinsic field. Without an intrinsic
-  // field this is the plain B1 <- B1 - (B1.n) n.
-  //
-  // The distinction matters: a planetary intrinsic field necessarily crosses
-  // the surface, so pinning B1.n to zero would leave a radial component of the
-  // total field there. BATSRUS makes the same split, through the 'reflectb'
-  // boundary type, where the ghost state is built from B + B0 before being
-  // reflected (ModFaceBoundary.f90, "Borig_D = Borig_D + B0Face_D"), so the
-  // face average of the TOTAL field is tangential and B0 passes through.
+  // conducting: the TOTAL field is made tangential, (B1 + B0).n = 0, so the
+  // evolved field picks up B1.n = -B0.n and the surface current
+  // n x (B1 + B0) closes on the intrinsic field instead of being shorted out.
+  // Without B0 this is the plain B1 <- B1 - (B1.n) n. BATSRUS splits it too.
   if (mf.nComp() < 3)
     return;
 
@@ -856,7 +848,6 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
   const Real shift = isCell ? 0.5 : 0.0;
   const int activeDim = get_dim();
 
-  // The intrinsic field on the same grid as mf, if there is one.
   const amrex::MultiFab* b0 = nullptr;
   if (use_intrinsic_B()) {
     const auto& src = isCell ? centerB0 : nodeB0;
@@ -894,8 +885,7 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
       const Real bx = arr(i, j, k, ix_);
       const Real by = arr(i, j, k, iy_);
       const Real bz = arr(i, j, k, iz_);
-      // Normal component of the total field: B1.n + B0.n. Subtracting it from
-      // B1 leaves B1.n = -B0.n, i.e. a tangential total field.
+      // Normal component of the total field, so that B1.n = -B0.n.
       Real br = bx * nx + by * ny + bz * nz;
       if (hasB0) {
         br += b0Arr(i, j, k, ix_) * nx + b0Arr(i, j, k, iy_) * ny +

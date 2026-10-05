@@ -680,11 +680,8 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 
 //==========================================================
 void Pic::ensure_divB(int iLev) {
-  // The full-PIC solver allocates divB in distribute_arrays() together with the
-  // other div(E)/div(B) correction arrays, because the hyperbolic cleaning
-  // needs it. The hybrid-PIC solver never calls correct_B(), so there it is
-  // created on demand, and only by a deck that asks for the diagnostic, so that
-  // every other hybrid deck keeps its current memory footprint.
+  // Full PIC allocates divB in distribute_arrays(); hybrid PIC has no such call
+  // path, so it is created on demand and only when a deck asks for it.
   if (static_cast<int>(divB.size()) != n_lev_max()) {
     divB.resize(n_lev_max());
   }
@@ -698,9 +695,7 @@ void Pic::ensure_divB(int iLev) {
 
 //==========================================================
 void Pic::ensure_centerDivB(int iLev) {
-  // Diagnostic only, so it is always created on demand and never in
-  // distribute_arrays(): a deck that does not ask for it keeps its memory
-  // footprint, and no existing behaviour changes.
+  // Diagnostic only, so always on demand.
   if (static_cast<int>(centerDivB.size()) != n_lev_max()) {
     centerDivB.resize(n_lev_max());
   }
@@ -714,10 +709,7 @@ void Pic::ensure_centerDivB(int iLev) {
 
 //==========================================================
 void Pic::ensure_hypPhi(int iLev) {
-  // The hyperbolic cleaner's scalar potential. Allocated on demand so that the
-  // hybrid-PIC solver, which distribute_arrays() does not provision, can use
-  // the cleaner too, and so that every other hybrid deck keeps its memory
-  // footprint.
+  // On demand: distribute_arrays() does not provision it for hybrid PIC.
   if (static_cast<int>(hypPhi.size()) != n_lev_max()) {
     hypPhi.resize(n_lev_max());
   }
@@ -733,15 +725,11 @@ void Pic::compute_divB(int iLev) {
   std::string nameFunc = "Pic::compute_divB";
   timing_func(nameFunc);
 
-  // The cell-centred divergence of the nodal field, i.e. exactly the quantity
-  // the full-PIC hyperbolic cleaning consumes, so that 'divB' means the same
-  // thing in both solvers.
+  // div of the nodal field, the quantity the cleaning consumes.
   ensure_divB(iLev);
   div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
 
-  // The same divergence taken on the cell-centred field the B update actually
-  // advances. Comparing the two tells whether the update conserves its own
-  // divergence or only the interpolated one.
+  // The same for the cell-centred field the update advances; 'divBc'.
   ensure_centerDivB(iLev);
   div_center_to_center(centerB[iLev], centerDivB[iLev],
                        Geom(iLev).InvCellSize());
@@ -791,21 +779,13 @@ void Pic::update_B() {
                    dBdt[iLev].nGrow());
 
     if (need_divB()) {
-      // The cleaning must be fed the divergence of the field it is about to
-      // correct. It used to be computed from nodeB, which at this point still
-      // holds the PREVIOUS step's field (nodeB is only rebuilt by
-      // average_center_to_node() further down), so the cleaning lagged one step
-      // behind the field it was correcting. Average the current centerB into
-      // nodeB first and take its divergence; the average further down repeats
-      // the work so that nodeB also carries the cleaning correction. A deck
-      // that only wants to plot 'divB' gets the same quantity, without the
-      // cleaning: see alwaysComputeDivB.
+      // The cleaning used to be fed the PREVIOUS step's nodal field, nodeB
+      // being rebuilt only further down. Average the current centerB in first;
+      // the average below repeats it so that nodeB also carries the correction.
       average_center_to_node(centerB[iLev], nodeB[iLev]);
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
-      // div(centerB): the divergence of the field the update advances, i.e. the
-      // quantity the cleaning could conserve if the discrete curl and
-      // divergence were an adjoint pair. Diagnostic only.
+      // Also refresh 'divBc' (see compute_divB).
       ensure_centerDivB(iLev);
       div_center_to_center(centerB[iLev], centerDivB[iLev],
                            Geom(iLev).InvCellSize());
@@ -880,9 +860,8 @@ void Pic::correct_B(int iLev) {
     return;
   }
 
-  // The upwind diffusion needs the comoving background velocity uBg, which is
-  // allocated for the full-PIC solver only. In hybrid PIC only the hyperbolic
-  // part runs; #UPWINDB therefore stays a full-PIC-only option there.
+  // The upwind diffusion needs uBg, which only the full-PIC solver allocates,
+  // so #UPWINDB stays a full-PIC-only option.
   const bool doUpwind = useUpwindB && !useHybridPIC;
   if (!doUpwind && !useHyperbolicCleaning) {
     return;

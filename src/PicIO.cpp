@@ -334,9 +334,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
        var.substr(0, 3) == "phi")) {
     return value;
   }
-  // 'divB' and 'divBc' are deliberately not in that list: they are the div(B)
-  // diagnostics the hybrid-PIC solver can provide (allocated on demand by
-  // ensure_divB() / ensure_centerDivB()).
+  // 'divB' / 'divBc' are available in hybrid PIC too, allocated on demand.
   if (useHybridPIC &&
       (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
        var.substr(0, 5) == "dBzdt")) {
@@ -376,22 +374,10 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   if (varLower == "body")
     return isInsideBody ? 1.0 : 0.0;
 
-  // Split the body into the one-cell-thick surface layer, where the field
-  // boundary condition (#BODYBOUNDARY) acts and which is therefore the place to
-  // look for a div(B) error, and the frozen interior. Unlike 'body', which is
-  // the analytic sphere evaluated at the printed coordinate, these are the
-  // staircase masks of the CELLS, i.e. of the same index the cell-centred
-  // div(B) is stored at, so a plot can separate the shell from the bulk
-  // exactly. The printed X/Y/Z are the lower node of that cell (see above), so
-  // the value belongs to the cell spanning X..X+dx.
-  //
-  // The 'N' variants ('bodySurfN', 'bodyIntN') are the NODE masks instead. They
-  // are the ones that match the projection applied to the nodal field in
-  // project_body_B(), which uses node_status: a node is projected when it
-  // belongs to a shell cell, whereas the cell mask read at the same index
-  // describes the cell that *starts* there. The two sets differ by one node
-  // along the surface, so a validator that checks a condition on the nodal
-  // field has to use the node mask.
+  // Staircase masks of the one-cell-thick surface shell, where the field
+  // boundary condition acts, and of the frozen interior. Unlike 'body', these
+  // are the cell masks, i.e. the index div(B) is stored at; the 'N' variants
+  // are the node masks, which are what project_body_B() acts on.
   if (varLower == "bodysurf" || varLower == "bodyint" ||
       varLower == "bodysurfn" || varLower == "bodyintn") {
     const bool useNode = (varLower == "bodysurfn" || varLower == "bodyintn");
@@ -571,16 +557,13 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 5) == "divBc") {
-      // div(centerB): the divergence of the cell-centred field, i.e. the
-      // quantity the B update could conserve exactly. Diagnostic only, so it
-      // reads as zero when it was never requested.
+      // Diagnostic: reads zero when it was never requested.
       if (iLev < centerDivB.size() && !centerDivB[iLev].empty()) {
         const Array4<Real const>& arr = centerDivB[iLev][mfi].array();
         value = arr(ijk);
       }
     } else if (var.substr(0, 4) == "divB") {
-      // Only allocated on demand in the hybrid-PIC solver; report a zero rather
-      // than indexing an empty MultiFab when the diagnostic was not requested.
+      // Allocated on demand in hybrid PIC: report zero when not requested.
       if (iLev < divB.size() && !divB[iLev].empty()) {
         const Array4<Real const>& arr = divB[iLev][mfi].array();
         value = arr(ijk);

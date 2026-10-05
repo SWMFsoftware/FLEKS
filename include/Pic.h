@@ -173,20 +173,11 @@ private:
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
   amrex::Vector<amrex::MultiFab> nodeB;
-  // Cell-centred div(B) diagnostic (component 0). It is the quantity the
-  // hyperbolic/upwind cleaning acts on in the full-PIC solver, and it is also
-  // written out as the plot variable 'divB'. In the full-PIC solver it is
-  // allocated in distribute_arrays; in the hybrid-PIC solver, which has no
-  // div(B) cleaning at all, it is allocated on demand by ensure_divB() so that
-  // decks that do not ask for the diagnostic keep their memory footprint.
+  // div(B) diagnostics, both cell-centred: divB is div of the nodal field,
+  // the quantity the cleaning acts on, centerDivB is div of the cell-centred
+  // field the B update advances. Allocated in distribute_arrays (full PIC)
+  // or on demand by ensure_divB() / ensure_centerDivB() (hybrid PIC).
   amrex::Vector<amrex::MultiFab> divB;
-  // Cell-centred divergence OF THE CELL-CENTRED FIELD, i.e. div(centerB), the
-  // quantity the B update dB/dt = -curl(E) could conserve exactly if the
-  // discrete curl and divergence were an adjoint pair. 'divB' above is instead
-  // div of the *nodal* field, so the two differ by an interpolation and only
-  // one of them is potentially conserved by the update. Written out as 'divBc';
-  // allocated on demand by ensure_centerDivB(). This is a diagnostic only: no
-  // solver path consumes it.
   amrex::Vector<amrex::MultiFab> centerDivB;
   amrex::Vector<amrex::MultiFab> centerB;
   // Hybrid hyper-resistivity scratch fields.
@@ -208,16 +199,9 @@ private:
   bool useHyperbolicCleaning = false;
   amrex::Vector<amrex::MultiFab> hypPhi;
   amrex::Real hypDecay = 0.1;
-  // Compute the cell-centred div(B) every step even when no div(B) cleaning is
-  // requested, so that 'divB' can be plotted. Without it the diagnostic is only
-  // filled as a by-product of the hyperbolic cleaning.
+  // Fill divB even when no cleaning is requested, so 'divB' can be plotted.
   bool alwaysComputeDivB = false;
-  // True when the div(B) diagnostic has to be refreshed this step. Both solvers
-  // consume it: the full-PIC one inside correct_B(), the hybrid-PIC one because
-  // update_B_hybrid() now runs the same cleaner. With the cleaning on it comes
-  // for free; a deck that only wants to plot 'divB' asks for it with
-  // alwaysComputeDivB. When both are false nothing is computed, so every
-  // existing deck keeps its memory footprint and its timings.
+  // With the cleaning on, div(B) comes for free as its by-product.
   bool need_divB() const { return alwaysComputeDivB || useHyperbolicCleaning; }
 
   // Background velocity and electric field.
@@ -709,9 +693,6 @@ public:
   void solve_hyp_phi(int iLev);
 
   //-------------div(B) diagnostic begin----------------
-  // Allocate divB[iLev] / centerDivB[iLev] / hypPhi[iLev] if they do not exist
-  // yet (hybrid-PIC solver, where distribute_arrays() does not create them) or
-  // if the grids changed.
   void ensure_divB(int iLev);
   void ensure_centerDivB(int iLev);
   void ensure_hypPhi(int iLev);

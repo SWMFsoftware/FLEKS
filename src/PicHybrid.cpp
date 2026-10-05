@@ -772,10 +772,8 @@ void Pic::update_B_hybrid() {
     apply_centerB_BC(iLev);
   }
 
-  // div(B) control for the hybrid solver, which otherwise has none: correct_B()
-  // is only reachable through update_B(), which is gated by solveEM. It is fed
-  // the divergence of the field it is about to correct, so nodeB is refreshed
-  // from the current centerB first and averaged again below.
+  // div(B) control, which hybrid otherwise has none: correct_B() is only
+  // reachable through update_B(), which is gated by solveEM.
   if (useHyperbolicCleaning) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       average_center_to_node(centerB[iLev], nodeB[iLev]);
@@ -813,10 +811,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // div(B) diagnostic. The hybrid solver has no div(B) cleaning at all, so this
-  // is the only place where the plot variable 'divB' can be filled. It is taken
-  // after the last ghost-cell synchronisation of nodeB, i.e. on exactly the
-  // field the next step's Ohm's law will see.
+  // The 'divB' diagnostic, which hybrid has no other place to fill.
   if (need_divB()) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       compute_divB(iLev);
