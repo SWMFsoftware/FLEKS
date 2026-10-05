@@ -37,6 +37,13 @@ WAKE_MAX_FRAC = 0.5   # wake density must stay below 50% of the upstream value
 ZERO_TOL = 1e-12      # "exactly zero" threshold inside the body
 ETOT_GROWTH_MAX = 10.0  # the body must not inject energy
 CONSTRAINT_TOL = 1e-6   # relative tolerance of the conducting constraint
+# Max |divB|*dx/|B| on the body surface shell, measured at the 64-cell
+# resolution of these decks: 'conducting' ~0.1, 'linetied' 0.028,
+# 'insulating' 0.002. Before the div(B) lag fix in update_B() 'conducting'
+# measured 0.362, so these bounds catch a return to that behaviour while
+# leaving ~2.5x headroom for the particle noise of a 4 ppc run.
+DIVB_SHELL_MAX_CONDUCTING = 0.3
+DIVB_SHELL_MAX_CONTROL = 0.1
 Z_HALF = 0.05           # half of the z extent of the fake-2D decks (one cell)
 PASS_THROUGH_MIN = 0.4  # insulating: |B| and |E| inside vs outside
 # Density next to the staircase surface relative to the far field. The initial
@@ -54,7 +61,7 @@ def _columns(vidx, rows):
     """Return the columns needed by the field checks, or None if missing."""
     out = {}
     for name in ("BODY", "X", "Y", "Z", "EX", "EY", "EZ", "BX", "BY", "BZ",
-                 "RHOS0"):
+                 "RHOS0", "DIVB", "BODYSURF"):
         out[name] = _run_dir.col(vidx, rows, name)
     return out
 
@@ -208,6 +215,13 @@ def validate_plot(test_name):
     if not inside:
         return False, "No point is marked as inside the body (mask is empty)"
 
+    # div(B) on the surface shell: the 'conducting' projection injects a
+    # grid-scale divergence there that no operator removes.
+    ok, msg = _check_divb(cols, test_name)
+    if not ok:
+        return False, msg
+    logger.debug("    div(B): %s", msg)
+
     # The initial frame is uniform, so it shows whether the moments next to the
     # staircase surface are diluted by the empty body cells.
     first_vidx, first_rows = _run_dir.load_first_out()
@@ -272,6 +286,61 @@ def _check_surface_density(cols):
                   f"[{min(ratios):.3f}, {max(ratios):.3f}])")
 
 
+def _check_divb(cols, test_name):
+    """Divergence of B on the one-cell-thick surface shell.
+
+    The 'conducting' body condition enforces B_r = 0 as a pointwise projection
+    B <- B - (B.n)n on the staircase shell, using the smooth spherical normal,
+    and that projection is the last write of the step. It leaves a standing
+    error
+
+        L = max|divB| * dx / |B_ref|   on the shell
+
+    with |B_ref| the far-field |B|. L is about 0.1 for 'conducting' against
+    0.002 ('insulating') and 0.028 ('linetied') at the 64-cell resolution used
+    here, and it does NOT converge with dx, which is why a gate on it is worth
+    having.
+
+    The hybrid-PIC variants are not gated: with no field condition at all
+    ('hybrid_insulating') the noise-driven field distortion already reaches
+    L ~ 1, so the hybrid number measures the hybrid noise problem rather than
+    the body condition.
+    """
+    divb = cols.get("DIVB")
+    surf = cols.get("BODYSURF")
+    if divb is None or surf is None:
+        return True, "no divB/bodySurf column (not checked)"
+
+    is_hybrid = bool(test_name and "hybrid" in test_name)
+    if is_hybrid:
+        return True, "hybrid-PIC: dominated by the noise background (not gated)"
+
+    dx = _grid_spacing(cols)
+    if dx <= 0:
+        return True, "cannot determine the grid spacing (not checked)"
+
+    far = [_norm(_vec(cols, "B", i)) for i in range(len(divb))
+           if _radial_in_plane(cols, i)[1] > R_BODY + 0.6]
+    far.sort()
+    if not far:
+        return True, "no far-field sample (not checked)"
+    b_ref = far[len(far) // 2]
+    if b_ref <= 0:
+        return True, "no ambient magnetic field (not checked)"
+
+    shell = [abs(divb[i]) for i in range(len(divb)) if surf[i] > 0.5]
+    if not shell:
+        return True, "no surface-shell point in the frame (not checked)"
+
+    peak = max(shell) * dx / b_ref
+    limit = (DIVB_SHELL_MAX_CONDUCTING if (test_name or "").endswith("conducting")
+             else DIVB_SHELL_MAX_CONTROL)
+    if peak > limit:
+        return False, (f"div(B) on the body surface shell is too large "
+                       f"(max |divB|*dx/|B| = {peak:.3f} > {limit:g})")
+    return True, f"max |divB|*dx/|B| on the shell = {peak:.3f} (<= {limit:g})"
+
+
 def _check_linetied(cols, inside, rows):
     """Default: the plasma moments and the electric field vanish inside."""
     for name in ("RHOS0", "RHOS1", "EX", "EY", "EZ"):
@@ -314,10 +383,13 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
     """conducting: E is purely radial (E_t = 0) and B is purely tangential.
 
     The conditions are surface conditions: they hold on the one-cell-thick
-    surface layer of the body, while the interior is a cavity with E = 0 and B
-    frozen at its initial value. The two layers are told apart by the radius,
-    with a band of ambiguous nodes in between that is not checked (the
-    staircase surface sits at R_BODY - 1.5 dx to R_BODY - 2.5 dx).
+    surface layer of the body, while the interior is a field-free cavity (E = 0
+    and B = 0, the frozen interior of a perfect conductor). The surface layer is
+    selected with the 'bodySurf' mask, which is the staircase shell itself; the
+    radius band that was used before is ambiguous, because the staircase surface
+    sits anywhere between R_BODY - 1.5 dx and R_BODY - 2.5 dx and the two layers
+    have opposite B_r. The radius band is kept as a fallback for decks that do
+    not write the mask.
 
     The check uses the in-plane (x, y) components: the run is fake 2D (one
     cell in z), the plot output carries no z coordinate, and the radial
@@ -331,12 +403,15 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
         return False, "The ambient E or B field is zero (test is vacuous)"
 
     dx = _grid_spacing(cols)
-    r_surf = R_BODY - 1.5 * dx   # solidly in the surface layer
-    r_int = R_BODY - 2.5 * dx    # solidly in the frozen interior
+    surf_mask = cols.get("BODYSURF")
+    int_mask = cols.get("BODYINT")
+    r_surf = R_BODY - 1.5 * dx   # fallback band, solidly in the surface layer
+    r_int = R_BODY - 2.5 * dx    # fallback band, solidly in the interior
 
     max_et = 0.0
     max_br = 0.0
     max_e_int = 0.0
+    max_b_int = 0.0
     max_db_int = 0.0
     n_surf = n_int = 0
     for i in inside:
@@ -344,7 +419,12 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
         if n2 is None:
             continue
 
-        if r2 >= r_surf:
+        is_surface = (surf_mask[i] > 0.5) if surf_mask is not None \
+            else (r2 >= r_surf)
+        is_interior = (int_mask[i] > 0.5) if int_mask is not None \
+            else (r2 <= r_int)
+
+        if is_surface:
             n_surf += 1
 
             # E x n = 0: in-plane tangential field must vanish, and since n_z = 0,
@@ -361,13 +441,16 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
             br = abs(bx * n2[0] + by * n2[1])
             allowed = abs(cols["BZ"][i]) * Z_HALF / r2
             max_br = max(max_br, max(0.0, br - allowed))
-        elif r2 <= r_int:
+        elif is_interior:
             n_int += 1
 
-            # The interior is shielded: no electric field and the magnetic
-            # field keeps its initial value.
+            # The interior is a field-free cavity: no electric field, and no
+            # magnetic field either -- a perfect conductor shields it, so the
+            # initial uniform B must not be left in there (it is not tangential
+            # and it leaks into the surface nodes through the nodal average).
             max_e_int = max(max_e_int, math.hypot(cols["EX"][i], cols["EY"][i],
                                                   cols["EZ"][i]))
+            max_b_int = max(max_b_int, _norm(_vec(cols, "B", i)))
             if first_cols is not None:
                 db = math.sqrt(sum((cols["B" + d][i] - first_cols["B" + d][i]) ** 2
                                    for d in ("X", "Y", "Z")))
@@ -376,8 +459,9 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
     logger.debug("    surface: %d nodes, max |E_t| = %.3e (|E| = %.3e), "
                  "max |B_r| beyond the fake-2D residual = %.3e (|B| = %.3e)",
                  n_surf, max_et, scale_e, max_br, scale_b)
-    logger.debug("    interior: %d nodes, max |E| = %.3e, max |B - B(t=0)| = %.3e",
-                 n_int, max_e_int, max_db_int)
+    logger.debug("    interior: %d nodes, max |E| = %.3e, max |B| = %.3e, "
+                 "max |B - B(t=0)| = %.3e",
+                 n_int, max_e_int, max_b_int, max_db_int)
 
     if n_surf == 0 or n_int == 0:
         return False, ("The conducting body is too small to separate the "
@@ -395,6 +479,11 @@ def _check_conducting(cols, inside, first_cols=None, test_name=None):
     if max_e_int > CONSTRAINT_TOL * scale_e:
         return False, (f"The electric field is not zero inside the conducting "
                        f"body (max |E| = {max_e_int:.3e})")
+    if max_b_int > CONSTRAINT_TOL * scale_b:
+        return False, (f"The magnetic field is not zero inside the conducting "
+                       f"body (max |B| = {max_b_int:.3e} > "
+                       f"{CONSTRAINT_TOL} * |B| = {CONSTRAINT_TOL * scale_b:.3e}) "
+                       f"-- the cavity of a perfect conductor has to be empty")
     if first_cols is not None and max_db_int > CONSTRAINT_TOL * scale_b:
         return False, (f"The magnetic field is not frozen inside the conducting "
                        f"body (max |B - B(t=0)| = {max_db_int:.3e})")

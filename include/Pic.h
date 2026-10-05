@@ -204,7 +204,12 @@ private:
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
   amrex::Vector<amrex::MultiFab> nodeB;
+  // div(B) diagnostics, both cell-centred: divB is div of the nodal field,
+  // the quantity the cleaning acts on, centerDivB is div of the cell-centred
+  // field the B update advances. Allocated in distribute_arrays (full PIC)
+  // or on demand by ensure_divB() / ensure_centerDivB() (hybrid PIC).
   amrex::Vector<amrex::MultiFab> divB;
+  amrex::Vector<amrex::MultiFab> centerDivB;
   amrex::Vector<amrex::MultiFab> centerB;
   // Hybrid hyper-resistivity scratch fields.
   amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (stage A)
@@ -225,6 +230,10 @@ private:
   bool useHyperbolicCleaning = false;
   amrex::Vector<amrex::MultiFab> hypPhi;
   amrex::Real hypDecay = 0.1;
+  // Fill divB even when no cleaning is requested, so 'divB' can be plotted.
+  bool alwaysComputeDivB = false;
+  // With the cleaning on, div(B) comes for free as its by-product.
+  bool need_divB() const { return alwaysComputeDivB || useHyperbolicCleaning; }
 
   // Background velocity and electric field.
   amrex::Vector<amrex::MultiFab> uBg;
@@ -743,6 +752,14 @@ public:
   void correct_B(int iLev);
 
   void solve_hyp_phi(int iLev);
+
+  //-------------div(B) diagnostic begin----------------
+  void ensure_divB(int iLev);
+  void ensure_centerDivB(int iLev);
+  void ensure_hypPhi(int iLev);
+  // Refresh both div(B) diagnostics from the current B.
+  void compute_divB(int iLev);
+  //-------------div(B) diagnostic end------------------
 
   //-------------div(E) correction begin----------------
   void divE_correction();

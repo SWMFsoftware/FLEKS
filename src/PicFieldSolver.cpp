@@ -679,6 +679,63 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 }
 
 //==========================================================
+void Pic::ensure_divB(int iLev) {
+  // Full PIC allocates divB in distribute_arrays(); hybrid PIC has no such call
+  // path, so it is created on demand and only when a deck asks for it.
+  if (static_cast<int>(divB.size()) != n_lev_max()) {
+    divB.resize(n_lev_max());
+  }
+  if (divB[iLev].empty() || divB[iLev].boxArray() != cGrids[iLev] ||
+      divB[iLev].DistributionMap() != DistributionMap(iLev)) {
+    // div_node_to_center() only fills component 0, so one component is enough.
+    distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                        nGst, false, 0.0);
+  }
+}
+
+//==========================================================
+void Pic::ensure_centerDivB(int iLev) {
+  // Diagnostic only, so always on demand.
+  if (static_cast<int>(centerDivB.size()) != n_lev_max()) {
+    centerDivB.resize(n_lev_max());
+  }
+  if (centerDivB[iLev].empty() || centerDivB[iLev].boxArray() != cGrids[iLev] ||
+      centerDivB[iLev].DistributionMap() != DistributionMap(iLev)) {
+    // div_center_to_center() only fills component 0.
+    distribute_FabArray(centerDivB[iLev], cGrids[iLev], DistributionMap(iLev),
+                        1, nGst, false, 0.0);
+  }
+}
+
+//==========================================================
+void Pic::ensure_hypPhi(int iLev) {
+  // On demand: distribute_arrays() does not provision it for hybrid PIC.
+  if (static_cast<int>(hypPhi.size()) != n_lev_max()) {
+    hypPhi.resize(n_lev_max());
+  }
+  if (hypPhi[iLev].empty() || hypPhi[iLev].boxArray() != cGrids[iLev] ||
+      hypPhi[iLev].DistributionMap() != DistributionMap(iLev)) {
+    distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev),
+                        nDim3, nGst, false, 0.0);
+  }
+}
+
+//==========================================================
+void Pic::compute_divB(int iLev) {
+  std::string nameFunc = "Pic::compute_divB";
+  timing_func(nameFunc);
+
+  // div of the nodal field, the quantity the cleaning consumes.
+  ensure_divB(iLev);
+  div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
+
+  // The same for the cell-centred field the update advances; 'divBc'.
+  ensure_centerDivB(iLev);
+  div_center_to_center(centerB[iLev], centerDivB[iLev],
+                       Geom(iLev).InvCellSize());
+}
+
+//==========================================================
 void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
@@ -721,8 +778,17 @@ void Pic::update_B() {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
-    if (useHyperbolicCleaning) {
+    if (need_divB()) {
+      // The cleaning used to be fed the PREVIOUS step's nodal field, nodeB
+      // being rebuilt only further down. Average the current centerB in first;
+      // the average below repeats it so that nodeB also carries the correction.
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
+      // Also refresh 'divBc' (see compute_divB).
+      ensure_centerDivB(iLev);
+      div_center_to_center(centerB[iLev], centerDivB[iLev],
+                           Geom(iLev).InvCellSize());
     }
 
     if (useUpwindB || useHyperbolicCleaning) {
@@ -794,6 +860,17 @@ void Pic::correct_B(int iLev) {
     return;
   }
 
+  // The upwind diffusion needs uBg, which only the full-PIC solver allocates,
+  // so #UPWINDB stays a full-PIC-only option.
+  const bool doUpwind = useUpwindB && !useHybridPIC;
+  if (!doUpwind && !useHyperbolicCleaning) {
+    return;
+  }
+
+  if (useHyperbolicCleaning) {
+    ensure_hypPhi(iLev);
+  }
+
   if (centerDB[iLev].empty()) {
     distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
                         nDim3, nGst);
@@ -801,7 +878,7 @@ void Pic::correct_B(int iLev) {
   MultiFab& cDB = centerDB[iLev];
   cDB.setVal(0.0);
 
-  if (useUpwindB) {
+  if (doUpwind) {
     Real coef[nDim3];
     for (int i = 0; i < nDim3; ++i) {
       coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];

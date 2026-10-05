@@ -157,7 +157,7 @@ z=0 var ascii pic       plotString
 -1                      dn
 2.0                     dt
 1                       dx
-body rhoS0 rhoS1 Ex Ey Ez Bx By Bz   plotVar
+body bodySurf rhoS0 rhoS1 Ex Ey Ez Bx By Bz divB divBc   plotVar
 
 #STOP
 -1                      MaxIter

@@ -961,12 +961,28 @@ cleaning is time consuming, reducing nDivECorrection to 1 may also work.
 <command name="DIVB" alias="DIVB_FLEKS0,DIVB_FLEKS1,DIVB_FLEKS2" multiple="T">
   <parameter name="useHyperbolicCleaning" type="logical" default="F"/>
   <parameter name="hypDecay" type="real" default="0.1" if="$useHyperbolicCleaning"/>
+  <parameter name="alwaysComputeDivB" type="logical" default="F"/>
 
 #DIVB
 T                         useHyperbolicCleaning
 0.1                       hypDecay (read if useHyperbolicCleaning=T)
+T                         alwaysComputeDivB
 
-This command enables hyperbolic divergence cleaning for the magnetic field.
+This command enables hyperbolic divergence cleaning for the magnetic field: a
+Munz-type correction
+
+    phi += -dt * ch\^2 * div(B),     B -= dt * grad(phi),     ch = 0.8*dx/dt
+
+which transports and damps the divergence error rather than solving for it. It
+is the only div(B) control available to the hybrid-PIC solver.
+
+The upwind diffusion of #UPWINDB stays a full-PIC-only option, because it needs
+the comoving background velocity, which hybrid PIC does not allocate.
+
+The optional alwaysComputeDivB fills the cell-centred div(B) every step even
+when the cleaning is off, so that divB can be written out as a plot variable
+(see the plotVar list of the SAVEPLOT command). Nothing is computed when both
+are false, which is the default.
 
 </command>
 
@@ -1797,11 +1813,17 @@ because it is shielded by the surface layer:
               implicit E solve, so the body is a field-free cavity and B is
               frozen at its initial value in the interior.
   conducting- perfect conductor: on the surface layer the tangential electric
-              field and the radial magnetic field vanish,
-              n x E = 0  and  n . B = 0,
+              field and the radial magnetic field of the TOTAL field vanish,
+              n x E = 0  and  n . (B1 + B0) = 0,
               while the radial E remains an unknown of the solve and the
               tangential B carries the surface current. The interior nodes are
               dropped from the solve like for 'linetied', so E = 0 there.
+              With an intrinsic planetary field (#DIPOLE, #CRUSTALFIELD) this
+              sets the evolved field to B1.n = -B0.n, i.e. the intrinsic field
+              passes through the surface and the surface current closes on the
+              total field, which is what BATSRUS does with its 'reflectb'
+              boundary type. Without an intrinsic field it is the plain
+              n . B1 = 0.
   insulating- perfect insulator: the body conducts no current and sustains no
               macroscopic surface shielding current, so the magnetic field
               passes through undistorted,

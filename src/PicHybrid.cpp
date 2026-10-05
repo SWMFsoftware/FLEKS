@@ -1402,6 +1402,22 @@ void Pic::update_B_hybrid() {
     apply_centerB_BC(iLev);
   }
 
+  // div(B) control, which hybrid otherwise has none: correct_B() is only
+  // reachable through update_B(), which is gated by solveEM.
+  if (useHyperbolicCleaning) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3,
+                       &Pic::get_node_B, iLev, true);
+      }
+      compute_divB(iLev);
+      correct_B(iLev);
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
   // Update nodeB from centerB on all levels.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     average_center_to_node(centerB[iLev], nodeB[iLev]);
@@ -1422,6 +1438,13 @@ void Pic::update_B_hybrid() {
       fill_fine_lev_bny_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    }
+  }
+
+  // The 'divB' diagnostic, which hybrid has no other place to fill.
+  if (need_divB()) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      compute_divB(iLev);
     }
   }
 

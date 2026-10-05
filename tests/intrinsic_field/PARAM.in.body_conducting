@@ -1,0 +1,133 @@
+#DESCRIPTION
+Intrinsic magnetic field with a CONDUCTING inner body: the total field is made
+tangential to the surface, the intrinsic field passes through it.
+
+Same isolated setup as the .body deck (SOLVEEM F, zero UNIFORMSTATE field), with
+a BODY of radius 1 at the origin and a tilted dipole. The only difference is the
+field boundary condition: 'conducting' instead of 'linetied', so the surface
+condition applies and the evolved field B1 is no longer identically zero.
+
+Because B1 starts at zero, the surface condition n . (B1 + B0) = 0 forces
+B1 = -B0.n n-hat exactly on the surface shell, and nothing anywhere else. That
+makes the deck a sharp test of the split:
+
+  * on the shell     the TOTAL field is tangential (B_r = 0 to round-off),
+  * off the shell    B1 stays zero, so B_total = B0 is untouched,
+  * inside the body  B0 still exists and E = 0,
+  * B0 does not evolve and the magnetic energy is constant.
+
+This is the condition BATSRUS calls 'reflectb', where the ghost state is built
+from B + B0 before being reflected so that the face average of the total field
+is tangential. Before this, FLEKS rejected the combination outright because it
+pinned B1.n to zero and a dipole necessarily crosses the surface.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-4.0                    xMin   [code units: 1 unit = 1 planetary radius]
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-2.0                    zMin   four cells so that z = 0 is a node
+ 2.0                    zMax   plane and the body fits inside
+
+#NCELL
+32                      nCellX
+32                      nCellY
+4                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+4                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLASMA
+2                       nS
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+0.2                     rho [amu/cc]   Species 1: electrons (n_e = n_i)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#PLANETRADIUS
+1.0e5                   radius [m]
+
+#DIPOLE
+100.0                   strength [nT]
+90.0                    theta [deg]
+180.0                   phi [deg]
+-1.0                    rRef [m, <0 = take it from the body/planet radius]
+
+#BODY
+sphere                  type
+1.0                     radius [code units]
+0.0                     center [code units] x
+0.0                     center [code units] y
+0.0                     center [code units] z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+conducting              fieldBoundary
+
+#TIMESTEPPING
+F                       useFixedDt
+0.2                     cfl
+
+#NORMALIZATION
+1.0e5                   lNormSI [m]
+1.0e5                   uNormSI [m/s]
+
+#MONITOR
+10                      dnReport
+
+#PARTICLES
+2                       npcelx
+2                       npcely
+1                       npcelz
+
+#SAVELOG
+10                      dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+10.0                    dt
+1                       dx
+B0x B0y B0z Bx By Bz Ex Ey Ez body bodySurfN   plotVar
+
+#STOP
+-1                      MaxIter
+10.0                    TimeMax
+
+#RUN

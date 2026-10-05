@@ -143,8 +143,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerPhi[iLev], cGrids[iLev], DistributionMap(iLev),
                           1, nGst);
 
+      // A diagnostic: read as zero, not as uninitialised, when not cleaned.
       distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
+                          nGst, doMoveData, 0.0);
       distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
 
@@ -596,6 +597,10 @@ void Pic::fill_E_B_fields() {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       project_body_B(centerB[iLev], iLev);
       project_body_B(nodeB[iLev], iLev);
+      // A perfect conductor shields its cavity: the initial uniform B is not
+      // tangential and leaks into the surface nodes through the nodal average.
+      mask_body_interior(centerB[iLev], cellStatus[iLev]);
+      mask_body_interior(nodeB[iLev], nodeStatus[iLev]);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     }

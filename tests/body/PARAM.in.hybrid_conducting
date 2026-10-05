@@ -131,6 +131,12 @@ shell                   shape
 grid                    etaHyperMode
 0.05                    etaHyperCh
 
+The hybrid solver has no div(B) cleaning, so the div(B) diagnostic must be
+requested explicitly to write it out.
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
 #TIMESTEPPING
 T                       useFixedDt
 0.02                    dt
@@ -157,7 +163,7 @@ z=0 var ascii pic       plotString
 -1                      dn
 2.0                     dt
 1                       dx
-body rhoS0 Ex Ey Ez Bx By Bz   plotVar
+body bodySurf bodyInt rhoS0 Ex Ey Ez Bx By Bz divB divBc   plotVar
 
 #STOP
 -1                      MaxIter

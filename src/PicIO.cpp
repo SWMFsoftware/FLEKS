@@ -332,9 +332,10 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
        var.substr(0, 3) == "E0z" || var.substr(0, 3) == "u0x" ||
        var.substr(0, 3) == "u0y" || var.substr(0, 3) == "u0z" ||
        var.substr(0, 2) == "qc" || var.substr(0, 5) == "divEc" ||
-       var.substr(0, 4) == "divB" || var.substr(0, 3) == "phi")) {
+       var.substr(0, 3) == "phi")) {
     return value;
   }
+  // 'divB' / 'divBc' are available in hybrid PIC too, allocated on demand.
   if (useHybridPIC &&
       (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
        var.substr(0, 5) == "dBzdt")) {
@@ -373,6 +374,25 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
 
   if (varLower == "body")
     return isInsideBody ? 1.0 : 0.0;
+
+  // Staircase masks of the one-cell-thick surface shell, where the field
+  // boundary condition acts, and of the frozen interior. Unlike 'body', these
+  // are the cell masks, i.e. the index div(B) is stored at; the 'N' variants
+  // are the node masks, which are what project_body_B() acts on.
+  if (varLower == "bodysurf" || varLower == "bodyint" ||
+      varLower == "bodysurfn" || varLower == "bodyintn") {
+    const bool useNode = (varLower == "bodysurfn" || varLower == "bodyintn");
+    if (!useBody || !isValidMFI)
+      return 0.0;
+    const auto& stat = useNode ? node_status(iLev) : cell_status(iLev);
+    const auto& statusArr = stat[mfi].array();
+    if (varLower == "bodyint" || varLower == "bodyintn")
+      return bit::is_body_interior(statusArr(ijk)) ? 1.0 : 0.0;
+    return (bit::is_body(statusArr(ijk)) &&
+            !bit::is_body_interior(statusArr(ijk)))
+               ? 1.0
+               : 0.0;
+  }
 
   // The particle-derived variables (rhoS0, uxS0, jHatx, nMM, ...) are zero
   // inside the body. is_body_moment_var() matches them in both the PC ('S0')
@@ -550,9 +570,18 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 5) == "divEc") {
       const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
       value = arr(ijk);
+    } else if (var.substr(0, 5) == "divBc") {
+      // Diagnostic: reads zero when it was never requested.
+      if (iLev < centerDivB.size() && !centerDivB[iLev].empty()) {
+        const Array4<Real const>& arr = centerDivB[iLev][mfi].array();
+        value = arr(ijk);
+      }
     } else if (var.substr(0, 4) == "divB") {
-      const Array4<Real const>& arr = divB[iLev][mfi].array();
-      value = arr(ijk);
+      // Allocated on demand in hybrid PIC: report zero when not requested.
+      if (iLev < divB.size() && !divB[iLev].empty()) {
+        const Array4<Real const>& arr = divB[iLev][mfi].array();
+        value = arr(ijk);
+      }
     } else if (var.substr(0, 3) == "phi") {
       const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
       value = arr(ijk);

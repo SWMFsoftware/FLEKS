@@ -247,6 +247,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (useHyperbolicCleaning) {
       param.read_var("hypDecay", hypDecay);
     }
+    // Optional, so existing decks are unaffected: fill divB without cleaning.
+    param.read_optional("alwaysComputeDivB", alwaysComputeDivB);
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -698,17 +700,9 @@ void Pic::post_process_param() {
     bodyBoundarySet_ = false;
   }
 
-  // A conducting inner body pins the radial component of the *evolved* field
-  // to zero on the body surface (project_body_B). A planetary intrinsic field
-  // has a radial component that necessarily crosses the surface, so the two
-  // conditions contradict each other. Reject the combination instead of
-  // silently dropping one of them; use 'linetied' or 'insulating' instead.
-  if (useBody && bodyFieldBC == BodyFieldBC::conducting &&
-      intrinsicB_ != nullptr && intrinsicB_->is_active()) {
-    Abort("Invalid combination: #BODYBOUNDARY fieldBoundary 'conducting' "
-          "cannot be used together with an intrinsic magnetic field "
-          "(#DIPOLE / #CRUSTALFIELD). Use 'linetied' or 'insulating'.");
-  }
+  // A conducting inner body makes the *total* field tangential (see
+  // project_body_B), so an intrinsic field is allowed and the combination is no
+  // longer rejected here.
 
   hasRegionalResistivity_ = !regionalResistivityConfigs.empty();
   hasRegionalHyper_ = !regionalHyperResistivityConfigs.empty();
