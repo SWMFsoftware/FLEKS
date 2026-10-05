@@ -279,20 +279,39 @@ private:
                                              // (nodal)
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
-  amrex::Vector<amrex::MultiFab> centerPe;  // electron pressure at cell centers
-  amrex::Vector<amrex::MultiFab> nodeEambi; // ambipolar electric field
-                                            // -grad(Pe)/(e*ne) at nodes
+  // Pure scratch, reused for several things within a step: the advected Pe,
+  // then div(q) during the conductivity update, then the scalar ion pressure
+  // in the collision stage. It also holds the Pe the Ohm's law differentiates
+  // when #ELECTRONPRESSURE is off. Never read it as "the" electron pressure:
+  // the state lives in centerPeState and diagnostics must read that.
+  amrex::Vector<amrex::MultiFab> centerPe;
+  amrex::Vector<amrex::MultiFab> nodeEambi;   // ambipolar electric field
+                                              // -grad(Pe)/(e*ne) at nodes
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated
                                               // density
   // ---- Evolved electron pressure (#ELECTRONPRESSURE) ----
   // centerPeState is the evolved field (written to / read from the restart
   // files and is copied on a regrid); everything else is per-step scratch.
+  //
+  // All six are allocated with the full nGst (= 2) ghost layers, which the
+  // advection MUSCL stencil depends on: it reads the state two cells away in
+  // every direction, so reducing nGst would read out of bounds.
   amrex::Vector<amrex::MultiFab> centerPeState; // Pe at cell centres (state)
-  amrex::Vector<amrex::MultiFab> centerPeRho;   // n_e at cell centres
-  amrex::Vector<amrex::MultiFab> centerPeTe;    // Te at cell centres, then
-                                                // div(q) scratch
+  amrex::Vector<amrex::MultiFab> centerPeRho;   // n_e at cell centres; only
+                                                // ever read pointwise, so it
+                                                // deliberately carries no
+                                                // ghost BC
+  amrex::Vector<amrex::MultiFab> centerPeTe;    // Te at cell centres; solver
+                                                // scratch for the
+                                                // conductivity, NOT the
+                                                // reported Te (it trails the
+                                                // state; the output path
+                                                // evaluates its own)
   amrex::Vector<amrex::MultiFab> nodePeVec;     // u_e, then grad(Te), then q
-  amrex::Vector<amrex::MultiFab> nodePeRho;     // nodal ion charge density
+  amrex::Vector<amrex::MultiFab> nodePeRho;     // nodal ion charge density,
+                                                // then the nodal scalar ion
+                                                // pressure of the collision
+                                                // stage
   amrex::Vector<amrex::MultiFab> nodePeAux;     // (0) Te, (1..3) kappa_hat_dd
   amrex::Vector<amrex::Real> plasmaEnergy;
 
@@ -722,8 +741,17 @@ public:
   // Advance the scalar electron pressure by one PIC step, operator split:
   //   dPe/dt + div(u_e Pe) + (gamma_e-1) Pe div(u_e)
   //       = (gamma_e-1) [ div(kappa_hat . grad(Te)) + H_ei ]
+  // update_Pe_hybrid(iLev, dt) is only the orchestrator; the five terms of the
+  // split are the methods below, in the order they are applied.
   void update_Pe_hybrid();
   void update_Pe_hybrid(int iLev, amrex::Real dt);
+  // Stage 1: u_e = U_i - J/(e*n_e) evaluated on the nodes.
+  void electron_velocity_at_nodes(int iLev);
+  // Stage 2: TVD/MUSCL advection of Pe plus the compression (pdV) term.
+  void advect_electron_pressure(int iLev, amrex::Real dt);
+  // Stage 4: Spitzer electron heat conduction; a no-op when heatCondKappa0
+  // is 0, so the common adiabatic run pays nothing for it.
+  void apply_electron_heat_conduction(int iLev, amrex::Real dt);
   // Seed Pe from the algebraic polytropic closure using the current density.
   void init_electron_pressure();
   void init_electron_pressure(int iLev);
@@ -732,9 +760,22 @@ public:
   // Zero-gradient ghosts, used by the pressure field and scratch.
   void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab &mf);
   void apply_centerPe_BC(int iLev);
+  // Fake-2D (single z cell) ghost clamp for a single-component cell-centred
+  // field; a no-op on a real 3D grid.
+  void apply_fake2d_k_clamp(amrex::MultiFab &mf);
+  // Nodal ion density -> cell-centred n_e. useGrownTile fills the nodes over
+  // the grown tile (needed by compute_ambipolar_E, which must also cover the
+  // coarse-fine interface nodes) instead of the valid box only.
+  void compute_electron_density(int iLev, amrex::MultiFab &nodalRho,
+                                amrex::MultiFab &cellRho, bool useGrownTile);
+  // Te = Pe/n_e at the cell centres. Solver scratch for the conductivity, not a
+  // diagnostic source: the reported Te is evaluated on demand in the output
+  // path, because this one trails the state by up to one conductivity /
+  // collision update.
+  void compute_electron_temperature(int iLev);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
   // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation from BATSRUS.
-  bool add_electron_ion_heating(int iLev, amrex::Real dt);
+  void add_electron_ion_heating(int iLev, amrex::Real dt);
 
   //-------------Electric field solver end-------------
 
