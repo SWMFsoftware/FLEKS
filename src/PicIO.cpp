@@ -514,21 +514,15 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
     } else if (var.substr(0, 2) == "Pe") {
       // Electron pressure actually used by the Ohm's law: the evolved state
-      // when #ELECTRONPRESSURE is on, the polytropic closure otherwise. Read
-      // the state array itself rather than the centerPe scratch, whose
-      // contents depend on which stage of the step last touched it.
+      // when #ELECTRONPRESSURE is on, the polytropic closure otherwise.
       // centerPeState is only allocated when the equation is evolved.
       const MultiFab& peField =
           useElectronPressureEq ? centerPeState[iLev] : centerPe[iLev];
       const Array4<Real const>& arr = peField[mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 2) == "Te") {
-      // Electron temperature in code units (Te = Pe/n_e); only meaningful
-      // when the electron pressure equation is evolved. Evaluated from the same
-      // two arrays the "Pe" variable above reads, so the two belong to the same
-      // point in the step. centerPeTe is deliberately not used: it is solver
-      // scratch and trails the state by up to one conductivity / collision
-      // update (see the savePeVars block below).
+      // Electron temperature in code units; only meaningful when the electron
+      // pressure equation is evolved. See the Te block in write_amrex_field().
       if (useElectronPressureEq) {
         const Real pe =
             amrex::max(centerPeState[iLev][mfi].array()(ijk), peMin);
@@ -1235,20 +1229,17 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     }
 
     if (savePeVars) {
-      // Pe is the evolved state; centerPe is only a per-stage scratch, so it
-      // must not be used as the plotfile source. centerPeState is allocated
-      // whenever savePeVars is true.
+      // centerPeState is allocated whenever savePeVars is true.
       MultiFab::Copy(out[iLev], centerPeState[iLev], 0, iStart, 1, 0);
       iStart += 1;
       varNames.push_back("Pe");
 
-      // Te = Pe/n_e, evaluated here rather than read from centerPeTe.
-      // centerPeTe is solver scratch: the conductivity updates it before the
-      // collision stage, so the stored value trails the state by up to one
-      // conductivity / collision update and would not belong to the Pe written
-      // next to it. Recomputing it from the same two arrays that Pe comes from
-      // keeps the pair consistent and, being read-only, cannot perturb
-      // anything.
+      // Te = Pe/n_e, recomputed from the same two arrays rather than read from
+      // centerPeTe: the conductivity updates that scratch before the collision
+      // stage, so it trails the state by up to one update and would not belong
+      // to the Pe written next to it. Refreshing it inside the solver instead
+      // was measured to perturb the next step's advection stencil, so it is
+      // only ever read here.
       const Real peMinOut = peMin;
       const Real rhoMinOut = rhoMinOhm;
       for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {

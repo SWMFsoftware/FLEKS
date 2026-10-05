@@ -14,15 +14,11 @@ using namespace amrex;
 namespace {
 
 //==========================================================
-// Device helpers for the evolved electron pressure (#ELECTRONPRESSURE).
-//
-// They are file-local and force-inlined so that lifting the three direction
-// bodies of the advection kernel out of the ParallelFor lambda does not change
-// the generated arithmetic: every expression below is the one that used to be
-// spelled out inline, in the same order.
+// File-local device helpers for the evolved electron pressure
+// (#ELECTRONPRESSURE). Force-inlined so they cost nothing over the inline
+// expressions they replace.
 
-// Cell (i,j,k) shifted by `off` cells along direction DIR. Used for the
-// cell-centred Pe stencil, which reaches two cells away (MUSCL).
+// Cell (i,j,k) shifted by `off` cells along direction DIR.
 template <int DIR>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
 pe_at(const Array4<Real const>& arrPe, const int i, const int j, const int k,
@@ -36,9 +32,7 @@ pe_at(const Array4<Real const>& arrPe, const int i, const int j, const int k,
   }
 }
 
-// Component DIR of the nodal velocity, shifted by `off` cells along DIR. The
-// x-face between cells i and i+1 is the node (i+1,j,k), so the nodal values are
-// exactly the face-normal velocities the upwind fluxes need.
+// Component DIR of the nodal velocity, shifted by `off` cells along DIR.
 template <int DIR>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
 ue_at(const Array4<Real const>& arrUe, const int i, const int j, const int k,
@@ -53,8 +47,7 @@ ue_at(const Array4<Real const>& arrUe, const int i, const int j, const int k,
 }
 
 // MUSCL slope limiter for the Pe advection.
-// limType: 0 = upwind1 (the caller takes a separate slope-free fast path),
-// 1 = minmod, 2 = van leer, 3 = monotonized central (mc).
+// limType: 0 = upwind1, 1 = minmod, 2 = van leer, 3 = monotonized central (mc).
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real pe_slope(const int limType,
                                                        const Real dL,
                                                        const Real dR) noexcept {
@@ -73,13 +66,8 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real pe_slope(const int limType,
   return 0.0;
 }
 
-// Add one direction's contribution to div(u_e Pe) and div(u_e).
-//
-// `invDx` is the inverse cell size along DIR; a direction with a single cell
-// carries no flux, and the caller skips it by testing invDx > 0 before calling.
-// The two accumulators are updated in place so the caller keeps the original
-// x -> y -> z summation order, which is what makes the result bit-for-bit
-// identical to the inlined version.
+// Add one direction's contribution to div(u_e Pe) and div(u_e). The caller
+// skips a direction that carries no flux by testing invDx > 0 first.
 template <int DIR>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
     const Array4<Real const>& arrPe, const Array4<Real const>& arrUe,
@@ -129,10 +117,8 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
   divUe += (uHi - uLo) * invDx;
 }
 
-// Algebraic polytropic electron closure the evolved equation starts from,
+// Algebraic polytropic electron closure the evolved equation starts from:
 //   Pe = P0 * (rho/rho0)^gamma,  or Pe = Te*rho when gamma == 1.
-// Shared by init_electron_pressure() and compute_ambipolar_E() so the seeded
-// state and the closure used by the Ohm's law can never drift apart.
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
 polytropic_closure(const Real rho, const Real p0, const Real invRho0,
                    const Real gamma, const Real Te) noexcept {
@@ -617,9 +603,8 @@ void Pic::apply_pe_zero_gradient_bc(int iLev, MultiFab& mf) {
 
 //==========================================================
 // Fake-2D (one cell in z) ghost clamp: every z layer outside the valid range
-// takes the value of the nearest valid layer. Shared by the two single-
-// component cell-centred electron-pressure fields; the multi-component
-// variant lives inline in apply_centerB_BC().
+// takes the value of the nearest valid layer. Single-component fields only; the
+// multi-component variant lives inline in apply_centerB_BC().
 void Pic::apply_fake2d_k_clamp(MultiFab& mf) {
   if (!isFake2D)
     return;
@@ -692,11 +677,8 @@ void Pic::fill_new_electron_pressure() {
 
 //==========================================================
 // Nodal ion density -> cell-centred n_e, into (nodalRho, cellRho).
-//
-// `useGrownTile` fills the nodes over the grown tile instead of the valid box.
-// compute_ambipolar_E() needs the coarse-fine interface nodes covered; the
-// evolved-Pe path only ever reads the valid nodes back, so it passes false and
-// the two stay bit-for-bit what they were.
+// useGrownTile also covers the coarse-fine interface nodes, which
+// compute_ambipolar_E() needs; the evolved-Pe path only reads valid nodes back.
 void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
                                    MultiFab& cellRho, const bool useGrownTile) {
   for (MFIter mfi(nodalRho); mfi.isValid(); ++mfi) {
@@ -712,11 +694,9 @@ void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
 }
 
 //==========================================================
-// Te = Pe/n_e at the cell centres, with fresh ghosts (the conductivity stage
-// averages and differentiates it). This is solver scratch for the conductivity,
-// not a diagnostic source: it trails the state by up to one conductivity /
-// collision update, so the reported Te is evaluated on demand in the output
-// path from centerPeState and centerPeRho instead.
+// Te = Pe/n_e at the cell centres, with fresh ghosts. Solver scratch for the
+// conductivity, not a diagnostic source; see the Te block in
+// write_amrex_field().
 void Pic::compute_electron_temperature(int iLev) {
   const Real peMinLocal = peMin;
   const Real rhoFloor = rhoMinOhm;
@@ -819,9 +799,6 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   // Operator-split advance of the scalar electron pressure on one level:
   //   dPe/dt + div(u_e Pe) + (gamma_e-1) Pe div(u_e)
   //       = (gamma_e-1) [ div(kappa_hat . grad(Te)) + H_ei ]
-  // The split and the order of the terms are what they were when this was one
-  // function; each term is now a method of its own so it can be read, and
-  // tested, in isolation.
   //--------------------------------------------------------------------
 
   // 1) Electron velocity at the nodes.
@@ -841,11 +818,9 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   // #ELECTRONCOLLISION enabled it.
   add_electron_ion_heating(iLev, dt);
 
-  // Stages 2, 4 and 5 write the valid box only, which leaves the ghost cells
-  // of the state stale. The next step's advection is the one consumer that
-  // reads them as a stencil (the MUSCL reconstruction reaches two cells away),
-  // so this is the single place that has to restore them rather than every
-  // stage paying for a ghost pass in between.
+  // Stages 2, 4 and 5 write the valid box only, so the state ghost cells are
+  // stale until now. Only the next step's advection reads them, which makes
+  // this the one place that has to restore them.
   apply_centerPe_BC(iLev);
 }
 
@@ -890,10 +865,9 @@ void Pic::electron_velocity_at_nodes(int iLev) {
 // Stage 2: dPe/dt = -div(u_e Pe) - (gamma_e-1) Pe div(u_e).
 //
 // TVD/MUSCL reconstructed face states (upwind1, minmod, vanleer, mc) with
-// exponential or explicit compression. The result is written to the centerPe
-// scratch and copied back into the state: the MUSCL stencil reads i+-2, so an
-// in-place update would let a thread see a neighbour it has already
-// overwritten.
+// exponential or explicit compression. The result goes to the centerPe scratch
+// and is copied back, because an in-place update would let a thread read a
+// neighbour it has already overwritten.
 void Pic::advect_electron_pressure(int iLev, Real dt) {
   BL_PROFILE("Pic::advect_electron_pressure");
 
@@ -909,8 +883,8 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
   const bool compExp = peCompressionExp;
   const Real peMinLocal = peMin;
 
-  // The one place the state is read as a stencil: the MUSCL reconstruction
-  // reaches two cells away, so centerPeState needs both ghost layers here.
+  // The only stencil read of the state: the MUSCL reconstruction reaches two
+  // cells away, so centerPeState needs both ghost layers.
   apply_centerPe_BC(iLev);
 
   for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
@@ -923,8 +897,7 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
       Real divFlux = 0.0;
       Real divUe = 0.0;
 
-      // Keep the x -> y -> z order: these are floating point accumulations and
-      // the summation order is part of the result.
+      // Keep the x -> y -> z order; the summation order is part of the result.
       if (invDxX > 0.0) {
         pe_dir_flux<ix_>(arrPe, arrUe, i, j, k, invDxX, limType, peMinLocal,
                          divFlux, divUe);
@@ -965,15 +938,11 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
 void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
   BL_PROFILE("Pic::apply_electron_heat_conduction");
 
-  // This stage is deliberately kept textually identical to the block it was
-  // extracted from. Every other stage here was factored into helpers and stayed
-  // bit-for-bit equivalent, but folding the repeated expressions out of this
-  // one (the diffusion rate, the hoisted parameter locals) changed the
-  // trajectory of a non-periodic, conduction-on configuration that is unstable
-  // in the pre-refactor code as well, and an unstable case cannot be used to
-  // prove equivalence. Correctness of the refactor therefore outranks
-  // consistency of style here; revisit once that configuration has a stability
-  // fix.
+  // Deliberately kept textually identical to the block it was extracted from:
+  // folding its repeated expressions out changed the trajectory of a
+  // non-periodic, conduction-on configuration that is unstable in the
+  // pre-refactor code as well, and an unstable case cannot prove equivalence.
+  // Revisit once that configuration has a stability fix.
   const Real* invDxGeom = Geom(iLev).InvCellSize();
   const IntVect domLen = Geom(iLev).Domain().length();
   const Real invDxX = (domLen[ix_] > 1) ? invDxGeom[ix_] : 0.0;
