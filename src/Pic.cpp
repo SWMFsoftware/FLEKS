@@ -190,7 +190,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
       // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE
-      // node-centred.
+      // node-centered.
       distribute_FabArray(centerLapB[iLev], cGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
       distribute_FabArray(nodeHyperE[iLev], nGrids[iLev], DistributionMap(iLev),
@@ -264,7 +264,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst, doMoveData);
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
-    // E current (jHat), and node-centred moments (nodePlasma): full-PIC only.
+    // E current (jHat), and node-centered moments (nodePlasma): full-PIC only.
     if (!useHybridPIC) {
       distribute_FabArray(eBg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);

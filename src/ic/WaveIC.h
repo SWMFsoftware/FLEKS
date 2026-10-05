@@ -86,7 +86,7 @@ private:
   //   exp(-((x - xCenter_) / gaussWidth_)^2)
   // giving a spatially localised Alfven pulse.
   amrex::Real gaussWidth_ = 0.0;
-  amrex::Real xCenter_ = 0.0; // Gaussian pulse centre (code units)
+  amrex::Real xCenter_ = 0.0; // Gaussian pulse center (code units)
   // Transverse velocity kick in units of the Alfvenic one (u_perp = -f * B1).
   // 1.0 is the incompressible Alfven relation u_perp = -B_perp/B0; the whistler
   // eigenmode needs -(k d_i)/(omega/Omega_i) instead (see PARAM.XML).

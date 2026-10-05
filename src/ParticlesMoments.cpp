@@ -312,8 +312,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
                          momentsMF[iLev].nGrow());
 
-    //----- Mirror boundary condition for the node-centred deposit ------------
-    // A node-centred CIC deposit at a non-periodic wall leaves the boundary
+    //----- Mirror boundary condition for the node-centered deposit ------------
+    // A node-centered CIC deposit at a non-periodic wall leaves the boundary
     // node with only ~half the charge of an interior node: with the node at the
     // domain face, a particle in the edge cell deposits its weight between that
     // edge node and the next interior node, and NO particle lies on the
@@ -365,9 +365,9 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
             if (!doFold)
               continue;
 
-            // NOTE: momentsMF is NODE-centred (nGrids = convert(cGrids,
+            // NOTE: momentsMF is NODE-centered (nGrids = convert(cGrids,
             // nodeVector)), whose domain box extends one node beyond the
-            // cell-centred Geometry box on the hi side.  The edge NODE is
+            // cell-centered Geometry box on the hi side.  The edge NODE is
             // dom.smallEnd (lo) or dom.bigEnd+1 (hi); using dom.bigEnd would
             // hit the second-last node and skip the real edge tile.
             const int domEdge =

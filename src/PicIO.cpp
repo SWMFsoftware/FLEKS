@@ -533,16 +533,22 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           plasma[extract_int(var)][iLev][mfi].array();
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
     } else if (var.substr(0, 2) == "Pe") {
-      // Electron pressure actually used by the Ohm's law: the evolved field
+      // Electron pressure actually used by the Ohm's law: the evolved state
       // when #ELECTRONPRESSURE is on, the polytropic closure otherwise.
-      const Array4<Real const>& arr = centerPe[iLev][mfi].array();
+      // centerPeState is only allocated when the equation is evolved.
+      const MultiFab& peField =
+          useElectronPressureEq ? centerPeState[iLev] : centerPe[iLev];
+      const Array4<Real const>& arr = peField[mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 2) == "Te") {
-      // Electron temperature in code units (Te = Pe/n_e); only meaningful
-      // when the electron pressure equation is evolved.
+      // Electron temperature in code units; only meaningful when the electron
+      // pressure equation is evolved. See the Te block in write_amrex_field().
       if (useElectronPressureEq) {
-        const Array4<Real const>& arr = centerPeTe[iLev][mfi].array();
-        value = arr(ijk);
+        const Real pe =
+            amrex::max(centerPeState[iLev][mfi].array()(ijk), peMin);
+        const Real ne =
+            amrex::max(centerPeRho[iLev][mfi].array()(ijk), rhoMinOhm);
+        value = pe / ne;
       } else {
         value = 0.0;
       }
@@ -1049,7 +1055,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     nVarOut += 1;
 
   // The evolved electron pressure and temperature (#ELECTRONPRESSURE). They
-  // are cell-centred, so they are only meaningful in the cell-centred output.
+  // are cell-centered, so they are only meaningful in the cell-centered output.
   const bool savePeVars = useElectronPressureEq && !saveNode;
   if (savePeVars)
     nVarOut += 2;
@@ -1252,10 +1258,30 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     }
 
     if (savePeVars) {
-      MultiFab::Copy(out[iLev], centerPe[iLev], 0, iStart, 1, 0);
-      MultiFab::Copy(out[iLev], centerPeTe[iLev], 0, iStart + 1, 1, 0);
-      iStart += 2;
+      // centerPeState is allocated whenever savePeVars is true.
+      MultiFab::Copy(out[iLev], centerPeState[iLev], 0, iStart, 1, 0);
+      iStart += 1;
       varNames.push_back("Pe");
+
+      // Te = Pe/n_e, recomputed from the same two arrays rather than read from
+      // centerPeTe: the conductivity updates that scratch before the collision
+      // stage, so it trails the state by up to one update and would not belong
+      // to the Pe written next to it. Refreshing it inside the solver instead
+      // was measured to perturb the next step's advection stencil, so it is
+      // only ever read here.
+      const Real peMinOut = peMin;
+      const Real rhoMinOut = rhoMinOhm;
+      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& outArr = out[iLev][mfi].array();
+        const Array4<Real const>& peArr = centerPeState[iLev][mfi].array();
+        const Array4<Real const>& rhoArr = centerPeRho[iLev][mfi].array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real ne = amrex::max(rhoArr(i, j, k), rhoMinOut);
+          outArr(i, j, k, iStart) = amrex::max(peArr(i, j, k), peMinOut) / ne;
+        });
+      }
+      iStart += 1;
       varNames.push_back("Te");
     }
 

@@ -255,7 +255,7 @@ def _check_iaw_density():
         # density gradient is. The initial field is exactly zero (the seed has no
         # EM field), so we check a LATER frame (the last one) where the ambipolar
         # field has built up. A zero Ex at late times means the structured plot
-        # is reading a stale/zero node-centred E instead of the live centerEhybrid
+        # is reading a stale/zero node-centered E instead of the live centerEhybrid
         # (the centerPlasmaPrev ghost-cell / nodeE-sync bug this test guards).
         ex_max_last = max(abs(v) for v in last_ex)
         ex_max_first = max(abs(v) for v in first_ex)

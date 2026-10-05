@@ -668,7 +668,7 @@ separate time-centring flag). "rk4" is the classic 4th-order Runge-Kutta on B,
 evaluating the Ohm's law at four trial B states; it is the default and has a
 large linear-stability region, so with rk4 you typically do not need a large
 #BSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
-a time-centred E. Only used when HYBRIDPIC is T.
+a time-centered E. Only used when HYBRIDPIC is T.
     </command>
 
 <command name="PARTMODE" alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2" multiple="T">
@@ -1704,7 +1704,7 @@ condition of #BODYBOUNDARY acts, and the interior behind it, which is a
 cavity: E = 0 and B frozen at its initial value, so the Faraday update and the
 div(B) cleaning do not reach it.
 
-The node-centred moments (nodePlasma, jHat, nodeMM) are rescaled by the
+The node-centered moments (nodePlasma, jHat, nodeMM) are rescaled by the
 fraction of the cells around the node that lie outside the body. A CIC moment
 averages over those cells and the body cells are empty, so without the
 rescaling a node on the staircase surface reports only a half (or three

@@ -288,21 +288,30 @@ private:
                                              // (nodal)
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
-  amrex::Vector<amrex::MultiFab> centerPe;  // electron pressure at cell centers
-  amrex::Vector<amrex::MultiFab> nodeEambi; // ambipolar electric field
-                                            // -grad(Pe)/(e*ne) at nodes
+  // Per-step scratch reused across stages: the advected Pe, then div(q), then
+  // the scalar ion pressure. Also the Pe the Ohm's law differentiates when
+  // #ELECTRONPRESSURE is off, so never read it as the electron pressure --
+  // diagnostics must read centerPeState.
+  amrex::Vector<amrex::MultiFab> centerPe;
+  amrex::Vector<amrex::MultiFab> nodeEambi;   // ambipolar electric field
+                                              // -grad(Pe)/(e*ne) at nodes
   amrex::Vector<amrex::MultiFab> nodeRhoTemp; // scratch for time-interpolated
                                               // density
   // ---- Evolved electron pressure (#ELECTRONPRESSURE) ----
   // centerPeState is the evolved field (written to / read from the restart
   // files and is copied on a regrid); everything else is per-step scratch.
-  amrex::Vector<amrex::MultiFab> centerPeState; // Pe at cell centres (state)
-  amrex::Vector<amrex::MultiFab> centerPeRho;   // n_e at cell centres
-  amrex::Vector<amrex::MultiFab> centerPeTe;    // Te at cell centres, then
-                                                // div(q) scratch
+  // All are allocated with the full nGst (= 2) ghost layers, which the
+  // advection MUSCL stencil needs: it reads the state two cells away in every
+  // direction.
+  amrex::Vector<amrex::MultiFab> centerPeState; // Pe at cell centers (state)
+  amrex::Vector<amrex::MultiFab> centerPeRho;   // n_e; read pointwise only, so
+                                                // it carries no ghost BC
+  amrex::Vector<amrex::MultiFab> centerPeTe;    // Te; conductivity scratch, NOT
+                                                // the reported Te
   amrex::Vector<amrex::MultiFab> nodePeVec;     // u_e, then grad(Te), then q
-  amrex::Vector<amrex::MultiFab> nodePeRho;     // nodal ion charge density
-  amrex::Vector<amrex::MultiFab> nodePeAux;     // (0) Te, (1..3) kappa_hat_dd
+  amrex::Vector<amrex::MultiFab> nodePeRho; // nodal ion charge density, then
+                                            // the collision stage's Pi
+  amrex::Vector<amrex::MultiFab> nodePeAux; // (0) Te, (1..3) kappa_hat_dd
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -394,7 +403,7 @@ private:
   // never advanced by Faraday's law.
   amrex::Vector<amrex::MultiFab> nodeB0;
   amrex::Vector<amrex::MultiFab> centerB0;
-  // Scratch for the cell-centred total field B1 + B0 used by the convective
+  // Scratch for the cell-centered total field B1 + B0 used by the convective
   // and Hall terms of the hybrid Ohm's law. The current is computed from B1
   // alone: the intrinsic field is current-free, and the discrete curl of
   // B1 + B0 would feed its truncation error into J.
@@ -555,7 +564,7 @@ public:
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
 
-  // Returns the cell-centred coarse-to-fine interpolater to use.  For the
+  // Returns the cell-centered coarse-to-fine interpolater to use.  For the
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
   // 2nd-order conservative with slope limiting) for higher accuracy at
   // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
@@ -633,7 +642,7 @@ public:
   void update_regional_hyper_grid_mode(amrex::Real dt);
   // dst <- dst + B0, for a MultiFab living on the same centering as dst.
   void add_intrinsic_B(amrex::MultiFab &dst, int iLev);
-  // Cell-centred total field: returns `src + B0` built in a scratch array, or
+  // Cell-centered total field: returns `src + B0` built in a scratch array, or
   // `src` itself when no intrinsic field is configured.
   amrex::MultiFab &total_center_B(amrex::MultiFab &src, int iLev);
   const IntrinsicBField *get_intrinsic_B() const { return intrinsicB_.get(); }
@@ -708,7 +717,7 @@ public:
   void smooth_moments();
   void update_B_hybrid();
   // Apply periodic and physical boundary conditions (and coarse-fine interface
-  // ghosts on refined levels) to the cell-centred B, e.g. for intermediate RK
+  // ghosts on refined levels) to the cell-centered B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.
   void apply_centerB_BC(int iLev);
   void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
@@ -731,8 +740,16 @@ public:
   // Advance the scalar electron pressure by one PIC step, operator split:
   //   dPe/dt + div(u_e Pe) + (gamma_e-1) Pe div(u_e)
   //       = (gamma_e-1) [ div(kappa_hat . grad(Te)) + H_ei ]
+  // update_Pe_hybrid(iLev, dt) is the orchestrator; the terms of the split are
+  // the methods below, in the order they are applied.
   void update_Pe_hybrid();
   void update_Pe_hybrid(int iLev, amrex::Real dt);
+  // u_e = U_i - J/(e*n_e) evaluated on the nodes.
+  void electron_velocity_at_nodes(int iLev);
+  // TVD/MUSCL advection of Pe plus the compression (pdV) term.
+  void advect_electron_pressure(int iLev, amrex::Real dt);
+  // Spitzer electron heat conduction; a no-op when heatCondKappa0 is 0.
+  void apply_electron_heat_conduction(int iLev, amrex::Real dt);
   // Seed Pe from the algebraic polytropic closure using the current density.
   void init_electron_pressure();
   void init_electron_pressure(int iLev);
@@ -741,9 +758,18 @@ public:
   // Zero-gradient ghosts, used by the pressure field and scratch.
   void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab &mf);
   void apply_centerPe_BC(int iLev);
+  // Fake-2D (single z cell) ghost clamp for a single-component cell-centered
+  // field.
+  void apply_fake2d_k_clamp(amrex::MultiFab &mf);
+  // Nodal ion density -> cell-centered n_e. useGrownTile also covers the
+  // coarse-fine interface nodes, which compute_ambipolar_E needs.
+  void compute_electron_density(int iLev, amrex::MultiFab &nodalRho,
+                                amrex::MultiFab &cellRho, bool useGrownTile);
+  // Te = Pe/n_e at the cell centers, as conductivity scratch for the solver.
+  void compute_electron_temperature(int iLev);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
   // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation from BATSRUS.
-  bool add_electron_ion_heating(int iLev, amrex::Real dt);
+  void add_electron_ion_heating(int iLev, amrex::Real dt);
 
   //-------------Electric field solver end-------------
 

@@ -70,7 +70,7 @@ normal rather than the staircase face normal.
   | Output | `body` mask variable and particle moments zeroed inside, in both the `.out` files and the AMReX plotfiles |
 
   The absorption test is the **cell-based** boundary, not the exact radius:
-  the deposition is node-centred CIC, so an exact-radius test would let
+  the deposition is node-centered CIC, so an exact-radius test would let
   surface particles deposit into masked nodes every step (a charge sink with
   no bookkeeping) while the field boundary is still the staircase.
 
@@ -81,7 +81,7 @@ normal rather than the staircase face normal.
   separation shows up at `r ≈ R − 1.6 dx`: nodes inside that radius keep the
   initial `B` and carry `E = 0`, nodes outside carry the surface condition.
 
-  The node-centred moments are **rescaled** by the fraction of the cells
+  The node-centered moments are **rescaled** by the fraction of the cells
   around a node that lie outside the body. A CIC moment averages over those
   cells and the body cells are empty, so an uncorrected node on the staircase
   surface reports only half (or three quarters) of the density and of the mass

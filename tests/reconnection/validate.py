@@ -143,15 +143,15 @@ def _opoints(x, f):
 
 
 def _island_opoints(x, f):
-    """Return the midplane nulls nearest the island centres (O-points, x ~ +-pi*L).
+    """Return the midplane nulls nearest the island centers (O-points, x ~ +-pi*L).
 
     Both O- and X-points give a By sign change on the midplane; the O-points are
-    the ones at the island centres, so we keep the null closest to each of
+    the ones at the island centers, so we keep the null closest to each of
     +ISLAND_X and -ISLAND_X."""
     nulls = _opoints(x, f)
     if not nulls:
         return []
-    # Closest null to each island centre.
+    # Closest null to each island center.
     out = []
     for target in (ISLAND_X, -ISLAND_X):
         best = min(nulls, key=lambda n: abs(n - target))
@@ -245,12 +245,12 @@ def _validate_fadeev_plot(test_name, frames):
     dx = ux[1] - ux[0]
     x0, j0, by_mid, bx_mid = _midplane_field(frames[0][1])
 
-    # O-points: midplane nulls nearest the island centres (x ~ +-pi*L).
+    # O-points: midplane nulls nearest the island centers (x ~ +-pi*L).
     outer = _island_opoints(x0, by_mid)
     if len(outer) < 2:
         return False, "t=0: no in-plane field nulls found on the midplane"
     # Tolerance is resolution-aware: the null position is only resolved to ~dx
-    # (the coarser full-PIC grid lands the null one cell off the island centre).
+    # (the coarser full-PIC grid lands the null one cell off the island center).
     o_tol = max(0.35 * L, 1.5 * dx)
     op_positions = [abs(o) for o in outer]
     pos_ok = all(
@@ -309,7 +309,7 @@ def _validate_fadeev_plot(test_name, frames):
     outer_f = _island_opoints(xf, by_mid_f)
     motion = 0.0
     if len(outer_f) >= 2:
-        # displacement of the island-centre (O-point) positions.
+        # displacement of the island-center (O-point) positions.
         motion = max(abs(outer_f[0] - outer[0]),
                      abs(outer_f[1] - outer[1]))
     logger.debug("    O-point motion: %.3f d_i (t0 -> t_end)", motion)
@@ -383,7 +383,7 @@ def _validate_gem_plot(test_name, frames):
     # reaches ~0.5 and clears this check with a huge margin.  The structured
     # .out output samples the node grid (33 y-rows including y = 0), which
     # measures ~0.0147 for the hybrid deck versus ~0.017 on the older
-    # cell-centred sampling, so the hybrid floor is lowered accordingly.
+    # cell-centered sampling, so the hybrid floor is lowered accordingly.
     late_thresh = 0.012 if test_name.endswith("hybrid") else 0.015
     if late_amp < late_thresh:
         return False, (

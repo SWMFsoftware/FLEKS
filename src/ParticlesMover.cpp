@@ -121,7 +121,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const Real zp = nDim > 2 ? p.pos(iz_) : 0;
 
         //-----calculate interpolate coef begin-------------
-        // The stencil is centred on the node that contains the particle: plain
+        // The stencil is centered on the node that contains the particle: plain
         // trilinear weights over the surrounding 2x2x2 nodes.
         IntVect loIdx;
         RealVect dShift;

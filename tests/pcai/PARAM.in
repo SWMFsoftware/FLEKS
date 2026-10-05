@@ -92,7 +92,7 @@ nonlinear phase.
 1                       nBSubcycle
 
 Time-integration for the hybrid Faraday (B) update.  "rk4" evaluates E at the
-time-centred B (B_stage + B^n)/2 in the generalized Ohm's law at each stage.
+time-centered B (B_stage + B^n)/2 in the generalized Ohm's law at each stage.
 #FIELDINTEGRATOR
 rk4                     fieldIntegrator
 

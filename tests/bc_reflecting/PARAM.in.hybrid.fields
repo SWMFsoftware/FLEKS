@@ -1,6 +1,6 @@
 #DESCRIPTION
 Hybrid-PIC conducting-field-wall test: a spatially localised Gaussian Alfven
-pulse (alfvenpulse testcase) is seeded at the centre of a finite-x domain
+pulse (alfvenpulse testcase) is seeded at the center of a finite-x domain
 whose x faces are CONDUCTING (PEC) field boundaries and REFLECTING particle
 boundaries.
 

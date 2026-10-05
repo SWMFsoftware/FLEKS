@@ -22,8 +22,8 @@ $$
 \gamma = \frac{\eta_h}{4\pi} \frac{16 \sin^4(\theta/2)}{\Delta x^4}, \quad \theta = k \Delta x
 $$
 
-which accounts for the compact (1 $\Delta x$) cell-centre $\to$ node curl used for
-$\nabla \times (\nabla^2 \mathbf{B})$, its node $\to$ cell-centre adjoint in
+which accounts for the compact (1 $\Delta x$) cell-center $\to$ node curl used for
+$\nabla \times (\nabla^2 \mathbf{B})$, its node $\to$ cell-center adjoint in
 Faraday's law, and the 3-point Laplacian. The two curls compose into a
 bi-Laplacian whose discrete eigenvalue is $16 \sin^4(\theta/2)/\Delta x^4$.
 

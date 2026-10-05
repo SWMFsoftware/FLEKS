@@ -233,8 +233,8 @@ def _check_fields_plot(out_files):
 
 
 # Soft tolerance for near-wall |Et| in the hybrid pulse test.  The cell-
-# centred hybrid advance applies the PEC BC on the wall face; the nearest
-# plotted cell (at the cell centre, ~dx/2 from the face) can carry a small
+# centered hybrid advance applies the PEC BC on the wall face; the nearest
+# plotted cell (at the cell center, ~dx/2 from the face) can carry a small
 # residual Ey/Ez from the Ohm's-law evaluation before the BC overwrites it.
 # NOTE: we only check tangential E (Ey, Ez) here, NOT normal B (Bx), because
 # the test carries a background guide field Bx ≈ 1.0 throughout the domain.
