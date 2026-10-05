@@ -108,5 +108,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 6.25                    TimeMax
-
-#RUN

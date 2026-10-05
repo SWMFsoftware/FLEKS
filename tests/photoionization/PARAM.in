@@ -177,5 +177,3 @@ sphere                  shape
 1                       vx[m/s]
 0                       vy[m/s]
 0                       vz[m/s]
-
-#RUN

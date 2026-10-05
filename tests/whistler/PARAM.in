@@ -110,5 +110,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 24.0                    TimeMax   ~3 full-EM whistler periods (T = 8.0 s here)
-
-#RUN

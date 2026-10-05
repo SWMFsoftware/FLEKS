@@ -87,5 +87,3 @@ planet                  IOUnit
 #STOP
 -1                      MaxIter
 3.0                     TimeMax
-
-#RUN

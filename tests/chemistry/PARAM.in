@@ -222,5 +222,3 @@ z=0 fluid ascii planet    plotString
 #STOP
 20                      MaxIter
 1.0                     TimeMax
-
-#RUN

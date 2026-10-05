@@ -125,5 +125,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 10.0                    TimeMax   ~1.6 ion gyroperiods (stability)
-
-#RUN

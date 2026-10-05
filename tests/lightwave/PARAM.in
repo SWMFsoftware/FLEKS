@@ -108,5 +108,3 @@ Ex Ey Ez Bx By Bz       plotVar
 #STOP
 -1                      MaxIter
 10.0                    TimeMax
-
-#RUN

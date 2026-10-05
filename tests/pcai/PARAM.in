@@ -168,5 +168,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 40.0                    TimeMax      t*Omega_ci = 40 ~ 6.4 gyro-periods (tNorm=1)
-
-#RUN

@@ -149,5 +149,3 @@ F                       doSmoothB
 #STOP
 -1                      MaxIter
 1.0                     TimeMax
-
-#RUN

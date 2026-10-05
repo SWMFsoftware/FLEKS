@@ -127,5 +127,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 3.0                     TimeMax   ~0.5 ion gyroperiod (reconnection onset)
-
-#RUN
