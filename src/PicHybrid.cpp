@@ -235,9 +235,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       }
 
       // Hall term: (J x B) / rho_q
+      Real hall_y = 0.0;
       if (rho > 0 && useHallTerm) {
         Real hall_x = (jy * bz - jz * by) * invRhoEff;
-        Real hall_y = (jz * bx - jx * bz) * invRhoEff;
+        hall_y = (jz * bx - jx * bz) * invRhoEff;
         Real hall_z = (jx * by - jy * bx) * invRhoEff;
 
         ex += hall_x;
@@ -258,12 +259,24 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   if (doHyper) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          centerLapB[iLev - 1], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          *get_cell_interp());
+    }
     apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
                    centerLapB[iLev].nComp(), &Pic::get_center_B, iLev, true);
 
     curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
                         Geom(iLev).InvCellSize());
     nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          nodeHyperE[iLev - 1], nodeHyperE[iLev], 0, nodeHyperE[iLev].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+    }
     apply_field_bc(nodeStatus[iLev], nodeHyperE[iLev], 0,
                    nodeHyperE[iLev].nComp(), &Pic::get_node_E, iLev, false);
 
@@ -479,8 +492,21 @@ void Pic::smooth_moments() {
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab& moments = nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+          nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    }
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       smooth_multifab(moments, iLev, 1, coefSmoothMoments);
+      if (iLev > 0) {
+        fill_fine_lev_bny_from_coarse(
+            nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+            nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+      }
     }
     moments.FillBoundary(Geom(iLev).periodicity());
 
@@ -534,6 +560,15 @@ void Pic::smooth_moments() {
 
     if (useBody) {
       mask_body(moments, node_status(iLev));
+    }
+  }
+
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); ++iLev) {
+      fill_fine_lev_bny_from_coarse(
+          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+          nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
 }
@@ -1258,14 +1293,12 @@ void Pic::update_B_hybrid() {
   // once per PIC timestep outside the magnetic subcycling steps.
   compute_ambipolar_E();
 
-  // For a polytropic electron pressure curl(-grad(Pe)/(e*n_e)) = 0, so the
-  // ambipolar field does not enter dB/dt and every stage can skip it (the
-  // existing behaviour). An evolved Pe is not a function of the density alone,
-  // so the curl is non-zero (the Biermann-battery-like term) and the field
-  // must be included at every stage. When the flag is false the argument
-  // passed below is exactly the same false as before, so polytropic runs are
-  // bit-for-bit unchanged.
-  const bool ambiInStages = useElectronPressureEq && ambipolarInStages;
+  const bool ambiInStages = (electronTemperature > 0);
+
+  // Ensure B ghost cells are fresh across all levels before subcycling.
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    apply_centerB_BC(iLev);
+  }
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
@@ -1282,10 +1315,8 @@ void Pic::update_B_hybrid() {
       const Real dtSixth = -subDt / 6.0;
       const Real dtThird = -subDt / 3.0;
 
+      // Stage 1 for all levels
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Stage 1: k1 = curl(E(B^n)). The Ohm's law uses the total field.
-        // J comes from the evolved field alone (the intrinsic field is
-        // current-free), the cross products use the total field.
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepStart, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
@@ -1293,13 +1324,18 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
 
-        // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
-                          -0.5 * subDt, kStage[iLev][0], 0, 0, nDim3, nGst);
+                          -0.5 * subDt, kStage[iLev][0], 0, 0, nDim3, 0);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
+                          centerB[iLev], 0, 0, nDim3, 0);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+      }
+
+      // Stage 2 for all levels
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerBstage[iLev],
                        total_center_B(centerBstar[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
@@ -1308,13 +1344,18 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
 
-        // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
-                          -0.5 * subDt, kStage[iLev][1], 0, 0, nDim3, nGst);
+                          -0.5 * subDt, kStage[iLev][1], 0, 0, nDim3, 0);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
+                          centerB[iLev], 0, 0, nDim3, 0);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+      }
+
+      // Stage 3 for all levels
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerBstage[iLev],
                        total_center_B(centerBstar[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
@@ -1323,13 +1364,18 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
 
-        // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
-                          kStage[iLev][2], 0, 0, nDim3, nGst);
+                          kStage[iLev][2], 0, 0, nDim3, 0);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
+                          centerB[iLev], 0, 0, nDim3, 0);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+      }
+
+      // Stage 4 for all levels
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerBstage[iLev],
                        total_center_B(centerBstar[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
@@ -1338,16 +1384,24 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][3], cellStatus[iLev]);
 
-        // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
-                        nGst);
+                        0);
         MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][1], 0, 0, nDim3,
-                        nGst);
+                        0);
         MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][2], 0, 0, nDim3,
-                        nGst);
+                        0);
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, nDim3,
-                        nGst);
+                        0);
+      }
 
+      if (projectDownEmFields && finest_level > 0) {
+        for (int iLev = finest_level; iLev > 0; iLev--) {
+          average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3,
+                       ref_ratio[iLev - 1]);
+        }
+      }
+
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev);
       }
       continue;
@@ -1356,7 +1410,7 @@ void Pic::update_B_hybrid() {
     if (fieldIntegrator == "ssprk3") {
       // Strong-stability-preserving RK3 with time-centered E evaluation.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, 0);
 
         // Stage 1: B1 = B_n - subDt * curl(E(B_n))
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
@@ -1366,12 +1420,17 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
-                          kStage[iLev][0], 0, 0, nDim3, nGst);
-
-        // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
+                          kStage[iLev][0], 0, 0, nDim3, 0);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstart[iLev], 0, 0, nDim3, 0);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+      }
+
+      // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerBstar[iLev],
                        total_center_B(centerBstar[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
@@ -1380,15 +1439,19 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstart[iLev], 0, 0, nDim3, 0);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
-                        0, nDim3, nGst);
-        apply_centerB_BC(iLev, centerBstage[iLev]);
-
-        // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
+                        0, nDim3, 0);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstart[iLev], 0, 0, nDim3, 0);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+      }
+
+      // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerBstar[iLev],
                        total_center_B(centerBstar[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
@@ -1397,10 +1460,19 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
-                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nGst);
+                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, 0);
         MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
-                        0, nDim3, nGst);
+                        0, nDim3, 0);
+      }
 
+      if (projectDownEmFields && finest_level > 0) {
+        for (int iLev = finest_level; iLev > 0; iLev--) {
+          average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3,
+                       ref_ratio[iLev - 1]);
+        }
+      }
+
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev);
       }
       continue;
@@ -1409,7 +1481,8 @@ void Pic::update_B_hybrid() {
 
   if (projectDownEmFields && finest_level > 0) {
     for (int iLev = finest_level; iLev > 0; iLev--) {
-      average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3, ref_ratio[0]);
+      average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3,
+                   ref_ratio[iLev - 1]);
     }
   }
 
