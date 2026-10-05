@@ -799,33 +799,28 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   // Operator-split advance of the scalar electron pressure on one level:
   //   dPe/dt + div(u_e Pe) + (gamma_e-1) Pe div(u_e)
   //       = (gamma_e-1) [ div(kappa_hat . grad(Te)) + H_ei ]
+  // The order matters: each term acts on the density, velocity and Te that the
+  // calls before it established.
   //--------------------------------------------------------------------
 
-  // 1) Electron velocity at the nodes.
   electron_velocity_at_nodes(iLev);
-
-  // 2) Advection with the electron velocity + compression (pdV).
   advect_electron_pressure(iLev, dt);
 
-  // 3) n_e and Te = Pe/n_e, needed by the conductivity.
   compute_electron_density(iLev, nodePeRho[iLev], centerPeRho[iLev], false);
   compute_electron_temperature(iLev);
 
-  // 4) Electron heat conduction; a no-op when heatCondKappa0 == 0.
+  // A no-op each when heatCondKappa0 is 0 / #ELECTRONCOLLISION is absent.
   apply_electron_heat_conduction(iLev, dt);
-
-  // 5) Electron-ion collisional thermal equilibration; off unless
-  // #ELECTRONCOLLISION enabled it.
   add_electron_ion_heating(iLev, dt);
 
-  // Stages 2, 4 and 5 write the valid box only, so the state ghost cells are
-  // stale until now. Only the next step's advection reads them, which makes
+  // The three calls above write the valid box only, so the state ghost cells
+  // are stale until now. Only the next step's advection reads them, which makes
   // this the one place that has to restore them.
   apply_centerPe_BC(iLev);
 }
 
 //==========================================================
-// Stage 1: electron velocity u_e = U_i - J/(e*n_e) on the NODES.
+// Electron velocity u_e = U_i - J/(e*n_e) on the NODES.
 //
 // A node at (i+1,j,k) is the x-face between cells i and i+1, so the nodal
 // values are exactly the face-normal velocities the upwind fluxes of stage 2
@@ -862,7 +857,7 @@ void Pic::electron_velocity_at_nodes(int iLev) {
 }
 
 //==========================================================
-// Stage 2: dPe/dt = -div(u_e Pe) - (gamma_e-1) Pe div(u_e).
+// Advection of Pe: dPe/dt = -div(u_e Pe) - (gamma_e-1) Pe div(u_e).
 //
 // TVD/MUSCL reconstructed face states (upwind1, minmod, vanleer, mc) with
 // exponential or explicit compression. The result goes to the centerPe scratch
@@ -928,7 +923,7 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
 }
 
 //==========================================================
-// Stage 4: electron heat conduction,
+// Electron heat conduction:
 //   dPe/dt = (gamma_e-1) div(kappa_hat . grad(Te)) = -(gamma_e-1) div(q),
 // with q = -kappa_hat . grad(Te) and the Spitzer kappa = kappa0 Te^2.5.
 //

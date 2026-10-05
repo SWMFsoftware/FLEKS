@@ -735,12 +735,11 @@ public:
   // the methods below, in the order they are applied.
   void update_Pe_hybrid();
   void update_Pe_hybrid(int iLev, amrex::Real dt);
-  // Stage 1: u_e = U_i - J/(e*n_e) evaluated on the nodes.
+  // u_e = U_i - J/(e*n_e) evaluated on the nodes.
   void electron_velocity_at_nodes(int iLev);
-  // Stage 2: TVD/MUSCL advection of Pe plus the compression (pdV) term.
+  // TVD/MUSCL advection of Pe plus the compression (pdV) term.
   void advect_electron_pressure(int iLev, amrex::Real dt);
-  // Stage 4: Spitzer electron heat conduction; a no-op when heatCondKappa0
-  // is 0.
+  // Spitzer electron heat conduction; a no-op when heatCondKappa0 is 0.
   void apply_electron_heat_conduction(int iLev, amrex::Real dt);
   // Seed Pe from the algebraic polytropic closure using the current density.
   void init_electron_pressure();
