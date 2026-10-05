@@ -324,9 +324,6 @@ void Pic::compute_ambipolar_E() {
       fill_fine_lev_bny_from_coarse(
           nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-      fill_fine_lev_edge_from_coarse(
-          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
 }
@@ -346,10 +343,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
   } else {
     // Copy nodal ion density to nodeRhoTemp and average it to cell centers.
-    // The nodes are filled over the grown tile so the coarse-fine interface
-    // nodes are covered as well (unlike the evolved path, which owns its
-    // density already).
-    compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], true);
+    compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], false);
     centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
     // Evaluate electron pressure Pe at cell centers via EOS
@@ -1475,14 +1469,10 @@ void Pic::update_B_hybrid() {
                    nodeE[iLev], iLev, 1.0);
   }
 
-  // Fill coarse-fine interface ghost cells and synchronize edge nodes for
-  // nodeE.
+  // Fill coarse-fine interface ghost cells for nodeE.
   if (finest_level > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(
-          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-      fill_fine_lev_edge_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
