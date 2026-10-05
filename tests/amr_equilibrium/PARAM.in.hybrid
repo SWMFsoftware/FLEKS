@@ -70,16 +70,16 @@ rk4                     fieldIntegrator
 
 #UNIFORMSTATE
 1.0                     rho [amu/cc]
-0.0                     ux [km/s]
+100.0                   ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 116045.0                T [K]
-0.0                     bx [T]
-0.0                     by [T]
-1.0e-9                  bz [T]
+1.0e-9                  bx [T]
+1.0e-9                  by [T]
+0.0                     bz [T]
 0.0                     ex [V/m]
 0.0                     ey [V/m]
-0.0                     ez [V/m]
+-1.0e-4                 ez [V/m]
 
 #PARTICLES
 16                      nParticle per cell in X
