@@ -2587,7 +2587,12 @@ FLEKS code units).
   <parameter name="T" type="real" default="0.0"/>
 
 #INFLOW
-5.0                      rho [amu/cc]
+5.0                      rho [amu/cc]   Species 0
+20.0                     ux [km/s]
+0.0                      uy [km/s]
+0.0                      uz [km/s]
+10000.0                  T [K]
+5.0                      rho [amu/cc]   Species 1 (optional per-species block)
 20.0                     ux [km/s]
 0.0                      uy [km/s]
 0.0                      uz [km/s]
@@ -2606,6 +2611,23 @@ is present and this command is supplied:
 * the inflow flux is supplied by flux-weighted particle injection at the
   boundary face, sampled from a drifting Maxwellian with the upstream density
   (rho), bulk velocity (ux, uy, uz), and temperature (T).
+
+ONE BLOCK PER SPECIES, IN `#PLASMA` ORDER.  The first block is mandatory; each
+following block is optional and is recognised only while the next line still
+looks like "value rho".  A species without its own block reuses the LAST
+declared block, so a single block keeps describing a uniform, quasi-neutral
+multi-species upstream plasma (this is the behaviour of all older decks).  Note
+that `rho` is the NUMBER density expressed in proton-mass-equivalent units (for
+protons identical to a mass density in amu/cc), and every species that shares a
+block therefore receives the SAME number density -- which is exactly what makes
+a two-species H+/e- block charge neutral.
+
+Set `rho` to zero for a species that must NOT enter through the inflow face
+(e.g. heavy planetary ions that only exist downstream through chemistry); that
+species is then simply never injected, while it is still initialised from
+`#UNIFORMSTATE` and produced by `#CHEMISTRY`.  A subset of the five lines of a
+per-species block may be given; the missing entries fall back as above, so a
+block may consist of the `rho` line alone.
 
 Without this command, an `inflow` face falls back to the zero-gradient ghost
 copy (the original open-boundary behaviour).  Pair `inflow` at one face with

@@ -66,18 +66,43 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#INFLOW") {
-    double tmp;
-    param.read_var("rho", tmp);
-    inflowRho_ = tmp; // [amu/cc]
-    param.read_var("ux", tmp);
-    inflowUx_ = tmp; // [km/s]
-    param.read_var("uy", tmp);
-    inflowUy_ = tmp; // [km/s]
-    param.read_var("uz", tmp);
-    inflowUz_ = tmp; // [km/s]
-    param.read_var("T", tmp);
-    inflowT_ = tmp; // [K]
+    // Upstream state of every species, in #PLASMA order.  The first block is
+    // mandatory; the following ones are optional and are consumed only while
+    // the next line still looks like "<value> rho".  A species for which no
+    // block is given inherits the last declared block (so a single block keeps
+    // working for a uniform multi-species plasma), and rho <= 0 means "this
+    // species has no upstream influx" -- it is then never injected at an
+    // inflow face.
     inflowDefined_ = true;
+    inflowRho_I.clear();
+    inflowUx_I.clear();
+    inflowUy_I.clear();
+    inflowUz_I.clear();
+    inflowT_I.clear();
+
+    double rho = 0.0, ux = 0.0, uy = 0.0, uz = 0.0, temp = 0.0;
+    param.read_var("rho", rho);
+    param.read_var("ux", ux);
+    param.read_var("uy", uy);
+    param.read_var("uz", uz);
+    param.read_var("T", temp);
+    inflowRho_I.push_back(rho);
+    inflowUx_I.push_back(ux);
+    inflowUy_I.push_back(uy);
+    inflowUz_I.push_back(uz);
+    inflowT_I.push_back(temp);
+
+    while (param.read_optional("rho", rho)) {
+      param.read_optional("ux", ux);
+      param.read_optional("uy", uy);
+      param.read_optional("uz", uz);
+      param.read_optional("T", temp);
+      inflowRho_I.push_back(rho);
+      inflowUx_I.push_back(ux);
+      inflowUy_I.push_back(uy);
+      inflowUz_I.push_back(uz);
+      inflowT_I.push_back(temp);
+    }
   } else if (command == "#DIPOLE") {
     // Static dipole of the inner body. Everything is SI; convert_intrinsic_B()
     // turns it into code units once the normalization is known.
@@ -1021,67 +1046,103 @@ void Pic::convert_electron_collision() {
 }
 
 //==========================================================
+// SI -> code conversion of the upstream states given by #INFLOW.
+//
+// #INFLOW stores ONE block per species in #PLASMA order; species without their
+// own block fall back to the last declared one.  Note that `rho` is the
+// PROTON-EQUIVALENT number density (identical to a proton mass density in
+// amu/cc), so it is converted exactly like #UNIFORMSTATE rho and then used
+// directly as the number density nDens consumed by
+// Particles::inject_flux_at_inflow_faces / add_particles_cell.  rho <= 0 leaves
+// nDens <= 0, which switches the injection off for that species.
 void Pic::convert_inflow_state() {
   if (!inflowDefined_)
     return;
 
-  // Convert density from amu/cc to code units.
+  const int nBlock = static_cast<int>(inflowRho_I.size());
+  if (nBlock == 0)
+    return;
+
+  if (nBlock > nSpecies)
+    Print() << "  Warning: #INFLOW declares " << nBlock
+            << " species blocks but "
+            << "#PLASMA only defines " << nSpecies
+            << "; the extra blocks are ignored.\n";
+
+  // Conversion factors: rho [amu/cc], u [km/s], T [K] -> code units.
   const double Si2NoRho = fi->get_Si2NoRho();
-  inflowRho_ *= 1.0e6 * cProtonMassSI * Si2NoRho;
-
-  // Convert velocity from km/s to code units.
+  const double rhoFactor = 1.0e6 * cProtonMassSI * Si2NoRho;
   const double vFactor = 1.0e3 * fi->get_Si2NoV();
-  inflowUx_ *= vFactor;
-  inflowUy_ *= vFactor;
-  inflowUz_ *= vFactor;
-
-  // Convert temperature T [K] to code units (kT / (m_p * uNorm^2)).
   const double unormSI = fi->get_unorm_si();
-  inflowT_ = cBoltzmannSI * inflowT_ / (cProtonMassSI * unormSI * unormSI);
+  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
 
-  // Publish converted state to FluidInterface for boundary particle injection.
-  FluidInterfaceParameters::InflowVel baseVel;
-  baseVel.nDens = inflowRho_;
-  baseVel.ux = inflowUx_;
-  baseVel.uy = inflowUy_;
-  baseVel.uz = inflowUz_;
-  baseVel.vth = 0.0;
+  Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies);
 
-  Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies, baseVel);
-  const int nParts = static_cast<int>(parts.size());
   for (int iS = 0; iS < nSpecies; ++iS) {
-    const double mass_i =
-        (iS < nParts && parts[iS]) ? parts[iS]->get_mass() : 1.0;
-    if (inflowT_ > 0 && mass_i > 0)
-      stateVec[iS].vth = std::sqrt(inflowT_ / mass_i);
+    // Species beyond the last declared block reuse that block, so a single
+    // block still describes a uniform multi-species upstream plasma.
+    const int iB = std::min(iS, nBlock - 1);
+
+    const double rho = inflowRho_I[iB] * rhoFactor;
+    const double T = inflowT_I[iB] * tFactor;
+
+    stateVec[iS].nDens = rho;
+    stateVec[iS].ux = inflowUx_I[iB] * vFactor;
+    stateVec[iS].uy = inflowUy_I[iB] * vFactor;
+    stateVec[iS].uz = inflowUz_I[iB] * vFactor;
+    stateVec[iS].vth = 0.0;
+
+    if (rho <= 0)
+      continue; // species is not injected at the inflow face
+
+    // vth is the 1-D thermal std sigma = sqrt(kT/m) with the SPECIES mass in
+    // proton units. Use the fluid interface (parts[] is only constructed later,
+    // in Pic::init, so reading parts[iS]->get_mass() here silently fell back to
+    // m = 1 and gave every species the PROTON thermal spread).
+    const double mass_i = (iS < fi->get_nS() && fi->get_species_mass(iS) > 0.0)
+                              ? fi->get_species_mass(iS)
+                              : 1.0;
+    if (T > 0)
+      stateVec[iS].vth = std::sqrt(T / mass_i);
+
+    Print() << "  #INFLOW species " << iS << " (code units):"
+            << " n=" << rho << " u=(" << stateVec[iS].ux << ","
+            << stateVec[iS].uy << "," << stateVec[iS].uz << ")"
+            << " vth=" << stateVec[iS].vth << "\n";
   }
+
   fi->set_inflow_state(stateVec);
   fi->set_inflow_defined(true);
 
-  Print() << "  #INFLOW state (code units):"
-          << " n=" << inflowRho_ << " u=(" << inflowUx_ << "," << inflowUy_
-          << "," << inflowUz_ << ")"
-          << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
-          << "  (Si2NoRho=" << Si2NoRho << ", Si2NoV=" << fi->get_Si2NoV()
-          << ")\n";
-
+  // Diagnostics: (a) warn when a species is injected with a density that does
+  // not match its #UNIFORMSTATE background, and (b) warn when the injected
+  // mixture is NOT charge neutral, because that drives a spurious sheath at
+  // the inflow face.
   const auto& unif = fi->get_uniform_state();
-  if (nSpecies > 1 && !unif.empty()) {
-    const double rawInflowN = inflowRho_ / (1.0e6 * cProtonMassSI * Si2NoRho);
+  if (nSpecies > 1) {
+    double netCharge = 0.0, totalN = 0.0;
     for (int iS = 0; iS < nSpecies; ++iS) {
-      if (iS * 5 < static_cast<int>(unif.size()) && iS < fi->get_nS() &&
-          fi->get_species_mass(iS) > 0.0) {
+      const double ni = stateVec[iS].nDens / rhoFactor; // back to /cc
+      if (ni <= 0)
+        continue;
+      netCharge += fi->get_species_charge(iS) * ni;
+      totalN += ni;
+
+      if (!unif.empty() && iS * 5 < static_cast<int>(unif.size()) &&
+          iS < fi->get_nS() && fi->get_species_mass(iS) > 0.0) {
         const double speciesN =
             unif[iS * 5] / (fi->get_species_mass(iS) * cProtonMassSI * 1.0e6);
-        if (std::abs(speciesN - rawInflowN) >
-            1e-4 * std::max(speciesN, rawInflowN)) {
-          Print()
-              << "  Warning: #INFLOW supplies a single uniform number density "
-              << "(n=" << rawInflowN << " /cc) for all species, but species "
-              << iS << " has #UNIFORMSTATE density n=" << speciesN << " /cc.\n";
-          break;
-        }
+        if (std::abs(speciesN - ni) > 1e-4 * std::max(speciesN, ni))
+          Print() << "  Warning: #INFLOW injects species " << iS
+                  << " with n=" << ni
+                  << " /cc but #UNIFORMSTATE gives n=" << speciesN << " /cc.\n";
       }
     }
+
+    if (totalN > 0 &&
+        std::abs(netCharge) > 1e-4 * std::max(totalN, std::abs(netCharge)))
+      Print() << "  Warning: the #INFLOW mixture is not charge neutral: "
+              << "sum(q_i*n_i) = " << netCharge
+              << " e/cc vs sum(n_i) = " << totalN << " /cc.\n";
   }
 }
