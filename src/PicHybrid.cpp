@@ -925,17 +925,11 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
 //   dPe/dt = (gamma_e-1) div(kappa_hat . grad(Te)) = -(gamma_e-1) div(q),
 // with q = -kappa_hat . grad(Te) and the Spitzer kappa = kappa0 Te^2.5.
 //
-// #ELECTRONCONDUCTION picks the strategy: "point-implicit" runs nCondIter
-// Jacobi sweeps of the point-implicit update, "subcycle" takes explicit
-// sub-steps bounded by a diffusion CFL estimate.
+// "point-implicit": runs nCondIter Jacobi sweeps of the point-implicit update
+// "subcycle": takes explicit sub-steps bounded by a diffusion CFL estimate
 void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
   BL_PROFILE("Pic::apply_electron_heat_conduction");
 
-  // Deliberately kept textually identical to the block it was extracted from:
-  // folding its repeated expressions out changed the trajectory of a
-  // non-periodic, conduction-on configuration that is unstable in the
-  // pre-refactor code as well, and an unstable case cannot prove equivalence.
-  // Revisit once that configuration has a stability fix.
   const Real* invDxGeom = Geom(iLev).InvCellSize();
   const IntVect domLen = Geom(iLev).Domain().length();
   const Real invDxX = (domLen[ix_] > 1) ? invDxGeom[ix_] : 0.0;
