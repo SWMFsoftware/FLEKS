@@ -59,8 +59,11 @@ def _load_frame(path):
     ncol = min(len(rows[0]), len(all_names))
     data = np.array([r[:ncol] for r in rows], dtype=float)
     idx = {all_names[i]: i for i in range(ncol)}
-    return {"x": data[:, idx["x"]], "y": data[:, idx["y"]],
-            "Bx": data[:, idx["Bx"]], "By": data[:, idx["By"]]}
+    res = {"x": data[:, idx["x"]], "y": data[:, idx["y"]],
+           "Bx": data[:, idx["Bx"]], "By": data[:, idx["By"]]}
+    if "Bz" in idx:
+        res["Bz"] = data[:, idx["Bz"]]
+    return res
 
 
 def _frame_stats(frame):
@@ -82,6 +85,8 @@ def _frame_stats(frame):
     spacings = set(np.round(dy, 4))
     coarse = any(abs(s - DX_COARSE) < 0.05 for s in spacings)
     fine = any(abs(s - DX_FINE) < 0.05 for s in spacings)
+    logger.debug("  _frame_stats: spacings=%s, coarse=%s (DX_COARSE=%s), fine=%s (DX_FINE=%s)",
+                 sorted(spacings), coarse, DX_COARSE, fine, DX_FINE)
 
     # Fine y-rows: those carrying DX_FINE-spaced x cells.
     fine_rows = []
@@ -237,6 +242,24 @@ def validate_plot(test_name):
     if profile_change < 0.05:
         return False, (f"midplane By changed by only {profile_change:.3f} "
                        f"(no reconnection)")
+
+    # ---- (3) AMR boundary stability & Bz boundedness ----
+    for fname, fr in frames:
+        if "Bz" in fr:
+            max_bz = float(np.abs(fr["Bz"]).max())
+            if not math.isfinite(max_bz):
+                return False, f"{fname}: non-finite Bz detected"
+            # Unphysical boundary corruption causes artificial Bz blowup (> 1.2).
+            if max_bz > 1.2:
+                return False, (f"{fname}: unphysical Bz blowup ({max_bz:.3f} > 1.2), "
+                               f"spurious AMR boundary artifact")
+            # Check refinement boundary (|y| ~ REFINE_Y_HALF)
+            bny_mask = np.abs(np.abs(fr["y"]) - REFINE_Y_HALF) < 1.0
+            if np.any(bny_mask):
+                bny_bz = float(np.abs(fr["Bz"][bny_mask]).max())
+                if bny_bz > 0.6:
+                    return False, (f"{fname}: excessive Bz at AMR boundary |y|~{REFINE_Y_HALF:.2f} "
+                                   f"({bny_bz:.3f} > 0.6)")
 
     logger.debug("    midplane |delta By|: %.3f -> %.3f (%.1fx), "
                  "X-point at x=%.2f d_i, profile change %.3f",
