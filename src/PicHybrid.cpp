@@ -1393,14 +1393,6 @@ void Pic::update_B_hybrid() {
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, nDim3,
                         0);
       }
-
-      if (projectDownEmFields && finest_level > 0) {
-        for (int iLev = finest_level; iLev > 0; iLev--) {
-          average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3,
-                       ref_ratio[iLev - 1]);
-        }
-      }
-
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev);
       }
@@ -1464,14 +1456,6 @@ void Pic::update_B_hybrid() {
         MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
                         0, nDim3, 0);
       }
-
-      if (projectDownEmFields && finest_level > 0) {
-        for (int iLev = finest_level; iLev > 0; iLev--) {
-          average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3,
-                       ref_ratio[iLev - 1]);
-        }
-      }
-
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev);
       }
