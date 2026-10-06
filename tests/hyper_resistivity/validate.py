@@ -11,6 +11,13 @@ import os
 logger = logging.getLogger(__name__)
 
 PARAM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "PARAM.in")
+RUN_DIR = "run_test"  # default; overridden by set_run_dir() if called
+
+
+def set_run_dir(run_dir):
+    """Mirror the runner's RUN_DIR into this module (for _analytic_gamma())."""
+    global RUN_DIR
+    RUN_DIR = run_dir
 
 TOL = 0.005           # Relative tolerance for damping rate
 MAX_RESIDUAL = 1e-6   # Upper bound on fit residual relative to amplitude
@@ -67,7 +74,7 @@ def _analytic_gamma(param_path=None):
     if param_path is None:
         run_param = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "run_test", "PARAM.in"
+            RUN_DIR, "PARAM.in"
         )
         param_path = run_param if os.path.isfile(run_param) else PARAM_PATH
 
