@@ -54,12 +54,12 @@ so the PIC Maxwell solve carries the full whistler dispersion.
 -1.0                    charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]          ~ ions, code T ~ 0.2 (T_code = k_B T/uNorm^2)
-2.7233e-3               rho [amu/cc]   Species 1: electrons (n_e = n_i = 5 /cc)
+4.9999788               rho [/cc]   Species 1: electrons (n_e = n_i = 5 /cc)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

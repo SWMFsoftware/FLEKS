@@ -86,12 +86,12 @@ Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 0.04).
 -1.0                    charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n_i = 5 /cc)
+5.0                     rho [/cc]   Species 0: ions (n_i = 5 /cc)
 100.0                   ux [km/s]      fast bulk flow (u_code = 1.0 = v_A, Mach 1)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 314000.0                T [K]          ion temperature, beta_i ~ 0.5 (beta_total ~ 1.0)
-0.2                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i => n_e = 5 /cc, neutral)
+5.0                     rho [/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i => n_e = 5 /cc, neutral)
 100.0                   ux [km/s]      electrons drift with ions (current-free equilibrium)
 0.0                     uy [km/s]
 0.0                     uz [km/s]

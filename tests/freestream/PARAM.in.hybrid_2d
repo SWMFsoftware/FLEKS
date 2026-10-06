@@ -55,7 +55,7 @@ periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 
 #INFLOW
-5.0                     rho [amu/cc]
+5.0                     rho [/cc]
 100.0                   ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -97,7 +97,7 @@ T                       doSmoothMoments
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
 100.0                   ux [km/s]      fast bulk flow (u_code = 1.0 = v_A)
 0.0                     uy [km/s]
 0.0                     uz [km/s]

@@ -82,19 +82,19 @@ Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
 -1.0                    charge
 
 #INFLOW
-5.0                     rho [amu/cc]   Species 0: ions
+5.0                     rho [/cc]   Species 0: ions
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 0.0                     T [K]          ions, beta_i ~ 0.5
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n_code ~ nb = 0.2)
+5.0                     rho [/cc]   Species 0: ions (n_code ~ nb = 0.2)
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 0.0                     T [K]          ions, beta_i ~ 0.5
-0.2                     rho [amu/cc]   Species 1: electrons
+5.0                     rho [/cc]   Species 1: electrons
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

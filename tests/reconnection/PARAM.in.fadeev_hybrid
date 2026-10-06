@@ -87,7 +87,7 @@ neutralizing massless fluid, so no electron particle species is present.
 1.0                     charge
 
 #UNIFORMSTATE
-12.5                    rho [amu/cc]   background ions (n_code ~ nb = 0.2)
+12.5                    rho [/cc]   background ions (n_code ~ nb = 0.2)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

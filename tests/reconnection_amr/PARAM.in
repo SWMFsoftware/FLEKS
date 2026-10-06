@@ -61,12 +61,12 @@ Both species share the same Fadeev density profile (charge neutral, n_e = n_i);
 the ion temperature sets beta_i ~ 0.5 and the electrons are heated to the same
 code temperature.
 #UNIFORMSTATE
-12.5                    rho [amu/cc]   Species 0: ions (n_code ~ nb = 0.2)
+12.5                    rho [/cc]   Species 0: ions (n_code ~ nb = 0.2)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 304000.0                T [K]          ions, beta_i ~ 0.5
-0.5                     rho [amu/cc]   Species 1: electrons (rho_e=rho_i*m_e/m_i => n_e=n_i, charge neutral)
+12.5                    rho [/cc]   Species 1: electrons (rho_e=rho_i*m_e/m_i => n_e=n_i, charge neutral)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

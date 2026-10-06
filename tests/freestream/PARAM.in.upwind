@@ -89,12 +89,12 @@ Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 0.04).
 -1.0                    charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
 100.0                   ux [km/s]      fast bulk flow (U_code = 1.0 = v_A)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 314000.0                T [K]          beta ~ 1 (T_code ~ 0.26)
-0.2                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i)
+5.0                     rho [/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i)
 100.0                   ux [km/s]      electrons comoving with ions (J = 0)
 0.0                     uy [km/s]
 0.0                     uz [km/s]

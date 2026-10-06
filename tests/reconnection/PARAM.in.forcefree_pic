@@ -70,12 +70,12 @@ F                       useHybridPIC
 -1.0                    charge
 
 #UNIFORMSTATE
-65.15939                rho [amu/cc]   Species 0: ions (n_i = 1.0)
+65.15939                rho [/cc]   Species 0: ions (n_i = 1.0)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 24191.0                 T [K]          ions, beta_i = 0.5, Ti_code = 0.25 / (4*pi)
-2.6063756               rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi = 65.15939 * 0.04)
+65.15939                rho [/cc]   Species 1: electrons (rho_e = rho_i * me/mi = 65.15939 * 0.04)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

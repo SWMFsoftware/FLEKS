@@ -115,7 +115,7 @@ rk4                     fieldIntegrator
 1.0                     charge
 
 #UNIFORMSTATE
-13.03188                rho [amu/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
+13.03188                rho [/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

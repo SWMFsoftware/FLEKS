@@ -97,7 +97,8 @@ def _check_beam_transverse_wave():
     iby, ibz, ibx = vidx["BY"], vidx["BZ"], vidx["BX"]
     # The H+ ion density column is requested in #SAVEPLOT varName.  In PLANETARY
     # output it is converted back to amu/cc, so it must round-trip to the input
-    # #UNIFORMSTATE value (5.0 amu/cc).  The species index differs between the
+    # #UNIFORMSTATE value (5.0 /cc = 5.0 amu/cc for H+).  The species index
+    # differs between the
     # full-PIC (H+ = species 1, rhoS1) and hybrid (single H+ species, rhoS0)
     # variants.
     irho = vidx.get("RHOS1")
@@ -227,9 +228,10 @@ def _check_beam_transverse_wave():
     n_res = max(1, round(k_res / k1))
 
     # ---- Check 0: output density round-trips to the input value -----------
-    # #UNIFORMSTATE sets the H+ background density rho = 5.0 amu/cc.  The code
-    # converts it to code units (x1e6*m_p*Si2NoRho) internally, and PLANETARY
-    # output converts it back to amu/cc (No2OutRho = 1/Si2NoRho /m_p *1e-6).
+    # #UNIFORMSTATE sets the H+ background density n = 5.0 /cc (rho is a number
+    # density; for H+ that is also 5.0 amu/cc).  The code converts it to code
+    # units (x1e6*m_p*Si2NoRho) internally, and PLANETARY output converts it
+    # back to amu/cc (No2OutRho = 1/Si2NoRho /m_p *1e-6).
     # The round trip is the identity, so the plotted density column must
     # reproduce the input.  Guard against a unit mismatch (e.g. rho interpreted
     # as PIC/code units in the validator) with a tight relative tolerance.

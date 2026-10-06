@@ -40,17 +40,17 @@ T                       solveEM
 1.0                     charge
 
 #UNIFORMSTATE
-0.0500625               rho [amu/cc]   Species 0: electron (quasi-neutral, hot for Te)
+5.00625                 rho [/cc]   Species 0: electron (quasi-neutral, hot for Te)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 100000.0                T [K]         High T for impact ionization
-5.0                     rho [amu/cc]   Species 1: H+ background
+5.0                     rho [/cc]   Species 1: H+ background
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 100000.0                T [K]
-0.1                     rho [amu/cc]   Species 2: O+ background (low density seed)
+0.00625                 rho [/cc]   Species 2: O+ background (low density seed)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

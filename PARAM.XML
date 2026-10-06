@@ -2356,12 +2356,12 @@ neutral species.
   <parameter name="Ez" type="real"/>  
 
 #UNIFORMSTATE
-1.8                 rho [amu/cc]  ! Species 1 
+1.8                 rho [/cc]  ! Species 1 
 100                 ux [km/s]
 0                   uy [km/s]
 0                   uz [km/s]
 6000                T  [K] 
-0.18                rho [amu/cc]  ! Species 2 
+1.8                 rho [/cc]  ! Species 2 
 100                 ux [km/s]
 0                   uy [km/s]
 0                   uz [km/s]
@@ -2374,15 +2374,19 @@ neutral species.
 0.0                 Ez [?]
 
 If PIC is not initialized from SWMF (#INITFROMSWMF), set uniform initial
-conditions here. For each plasma species, provide rho [amu/cc], ux/uy/uz
-[km/s], and T [K]. The background electromagnetic fields B [T] and E [V/m]
-are specified once at the end (in SI units).
+conditions here. For each plasma species, provide the NUMBER density rho
+[1/cc], ux/uy/uz [km/s], and T [K]. The background electromagnetic fields
+B [T] and E [V/m] are specified once at the end (in SI units).
+
+`rho` is a number density, the same convention as #INFLOW: for protons it is
+numerically identical to the older mass density in amu/cc, while a species of
+mass m [amu] carries the mass density m*rho [amu/cc].
 
 When useElectronFluid is enabled, the electron species (species 0) density
 is read directly from its rho value rather than being computed from a
 quasi-neutrality condition. The user is responsible for ensuring charge
-neutrality, i.e. rho_e = (sum_i rho_i / m_i) * m_e, where m_e and m_i are
-the species masses declared in #PLASMA.
+neutrality, i.e. sum_i q_i * rho_i = 0 with q_i the charges declared in
+#PLASMA (for singly charged ions and electrons simply rho_e = sum_i rho_i).
 </command>
 
 
@@ -2587,12 +2591,12 @@ FLEKS code units).
   <parameter name="T" type="real" default="0.0"/>
 
 #INFLOW
-5.0                      rho [amu/cc]   Species 0
+5.0                      rho [/cc]      Species 0
 20.0                     ux [km/s]
 0.0                      uy [km/s]
 0.0                      uz [km/s]
 10000.0                  T [K]
-5.0                      rho [amu/cc]   Species 1 (optional per-species block)
+5.0                      rho [/cc]      Species 1 (optional per-species block)
 20.0                     ux [km/s]
 0.0                      uy [km/s]
 0.0                      uz [km/s]
@@ -2616,11 +2620,10 @@ ONE BLOCK PER SPECIES, IN `#PLASMA` ORDER.  The first block is mandatory; each
 following block is optional and is recognised only while the next line still
 looks like "value rho".  A species without its own block reuses the LAST
 declared block, so a single block keeps describing a uniform, quasi-neutral
-multi-species upstream plasma (this is the behaviour of all older decks).  Note
-that `rho` is the NUMBER density expressed in proton-mass-equivalent units (for
-protons identical to a mass density in amu/cc), and every species that shares a
-block therefore receives the SAME number density -- which is exactly what makes
-a two-species H+/e- block charge neutral.
+multi-species upstream plasma (this is the behaviour of all older decks).  `rho`
+is the NUMBER density [1/cc], exactly like `#UNIFORMSTATE` rho, so every species
+that shares a block receives the SAME number density -- which is exactly what
+makes a two-species H+/e- block charge neutral.
 
 Set `rho` to zero for a species that must NOT enter through the inflow face
 (e.g. heavy planetary ions that only exist downstream through chemistry); that

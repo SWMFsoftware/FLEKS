@@ -143,7 +143,9 @@ class Units:
         self.xMax = get(blocks, "GEOMETRY", "xMax")
         self.Lx = abs(self.xMax - self.xMin)
 
-        self.rhoAmuCc = get(blocks, "UNIFORMSTATE", "rho")
+        # #UNIFORMSTATE rho is a NUMBER density [1/cc] (the convention shared
+        # with #INFLOW); the code-unit MASS density of species 0 is n*m.
+        self.nCc = get(blocks, "UNIFORMSTATE", "rho")
         self.bxT = get(blocks, "UNIFORMSTATE", "bx")
         self.mass = get(blocks, "PLASMA", "mass", 1.0)
         self.charge = get(blocks, "PLASMA", "charge", 1.0)
@@ -155,7 +157,7 @@ class Units:
         self.Si2NoB = 1.0e4 / self.Bnorm
 
         # Code-unit plasma quantities.
-        self.rhoCode = self.rhoAmuCc * 1.0e6 * MP * self.Si2NoRho
+        self.rhoCode = self.nCc * 1.0e6 * MP * self.mass * self.Si2NoRho
         self.rhoQ = self.rhoCode * (self.charge / self.mass)
         self.omegaPi = math.sqrt(FOUR_PI * self.rhoQ * (self.charge / self.mass))
         self.di = 1.0 / self.omegaPi  # c_code = 1
