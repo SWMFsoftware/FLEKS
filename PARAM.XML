@@ -2321,6 +2321,10 @@ individual commands, not both.
   <parameter name="nS" type="integer"/>
   <parameter name="mass" type="real"/>
   <parameter name="charge" type="real"/>
+  <for from="2" to="$nS">
+    <parameter name="mass" type="real"/>
+    <parameter name="charge" type="real"/>
+  </for>
 
 #PLASMA
 1                       nS
@@ -2339,6 +2343,7 @@ mass and charge here. The units of mass and charge are amu and
 elementary charge, respectively. If the charge is 0, then it is a 
 neutral species. 
 
+One mass/charge pair is read for every species, in the order given by nS.
 </command>
 
 
@@ -2348,6 +2353,13 @@ neutral species.
   <parameter name="uy" type="real"/>  
   <parameter name="uz" type="real"/>  
   <parameter name="T" type="real"/>  
+  <for from="2" to="$nS">
+    <parameter name="rho" type="real"/>
+    <parameter name="ux" type="real"/>
+    <parameter name="uy" type="real"/>
+    <parameter name="uz" type="real"/>
+    <parameter name="T" type="real"/>
+  </for>
   <parameter name="Bx" type="real"/>  
   <parameter name="By" type="real"/>  
   <parameter name="Bz" type="real"/>  
@@ -2589,6 +2601,13 @@ FLEKS code units).
   <parameter name="uy" type="real" default="0.0"/>
   <parameter name="uz" type="real" default="0.0"/>
   <parameter name="T" type="real" default="0.0"/>
+  <for from="2" to="$nS">
+    <parameter name="rho" type="real" default="0.0"/>
+    <parameter name="ux" type="real" default="0.0"/>
+    <parameter name="uy" type="real" default="0.0"/>
+    <parameter name="uz" type="real" default="0.0"/>
+    <parameter name="T" type="real" default="0.0"/>
+  </for>
 
 #INFLOW
 5.0                      rho [/cc]      Species 0
@@ -2623,7 +2642,9 @@ declared block, so a single block keeps describing a uniform, quasi-neutral
 multi-species upstream plasma (this is the behaviour of all older decks).  `rho`
 is the NUMBER density [1/cc], exactly like `#UNIFORMSTATE` rho, so every species
 that shares a block receives the SAME number density -- which is exactly what
-makes a two-species H+/e- block charge neutral.
+makes a two-species H+/e- block charge neutral.  This description lists one block
+per species so that `CheckParam.pl` can count the lines; a deck that relies on
+the inheritance above simply lists fewer blocks than `nS`.
 
 Set `rho` to zero for a species that must NOT enter through the inflow face
 (e.g. heavy planetary ions that only exist downstream through chemistry); that

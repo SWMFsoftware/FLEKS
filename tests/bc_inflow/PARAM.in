@@ -65,6 +65,20 @@ F                       useHallTerm
 1.0                     electronGamma
 1.0                     electronDensity0
 
+#BSUBCYCLE
+1                       nBSubcycle
+
+Two kinetic ion species: solar-wind protons and a heavy minor ion.  The
+electron is an implicit neutralizing massless fluid, so no electron particle
+species is present.  Declared before INFLOW and UNIFORMSTATE because their
+per-species blocks are read in that order.
+#PLASMA
+2                       nSpecies
+1.0                     mass       Species 0: H+
+1.0                     charge
+16.0                    mass       Species 1: heavy ion (O+), m = 16 m_p
+1.0                     charge
+
 One upstream block per species, in PLASMA order.  rho is the number density
 [1/cc] for both this command and UNIFORMSTATE below, so the heavy species reads
 1.0 in both places (its mass density is m * n = 16 amu/cc).
@@ -79,19 +93,6 @@ One upstream block per species, in PLASMA order.  rho is the number density
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 40000.0                 T [K]
-
-#BSUBCYCLE
-1                       nBSubcycle
-
-Two kinetic ion species: solar-wind protons and a heavy minor ion.  The
-electron is an implicit neutralizing massless fluid, so no electron particle
-species is present.
-#PLASMA
-2                       nSpecies
-1.0                     mass       Species 0: H+
-1.0                     charge
-16.0                    mass       Species 1: heavy ion (O+), m = 16 m_p
-1.0                     charge
 
 #UNIFORMSTATE
 5.0                     rho [/cc]   Species 0: H+ (n = 5 /cc)
