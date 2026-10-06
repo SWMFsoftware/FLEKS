@@ -131,7 +131,27 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
     }
   }
 
-  // Print() << "dm = " << DistributionMap(0) << std::endl;
+  finish_regrid();
+}
+
+void Grid::restore_grid(const Vector<BoxArray>& boxes) {
+  if (boxes.empty() || boxes.size() > static_cast<std::size_t>(n_lev_max()))
+    Abort("Invalid restart grid level count.");
+
+  cGridsOld = cGrids;
+  cGridsOld.resize(n_lev_max());
+  activeRegion = boxes[0];
+  isGridEmpty = activeRegion.empty();
+  SetFinestLevel(static_cast<int>(boxes.size()) - 1);
+  for (int iLev = 0; iLev < n_lev_max(); ++iLev) {
+    const BoxArray ba = iLev < n_lev() ? boxes[iLev] : BoxArray();
+    SetBoxArray(iLev, ba);
+    SetDistributionMap(iLev, DistributionMapping(ba));
+  }
+  finish_regrid();
+}
+
+void Grid::finish_regrid() {
 
   calc_node_grids();
 

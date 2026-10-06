@@ -939,13 +939,11 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
 }
 
 template <class FAB, class Interp>
-void fill_fine_lev_new_from_coarse(amrex::FabArray<FAB>& coarse,
-                                   amrex::FabArray<FAB>& fine, const int iStart,
-                                   const int nComp, const amrex::IntVect ratio,
-                                   const amrex::Geometry& cgeom,
-                                   const amrex::Geometry& fgeom,
-                                   const amrex::iMultiFab& fstatus,
-                                   Interp& mapper, amrex::Real mult = 1.0) {
+void fill_fine_lev_new_from_coarse(
+    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
+    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
+    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
+    Interp& mapper, amrex::Real mult = 1.0, bool fillAll = false) {
   BL_PROFILE("fill_fine_lev_bny_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
@@ -966,7 +964,7 @@ void fill_fine_lev_new_from_coarse(amrex::FabArray<FAB>& coarse,
     const auto tmp = ftmp[mfi].array();
 
     amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      if (bit::is_new(statusArr(i, j, k))) {
+      if (fillAll || bit::is_new(statusArr(i, j, k))) {
         for (int iVar = 0; iVar < numComp; ++iVar) {
           data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
         }

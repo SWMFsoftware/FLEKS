@@ -16,6 +16,7 @@
 #include "InitialCondition.h"
 #include "IntrinsicBField.h"
 #include "LinearSolver.h"
+#include "MeshChange.h"
 #include "OHInterface.h"
 #include "Particles.h"
 #include "ReadParam.h"
@@ -689,18 +690,18 @@ public:
 
   //--------------Initialization begin-------------------------------
   void pre_regrid();
-  void post_regrid();
+  void post_regrid(MeshChangeReason reason = MeshChangeReason::Topology);
 
   void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld =
                              amrex::Vector<amrex::BoxArray>());
 
   void fill_new_cells();
-  void fill_E_B_fields();
+  void fill_E_B_fields(bool fillAll = false);
 
-  void fill_new_node_E();
+  void fill_new_node_E(bool fillAll = false);
 
-  void fill_new_node_B();
-  void fill_new_center_B();
+  void fill_new_node_B(bool fillAll = false);
+  void fill_new_center_B(bool fillAll = false);
 
   void fill_particles();
 

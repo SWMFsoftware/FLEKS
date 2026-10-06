@@ -581,7 +581,7 @@ void Domain::load_balance() {
   fi->post_regrid();
 
   if (pic) {
-    pic->post_regrid();
+    pic->post_regrid(MeshChangeReason::LoadBalance);
     pic->report_load_balance(true, true);
     pic->inject_particles_for_boundary_cells();
   }
@@ -638,6 +638,15 @@ void Domain::regrid() {
           << nCellPic / centerBox.d_numPts()
           << "\n===================================================="
           << std::endl;
+
+  // A restored hierarchy may already match the received region. Re-running
+  // consumer hooks would request initialization of already restored fields.
+  if (!grid->is_new_grid() && activeRegion == grid->get_base_grid() &&
+      !refineRegions.is_modified()) {
+    gridInfo.is_grid_new(false);
+    isNewGrid = false;
+    return;
+  }
 
   if (pic) {
     pic->pre_regrid();
@@ -843,42 +852,36 @@ void Domain::read_restart() {
     is.ignore(100000, '\n');
   }
 
-  this->grid->SetFinestLevel(nLev - 1);
-  for (int iLev = 0; iLev < nLev; iLev++) {
-    this->grid->SetBoxArray(iLev, bas[iLev]);
-    this->grid->SetDistributionMap(iLev, DistributionMapping(bas[iLev]));
-  }
-
-  this->grid->SetGridEff(gridEfficiency);
-  this->grid->set_refine_regions(refineRegions);
-  this->grid->regrid(bas[0], this->grid.get());
+  grid->SetGridEff(gridEfficiency);
+  grid->set_refine_regions(refineRegions);
+  grid->restore_grid(bas);
 
   //----------------------------------------------------------------
 
   fi->post_regrid();
   fi->read_restart();
 
-  if (!domainParameters.doRestartFIOnly) {
-    if (source)
-      source->post_regrid();
-    if (stateOH)
-      stateOH->post_regrid();
-    if (sourcePT2OH)
-      sourcePT2OH->post_regrid();
+  if (source)
+    source->post_regrid();
+  if (stateOH)
+    stateOH->post_regrid();
+  if (sourcePT2OH)
+    sourcePT2OH->post_regrid();
 
-    if (pic) {
-      pic->post_regrid();
+  if (pic) {
+    pic->post_regrid(MeshChangeReason::Restart);
+    if (!domainParameters.doRestartFIOnly) {
       pic->read_restart();
       write_plots(true);
       pic->write_log(true, true);
     }
+  }
 
-    if (pt) {
-      pt->post_regrid();
-      if (domainParameters.doRestartPT) {
-        pt->read_restart();
-        pt->write_log(true, true);
-      }
+  if (pt) {
+    pt->post_regrid();
+    if (!domainParameters.doRestartFIOnly && domainParameters.doRestartPT) {
+      pt->read_restart();
+      pt->write_log(true, true);
     }
   }
 

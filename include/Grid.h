@@ -91,6 +91,8 @@ private:
   // install the initial AmrInfo.
   amrex::AmrInfo gridAmrInfo;
 
+  void finish_regrid();
+
 public:
   Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
        const int nGstIn, int id = 0, std::string tagIn = std::string())
@@ -189,6 +191,10 @@ public:
   // TODO: Maybe the first argument 'region' can be removed? --Yuxi
   void regrid(const amrex::BoxArray& region, const Grid* const grid,
               bool doLoadBalance = false);
+
+  // Restore a saved hierarchy while retaining the pre-restore layout for
+  // new-cell classification. No second simulation Grid is constructed.
+  void restore_grid(const amrex::Vector<amrex::BoxArray>& boxes);
 
   virtual void post_regrid() { distribute_grid_arrays(); };
 

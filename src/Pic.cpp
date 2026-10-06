@@ -32,11 +32,7 @@ void Pic::fill_new_cells() {
 
   timing_func(nameFunc);
 
-  if (!usePIC) {
-    return;
-  }
-
-  if (pInfo.isPPVconstant || pInfo.doPreSplitting) {
+  if (usePIC && (pInfo.isPPVconstant || pInfo.doPreSplitting)) {
     SetTargetPPC(2);
     isTargetPPCDefined = true;
     for (int i = 0; i < nSpecies; i++) {
@@ -44,7 +40,9 @@ void Pic::fill_new_cells() {
     }
   }
   if (initEM) {
-    fill_E_B_fields();
+    // Tracker-only runs refresh retained fields at every coupling without
+    // changing the shared mesh's new-cell classification.
+    fill_E_B_fields(!usePIC);
   }
   init_regional_fields();
 
@@ -301,9 +299,10 @@ void Pic::pre_regrid() {
   }
 }
 
-void Pic::post_regrid() {
+void Pic::post_regrid(MeshChangeReason reason) {
 
-  doNeedFillNewCell = true;
+  if (reason != MeshChangeReason::LoadBalance)
+    doNeedFillNewCell = true;
   distribute_arrays();
 
   // B0 lives on the same grids as B1 and is analytic, so the new boxes are
@@ -396,7 +395,7 @@ void Pic::post_regrid() {
 }
 
 //==========================================================
-void Pic::fill_new_node_E() {
+void Pic::fill_new_node_E(bool fillAll) {
   {
     Real xL = 0, xR = 0;
     if (ic_ && ic_->is_tophat()) {
@@ -413,7 +412,7 @@ void Pic::fill_new_node_E() {
 
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_new(status(ijk))) {
+        if (fillAll || bit::is_new(status(ijk))) {
           if (ic_ && ic_->is_tophat()) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
@@ -434,7 +433,7 @@ void Pic::fill_new_node_E() {
       fill_fine_lev_new_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+          node_bilinear_interp, 1.0, fillAll);
     }
   }
 
@@ -449,7 +448,7 @@ void Pic::fill_new_node_E() {
 }
 
 //==========================================================
-void Pic::fill_new_node_B() {
+void Pic::fill_new_node_B(bool fillAll) {
   {
     Real xL = 0, xR = 0;
     if (ic_ && ic_->is_tophat()) {
@@ -465,7 +464,7 @@ void Pic::fill_new_node_B() {
 
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_new(status(ijk))) {
+        if (fillAll || bit::is_new(status(ijk))) {
           if (ic_ && ic_->is_tophat()) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
@@ -487,13 +486,13 @@ void Pic::fill_new_node_B() {
       fill_fine_lev_new_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+          node_bilinear_interp, 1.0, fillAll);
     }
   }
 }
 
 //==========================================================
-void Pic::fill_new_center_B() {
+void Pic::fill_new_center_B(bool fillAll) {
   {
     int iLev = 0;
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
@@ -506,7 +505,7 @@ void Pic::fill_new_center_B() {
           box, centerB[iLev].nComp(), [&](int i, int j, int k, int iVar) {
             IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-            if (bit::is_new(status(ijk))) {
+            if (fillAll || bit::is_new(status(ijk))) {
               centerArr(ijk, iVar) = 0;
 
               Box subBox(ijk, ijk + 1);
@@ -521,19 +520,19 @@ void Pic::fill_new_center_B() {
   if (finest_level > 0) {
     auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_new_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
-                                    centerB[iLev - 1].nComp(),
-                                    ref_ratio[iLev - 1], Geom(iLev - 1),
-                                    Geom(iLev), cell_status(iLev), cellInterp);
+      fill_fine_lev_new_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cellInterp, 1.0, fillAll);
     }
   }
 }
 
 //==========================================================
-void Pic::fill_E_B_fields() {
-  fill_new_node_E();
-  fill_new_node_B();
-  fill_new_center_B();
+void Pic::fill_E_B_fields(bool fillAll) {
+  fill_new_node_E(fillAll);
+  fill_new_node_B(fillAll);
+  fill_new_center_B(fillAll);
 
   fill_intrinsic_B();
 
