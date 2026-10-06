@@ -8,22 +8,40 @@
 #include "Pic.h"
 #include "TestParticles.h"
 
-class ParticleTracker : public Grid {
+class ParticleTracker {
 public:
-  ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
-                  int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
+  ParticleTracker(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
                   ParticleTrackerInfo &info, const DomainParameters & /*dp*/)
-      : Grid(gm, amrInfo, nGst, id, "pt"),
+      : grid(gridIn),
         tc(tcIn),
         fi(fluidIn),
-        pInfo(&info) {}
+        pInfo(&info),
+        gridID(id),
+        nGst(gridIn.get_n_ghost()),
+        isGridEmpty(gridIn.is_grid_empty_ref()),
+        isNewGrid(gridIn.is_new_grid_ref()),
+        cGrids(gridIn.box_arrays()),
+        nGrids(gridIn.node_box_arrays()) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = gridName + " pt: ";
+  }
 
-  ~ParticleTracker() override;
+  ~ParticleTracker();
+
+  int n_lev() const { return grid.n_lev(); }
+  int n_lev_max() const { return grid.n_lev_max(); }
+  const amrex::Geometry &Geom(int iLev) const { return grid.Geom(iLev); }
+  const amrex::DistributionMapping &DistributionMap(int iLev) const {
+    return grid.get_dmap(iLev);
+  }
+  bool is_grid_empty() const { return grid.is_grid_empty(); }
+  bool is_new_grid() const { return grid.is_new_grid(); }
+  void is_new_grid(bool in) { grid.is_new_grid(in); }
 
   void post_process_param();
 
-  void pre_regrid() override;
-  void post_regrid() override;
+  void pre_regrid();
+  void post_regrid();
 
   void update_field(Pic &pic, bool needJacobian = false);
   void set_ic(Pic &pic);
@@ -39,8 +57,19 @@ public:
   void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape> > &shapes);
 
 private:
+  Grid &grid;
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
+
+  std::string tag = "pt";
+  std::string gridName;
+  std::string printPrefix;
+  int gridID;
+  int nGst;
+  const bool &isGridEmpty;
+  const bool &isNewGrid;
+  const amrex::Vector<amrex::BoxArray> &cGrids;
+  const amrex::Vector<amrex::BoxArray> &nGrids;
 
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).

@@ -140,9 +140,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("particleBoundary", particle);
     param.read_var("fieldBoundary", field);
 
-    bodyParticleBC = ParticleBC::parse(particle);
-    if (bodyParticleBC != ParticleBC::absorb &&
-        bodyParticleBC != ParticleBC::reflect)
+    body_particle_bc() = ParticleBC::parse(particle);
+    if (body_particle_bc() != ParticleBC::absorb &&
+        body_particle_bc() != ParticleBC::reflect)
       Abort("Error: #BODYBOUNDARY particleBoundary '" + particle +
             "' is not supported for the inner body. Accepted values: "
             "absorb, reflect.");
@@ -151,7 +151,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     bodyBoundarySet_ = true;
 
     Print() << "  inner body BC: particles = "
-            << ParticleBC::to_string(bodyParticleBC)
+            << ParticleBC::to_string(body_particle_bc())
             << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
   } else if (command == "#REGIONRESISTIVITY") {
     RegionalResistivityConfig cfg;
@@ -671,7 +671,8 @@ void Pic::post_process_param() {
     if (bodyRadius <= 0)
       Abort("Invalid #BODY: radius must be positive.");
 
-    if (n_lev_max() > 1 && refineRegions && !refineRegions->empty())
+    if (n_lev_max() > 1 && get_refine_regions() &&
+        !get_refine_regions()->empty())
       Print() << "  Warning: #BODY has not been verified with AMR "
               << "(refinement regions are defined).\n";
 
@@ -695,7 +696,7 @@ void Pic::post_process_param() {
     // #BODYBOUNDARY only has a meaning together with #BODY.
     Print() << "  Warning: #BODYBOUNDARY is ignored because no #BODY is "
             << "defined.\n";
-    bodyParticleBC = ParticleBC::absorb;
+    body_particle_bc() = ParticleBC::absorb;
     bodyFieldBC = BodyFieldBC::linetied;
     bodyBoundarySet_ = false;
   }

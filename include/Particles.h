@@ -1009,8 +1009,18 @@ public:
     return grid->node_status(iLev);
   }
 
+  const amrex::Vector<amrex::iMultiFab>* targetPPCSource = nullptr;
+
+  void set_target_ppc_source(const amrex::Vector<amrex::iMultiFab>& src) {
+    targetPPCSource = &src;
+  }
+
   const amrex::iMultiFab& target_PPC(int iLev) const {
-    return grid->target_PPC(iLev);
+    if (targetPPCSource != nullptr) {
+      return (*targetPPCSource)[iLev];
+    }
+    static const amrex::iMultiFab emptyMF;
+    return emptyMF;
   }
 
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,

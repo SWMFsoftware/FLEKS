@@ -271,15 +271,13 @@ void ParticleTracker::post_regrid() {
     }
   }
 
-  distribute_grid_arrays();
-
   //--------------test particles-----------------------------------
   const int nSpecies = fi->get_nS();
 
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<TestParticles>(
-          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           gridID);
       ptr->set_ppc(pInfo->nTPPerCell);
       ptr->set_interval(pInfo->nTPIntervalCell);

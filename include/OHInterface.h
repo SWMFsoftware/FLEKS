@@ -7,9 +7,9 @@
 
 class OHInterface : public FluidInterface {
 public:
-  OHInterface(const FluidInterface &other, int id, std::string tag,
-              FluidType typeIn = SourceFluid)
-      : FluidInterface(other, id, tag, typeIn) {
+  OHInterface(Grid &gridIn, const FluidInterface &other, int id,
+              std::string tag, FluidType typeIn = SourceFluid)
+      : FluidInterface(gridIn, other, id, tag, typeIn) {
     initFromSWMF = false;
 
     if (myType != PICFluid) {

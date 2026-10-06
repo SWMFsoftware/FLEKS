@@ -58,7 +58,6 @@ protected:
   // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
-  amrex::Vector<amrex::iMultiFab> targetPPC;
 
   amrex::Vector<amrex::MultiFab> cellCost;
 
@@ -212,6 +211,46 @@ public:
     return false;
   }
 
+  //---- Grid query accessors for composition ----
+  const amrex::BoxArray& box_array(int iLev) const { return boxArray(iLev); }
+  const amrex::Vector<amrex::BoxArray>& box_arrays() const { return grids; }
+  const amrex::BoxArray& node_box_array(int iLev) const { return nGrids[iLev]; }
+  const amrex::Vector<amrex::BoxArray>& node_box_arrays() const {
+    return nGrids;
+  }
+  const amrex::DistributionMapping& get_dmap(int iLev) const {
+    return DistributionMap(iLev);
+  }
+  amrex::IntVect get_ref_ratio(int iLev) const {
+    return amrex::AmrMesh::refRatio(iLev);
+  }
+  const amrex::Geometry& get_geom(int iLev) const { return Geom(iLev); }
+  amrex::Vector<amrex::iMultiFab>& node_status() { return nodeStatus; }
+  const amrex::Vector<amrex::iMultiFab>& node_status() const {
+    return nodeStatus;
+  }
+  amrex::Vector<amrex::iMultiFab>& cell_status() { return cellStatus; }
+  const amrex::Vector<amrex::iMultiFab>& cell_status() const {
+    return cellStatus;
+  }
+  const amrex::BoxArray& active_region_ref() const { return activeRegion; }
+  amrex::Vector<amrex::MultiFab>& cell_cost() { return cellCost; }
+  const amrex::Vector<amrex::MultiFab>& cell_cost() const { return cellCost; }
+  const amrex::Vector<amrex::IntVect>& ref_ratios() const { return ref_ratio; }
+  const int& get_finest_level_ref() const { return finest_level; }
+  const bool& is_grid_empty_ref() const { return isGridEmpty; }
+  const bool& is_new_grid_ref() const { return isNewGrid; }
+  const bool& is_fake_2d_ref() const { return isFake2D; }
+  bool is_fake_2d() const { return isFake2D; }
+  const bool& use_body_ref() const { return useBody; }
+  const amrex::Real& get_body_radius_ref() const { return bodyRadius; }
+  const amrex::Vector<amrex::BoxArray>& get_old_cgrids() const {
+    return cGridsOld;
+  }
+  int get_id() const { return gridID; }
+  const std::string& get_name() const { return gridName; }
+  const std::string& get_print_prefix() const { return printPrefix; }
+
   //---- Inner body (see the #BODY command) ----
 
   bool use_body() const { return useBody; }
@@ -279,9 +318,7 @@ public:
     return nodeStatus[iLev];
   }
 
-  const amrex::iMultiFab& target_PPC(int iLev) const { return targetPPC[iLev]; }
-
-  std::string lev_string(int iLev) {
+  std::string lev_string(int iLev) const {
     std::string sLev = "_lev_" + std::to_string(iLev);
     if (n_lev_max() == 1) {
       // Keep backward compatibility.

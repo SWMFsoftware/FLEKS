@@ -41,12 +41,10 @@ private:
 public:
   std::unique_ptr<TimeCtr> tc;
 
-  // Q: Why are pic and pt defined as pointers?
-  // A: Pic and particleTracker are derived from AmrCore, whose initialization
-  // requires the informaion of the domain, such as the domain range and cell
-  // size. Such information is not known until Domain received information from
-  // GM and read the input parameters. pic and pt are used as pointers so that
-  // their initialization is deferred until the grid information is obtained.
+  // Single simulation grid owned by Domain. Declared before consumers so
+  // it is destroyed after them.
+  std::unique_ptr<Grid> grid;
+
   std::unique_ptr<Pic> pic;
   std::unique_ptr<ParticleTracker> pt;
 

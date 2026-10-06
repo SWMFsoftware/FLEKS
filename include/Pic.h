@@ -87,7 +87,7 @@ struct NodeMMCommData {
 };
 
 // The grid is defined in DomainGrid. This class contains the data on the grid.
-class Pic : public Grid {
+class Pic {
   friend PlotWriter;
   friend ParticleTracker;
   // private variables
@@ -464,15 +464,122 @@ private:
   std::string logFile;
   std::ofstream picLogStream;
 
+protected:
+  Grid &grid;
+
+  std::string tag = "pic";
+  std::string gridName;
+  std::string printPrefix;
+  int gridID;
+  int nGst;
+  const bool &isFake2D;
+  const bool &isGridEmpty;
+  const int &finest_level;
+  const amrex::Vector<amrex::BoxArray> &cGrids;
+  const amrex::Vector<amrex::BoxArray> &nGrids;
+  const amrex::Vector<amrex::IntVect> &ref_ratio;
+  amrex::Vector<amrex::iMultiFab> &cellStatus;
+  amrex::Vector<amrex::iMultiFab> &nodeStatus;
+  amrex::Vector<amrex::MultiFab> &cellCost;
+  const amrex::BoxArray &activeRegion;
+  const bool &useBody;
+  const amrex::Real &bodyRadius;
+  const amrex::Real *bodyCenter;
+
+  amrex::Vector<amrex::iMultiFab> targetPPC;
+  bool isTargetPPCDefined = false;
+  bool doNeedFillNewCell = false;
+
   // public methods
 public:
-  Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
-      FluidInterface *fluidIn, TimeCtr *tcIn, int id,
+  Grid &get_grid() { return grid; }
+  const Grid &get_grid() const { return grid; }
+
+  int n_lev() const { return grid.n_lev(); }
+  int n_lev_max() const { return grid.n_lev_max(); }
+  int finestLevel() const { return grid.finestLevel(); }
+  const amrex::Geometry &Geom(int iLev) const { return grid.Geom(iLev); }
+  const amrex::BoxArray &boxArray(int iLev) const {
+    return grid.box_array(iLev);
+  }
+  const amrex::BoxArray &node_box_array(int iLev) const {
+    return grid.node_box_array(iLev);
+  }
+  const amrex::Vector<amrex::BoxArray> &node_box_arrays() const {
+    return grid.node_box_arrays();
+  }
+  const amrex::DistributionMapping &DistributionMap(int iLev) const {
+    return grid.get_dmap(iLev);
+  }
+  const amrex::iMultiFab &cell_status(int iLev) const {
+    return grid.cell_status(iLev);
+  }
+  const amrex::iMultiFab &node_status(int iLev) const {
+    return grid.node_status(iLev);
+  }
+  bool is_grid_empty() const { return grid.is_grid_empty(); }
+  bool is_inside_domain(const amrex::Real *loc) const {
+    return grid.is_inside_domain(loc);
+  }
+  const amrex::Vector<amrex::RealBox> &domain_range() const {
+    return grid.domain_range();
+  }
+  bool use_body() const { return grid.use_body(); }
+  amrex::Real get_body_radius() const { return grid.get_body_radius(); }
+  const amrex::Real *get_body_center() const { return grid.get_body_center(); }
+  int get_dim() const { return grid.get_dim(); }
+  int get_n_ghost() const { return nGst; }
+  const amrex::AmrInfo &get_amr_info() const { return grid.get_amr_info(); }
+  const RefineRegions *get_refine_regions() const {
+    return grid.get_refine_regions();
+  }
+  void set_base_grid(const amrex::BoxArray &ba) { grid.set_base_grid(ba); }
+  amrex::BoxArray get_base_grid() const { return grid.get_base_grid(); }
+  bool is_new_grid() const { return grid.is_new_grid(); }
+  void is_new_grid(bool in) { grid.is_new_grid(in); }
+  const amrex::Vector<amrex::MultiFab> &get_cost() const {
+    return grid.get_cost();
+  }
+  const amrex::iMultiFab &target_PPC(int iLev) const { return targetPPC[iLev]; }
+  amrex::Real get_cell_volume(int iLev) const {
+    return grid.get_cell_volume(iLev);
+  }
+  std::string lev_string(int iLev) const { return grid.lev_string(iLev); }
+  int get_finest_lev(const amrex::RealVect &xyz) const {
+    return grid.get_finest_lev(xyz);
+  }
+  bool is_inside_body(const amrex::Real *loc) const {
+    return grid.is_inside_body(loc);
+  }
+  void set_body(const amrex::Real *center, const amrex::Real radius) {
+    grid.set_body(center, radius);
+  }
+  ParticleBC::Type &body_particle_bc() { return grid.bodyParticleBC; }
+  ParticleBC::Type body_particle_bc() const { return grid.bodyParticleBC; }
+
+  Pic(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
       const DomainParameters &parameters)
-      : Grid(gm, amrInfo, nGst, id, "pic"),
+      : grid(gridIn),
         fi(fluidIn),
         tc(tcIn),
-        domainParameters(parameters) {
+        domainParameters(parameters),
+        gridID(id),
+        nGst(gridIn.get_n_ghost()),
+        isFake2D(gridIn.is_fake_2d_ref()),
+        isGridEmpty(gridIn.is_grid_empty_ref()),
+        finest_level(gridIn.get_finest_level_ref()),
+        cGrids(gridIn.box_arrays()),
+        nGrids(gridIn.node_box_arrays()),
+        ref_ratio(gridIn.ref_ratios()),
+        cellStatus(gridIn.cell_status()),
+        nodeStatus(gridIn.node_status()),
+        cellCost(gridIn.cell_cost()),
+        activeRegion(gridIn.active_region_ref()),
+        useBody(gridIn.use_body_ref()),
+        bodyRadius(gridIn.get_body_radius_ref()),
+        bodyCenter(gridIn.get_body_center()) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = gridName + " pic: ";
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -581,10 +688,11 @@ public:
   void set_fluid_source(SourceInterface *in) { source = in; }
 
   //--------------Initialization begin-------------------------------
-  virtual void pre_regrid() override;
-  virtual void post_regrid() override;
+  void pre_regrid();
+  void post_regrid();
 
-  void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld);
+  void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld =
+                             amrex::Vector<amrex::BoxArray>());
 
   void fill_new_cells();
   void fill_E_B_fields();
@@ -961,28 +1069,6 @@ public:
 
   //--------------- Boundary end ------------------------
 
-  // Make a new level from scratch using provided BoxArray and
-  // DistributionMapping. Only used during initialization. overrides the pure
-  // virtual function in AmrCore
-  virtual void MakeNewLevelFromScratch(
-      int iLev, amrex::Real time, const amrex::BoxArray &ba,
-      const amrex::DistributionMapping &dm) override {
-    std::string nameFunc = "Pic::MakeNewLevelFromScratch";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
-                   << std::endl;
-  };
-
-  // Make a new level using provided BoxArray and DistributionMapping and
-  // fill with interpolated coarse level data.
-  // overrides the pure virtual function in AmrCore
-  virtual void MakeNewLevelFromCoarse(
-      int iLev, amrex::Real time, const amrex::BoxArray &ba,
-      const amrex::DistributionMapping &dm) override {
-    std::string nameFunc = "Pic::MakeNewLevelFromCoarse";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
-                   << std::endl;
-  };
-
   void WriteDivEErrorToParaView() {
     amrex::Vector<amrex::MultiFab> errorDivE;
     errorDivE.resize(n_lev());
@@ -1008,7 +1094,7 @@ public:
         });
       }
     }
-    WriteMF(errorDivE, finest_level, "errorDivE");
+    grid.WriteMF(errorDivE, finest_level, "errorDivE");
   }
 
   void SetTargetPPC(int npresplitcells) {
@@ -1065,9 +1151,9 @@ public:
 
   void WriteParticleQualityToParaView() {
     parts[0]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality0");
+    grid.WriteMF(particleQuality, finest_level, "particleQuality0");
     parts[1]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality1");
+    grid.WriteMF(particleQuality, finest_level, "particleQuality1");
   }
   // private methods
 private:

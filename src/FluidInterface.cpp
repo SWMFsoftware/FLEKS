@@ -225,13 +225,24 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
   finalize_normalization();
 }
 
-FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
-                               int nGst, int id, std::string tag,
+FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
                                const Vector<int>& iParam,
                                const Vector<double>& norm,
                                const Vector<double>& paramComm)
-    : Grid(gm, amrInfo, nGst, id, tag) {
+    : grid(gridIn),
+      tag(tagIn),
+      gridID(gridIn.get_id()),
+      nGst(gridIn.get_n_ghost()),
+      isFake2D(gridIn.is_fake_2d_ref()),
+      isGridEmpty(gridIn.is_grid_empty_ref()),
+      cGrids(gridIn.box_arrays()),
+      nGrids(gridIn.node_box_arrays()),
+      ref_ratio(gridIn.ref_ratios()),
+      cellStatus(gridIn.cell_status()),
+      nodeStatus(gridIn.node_status()) {
 
+  gridName = std::string("FLEKS") + std::to_string(gridID);
+  printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
   initFromSWMF = true;
 
   if (iParam.empty() || norm.empty() || paramComm.empty())
@@ -538,8 +549,6 @@ void FluidInterface::distribute_arrays() {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy, 0.0);
   }
-
-  distribute_grid_arrays(cGridsOld);
 }
 
 //==========================================================
@@ -1492,7 +1501,7 @@ void FluidInterface::save_amrex_file() {
   }
 
   WriteMultiLevelPlotfile(filename, n_lev(), GetVecOfConstPtrs(nodeFluid),
-                          plotNames, geom, 0.0, Vector<int>(n_lev(), 0),
+                          plotNames, Geom(), 0.0, Vector<int>(n_lev(), 0),
                           refRatio());
 }
 

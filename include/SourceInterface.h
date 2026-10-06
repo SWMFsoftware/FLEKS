@@ -67,9 +67,9 @@ protected:
   const DomainParameters& domainParameters;
 
 public:
-  SourceInterface(const FluidInterface& other, int id, std::string tag,
-                  FluidType typeIn, const DomainParameters& dp)
-      : FluidInterface(other, id, tag, typeIn), domainParameters(dp) {
+  SourceInterface(Grid& gridIn, const FluidInterface& other, int id,
+                  std::string tag, FluidType typeIn, const DomainParameters& dp)
+      : FluidInterface(gridIn, other, id, tag, typeIn), domainParameters(dp) {
     initFromSWMF = false;
   }
 

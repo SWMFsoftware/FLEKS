@@ -67,14 +67,15 @@ void Grid::load_balance(const Grid* other, bool doSplitLevs) {
   } else {
     Vector<DistributionMapping> dmap = calc_balanced_maps(doSplitLevs);
 
-    Grid grid(Geom(0), get_amr_info(), nGst, gridID);
-    grid.SetFinestLevel(n_lev() - 1);
+    cGridsOld = cGrids;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      grid.SetBoxArray(iLev, boxArray(iLev));
-      grid.SetDistributionMap(iLev, dmap[iLev]);
+      SetDistributionMap(iLev, dmap[iLev]);
     }
 
-    regrid(grid.get_base_grid(), &grid, true);
+    calc_node_grids();
+    print_grid_info();
+    isNewGrid = false;
+    post_regrid();
   }
 }
 

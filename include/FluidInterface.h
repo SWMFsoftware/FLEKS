@@ -181,18 +181,26 @@ public:
   }
 };
 
-class FluidInterface : public Grid, public FluidInterfaceParameters {
+class FluidInterface : public FluidInterfaceParameters {
   // NormalizationParams is a derived, immutable snapshot of fi's parameters.
   friend class NormalizationParams;
-  /*
-  Q: It is preferable to declare copyable variables in
-    FluidInterfaceParameters. Why?
-  A: Grid's base class AmrCore deletes the copy constructor.
-    So FluidInterface's default constructor is also deleted. It is much
-    easier to copy variables in FluidInterfaceParameters.
-  */
+
 protected:
+  Grid& grid;
   FluidType myType = PICFluid;
+
+  std::string tag;
+  std::string gridName;
+  std::string printPrefix;
+  int gridID;
+  int nGst;
+  const bool& isFake2D;
+  const bool& isGridEmpty;
+  const amrex::Vector<amrex::BoxArray>& cGrids;
+  const amrex::Vector<amrex::BoxArray>& nGrids;
+  const amrex::Vector<amrex::IntVect>& ref_ratio;
+  const amrex::Vector<amrex::iMultiFab>& cellStatus;
+  const amrex::Vector<amrex::iMultiFab>& nodeStatus;
 
   amrex::Vector<amrex::MultiFab> nodeFluid;
   amrex::Vector<amrex::MultiFab> centerB;
@@ -200,16 +208,71 @@ protected:
   bool isnodeFluidReady = false;
 
 public:
-  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag,
+  Grid& get_grid() { return grid; }
+  const Grid& get_grid() const { return grid; }
+
+  int n_lev() const { return grid.n_lev(); }
+  int n_lev_max() const { return grid.n_lev_max(); }
+  int finestLevel() const { return grid.finestLevel(); }
+  const amrex::Geometry& Geom(int iLev) const { return grid.Geom(iLev); }
+  const amrex::BoxArray& boxArray(int iLev) const {
+    return grid.box_array(iLev);
+  }
+  const amrex::BoxArray& node_box_array(int iLev) const {
+    return grid.node_box_array(iLev);
+  }
+  const amrex::Vector<amrex::BoxArray>& node_box_arrays() const {
+    return grid.node_box_arrays();
+  }
+  const amrex::DistributionMapping& DistributionMap(int iLev) const {
+    return grid.get_dmap(iLev);
+  }
+  const amrex::iMultiFab& cell_status(int iLev) const {
+    return grid.cell_status(iLev);
+  }
+  const amrex::iMultiFab& node_status(int iLev) const {
+    return grid.node_status(iLev);
+  }
+  bool is_grid_empty() const { return grid.is_grid_empty(); }
+  bool is_new_grid() const { return grid.is_new_grid(); }
+  void is_new_grid(bool in) { grid.is_new_grid(in); }
+  int get_n_ghost() const { return nGst; }
+  const amrex::AmrInfo& get_amr_info() const { return grid.get_amr_info(); }
+  const RefineRegions* get_refine_regions() const {
+    return grid.get_refine_regions();
+  }
+  void set_base_grid(const amrex::BoxArray& ba) { grid.set_base_grid(ba); }
+  amrex::BoxArray get_base_grid() const { return grid.get_base_grid(); }
+  std::string lev_string(int iLev) const { return grid.lev_string(iLev); }
+  int find_mpi_rank_from_coord(const amrex::RealVect& xyz) const {
+    return grid.find_mpi_rank_from_coord(xyz);
+  }
+  int get_finest_lev(const amrex::RealVect& xyz) const {
+    return grid.get_finest_lev(xyz);
+  }
+  const amrex::Vector<amrex::Geometry>& Geom() const { return grid.Geom(); }
+  amrex::Vector<amrex::IntVect> refRatio() const { return grid.refRatio(); }
+
+  FluidInterface(Grid& gridIn, std::string tag,
                  const amrex::Vector<int>& iParam,
                  const amrex::Vector<double>& norm,
                  const amrex::Vector<double>& paramComm);
 
-  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag, FluidType typeIn = PICFluid)
-      : Grid(gm, amrInfo, nGst, id, tag), myType(typeIn) {
-
+  FluidInterface(Grid& gridIn, std::string tag, FluidType typeIn = PICFluid)
+      : grid(gridIn),
+        myType(typeIn),
+        tag(tag),
+        gridID(gridIn.get_id()),
+        nGst(gridIn.get_n_ghost()),
+        isFake2D(gridIn.is_fake_2d_ref()),
+        isGridEmpty(gridIn.is_grid_empty_ref()),
+        cGrids(gridIn.box_arrays()),
+        nGrids(gridIn.node_box_arrays()),
+        ref_ratio(gridIn.ref_ratios()),
+        cellStatus(gridIn.cell_status()),
+        nodeStatus(gridIn.node_status()) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
     initFromSWMF = false;
 
     if (myType != PICFluid)
@@ -217,13 +280,26 @@ public:
   }
 
   // Initialization from other FluidInterface
-  FluidInterface(const FluidInterface& other, int id, std::string tag,
-                 FluidType typeIn = PICFluid)
-      : Grid(other.Geom(0), other.get_amr_info(), other.get_n_ghost(), id, tag),
-        FluidInterfaceParameters(other),
-        myType(typeIn) {}
+  FluidInterface(Grid& gridIn, const FluidInterface& other, int id,
+                 std::string tag, FluidType typeIn = PICFluid)
+      : FluidInterfaceParameters(other),
+        grid(gridIn),
+        myType(typeIn),
+        tag(tag),
+        gridID(id),
+        nGst(gridIn.get_n_ghost()),
+        isFake2D(gridIn.is_fake_2d_ref()),
+        isGridEmpty(gridIn.is_grid_empty_ref()),
+        cGrids(gridIn.box_arrays()),
+        nGrids(gridIn.node_box_arrays()),
+        ref_ratio(gridIn.ref_ratios()),
+        cellStatus(gridIn.cell_status()),
+        nodeStatus(gridIn.node_status()) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
+  }
 
-  ~FluidInterface() = default;
+  virtual ~FluidInterface() = default;
 
   FluidType my_type() { return myType; }
 
@@ -248,7 +324,7 @@ public:
 
   void post_process_param(const DomainParameters& parameters);
 
-  void post_regrid() override {
+  virtual void post_regrid() {
     // Array redistribution creates fine nodes before their fluid state can be
     // interpolated from the retained coarse level.
     distribute_arrays();

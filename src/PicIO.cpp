@@ -986,7 +986,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     // 'correct' but occupies too much disk space for AMR grids.
     gridIO.regrid(baIO);
   } else {
-    gridIO.set_ba_and_dm(this);
+    gridIO.set_ba_and_dm(&grid);
   }
 
   IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,

@@ -5,9 +5,9 @@
 
 class UserSource : public SourceInterface {
 public:
-  UserSource(const FluidInterface& other, int id, std::string tag,
-             FluidType typeIn, const DomainParameters& dp)
-      : SourceInterface(other, id, tag, typeIn, dp) {
+  UserSource(Grid& gridIn, const FluidInterface& other, int id,
+             std::string tag, FluidType typeIn, const DomainParameters& dp)
+      : SourceInterface(gridIn, other, id, tag, typeIn, dp) {
     info = "Exosphere Source";
     useFluidSource = true;
   }

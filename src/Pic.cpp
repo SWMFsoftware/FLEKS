@@ -33,11 +33,7 @@ void Pic::fill_new_cells() {
   timing_func(nameFunc);
 
   if (!usePIC) {
-    // If this method is called when PIC component is off, it suggests the test
-    // particle component is activated. The test particle component copies EM
-    // field from PIC, so PIC EM field should be updated here.
-
-    update_grid_status();
+    return;
   }
 
   if (pInfo.isPPVconstant || pInfo.doPreSplitting) {
@@ -292,8 +288,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           nMoments, nGst, doMoveData);
     }
   }
-
-  distribute_grid_arrays(cGridsOld);
 }
 
 //==========================================================
@@ -309,7 +303,8 @@ void Pic::pre_regrid() {
 
 void Pic::post_regrid() {
 
-  distribute_arrays(cGridsOld);
+  doNeedFillNewCell = true;
+  distribute_arrays();
 
   // B0 lives on the same grids as B1 and is analytic, so the new boxes are
   // filled by re-evaluating the model rather than by interpolating the old
@@ -338,14 +333,16 @@ void Pic::post_regrid() {
 
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<PicParticles>(
-          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           pInfo, pMode, ic_.get());
+      ptr->set_target_ppc_source(targetPPC);
 
       parts.push_back(std::move(ptr));
 
       auto ptrSource = std::make_unique<PicParticles>(
-          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           pInfo, pMode, ic_.get());
+      ptrSource->set_target_ppc_source(targetPPC);
 
       sourceParts.push_back(std::move(ptrSource));
     }
