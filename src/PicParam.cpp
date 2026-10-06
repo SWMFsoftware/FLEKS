@@ -1049,9 +1049,9 @@ void Pic::convert_electron_collision() {
 // SI -> code conversion of the upstream states given by #INFLOW.
 //
 // #INFLOW stores ONE block per species in #PLASMA order; species without their
-// own block fall back to the last declared one.  Note that `rho` is the
-// PROTON-EQUIVALENT number density (identical to a proton mass density in
-// amu/cc), so it is converted exactly like #UNIFORMSTATE rho and then used
+// own block fall back to the last declared one.  `rho` is the number density
+// [1/cc], the same convention as #UNIFORMSTATE rho, so it is converted
+// exactly like #UNIFORMSTATE rho and then used
 // directly as the number density nDens consumed by
 // Particles::inject_flux_at_inflow_faces / add_particles_cell.  rho <= 0 leaves
 // nDens <= 0, which switches the injection off for that species.
@@ -1118,7 +1118,19 @@ void Pic::convert_inflow_state() {
   // not match its #UNIFORMSTATE background, and (b) warn when the injected
   // mixture is NOT charge neutral, because that drives a spurious sheath at
   // the inflow face.
+  //
+  // (b) is only meaningful when the electrons are a KINETIC species.  In
+  // hybrid PIC -- and in any ion-only deck -- the electron is an implicit
+  // massless neutralizing fluid, so sum(q_i*n_i) is the ION charge density by
+  // construction and the injected mixture is neutral as a whole.
   const auto& unif = fi->get_uniform_state();
+  bool hasElectronSpecies = false;
+  for (int iS = 0; iS < nSpecies; ++iS) {
+    if (iS < fi->get_nS() && fi->get_species_charge(iS) < 0.0)
+      hasElectronSpecies = true;
+  }
+  const bool checkNeutrality = !useHybridPIC && hasElectronSpecies;
+
   if (nSpecies > 1) {
     double netCharge = 0.0, totalN = 0.0;
     for (int iS = 0; iS < nSpecies; ++iS) {
@@ -1139,7 +1151,7 @@ void Pic::convert_inflow_state() {
       }
     }
 
-    if (totalN > 0 &&
+    if (checkNeutrality && totalN > 0 &&
         std::abs(netCharge) > 1e-4 * std::max(totalN, std::abs(netCharge)))
       Print() << "  Warning: the #INFLOW mixture is not charge neutral: "
               << "sum(q_i*n_i) = " << netCharge
