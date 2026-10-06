@@ -98,6 +98,26 @@ private:
 
   // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
   bool useHybridPIC = false;
+  // Coarse-fine interface treatment of the hybrid Faraday update (optional
+  // #HYBRIDPIC parameters; only active with more than one level). The update
+  // dB/dt = -curl_node_to_center(E) is a hidden face-staggered constrained
+  // transport, so div_node_to_center(avg_center_to_node(B)) is preserved when
+  // every cell of a level is advanced by one single nodal E field:
+  //   syncEmfAmr  : one nodal E per stage across levels: the fine interface
+  //                 nodes take the coarse E, and the fine E is injected into
+  //                 the covered coarse nodes.
+  //   ctRestrictB : advance the covered coarse cells with the injected E
+  //                 instead of overwriting them with average_down of B, then
+  //                 relax them toward the fine average with div-free
+  //                 corrections (relax_covered_B_to_fine).
+  //   evolveGhostB: advance the in-plane B of the first fine ghost layer with
+  //                 the same Faraday update (E on the ghost nodes interpolated
+  //                 from the coarse E) instead of re-interpolating it from the
+  //                 coarse level; the ghost Bz is still interpolated in 2D.
+  // Exact in 2D; in 3D the nodal injection is only approximate.
+  bool syncEmfAmr = true;
+  bool ctRestrictB = true;
+  bool evolveGhostB = true;
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
   amrex::Real etaResistivity = 0.0;
@@ -733,6 +753,25 @@ public:
                       bool includeAmbi = true);
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
+  // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
+  // E assembled from (Bin, Bavg) at moment fraction hstep, then synchronized
+  // across levels (see syncEmfAmr / evolveGhostB).
+  void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin,
+                         amrex::Vector<amrex::MultiFab> &Bavg, int iK,
+                         amrex::Real hstep, bool includeAmbi);
+  // Inject fine nodal E into the coincident coarse nodes, finest first.
+  void sync_emf_fine_to_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // Fill the fine-level ghost nodes of E from the coarse E.
+  void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // Number of ghost layers advanced by the Faraday stage update on iLev.
+  int faraday_ngrow(int iLev) const {
+    return (iLev > 0 && syncEmfAmr && evolveGhostB) ? 1 : 0;
+  }
+  // Per-level div(B) report split into interface / covered / interior cells.
+  void report_divB_amr();
+  // Relax the covered coarse B on iLev toward the restriction of the fine B
+  // with a discrete-curl correction, so the coarse div(B) is preserved.
+  void relax_covered_B_to_fine(int iLev);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 

@@ -371,13 +371,42 @@ This command enables or disables the electromagnetic field solver.
 
 <command name="HYBRIDPIC" alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2" multiple="T">
   <parameter name="useHybridPIC" type="logical" default="F"/>
+  <parameter name="syncEmfAmr" type="logical" default="T"/>
+  <parameter name="ctRestrictB" type="logical" default="T"/>
+  <parameter name="evolveGhostB" type="logical" default="T"/>
 
 #HYBRIDPIC
 F                 useHybridPIC
+T                 syncEmfAmr     (optional)
+T                 ctRestrictB    (optional)
+T                 evolveGhostB   (optional)
 
 When true, the hybrid PIC field solver (generalized Ohm's law with kinetic
 ions and a fluid electron) is used instead of the full PIC field solver.
 Mutually exclusive with SOLVEEM.
+
+The last three parameters are optional (each line may be omitted) and only
+matter for multi-level (AMR) grids. The Faraday update
+dB/dt = -curl(E), with E on the nodes and B at the cell centers, is a hidden
+face-staggered constrained transport scheme: the nodal div(B) is preserved to
+round-off as long as all cells of a level are advanced with one single nodal
+E field. At the coarse-fine interface this requires:
+\begin{verbatim}
+  syncEmfAmr   - one nodal E per Faraday stage across levels: the fine
+                 interface nodes take the coarse E, and the fine E is injected
+                 into the covered coarse nodes.
+  ctRestrictB  - advance the covered coarse cells with the injected E instead
+                 of overwriting them with the average of the fine B; their
+                 drift from the fine average is then removed with a
+                 divergence-free (discrete curl) relaxation.
+  evolveGhostB - advance the in-plane B of the first fine ghost layer with the
+                 same Faraday update, using E on the ghost nodes interpolated
+                 from the coarse E, instead of re-interpolating B from the
+                 coarse level (Bz is still interpolated).
+\end{verbatim}
+ctRestrictB and evolveGhostB require syncEmfAmr. With all three on, div(B) stays
+at round-off on every level in 2D; in 3D the nodal injection is only
+approximate. Setting all three to F restores the previous treatment.
 
 === Generalized Ohm's law: how each command controls a separate term ===
 
