@@ -235,10 +235,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       }
 
       // Hall term: (J x B) / rho_q
-      Real hall_y = 0.0;
       if (rho > 0 && useHallTerm) {
         Real hall_x = (jy * bz - jz * by) * invRhoEff;
-        hall_y = (jz * bx - jx * bz) * invRhoEff;
+        Real hall_y = (jz * bx - jx * bz) * invRhoEff;
         Real hall_z = (jx * by - jy * bx) * invRhoEff;
 
         ex += hall_x;
@@ -1293,6 +1292,10 @@ void Pic::update_B_hybrid() {
   // once per PIC timestep outside the magnetic subcycling steps.
   compute_ambipolar_E();
 
+  // Maintain transverse force balance (J x B = grad(Pe)) in Faraday stages.
+  // When ambiInStages was false, the uncompensated diamagnetic Hall field Ey
+  // produced an artificial jump across coarse-fine boundaries, generating
+  // unphysical horizontal dipole stripes of Bz in Harris reconnection.
   const bool ambiInStages = (electronTemperature > 0);
 
   // Ensure B ghost cells are fresh across all levels before subcycling.

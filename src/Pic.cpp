@@ -87,6 +87,12 @@ void Pic::fill_new_cells() {
         }
       }
     }
+
+    if (need_divB()) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        compute_divB(iLev);
+      }
+    }
   }
 
   doNeedFillNewCell = false;
