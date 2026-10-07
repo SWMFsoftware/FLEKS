@@ -1,19 +1,7 @@
 #!/usr/bin/env python3
 """Validator for the inflow/outflow open-boundary hybrid test (tests/bc_inflow/).
 
-The deck streams a uniform TWO-ION-SPECIES hybrid plasma (solar-wind protons +
-a heavy minor ion) along +x.  Each species carries its own #INFLOW block, so a
-uniform state is still the exact steady state and the inflow face must rebuild
-it species by species:
-
-* species densities and bulk velocities are preserved at the inflow face,
-* each species keeps its own temperature, i.e. the injected thermal speed must
-  scale as sqrt(T/m) with the SPECIES mass (a proton-mass vth for the heavy
-  ion would show up as a 16x temperature error),
-* the guide field Bx stays uniform and no spurious E develops.
-
-The expected per-species state is read back from the deck (#PLASMA /
-#UNIFORMSTATE) so the checks follow the deck instead of hard-coded numbers.
+See README.md for the deck and the list of checks.
 """
 import glob
 import logging

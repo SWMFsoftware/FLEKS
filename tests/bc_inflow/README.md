@@ -18,21 +18,11 @@ The plasma has **two kinetic ion species**, so the per-species form of the
 `rho` is a **number density [1/cc]** in both commands, so the heavy species
 reads 1.0 in both places (its mass density is m·n = 16 amu/cc). Only the first
 `#INFLOW` block is mandatory; a species without a block of its own reuses the
-last declared one, so dropping the second block injects the heavy ion at the
-*proton* density and temperature.
+last declared one.
 
-A uniform two-species streaming plasma in which every species shares the same
-bulk velocity is the exact steady-state solution, so this test validates that
-the inflow/outflow pair keeps a uniform state uniform **species by species**:
-
-* Upstream densities `rhoS0` / `rhoS1` and bulk velocities `uxS0` / `uxS1` are
-  preserved at the inflow face.
-* Each species keeps its own temperature, i.e. the injected thermal speed is
-  `sqrt(T/m)` with the *species* mass: `T1/T0` must stay at the prescribed
-  factor 4 (a proton-mass `vth` for the heavy ion would give 64).
-* The guide field `Bx` stays uniform and unchanged.
-* No spurious electric field develops.
-* Ion kinetic energy `Epart` and magnetic energy `Eb` stay finite and bounded.
+A uniform two-species plasma in which every species shares the same bulk
+velocity is the exact steady-state solution, so the inflow/outflow pair has to
+keep it uniform **species by species** — see Validation.
 
 ## Running
 
@@ -42,25 +32,23 @@ python3 tests/validate_tests.py --test=bc_inflow
 
 ## Validation
 
-`validate.py` checks:
+`validate.py` reads the expected per-species state back from the deck
+(`#PLASMA`, `#UNIFORMSTATE`), so the checks follow the deck instead of
+hard-coded numbers.
 
-1. **Energy log** (`validate_log`): `Etot`/`Ee`/`Eb`/`Epart` finite; `Epart`
-   bounded (open BCs inject/remove particles every step, so the ratio
-   tolerance is loose); `Eb` within ~20% of its initial value (uniform `Bx`); `Ee`
-   negligible (no spurious E build-up).
-2. **Plot output** (`validate_plot`), for every species in the output:
-   * `<uxS{i}>` conserved across the domain,
-   * inflow-side (first third of the domain) `rhoS{i}` preserved to ~10%,
-   * inflow-side temperature `T_i = pS{i} * m_i / rhoS{i}` preserved to ~15%,
-   * inflow-side pressure isotropic (`Pxx` ~ `Pyy` ~ `Pzz`, `Pzz` > 0),
-   * guide field `Bx` uniform and unchanged,
-   * no spurious mean `Ex`/`Ey`/`Ez`.
-3. **Cross-species ratios**, read back from the deck (`#PLASMA` /
-   `#UNIFORMSTATE`) so the checks follow the deck:
-   * `rhoS1/rhoS0` equals the prescribed mass-density ratio
-     `n1*m1 / (n0*m0)` = 3.2 (a single broadcast `#INFLOW` block gives 16),
-   * `T1/T0` equals the prescribed temperature ratio (4.0).
+* **Energy log** — `Etot`/`Ee`/`Eb`/`Epart` finite; `Epart` bounded (open BCs
+  inject and remove particles every step, so that tolerance is loose); `Eb`
+  within 20% of its initial value (the `Bx` guide field is uniform); `Ee`
+  negligible, i.e. no spurious `E` build-up at the faces.
+* **Per species, from the `.out` frames** — `<uxS{i}>` conserved across the
+  domain; inflow-side (first third) `rhoS{i}` within 10% and temperature
+  `T_i = pS{i} * m_i / rhoS{i}` within 15% of the first frame; inflow-side
+  pressure isotropic with `Pzz > 0`.
+* **Fields** — `Bx` uniform and unchanged; no spurious mean `Ex`/`Ey`/`Ez`.
+* **Cross-species ratios** — `rhoS1/rhoS0 = n1*m1 / (n0*m0)` (3.2 here) and
+  `T1/T0` (4.0 here).
 
-Both ratio checks are the discriminating ones: they fail by a factor of order
-`m1/m0` if the upstream state is not per-species or if the thermal speed
-ignores the species mass.
+The last item is the discriminating one: both ratios break by `O(m1/m0)` if the
+upstream state is not per-species, or if the injected thermal speed ignores the
+species mass. Dropping the second `#INFLOW` block, for instance, gives
+`rhoS1/rhoS0 = 14.2` and `T1/T0 = 1.11` and fails the test.
