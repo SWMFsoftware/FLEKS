@@ -12,7 +12,7 @@
 #include "DomainParameters.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
-#include "Grid.h"
+#include "GridAccess.h"
 #include "InitialCondition.h"
 #include "IntrinsicBField.h"
 #include "LinearSolver.h"
@@ -88,7 +88,7 @@ struct NodeMMCommData {
 };
 
 // The grid is defined in DomainGrid. This class contains the data on the grid.
-class Pic {
+class Pic : public GridAccess {
   friend PlotWriter;
   friend ParticleTracker;
   // private variables
@@ -466,8 +466,7 @@ private:
   std::ofstream picLogStream;
 
 protected:
-  Grid &grid;
-
+  // The shared Grid reference and the mesh queries live in GridAccess.
   std::string tag = "pic";
   std::string gridName;
   std::string printPrefix;
@@ -493,32 +492,9 @@ protected:
 
   // public methods
 public:
-  Grid &get_grid() { return grid; }
-  const Grid &get_grid() const { return grid; }
-
-  int n_lev() const { return grid.n_lev(); }
-  int n_lev_max() const { return grid.n_lev_max(); }
-  int finestLevel() const { return grid.finestLevel(); }
-  const amrex::Geometry &Geom(int iLev) const { return grid.Geom(iLev); }
-  const amrex::BoxArray &boxArray(int iLev) const {
-    return grid.box_array(iLev);
-  }
-  const amrex::BoxArray &node_box_array(int iLev) const {
-    return grid.node_box_array(iLev);
-  }
-  const amrex::Vector<amrex::BoxArray> &node_box_arrays() const {
-    return grid.node_box_arrays();
-  }
-  const amrex::DistributionMapping &DistributionMap(int iLev) const {
-    return grid.get_dmap(iLev);
-  }
-  const amrex::iMultiFab &cell_status(int iLev) const {
-    return grid.cell_status(iLev);
-  }
-  const amrex::iMultiFab &node_status(int iLev) const {
-    return grid.node_status(iLev);
-  }
-  bool is_grid_empty() const { return grid.is_grid_empty(); }
+  // Shared mesh queries (n_lev, Geom, DistributionMap, cell_status,
+  // get_base_grid, lev_string, get_finest_lev, ...) are inherited from
+  // GridAccess.  The queries below are PIC-specific.
   bool is_inside_domain(const amrex::Real *loc) const {
     return grid.is_inside_domain(loc);
   }
@@ -529,25 +505,12 @@ public:
   amrex::Real get_body_radius() const { return grid.get_body_radius(); }
   const amrex::Real *get_body_center() const { return grid.get_body_center(); }
   int get_dim() const { return grid.get_dim(); }
-  int get_n_ghost() const { return nGst; }
-  const amrex::AmrInfo &get_amr_info() const { return grid.get_amr_info(); }
-  const RefineRegions *get_refine_regions() const {
-    return grid.get_refine_regions();
-  }
-  void set_base_grid(const amrex::BoxArray &ba) { grid.set_base_grid(ba); }
-  amrex::BoxArray get_base_grid() const { return grid.get_base_grid(); }
-  bool is_new_grid() const { return grid.is_new_grid(); }
-  void is_new_grid(bool in) { grid.is_new_grid(in); }
   const amrex::Vector<amrex::MultiFab> &get_cost() const {
     return grid.get_cost();
   }
   const amrex::iMultiFab &target_PPC(int iLev) const { return targetPPC[iLev]; }
   amrex::Real get_cell_volume(int iLev) const {
     return grid.get_cell_volume(iLev);
-  }
-  std::string lev_string(int iLev) const { return grid.lev_string(iLev); }
-  int get_finest_lev(const amrex::RealVect &xyz) const {
-    return grid.get_finest_lev(xyz);
   }
   bool is_inside_body(const amrex::Real *loc) const {
     return grid.is_inside_body(loc);
@@ -560,7 +523,7 @@ public:
 
   Pic(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
       const DomainParameters &parameters)
-      : grid(gridIn),
+      : GridAccess(gridIn),
         fi(fluidIn),
         tc(tcIn),
         domainParameters(parameters),

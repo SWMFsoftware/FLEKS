@@ -394,27 +394,6 @@ void Domain::calc_refine_region() {
   if (grid) {
     grid->is_new_grid(isNewGrid);
   }
-
-  fi->is_new_grid(isNewGrid);
-
-  if (source) {
-    source->is_new_grid(isNewGrid);
-  }
-
-  if (stateOH) {
-    stateOH->is_new_grid(isNewGrid);
-  }
-  if (sourcePT2OH) {
-    sourcePT2OH->is_new_grid(isNewGrid);
-  }
-
-  if (pic) {
-    pic->is_new_grid(isNewGrid);
-  }
-
-  if (pt) {
-    pt->is_new_grid(isNewGrid);
-  }
 }
 
 //========================================================

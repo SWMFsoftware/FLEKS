@@ -4,15 +4,16 @@
 #include <AMReX_Vector.H>
 
 #include "Grid.h"
+#include "GridAccess.h"
 #include "Particles.h"
 #include "Pic.h"
 #include "TestParticles.h"
 
-class ParticleTracker {
+class ParticleTracker : public GridAccess {
 public:
   ParticleTracker(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
                   ParticleTrackerInfo &info, const DomainParameters & /*dp*/)
-      : grid(gridIn),
+      : GridAccess(gridIn),
         tc(tcIn),
         fi(fluidIn),
         pInfo(&info),
@@ -28,16 +29,8 @@ public:
 
   ~ParticleTracker();
 
-  int n_lev() const { return grid.n_lev(); }
-  int n_lev_max() const { return grid.n_lev_max(); }
-  const amrex::Geometry &Geom(int iLev) const { return grid.Geom(iLev); }
-  const amrex::DistributionMapping &DistributionMap(int iLev) const {
-    return grid.get_dmap(iLev);
-  }
-  bool is_grid_empty() const { return grid.is_grid_empty(); }
-  bool is_new_grid() const { return grid.is_new_grid(); }
-  void is_new_grid(bool in) { grid.is_new_grid(in); }
-
+  // Shared mesh queries (n_lev, Geom, DistributionMap, is_grid_empty, ...)
+  // are inherited from GridAccess.
   void post_process_param();
 
   void pre_regrid();
@@ -57,7 +50,7 @@ public:
   void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape> > &shapes);
 
 private:
-  Grid &grid;
+  // The shared Grid reference lives in GridAccess.
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
 

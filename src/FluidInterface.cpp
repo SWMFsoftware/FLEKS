@@ -229,7 +229,7 @@ FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
                                const Vector<int>& iParam,
                                const Vector<double>& norm,
                                const Vector<double>& paramComm)
-    : grid(gridIn),
+    : GridAccess(gridIn),
       tag(tagIn),
       gridID(gridIn.get_id()),
       nGst(gridIn.get_n_ghost()),
