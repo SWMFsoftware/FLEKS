@@ -438,11 +438,17 @@ private:
   // Characteristic speed for the absorbing BC; 0 = auto (light speed).
   amrex::Real absorbCharSpeed = 0.0;
 
-  // Inflow boundary upstream state set by #INFLOW (in code units).
+  // Upstream state declared by #INFLOW, stored as read from PARAM.in
+  // (rho [1/cc] i.e. the species number density, ux/uy/uz [km/s], T [K] --
+  // note that these are NOT SI: km/s and 1/cc are not).  One block may be
+  // given per species, in #PLASMA order; species
+  // without a block of their own reuse the last declared block, so a single
+  // block still describes a uniform quasi-neutral multi-species upstream
+  // plasma.  rho <= 0 switches the injection off for that species.
+  // convert_inflow_state() turns these into code units.
   bool inflowDefined_ = false;
-  amrex::Real inflowRho_ = 0.0;
-  amrex::Real inflowUx_ = 0.0, inflowUy_ = 0.0, inflowUz_ = 0.0;
-  amrex::Real inflowT_ = 0.0;
+  amrex::Vector<amrex::Real> inflowRho_I, inflowUx_I, inflowUy_I, inflowUz_I,
+      inflowT_I;
 
   // Static intrinsic magnetic field B0 of the planet (#DIPOLE /
   // #CRUSTALFIELD). It never evolves: it is added to the evolved field B1

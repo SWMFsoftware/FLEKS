@@ -71,7 +71,7 @@ rk4                     fieldIntegrator
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]
+5.0                     rho [/cc]
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

@@ -66,7 +66,7 @@ neutralizing massless fluid, so no electron particle species is present.
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: H+ (quasi-neutral)
+5.0                     rho [/cc]   Species 0: H+ (quasi-neutral)
 -0.4                    ux [km/s normalized; -400 km/s background]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

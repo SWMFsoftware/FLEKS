@@ -90,7 +90,7 @@ neutralizing fluid.
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions
+5.0                     rho [/cc]   Species 0: ions
 80.0                    ux [km/s]      bulk flow toward +x wall (U_code = 0.8)
 4.0                     uy [km/s]      small oblique component (~2.9 deg)
 0.0                     uz [km/s]

@@ -36,7 +36,7 @@ T                       solveEM
 -1.0                    charge
 
 #UNIFORMSTATE
-1.0                     rho [amu/cc]   Species 0: electron background
+100.0                   rho [/cc]   Species 0: electron background
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

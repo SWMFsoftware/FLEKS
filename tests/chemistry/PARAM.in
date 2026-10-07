@@ -44,27 +44,27 @@ T                       solveEM
 1.0                     charge
 
 #UNIFORMSTATE
-0.0558238636363636      rho [amu/cc]   Species 0: electron (quasi-neutral)
+5.582386364             rho [/cc]   Species 0: electron (quasi-neutral)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [amu/cc]   Species 1: H+
+5.0                     rho [/cc]   Species 1: H+
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [amu/cc]   Species 2: O+
+0.3125                  rho [/cc]   Species 2: O+
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [amu/cc]   Species 3: O2+
+0.15625                 rho [/cc]   Species 3: O2+
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [amu/cc]   Species 4: CO2+
+0.1136363636            rho [/cc]   Species 4: CO2+
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

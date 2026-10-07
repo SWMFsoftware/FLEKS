@@ -55,7 +55,7 @@ T                       useHallTerm
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]
+5.0                     rho [/cc]
 -0.4                    ux [km/s normalized; -400 km/s background]
 0.0                     uy
 0.0                     uz
