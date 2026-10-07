@@ -1159,6 +1159,20 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 //==========================================================
 // BCs for the cell-centered B, applied to the RK trial states and to the new
 // state at the end of each B sub-step.
+//
+// Every call on a refined level interpolates the whole fine level from the
+// coarse one and then keeps only the level-boundary band, so the cost is set
+// by the full destination volume. Restricting the destination was evaluated
+// and rejected: interp_from_coarse_to_fine goes through AMReX's
+// InterpFromCoarseLevel, which derives the coarse source geometry from the
+// fine BoxArray, so a band sub-BoxArray needs a matching coarse FabArray
+// built for the covering boxes -- fiddly, and the payoff is unclear because
+// the cost is not purely volume-bound (two decks with identical 512+512 grids,
+// amr_equilibrium and reconnection_amr, differ 3.6x in cost per interpolation:
+// 0.094 ms vs 0.343 ms). Cutting the *number* of interpolations is the
+// effective lever instead: set_centerBstar_ghost removed one per stage, and
+// folding the lev_edge and lev_boundary passes into one is unsafe (see
+// sync_emf_fine_to_coarse).
 void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
