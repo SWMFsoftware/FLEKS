@@ -1227,6 +1227,18 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 //  1. top-down: the fine nodes ON the coarse-fine interface take the coarse E
 //     (linear interpolation along the coarse edges);
 //  2. bottom-up: the covered coarse nodes take the injected fine E.
+//  3. fill_ghost_emf_from_coarse: the fine ghost nodes take the coarse E.
+//
+// Do NOT fold step 1 and step 3 into a single interpolation, not even for
+// finest_level == 1. They are not redundant: the lev_edge nodes are filled from
+// the coarse E *before* the bottom-up injection and the lev_boundary ghost
+// nodes *after* it, so one pass would silently switch the fine interface nodes
+// to the injected values. That looks fine on a smooth equilibrium deck (it is
+// the "run the injection first" variant, 8.5e-4 vs 9.0e-4 drift) but it is a
+// 20x div(B) regression on reconnection_amr (level-0 interface 6.2e-4 ->
+// 1.2e-2). Re-adding the pre-injection FillBoundary does not rescue it: the
+// difference is the injection order, not the ghost refresh.
+//
 // The coarse update of a covered cell then equals the average of the fine
 // updates up to O(dx^2), and the fine interface E no longer depends on the
 // interpolated fine ghost B (letting that E drive the coarse cells was found
