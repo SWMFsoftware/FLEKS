@@ -126,8 +126,6 @@ public:
 
   const amrex::AmrInfo& get_amr_info() const { return gridAmrInfo; }
 
-  void set_base_grid(const amrex::BoxArray& ba) { activeRegion = ba; }
-
   amrex::BoxArray get_base_grid() const { return activeRegion; }
 
   bool is_grid_empty() const { return isGridEmpty; }
@@ -217,7 +215,6 @@ public:
   }
   int get_id() const { return gridID; }
   const std::string& get_name() const { return gridName; }
-  const std::string& get_print_prefix() const { return printPrefix; }
 
   //---- Inner body (see the #BODY command) ----
 
@@ -321,20 +318,6 @@ public:
     amrex::AllPrint() << "xyz = " << xyz << std::endl;
     amrex::Abort("Error: can not find this cell!");
     return -1;
-  }
-
-  //===========================================================================
-  inline int find_mpi_rank_from_cell_index(int const iLev,
-                                           const amrex::IntVect& ijk) const {
-    for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
-      const amrex::Box& bx = cGrids[iLev][ii];
-      if (bx.contains(ijk))
-        return DistributionMap(iLev)[ii];
-    }
-
-    amrex::AllPrint() << "iLev = " << iLev << " idx = " << ijk << std::endl;
-    amrex::Abort("Error: can not find this cell!");
-    return -1; // To suppress compiler warnings.
   }
 
   //===========================================================================

@@ -25,10 +25,6 @@ void curl_center_to_node(const amrex::MultiFab& centerMF,
 void curl_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
-void curl_center_to_center(const amrex::MultiFab& centerInMF,
-                           amrex::MultiFab& centerOutMF,
-                           const amrex::Real* invDx);
-
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping& dm,
                       const amrex::Geometry& gm,
@@ -72,41 +68,6 @@ void print_MultiFab(const amrex::MultiFab& data, const std::string& tag,
 
 void print_MultiFab(const amrex::MultiFab& data, const std::string& tag,
                     amrex::Geometry& gm, int nshift = 0);
-
-template <class FAB>
-void print_fab(const amrex::FabArray<FAB>& mf, const std::string& tag,
-               const int iStart, const int nComp, int nshift = 0) {
-  amrex::AllPrint() << "-----" << tag << " begin-----" << std::endl;
-  amrex::Real sum = 0;
-  amrex::Real sum2 = 0;
-
-  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    const FAB& fab = mf[mfi];
-    const auto& box = mfi.validbox();
-    const auto& data = fab.array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    amrex::AllPrint() << "------ box = " << box << std::endl;
-    for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
-      for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
-        // for (int k = lo.z; k <= hi.z; ++k)
-        for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-          int k = 0;
-          const amrex::Real value = data(i, j, k, iVar);
-          amrex::AllPrint()
-              << " i = " << i << " j = " << j << " k = " << k
-              << " iVar = " << iVar << " data = " << value << std::endl;
-          sum += value;
-          sum2 += value * value;
-        }
-  }
-  amrex::AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
-                    << " on proc = " << amrex::ParallelDescriptor::MyProc()
-                    << std::endl;
-  amrex::AllPrint() << "-----" << tag << " end-----" << std::endl;
-}
 
 inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
   int nTotal = 0;
@@ -701,28 +662,6 @@ inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
   return fa;
 }
 
-// Sum from coarse level to fine level for nodes at the boundary of two levels.
-
-template <class FAB>
-void fill_lev_bny_from_value(amrex::FabArray<FAB>& dst,
-                             const amrex::iMultiFab& fstatus,
-                             amrex::Real value) {
-  const int nComp = dst.nComp();
-  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-    const auto& box = mfi.fabbox();
-    auto data = dst[mfi].array();
-    const auto statusArr = fstatus[mfi].array();
-
-    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      if (bit::is_lev_boundary(statusArr(i, j, k))) {
-        for (int iVar = 0; iVar < nComp; ++iVar) {
-          data(i, j, k, iVar) = value;
-        }
-      }
-    });
-  }
-}
-
 template <class FAB>
 void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
                                 const amrex::iMultiFab& fstatus, int iLev) {
@@ -883,24 +822,6 @@ void rescale_body_surface_nodes(amrex::FabArray<FAB>& dst,
   }
 }
 
-template <class FAB>
-void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
-                         int startvar = 0, int stopvar = -1) {
-  if (stopvar == -1) {
-    stopvar = dst.nComp() - 1;
-  }
-  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-    const auto& box = mfi.fabbox();
-    auto data = dst[mfi].array();
-
-    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      for (int iVar = startvar; iVar <= stopvar; ++iVar) {
-        data(i, j, k, iVar) = value;
-      }
-    });
-  }
-}
-
 template <class FAB, class Interp>
 void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
                                    amrex::FabArray<FAB>& fine, const int iStart,
@@ -1008,40 +929,6 @@ void fill_fine_lev_edge_from_coarse(
   }
 }
 
-template <class FAB, class Interp>
-void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
-                               amrex::FabArray<FAB>& fine, const int iStart,
-                               const int nComp, const amrex::IntVect ratio,
-                               const amrex::Geometry& cgeom,
-                               const amrex::Geometry& fgeom, Interp& mapper,
-                               amrex::Real mult = 1.0) {
-  BL_PROFILE("fill_fine_lev_from_coarse");
-
-  amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
-  amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
-
-  amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp,
-                            fine.nGrow());
-  ftmp.setVal(0.0);
-
-  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper,
-                             f.nGrow());
-
-  const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    const auto& box = mfi.fabbox();
-    auto data = f[mfi].array();
-    const auto tmp = ftmp[mfi].array();
-
-    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      for (int iVar = 0; iVar < numComp; ++iVar) {
-        data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-      }
-    });
-  }
-  fine.FillBoundary();
-}
-
 // Sum from coarse level to fine level for nodes at the boundary of two levels.
 template <class FAB>
 void sum_coarse_to_fine_lev_bny_node(
@@ -1139,20 +1026,6 @@ void sum_coarse_to_fine_lev_bny_cell(
   }
 }
 
-// Combined cell-centered coarse-fine interface summation for moments.
-template <class FAB, class Interp>
-void sum_two_lev_interface_cell(amrex::FabArray<FAB>& coarse,
-                                amrex::FabArray<FAB>& fine, int iStart,
-                                const int nComp, const amrex::IntVect ratio,
-                                const amrex::Geometry& cgeom,
-                                const amrex::Geometry& fgeom,
-                                const amrex::iMultiFab& fstatus,
-                                Interp& mapper) {
-  BL_PROFILE("sum_two_lev_interface_cell");
-  sum_fine_to_coarse_lev_bny_cell(coarse, fine, iStart, nComp, ratio);
-  sum_coarse_to_fine_lev_bny_cell(coarse, fine, iStart, nComp, ratio, cgeom,
-                                  fgeom, fstatus, mapper);
-}
 // Sum from coarse level to fine level for domain boundary edge nodes
 template <class FAB>
 void interp_from_coarse_to_fine_for_domain_edge(

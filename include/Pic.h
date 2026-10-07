@@ -396,9 +396,6 @@ private:
   bool is_body_conducting() const {
     return use_body() && bodyFieldBC == BodyFieldBC::conducting;
   }
-  bool is_body_insulating() const {
-    return use_body() && bodyFieldBC == BodyFieldBC::insulating;
-  }
   // Static intrinsic field of the planet (#DIPOLE / #CRUSTALFIELD), on the
   // same grids as the evolved field. Filled at init and after every regrid,
   // never advanced by Faraday's law.
@@ -665,8 +662,6 @@ public:
   void fill_regional_resistivity_field(int iLev);
   void fill_regional_hyper_field(int iLev);
   void update_regional_hyper_grid_mode(amrex::Real dt);
-  // dst <- dst + B0, for a MultiFab living on the same centering as dst.
-  void add_intrinsic_B(amrex::MultiFab &dst, int iLev);
   // Cell-centered total field: returns `src + B0` built in a scratch array, or
   // `src` itself when no intrinsic field is configured.
   amrex::MultiFab &total_center_B(amrex::MultiFab &src, int iLev);

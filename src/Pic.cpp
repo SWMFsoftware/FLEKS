@@ -772,21 +772,6 @@ amrex::MultiFab& Pic::total_center_B(amrex::MultiFab& src, const int iLev) {
 }
 
 //==========================================================
-void Pic::add_intrinsic_B(amrex::MultiFab& dst, const int iLev) {
-  if (!use_intrinsic_B())
-    return;
-
-  const amrex::MultiFab& src =
-      dst.ixType().cellCentered() ? centerB0[iLev] : nodeB0[iLev];
-  if (src.empty())
-    return;
-
-  const int nComp = std::min(dst.nComp(), src.nComp());
-  const int nGrow = std::min(dst.nGrow(), src.nGrow());
-  amrex::MultiFab::Add(dst, src, 0, 0, nComp, nGrow);
-}
-
-//==========================================================
 void Pic::fill_particles() {
   inject_particles_for_new_cells();
   inject_particles_for_boundary_cells();

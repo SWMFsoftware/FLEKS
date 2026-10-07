@@ -593,55 +593,6 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   }
 }
 
-void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
-                           const Real* invDx) {
-  // Collocated 2*dx central difference on a cell-centered field. The box is
-  // grown by one cell on each side (the output cell (i,j,k) reads neighbours
-  // at +/-1). Requires the input to have >= 1 ghost cell (nGst >= 1).
-  const Real dyInv = 0.5 * invDx[iy_];
-  const Real dxInv = 0.5 * invDx[ix_];
-  // 2D safety: AMReX keeps a dummy z extent, so guard the z inverse and all
-  // z-derivatives with nDim > 2.
-  const Real dzInv = (nDim > 2) ? 0.5 * invDx[iz_] : 0.0;
-
-  for (MFIter mfi(centerOutMF, doTiling); mfi.isValid(); ++mfi) {
-    const int ng =
-        std::min(centerOutMF.nGrow(), std::max(0, centerInMF.nGrow() - 1));
-    Box box = mfi.validbox();
-    box.grow(ng);
-
-    const Array4<Real>& outArr = centerOutMF[mfi].array();
-    const Array4<Real const>& inArr = centerInMF[mfi].array();
-
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      // curl X: (dBz/dy - dBy/dz)
-      const Real dBz_dy =
-          (inArr(i, j + 1, k, iz_) - inArr(i, j - 1, k, iz_)) * dyInv;
-      const Real dBy_dz =
-          (nDim > 2)
-              ? (inArr(i, j, k + 1, iy_) - inArr(i, j, k - 1, iy_)) * dzInv
-              : 0.0;
-      outArr(i, j, k, ix_) = dBz_dy - dBy_dz;
-
-      // curl Y: (dBx/dz - dBz/dx)
-      const Real dBx_dz =
-          (nDim > 2)
-              ? (inArr(i, j, k + 1, ix_) - inArr(i, j, k - 1, ix_)) * dzInv
-              : 0.0;
-      const Real dBz_dx =
-          (inArr(i + 1, j, k, iz_) - inArr(i - 1, j, k, iz_)) * dxInv;
-      outArr(i, j, k, iy_) = dBx_dz - dBz_dx;
-
-      // curl Z: (dBy/dx - dBx/dy)
-      const Real dBy_dx =
-          (inArr(i + 1, j, k, iy_) - inArr(i - 1, j, k, iy_)) * dxInv;
-      const Real dBx_dy =
-          (inArr(i, j + 1, k, ix_) - inArr(i, j - 1, k, ix_)) * dyInv;
-      outArr(i, j, k, iz_) = dBy_dx - dBx_dy;
-    });
-  }
-}
-
 void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const int ng = std::min(nodeMF.nGrow(), std::max(0, centerMF.nGrow() - 1));

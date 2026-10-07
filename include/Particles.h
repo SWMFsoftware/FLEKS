@@ -951,7 +951,6 @@ public:
   }
 
   int sup_id() const { return supID; }
-  void set_sup_id(int in) { supID = in; }
 
   amrex::IntVect get_ref_ratio(const int iLev) const {
     const amrex::ParGDBBase* gdb = GetParGDB();
@@ -1038,8 +1037,6 @@ public:
   }
 
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
-
-  void set_bc(const BoxBC<ParticleBC::Type>& bcIn) { bc = bcIn; }
 
   // Mark face `side` (0 = lo, 1 = hi) of dimension `d` as carrying a
   // FieldBC::wave field boundary; drives the wave velocity kick.
@@ -1188,15 +1185,6 @@ public:
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
 
-  // Absorbing-BC diagnostics (per face, 2*d + {0=lo,1=hi}).
-  amrex::Real get_absorb_count(int face) const {
-    return absorbTallyCount[face];
-  }
-  amrex::Real get_absorb_charge(int face) const {
-    return absorbTallyCharge[face];
-  }
-  amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
-
   // Tallies for the particles absorbed by the inner body (see #BODY).
   amrex::Real get_body_absorb_count() const { return bodyAbsorbCount; }
   amrex::Real get_body_absorb_charge() const { return bodyAbsorbCharge; }
@@ -1237,63 +1225,6 @@ public:
     }
   }
 
-  void Write_Binary(std::string folder = "Particles",
-                    std::string particletype = "1") {
-    Checkpoint(folder, particletype);
-  }
-
-  void Generate_GhostParticles(int iLev, int nGhost) {
-    ParticleTileType ptile;
-    CreateGhostParticles(iLev - 1, nGhost, ptile);
-    AddParticlesAtLevel(ptile, iLev, nGhost);
-  }
-
-  void Generate_VirtualParticles(int iLev) {
-    ParticleTileType ptile;
-    CreateVirtualParticles(iLev + 1, ptile);
-    AddParticlesAtLevel(ptile, iLev);
-  }
-
-  void Exchange_VirtualParticles(int iLev) {
-    ParticleTileType ptile;
-    ParticleTileType ptile2;
-    CreateVirtualParticles(iLev + 1, ptile);
-    CreateGhostParticles(iLev, 1, ptile2);
-    AddParticlesAtLevel(ptile, iLev);
-    AddParticlesAtLevel(ptile2, iLev + 1, 1);
-  }
-
-  void delete_particles_from_refined_region(int iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      AoS& particles = pti.GetArrayOfStructs();
-      const auto& status = cell_status(iLev)[pti].array();
-      for (auto& p : particles) {
-        amrex::IntVect loIdx;
-        amrex::RealVect dShift;
-        find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), loIdx, dShift);
-        if (bit::is_refined(status(loIdx))) {
-          p.id() = -1;
-        }
-      }
-    }
-  }
-
-  void delete_particles_from_ghost_cells(int iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      AoS& particles = pti.GetArrayOfStructs();
-      const auto& status = cell_status(iLev)[pti].array();
-      for (auto& p : particles) {
-        amrex::IntVect loIdx;
-        amrex::RealVect dShift;
-        find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), loIdx, dShift);
-        if (bit::is_lev_boundary(status(loIdx))) {
-          p.id() = -1;
-        }
-      }
-    }
-  }
   void calculate_particle_quality(amrex::Vector<amrex::MultiFab>& quality);
 };
 
