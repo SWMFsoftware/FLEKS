@@ -770,6 +770,11 @@ public:
   // trial states that need fresh ghosts for the Ohm's law stencils.
   void apply_centerB_BC(int iLev);
   void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
+  // Fill the ghost cells of centerBstar[iLev] algebraically as
+  // 0.5*(centerBstage[iLev] + otherB) instead of interpolating the coarse
+  // level again. `otherB` is centerB[iLev] for RK4 and centerBstart[iLev] for
+  // ssprk3, and must already be ghosted over the full nGrow.
+  void set_centerBstar_ghost(int iLev, const amrex::MultiFab &otherB);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion

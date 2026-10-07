@@ -1684,6 +1684,38 @@ void Pic::report_divB_amr() {
 }
 
 //==========================================================
+// Fill the ghost cells of the time-centered trial state centerBstar from the
+// other RK state instead of interpolating the coarse level a second time.
+//
+// centerBstar is *exactly* 0.5*(centerBstage + otherB) in the valid region, and
+// the two sources already carry valid ghosts: centerBstage has just been
+// through apply_centerB_BC, and otherB (centerB_n, or centerBstart for
+// ssprk3) is filled once at the top of the step. Since
+// fill_fine_lev_*_from_coarse and the physical field BCs are linear, the
+// interpolated ghost cells are that same linear combination of the two
+// sources' ghost cells, so one LinComb over the whole ghost box reproduces
+// them without any communication. LinComb writes every ghost cell of every
+// box, so no FillBoundary is needed on the result either.
+//
+// The one exception is project_body_B: the conducting-body projection is not
+// linear (0.5*(proj(A) + proj(B)) != proj(0.5*(A+B))), so a conducting body
+// keeps the interpolated path.
+void Pic::set_centerBstar_ghost(int iLev, const MultiFab& otherB) {
+  MultiFab& Bs = centerBstar[iLev];
+  if (is_body_conducting()) {
+    apply_centerB_BC(iLev, Bs);
+    return;
+  }
+  MultiFab::LinComb(Bs, 0.5, centerBstage[iLev], 0, 0.5, otherB, 0, 0, nDim3,
+                    Bs.nGrow());
+  // The sources already satisfy the physical BCs; re-applying them is a no-op
+  // for the linear (periodic/outflow) ones and keeps parity with
+  // apply_centerB_BC.
+  apply_field_bc(cellStatus[iLev], Bs, 0, nDim3, &Pic::get_center_B, iLev,
+                 true);
+}
+
+//==========================================================
 void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
@@ -1848,7 +1880,9 @@ void Pic::update_B_hybrid() {
         }
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           apply_centerB_BC(iLev, centerBstage[iLev]);
-          apply_centerB_BC(iLev, centerBstar[iLev]);
+        }
+        for (int iLev = 0; iLev < n_lev(); ++iLev) {
+          set_centerBstar_ghost(iLev, centerB[iLev]);
         }
       }
 
@@ -1874,8 +1908,11 @@ void Pic::update_B_hybrid() {
     if (fieldIntegrator == "ssprk3") {
       // Strong-stability-preserving RK3 with time-centered E evaluation.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        // Copy the whole ghost box, not just faraday_ngrow(iLev): the star
+        // state uses centerBstart as its second operand, and the algebraic
+        // ghost fill needs that operand ghosted on every layer.
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3,
-                       faraday_ngrow(iLev));
+                       centerBstart[iLev].nGrow());
       }
 
       // Stage 1: B1 = B_n - subDt * curl(E(B_n))
@@ -1889,7 +1926,9 @@ void Pic::update_B_hybrid() {
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
-        apply_centerB_BC(iLev, centerBstar[iLev]);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        set_centerBstar_ghost(iLev, centerBstart[iLev]);
       }
 
       // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
@@ -1905,7 +1944,9 @@ void Pic::update_B_hybrid() {
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
-        apply_centerB_BC(iLev, centerBstar[iLev]);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        set_centerBstar_ghost(iLev, centerBstart[iLev]);
       }
 
       // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
