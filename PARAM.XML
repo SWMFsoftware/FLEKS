@@ -410,10 +410,10 @@ at round-off on every level, in 2D and in 3D alike: the identity
 div(avg(curl(E))) = 0 holds in both, and the relaxation builds its correction
 from the same discrete curl the Faraday update uses, so the correction is
 divergence-free however far the least-squares solve is taken. The covered
-coarse B still drifts from the fine average by O(dx^2) per step (the coarse
-face flux matches the telescoped fine fluxes only to that order); ctRestrictB
-removes that drift each step. Setting all three to F restores the previous
-treatment.
+coarse B still drifts from the fine average, because curl_node_to_center is a
+2dx-wide operator and evaluating the same field at dx and dx/2 does not
+telescope; ctRestrictB removes that drift each step. Setting all three to F
+restores the previous treatment.
 
 === Generalized Ohm's law: how each command controls a separate term ===
 

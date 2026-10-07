@@ -115,11 +115,13 @@ private:
   //                 from the coarse E) instead of re-interpolating it from the
   //                 coarse level; the ghost Bz is still interpolated when Bz
   //                 does not enter div(B) (see is_bz_div_free).
-  // The underlying identity div(avg(curl(E))) == 0 holds in 2D and in 3D
-  // alike, so with all three on div(B) stays at round-off on every level in
-  // both. (The nodal E injection at the interface is only *consistent* to
-  // O(dx^2) in 3D, which shows up as a small drift of the covered coarse B
-  // from the fine average, not as a div(B) error.)
+  // The identity
+  // div(avg(curl(E))) == 0 holds in both dimensions, and the relaxation builds
+  // its correction from the same discrete curl the Faraday update uses, so the
+  // correction is divergence-free however far the least-squares solve is taken.
+  // The covered coarse B still drifts from the fine average (the curl operator
+  // is 2dx-wide, so evaluating the same field at dx and dx/2 does not
+  // telescope); ctRestrictB removes that drift each step.
   bool syncEmfAmr = true;
   bool ctRestrictB = true;
   bool evolveGhostB = true;

@@ -1253,27 +1253,38 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 // 1.2e-2). Re-adding the pre-injection FillBoundary does not rescue it: the
 // difference is the injection order, not the ghost refresh.
 //
-// The coarse update of a covered cell then equals the average of the fine
-// updates up to O(dx^2), and the fine interface E no longer depends on the
-// interpolated fine ghost B (letting that E drive the coarse cells was found
-// to be unstable at the corners of the fine boxes).
-//
-// The residual O(dx^2) is what ctRestrictB has to clean up. Measured
-// (amr_equilibrium, 20 steps): dropping the bottom-up pass makes the covered
-// drift *worse* (9.7e-4 vs 9.0e-4) and running it before the top-down pass
-// only improves it by ~6% (8.5e-4), so the ordering is not the lever.
+// The fine interface E no longer depends on the interpolated fine ghost B
+// (letting that E drive the coarse cells was found to be unstable at the
+// corners of the fine boxes).
 //
 // amrex::average_down_nodal IS already an exact coincident-node injection, not
 // a weighted average: amrex_avgdown_nodes() is
 //     crse(i,j,k,n) = fine(i*ratio[0], j*ratio[1], k*ratio[2], n)
 // (AMReX_MultiFabUtil_3D_C.H), and on AMR it runs through a coarsened
 // temporary FabArray plus a ParallelCopy, so it is already the cross-rank
-// gather. So the covered coarse nodes hold precisely the fine E, and the
-// residual drift is NOT a restriction artefact -- it is whatever else differs
-// between the coarse curl of that field and the average of the fine curls.
-// Note the two orderings above are not equivalent even though the injection is
-// exact: the edge midpoints are interpolated from whatever the coarse corners
-// held at that moment.
+// gather. The covered coarse nodes therefore hold precisely the fine E.
+//
+// Even so, the covered coarse B does not equal the average of the fine B, and
+// the residual is NOT a synchronisation artefact. Measured directly (compare
+// curl_node_to_center(E_coarse) on the covered cells against average_down of
+// curl_node_to_center(E_fine)):
+//
+//   amr_equilibrium 2D: |mismatch| / |K_c E_c| = 0.63 (ring) / 0.66 (deep)
+//   amr_equilibrium 3D: |mismatch| / |K_c E_c| = 0.80 (ring) / 0.83 (deep)
+//   reconnection_amr  : |mismatch| / |K_c E_c| = 0.58 (ring) / 0.53 (deep)
+//
+// i.e. the coarse curl of the synchronized field and the average of the fine
+// curls differ at O(1) *relative*, and -- decisively -- equally in the interior
+// of the covered region and in the boundary ring. So the drift is intrinsic:
+// curl_node_to_center is a 2dx-wide operator, and evaluating the same physics
+// at dx and dx/2 simply does not telescope. No choice of nodal E removes it,
+// and the deep/ring agreement rules out the "interior coarse-edge midpoints are
+// not interpolated" explanation that the lev_edge mask suggested.
+//
+// That per-step difference is exactly what ctRestrictB's div-free relaxation
+// removes. The ordering of the two passes is likewise not the lever: on
+// amr_equilibrium, dropping the bottom-up pass makes the drift *worse*
+// (9.7e-4 vs 9.0e-4) and running it first improves it only ~6% (8.5e-4).
 void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
   BL_PROFILE("Pic::sync_emf_fine_to_coarse");
   for (int iLev = 1; iLev <= finest_level; ++iLev) {
@@ -1772,10 +1783,11 @@ void Pic::update_B_hybrid() {
       amrex::Print()
           << printPrefix
           << "Note: #HYBRIDPIC syncEmfAmr on a 3D grid: the nodal "
-             "E injection matches the coarse face flux only to "
-             "O(dx^2), so the covered coarse B drifts from the fine "
-             "average by that much per step (ctRestrictB removes the "
-             "drift). div(B) itself is preserved in 3D as well.\n";
+             "Note: #HYBRIDPIC syncEmfAmr on a 3D grid: the covered "
+             "coarse B drifts from the average of the fine B, since the "
+             "2dx-wide curl operator does not telescope between dx and "
+             "dx/2 (ctRestrictB removes the drift each step). div(B) "
+             "itself is preserved in 3D as well.\n";
       isWarned = true;
     }
   }
