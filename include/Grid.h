@@ -458,41 +458,8 @@ public:
     ba.maxSize(max_grid_size[iLev]);
   };
 
-  void write_mf_series(amrex::Vector<amrex::MultiFab>& mf, TimeCtr tc,
-                       int nstep, int nlev = 0, std::string st = "WriteMF",
-                       amrex::Vector<std::string> var = {});
-
-  void write_mf(NodeMMFab& mf, std::string st = "WriteMF",
-                amrex::Vector<std::string> var = {});
-
-  void write_mf(CenterMMFab& mf, std::string st = "WriteMF",
-                amrex::Vector<std::string> var = {});
-
-  void write_mf(amrex::iMultiFab& mf, std::string st = "WriteMF",
-                amrex::Vector<std::string> var = {});
-
-  void write_mf(amrex::MultiFab& mf, std::string st = "WriteMF",
-                amrex::Vector<std::string> var = {});
-
-  void write_mf(amrex::Vector<amrex::iMultiFab>& mf, int nlev = -1,
-                std::string st = "WriteMF",
-                amrex::Vector<std::string> var = {});
-
   void write_mf(amrex::Vector<amrex::MultiFab>& mf, int nlev = -1,
                 std::string st = "WriteMF",
                 amrex::Vector<std::string> var = {});
-
-  amrex::MultiFab center_mm_to_mf(CenterMMFab& mfIn);
-
-  CenterMMFab mf_to_center_mm(amrex::MultiFab& mfIn);
-
-  amrex::MultiFab node_mm_to_mf(NodeMMFab& mfIn);
-
-  NodeMMFab mf_to_node_mm(amrex::MultiFab& mfIn);
-
-  void write_mf_to_txt(amrex::Vector<amrex::MultiFab>& mf, int nLev = 0,
-                       int writeGhost = 0);
-
-  void write_mf_to_txt(amrex::MultiFab& mf, int writeGhost = 0);
 };
 #endif
