@@ -31,6 +31,7 @@ Other options::
     --timeout S per-test wall-clock limit in seconds (0 disables it)
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -183,6 +184,12 @@ def run_one(test, variant, nprocs, run_dir, exe, keep_prof=False,
         "variant": variant,
         "nprocs": nprocs,
         "param": os.path.relpath(source, REPO_ROOT),
+        # Which deck this side actually ran.  The reference capture runs the
+        # BASE tree's decks (see memory_test.yml), so the two sides of a
+        # deck-changing PR legitimately differ; recording the hash makes that
+        # visible in the report instead of turning it into a mystery.
+        "param_sha256": hashlib.sha256(
+            param_text.encode("utf-8", "replace")).hexdigest()[:16],
         "wall_s": round(wall_s, 4),
         "exit_code": exit_code,
         "profile": {},

@@ -70,7 +70,7 @@ T                       useHallTerm
 1.0                     charge
 
 #INFLOW
-5.0                     rho [amu/cc]
+5.0                     rho [/cc]
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

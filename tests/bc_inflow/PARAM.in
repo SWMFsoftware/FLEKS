@@ -1,8 +1,10 @@
 #DESCRIPTION
 Inflow / outflow open-boundary regression test for the hybrid solver:
 
-a uniform magnetized plasma streams along +x through a 1D domain with
-inflow at -x and outflow at +x.
+a uniform magnetized TWO-ION-SPECIES plasma (solar-wind protons plus a heavy
+minor ion) streams along +x through a 1D domain with inflow at -x and outflow
+at +x.  The two species carry their own upstream density and temperature, so
+the per-species INFLOW blocks are exercised as well as the boundary pair.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -63,29 +65,46 @@ F                       useHallTerm
 1.0                     electronGamma
 1.0                     electronDensity0
 
-#INFLOW
-5.0                      rho [amu/cc]
-20.0                     ux [km/s]
-0.0                      uy [km/s]
-0.0                      uz [km/s]
-10000.0                  T [K]
-
 #BSUBCYCLE
 1                       nBSubcycle
 
-Single kinetic ion species (q = m = 1); the electron is an implicit
-neutralizing massless fluid, so no electron particle species is present.
+Two kinetic ion species: solar-wind protons and a heavy minor ion.  The
+electron is an implicit neutralizing massless fluid, so no electron particle
+species is present.  Declared before INFLOW and UNIFORMSTATE because their
+per-species blocks are read in that order.
 #PLASMA
-1                       nSpecies
-1.0                     mass
+2                       nSpecies
+1.0                     mass       Species 0: H+
+1.0                     charge
+16.0                    mass       Species 1: heavy ion (O+), m = 16 m_p
 1.0                     charge
 
+One upstream block per species, in PLASMA order.  rho is the number density
+[1/cc] for both this command and UNIFORMSTATE below, so the heavy species reads
+1.0 in both places (its mass density is m * n = 16 amu/cc).
+#INFLOW
+5.0                     rho [/cc]   Species 0: H+ (n = 5 /cc)
+20.0                    ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0                     rho [/cc]   Species 1: heavy ion (n = 1 /cc)
+20.0                    ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+40000.0                 T [K]
+
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [/cc]   Species 0: H+ (n = 5 /cc)
 20.0                    ux [km/s]      uniform bulk flow along +x (U_code = 0.2)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
+1.0                     rho [/cc]   Species 1: heavy ion (n = 1 /cc)
+20.0                    ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+40000.0                 T [K]
 1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
 0.0                     by [T]
 0.0                     bz [T]

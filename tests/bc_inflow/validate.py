@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Validator for the inflow/outflow open-boundary hybrid test (tests/bc_inflow/).
 
-Validates that a uniform streaming hybrid plasma remains uniform across the
-inflow/outflow domain, with preserved upstream density and bulk velocity,
-uniform magnetic field, and bounded energies.
+See README.md for the deck and the list of checks.
 """
 import glob
 import logging
@@ -23,8 +21,12 @@ EB_RATIO_TOL = 0.20          # Bx0 is uniform => Eb should stay within +/-20%
 EE_MAX_FRAC = 0.10           # Ee <= 10% of Eb (no spurious E build-up)
 RHO_TOL = 0.10                # upstream density preserved to +/-10%
 VEL_TOL = 0.10               # bulk velocity preserved to +/-10%
+T_TOL = 0.15                 # per-species temperature preserved to +/-15%
+RHO_RATIO_TOL = 0.10         # cross-species density ratio
+T_RATIO_TOL = 0.15           # cross-species temperature ratio
 B_SPREAD_TOL = 0.10          # Bx spatially uniform to 10% of mean
 E_SPURIOUS_TOL = 0.10        # mean spurious E <= 10% of guide-field scale
+ANISO_TOL = 0.25             # Pxx/Pyy/Pzz isotropy (finite-particle noise)
 
 
 def set_run_dir(run_dir):
@@ -114,9 +116,83 @@ def _mean(vals):
     return sum(vals) / len(vals) if vals else 0.0
 
 
+def _deck_species():
+    """Read the per-species (mass, rho, T) declared by the deck.
+
+    rho is the #UNIFORMSTATE NUMBER density [1/cc] -- the convention shared
+    with #INFLOW -- and T the uniform-state temperature [K].  Only RATIOS are
+    used below, so the normalisation cancels.
+    """
+    candidates = [os.path.join(_run_dir.RUN_DIR, "PARAM.in"),
+                  os.path.join("tests", "bc_inflow", "PARAM.in")]
+    path = next((p for p in candidates if os.path.isfile(p)), None)
+    if path is None:
+        return []
+
+    masses, rhos, temps = [], [], []
+    command = None
+    with open(path, "r", encoding="latin-1") as f:
+        for line in f:
+            toks = line.split()
+            if not toks:
+                continue
+            if toks[0].startswith("#"):
+                command = toks[0].upper()
+                continue
+            if len(toks) < 2:
+                continue
+            name = toks[1].lower()
+            try:
+                value = float(toks[0])
+            except ValueError:
+                continue
+            if command == "#PLASMA" and name.startswith("mass"):
+                masses.append(value)
+            elif command == "#UNIFORMSTATE":
+                if name.startswith("rho"):
+                    rhos.append(value)
+                elif name.startswith("t"):
+                    temps.append(value)
+
+    nS = min(len(masses), len(rhos), len(temps))
+    return [{"mass": masses[i], "rho": rhos[i], "T": temps[i]}
+            for i in range(nS)]
+
+
+def _species_in_plot(vidx):
+    """Number of species present in the .out frame (rhoS0, rhoS1, ...)."""
+    n = 0
+    while f"RHOS{n}" in vidx and f"PS{n}" in vidx:
+        n += 1
+    return n
+
+
+def _inflow_side(vidx, rows, name):
+    """Mean of *name* over the inflow-side (first) third of the domain."""
+    vals = _col(vidx, rows, name)
+    xi = vidx.get("X")
+    if not vals or xi is None:
+        return None
+    xs = [r[xi] for r in rows]
+    cut = min(xs) + 0.33 * (max(xs) - min(xs))
+    sel = [v for v, x in zip(vals, xs) if x <= cut]
+    return _mean(sel) if sel else None
+
+
+def _temperature(vidx, rows, iS, mass):
+    """Code-unit temperature of species iS: T = p * m / rho (inflow side)."""
+    rho = _inflow_side(vidx, rows, f"RHOS{iS}")
+    press = _inflow_side(vidx, rows, f"PS{iS}")
+    if not rho or not press or rho <= 0:
+        return None
+    return press * mass / rho
+
+
 def validate_plot(test_name):
-    """Plot checks: Bx uniform & unchanged, uxS0 conserved, rhoS0 preserved
-    at the inflow face, no spurious mean E."""
+    """Plot checks: Bx uniform & unchanged, per-species ux/rho/T preserved at
+    the inflow face, and the cross-species density/temperature ratios set by
+    the deck (they fail loudly if one #INFLOW block is broadcast to all
+    species or if the thermal speed ignores the species mass)."""
     import tests._shared.hybrid as _hyb
     plots_dir = os.path.join(_hyb.RUN_DIR, "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
@@ -132,20 +208,113 @@ def validate_plot(test_name):
     passed = True
     reasons = []
 
-    # Bulk velocity uxS0 conserved across the domain.
-    ux0, uxl = _col(vidx0, rows0, "UXS0"), _col(vidxl, rowsl, "UXS0")
-    if ux0 and uxl:
+    nSpecies = _species_in_plot(vidxl)
+    deck = _deck_species()
+    masses = [d["mass"] for d in deck]
+    if len(masses) < nSpecies:
+        masses += [1.0] * (nSpecies - len(masses))
+    logger.debug("    [INFLOW] %d species in the output, deck: %s",
+                 nSpecies, deck)
+
+    # Bulk velocity uxS<i> conserved across the domain, for every species.
+    for iS in range(nSpecies):
+        ux0, uxl = _col(vidx0, rows0, f"UXS{iS}"), _col(vidxl, rowsl, f"UXS{iS}")
+        if not (ux0 and uxl):
+            continue
         mean0, meanl = _mean(ux0), _mean(uxl)
-        logger.debug("    [INFLOW] <uxS0>: %s -> %s",
+        logger.debug("    [INFLOW] <uxS%d>: %s -> %s", iS,
                      f"{mean0:.5f}", f"{meanl:.5f}")
         if abs(mean0) > 1e-12 and abs(meanl / mean0 - 1.0) > VEL_TOL:
             passed = False
             reasons.append(
-                f"bulk velocity <uxS0> {mean0:.4f} -> {meanl:.4f} "
+                f"bulk velocity <uxS{iS}> {mean0:.4f} -> {meanl:.4f} "
                 f"(>{VEL_TOL*100:.0f}% drift; inflow not maintaining state)")
         elif abs(mean0) <= 1e-12 and abs(meanl) > 0.05:
             passed = False
             reasons.append(f"spurious bulk velocity {meanl:.4f} developed")
+
+    # Inflow-side density and temperature of every species, plus pressure
+    # isotropy (a broken per-species inflow shows up as the wrong T, because
+    # vth must be sqrt(T/m) with the species mass).
+    rho_in, temp_in = {}, {}
+    for iS in range(nSpecies):
+        rho_l = _inflow_side(vidxl, rowsl, f"RHOS{iS}")
+        rho_0 = _inflow_side(vidx0, rows0, f"RHOS{iS}")
+        t_l = _temperature(vidxl, rowsl, iS, masses[iS])
+        t_0 = _temperature(vidx0, rows0, iS, masses[iS])
+        rho_in[iS], temp_in[iS] = rho_l, t_l
+        logger.debug("    [INFLOW] inflow-side species %d: rho %s -> %s, "
+                     "T %s -> %s",
+                     iS, f"{rho_0:.6f}", f"{rho_l:.6f}",
+                     f"{t_0:.5e}", f"{t_l:.5e}")
+
+        if rho_0 and rho_l:
+            if rho_0 > 1e-12 and abs(rho_l / rho_0 - 1.0) > RHO_TOL:
+                passed = False
+                reasons.append(
+                    f"inflow-side density rhoS{iS} {rho_0:.4f} -> {rho_l:.4f} "
+                    f"(>{RHO_TOL*100:.0f}% drift; inflow face draining)")
+            elif rho_l <= 0.0:
+                passed = False
+                reasons.append(f"inflow-side density rhoS{iS} collapsed to zero")
+
+        if t_0 and t_l and t_0 > 0:
+            if abs(t_l / t_0 - 1.0) > T_TOL:
+                passed = False
+                reasons.append(
+                    f"inflow-side temperature of species {iS}: {t_0:.4e} -> "
+                    f"{t_l:.4e} (>{T_TOL*100:.0f}% drift; wrong per-species "
+                    f"thermal speed)")
+
+        # Thermal isotropy and a non-degenerate out-of-plane pressure.
+        pxx = _inflow_side(vidxl, rowsl, f"PXXS{iS}")
+        pyy = _inflow_side(vidxl, rowsl, f"PYYS{iS}")
+        pzz = _inflow_side(vidxl, rowsl, f"PZZS{iS}")
+        if pxx and pyy and pzz:
+            if pzz <= 0.0 or not math.isfinite(pzz):
+                passed = False
+                reasons.append(
+                    f"inflow-side Pzz of species {iS} collapsed or non-finite "
+                    f"(vz sampling failed)")
+            elif pxx > 0.0:
+                for label, val in (("Z", pzz), ("Y", pyy)):
+                    if abs(val / pxx - 1.0) > ANISO_TOL:
+                        passed = False
+                        reasons.append(
+                            f"inflow pressure of species {iS} anisotropic in "
+                            f"{label} (P{label}{label}/Pxx = {val/pxx:.3f})")
+
+    # Cross-species ratios: the mass-density ratio rhoS1/rhoS0 and the
+    # temperature ratio T1/T0 are set by the deck.  Broadcasting a single
+    # #INFLOW block to every species, or using the proton mass for every
+    # thermal speed, breaks them by a factor of order m_1/m_0.
+    #
+    # The plot carries MASS densities while the deck gives NUMBER densities
+    # (rho [1/cc], the convention shared by #UNIFORMSTATE and #INFLOW), so the
+    # expected ratio is (n_1*m_1)/(n_0*m_0).
+    if nSpecies >= 2 and len(deck) >= 2:
+        if rho_in.get(0) and rho_in.get(1) and rho_in[0] > 0:
+            meas = rho_in[1] / rho_in[0]
+            expect = ((deck[1]["rho"] * deck[1]["mass"]) /
+                      (deck[0]["rho"] * deck[0]["mass"]))
+            logger.debug("    [INFLOW] rhoS1/rhoS0 = %.4f (deck %.4f)",
+                         meas, expect)
+            if abs(meas / expect - 1.0) > RHO_RATIO_TOL:
+                passed = False
+                reasons.append(
+                    f"species density ratio rhoS1/rhoS0 = {meas:.3f} but the "
+                    f"deck prescribes {expect:.3f}; #INFLOW is not per-species")
+
+        if temp_in.get(0) and temp_in.get(1) and temp_in[0] > 0:
+            meas = temp_in[1] / temp_in[0]
+            expect = deck[1]["T"] / deck[0]["T"]
+            logger.debug("    [INFLOW] T1/T0 = %.4f (deck %.4f)", meas, expect)
+            if abs(meas / expect - 1.0) > T_RATIO_TOL:
+                passed = False
+                reasons.append(
+                    f"species temperature ratio T1/T0 = {meas:.3f} but the "
+                    f"deck prescribes {expect:.3f}; the injected thermal speed "
+                    f"ignores the species mass")
 
     # Guide field Bx uniform and unchanged.
     bx0, bxl = _col(vidx0, rows0, "BX"), _col(vidxl, rowsl, "BX")
@@ -164,73 +333,6 @@ def validate_plot(test_name):
                 f"guide field not uniform (spread {spreadl:.4f} > "
                 f"{B_SPREAD_TOL*100:.0f}% of <Bx>; boundary layer formed)")
 
-    # Upstream (inflow-side, -x) density preserved: the first few cells must
-    # hold the pristine upstream rho rather than draining toward vacuum.
-    # Compare the inflow-side third of the last frame to the same region in the
-    # first frame (the seeded uniform state).
-    rho_l = _col(vidxl, rowsl, "RHOS0")
-    rho0_all = _col(vidx0, rows0, "RHOS0")
-    xi_l = vidxl.get("X")
-    xi_0 = vidx0.get("X")
-    if rho_l and rho0_all and xi_l is not None and xi_0 is not None:
-        xmins = [min(r[xi_l] for r in rowsl), min(r[xi_0] for r in rows0)]
-        xmaxs = [max(r[xi_l] for r in rowsl), max(r[xi_0] for r in rows0)]
-        cuts = [xmins[i] + 0.33 * (xmaxs[i] - xmins[i]) for i in range(2)]
-        rho_in = [r for r, x in zip(rho_l, (row[xi_l] for row in rowsl))
-                  if x <= cuts[0]]
-        rho0_in = [r for r, x in zip(rho0_all, (row[xi_0] for row in rows0))
-                  if x <= cuts[1]]
-        if rho_in and rho0_in:
-            rho_in_mean = _mean(rho_in)
-            rho0_mean = _mean(rho0_in)
-            logger.debug("    [INFLOW] inflow-side <rhoS0>: %s -> %s",
-                         f"{rho0_mean:.5f}", f"{rho_in_mean:.5f}")
-            if rho0_mean > 1e-12 and \
-                    abs(rho_in_mean / rho0_mean - 1.0) > RHO_TOL:
-                passed = False
-                reasons.append(
-                    f"inflow-side density {rho0_mean:.4f} -> {rho_in_mean:.4f} "
-                    f"(>{RHO_TOL*100:.0f}% drift; inflow face draining)")
-            elif rho_in_mean <= 0.0:
-                passed = False
-                reasons.append("inflow-side density collapsed to zero")
-
-            # Verify pressure tensor components (Pxx, Pyy, Pzz) at inflow physical cells:
-            # confirm thermal isotropy and verify out-of-plane pressure (Pzz) is not zero.
-            pxx_l = _col(vidxl, rowsl, "PXXS0")
-            pyy_l = _col(vidxl, rowsl, "PYYS0")
-            pzz_l = _col(vidxl, rowsl, "PZZS0")
-            if pxx_l and pyy_l and pzz_l:
-                pxx_in = [r for r, x in zip(pxx_l, (row[xi_l] for row in rowsl))
-                          if x <= cuts[0]]
-                pyy_in = [r for r, x in zip(pyy_l, (row[xi_l] for row in rowsl))
-                          if x <= cuts[0]]
-                pzz_in = [r for r, x in zip(pzz_l, (row[xi_l] for row in rowsl))
-                          if x <= cuts[0]]
-                if pxx_in and pyy_in and pzz_in:
-                    m_pxx = _mean(pxx_in)
-                    m_pyy = _mean(pyy_in)
-                    m_pzz = _mean(pzz_in)
-                    logger.debug("    [INFLOW] inflow-side pressure: Pxx=%.5e, Pyy=%.5e, Pzz=%.5e",
-                                 m_pxx, m_pyy, m_pzz)
-                    if m_pzz <= 0.0 or not math.isfinite(m_pzz):
-                        passed = False
-                        reasons.append("inflow-side Pzz collapsed or non-finite (2D3V vz sampling failed)")
-                    elif m_pxx > 0.0:
-                        # Allow 25% tolerance for finite-particle statistical fluctuations
-                        p_anisotropy_z = abs(m_pzz / m_pxx - 1.0)
-                        p_anisotropy_y = abs(m_pyy / m_pxx - 1.0)
-                        if p_anisotropy_z > 0.25:
-                            passed = False
-                            reasons.append(
-                                f"inflow pressure anisotropic in Z (Pzz/Pxx = {m_pzz/m_pxx:.3f}; "
-                                f">{25}% deviation from isotropy)")
-                        if p_anisotropy_y > 0.25:
-                            passed = False
-                            reasons.append(
-                                f"inflow pressure anisotropic in Y (Pyy/Pxx = {m_pyy/m_pxx:.3f}; "
-                                f">{25}% deviation from isotropy)")
-
     # No spurious mean E field.
     for ecomp in ("EX", "EY", "EZ"):
         el = _col(vidxl, rowsl, ecomp)
@@ -246,6 +348,7 @@ def validate_plot(test_name):
                     f"(>{E_SPURIOUS_TOL*100:.0f}% of guide-field scale)")
 
     if passed:
-        return True, ("Passed (state stays uniform; inflow maintains upstream "
-                      "state, outflow lets plasma leave)")
+        return True, ("Passed (multi-species state stays uniform; inflow "
+                      "maintains the per-species upstream state, outflow lets "
+                      "plasma leave)")
     return False, "; ".join(reasons)

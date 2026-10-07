@@ -111,15 +111,15 @@ rk4                     fieldIntegrator
 
 #PLASMA
 1                       nSpecies
-1.0                     mass           Species 0: ions
+1.0                     mass        Species 0: ions
 1.0                     charge
 
 #UNIFORMSTATE
-13.03188                rho [amu/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
+13.03188                rho [/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-40168.0                 T [K]          ion temperature (Ti_code = 5/(48*pi) ~ 0.03316, Ti/Te = 5)
+40168.0                 T [K]       ion temperature (Ti_code = 5/(48*pi) ~ 0.03316, Ti/Te = 5)
 0.0                     bx [T]
 0.0                     by [T]
 0.0                     bz [T]

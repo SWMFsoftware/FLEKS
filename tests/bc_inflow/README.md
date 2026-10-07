@@ -7,16 +7,22 @@ streams along `+x` through a 1D domain. The `-x` face is an **inflow**
 boundary (`BC::inflow`) and the `+x` face is an **outflow** boundary
 (`BC::outflow`).
 
-A uniform streaming plasma is the exact steady-state solution, so this test
-validates that the inflow/outflow pair keeps a uniform state uniform:
+The plasma has **two kinetic ion species**, so the per-species form of the
+`#INFLOW` command is exercised:
 
-* Upstream density `rhoS0` and bulk velocity `uxS0` are preserved at the inflow face.
-* The guide field `Bx` stays uniform and unchanged.
-* No spurious electric field develops.
-* Ion kinetic energy `Epart` and magnetic energy `Eb` stay finite and bounded.
+| Species | m [m_p] | q [e] | n [/cc] | T [K] | `#UNIFORMSTATE` rho | `#INFLOW` rho |
+|---|---|---|---|---|---|---|
+| 0: solar-wind H+ | 1 | +1 | 5 | 10000 | 5.0 | 5.0 |
+| 1: heavy minor ion | 16 | +1 | 1 | 40000 | 1.0 | 1.0 |
 
-The upstream state is prescribed by the `#INFLOW` command (see `PARAM.XML` for
-command syntax and parameter descriptions).
+`rho` is a **number density [1/cc]** in both commands, so the heavy species
+reads 1.0 in both places (its mass density is m·n = 16 amu/cc). Only the first
+`#INFLOW` block is mandatory; a species without a block of its own reuses the
+last declared one.
+
+A uniform two-species plasma in which every species shares the same bulk
+velocity is the exact steady-state solution, so the inflow/outflow pair has to
+keep it uniform **species by species** — see Validation.
 
 ## Running
 
@@ -26,15 +32,23 @@ python3 tests/validate_tests.py --test=bc_inflow
 
 ## Validation
 
-`validate.py` checks:
+`validate.py` reads the expected per-species state back from the deck
+(`#PLASMA`, `#UNIFORMSTATE`), so the checks follow the deck instead of
+hard-coded numbers.
 
-1. **Energy log** (`validate_log`): `Etot`/`Ee`/`Eb`/`Epart` finite; `Epart`
-   bounded (open BCs inject/remove particles every step, so the ratio
-   tolerance is loose); `Eb` within ~20% of its initial value (uniform `Bx`); `Ee`
-   negligible (no spurious E build-up).
-2. **Plot output** (`validate_plot`):
-   * `<uxS0>` conserved across the domain,
-   * guide field `Bx` uniform and unchanged,
-   * inflow-side (first third of the domain) `rhoS0` preserved to ~10%
-     (the inflow maintains the upstream state rather than draining),
-   * no spurious mean `Ex`/`Ey`/`Ez`.
+* **Energy log** — `Etot`/`Ee`/`Eb`/`Epart` finite; `Epart` bounded (open BCs
+  inject and remove particles every step, so that tolerance is loose); `Eb`
+  within 20% of its initial value (the `Bx` guide field is uniform); `Ee`
+  negligible, i.e. no spurious `E` build-up at the faces.
+* **Per species, from the `.out` frames** — `<uxS{i}>` conserved across the
+  domain; inflow-side (first third) `rhoS{i}` within 10% and temperature
+  `T_i = pS{i} * m_i / rhoS{i}` within 15% of the first frame; inflow-side
+  pressure isotropic with `Pzz > 0`.
+* **Fields** — `Bx` uniform and unchanged; no spurious mean `Ex`/`Ey`/`Ez`.
+* **Cross-species ratios** — `rhoS1/rhoS0 = n1*m1 / (n0*m0)` (3.2 here) and
+  `T1/T0` (4.0 here).
+
+The last item is the discriminating one: both ratios break by `O(m1/m0)` if the
+upstream state is not per-species, or if the injected thermal speed ignores the
+species mass. Dropping the second `#INFLOW` block, for instance, gives
+`rhoS1/rhoS0 = 14.2` and `T1/T0 = 1.11` and fails the test.

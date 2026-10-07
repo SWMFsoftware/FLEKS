@@ -40,17 +40,17 @@ T                       solveEM
 1.0                     charge
 
 #UNIFORMSTATE
-0.0515625               rho [amu/cc]   Species 0: electron (quasi-neutral: ne = n_H + n_O2)
+5.15625                 rho [/cc]   Species 0: electron (quasi-neutral: ne = n_H + n_O2)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [amu/cc]   Species 1: H+ background (n_H = 5 /cc)
+5.0                     rho [/cc]   Species 1: H+ background (n_H = 5 /cc)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [amu/cc]   Species 2: O2+ (will decrease due to recombination)
+0.15625                 rho [/cc]   Species 2: O2+ (will decrease due to recombination)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
