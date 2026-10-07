@@ -1261,11 +1261,19 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 // The residual O(dx^2) is what ctRestrictB has to clean up. Measured
 // (amr_equilibrium, 20 steps): dropping the bottom-up pass makes the covered
 // drift *worse* (9.7e-4 vs 9.0e-4) and running it before the top-down pass
-// only improves it by ~6% (8.5e-4), so the error is dominated by
-// average_down_nodal being a (1/4,1/2,1) smoothing rather than an injection of
-// the coincident node values -- not by the ordering. Making it exact would
-// need a true nodal injection (fine -> coarse, coincident nodes), which is a
-// cross-rank gather; the relaxation removes the drift anyway.
+// only improves it by ~6% (8.5e-4), so the ordering is not the lever.
+//
+// amrex::average_down_nodal IS already an exact coincident-node injection, not
+// a weighted average: amrex_avgdown_nodes() is
+//     crse(i,j,k,n) = fine(i*ratio[0], j*ratio[1], k*ratio[2], n)
+// (AMReX_MultiFabUtil_3D_C.H), and on AMR it runs through a coarsened
+// temporary FabArray plus a ParallelCopy, so it is already the cross-rank
+// gather. So the covered coarse nodes hold precisely the fine E, and the
+// residual drift is NOT a restriction artefact -- it is whatever else differs
+// between the coarse curl of that field and the average of the fine curls.
+// Note the two orderings above are not equivalent even though the injection is
+// exact: the edge midpoints are interpolated from whatever the coarse corners
+// held at that moment.
 void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
   BL_PROFILE("Pic::sync_emf_fine_to_coarse");
   for (int iLev = 1; iLev <= finest_level; ++iLev) {
@@ -1692,9 +1700,11 @@ void Pic::report_divB_amr() {
 
   // With evolveGhostB the first fine ghost layer is advanced by the Faraday
   // update but never re-interpolated from the coarse level, so it can drift
-  // away from it without bound. Report that clearly: on decks with strong
-  // gradients crossing the interface it has been seen to reach O(|B|), which
-  // degrades the fine-level div(B).
+  // away from it. Measured on reconnection_amr to t=100: dGhost grows fast at
+  // first and then saturates near 9 (~4x the peak |B|), while every AMR div(B)
+  // bucket stays bit-for-bit flat for all 5000 cycles. So this is reported, not
+  // fixed; the warning threshold is deliberately low because saturation at
+  // several times |B| is normal here. See scratch/hybrid_amr_divb/.
   if (maxBmag > 0 && maxGhostDrift > 0.05 * maxBmag) {
     static bool isWarned = false;
     if (!isWarned) {
@@ -1702,7 +1712,8 @@ void Pic::report_divB_amr() {
                      << "Warning: the evolved first fine ghost layer of B has "
                         "drifted from the coarse interpolation by dGhost="
                      << maxGhostDrift << " (|B|=" << maxBmag
-                     << "). Consider #HYBRIDPIC evolveGhostB F.\n";
+                     << "). This saturates in practice and does not degrade "
+                        "div(B); see the comment in report_divB_amr.\n";
       isWarned = true;
     }
   }
