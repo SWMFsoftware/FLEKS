@@ -2623,7 +2623,8 @@ FLEKS code units).
 
 Specifies the upstream plasma state for the inflow (open) boundary condition
 (`#FIELDBOXBOUNDARY ... inflow ...` / `#PARTICLEBOXBOUNDARY ... inflow ...`).
-All values are in SI units, mirroring `#UNIFORMSTATE`.  When an `inflow` face
+All values are given in the same non-SI units as `#UNIFORMSTATE` (rho in1/cc,
+velocities in km/s, T in K; B in T and E in V/m would be SI).  When an `inflow` face
 is present and this command is supplied:
 
 * the EM-field ghost cells at an `inflow` face are filled by a zero-gradient

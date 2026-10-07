@@ -1046,7 +1046,8 @@ void Pic::convert_electron_collision() {
 }
 
 //==========================================================
-// SI -> code conversion of the upstream states given by #INFLOW.
+// PARAM.in -> code conversion of the upstream states given by #INFLOW
+// (rho [1/cc], ux/uy/uz [km/s], T [K] -- none of them SI).
 //
 // #INFLOW stores ONE block per species in #PLASMA order; species without their
 // own block fall back to the last declared one.  `rho` is the number density

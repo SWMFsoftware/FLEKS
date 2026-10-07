@@ -438,9 +438,10 @@ private:
   // Characteristic speed for the absorbing BC; 0 = auto (light speed).
   amrex::Real absorbCharSpeed = 0.0;
 
-  // Upstream state declared by #INFLOW, stored in raw SI units
-  // (rho [amu/cc] i.e. the proton-equivalent number density, ux/uy/uz [km/s],
-  // T [K]).  One block may be given per species, in #PLASMA order; species
+  // Upstream state declared by #INFLOW, stored as read from PARAM.in
+  // (rho [1/cc] i.e. the species number density, ux/uy/uz [km/s], T [K] --
+  // note that these are NOT SI: km/s and 1/cc are not).  One block may be
+  // given per species, in #PLASMA order; species
   // without a block of their own reuse the last declared block, so a single
   // block still describes a uniform quasi-neutral multi-species upstream
   // plasma.  rho <= 0 switches the injection off for that species.
