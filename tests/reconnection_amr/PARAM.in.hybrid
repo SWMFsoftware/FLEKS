@@ -150,8 +150,6 @@ z=0 fluid ascii planet  plotString   (z cut; degenerate z in true-2D build)
 -1                      MaxIter
 20.0                    TimeMax   ~3.2 ion gyroperiods (reconnection develops)
 
-#RUN
-
 AMR setup: a thin box layer around the current sheet (|y| < 7.85 d_i)
 is refined (REFINEREGION) to 2x resolution (REFINEMENTRATIO 2); see README.
 #REGION

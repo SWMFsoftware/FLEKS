@@ -134,5 +134,3 @@ T
 #STOP
 10                      MaxIter
 1.0                     TimeMax
-
-#RUN

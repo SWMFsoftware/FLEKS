@@ -162,5 +162,3 @@ body bodySurf bodyInt rhoS0 rhoS1 Ex Ey Ez Bx By Bz divB divBc   plotVar
 #STOP
 -1                      MaxIter
 2.0                     TimeMax
-
-#RUN

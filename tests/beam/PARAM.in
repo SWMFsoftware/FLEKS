@@ -137,5 +137,3 @@ uniform         region
 planet      IOUnit
 10          dnSave
 0.5         launchThreshold
-
-#RUN

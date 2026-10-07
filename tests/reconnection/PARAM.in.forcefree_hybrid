@@ -162,5 +162,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 6.2831853               TimeMax     [1.0 * t_ci = 1000 steps]
-
-#RUN

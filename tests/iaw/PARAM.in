@@ -148,5 +148,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 5.0                     TimeMax   ~0.3 of the n=1 ion-acoustic period
-
-#RUN

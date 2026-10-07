@@ -133,5 +133,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 10.0                    TimeMax   crosses periodic box 1.56 times
-
-#RUN

@@ -122,5 +122,3 @@ B0x B0y B0z Bx By Bz Ex Ey Ez body   plotVar
 #STOP
 -1                      MaxIter
 10.0                    TimeMax
-
-#RUN
