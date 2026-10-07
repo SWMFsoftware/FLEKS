@@ -66,13 +66,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#INFLOW") {
-    // Upstream state of every species, in #PLASMA order.  The first block is
-    // mandatory; the following ones are optional and are consumed only while
-    // the next line still looks like "<value> rho".  A species for which no
-    // block is given inherits the last declared block (so a single block keeps
-    // working for a uniform multi-species plasma), and rho <= 0 means "this
-    // species has no upstream influx" -- it is then never injected at an
-    // inflow face.
     inflowDefined_ = true;
     inflowRho_I.clear();
     inflowUx_I.clear();
@@ -1046,16 +1039,8 @@ void Pic::convert_electron_collision() {
 }
 
 //==========================================================
-// PARAM.in -> code conversion of the upstream states given by #INFLOW
-// (rho [1/cc], ux/uy/uz [km/s], T [K] -- none of them SI).
-//
-// #INFLOW stores ONE block per species in #PLASMA order; species without their
-// own block fall back to the last declared one.  `rho` is the number density
-// [1/cc], the same convention as #UNIFORMSTATE rho, so it is converted
-// exactly like #UNIFORMSTATE rho and then used
-// directly as the number density nDens consumed by
-// Particles::inject_flux_at_inflow_faces / add_particles_cell.  rho <= 0 leaves
-// nDens <= 0, which switches the injection off for that species.
+// #INFLOW (rho [1/cc], ux/uy/uz [km/s], T [K]) -> code units.
+// See PARAM.XML for the per-species blocks and the inheritance rule.
 void Pic::convert_inflow_state() {
   if (!inflowDefined_)
     return;
@@ -1096,10 +1081,8 @@ void Pic::convert_inflow_state() {
     if (rho <= 0)
       continue; // species is not injected at the inflow face
 
-    // vth is the 1-D thermal std sigma = sqrt(kT/m) with the SPECIES mass in
-    // proton units. Use the fluid interface (parts[] is only constructed later,
-    // in Pic::init, so reading parts[iS]->get_mass() here silently fell back to
-    // m = 1 and gave every species the PROTON thermal spread).
+    // vth is the 1-D thermal std sigma = sqrt(kT/m), with the species mass in
+    // proton units from the fluid interface (parts[] is built later).
     const double mass_i = (iS < fi->get_nS() && fi->get_species_mass(iS) > 0.0)
                               ? fi->get_species_mass(iS)
                               : 1.0;
@@ -1115,44 +1098,25 @@ void Pic::convert_inflow_state() {
   fi->set_inflow_state(stateVec);
   fi->set_inflow_defined(true);
 
-  // Diagnostics: (a) warn when a species is injected with a density that does
-  // not match its #UNIFORMSTATE background, and (b) warn when the injected
-  // mixture is NOT charge neutral, because that drives a spurious sheath at
-  // the inflow face.
-  //
-  // (b) is only meaningful when the electrons are a KINETIC species.  In
-  // hybrid PIC -- and in any ion-only deck -- the electron is an implicit
-  // massless neutralizing fluid, so sum(q_i*n_i) is the ION charge density by
-  // construction and the injected mixture is neutral as a whole.
-  const auto& unif = fi->get_uniform_state();
+  // A non-neutral injected mixture drives a spurious sheath at the inflow
+  // face, so warn about it -- but only when the electrons are kinetic.
   bool hasElectronSpecies = false;
   for (int iS = 0; iS < nSpecies; ++iS) {
     if (iS < fi->get_nS() && fi->get_species_charge(iS) < 0.0)
       hasElectronSpecies = true;
   }
-  const bool checkNeutrality = !useHybridPIC && hasElectronSpecies;
 
-  if (nSpecies > 1) {
+  if (nSpecies > 1 && !useHybridPIC && hasElectronSpecies) {
     double netCharge = 0.0, totalN = 0.0;
-    for (int iS = 0; iS < nSpecies; ++iS) {
+    for (int iS = 0; iS < nSpecies && iS < fi->get_nS(); ++iS) {
       const double ni = stateVec[iS].nDens / rhoFactor; // back to /cc
       if (ni <= 0)
         continue;
       netCharge += fi->get_species_charge(iS) * ni;
       totalN += ni;
-
-      if (!unif.empty() && iS * 5 < static_cast<int>(unif.size()) &&
-          iS < fi->get_nS() && fi->get_species_mass(iS) > 0.0) {
-        const double speciesN =
-            unif[iS * 5] / (fi->get_species_mass(iS) * cProtonMassSI * 1.0e6);
-        if (std::abs(speciesN - ni) > 1e-4 * std::max(speciesN, ni))
-          Print() << "  Warning: #INFLOW injects species " << iS
-                  << " with n=" << ni
-                  << " /cc but #UNIFORMSTATE gives n=" << speciesN << " /cc.\n";
-      }
     }
 
-    if (checkNeutrality && totalN > 0 &&
+    if (totalN > 0 &&
         std::abs(netCharge) > 1e-4 * std::max(totalN, std::abs(netCharge)))
       Print() << "  Warning: the #INFLOW mixture is not charge neutral: "
               << "sum(q_i*n_i) = " << netCharge

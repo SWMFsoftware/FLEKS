@@ -475,11 +475,6 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     }
     double tmp;
     for (int i = 0; i < nS; ++i) {
-      // rho is the NUMBER density of the species [1/cc], the same convention
-      // as #INFLOW: for protons it coincides with the older mass density in
-      // amu/cc, for any other species it is smaller by the mass ratio.
-      // uniformState itself keeps storing the MASS density [kg/m^3] (that is
-      // what nodeFluid, the initial condition and the MHD coupling use).
       double n;
       param.read_var("rho", n);
       double mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
