@@ -223,6 +223,15 @@ def run_test(test_dir, nprocs=1, param_text=None):
     result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result.stdout = (result.stdout or b"").decode("utf-8", errors="replace")
     result.stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+    # Keep FLEKS's stdout on disk. Several per-cycle diagnostics (notably the
+    # AMR div(B) report) are only printed to stdout, so validators that assert
+    # on them need a file to read.
+    try:
+        with open(os.path.join(RUN_DIR, "fleks_stdout.log"), "w",
+                  encoding="utf-8", errors="replace") as _f:
+            _f.write(result.stdout)
+    except OSError:
+        pass
     if result.returncode != 0:
         logger.error("Error running FLEKS.exe for %s:", test_dir)
         logger.error("--- FLEKS stdout ---")
@@ -358,7 +367,7 @@ EXO_SOURCE_TESTS = {
 AMR_TESTS = {"amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr"}
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
-AMREX3D_TESTS = {"lightwave"}
+AMREX3D_TESTS = {"lightwave", "amr_equilibrium_3d"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
 AMREX2D_TESTS = {"photoionization", "body"}
