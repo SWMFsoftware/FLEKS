@@ -324,15 +324,8 @@ public:
                                     NStructInt>::NumberOfParticlesAtLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Checkpoint;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
-  using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
-  using amrex::AmrParticleContainer<NStructReal,
-                                    NStructInt>::CreateGhostParticles;
-  using amrex::AmrParticleContainer<NStructReal,
-                                    NStructInt>::CreateVirtualParticles;
-  using amrex::AmrParticleContainer<NStructReal,
-                                    NStructInt>::AddParticlesAtLevel;
 
   using AoS = amrex::ArrayOfStructs<ParticleType>;
 
