@@ -57,9 +57,9 @@ F                       useHybridPIC
 Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
 #PLASMA
 2                       nSpecies
-1.0                     mass           Species 0: ions
+1.0                     mass        Species 0: ions
 1.0                     charge
-1.0/25.0                mass           Species 1: electrons
+1.0/25.0                mass        Species 1: electrons
 -1.0                    charge
 
 Both species share the same Fadeev density profile (charge neutral, n_e = n_i);
@@ -70,13 +70,13 @@ code temperature.
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-304000.0                T [K]          ions, beta_i ~ 0.5
+304000.0                T [K]       ions, beta_i ~ 0.5
 12.5                    rho [/cc]   Species 1: electrons (rho_e=rho_i*m_e/m_i => n_e=n_i, charge neutral)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-304000.0                T [K]          electrons
-0.0                     bx [T]         guide field set by FadeevIC (bg = 0)
+304000.0                T [K]       electrons
+0.0                     bx [T]      guide field set by FadeevIC (bg = 0)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]

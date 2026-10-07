@@ -53,9 +53,9 @@ F                       useHybridPIC
 
 #PLASMA
 2                       nSpecies
-1.0                     mass           Species 0: ions
+1.0                     mass        Species 0: ions
 1.0                     charge
-0.04                    mass           Species 1: electrons (mi/me = 25)
+0.04                    mass        Species 1: electrons (mi/me = 25)
 -1.0                    charge
 
 #UNIFORMSTATE

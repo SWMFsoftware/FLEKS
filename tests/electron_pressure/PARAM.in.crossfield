@@ -110,8 +110,8 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 400000.0                T [K]
-0.0                     bx [T]         weak guide field along Y, see below
-1.0e-10                 by [T]         sets the conduction direction only
+0.0                     bx [T]      weak guide field along Y, see below
+1.0e-10                 by [T]      sets the conduction direction only
 0.0                     bz [T]
 0.0                     ex [V/m]
 0.0                     ey [V/m]

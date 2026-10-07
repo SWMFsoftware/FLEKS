@@ -64,9 +64,9 @@ F                       useHybridPIC
 
 #PLASMA
 2                       nSpecies
-1.0                     mass           Species 0: ions
+1.0                     mass        Species 0: ions
 1.0                     charge
-0.04                    mass           Species 1: electrons (mi/me = 25)
+0.04                    mass        Species 1: electrons (mi/me = 25)
 -1.0                    charge
 
 #UNIFORMSTATE
@@ -74,13 +74,13 @@ F                       useHybridPIC
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-24191.0                 T [K]          ions, beta_i = 0.5, Ti_code = 0.25 / (4*pi)
+24191.0                 T [K]       ions, beta_i = 0.5, Ti_code = 0.25 / (4*pi)
 65.15939                rho [/cc]   Species 1: electrons (rho_e = rho_i * me/mi = 65.15939 * 0.04)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-4838.2                  T [K]          electrons, beta_e = 0.1, Te_code = 0.05 / (4*pi), Ti/Te = 5
-0.0                     bx [T]         set by ForceFreeIC
+4838.2                  T [K]       electrons, beta_e = 0.1, Te_code = 0.05 / (4*pi), Ti/Te = 5
+0.0                     bx [T]      set by ForceFreeIC
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]

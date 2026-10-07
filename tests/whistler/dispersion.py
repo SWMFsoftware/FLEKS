@@ -143,8 +143,6 @@ class Units:
         self.xMax = get(blocks, "GEOMETRY", "xMax")
         self.Lx = abs(self.xMax - self.xMin)
 
-        # #UNIFORMSTATE rho is a NUMBER density [1/cc] (the convention shared
-        # with #INFLOW); the code-unit MASS density of species 0 is n*m.
         self.nCc = get(blocks, "UNIFORMSTATE", "rho")
         self.bxT = get(blocks, "UNIFORMSTATE", "bx")
         self.mass = get(blocks, "PLASMA", "mass", 1.0)
