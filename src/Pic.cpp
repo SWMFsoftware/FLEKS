@@ -774,6 +774,7 @@ amrex::MultiFab& Pic::total_center_B(amrex::MultiFab& src, const int iLev) {
 //==========================================================
 void Pic::fill_particles() {
   inject_particles_for_new_cells();
+  particlesInitialized = true;
   inject_particles_for_boundary_cells();
 }
 

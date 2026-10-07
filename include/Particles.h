@@ -455,7 +455,7 @@ public:
 
   int n_lev_max() const { return maxLevel() + 1; }
 
-  void add_particles_domain();
+  void add_particles_domain(bool fillAll = false);
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi,
                           const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,

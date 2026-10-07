@@ -712,6 +712,7 @@ void Pic::read_restart() {
     parts[iPart]->Restart(restartDir,
                           gridName + "_particles" + std::to_string(iPart));
   }
+  particlesInitialized = true;
   inject_particles_for_boundary_cells();
 
   sum_moments();

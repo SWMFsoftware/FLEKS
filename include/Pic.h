@@ -472,6 +472,7 @@ protected:
   amrex::Vector<amrex::iMultiFab> targetPPC;
   bool isTargetPPCDefined = false;
   bool doNeedFillNewCell = false;
+  bool particlesInitialized = false;
 
   // public methods
 public:
@@ -685,7 +686,7 @@ public:
       return;
 
     for (auto &pts : parts) {
-      pts->add_particles_domain();
+      pts->add_particles_domain(!particlesInitialized);
     }
   }
 
