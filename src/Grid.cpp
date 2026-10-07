@@ -150,6 +150,15 @@ void Grid::restore_grid(const Vector<BoxArray>& boxes) {
 
 void Grid::finish_regrid() {
 
+  // InitFromScratch lowers finest_level without clearing removed levels.
+  // Do not retain their boxes: a later refinement would otherwise classify
+  // recreated fine nodes as old and skip their fluid initialization.
+  for (int iLev = n_lev();
+       iLev < n_lev_max() && iLev < static_cast<int>(cGrids.size()); ++iLev) {
+    ClearBoxArray(iLev);
+    ClearDistributionMap(iLev);
+  }
+
   calc_node_grids();
 
   print_grid_info();
