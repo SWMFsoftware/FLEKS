@@ -1031,7 +1031,7 @@ void Domain::save_restart_header() {
     headerFile << "#GRIDBOXARRAY \n";
     headerFile << grid->n_lev() << "\n";
     for (int iLev = 0; iLev < grid->n_lev(); iLev++) {
-      grid->box_array(iLev).writeOn(headerFile);
+      grid->boxArray(iLev).writeOn(headerFile);
       headerFile << "\n";
     }
     headerFile << "\n";

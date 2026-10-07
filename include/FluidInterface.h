@@ -194,14 +194,6 @@ protected:
   std::string gridName;
   std::string printPrefix;
   int gridID;
-  int nGst;
-  const bool& isFake2D;
-  const bool& isGridEmpty;
-  const amrex::Vector<amrex::BoxArray>& cGrids;
-  const amrex::Vector<amrex::BoxArray>& nGrids;
-  const amrex::Vector<amrex::IntVect>& ref_ratio;
-  const amrex::Vector<amrex::iMultiFab>& cellStatus;
-  const amrex::Vector<amrex::iMultiFab>& nodeStatus;
 
   amrex::Vector<amrex::MultiFab> nodeFluid;
   amrex::Vector<amrex::MultiFab> centerB;
@@ -211,13 +203,7 @@ protected:
 public:
   // Shared mesh queries (n_lev, Geom(iLev), DistributionMap, cell_status,
   // get_base_grid, lev_string, get_finest_lev, ...) are inherited from
-  // GridAccess.  The queries below are specific to the fluid interface.
-  using GridAccess::Geom;
-  const amrex::Vector<amrex::Geometry>& Geom() const { return grid.Geom(); }
-  amrex::Vector<amrex::IntVect> refRatio() const { return grid.refRatio(); }
-  int find_mpi_rank_from_coord(const amrex::RealVect& xyz) const {
-    return grid.find_mpi_rank_from_coord(xyz);
-  }
+  // GridAccess.
 
   FluidInterface(Grid& gridIn, std::string tag,
                  const amrex::Vector<int>& iParam,
@@ -225,18 +211,7 @@ public:
                  const amrex::Vector<double>& paramComm);
 
   FluidInterface(Grid& gridIn, std::string tag, FluidType typeIn = PICFluid)
-      : GridAccess(gridIn),
-        myType(typeIn),
-        tag(tag),
-        gridID(gridIn.get_id()),
-        nGst(gridIn.get_n_ghost()),
-        isFake2D(gridIn.is_fake_2d_ref()),
-        isGridEmpty(gridIn.is_grid_empty_ref()),
-        cGrids(gridIn.box_arrays()),
-        nGrids(gridIn.node_box_arrays()),
-        ref_ratio(gridIn.ref_ratios()),
-        cellStatus(gridIn.cell_status()),
-        nodeStatus(gridIn.node_status()) {
+      : GridAccess(gridIn), myType(typeIn), tag(tag), gridID(gridIn.get_id()) {
     gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
     initFromSWMF = false;
@@ -252,15 +227,7 @@ public:
         FluidInterfaceParameters(other),
         myType(typeIn),
         tag(tag),
-        gridID(id),
-        nGst(gridIn.get_n_ghost()),
-        isFake2D(gridIn.is_fake_2d_ref()),
-        isGridEmpty(gridIn.is_grid_empty_ref()),
-        cGrids(gridIn.box_arrays()),
-        nGrids(gridIn.node_box_arrays()),
-        ref_ratio(gridIn.ref_ratios()),
-        cellStatus(gridIn.cell_status()),
-        nodeStatus(gridIn.node_status()) {
+        gridID(id) {
     gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
   }
@@ -435,14 +402,14 @@ public:
     for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
       sum_two_lev_interface_node(
           nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
-          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+          refRatio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
     }
 
     // Correct domain edge nodes
     for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
       interp_from_coarse_to_fine_for_domain_edge(
           nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
-          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+          refRatio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
     }
   }
 
@@ -487,7 +454,7 @@ public:
   }
 
   void save_restart_data() {
-    if (isGridEmpty)
+    if (is_grid_empty())
       return;
 
     std::string restartDir = get_restart_out_dir();
@@ -503,7 +470,7 @@ public:
   }
 
   void read_restart() {
-    if (isGridEmpty)
+    if (is_grid_empty())
       return;
 
     std::string restartDir = component + "/restartIN/";

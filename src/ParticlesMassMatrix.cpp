@@ -340,7 +340,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
     amrex::Vector<amrex::MultiFab>& jhf, MultiFab& nodeBMF,
     const MultiFab* nodeB0MF, MultiFab& u0MF, Real dt, int iLev,
-    bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& cellstatus) {
+    bool solveInCoMov, const amrex::Vector<amrex::iMultiFab>& cellstatus) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -702,7 +702,7 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
   template void T::calc_mass_matrix_amr(                                       \
       NodeMMFab&, Vector<Vector<NodeMMFab> >&, Vector<NodeMMFab>&, MultiFab&,  \
       Vector<Vector<MultiFab> >&, Vector<MultiFab>&, MultiFab&,                \
-      MultiFab const*, MultiFab&, Real, int, bool, Vector<iMultiFab>&);        \
+      MultiFab const*, MultiFab&, Real, int, bool, const Vector<iMultiFab>&);  \
   template void T::calc_jhat(MultiFab&, MultiFab&, MultiFab const*, Real);     \
   template void T::apply_jhat_mirror(MultiFab&, int);
 

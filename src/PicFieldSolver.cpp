@@ -34,12 +34,12 @@ void Pic::update_E_expl() {
     // Physical boundary conditions apply at the base domain; fine-level
     // boundaries instead take their values from the coarser level.
     if (iLev == 0) {
-      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
                      &Pic::get_center_B, iLev, true);
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
           *get_cell_interp());
     }
   }
@@ -57,7 +57,7 @@ void Pic::update_E_expl() {
                   nodeE[iLev].nGrow());
 
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+    apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3, &Pic::get_node_E,
                    iLev, false);
 
     // Electric field boundary on the inner body (see #BODYBOUNDARY).
@@ -93,18 +93,18 @@ void Pic::update_E_impl() {
     }
 
     MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
-                  nGst);
+                  get_n_ghost());
 
     MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
                       nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
-                      nodeE[iLev].nComp(), nGst);
+                      nodeE[iLev].nComp(), get_n_ghost());
 
     if (iLev == 0) {
 
       // NOTE: the wave hard source is applied inside apply_field_bc().
-      apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+      apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3, &Pic::get_node_E,
                      iLev, false);
-      apply_field_bc(nodeStatus[iLev], nodeEth[iLev], 0, nDim3,
+      apply_field_bc(node_status(iLev), nodeEth[iLev], 0, nDim3,
                      &Pic::get_node_E, iLev, false);
     }
 
@@ -206,13 +206,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   zero_array(vecOut, eSolver.get_nSolve());
 
   if (solverVecMF[iLev].empty()) {
-    distribute_FabArray(solverVecMF[iLev], nGrids[iLev], DistributionMap(iLev),
-                        3, nGst);
-    distribute_FabArray(solverMatvecMF[iLev], nGrids[iLev],
+    distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
                         DistributionMap(iLev), 3, 1);
-    distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
-                        DistributionMap(iLev), 3, nGst);
-    distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+    distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverCenterLapMF[iLev], boxArray(iLev),
                         DistributionMap(iLev), 3, 1);
   }
 
@@ -233,7 +233,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   // M*E needs ghost cell information.
   vecMF.FillBoundary(Geom(iLev).periodicity());
 
-  if (isFake2D) {
+  if (is_fake_2d()) {
     // Make sure there is no variation in the z-direction.
     Periodicity period(IntVect(AMREX_D_DECL(0, 0, 1)));
     vecMF.FillBoundary(period);
@@ -267,12 +267,12 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
     if (iLev == 0) {
-      apply_field_bc(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev,
+      apply_field_bc(node_status(iLev), vecMF, 0, nDim3, &Pic::get_node_E, iLev,
                      false);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
     }
   }
@@ -347,10 +347,10 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
     if (fsolver.coefDiff > 0) {
       if (solverTempCenter3[iLev].empty()) {
-        distribute_FabArray(solverTempCenter3[iLev], cGrids[iLev],
-                            DistributionMap(iLev), 3, nGst);
-        distribute_FabArray(solverTempCenter1[iLev], cGrids[iLev],
-                            DistributionMap(iLev), 1, nGst);
+        distribute_FabArray(solverTempCenter3[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost());
+        distribute_FabArray(solverTempCenter1[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 1, get_n_ghost());
       }
       MultiFab& tempCenter3 = solverTempCenter3[iLev];
       MultiFab& tempCenter1 = solverTempCenter1[iLev];
@@ -379,7 +379,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
       // cells) of tempCenter1 are not accurate
-      apply_BC(cellStatus[iLev], tempCenter1, 0, tempCenter1.nComp(),
+      apply_BC(cell_status(iLev), tempCenter1, 0, tempCenter1.nComp(),
                &Pic::get_zero, iLev);
 
       MultiFab::LinComb(centerDivE[iLev], 1 - fsolver.coefDiff,
@@ -518,10 +518,10 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   timing_func(nameFunc);
 
   if (solverRhsNode1[iLev].empty()) {
-    distribute_FabArray(solverRhsNode1[iLev], nGrids[iLev],
-                        DistributionMap(iLev), 3, nGst);
-    distribute_FabArray(solverRhsNode2[iLev], nGrids[iLev],
-                        DistributionMap(iLev), 3, nGst);
+    distribute_FabArray(solverRhsNode1[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverRhsNode2[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
   }
 
   MultiFab& tempNode = solverRhsNode1[iLev];
@@ -534,18 +534,18 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   // The same base-versus-fine distinction applies to both B layouts used by
   // the implicit field solve after a regrid.
   if (iLev == 0) {
-    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+    apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
                    &Pic::get_center_B, iLev, true);
-    apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+    apply_field_bc(node_status(iLev), nodeB[iLev], 0, nodeB[iLev].nComp(),
                    &Pic::get_node_B, iLev, true);
   } else {
-    fill_fine_lev_bny_from_coarse(
-        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        *get_cell_interp());
+    fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
+                                  centerB[iLev - 1].nComp(), refRatio(iLev - 1),
+                                  Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+                                  *get_cell_interp());
 
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
-                                  nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  nodeB[iLev - 1].nComp(), refRatio(iLev - 1),
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   node_bilinear_interp);
   }
@@ -621,7 +621,7 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 
     const Array4<Real>& arr = MF[mfi].array();
 
-    const auto& nodeArr = nodeStatus[iLev][mfi].array();
+    const auto& nodeArr = node_status(iLev)[mfi].array();
 
     // A 'linetied' body drops all its nodes from the linear system (E = 0),
     // a 'conducting' body only drops the interior ones (E = 0 inside, E_t = 0
@@ -652,7 +652,7 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 
     const Array4<Real const>& arr = MF[mfi].array();
 
-    const auto& nodeArr = nodeStatus[iLev][mfi].array();
+    const auto& nodeArr = node_status(iLev)[mfi].array();
 
     // See convert_1d_to_3d: only the 'linetied' body drops its nodes from the
     // linear system.
@@ -685,11 +685,11 @@ void Pic::ensure_divB(int iLev) {
   if (static_cast<int>(divB.size()) != n_lev_max()) {
     divB.resize(n_lev_max());
   }
-  if (divB[iLev].empty() || divB[iLev].boxArray() != cGrids[iLev] ||
+  if (divB[iLev].empty() || divB[iLev].boxArray() != boxArray(iLev) ||
       divB[iLev].DistributionMap() != DistributionMap(iLev)) {
     // div_node_to_center() only fills component 0, so one component is enough.
-    distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                        nGst, false, 0.0);
+    distribute_FabArray(divB[iLev], boxArray(iLev), DistributionMap(iLev), 1,
+                        get_n_ghost(), false, 0.0);
   }
 }
 
@@ -699,11 +699,12 @@ void Pic::ensure_centerDivB(int iLev) {
   if (static_cast<int>(centerDivB.size()) != n_lev_max()) {
     centerDivB.resize(n_lev_max());
   }
-  if (centerDivB[iLev].empty() || centerDivB[iLev].boxArray() != cGrids[iLev] ||
+  if (centerDivB[iLev].empty() ||
+      centerDivB[iLev].boxArray() != boxArray(iLev) ||
       centerDivB[iLev].DistributionMap() != DistributionMap(iLev)) {
     // div_center_to_center() only fills component 0.
-    distribute_FabArray(centerDivB[iLev], cGrids[iLev], DistributionMap(iLev),
-                        1, nGst, false, 0.0);
+    distribute_FabArray(centerDivB[iLev], boxArray(iLev), DistributionMap(iLev),
+                        1, get_n_ghost(), false, 0.0);
   }
 }
 
@@ -713,10 +714,10 @@ void Pic::ensure_hypPhi(int iLev) {
   if (static_cast<int>(hypPhi.size()) != n_lev_max()) {
     hypPhi.resize(n_lev_max());
   }
-  if (hypPhi[iLev].empty() || hypPhi[iLev].boxArray() != cGrids[iLev] ||
+  if (hypPhi[iLev].empty() || hypPhi[iLev].boxArray() != boxArray(iLev) ||
       hypPhi[iLev].DistributionMap() != DistributionMap(iLev)) {
-    distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev),
-                        nDim3, nGst, false, 0.0);
+    distribute_FabArray(hypPhi[iLev], boxArray(iLev), DistributionMap(iLev),
+                        nDim3, get_n_ghost(), false, 0.0);
   }
 }
 
@@ -742,8 +743,8 @@ void Pic::update_B() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (centerDB[iLev].empty()) {
-      distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
-                          nDim3, nGst);
+      distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
+                          nDim3, get_n_ghost());
     }
     MultiFab& dB = centerDB[iLev];
     curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
@@ -751,28 +752,28 @@ void Pic::update_B() {
     // The interior of the body is a cavity: Faraday's law does not change the
     // magnetic field there, so B keeps its initial value.
     if (is_body_interior_frozen())
-      mask_body_interior(dB, cellStatus[iLev]);
+      mask_body_interior(dB, cell_status(iLev));
 
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
 
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
-  if (projectDownEmFields && finest_level > 0) {
-    for (int iLev = finest_level; iLev > 0; iLev--) {
-      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[0]);
+  if (projectDownEmFields && finestLevel() > 0) {
+    for (int iLev = finestLevel(); iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, refRatio(0));
     }
   }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
                      &Pic::get_center_B, iLev, true);
 
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
           *get_cell_interp());
     }
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
@@ -804,13 +805,13 @@ void Pic::update_B() {
                       0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
 
     if (iLev == 0) {
-      apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+      apply_field_bc(node_status(iLev), nodeB[iLev], 0, nodeB[iLev].nComp(),
                      &Pic::get_node_B, iLev, true);
     } else {
-      fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
+                                    nodeB[iLev - 1].nComp(), refRatio(iLev - 1),
+                                    Geom(iLev - 1), Geom(iLev),
+                                    node_status(iLev), node_bilinear_interp);
     }
 
     // 'conducting' body: B_r = 0, the tangential B carries the surface
@@ -847,7 +848,7 @@ void Pic::solve_hyp_phi(int iLev) {
 
   hypPhi[iLev].FillBoundary(Geom(iLev).periodicity());
 
-  apply_BC(cellStatus[iLev], hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
+  apply_BC(cell_status(iLev), hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
            iLev);
 }
 
@@ -872,13 +873,14 @@ void Pic::correct_B(int iLev) {
   }
 
   if (centerDB[iLev].empty()) {
-    distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
-                        nDim3, nGst);
+    distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
+                        nDim3, get_n_ghost());
   }
   MultiFab& cDB = centerDB[iLev];
   cDB.setVal(0.0);
 
   if (doUpwind) {
+    const bool isFake2D = is_fake_2d();
     Real coef[nDim3];
     for (int i = 0; i < nDim3; ++i) {
       coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
@@ -890,7 +892,7 @@ void Pic::correct_B(int iLev) {
       const Array4<Real>& cB = centerB[iLev][mfi].array();
       const Array4<Real const>& nU = uBg[iLev][mfi].array();
       const Array4<Real>& dB = cDB[mfi].array();
-      const auto& status = cellStatus[iLev][mfi].array();
+      const auto& status = cell_status(iLev)[mfi].array();
 
       // Get the face along the direction iDir for the cell (i,j,k) for the iVar
       // component
@@ -1029,10 +1031,10 @@ void Pic::correct_B(int iLev) {
 
   if (useHyperbolicCleaning) {
     if (solverCenterLapMF[iLev].empty()) {
-      distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+      distribute_FabArray(solverCenterLapMF[iLev], boxArray(iLev),
                           DistributionMap(iLev), 3, 1);
-      distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
-                          DistributionMap(iLev), 3, nGst);
+      distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost());
     }
     MultiFab& gradPhi = solverCenterLapMF[iLev];
     gradPhi.setVal(0.0);
@@ -1064,7 +1066,7 @@ void Pic::correct_B(int iLev) {
 
   // The div(B) cleaning must not reach into the frozen interior of the body.
   if (is_body_interior_frozen())
-    mask_body_interior(cDB, cellStatus[iLev]);
+    mask_body_interior(cDB, cell_status(iLev));
 
   MultiFab::Add(centerB[iLev], cDB, 0, 0, nDim3, 0);
 
@@ -1134,7 +1136,7 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
   smooth_dir(ix_);
   if (nDim > 1)
     smooth_dir(iy_);
-  if (nDim > 2 && !isFake2D)
+  if (nDim > 2 && !is_fake_2d())
     smooth_dir(iz_);
 }
 
@@ -1150,12 +1152,12 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
 
 //==========================================================
 void Pic::project_down_E() {
-  if (finest_level > 0) {
-    for (int iLev = finest_level; iLev > 0; iLev--) {
+  if (finestLevel() > 0) {
+    for (int iLev = finestLevel(); iLev > 0; iLev--) {
       if (projectScratchMF[iLev].empty() ||
-          projectScratchMF[iLev].boxArray() != nGrids[iLev] ||
+          projectScratchMF[iLev].boxArray() != node_box_array(iLev) ||
           projectScratchMF[iLev].DistributionMap() != DistributionMap(iLev)) {
-        distribute_FabArray(projectScratchMF[iLev], nGrids[iLev],
+        distribute_FabArray(projectScratchMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 0);
       }
       amrex::MultiFab& tmp = projectScratchMF[iLev];
@@ -1184,11 +1186,11 @@ void Pic::project_down_E() {
         });
       }
       fill_fine_lev_edge_from_coarse(
-          nodeE[iLev - 1], tmp, 0, nodeE[iLev].nComp(), ref_ratio[iLev - 1],
+          nodeE[iLev - 1], tmp, 0, nodeE[iLev].nComp(), refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-      average_down_nodal(tmp, nodeE[iLev - 1], ref_ratio[iLev - 1]);
+      average_down_nodal(tmp, nodeE[iLev - 1], refRatio(iLev - 1));
     }
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (int iLev = 0; iLev <= finestLevel(); iLev++) {
       nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }

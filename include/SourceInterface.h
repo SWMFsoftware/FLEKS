@@ -136,8 +136,9 @@ public:
       return;
     const bool doCopy = true;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      distribute_FabArray(nodeLossFluid[iLev], nGrids[iLev],
-                          DistributionMap(iLev), nS, nGst, doCopy);
+      distribute_FabArray(nodeLossFluid[iLev], grid.node_box_array(iLev),
+                          DistributionMap(iLev), nS, grid.get_n_ghost(),
+                          doCopy);
     }
   }
 

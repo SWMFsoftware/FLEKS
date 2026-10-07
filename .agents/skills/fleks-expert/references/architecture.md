@@ -29,9 +29,12 @@ facade**: it stores the single `Grid&` once and exposes the const mesh queries
 `get_base_grid`, `lev_string`, `get_finest_lev`, ...) that Pic, FluidInterface
 and ParticleTracker all need. It deliberately carries no mesh mutation, no
 ownership, no virtual hooks and no default constructor, so the AMR hierarchy is
-still changed only through Domain's orchestration path. Consumers that need
-extra queries (PIC's body/domain/cost helpers, FluidInterface's `Geom()` /
-`refRatio()` / coordinate-to-rank lookups) keep them locally.
+still changed only through Domain's orchestration path. Body/domain/cost
+queries, both `Geom` overloads, `refRatio()`, and coordinate-to-rank lookups
+also live in GridAccess. Consumer implementations query `grid` directly
+instead of storing persistent aliases to mesh state. PIC keeps its own
+physics state and accesses mutable Grid-owned costs only when calculating
+load-balancing weights.
 
 Design rule: ionization parameters live in **SourceInterface** (physics in
 `UserSource`), never in `FluidInterface`, so the MHD coupling layer stays

@@ -517,7 +517,8 @@ public:
       amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
       amrex::Vector<amrex::MultiFab>& jhf, amrex::MultiFab& nodeBMF,
       const amrex::MultiFab* nodeB0MF, amrex::MultiFab& u0MF, amrex::Real dt,
-      int iLev, bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& cellstatus);
+      int iLev, bool solveInCoMov,
+      const amrex::Vector<amrex::iMultiFab>& cellstatus);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  const amrex::MultiFab* nodeB0MF, amrex::Real dt);

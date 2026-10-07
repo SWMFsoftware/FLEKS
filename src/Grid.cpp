@@ -98,11 +98,7 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
         !(refineRegions && refineRegions->is_modified()))
       return;
 
-    pre_regrid();
-
     cGridsOld = cGrids;
-
-    doNeedFillNewCell = true;
 
     activeRegion = region;
   } else {
@@ -600,8 +596,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
   }
 }
 
-void Grid::WriteMFseries(Vector<MultiFab>& MF, TimeCtr tc, int nstep, int nlev,
-                         std::string st, Vector<std::string> var) {
+void Grid::write_mf_series(Vector<MultiFab>& mf, TimeCtr tc, int nstep,
+                           int nlev, std::string st, Vector<std::string> var) {
   int cycle = tc.get_cycle();
   std::string st2 = std::to_string(cycle);
   Real time = tc.get_time();
@@ -609,53 +605,53 @@ void Grid::WriteMFseries(Vector<MultiFab>& MF, TimeCtr tc, int nstep, int nlev,
 
   st = st + "_" + st2 + "_" + st3;
   if (cycle % nstep == 0) {
-    WriteMF(MF, nlev, st, var);
+    write_mf(mf, nlev, st, var);
   }
 }
 
-void Grid::WriteMF(NodeMMFab& MF, std::string st, Vector<std::string> var) {
+void Grid::write_mf(NodeMMFab& mf, std::string st, Vector<std::string> var) {
   Vector<MultiFab> tmf;
-  tmf.push_back(nodeMMtoMF(MF));
+  tmf.push_back(node_mm_to_mf(mf));
   int nlev = 0;
-  WriteMF(tmf, nlev, st, var);
+  write_mf(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(CenterMMFab& MF, std::string st, Vector<std::string> var) {
+void Grid::write_mf(CenterMMFab& mf, std::string st, Vector<std::string> var) {
   Vector<MultiFab> tmf;
-  tmf.push_back(centerMMtoMF(MF));
+  tmf.push_back(center_mm_to_mf(mf));
   int nlev = 0;
-  WriteMF(tmf, nlev, st, var);
+  write_mf(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(iMultiFab& MF, std::string st, Vector<std::string> var) {
+void Grid::write_mf(iMultiFab& mf, std::string st, Vector<std::string> var) {
   Vector<iMultiFab> tmf;
   tmf.resize(1);
-  tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
-  iMultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+  tmf[0].define(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
+  iMultiFab::Copy(tmf[0], mf, 0, 0, mf.nComp(), mf.nGrow());
   int nlev = 0;
-  WriteMF(tmf, nlev, st, var);
+  write_mf(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(MultiFab& MF, std::string st, Vector<std::string> var) {
+void Grid::write_mf(MultiFab& mf, std::string st, Vector<std::string> var) {
   Vector<MultiFab> tmf;
   tmf.resize(1);
-  tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
-  MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+  tmf[0].define(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
+  MultiFab::Copy(tmf[0], mf, 0, 0, mf.nComp(), mf.nGrow());
   int nlev = 0;
-  WriteMF(tmf, nlev, st, var);
+  write_mf(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(Vector<iMultiFab>& MF, int nlev, std::string st,
-                   Vector<std::string> var) {
+void Grid::write_mf(Vector<iMultiFab>& mf, int nlev, std::string st,
+                    Vector<std::string> var) {
   Vector<MultiFab> tmf;
-  tmf.resize(MF.size());
-  for (int iLev = 0; iLev < MF.size(); iLev++) {
-    tmf[iLev].define(MF[iLev].boxArray(), MF[iLev].DistributionMap(),
-                     MF[iLev].nComp(), MF[iLev].nGrow());
+  tmf.resize(mf.size());
+  for (int iLev = 0; iLev < mf.size(); iLev++) {
+    tmf[iLev].define(mf[iLev].boxArray(), mf[iLev].DistributionMap(),
+                     mf[iLev].nComp(), mf[iLev].nGrow());
 
-    for (MFIter mfi(MF[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mf[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<int>& fab = MF[iLev][mfi].array();
+      const Array4<int>& fab = mf[iLev][mfi].array();
       const Array4<Real>& fab2 = tmf[iLev][mfi].array();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
@@ -667,11 +663,11 @@ void Grid::WriteMF(Vector<iMultiFab>& MF, int nlev, std::string st,
           }
     }
   }
-  WriteMF(tmf, nlev, st, var);
+  write_mf(tmf, nlev, st, var);
 }
 
-void Grid::WriteMF(Vector<MultiFab>& MF, int nlev, std::string st,
-                   Vector<std::string> var) {
+void Grid::write_mf(Vector<MultiFab>& mf, int nlev, std::string st,
+                    Vector<std::string> var) {
   if (nlev == -1) {
     nlev = finest_level + 1;
   } else {
@@ -679,11 +675,11 @@ void Grid::WriteMF(Vector<MultiFab>& MF, int nlev, std::string st,
   }
   Vector<const MultiFab*> tMF;
   for (int i = 0; i < nlev; ++i) {
-    tMF.push_back(&MF[i]);
+    tMF.push_back(&mf[i]);
   }
   Vector<int> tmpVint;
   if (var.empty()) {
-    for (int i = 0; i < MF[0].nComp(); ++i) {
+    for (int i = 0; i < mf[0].nComp(); ++i) {
       var.push_back(std::to_string(i + 1));
     }
   }
@@ -693,14 +689,14 @@ void Grid::WriteMF(Vector<MultiFab>& MF, int nlev, std::string st,
   WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint, ref_ratio);
 }
 
-MultiFab Grid::centerMMtoMF(CenterMMFab& MFin) {
-  MultiFab MFout;
-  MFout.define(MFin.boxArray(), MFin.DistributionMap(), nCMMComponents,
-               MFin.nGrow());
-  for (MFIter mfi(MFout); mfi.isValid(); ++mfi) {
+MultiFab Grid::center_mm_to_mf(CenterMMFab& mfIn) {
+  MultiFab mfOut;
+  mfOut.define(mfIn.boxArray(), mfIn.DistributionMap(), nCMMComponents,
+               mfIn.nGrow());
+  for (MFIter mfi(mfOut); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
-    const Array4<RealCMM>& fab = MFin[mfi].array();
-    const Array4<Real>& fab2 = MFout[mfi].array();
+    const Array4<RealCMM>& fab = mfIn[mfi].array();
+    const Array4<Real>& fab2 = mfOut[mfi].array();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
@@ -714,16 +710,16 @@ MultiFab Grid::centerMMtoMF(CenterMMFab& MFin) {
       }
     }
   }
-  return MFout;
+  return mfOut;
 }
 
-CenterMMFab Grid::MFtocenterMM(MultiFab& MFin) {
-  CenterMMFab MFout;
-  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
-  for (MFIter mfi(MFin); mfi.isValid(); ++mfi) {
+CenterMMFab Grid::mf_to_center_mm(MultiFab& mfIn) {
+  CenterMMFab mfOut;
+  mfOut.define(mfIn.boxArray(), mfIn.DistributionMap(), 1, mfIn.nGrow());
+  for (MFIter mfi(mfIn); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
-    const Array4<RealCMM>& fab2 = MFout[mfi].array();
-    const Array4<Real>& fab = MFin[mfi].array();
+    const Array4<RealCMM>& fab2 = mfOut[mfi].array();
+    const Array4<Real>& fab = mfIn[mfi].array();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
@@ -737,17 +733,17 @@ CenterMMFab Grid::MFtocenterMM(MultiFab& MFin) {
       }
     }
   }
-  return MFout;
+  return mfOut;
 }
 
-MultiFab Grid::nodeMMtoMF(NodeMMFab& MFin) {
-  MultiFab MFout;
-  MFout.define(MFin.boxArray(), MFin.DistributionMap(), nMMComponents,
-               MFin.nGrow());
-  for (MFIter mfi(MFout); mfi.isValid(); ++mfi) {
+MultiFab Grid::node_mm_to_mf(NodeMMFab& mfIn) {
+  MultiFab mfOut;
+  mfOut.define(mfIn.boxArray(), mfIn.DistributionMap(), nMMComponents,
+               mfIn.nGrow());
+  for (MFIter mfi(mfOut); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
-    const Array4<RealMM>& fab = MFin[mfi].array();
-    const Array4<Real>& fab2 = MFout[mfi].array();
+    const Array4<RealMM>& fab = mfIn[mfi].array();
+    const Array4<Real>& fab2 = mfOut[mfi].array();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
@@ -761,16 +757,16 @@ MultiFab Grid::nodeMMtoMF(NodeMMFab& MFin) {
       }
     }
   }
-  return MFout;
+  return mfOut;
 }
 
-NodeMMFab Grid::MFtonodeMM(MultiFab& MFin) {
-  NodeMMFab MFout;
-  MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
-  for (MFIter mfi(MFin); mfi.isValid(); ++mfi) {
+NodeMMFab Grid::mf_to_node_mm(MultiFab& mfIn) {
+  NodeMMFab mfOut;
+  mfOut.define(mfIn.boxArray(), mfIn.DistributionMap(), 1, mfIn.nGrow());
+  for (MFIter mfi(mfIn); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
-    const Array4<RealMM>& fab2 = MFout[mfi].array();
-    const Array4<Real>& fab = MFin[mfi].array();
+    const Array4<RealMM>& fab2 = mfOut[mfi].array();
+    const Array4<Real>& fab = mfIn[mfi].array();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
@@ -784,25 +780,25 @@ NodeMMFab Grid::MFtonodeMM(MultiFab& MFin) {
       }
     }
   }
-  return MFout;
+  return mfOut;
 }
 
-void Grid::WriteMFtoTXT(Vector<MultiFab>& MF, int nLev, int WriteGhost) {
-  int ngst = MF[0].nGrow() * WriteGhost;
-  int ncomp = MF[0].nComp();
+void Grid::write_mf_to_txt(Vector<MultiFab>& mf, int nLev, int writeGhost) {
+  int ngst = mf[0].nGrow() * writeGhost;
+  int ncomp = mf[0].nComp();
 
   Vector<MultiFab> tmf;
   tmf.resize(nLev + 1);
   for (int n = 0; n <= nLev; n++) {
-    DistributionMapping dm(MF[n].boxArray(), 1);
+    DistributionMapping dm(mf[n].boxArray(), 1);
     MultiFab ttmf;
-    ttmf.define(MF[n].boxArray(), dm, MF[n].nComp(), MF[n].nGrow());
+    ttmf.define(mf[n].boxArray(), dm, mf[n].nComp(), mf[n].nGrow());
 
-    ttmf.ParallelCopy(MF[n], 0, 0, MF[n].nComp(), MF[n].nGrow(), MF[n].nGrow());
+    ttmf.ParallelCopy(mf[n], 0, 0, mf[n].nComp(), mf[n].nGrow(), mf[n].nGrow());
 
     tmf[n] = std::move(ttmf);
 
-    MF[n].FillBoundary();
+    mf[n].FillBoundary();
     tmf[n].FillBoundary();
   }
   if (ParallelDescriptor::IOProcessor()) {
@@ -848,11 +844,11 @@ void Grid::WriteMFtoTXT(Vector<MultiFab>& MF, int nLev, int WriteGhost) {
   }
 }
 
-void Grid::WriteMFtoTXT(MultiFab& MF, int WriteGhost) {
+void Grid::write_mf_to_txt(MultiFab& mf, int writeGhost) {
   Vector<MultiFab> tmf;
   tmf.resize(1);
-  tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
-  MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+  tmf[0].define(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
+  MultiFab::Copy(tmf[0], mf, 0, 0, mf.nComp(), mf.nGrow());
   int nlev = 0;
-  WriteMFtoTXT(tmf, nlev, WriteGhost);
+  write_mf_to_txt(tmf, nlev, writeGhost);
 }

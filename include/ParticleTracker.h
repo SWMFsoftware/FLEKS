@@ -13,16 +13,7 @@ class ParticleTracker : public GridAccess {
 public:
   ParticleTracker(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
                   ParticleTrackerInfo &info, const DomainParameters & /*dp*/)
-      : GridAccess(gridIn),
-        tc(tcIn),
-        fi(fluidIn),
-        pInfo(&info),
-        gridID(id),
-        nGst(gridIn.get_n_ghost()),
-        isGridEmpty(gridIn.is_grid_empty_ref()),
-        isNewGrid(gridIn.is_new_grid_ref()),
-        cGrids(gridIn.box_arrays()),
-        nGrids(gridIn.node_box_arrays()) {
+      : GridAccess(gridIn), tc(tcIn), fi(fluidIn), pInfo(&info), gridID(id) {
     gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = gridName + " pt: ";
   }
@@ -58,11 +49,6 @@ private:
   std::string gridName;
   std::string printPrefix;
   int gridID;
-  int nGst;
-  const bool &isGridEmpty;
-  const bool &isNewGrid;
-  const amrex::Vector<amrex::BoxArray> &cGrids;
-  const amrex::Vector<amrex::BoxArray> &nGrids;
 
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).

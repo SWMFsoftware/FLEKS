@@ -63,15 +63,11 @@ protected:
 
   const RefineRegions* refineRegions = nullptr;
 
-  bool doNeedFillNewCell = true;
-
   bool isNewGrid = true;
 
   bool isGridEmpty = false;
 
   bool isFake2D = false;
-
-  bool isTargetPPCDefined = false;
 
   std::string tag;
 
@@ -136,8 +132,6 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
-  virtual void pre_regrid() {};
-
   // Tells the compiler to consider the base class version of the function
   using amrex::AmrCore::regrid;
 
@@ -162,13 +156,6 @@ public:
   }
 
   const amrex::Vector<amrex::MultiFab>& get_cost() const { return cellCost; }
-
-  void set_cost(const amrex::Vector<amrex::MultiFab>& in) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      amrex::MultiFab::Copy(cellCost[iLev], in[iLev], 0, 0,
-                            cellCost[iLev].nComp(), cellCost[iLev].nGrow());
-    }
-  }
 
   amrex::Vector<amrex::DistributionMapping> calc_balanced_maps(
       bool doSplitLevs = false);
@@ -218,40 +205,15 @@ public:
   }
 
   //---- Grid query accessors for composition ----
-  const amrex::BoxArray& box_array(int iLev) const { return boxArray(iLev); }
-  const amrex::Vector<amrex::BoxArray>& box_arrays() const { return grids; }
   const amrex::BoxArray& node_box_array(int iLev) const { return nGrids[iLev]; }
   const amrex::Vector<amrex::BoxArray>& node_box_arrays() const {
     return nGrids;
   }
-  const amrex::DistributionMapping& get_dmap(int iLev) const {
-    return DistributionMap(iLev);
-  }
-  amrex::IntVect get_ref_ratio(int iLev) const {
-    return amrex::AmrMesh::refRatio(iLev);
-  }
-  const amrex::Geometry& get_geom(int iLev) const { return Geom(iLev); }
-  amrex::Vector<amrex::iMultiFab>& node_status() { return nodeStatus; }
-  const amrex::Vector<amrex::iMultiFab>& node_status() const {
-    return nodeStatus;
-  }
-  amrex::Vector<amrex::iMultiFab>& cell_status() { return cellStatus; }
-  const amrex::Vector<amrex::iMultiFab>& cell_status() const {
-    return cellStatus;
-  }
   const amrex::BoxArray& active_region_ref() const { return activeRegion; }
   amrex::Vector<amrex::MultiFab>& cell_cost() { return cellCost; }
-  const amrex::Vector<amrex::MultiFab>& cell_cost() const { return cellCost; }
-  const amrex::Vector<amrex::IntVect>& ref_ratios() const { return ref_ratio; }
-  const int& get_finest_level_ref() const { return finest_level; }
-  const bool& is_grid_empty_ref() const { return isGridEmpty; }
-  const bool& is_new_grid_ref() const { return isNewGrid; }
-  const bool& is_fake_2d_ref() const { return isFake2D; }
   bool is_fake_2d() const { return isFake2D; }
-  const bool& use_body_ref() const { return useBody; }
-  const amrex::Real& get_body_radius_ref() const { return bodyRadius; }
-  const amrex::Vector<amrex::BoxArray>& get_old_cgrids() const {
-    return cGridsOld;
+  const amrex::Vector<amrex::iMultiFab>& cell_status() const {
+    return cellStatus;
   }
   int get_id() const { return gridID; }
   const std::string& get_name() const { return gridName; }
@@ -394,6 +356,13 @@ public:
 
   // Make a new level using provided BoxArray and DistributionMapping and
   // fill with interpolated coarse level data.
+  //
+  // The six virtual hooks below (MakeNewLevelFromCoarse, RemakeLevel,
+  // ClearLevel, MakeNewLevelFromScratch, ErrorEst, PostProcessBaseGrids) keep
+  // their AMReX names and signatures on purpose: amrex::AmrCore declares them
+  // as pure virtual / virtual, so renaming them would silently drop the
+  // override and break the regrid path. See the "AMReX API exception" note in
+  // doc/Coding_standards.md.
   // overrides the pure virtual function in AmrCore
   virtual void MakeNewLevelFromCoarse(
       int iLev, amrex::Real time, const amrex::BoxArray& ba,
@@ -489,39 +458,41 @@ public:
     ba.maxSize(max_grid_size[iLev]);
   };
 
-  void WriteMFseries(amrex::Vector<amrex::MultiFab>& MF, TimeCtr tc, int nstep,
-                     int nlev = 0, std::string st = "WriteMF",
-                     amrex::Vector<std::string> var = {});
+  void write_mf_series(amrex::Vector<amrex::MultiFab>& mf, TimeCtr tc,
+                       int nstep, int nlev = 0, std::string st = "WriteMF",
+                       amrex::Vector<std::string> var = {});
 
-  void WriteMF(NodeMMFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
+  void write_mf(NodeMMFab& mf, std::string st = "WriteMF",
+                amrex::Vector<std::string> var = {});
 
-  void WriteMF(CenterMMFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
+  void write_mf(CenterMMFab& mf, std::string st = "WriteMF",
+                amrex::Vector<std::string> var = {});
 
-  void WriteMF(amrex::iMultiFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
+  void write_mf(amrex::iMultiFab& mf, std::string st = "WriteMF",
+                amrex::Vector<std::string> var = {});
 
-  void WriteMF(amrex::MultiFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
+  void write_mf(amrex::MultiFab& mf, std::string st = "WriteMF",
+                amrex::Vector<std::string> var = {});
 
-  void WriteMF(amrex::Vector<amrex::iMultiFab>& MF, int nlev = -1,
-               std::string st = "WriteMF", amrex::Vector<std::string> var = {});
+  void write_mf(amrex::Vector<amrex::iMultiFab>& mf, int nlev = -1,
+                std::string st = "WriteMF",
+                amrex::Vector<std::string> var = {});
 
-  void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = -1,
-               std::string st = "WriteMF", amrex::Vector<std::string> var = {});
+  void write_mf(amrex::Vector<amrex::MultiFab>& mf, int nlev = -1,
+                std::string st = "WriteMF",
+                amrex::Vector<std::string> var = {});
 
-  amrex::MultiFab centerMMtoMF(CenterMMFab& MFin);
+  amrex::MultiFab center_mm_to_mf(CenterMMFab& mfIn);
 
-  CenterMMFab MFtocenterMM(amrex::MultiFab& MFin);
+  CenterMMFab mf_to_center_mm(amrex::MultiFab& mfIn);
 
-  amrex::MultiFab nodeMMtoMF(NodeMMFab& MFin);
+  amrex::MultiFab node_mm_to_mf(NodeMMFab& mfIn);
 
-  NodeMMFab MFtonodeMM(amrex::MultiFab& MFin);
+  NodeMMFab mf_to_node_mm(amrex::MultiFab& mfIn);
 
-  void WriteMFtoTXT(amrex::Vector<amrex::MultiFab>& MF, int nLev = 0,
-                    int WriteGhost = 0);
+  void write_mf_to_txt(amrex::Vector<amrex::MultiFab>& mf, int nLev = 0,
+                       int writeGhost = 0);
 
-  void WriteMFtoTXT(amrex::MultiFab& MF, int WriteGhost = 0);
+  void write_mf_to_txt(amrex::MultiFab& mf, int writeGhost = 0);
 };
 #endif

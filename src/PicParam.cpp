@@ -130,10 +130,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // like #REGION, and unlike #PLANETRADIUS which is in SI.
     set_body(center, radius);
 
-    Print() << "  inner body: sphere, radius = " << bodyRadius
+    Print() << "  inner body: sphere, radius = " << get_body_radius()
             << ", center = (";
     for (int i = 0; i < nDim; i++)
-      Print() << (i > 0 ? ", " : "") << bodyCenter[i];
+      Print() << (i > 0 ? ", " : "") << get_body_center()[i];
     Print() << ") [code units]\n";
   } else if (command == "#BODYBOUNDARY") {
     std::string particle, field;
@@ -667,8 +667,8 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
           "'. Expected 'si' or 'grid'.");
 
-  if (useBody) {
-    if (bodyRadius <= 0)
+  if (use_body()) {
+    if (get_body_radius() <= 0)
       Abort("Invalid #BODY: radius must be positive.");
 
     if (n_lev_max() > 1 && get_refine_regions() &&
@@ -687,8 +687,8 @@ void Pic::post_process_param() {
     for (int i = 0; i < nDim; i++) {
       if (dom.length(i) <= 1)
         continue;
-      if (bodyCenter[i] - bodyRadius <= plo[i] ||
-          bodyCenter[i] + bodyRadius >= phi[i])
+      if (get_body_center()[i] - get_body_radius() <= plo[i] ||
+          get_body_center()[i] + get_body_radius() >= phi[i])
         Abort("Invalid #BODY: the body must be strictly inside the "
               "simulation domain.");
     }
@@ -830,12 +830,13 @@ void Pic::convert_intrinsic_B() {
     return;
   }
 
-  const double bodyCenterTmp[3] = { bodyCenter[ix_], bodyCenter[iy_],
-                                    bodyCenter[iz_] };
+  const double bodyCenterTmp[3] = { get_body_center()[ix_],
+                                    get_body_center()[iy_],
+                                    get_body_center()[iz_] };
 
   intrinsicB_->convert_units(fi->get_Si2NoB(), fi->get_Si2NoL(),
-                             fi->get_rPlanet_SI(), bodyCenterTmp, bodyRadius,
-                             useBody, nDim);
+                             fi->get_rPlanet_SI(), bodyCenterTmp,
+                             get_body_radius(), use_body(), nDim);
 
   Print() << intrinsicB_->describe() << "\n";
 }

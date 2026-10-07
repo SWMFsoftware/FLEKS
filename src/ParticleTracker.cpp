@@ -10,7 +10,7 @@ ParticleTracker::~ParticleTracker() {
     ptLogStream.close();
   }
 
-  if (isGridEmpty || isNewGrid || !savectr)
+  if (is_grid_empty() || is_new_grid() || !savectr)
     return;
 
   bool doSave = savectr->is_time_to(true);
@@ -22,7 +22,7 @@ ParticleTracker::~ParticleTracker() {
 }
 
 void ParticleTracker::set_ic(Pic& pic) {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   complete_parameters();
@@ -60,7 +60,7 @@ void ParticleTracker::set_ic(Pic& pic) {
 
 //==========================================================
 void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   const int wCol = 24;
@@ -121,7 +121,7 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
   std::string funcName = "PTracker::update";
   timing_func(funcName);
 
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   if (doReport) {
@@ -206,7 +206,7 @@ void ParticleTracker::update_field(Pic& pic, bool needJacobian) {
       // the scratch array and differentiate that.
       MultiFab& centerBt = centerBtotal[iLev];
       if (centerBt.empty()) {
-        distribute_FabArray(centerBt, cGrids[iLev], DistributionMap(iLev), 3,
+        distribute_FabArray(centerBt, boxArray(iLev), DistributionMap(iLev), 3,
                             nodeJacB[iLev].nGrow(), false);
       }
       MultiFab::Copy(centerBt, pic.centerB[iLev], 0, 0, 3, 0);
@@ -261,13 +261,13 @@ void ParticleTracker::post_regrid() {
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, false);
-    distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, false);
+    distribute_FabArray(nodeE[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost(), false);
+    distribute_FabArray(nodeB[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost(), false);
     if (ptRecordSize > 13) {
-      distribute_FabArray(nodeJacB[iLev], nGrids[iLev], DistributionMap(iLev),
-                          9, nGst, false);
+      distribute_FabArray(nodeJacB[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 9, get_n_ghost(), false);
     }
   }
 
@@ -308,7 +308,7 @@ void ParticleTracker::set_tp_init_shapes(
 }
 
 void ParticleTracker::save_restart_data() {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   bool doSavePlot = savectr->is_time_to(true);

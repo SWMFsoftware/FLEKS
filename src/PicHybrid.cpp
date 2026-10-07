@@ -148,7 +148,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   average_center_to_node(centerBtimeAvg, nodeBstage[iLev]);
   nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_field_bc(nodeStatus[iLev], nodeBstage[iLev], 0, 3, &Pic::get_node_B,
+    apply_field_bc(node_status(iLev), nodeBstage[iLev], 0, 3, &Pic::get_node_B,
                    iLev, true);
   }
   if (is_body_conducting()) {
@@ -258,13 +258,13 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   if (doHyper) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
+    apply_field_bc(cell_status(iLev), centerLapB[iLev], 0,
                    centerLapB[iLev].nComp(), &Pic::get_center_B, iLev, true);
 
     curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
                         Geom(iLev).InvCellSize());
     nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_field_bc(nodeStatus[iLev], nodeHyperE[iLev], 0,
+    apply_field_bc(node_status(iLev), nodeHyperE[iLev], 0,
                    nodeHyperE[iLev].nComp(), &Pic::get_node_E, iLev, false);
 
     const Real fGlobal = etaHyperLev[iLev] / fourPI;
@@ -292,9 +292,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   }
 
   Eout.FillBoundary(Geom(iLev).periodicity());
-  apply_field_bc(nodeStatus[iLev], Eout, 0, nDim3, &Pic::get_node_E, iLev,
+  apply_field_bc(node_status(iLev), Eout, 0, nDim3, &Pic::get_node_E, iLev,
                  false);
-  if (useBody) {
+  if (use_body()) {
     apply_body_E_bc(Eout, iLev);
   }
 }
@@ -319,13 +319,13 @@ void Pic::compute_ambipolar_E() {
     compute_ambipolar_E(iLev);
   }
 
-  if (finest_level > 0) {
+  if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); ++iLev) {
       fill_fine_lev_bny_from_coarse(
-          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
       fill_fine_lev_edge_from_coarse(
-          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
@@ -372,7 +372,7 @@ void Pic::compute_ambipolar_E(int iLev) {
 
   if (iLev > 0) {
     fill_fine_lev_bny_from_coarse(
-        centerPe[iLev - 1], centerPe[iLev], 0, 1, ref_ratio[iLev - 1],
+        centerPe[iLev - 1], centerPe[iLev], 0, 1, refRatio(iLev - 1),
         Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
   }
 
@@ -446,7 +446,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     }
   }
 
-  if (isFake2D) {
+  if (is_fake_2d()) {
     for (amrex::MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
       const auto& vbox = mfi.validbox();
       const auto& fbox = mfi.fabbox();
@@ -466,9 +466,9 @@ void Pic::compute_ambipolar_E(int iLev) {
   }
 
   nodeEambi[iLev].FillBoundary(Geom(iLev).periodicity());
-  apply_field_bc(nodeStatus[iLev], nodeEambi[iLev], 0, nDim3, &Pic::get_node_E,
+  apply_field_bc(node_status(iLev), nodeEambi[iLev], 0, nDim3, &Pic::get_node_E,
                  iLev, false);
-  if (useBody) {
+  if (use_body()) {
     apply_body_E_bc(nodeEambi[iLev], iLev);
   }
 }
@@ -538,7 +538,7 @@ void Pic::smooth_moments() {
       }
     }
 
-    if (useBody) {
+    if (use_body()) {
       mask_body(moments, node_status(iLev));
     }
   }
@@ -604,7 +604,7 @@ void Pic::apply_pe_zero_gradient_bc(int iLev, MultiFab& mf) {
 // takes the value of the nearest valid layer. Single-component fields only; the
 // multi-component variant lives inline in apply_centerB_BC().
 void Pic::apply_fake2d_k_clamp(MultiFab& mf) {
-  if (!isFake2D)
+  if (!is_fake_2d())
     return;
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
@@ -660,7 +660,7 @@ void Pic::init_electron_pressure(int iLev) {
 
 //==========================================================
 void Pic::fill_new_electron_pressure() {
-  if (!useElectronPressureEq || finest_level <= 0)
+  if (!useElectronPressureEq || finestLevel() <= 0)
     return;
 
   // Boxes created by a regrid have no history; interpolate them from the next
@@ -668,7 +668,7 @@ void Pic::fill_new_electron_pressure() {
   auto& cellInterp = *get_cell_interp();
   for (int iLev = 1; iLev < n_lev(); ++iLev) {
     fill_fine_lev_new_from_coarse(centerPeState[iLev - 1], centerPeState[iLev],
-                                  0, 1, ref_ratio[iLev - 1], Geom(iLev - 1),
+                                  0, 1, refRatio(iLev - 1), Geom(iLev - 1),
                                   Geom(iLev), cell_status(iLev), cellInterp);
   }
 }
@@ -782,10 +782,10 @@ void Pic::update_Pe_hybrid() {
   for (int iLev = 0; iLev < n_lev(); ++iLev)
     update_Pe_hybrid(iLev, dt);
 
-  if (projectDownEmFields && finest_level > 0) {
-    for (int iLev = finest_level; iLev > 0; iLev--)
+  if (projectDownEmFields && finestLevel() > 0) {
+    for (int iLev = finestLevel(); iLev > 0; iLev--)
       average_down(centerPeState[iLev], centerPeState[iLev - 1], 0, 1,
-                   ref_ratio[iLev - 1]);
+                   refRatio(iLev - 1));
   }
 }
 
@@ -1127,16 +1127,16 @@ void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
   mfB.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
+    apply_field_bc(cell_status(iLev), mfB, 0, mfB.nComp(), &Pic::get_center_B,
                    iLev, true);
   } else {
     MultiFab& coarseB = (&mfB == &centerBstage[iLev])  ? centerBstage[iLev - 1]
                         : (&mfB == &centerBstar[iLev]) ? centerBstar[iLev - 1]
                                                        : centerB[iLev - 1];
     fill_fine_lev_bny_from_coarse(
-        coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1], Geom(iLev - 1),
+        coarseB, mfB, 0, mfB.nComp(), refRatio(iLev - 1), Geom(iLev - 1),
         Geom(iLev), cell_status(iLev), *get_cell_interp());
-    apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
+    apply_field_bc(cell_status(iLev), mfB, 0, mfB.nComp(), &Pic::get_center_B,
                    iLev, true);
   }
 
@@ -1144,7 +1144,7 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
     project_body_B(mfB, iLev);
   }
 
-  if (isFake2D) {
+  if (is_fake_2d()) {
     const int nComp = mfB.nComp();
     for (amrex::MFIter mfi(mfB); mfi.isValid(); ++mfi) {
       const auto& vbox = mfi.validbox();
@@ -1297,13 +1297,14 @@ void Pic::update_B_hybrid() {
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
+          mask_body_interior(kStage[iLev][0], cell_status(iLev));
 
         // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
-                          -0.5 * subDt, kStage[iLev][0], 0, 0, nDim3, nGst);
+                          -0.5 * subDt, kStage[iLev][0], 0, 0, nDim3,
+                          get_n_ghost());
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
+                          centerB[iLev], 0, 0, nDim3, get_n_ghost());
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev],
@@ -1312,13 +1313,14 @@ void Pic::update_B_hybrid() {
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
+          mask_body_interior(kStage[iLev][1], cell_status(iLev));
 
         // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
-                          -0.5 * subDt, kStage[iLev][1], 0, 0, nDim3, nGst);
+                          -0.5 * subDt, kStage[iLev][1], 0, 0, nDim3,
+                          get_n_ghost());
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
+                          centerB[iLev], 0, 0, nDim3, get_n_ghost());
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev],
@@ -1327,13 +1329,13 @@ void Pic::update_B_hybrid() {
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
+          mask_body_interior(kStage[iLev][2], cell_status(iLev));
 
         // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
-                          kStage[iLev][2], 0, 0, nDim3, nGst);
+                          kStage[iLev][2], 0, 0, nDim3, get_n_ghost());
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
+                          centerB[iLev], 0, 0, nDim3, get_n_ghost());
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev],
@@ -1342,17 +1344,17 @@ void Pic::update_B_hybrid() {
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][3], cellStatus[iLev]);
+          mask_body_interior(kStage[iLev][3], cell_status(iLev));
 
         // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
-                        nGst);
+                        get_n_ghost());
         MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][1], 0, 0, nDim3,
-                        nGst);
+                        get_n_ghost());
         MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][2], 0, 0, nDim3,
-                        nGst);
+                        get_n_ghost());
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, nDim3,
-                        nGst);
+                        get_n_ghost());
 
         apply_centerB_BC(iLev);
       }
@@ -1362,7 +1364,8 @@ void Pic::update_B_hybrid() {
     if (fieldIntegrator == "ssprk3") {
       // Strong-stability-preserving RK3 with time-centered E evaluation.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3,
+                       get_n_ghost());
 
         // Stage 1: B1 = B_n - subDt * curl(E(B_n))
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
@@ -1370,13 +1373,13 @@ void Pic::update_B_hybrid() {
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
+          mask_body_interior(kStage[iLev][0], cell_status(iLev));
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
-                          kStage[iLev][0], 0, 0, nDim3, nGst);
+                          kStage[iLev][0], 0, 0, nDim3, get_n_ghost());
 
         // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstart[iLev], 0, 0, nDim3, get_n_ghost());
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev],
                        total_center_B(centerBstar[iLev], iLev),
@@ -1384,16 +1387,16 @@ void Pic::update_B_hybrid() {
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
+          mask_body_interior(kStage[iLev][1], cell_status(iLev));
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstart[iLev], 0, 0, nDim3, get_n_ghost());
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
-                        0, nDim3, nGst);
+                        0, nDim3, get_n_ghost());
         apply_centerB_BC(iLev, centerBstage[iLev]);
 
         // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstart[iLev], 0, 0, nDim3, get_n_ghost());
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev],
                        total_center_B(centerBstar[iLev], iLev),
@@ -1401,11 +1404,12 @@ void Pic::update_B_hybrid() {
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
+          mask_body_interior(kStage[iLev][2], cell_status(iLev));
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
-                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nGst);
+                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3,
+                          get_n_ghost());
         MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
-                        0, nDim3, nGst);
+                        0, nDim3, get_n_ghost());
 
         apply_centerB_BC(iLev);
       }
@@ -1413,9 +1417,9 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  if (projectDownEmFields && finest_level > 0) {
-    for (int iLev = finest_level; iLev > 0; iLev--) {
-      average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3, ref_ratio[0]);
+  if (projectDownEmFields && finestLevel() > 0) {
+    for (int iLev = finestLevel(); iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3, refRatio(0));
     }
   }
 
@@ -1430,7 +1434,7 @@ void Pic::update_B_hybrid() {
       average_center_to_node(centerB[iLev], nodeB[iLev]);
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
-        apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3,
+        apply_field_bc(node_status(iLev), nodeB[iLev], 0, nDim3,
                        &Pic::get_node_B, iLev, true);
       }
       compute_divB(iLev);
@@ -1444,7 +1448,7 @@ void Pic::update_B_hybrid() {
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3, &Pic::get_node_B,
+      apply_field_bc(node_status(iLev), nodeB[iLev], 0, nDim3, &Pic::get_node_B,
                      iLev, true);
     }
     if (is_body_conducting()) {
@@ -1454,10 +1458,10 @@ void Pic::update_B_hybrid() {
   }
 
   // Fill coarse-fine interface ghost cells for nodeB.
-  if (finest_level > 0) {
+  if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          nodeB[iLev - 1], nodeB[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
@@ -1477,13 +1481,13 @@ void Pic::update_B_hybrid() {
 
   // Fill coarse-fine interface ghost cells and synchronize edge nodes for
   // nodeE.
-  if (finest_level > 0) {
+  if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(
-          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
       fill_fine_lev_edge_from_coarse(
-          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
+          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }

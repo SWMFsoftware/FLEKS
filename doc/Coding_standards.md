@@ -11,6 +11,24 @@
  - Variable name: variableName
  - Function/method name: this_is_a_function_name
 
+   AMReX API exception (including Grid and GridAccess):
+   - Methods inherited from AmrCore/AmrMesh keep their original AMReX names,
+     including Geom(), boxArray(), DistributionMap(), refRatio(),
+     finestLevel(), maxLevel(), gridEff(), and SetGridEff().
+   - Grid uses these inherited methods directly. Do not redefine them or add
+     snake_case aliases merely to adapt their spelling to FLEKS conventions.
+   - GridAccess forwards needed AMReX queries with the same original names,
+     for example Geom() and gridEff(). It remains a read-only query facade;
+     this naming exception does not authorize adding mutation methods.
+   - Required AMReX virtual overrides retain their exact library names and
+     signatures. Calls on other AMReX objects also keep library names.
+   - Methods introduced by FLEKS follow snake_case, including Grid-owned
+     queries such as node_box_array() and output methods such as write_mf().
+     Existing helpers that add behavior, such as n_lev(), are FLEKS methods,
+     not mere spelling aliases for inherited methods.
+   - Preserve overloads, constness, return semantics, and ownership when
+     applying naming changes. Identify the owning API before renaming a call.
+
 3. 'using namespace amrex' is allowed in *.cpp files. Otherwise, do NOT leave 
    'using namespace xxx' in the code. 
 
@@ -26,4 +44,3 @@
 8. Using debug flags and Valgrind to check errors.
 
 9. Follow the coventional commits format: https://www.conventionalcommits.org/en/v1.0.0/
-

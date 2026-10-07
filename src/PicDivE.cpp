@@ -105,7 +105,7 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
   timing_func(nameFunc);
 
   {
-    MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, 0);
+    MultiFab residual(boxArray(iLev), DistributionMap(iLev), 1, 0);
 
     solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
     Real coef = 1.0 / rhoTheta;
@@ -113,15 +113,15 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
     MultiFab::LinComb(residual, coef, centerDivE[iLev], 0, -fourPI * coef,
                       centerNetChargeN[iLev], 0, 0, residual.nComp(),
                       residual.nGrow());
-    if (finest_level > 0) {
-      skip_cells_divE_correction(residual, cellStatus[iLev], iLev);
+    if (finestLevel() > 0) {
+      skip_cells_divE_correction(residual, cell_status(iLev), iLev);
     }
 
     // The div(E) equation cannot be satisfied inside a 'linetied' or
     // 'conducting' body, where E is constrained, so those cells are dropped;
     // for an 'insulating' body the charge inside is a real source and is kept.
-    if (useBody && bodyFieldBC != BodyFieldBC::insulating) {
-      mask_body(residual, cellStatus[iLev]);
+    if (use_body() && bodyFieldBC != BodyFieldBC::insulating) {
+      mask_body(residual, cell_status(iLev));
     }
 
     convert_3d_to_1d(residual, solver.rhs, iLev);
@@ -215,7 +215,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
     centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
 
     if (iLev == 0) {
-      apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
+      apply_BC(cell_status(iLev), centerNetChargeNew[iLev], 0,
                centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
     }
 
@@ -253,16 +253,16 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
   if (iLev == 0) {
     cLev = iLev;
   }
-  if (iLev == finest_level) {
+  if (iLev == finestLevel()) {
     fLev = iLev;
   }
   {
     BoxArray bac = centerB[cLev].boxArray();
-    bac.refine(ref_ratio[iLev]);
+    bac.refine(refRatio(iLev));
     jc.define(bac, centerB[cLev].DistributionMap(), 1, 1);
     jc.setVal(0.0);
     BoxArray baf = centerB[fLev].boxArray();
-    baf.coarsen(ref_ratio[iLev]);
+    baf.coarsen(refRatio(iLev));
     baf.grow(1);
     jf.define(baf, centerB[fLev].DistributionMap(), 1, 1);
     jf.setVal(0.0);
@@ -289,7 +289,7 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
   MultiFab::Add(centerNetChargeNew[iLev], tmp, 0, 0, 1, 0);
 
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
+    apply_BC(cell_status(iLev), centerNetChargeNew[iLev], 0,
              centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
   }
 
@@ -326,11 +326,11 @@ void Pic::amr_divE_correction() {
   };
   std::vector<DivELogEntry> logEntries;
   if (doReport && useCompactDivELog) {
-    logEntries.reserve(nDivECorrection * (finest_level + 1));
+    logEntries.reserve(nDivECorrection * (finestLevel() + 1));
   }
 
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
-    for (int iLev = finest_level; iLev >= 0; iLev--) {
+    for (int iLev = finestLevel(); iLev >= 0; iLev--) {
       sum_to_center_amr(true, iLev);
       skip_cells_divE_correction(centerMM[iLev], cell_status(iLev), iLev);
 
@@ -349,7 +349,7 @@ void Pic::amr_divE_correction() {
       for (int i = 0; i < nSpecies; ++i) {
         parts[i]->divE_correct_position(centerPhi, iLev);
       }
-      if (finest_level > 0) {
+      if (finestLevel() > 0) {
         for (int i = 0; i < nSpecies; ++i) {
           parts[i]->Redistribute();
         }
@@ -365,7 +365,7 @@ void Pic::amr_divE_correction() {
     const double resInitial = logEntries.front().res0;
     const double resFinal = logEntries.back().res0 * logEntries.back().relErr;
 
-    if (finest_level == 0) {
+    if (finestLevel() == 0) {
       if (logEntries.size() == 1) {
         Print() << printPrefix << "div(E): res " << std::setprecision(5)
                 << resInitial << " -> " << resFinal << " (" << totalMatVec
@@ -379,7 +379,7 @@ void Pic::amr_divE_correction() {
       }
     } else {
       Print() << printPrefix << "div(E) [" << nDivECorrection << " iters, "
-              << (finest_level + 1) << " levs]: res " << std::setprecision(5)
+              << (finestLevel() + 1) << " levs]: res " << std::setprecision(5)
               << resInitial << " -> " << resFinal << " (total " << totalMatVec
               << " mv)" << std::defaultfloat << std::setprecision(6)
               << std::endl;
