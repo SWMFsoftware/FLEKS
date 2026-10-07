@@ -1177,10 +1177,12 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
           coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1], Geom(iLev - 1),
           Geom(iLev), cell_status(iLev), *get_cell_interp(),
           faraday_ngrow(iLev));
-      if (nDim == 2 && mfB.nComp() > iz_) {
-        // In 2D only Bx, By enter div(B). A free-running ghost Bz is not
-        // needed and piles up where the outflow crosses the interface, so it
-        // is taken from the coarse level in the whole ghost region.
+      if (is_bz_div_free() && mfB.nComp() > iz_) {
+        // Without a z extent only Bx, By enter div(B). A free-running ghost Bz
+        // is not needed and piles up where the outflow crosses the interface,
+        // so it is taken from the coarse level in the whole ghost region.
+        // (nDim alone is not enough: a fake-2D deck in a 3D build has nDim ==
+        // 3 but the same single z cell.)
         fill_fine_lev_bny_from_coarse(coarseB, mfB, iz_, 1, ref_ratio[iLev - 1],
                                       Geom(iLev - 1), Geom(iLev),
                                       cell_status(iLev), *get_cell_interp());
@@ -1225,12 +1227,21 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 //  1. top-down: the fine nodes ON the coarse-fine interface take the coarse E
 //     (linear interpolation along the coarse edges);
 //  2. bottom-up: the covered coarse nodes take the injected fine E.
-// In 2D the coarse face flux Ez(top) - Ez(bot) on the interface then equals
-// the telescoped sum of the fine face fluxes, the covered coarse cells are
-// advanced with the fine E, and the fine interface E no longer depends on the
+// The coarse update of a covered cell then equals the average of the fine
+// updates up to O(dx^2), and the fine interface E no longer depends on the
 // interpolated fine ghost B (letting that E drive the coarse cells was found
 // to be unstable at the corners of the fine boxes).
+//
+// The residual O(dx^2) is what ctRestrictB has to clean up. Measured
+// (amr_equilibrium, 20 steps): dropping the bottom-up pass makes the covered
+// drift *worse* (9.7e-4 vs 9.0e-4) and running it before the top-down pass
+// only improves it by ~6% (8.5e-4), so the error is dominated by
+// average_down_nodal being a (1/4,1/2,1) smoothing rather than an injection of
+// the coincident node values -- not by the ordering. Making it exact would
+// need a true nodal injection (fine -> coarse, coincident nodes), which is a
+// cross-rank gather; the relaxation removes the drift anyway.
 void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
+  BL_PROFILE("Pic::sync_emf_fine_to_coarse");
   for (int iLev = 1; iLev <= finest_level; ++iLev) {
     fill_fine_lev_edge_from_coarse(
         nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, ref_ratio[iLev - 1],
@@ -1261,6 +1272,7 @@ void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
 // interpolation along the coarse edges makes the ghost face fluxes sum to the
 // coarse face fluxes.
 void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
+  BL_PROFILE("Pic::fill_ghost_emf_from_coarse");
   for (int iLev = 1; iLev <= finest_level; ++iLev) {
     fill_fine_lev_bny_from_coarse(
         nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, ref_ratio[iLev - 1],
@@ -1281,6 +1293,7 @@ void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
 // advanced by one single nodal E field.
 void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, Vector<MultiFab>& Bavg,
                             int iK, Real hstep, bool includeAmbi) {
+  BL_PROFILE("Pic::faraday_stage_rhs");
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     assemble_ohm_E(Bin[iLev], total_center_B(Bavg[iLev], iLev),
                    nodeEstage[iLev], iLev, hstep, includeAmbi);
@@ -1304,42 +1317,100 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, Vector<MultiFab>& Bavg,
 }
 
 //==========================================================
+// Max |avg(B_fine) - B_coarse| over the covered cells of iLev, taken *before*
+// any restriction overwrites them. This is the quantity ctRestrictB has to
+// remove (the fine-scale part of E is invisible to the coarse curl, so the
+// coarse covered B drifts from the fine average); measuring it after the
+// restriction instead would report zero whenever the plain average_down is
+// used, which carries no information.
+void Pic::measure_covered_B_drift(int iLev) {
+  BL_PROFILE("Pic::measure_covered_B_drift");
+  MultiFab& target = relaxTarget[iLev];
+  MultiFab::Copy(target, centerB[iLev], 0, 0, nDim3, 0);
+  average_down(centerB[iLev + 1], target, 0, nDim3, ref_ratio[iLev]);
+  MultiFab::Subtract(target, centerB[iLev], 0, 0, nDim3, 0);
+
+  Real drift = 0;
+  for (MFIter mfi(target); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const auto& d = target[mfi].const_array();
+    const auto& st = cellStatus[iLev][mfi].const_array();
+    amrex::Loop(box, [&](int i, int j, int k) {
+      if (!bit::is_refined(st(i, j, k)))
+        return;
+      for (int iVar = 0; iVar < nDim3; ++iVar)
+        drift = amrex::max(drift, std::abs(d(i, j, k, iVar)));
+    });
+  }
+  ParallelDescriptor::ReduceRealMax(drift);
+  coveredBDrift[iLev] = drift;
+}
+
+//==========================================================
 // ctRestrictB: pull the covered coarse B toward the average of the fine B
-// using divergence-free corrections only, B += curl_node_to_center(psi z),
-// with psi non-zero only on the nodes whose cells are all covered. The
-// uncovered cells and the interface fluxes are untouched, so div(B) of the
-// coarse level stays at round-off, while the drift of the covered B (the
-// fine-scale part of E is invisible to the coarse curl) stays bounded.
-// psi is the least-squares solution of curl(psi) = avg(Bf) - Bc, obtained
-// with CGLS. Bz does not enter div(B) in 2D and is
-// restricted directly. Only implemented for nDim == 2; otherwise the plain
-// average_down is used.
+// using divergence-free corrections only, B += curl(A), where the nodal
+// vector potential A is non-zero only on the nodes whose surrounding cells are
+// all covered. The uncovered cells and the interface fluxes are untouched, so
+// div(B) of the coarse level stays at round-off, while the drift of the
+// covered B (the fine-scale part of E is invisible to the coarse curl) stays
+// bounded. A is the least-squares solution of curl(A) = avg(Bf) - Bc,
+// obtained with CGLS.
+//
+// Why this is divergence-free: div_node_to_center o average_center_to_node o
+// curl_node_to_center == 0 identically (in 2D and in 3D), so *any* curl
+// correction leaves div(B) untouched -- the CGLS does not have to converge for
+// the property to hold, it only decides how much of the drift is removed.
+//
+// Two variants, selected by is_bz_div_free():
+//   * No z extent (2D build, or fake 2D with one cell in z): Bz does not enter
+//     div(B), so it is restricted directly and only (Bx, By) is relaxed with
+//     the scalar potential A_z.
+//   * True 3D: all three components are relaxed with the full nodal vector
+//     potential. The gauge freedom A -> A + grad(phi) leaves curl(A) unchanged
+//     and makes the normal equations singular along the gauge modes; those
+//     modes lie in the null space of the curl operator, so CGLS never amplifies
+//     them and no gauge fixing is needed.
 void Pic::relax_covered_B_to_fine(int iLev) {
+  BL_PROFILE("Pic::relax_covered_B_to_fine");
+
   MultiFab& B = centerB[iLev];
-  MultiFab target(B.boxArray(), B.DistributionMap(), nDim3, 0);
+  MultiFab& target = relaxTarget[iLev];
   MultiFab::Copy(target, B, 0, 0, nDim3, 0);
   average_down(centerB[iLev + 1], target, 0, nDim3, ref_ratio[iLev]);
 
-  if (nDim != 2) {
-    MultiFab::Copy(B, target, 0, 0, nDim3, 0);
-    B.FillBoundary(Geom(iLev).periodicity());
-    return;
+  const bool bzFree = is_bz_div_free();
+  // Number of cell components taking part in the relaxation.
+  const int nRelax = bzFree ? 2 : nDim3;
+  if (bzFree) {
+    MultiFab::Copy(B, target, iz_, iz_, 1, 0);
   }
 
-  MultiFab::Copy(B, target, iz_, iz_, 1, 0);
+  MultiFab& r = relaxResidual[iLev];
+  MultiFab& q = relaxCurl[iLev];
+  MultiFab& s = relaxCurlT[iLev];
+  MultiFab& p = relaxDir[iLev];
 
-  const auto dx = Geom(iLev).CellSizeArray();
-  const Real hInvDx = 0.5 / dx[ix_], hInvDy = 0.5 / dx[iy_];
-  constexpr int maxIter = 500;
+  // Face-averaged difference operators P_d of curl_node_to_center and their
+  // transposes P_d^T, with c = 1/4 in 3D and 1/2 without a z extent. Writing
+  // D+ for f(.. +1 ..) - f(..) and S- for f(..) + f(.. -1 ..), each acting on
+  // the direction given by its subscript:
+  //   P_x = c/dx * D+_x S+_y S+_z,   P_x^T = c/dx * D-_x S-_y S-_z
+  // and likewise for y and z, with the sums over the *other* two directions.
+  // curl(A) = (P_y A_z - P_z A_y, P_z A_x - P_x A_z, P_x A_y - P_y A_x); its
+  // adjoint collects the coefficient of each A component:
+  //   s_x = P_z^T r_y - P_y^T r_z, s_y = P_x^T r_z - P_z^T r_x,
+  //   s_z = P_y^T r_x - P_x^T r_y.
+  const auto invDx = Geom(iLev).InvCellSizeArray();
+  const bool useZ = !bzFree;
+  const Real cFac = useZ ? 0.25 : 0.5;
+  const Real cInvDx = cFac * invDx[ix_];
+  const Real cInvDy = cFac * invDx[iy_];
+  const Real cInvDz = useZ ? cFac * invDx[iz_] : 0.0;
+  // 1 in 3D, 0 without a z extent: the transverse sums then skip that index.
+  const int kOff = useZ ? 1 : 0;
+  constexpr int maxIter = 30;
   constexpr Real relTol = 1e-8;
   const auto period = Geom(iLev).periodicity();
-
-  // Cell residual r (Bx, By) and its nodal image s = curl^T r; p is the
-  // nodal search direction and q = curl(p z) its cell image.
-  MultiFab r(B.boxArray(), B.DistributionMap(), 2, 1);
-  MultiFab q(B.boxArray(), B.DistributionMap(), 2, 0);
-  MultiFab s(nGrids[iLev], B.DistributionMap(), 1, 0);
-  MultiFab p(nGrids[iLev], B.DistributionMap(), 1, 0);
   const auto owner = s.OwnerMask(period);
 
   // s = curl^T r on the nodes surrounded by covered cells, zero elsewhere.
@@ -1352,40 +1423,92 @@ void Pic::relax_covered_B_to_fine(int iLev) {
       const auto& d = r[mfi].const_array();
       const auto& st = cellStatus[iLev][mfi].const_array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        const bool inner = bit::is_refined(st(i - 1, j - 1, k)) &&
-                           bit::is_refined(st(i, j - 1, k)) &&
-                           bit::is_refined(st(i - 1, j, k)) &&
-                           bit::is_refined(st(i, j, k));
+        bool inner = true;
+        for (int kk = 0; kk <= kOff && inner; ++kk)
+          for (int jj = 0; jj <= 1 && inner; ++jj)
+            for (int ii = 0; ii <= 1 && inner; ++ii)
+              if (!bit::is_refined(st(i - ii, j - jj, k - kk)))
+                inner = false;
         if (!inner) {
-          sa(i, j, k) = 0.0;
+          for (int iVar = 0; iVar < nDim3; ++iVar)
+            sa(i, j, k, iVar) = 0.0;
           return;
         }
-        const Real dDyDx = hInvDx * (d(i, j - 1, k, 1) + d(i, j, k, 1) -
-                                     d(i - 1, j - 1, k, 1) - d(i - 1, j, k, 1));
-        const Real dDxDy = hInvDy * (d(i - 1, j, k, 0) + d(i, j, k, 0) -
-                                     d(i - 1, j - 1, k, 0) - d(i, j - 1, k, 0));
-        sa(i, j, k) = dDyDx - dDxDy;
+
+        // (P_z^T f)(i,j,k) = c/dz * sum_{ii,jj} [ f(i-ii,j-jj,k-1) -
+        //                                         f(i-ii,j-jj,k)   ]
+        Real pzT_y = 0.0, pzT_x = 0.0;
+        if (useZ) {
+          for (int jj = 0; jj <= 1; ++jj)
+            for (int ii = 0; ii <= 1; ++ii) {
+              pzT_y +=
+                  d(i - ii, j - jj, k - 1, iy_) - d(i - ii, j - jj, k, iy_);
+              pzT_x +=
+                  d(i - ii, j - jj, k - 1, ix_) - d(i - ii, j - jj, k, ix_);
+            }
+          pzT_y *= cInvDz;
+          pzT_x *= cInvDz;
+        }
+
+        // (P_y^T f)(i,j,k) = c/dy * sum_{ii,kk} [ f(i-ii,j-1,k-kk) -
+        //                                         f(i-ii,j,  k-kk) ]
+        Real pyT_x = 0.0, pyT_z = 0.0;
+        for (int kk = 0; kk <= kOff; ++kk)
+          for (int ii = 0; ii <= 1; ++ii) {
+            pyT_x += d(i - ii, j - 1, k - kk, ix_) - d(i - ii, j, k - kk, ix_);
+            pyT_z += d(i - ii, j - 1, k - kk, iz_) - d(i - ii, j, k - kk, iz_);
+          }
+        pyT_x *= cInvDy;
+        pyT_z *= cInvDy;
+
+        // (P_x^T f)(i,j,k) = c/dx * sum_{jj,kk} [ f(i-1,j-jj,k-kk) -
+        //                                         f(i,  j-jj,k-kk) ]
+        Real pxT_z = 0.0, pxT_y = 0.0;
+        for (int kk = 0; kk <= kOff; ++kk)
+          for (int jj = 0; jj <= 1; ++jj) {
+            pxT_z += d(i - 1, j - jj, k - kk, iz_) - d(i, j - jj, k - kk, iz_);
+            pxT_y += d(i - 1, j - jj, k - kk, iy_) - d(i, j - jj, k - kk, iy_);
+          }
+        pxT_z *= cInvDx;
+        pxT_y *= cInvDx;
+
+        sa(i, j, k, ix_) = pzT_y - pyT_z;
+        sa(i, j, k, iy_) = pxT_z - pzT_x;
+        sa(i, j, k, iz_) = pyT_x - pxT_y;
       });
     }
   };
 
-  // q = curl_node_to_center(p z) = (dp/dy, -dp/dx). Non-zero only on covered
-  // cells, since p vanishes on every node that touches an uncovered cell.
+  // q = curl(A) with A = p. Only non-zero on cells whose four (eight) corner
+  // nodes are all inner, because p vanishes on every node touching an
+  // uncovered cell. In 3D this calls the very operator the Faraday update
+  // uses, so the correction is discretely a curl of the same stencil.
   auto apply_curl = [&]() {
+    if (useZ) {
+      curl_node_to_center(p, q, Geom(iLev).InvCellSize());
+      return;
+    }
     for (MFIter mfi(q); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& qa = q[mfi].array();
       const auto& pa = p[mfi].const_array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        qa(i, j, k, 0) = hInvDy * (pa(i, j + 1, k) + pa(i + 1, j + 1, k) -
-                                   pa(i, j, k) - pa(i + 1, j, k));
-        qa(i, j, k, 1) = -hInvDx * (pa(i + 1, j, k) + pa(i + 1, j + 1, k) -
-                                    pa(i, j, k) - pa(i, j + 1, k));
+        const Real pyAz =
+            cInvDy * (pa(i, j + 1, k, iz_) + pa(i + 1, j + 1, k, iz_) -
+                      pa(i, j, k, iz_) - pa(i + 1, j, k, iz_));
+        const Real pxAz =
+            cInvDx * (pa(i + 1, j, k, iz_) + pa(i + 1, j + 1, k, iz_) -
+                      pa(i, j, k, iz_) - pa(i, j + 1, k, iz_));
+        qa(i, j, k, ix_) = pyAz;
+        qa(i, j, k, iy_) = -pxAz;
+        qa(i, j, k, iz_) = 0.0;
       });
     }
   };
 
-  // r = avg(Bf) - Bc on the covered cells, zero elsewhere.
+  // r = avg(Bf) - Bc on the covered cells, zero elsewhere. The components not
+  // taking part in the relaxation stay zero, so the adjoint never drives their
+  // potential components.
   r.setVal(0.0);
   for (MFIter mfi(B); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -1395,30 +1518,34 @@ void Pic::relax_covered_B_to_fine(int iLev) {
     const auto& st = cellStatus[iLev][mfi].const_array();
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (bit::is_refined(st(i, j, k))) {
-        d(i, j, k, 0) = t(i, j, k, ix_) - b(i, j, k, ix_);
-        d(i, j, k, 1) = t(i, j, k, iy_) - b(i, j, k, iy_);
+        for (int iVar = 0; iVar < nRelax; ++iVar)
+          d(i, j, k, iVar) = t(i, j, k, iVar) - b(i, j, k, iVar);
       }
     });
   }
 
-  // CGLS for min |r - curl(psi z)|^2: B accumulates the curl corrections.
+  // CGLS for min |r - curl(A)|^2: A accumulates the potential and B its curl.
+  // (Warm-starting A from the previous step was measured to give no speed-up:
+  // the drift increment has the same spectral content as the drift itself, so
+  // the convergence rate -- set by the conditioning, not the magnitude -- is
+  // unchanged, and it even cost a couple of extra iterations.)
   apply_curlT();
-  MultiFab::Copy(p, s, 0, 0, 1, 0);
-  Real gamma = MultiFab::Dot(*owner, s, 0, s, 0, 1, 0);
+  MultiFab::Copy(p, s, 0, 0, nDim3, 0);
+  Real gamma = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
   const Real gamma0 = gamma;
+
   for (int iter = 0; iter < maxIter && gamma > relTol * relTol * gamma0;
        ++iter) {
     apply_curl();
-    const Real qq = MultiFab::Dot(q, 0, q, 0, 2, 0);
+    const Real qq = MultiFab::Dot(q, 0, q, 0, nRelax, 0);
     if (qq <= 0)
       break;
     const Real a = gamma / qq;
-    MultiFab::Saxpy(B, a, q, 0, ix_, 1, 0);
-    MultiFab::Saxpy(B, a, q, 1, iy_, 1, 0);
-    MultiFab::Saxpy(r, -a, q, 0, 0, 2, 0);
+    MultiFab::Saxpy(B, a, q, 0, 0, nRelax, 0);
+    MultiFab::Saxpy(r, -a, q, 0, 0, nRelax, 0);
     apply_curlT();
-    const Real gammaNew = MultiFab::Dot(*owner, s, 0, s, 0, 1, 0);
-    MultiFab::Xpay(p, gammaNew / gamma, s, 0, 0, 1, 0);
+    const Real gammaNew = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
+    MultiFab::Xpay(p, gammaNew / gamma, s, 0, 0, nDim3, 0);
     gamma = gammaNew;
   }
   B.FillBoundary(period);
@@ -1431,18 +1558,22 @@ void Pic::relax_covered_B_to_fine(int iLev) {
 // between the covered coarse B and the average of the fine B, which is the
 // price of ctRestrictB, and the drift of the first fine ghost layer from the
 // coarse interpolation (evolveGhostB). One line per cycle:
-//   divB-AMR n=<cycle> L<lev> if/cv/in=<iface>/<covered>/<interior> ...
+//   divB-AMR n=<cycle> L<lev> if/cv/in=<iface>/<covered>/<interior>/dom=<edge>
 //            dCov=<max|Bc-avg(Bf)|> dGhost=<max|Bghost-interp(Bc)|>
-// (cv is omitted on the finest level; a non-finite divB shows as inf.)
+//            |B|=<max|B|>
+// (cv is omitted on the finest level; a non-finite divB shows as inf. 'dom'
+// holds the cells on the physical domain boundary, which the field BC sets
+// rather than the update, so they are not part of the interior bucket.)
 void Pic::report_divB_amr() {
+  BL_PROFILE("Pic::report_divB_amr");
   std::ostringstream line;
   line << std::scientific << std::setprecision(1);
   line << "divB-AMR n=" << tc->get_cycle();
-  Real maxDrift = 0, maxGhostDrift = 0;
+  Real maxDrift = 0, maxGhostDrift = 0, maxBmag = 0;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     if (divB[iLev].empty())
       continue;
-    Real maxIface = 0, maxCovered = 0, maxInterior = 0;
+    Real maxIface = 0, maxCovered = 0, maxInterior = 0, maxDomain = 0;
     const bool hasFiner = iLev < finest_level;
     for (MFIter mfi(divB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -1453,11 +1584,16 @@ void Pic::report_divB_amr() {
         const Real raw = arr(i, j, k, 0);
         const Real v = std::isfinite(raw) ? std::abs(raw)
                                           : std::numeric_limits<Real>::max();
-        const bool fineIface =
-            iLev > 0 && bit::is_lev_edge(st) && !bit::is_domain_edge(st);
-        if (hasFiner && bit::is_refined(st)) {
+        // Cells on the physical domain boundary are set by the field BC, not
+        // by the update, so they are reported separately: leaving them in the
+        // interior bucket makes the solver's div(B) unreadable on decks with
+        // outflow faces.
+        if (bit::is_domain_edge(st)) {
+          maxDomain = amrex::max(maxDomain, v);
+        } else if (hasFiner && bit::is_refined(st)) {
           maxCovered = amrex::max(maxCovered, v);
-        } else if (fineIface || (hasFiner && bit::is_refined_neighbour(st))) {
+        } else if ((iLev > 0 && bit::is_lev_edge(st)) ||
+                   (hasFiner && bit::is_refined_neighbour(st))) {
           maxIface = amrex::max(maxIface, v);
         } else {
           maxInterior = amrex::max(maxInterior, v);
@@ -1467,17 +1603,13 @@ void Pic::report_divB_amr() {
     ParallelDescriptor::ReduceRealMax(maxIface);
     ParallelDescriptor::ReduceRealMax(maxCovered);
     ParallelDescriptor::ReduceRealMax(maxInterior);
+    ParallelDescriptor::ReduceRealMax(maxDomain);
 
-    Real drift = 0;
-    if (hasFiner) {
-      MultiFab tmp(centerB[iLev].boxArray(), centerB[iLev].DistributionMap(),
-                   nDim3, 0);
-      MultiFab::Copy(tmp, centerB[iLev], 0, 0, nDim3, 0);
-      average_down(centerB[iLev + 1], tmp, 0, nDim3, ref_ratio[iLev]);
-      MultiFab::Subtract(tmp, centerB[iLev], 0, 0, nDim3, 0);
-      for (int iVar = 0; iVar < nDim3; ++iVar)
-        drift = amrex::max(drift, tmp.norm0(iVar));
-    }
+    // Sampled before the restriction in update_B_hybrid; measuring it here
+    // instead would report zero whenever the plain average_down runs.
+    const Real drift = (hasFiner && iLev < coveredBDrift.size())
+                           ? coveredBDrift[iLev]
+                           : Real(0.0);
 
     // Drift of the first fine ghost layer from the coarse interpolation (only
     // non-zero with evolveGhostB).
@@ -1506,6 +1638,11 @@ void Pic::report_divB_amr() {
       ParallelDescriptor::ReduceRealMax(ghostDrift);
     }
 
+    // Reference magnitude for the dGhost warning below.
+    Real bMag = 0;
+    for (int iVar = 0; iVar < nDim3; ++iVar)
+      bMag = amrex::max(bMag, centerB[iLev].norm0(iVar, 0, false));
+
     auto fmt = [](Real v) {
       std::ostringstream s;
       s << std::scientific << std::setprecision(1);
@@ -1519,11 +1656,30 @@ void Pic::report_divB_amr() {
          << fmt(maxIface) << "/";
     if (hasFiner)
       line << fmt(maxCovered) << "/";
-    line << fmt(maxInterior);
+    line << fmt(maxInterior) << "/dom=" << fmt(maxDomain);
     maxDrift = amrex::max(maxDrift, drift);
     maxGhostDrift = amrex::max(maxGhostDrift, ghostDrift);
+    maxBmag = amrex::max(maxBmag, bMag);
   }
-  line << " dCov=" << maxDrift << " dGhost=" << maxGhostDrift;
+  line << " dCov=" << maxDrift << " dGhost=" << maxGhostDrift
+       << "|B|=" << maxBmag;
+
+  // With evolveGhostB the first fine ghost layer is advanced by the Faraday
+  // update but never re-interpolated from the coarse level, so it can drift
+  // away from it without bound. Report that clearly: on decks with strong
+  // gradients crossing the interface it has been seen to reach O(|B|), which
+  // degrades the fine-level div(B).
+  if (maxBmag > 0 && maxGhostDrift > 0.05 * maxBmag) {
+    static bool isWarned = false;
+    if (!isWarned) {
+      amrex::Print() << printPrefix
+                     << "Warning: the evolved first fine ghost layer of B has "
+                        "drifted from the coarse interpolation by dGhost="
+                     << maxGhostDrift << " (|B|=" << maxBmag
+                     << "). Consider #HYBRIDPIC evolveGhostB F.\n";
+      isWarned = true;
+    }
+  }
   amrex::Print() << printPrefix << line.str() << std::endl;
 }
 
@@ -1535,10 +1691,13 @@ void Pic::update_B_hybrid() {
   if (finest_level > 0 && syncEmfAmr && nDim == 3 && !isFake2D) {
     static bool isWarned = false;
     if (!isWarned) {
-      amrex::Print() << printPrefix
-                     << "Warning: #HYBRIDPIC syncEmfAmr is exact only in 2D; "
-                        "in 3D the nodal E injection leaves an O(dx^2) "
-                        "div(B) error at the coarse-fine interface.\n";
+      amrex::Print()
+          << printPrefix
+          << "Note: #HYBRIDPIC syncEmfAmr on a 3D grid: the nodal "
+             "E injection matches the coarse face flux only to "
+             "O(dx^2), so the covered coarse B drifts from the fine "
+             "average by that much per step (ctRestrictB removes the "
+             "drift). div(B) itself is preserved in 3D as well.\n";
       isWarned = true;
     }
   }
@@ -1773,6 +1932,14 @@ void Pic::update_B_hybrid() {
   // average (the fine-scale part of E is invisible to the coarse curl), so it
   // is relaxed toward it with divergence-free corrections only.
   const bool useCtRestrict = syncEmfAmr && ctRestrictB;
+  if (finest_level > 0) {
+    // How far the covered coarse B has drifted from the fine average. This is
+    // the quantity the relaxation has to remove, so it must be sampled before
+    // the restriction overwrites the covered cells.
+    for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
+      measure_covered_B_drift(iLev);
+    }
+  }
   if (useCtRestrict && finest_level > 0) {
     for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
       relax_covered_B_to_fine(iLev);
@@ -1856,6 +2023,17 @@ void Pic::update_B_hybrid() {
     assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
                    nodeE[iLev], iLev, 1.0);
   }
+
+  // Suppress grid-scale E component if enabled. This has to happen *before*
+  // the coarse-fine synchronization: smoothing afterwards would leave the two
+  // levels with different E at the interface nodes again.
+  if (doSmoothE) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+      smooth_E(nodeE[iLev], iLev);
+    }
+  }
+
   if (syncEmfAmr && finest_level > 0) {
     sync_emf_fine_to_coarse(nodeE);
   }
@@ -1866,14 +2044,6 @@ void Pic::update_B_hybrid() {
       fill_fine_lev_bny_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-    }
-  }
-
-  // Suppress grid-scale E component if enabled.
-  if (doSmoothE) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-      smooth_E(nodeE[iLev], iLev);
     }
   }
 }

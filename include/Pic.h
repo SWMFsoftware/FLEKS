@@ -113,8 +113,13 @@ private:
   //   evolveGhostB: advance the in-plane B of the first fine ghost layer with
   //                 the same Faraday update (E on the ghost nodes interpolated
   //                 from the coarse E) instead of re-interpolating it from the
-  //                 coarse level; the ghost Bz is still interpolated in 2D.
-  // Exact in 2D; in 3D the nodal injection is only approximate.
+  //                 coarse level; the ghost Bz is still interpolated when Bz
+  //                 does not enter div(B) (see is_bz_div_free).
+  // The underlying identity div(avg(curl(E))) == 0 holds in 2D and in 3D
+  // alike, so with all three on div(B) stays at round-off on every level in
+  // both. (The nodal E injection at the interface is only *consistent* to
+  // O(dx^2) in 3D, which shows up as a small drift of the covered coarse B
+  // from the fine average, not as a div(B) error.)
   bool syncEmfAmr = true;
   bool ctRestrictB = true;
   bool evolveGhostB = true;
@@ -242,6 +247,24 @@ private:
   // RK persistent scratch.
   amrex::Vector<amrex::MultiFab> centerBstart;
   amrex::Vector<amrex::MultiFab> centerBstar; // time-centered state used by E
+
+  // ---- ctRestrictB: divergence-free relaxation of the covered coarse B ----
+  // Persistent per-level workspace of relax_covered_B_to_fine, allocated in
+  // distribute_arrays so a regrid rebuilds it with the new BoxArray.
+  //   relaxTarget   : avg(B_fine) restricted onto the coarse level (cell)
+  //   relaxResidual : r = target - B on the covered cells (cell, 1 ghost)
+  //   relaxCurl     : q = curl(potential)              (cell)
+  //   relaxCurlT    : s = transpose(curl) applied to r (nodal)
+  //   relaxDir      : CGLS search direction             (nodal)
+  amrex::Vector<amrex::MultiFab> relaxTarget;
+  amrex::Vector<amrex::MultiFab> relaxResidual;
+  amrex::Vector<amrex::MultiFab> relaxCurl;
+  amrex::Vector<amrex::MultiFab> relaxCurlT;
+  amrex::Vector<amrex::MultiFab> relaxDir;
+  amrex::Vector<amrex::MultiFab> relaxPot;
+  // Max |avg(B_fine) - B_coarse| over the covered cells of each level, measured
+  // *before* the restriction (see measure_covered_B_drift). Reported as 'dCov'.
+  amrex::Vector<amrex::Real> coveredBDrift;
 
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
@@ -521,6 +544,12 @@ public:
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
+    relaxTarget.resize(n_lev_max());
+    relaxResidual.resize(n_lev_max());
+    relaxCurl.resize(n_lev_max());
+    relaxCurlT.resize(n_lev_max());
+    relaxDir.resize(n_lev_max());
+    coveredBDrift.resize(n_lev_max(), 0.0);
     kStage.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL)
       kStage[iL].resize(4);
@@ -767,8 +796,17 @@ public:
   int faraday_ngrow(int iLev) const {
     return (iLev > 0 && syncEmfAmr && evolveGhostB) ? 1 : 0;
   }
+  // True when Bz does not enter div(B), i.e. when the grid has no z extent:
+  // either a true-2D AMReX build or a 3D build with a single cell in z
+  // (fake 2D, where the two z node planes coincide).  `nDim` is the
+  // compile-time amrex::SpaceDim, so a bare `nDim == 2` test silently excludes
+  // the fake-2D case in a 3D build -- always use this helper instead.
+  bool is_bz_div_free() const { return (nDim == 2) || isFake2D; }
   // Per-level div(B) report split into interface / covered / interior cells.
   void report_divB_amr();
+  // Max |avg(B_fine) - B_coarse| over the covered cells of iLev, measured
+  // before any restriction overwrites them, stored into coveredBDrift[iLev].
+  void measure_covered_B_drift(int iLev);
   // Relax the covered coarse B on iLev toward the restriction of the fine B
   // with a discrete-curl correction, so the coarse div(B) is preserved.
   void relax_covered_B_to_fine(int iLev);
