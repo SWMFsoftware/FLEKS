@@ -111,3 +111,19 @@ To run a **single variant**, append its token to the test name:
 python3 tests/validate_tests.py --test=reconnection_amr.full     # full PIC only
 python3 tests/validate_tests.py --test=reconnection_amr.hybrid   # hybrid only
 ```
+
+## Long-horizon div(B) / ghost-drift measurements
+
+`GHOST_DRIFT.md` records a 100-time-unit run of the hybrid variant with the
+`#DIVB` diagnostic enabled, used to settle two questions about the coarse-fine
+treatment:
+
+- every AMR div(B) bucket (level-0 interface / covered / interior and the
+  fine-level interior) is **bit-for-bit flat** over 5000 cycles, so the
+  interface adds no div(B) after the initial condition;
+- the `dGhost` diagnostic (drift of the evolved first fine ghost layer from the
+  coarse interpolation) grows quickly and then **saturates** near 4x the peak
+  |B|, so it is reported rather than fixed.
+
+It also shows that the level-1 *physical* domain-edge bucket grows steadily,
+which is the outflow boundary condition rather than anything AMR does.

@@ -1704,7 +1704,8 @@ void Pic::report_divB_amr() {
   // first and then saturates near 9 (~4x the peak |B|), while every AMR div(B)
   // bucket stays bit-for-bit flat for all 5000 cycles. So this is reported, not
   // fixed; the warning threshold is deliberately low because saturation at
-  // several times |B| is normal here. See scratch/hybrid_amr_divb/.
+  // several times |B| is normal here. See
+  // tests/reconnection_amr/GHOST_DRIFT.md.
   if (maxBmag > 0 && maxGhostDrift > 0.05 * maxBmag) {
     static bool isWarned = false;
     if (!isWarned) {
