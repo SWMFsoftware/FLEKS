@@ -1700,22 +1700,30 @@ void Pic::report_divB_amr() {
 
   // With evolveGhostB the first fine ghost layer is advanced by the Faraday
   // update but never re-interpolated from the coarse level, so it can drift
-  // away from it. Measured on reconnection_amr to t=100: dGhost grows fast at
-  // first and then saturates near 9 (~4x the peak |B|), while every AMR div(B)
-  // bucket stays bit-for-bit flat for all 5000 cycles. So this is reported, not
-  // fixed; the warning threshold is deliberately low because saturation at
-  // several times |B| is normal here. See
-  // tests/reconnection_amr/GHOST_DRIFT.md.
-  if (maxBmag > 0 && maxGhostDrift > 0.05 * maxBmag) {
-    static bool isWarned = false;
-    if (!isWarned) {
-      amrex::Print() << printPrefix
-                     << "Warning: the evolved first fine ghost layer of B has "
-                        "drifted from the coarse interpolation by dGhost="
-                     << maxGhostDrift << " (|B|=" << maxBmag
-                     << "). This saturates in practice and does not degrade "
-                        "div(B); see the comment in report_divB_amr.\n";
-      isWarned = true;
+  // away from it. That drift *saturates*: measured on reconnection_amr to
+  // t=100, dGhost/|B| rises to ~4.7 and then flattens while every AMR div(B)
+  // bucket stays bit-for-bit flat over 5000 cycles (tests/reconnection_amr/
+  // GHOST_DRIFT.md). A low fixed threshold therefore cannot work: it sits below
+  // the benign saturation level and fires on every strong-gradient deck.
+  // Require both a level clearly above anything seen benign (dGhostRunaway) and
+  // continued *growth* -- the ratio at least doubling past its own previous
+  // maximum -- so the warning tracks a runaway rather than a level.
+  constexpr Real dGhostRunaway = 6.0; // ~30% above the worst benign value (4.7)
+  constexpr Real dGrossGrowth = 2.0;  // factor that counts as "still running"
+  if (maxBmag > 0) {
+    static Real maxRatioSeen = 0.0;
+    const Real ratio = maxGhostDrift / maxBmag;
+    if (ratio > dGhostRunaway && ratio > dGrossGrowth * maxRatioSeen) {
+      amrex::Print()
+          << printPrefix
+          << "Warning: the evolved first fine ghost layer of B is "
+             "running away from the coarse interpolation: dGhost/|B| = "
+          << ratio << " (dGhost=" << maxGhostDrift << ", |B|=" << maxBmag
+          << "), up from " << maxRatioSeen
+          << " previously. Saturation near 5x|B| is normal "
+             "(see tests/reconnection_amr/GHOST_DRIFT.md); sustained "
+             "growth is not.\n";
+      maxRatioSeen = ratio;
     }
   }
   amrex::Print() << printPrefix << line.str() << std::endl;
