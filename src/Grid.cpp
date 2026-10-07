@@ -137,10 +137,13 @@ void Grid::restore_grid(const Vector<BoxArray>& boxes) {
   activeRegion = boxes[0];
   isGridEmpty = activeRegion.empty();
   SetFinestLevel(static_cast<int>(boxes.size()) - 1);
-  for (int iLev = 0; iLev < n_lev_max(); ++iLev) {
-    const BoxArray ba = iLev < n_lev() ? boxes[iLev] : BoxArray();
-    SetBoxArray(iLev, ba);
-    SetDistributionMap(iLev, DistributionMapping(ba));
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    SetBoxArray(iLev, boxes[iLev]);
+    SetDistributionMap(iLev, DistributionMapping(boxes[iLev]));
+  }
+  for (int iLev = n_lev(); iLev < n_lev_max(); ++iLev) {
+    ClearBoxArray(iLev);
+    ClearDistributionMap(iLev);
   }
   finish_regrid();
 }
