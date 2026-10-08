@@ -64,7 +64,7 @@ T                       doSmoothE
 1.0                     charge
 
 #UNIFORMSTATE
-1.0                     rho [amu/cc]
+1.0                     rho [/cc]
 0.0                     ux
 0.0                     uy
 0.0                     uz
@@ -111,5 +111,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 20.0                    TimeMax
-
-#RUN

@@ -57,12 +57,12 @@ F                       useHybridPIC
 -1.0                    charge
 
 #UNIFORMSTATE
-1.0                     rho [amu/cc]
+1.0                     rho [/cc]
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 116045.0                T [K]
-0.04                    rho [amu/cc]
+1.0                     rho [/cc]
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -132,5 +132,3 @@ F                       isPPVconstant
 #STOP
 20                      MaxIter
 -1.0                    TimeMax
-
-#RUN

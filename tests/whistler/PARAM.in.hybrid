@@ -120,12 +120,12 @@ neutralizing massless fluid, so no electron particle species is present.
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+1.0439e-8               bx [T]      uniform guide field Bx0 (B_code ~ 1)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -176,5 +176,3 @@ z=0 fluid ascii pic     plotString
                                   instability of the Hall advance swamped the
                                   signal after ~10 s - with the hyper-resistivity
                                   above the mode is stable for the whole run
-
-#RUN

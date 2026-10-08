@@ -53,18 +53,18 @@ F                       useHybridPIC
 
 #PLASMA
 2                       nSpecies
-1.0                     mass           Species 0: ions
+1.0                     mass        Species 0: ions
 1.0                     charge
-0.04                    mass           Species 1: electrons (mi/me = 25)
+0.04                    mass        Species 1: electrons (mi/me = 25)
 -1.0                    charge
 
 #UNIFORMSTATE
-12.5                    rho [amu/cc]   Species 0: ions (nb = 0.2)
+12.5                    rho [/cc]   Species 0: ions (nb = 0.2)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 304000.0                T [K]
-0.5                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * me/mi)
+12.5                    rho [/cc]   Species 1: electrons (rho_e = rho_i * me/mi)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -125,5 +125,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 1.0                     TimeMax
-
-#RUN

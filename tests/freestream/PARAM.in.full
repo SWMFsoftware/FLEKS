@@ -80,28 +80,28 @@ F
 Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 0.04).
 #PLASMA
 2                       nS
-1.0                     mass           Species 0: ions
+1.0                     mass        Species 0: ions
 1.0                     charge
-0.04                    mass           Species 1: electrons (m_e = 0.04 m_i)
+0.04                    mass        Species 1: electrons (m_e = 0.04 m_i)
 -1.0                    charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n_i = 5 /cc)
-100.0                   ux [km/s]      fast bulk flow (u_code = 1.0 = v_A, Mach 1)
+5.0                     rho [/cc]   Species 0: ions (n_i = 5 /cc)
+100.0                   ux [km/s]   fast bulk flow (u_code = 1.0 = v_A, Mach 1)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-314000.0                T [K]          ion temperature, beta_i ~ 0.5 (beta_total ~ 1.0)
-0.2                     rho [amu/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i => n_e = 5 /cc, neutral)
-100.0                   ux [km/s]      electrons drift with ions (current-free equilibrium)
+314000.0                T [K]       ion temperature, beta_i ~ 0.5 (beta_total ~ 1.0)
+5.0                     rho [/cc]   Species 1: electrons (rho_e = rho_i * m_e / m_i => n_e = 5 /cc, neutral)
+100.0                   ux [km/s]   electrons drift with ions (current-free equilibrium)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-314000.0                T [K]          electron temperature, beta_e ~ 0.5
-8.0e-9                  bx [T]         3D oblique magnetic field: Bx0 = 8 nT
-6.0e-9                  by [T]         By0 = 6 nT
-3.0e-9                  bz [T]         Bz0 = 3 nT (|B| = 10.44 nT)
-0.0                     ex [V/m]       convective field E = -u x B: Ex = 0
-3.0e-4                  ey [V/m]       Ey = -ux * (-Bz) = +3.0e-4 V/m
--6.0e-4                 ez [V/m]       Ez = -ux * By    = -6.0e-4 V/m
+314000.0                T [K]       electron temperature, beta_e ~ 0.5
+8.0e-9                  bx [T]      3D oblique magnetic field: Bx0 = 8 nT
+6.0e-9                  by [T]      By0 = 6 nT
+3.0e-9                  bz [T]      Bz0 = 3 nT (|B| = 10.44 nT)
+0.0                     ex [V/m]    convective field E = -u x B: Ex = 0
+3.0e-4                  ey [V/m]    Ey = -ux * (-Bz) = +3.0e-4 V/m
+-6.0e-4                 ez [V/m]    Ez = -ux * By    = -6.0e-4 V/m
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -133,5 +133,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 10.0                    TimeMax   crosses periodic box 1.56 times
-
-#RUN

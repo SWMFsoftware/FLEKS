@@ -475,9 +475,9 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         }
       }
 
-      // 2. Boundary cells on physical inflow wall for cell-centered B (centerB).
-      // Enforcing prescribed B on the boundary cell prevents Faraday curl
-      // mismatch between the pinned inflow boundary node and the interior
+      // 2. Boundary cells on physical inflow wall for cell-centered B
+      // (centerB). Enforcing prescribed B on the boundary cell prevents Faraday
+      // curl mismatch between the pinned inflow boundary node and the interior
       // solution.
       for (int d = 0; d < nDim; ++d) {
         if (bnd.isNode[d] || !isB)

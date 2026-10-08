@@ -133,10 +133,17 @@ def _compare_arena(base, cand, key, findings, ratio_tol=0.01):
             if nb and nc and nb != nc:
                 # More calls legitimately means more allocations; normalise so
                 # that "the refactor allocated something extra per call" is what
-                # gets flagged.
+                # gets flagged.  The raw counts are reported as well: dividing
+                # by an unrelated call count can otherwise hide a real change in
+                # the number of allocations (a step-count change in an
+                # adaptive-dt run moves the denominator, not the allocations).
                 findings.add(INFO, key, region, "ncalls", nb, nc,
                              "call count changed; allocations per call",
                              arena=arena, kind="number")
+                findings.add(INFO, key, region, "nalloc", vb, vc,
+                             "raw allocation count (normalized to nalloc/call "
+                             "above because the call count changed)",
+                             arena=arena)
                 vb, vc = vb / nb, vc / nc
                 metric = "nalloc/call"
                 kind = "ratio"
@@ -288,6 +295,17 @@ def compare(baseline, candidate, cfg):
             findings.add(INFO, key, "-", "nprocs", rb.get("nprocs"),
                          rc.get("nprocs"), "rank counts differ")
             continue
+
+        if rb.get("param_sha256") != rc.get("param_sha256"):
+            # Expected whenever a PR edits a deck: the reference capture runs
+            # the base tree's decks (see memory_test.yml).  Recorded so a memory
+            # delta can be attributed to the deck rather than to the code.
+            findings.add(INFO, key, "deck", "sha256", None, None,
+                         f"the two sides ran different decks "
+                         f"(base {rb.get('param_sha256')} vs "
+                         f"PR {rc.get('param_sha256')}); this comparison "
+                         f"includes the deck change",
+                         arena="deck")
 
         ratio_tol = getattr(cfg, "ratio_tol", 0.01) if cfg else 0.01
         _compare_arena(rb["profile"], rc["profile"], key, findings, ratio_tol)

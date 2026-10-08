@@ -55,7 +55,7 @@ periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 
 #INFLOW
-5.0                     rho [amu/cc]
+5.0                     rho [/cc]
 100.0                   ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -97,17 +97,17 @@ T                       doSmoothMoments
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
-100.0                   ux [km/s]      fast bulk flow (u_code = 1.0 = v_A)
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
+100.0                   ux [km/s]   fast bulk flow (u_code = 1.0 = v_A)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-314000.0                T [K]          beta ~ 1 (T_code ~ 0.26)
-8.0e-9                  bx [T]         3D oblique magnetic field (|B| ~ 10.44 nT)
+314000.0                T [K]       beta ~ 1 (T_code ~ 0.26)
+8.0e-9                  bx [T]      3D oblique magnetic field (|B| ~ 10.44 nT)
 6.0e-9                  by [T]
 3.0e-9                  bz [T]
-0.0                     ex [V/m]       convective electric field E = -u x B
-3.0e-4                  ey [V/m]       Ey = ux * Bz
--6.0e-4                 ez [V/m]       Ez = -ux * By
+0.0                     ex [V/m]    convective electric field E = -u x B
+3.0e-4                  ey [V/m]    Ey = ux * Bz
+-6.0e-4                 ez [V/m]    Ez = -ux * By
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -141,5 +141,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 2.0                     TimeMax
-
-#RUN

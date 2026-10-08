@@ -76,29 +76,29 @@ T                       doSmoothJ
 Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
 #PLASMA
 2                       nSpecies
-1.0                     mass           Species 0: ions
+1.0                     mass        Species 0: ions
 1.0                     charge
-1.0/25.0                mass           Species 1: electrons
+1.0/25.0                mass        Species 1: electrons
 -1.0                    charge
 
 #INFLOW
-5.0                     rho [amu/cc]   Species 0: ions
+5.0                     rho [/cc]   Species 0: ions
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-0.0                     T [K]          ions, beta_i ~ 0.5
+0.0                     T [K]       ions, beta_i ~ 0.5
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n_code ~ nb = 0.2)
+5.0                     rho [/cc]   Species 0: ions (n_code ~ nb = 0.2)
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-0.0                     T [K]          ions, beta_i ~ 0.5
-0.2                     rho [amu/cc]   Species 1: electrons
+0.0                     T [K]       ions, beta_i ~ 0.5
+5.0                     rho [/cc]   Species 1: electrons
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-0.0                     T [K]          electrons
+0.0                     T [K]       electrons
 7.382e-9                bx
 0.0                     by
 7.382e-9                bz
@@ -136,5 +136,3 @@ z=0 fluid ascii planet     plotString
 #STOP
 -2                      MaxIter
 5.0                     TimeMax
-
-#RUN

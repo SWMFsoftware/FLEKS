@@ -50,7 +50,7 @@ periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 
 #INFLOW
-5.0                     rho [amu/cc]
+5.0                     rho [/cc]
 100.0                   ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -98,12 +98,12 @@ T                       doSmoothJ
 -1.0                    charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions
+5.0                     rho [/cc]   Species 0: ions
 100.0                   ux [km/s]      u_code = 1 (uNormSI = 1e5 m/s)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 314000.0                T [K]
-0.2                     rho [amu/cc]   Species 1: electrons (n_e = n_i)
+5.0                     rho [/cc]   Species 1: electrons (n_e = n_i)
 100.0                   ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -159,5 +159,3 @@ body bodySurf rhoS0 rhoS1 Ex Ey Ez Bx By Bz divB divBc   plotVar
 #STOP
 -1                      MaxIter
 2.0                     TimeMax
-
-#RUN
