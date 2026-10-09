@@ -266,7 +266,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("hypDecay", hypDecay);
     }
     // Optional, so existing decks are unaffected: fill divB without cleaning.
-    param.read_optional("alwaysComputeDivB", alwaysComputeDivB);
+    std::string sVal;
+    if (param.read_optional("alwaysComputeDivB", sVal)) {
+      alwaysComputeDivB = (sVal == "T" || sVal == "t" || sVal == "true" ||
+                           sVal == "TRUE" || sVal == "1");
+    }
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -602,6 +606,7 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
     Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+
   if (useElectronPressureEq) {
     if (!useHybridPIC)
       Abort("Invalid #ELECTRONPRESSURE: the evolved electron pressure "

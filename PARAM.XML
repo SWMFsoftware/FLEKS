@@ -379,6 +379,24 @@ When true, the hybrid PIC field solver (generalized Ohm's law with kinetic
 ions and a fluid electron) is used instead of the full PIC field solver.
 Mutually exclusive with SOLVEEM.
 
+On multi-level (AMR) grids, the hybrid PIC solver uses a robust,
+divergence-preserving interface treatment for the Faraday update
+dB/dt = -curl(E) (with E on nodes and B at cell centers):
+  1) Nodal electric fields are synchronized across coarse-fine boundary nodes
+     at each Faraday stage (fine interface nodes adopt coarse E, and fine E
+     is injected into covered coarse nodes).
+  2) The in-plane B of the first fine ghost layer is advanced via Faraday's
+     law using the synchronized nodal electric field rather than being
+     re-interpolated from the coarse grid (Bz is interpolated when the grid
+     has no z extent).
+  3) Covered coarse cells are advanced with the injected fine electric field
+     instead of being overwritten by fine-cell averages; the 2dx drift
+     between coarse and fine representations is relaxed each step via a
+     divergence-free (discrete curl) projection.
+Together, these ensure that nodal div(B) is preserved to round-off across all
+refinement levels in both 2D and 3D.
+
+
 === Generalized Ohm's law: how each command controls a separate term ===
 
 The hybrid solver advances B from the electric field given by the generalized

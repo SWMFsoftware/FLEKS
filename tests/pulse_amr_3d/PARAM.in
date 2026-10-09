@@ -1,26 +1,26 @@
 #DESCRIPTION
-Standalone Hybrid PIC AMR Test: Uniform Thermal Equilibrium across a Stationary Central Refined Slab
+3D Alfvén pulse propagation across a central 3D AMR box with hybrid PIC
 
 #INITFROMSWMF
 F                       initFromSWMF
 
 #GEOMETRY
--16.0                   xMin
- 16.0                   xMax
--8.0                    yMin
- 8.0                    yMax
+-4.0                    xMin
+ 4.0                    xMax
+-2.0                    yMin
+ 2.0                    yMax
 -1.0                    zMin
  1.0                    zMax
 
 #NCELL
 32                      nCellX
 16                      nCellY
-1                       nCellZ
+8                       nCellZ
 
 #MAXBLOCKSIZE
-8                       maxBlockSizeX
+16                      maxBlockSizeX
 8                       maxBlockSizeY
-1                       maxBlockSizeZ
+4                       maxBlockSizeZ
 
 #PERIODICITY
 T                       isPeriodicX
@@ -61,7 +61,7 @@ T                       useHybridPIC
 rk4                     fieldIntegrator
 
 #BSUBCYCLE
-2                       nBSubcycle
+4                       nBSubcycle
 
 #PLASMA
 1                       nSpecies
@@ -70,25 +70,28 @@ rk4                     fieldIntegrator
 
 #UNIFORMSTATE
 1.0                     rho [/cc]
-100.0                   ux [km/s]
+0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 116045.0                T [K]
 1.0e-9                  bx [T]
-1.0e-9                  by [T]
+0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
 0.0                     ey [V/m]
--1.0e-4                 ez [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+AlfvenPulse             testCase
 
 #PARTICLES
-16                      nParticle per cell in X
-16                      nParticle per cell in Y
-1                       nParticle per cell in Z
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
+2                       nParticle per cell in Z
 
 #TIMESTEPPING
 T                       useFixedDt
-0.05                    dt
+0.01                    dt
 
 #NORMALIZATION
 1.0e5                   lNormSI
@@ -96,6 +99,10 @@ T                       useFixedDt
 
 #MONITOR
 5                       dnReport
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
 
 #SAVELOG
 1                       dnSavePic
@@ -109,18 +116,18 @@ z=0 fluid ascii planet  plotString
 -1                      dxSavePlot
 
 #REGION
-center_slab             name
+center_box              name
 box                     shape
--8.0                    min
- 8.0                    max
--4.0                    min
- 4.0                    max
+-2.0                    min
+ 2.0                    max
 -1.0                    min
  1.0                    max
+-0.5                    min
+ 0.5                    max
 
 #REFINEREGION
 0                       iLev
-+center_slab            regions
++center_box             regions
 
 #GRIDEFFICIENCY
 1.0                     gridEfficiency

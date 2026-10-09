@@ -221,15 +221,52 @@ def validate_plot(test_name=None):
         if max_sym_diff > 0.08:
             return False, f"Asymmetric interface artifact: max |rho(x) - rho(-x)| = {max_sym_diff:.4f} (> 0.08)"
 
-    # 4. Magnetic field check
+    # Baseline from initial frame (frame 0)
+    frame0 = frames[0][1]
+    exp_bx = float(np.mean(frame0.get("Bx", [0.0])))
+    exp_by = float(np.mean(frame0.get("By", [0.0])))
+    exp_bz = float(np.mean(frame0.get("Bz", [0.0])))
+    exp_ux = float(np.mean(frame0.get("uxS0", [0.0])))
+
+    # 4. Magnetic field check against initial baseline
+    bx = frame.get("Bx")
+    if bx is not None:
+        mean_bx = float(np.mean(bx))
+        dev_bx = float(np.max(np.abs(bx - exp_bx)))
+        logger.debug("  Mean Bx = %.4f (expected ~%.4f), max |Bx - Bx0| = %.4f", mean_bx, exp_bx, dev_bx)
+        if abs(mean_bx - exp_bx) > 0.05 or dev_bx > 0.08:
+            return False, f"Bx drifted: mean={mean_bx:.4f}, max deviation={dev_bx:.4f} (> 0.08)"
+
+    by = frame.get("By")
+    if by is not None:
+        mean_by = float(np.mean(by))
+        dev_by = float(np.max(np.abs(by - exp_by)))
+        logger.debug("  Mean By = %.4f (expected ~%.4f), max |By - By0| = %.4f", mean_by, exp_by, dev_by)
+        if abs(mean_by - exp_by) > 0.05 or dev_by > 0.08:
+            return False, f"By drifted: mean={mean_by:.4f}, max deviation={dev_by:.4f} (> 0.08)"
+
     bz = frame.get("Bz")
     if bz is not None:
         mean_bz = float(np.mean(bz))
-        logger.debug("  Mean Bz = %.4f (expected ~1.0)", mean_bz)
-        if abs(mean_bz - 1.0) > 0.05:
-            return False, f"Mean Bz = {mean_bz:.4f} drifted from 1.0"
+        dev_bz = float(np.max(np.abs(bz - exp_bz)))
+        logger.debug("  Mean Bz = %.4f (expected ~%.4f), max |Bz - Bz0| = %.4f", mean_bz, exp_bz, dev_bz)
+        if abs(mean_bz - exp_bz) > 0.05 or dev_bz > 0.08:
+            return False, f"Bz drifted: mean={mean_bz:.4f}, max deviation={dev_bz:.4f} (> 0.08)"
 
-    msg = f"AMR equilibrium verified: dx_fine={dx_fine_meas:.2f}, dx_coarse={dx_coarse_meas:.2f}, max |delta rho|={max_dev:.4f}"
+    # 5. Flow velocity check against initial baseline
+    ux = frame.get("uxS0")
+    if ux is not None and abs(exp_ux) > 1.0:
+        mean_ux = float(np.mean(ux))
+        dev_ux = float(np.max(np.abs(ux - exp_ux)))
+        logger.debug("  Mean ux = %.2f (expected ~%.2f), max |ux - ux0| = %.2f", mean_ux, exp_ux, dev_ux)
+        if abs(mean_ux - exp_ux) > 5.0 or dev_ux > 15.0:
+            return False, f"ux drifted: mean={mean_ux:.2f}, max deviation={dev_ux:.2f} (> 15.0)"
+
+    max_b_dev = max(dev_bx if bx is not None else 0.0,
+                    dev_by if by is not None else 0.0,
+                    dev_bz if bz is not None else 0.0)
+    msg = (f"AMR equilibrium verified: dx_fine={dx_fine_meas:.2f}, dx_coarse={dx_coarse_meas:.2f}, "
+           f"max |delta rho|={max_dev:.4f}, max |delta B|={max_b_dev:.4f}")
     return True, msg
 
 

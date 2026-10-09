@@ -831,17 +831,16 @@ void Pic::solve_hyp_phi(int iLev) {
   // divB error propagation speed
   Real ch = 0.8 * Geom(iLev).CellSize()[ix_] / tc->get_dt();
 
-  Real coef = -tc->get_dt() * pow(ch, 2);
+  Real coef = -tc->get_dt() * (ch * ch);
   for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
 
     const Array4<Real>& divBArr = divB[iLev][mfi].array();
     const Array4<Real>& phiArr = hypPhi[iLev][mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
-      phiArr(ijk) += coef * divBArr(ijk);
-      phiArr(ijk) *= (1 - hypDecay);
+      phiArr(ijk) = (phiArr(ijk) + coef * divBArr(ijk)) * (1.0 - hypDecay);
     });
   }
 
@@ -1035,13 +1034,9 @@ void Pic::correct_B(int iLev) {
                           DistributionMap(iLev), 3, nGst);
     }
     MultiFab& gradPhi = solverCenterLapMF[iLev];
-    gradPhi.setVal(0.0);
-
     solve_hyp_phi(iLev);
 
     MultiFab& gradPhiNode = solverTempNode3[iLev];
-    gradPhiNode.setVal(0.0);
-
     grad_center_to_node(hypPhi[iLev], gradPhiNode, Geom(iLev).InvCellSize());
 
     average_node_to_cellcenter(gradPhi, 0, gradPhiNode, 0, nDim3,

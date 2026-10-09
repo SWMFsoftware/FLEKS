@@ -938,6 +938,49 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
   }
 }
 
+// Same as fill_fine_lev_bny_from_coarse, but the level-boundary ghost cells
+// within nKeep layers of the valid box are left untouched (they are evolved
+// by the caller, e.g. the hybrid Faraday update of the first ghost layer).
+template <class FAB, class Interp>
+void fill_fine_lev_outer_bny_from_coarse(
+    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
+    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
+    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
+    Interp& mapper, const int nKeep) {
+  BL_PROFILE("fill_fine_lev_outer_bny_from_coarse");
+
+  if (fine.nGrow() <= nKeep)
+    return;
+
+  amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
+  amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
+
+  amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp,
+                            fine.nGrow());
+  ftmp.setVal(0.0);
+
+  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper,
+                             f.nGrow());
+
+  const int numComp = f.nComp();
+  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.fabbox();
+    const amrex::Box keepBox = amrex::grow(mfi.validbox(), nKeep);
+    auto data = f[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
+    const auto tmp = ftmp[mfi].array();
+
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_lev_boundary(statusArr(i, j, k)) &&
+          !keepBox.contains(amrex::IntVect(AMREX_D_DECL(i, j, k)))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
+  }
+}
+
 template <class FAB, class Interp>
 void fill_fine_lev_new_from_coarse(amrex::FabArray<FAB>& coarse,
                                    amrex::FabArray<FAB>& fine, const int iStart,

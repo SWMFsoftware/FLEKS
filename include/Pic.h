@@ -98,6 +98,20 @@ private:
 
   // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
   bool useHybridPIC = false;
+  // Coarse-fine interface treatment of the hybrid Faraday update on AMR grids.
+  // The update dB/dt = -curl_node_to_center(E) is a hidden face-staggered
+  // constrained transport, so div_node_to_center(avg_center_to_node(B)) is
+  // preserved when every cell of a level is advanced by one single nodal E:
+  //   1) Nodal E is synchronized across coarse-fine interfaces (fine interface
+  //      nodes take the coarse E, and fine E is injected into covered coarse
+  //      nodes).
+  //   2) The in-plane B of the first fine ghost layer is advanced by Faraday's
+  //      law with synchronized/interpolated nodal E.
+  //   3) Covered coarse cells are advanced with the injected fine E, and
+  //      relaxed toward the fine average with divergence-free curl corrections
+  //      (relax_covered_B_to_fine).
+  // The identity div(avg(curl(E))) == 0 holds in both 2D and 3D, keeping
+  // div(B) at round-off across all refinement levels.
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
   amrex::Real etaResistivity = 0.0;
@@ -222,6 +236,24 @@ private:
   // RK persistent scratch.
   amrex::Vector<amrex::MultiFab> centerBstart;
   amrex::Vector<amrex::MultiFab> centerBstar; // time-centered state used by E
+
+  // ---- Divergence-free relaxation of the covered coarse B ----
+  // Persistent per-level workspace of relax_covered_B_to_fine, allocated in
+  // distribute_arrays so a regrid rebuilds it with the new BoxArray.
+  //   relaxTarget   : avg(B_fine) restricted onto the coarse level (cell)
+  //   relaxResidual : r = target - B on the covered cells (cell, 1 ghost)
+  //   relaxCurl     : q = curl(potential)              (cell)
+  //   relaxCurlT    : s = transpose(curl) applied to r (nodal)
+  //   relaxDir      : CGLS search direction             (nodal)
+  amrex::Vector<amrex::MultiFab> relaxTarget;
+  amrex::Vector<amrex::MultiFab> relaxResidual;
+  amrex::Vector<amrex::MultiFab> relaxCurl;
+  amrex::Vector<amrex::MultiFab> relaxCurlT;
+  amrex::Vector<amrex::MultiFab> relaxDir;
+  amrex::Vector<amrex::MultiFab> relaxPot;
+  // Max |avg(B_fine) - B_coarse| over the covered cells of each level, measured
+  // *before* the restriction (see measure_covered_B_drift). Reported as 'dCov'.
+  amrex::Vector<amrex::Real> coveredBDrift;
 
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
@@ -507,6 +539,12 @@ public:
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
+    relaxTarget.resize(n_lev_max());
+    relaxResidual.resize(n_lev_max());
+    relaxCurl.resize(n_lev_max());
+    relaxCurlT.resize(n_lev_max());
+    relaxDir.resize(n_lev_max());
+    coveredBDrift.resize(n_lev_max(), 0.0);
     kStage.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL)
       kStage[iL].resize(4);
@@ -727,6 +765,11 @@ public:
   // trial states that need fresh ghosts for the Ohm's law stencils.
   void apply_centerB_BC(int iLev);
   void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
+  // Fill the ghost cells of centerBstar[iLev] algebraically as
+  // 0.5*(centerBstage[iLev] + otherB) instead of interpolating the coarse
+  // level again. `otherB` is centerB[iLev] for RK4 and centerBstart[iLev] for
+  // ssprk3, and must already be ghosted over the full nGrow.
+  void set_centerBstar_ghost(int iLev, const amrex::MultiFab &otherB);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion
@@ -739,6 +782,32 @@ public:
                       bool includeAmbi = true);
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
+  // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
+  // E assembled from (Bin, Bavg) at moment fraction hstep, then synchronized
+  // across levels.
+  void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin,
+                         amrex::Vector<amrex::MultiFab> &Bavg, int iK,
+                         amrex::Real hstep, bool includeAmbi);
+  // Inject fine nodal E into the coincident coarse nodes, finest first.
+  void sync_emf_fine_to_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // Fill the fine-level ghost nodes of E from the coarse E.
+  void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // Number of ghost layers advanced by the Faraday stage update on iLev.
+  int faraday_ngrow(int iLev) const { return (iLev > 0) ? 1 : 0; }
+  // True when Bz does not enter div(B), i.e. when the grid has no z extent:
+  // either a true-2D AMReX build or a 3D build with a single cell in z
+  // (fake 2D, where the two z node planes coincide).  `nDim` is the
+  // compile-time amrex::SpaceDim, so a bare `nDim == 2` test silently excludes
+  // the fake-2D case in a 3D build -- always use this helper instead.
+  bool is_bz_div_free() const { return (nDim == 2) || isFake2D; }
+  // Per-level div(B) report split into interface / covered / interior cells.
+  void report_divB_amr();
+  // Max |avg(B_fine) - B_coarse| over the covered cells of iLev, measured
+  // before any restriction overwrites them, stored into coveredBDrift[iLev].
+  void measure_covered_B_drift(int iLev);
+  // Relax the covered coarse B on iLev toward the restriction of the fine B
+  // with a discrete-curl correction, so the coarse div(B) is preserved.
+  void relax_covered_B_to_fine(int iLev);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 
