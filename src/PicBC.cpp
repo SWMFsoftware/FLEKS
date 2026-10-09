@@ -102,7 +102,7 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
     // Note: [&mfi] is retained because host member-function pointer func
     // requires mfi. All other data are captured by value for GPU readiness.
     ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
-      if (!bit::is_domain_boundary(statusArr(i, j, k, 0)))
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
       // If at an outer physical boundary with non-Dirichlet condition,
