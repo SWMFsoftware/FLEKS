@@ -98,33 +98,20 @@ private:
 
   // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
   bool useHybridPIC = false;
-  // Coarse-fine interface treatment of the hybrid Faraday update (optional
-  // #HYBRIDPIC parameters; only active with more than one level). The update
-  // dB/dt = -curl_node_to_center(E) is a hidden face-staggered constrained
-  // transport, so div_node_to_center(avg_center_to_node(B)) is preserved when
-  // every cell of a level is advanced by one single nodal E field:
-  //   syncEmfAmr  : one nodal E per stage across levels: the fine interface
-  //                 nodes take the coarse E, and the fine E is injected into
-  //                 the covered coarse nodes.
-  //   ctRestrictB : advance the covered coarse cells with the injected E
-  //                 instead of overwriting them with average_down of B, then
-  //                 relax them toward the fine average with div-free
-  //                 corrections (relax_covered_B_to_fine).
-  //   evolveGhostB: advance the in-plane B of the first fine ghost layer with
-  //                 the same Faraday update (E on the ghost nodes interpolated
-  //                 from the coarse E) instead of re-interpolating it from the
-  //                 coarse level; the ghost Bz is still interpolated when Bz
-  //                 does not enter div(B) (see is_bz_div_free).
-  // The identity
-  // div(avg(curl(E))) == 0 holds in both dimensions, and the relaxation builds
-  // its correction from the same discrete curl the Faraday update uses, so the
-  // correction is divergence-free however far the least-squares solve is taken.
-  // The covered coarse B still drifts from the fine average (the curl operator
-  // is 2dx-wide, so evaluating the same field at dx and dx/2 does not
-  // telescope); ctRestrictB removes that drift each step.
-  bool syncEmfAmr = true;
-  bool ctRestrictB = true;
-  bool evolveGhostB = true;
+  // Coarse-fine interface treatment of the hybrid Faraday update on AMR grids.
+  // The update dB/dt = -curl_node_to_center(E) is a hidden face-staggered
+  // constrained transport, so div_node_to_center(avg_center_to_node(B)) is
+  // preserved when every cell of a level is advanced by one single nodal E:
+  //   1) Nodal E is synchronized across coarse-fine interfaces (fine interface
+  //      nodes take the coarse E, and fine E is injected into covered coarse
+  //      nodes).
+  //   2) The in-plane B of the first fine ghost layer is advanced by Faraday's
+  //      law with synchronized/interpolated nodal E.
+  //   3) Covered coarse cells are advanced with the injected fine E, and
+  //      relaxed toward the fine average with divergence-free curl corrections
+  //      (relax_covered_B_to_fine).
+  // The identity div(avg(curl(E))) == 0 holds in both 2D and 3D, keeping
+  // div(B) at round-off across all refinement levels.
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
   amrex::Real etaResistivity = 0.0;
@@ -250,7 +237,7 @@ private:
   amrex::Vector<amrex::MultiFab> centerBstart;
   amrex::Vector<amrex::MultiFab> centerBstar; // time-centered state used by E
 
-  // ---- ctRestrictB: divergence-free relaxation of the covered coarse B ----
+  // ---- Divergence-free relaxation of the covered coarse B ----
   // Persistent per-level workspace of relax_covered_B_to_fine, allocated in
   // distribute_arrays so a regrid rebuilds it with the new BoxArray.
   //   relaxTarget   : avg(B_fine) restricted onto the coarse level (cell)
@@ -797,7 +784,7 @@ public:
   void compute_ambipolar_E(int iLev);
   // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
   // E assembled from (Bin, Bavg) at moment fraction hstep, then synchronized
-  // across levels (see syncEmfAmr / evolveGhostB).
+  // across levels.
   void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin,
                          amrex::Vector<amrex::MultiFab> &Bavg, int iK,
                          amrex::Real hstep, bool includeAmbi);
@@ -806,9 +793,7 @@ public:
   // Fill the fine-level ghost nodes of E from the coarse E.
   void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
-  int faraday_ngrow(int iLev) const {
-    return (iLev > 0 && syncEmfAmr && evolveGhostB) ? 1 : 0;
-  }
+  int faraday_ngrow(int iLev) const { return (iLev > 0) ? 1 : 0; }
   // True when Bz does not enter div(B), i.e. when the grid has no z extent:
   // either a true-2D AMReX build or a 3D build with a single cell in z
   // (fake 2D, where the two z node planes coincide).  `nDim` is the

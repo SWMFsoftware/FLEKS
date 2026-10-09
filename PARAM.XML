@@ -371,49 +371,31 @@ This command enables or disables the electromagnetic field solver.
 
 <command name="HYBRIDPIC" alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2" multiple="T">
   <parameter name="useHybridPIC" type="logical" default="F"/>
-  <parameter name="syncEmfAmr" type="logical" default="T"/>
-  <parameter name="ctRestrictB" type="logical" default="T"/>
-  <parameter name="evolveGhostB" type="logical" default="T"/>
 
 #HYBRIDPIC
 F                 useHybridPIC
-T                 syncEmfAmr     (optional)
-T                 ctRestrictB    (optional)
-T                 evolveGhostB   (optional)
 
 When true, the hybrid PIC field solver (generalized Ohm's law with kinetic
 ions and a fluid electron) is used instead of the full PIC field solver.
 Mutually exclusive with SOLVEEM.
 
-The last three parameters are optional (each line may be omitted) and only
-matter for multi-level (AMR) grids. The Faraday update
-dB/dt = -curl(E), with E on the nodes and B at the cell centers, is a hidden
-face-staggered constrained transport scheme: the nodal div(B) is preserved to
-round-off as long as all cells of a level are advanced with one single nodal
-E field. At the coarse-fine interface this requires:
-\begin{verbatim}
-  syncEmfAmr   - one nodal E per Faraday stage across levels: the fine
-                 interface nodes take the coarse E, and the fine E is injected
-                 into the covered coarse nodes.
-  ctRestrictB  - advance the covered coarse cells with the injected E instead
-                 of overwriting them with the average of the fine B; their
-                 drift from the fine average is then removed with a
-                 divergence-free (discrete curl) relaxation.
-  evolveGhostB - advance the in-plane B of the first fine ghost layer with the
-                 same Faraday update, using E on the ghost nodes interpolated
-                 from the coarse E, instead of re-interpolating B from the
-                 coarse level (Bz is still interpolated when the grid has no z
-                 extent).
-\end{verbatim}
-ctRestrictB and evolveGhostB require syncEmfAmr. With all three on, div(B) stays
-at round-off on every level, in 2D and in 3D alike: the identity
-div(avg(curl(E))) = 0 holds in both, and the relaxation builds its correction
-from the same discrete curl the Faraday update uses, so the correction is
-divergence-free however far the least-squares solve is taken. The covered
-coarse B still drifts from the fine average, because curl_node_to_center is a
-2dx-wide operator and evaluating the same field at dx and dx/2 does not
-telescope; ctRestrictB removes that drift each step. Setting all three to F
-restores the previous treatment.
+On multi-level (AMR) grids, the hybrid PIC solver uses a robust,
+divergence-preserving interface treatment for the Faraday update
+dB/dt = -curl(E) (with E on nodes and B at cell centers):
+  1) Nodal electric fields are synchronized across coarse-fine boundary nodes
+     at each Faraday stage (fine interface nodes adopt coarse E, and fine E
+     is injected into covered coarse nodes).
+  2) The in-plane B of the first fine ghost layer is advanced via Faraday's
+     law using the synchronized nodal electric field rather than being
+     re-interpolated from the coarse grid (Bz is interpolated when the grid
+     has no z extent).
+  3) Covered coarse cells are advanced with the injected fine electric field
+     instead of being overwritten by fine-cell averages; the 2dx drift
+     between coarse and fine representations is relaxed each step via a
+     divergence-free (discrete curl) projection.
+Together, these ensure that nodal div(B) is preserved to round-off across all
+refinement levels in both 2D and 3D.
+
 
 === Generalized Ohm's law: how each command controls a separate term ===
 

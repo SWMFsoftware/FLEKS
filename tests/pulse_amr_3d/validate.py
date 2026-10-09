@@ -8,7 +8,7 @@ Verifies the 3D coarse-fine AMR interface with non-uniform magnetic field:
      - Bounded magnetic energy Eb without whistler/Hall instability.
   2. Div(B) preservation across 3D coarse-fine interface:
      - Every divB-AMR line on all levels has max |div(B)| < 1e-10
-       (measures ~1e-15 when ctRestrictB / evolveGhostB are active).
+       (measures ~1e-15 with divergence-preserving AMR interface scheme).
      - dGhost remains stable without runaway.
   3. Spatial grid & field profile:
      - Detection of coarse (dx ~ 0.25) and fine (dx ~ 0.125) grids.

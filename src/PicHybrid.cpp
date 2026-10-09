@@ -259,15 +259,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   if (doHyper) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
-    // With evolveGhostB the first ghost layer of B is Faraday-advanced, so the
-    // Laplacian there (needed by the curl at the interface nodes) is computed
+    // The first ghost layer of B is Faraday-advanced, so the Laplacian
+    // there (needed by the curl at the interface nodes) is computed
     // directly from it and must not be replaced by coarse interpolation.
-    if (iLev > 0 && faraday_ngrow(iLev) == 0) {
-      fill_fine_lev_bny_from_coarse(
-          centerLapB[iLev - 1], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          *get_cell_interp());
-    } else if (iLev > 0) {
+    if (iLev > 0) {
       fill_fine_lev_outer_bny_from_coarse(
           centerLapB[iLev - 1], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
@@ -1186,7 +1181,7 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
                                                        : centerB[iLev - 1];
     if (faraday_ngrow(iLev) > 0) {
       // The first ghost layer is advanced by the Faraday update with the
-      // synchronized E (evolveGhostB); only the outer layers are interpolated.
+      // synchronized E; only the outer layers are interpolated.
       fill_fine_lev_outer_bny_from_coarse(
           coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1], Geom(iLev - 1),
           Geom(iLev), cell_status(iLev), *get_cell_interp(),
@@ -1281,7 +1276,7 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 // and the deep/ring agreement rules out the "interior coarse-edge midpoints are
 // not interpolated" explanation that the lev_edge mask suggested.
 //
-// That per-step difference is exactly what ctRestrictB's div-free relaxation
+// That per-step difference is exactly what the div-free relaxation
 // removes. The ordering of the two passes is likewise not the lever: on
 // amr_equilibrium, dropping the bottom-up pass makes the drift *worse*
 // (9.7e-4 vs 9.0e-4) and running it first improves it only ~6% (8.5e-4).
@@ -1334,7 +1329,7 @@ void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
 // kStage[iLev][iK] = curl(E_Ohm(Bin, Bavg)) on all levels. E is assembled on
 // every level first, then synchronized across the coarse-fine interfaces, and
 // only then is the curl taken, so that every cell of a level (including the
-// covered coarse cells and, with evolveGhostB, the first fine ghost layer) is
+// covered coarse cells and the first fine ghost layer) is
 // advanced by one single nodal E field.
 void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, Vector<MultiFab>& Bavg,
                             int iK, Real hstep, bool includeAmbi) {
@@ -1344,11 +1339,9 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, Vector<MultiFab>& Bavg,
                    nodeEstage[iLev], iLev, hstep, includeAmbi);
   }
 
-  if (finest_level > 0 && syncEmfAmr) {
+  if (finest_level > 0) {
     sync_emf_fine_to_coarse(nodeEstage);
-    if (evolveGhostB) {
-      fill_ghost_emf_from_coarse(nodeEstage);
-    }
+    fill_ghost_emf_from_coarse(nodeEstage);
   }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -1363,11 +1356,10 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, Vector<MultiFab>& Bavg,
 
 //==========================================================
 // Max |avg(B_fine) - B_coarse| over the covered cells of iLev, taken *before*
-// any restriction overwrites them. This is the quantity ctRestrictB has to
+// the relaxation updates them. This is the quantity the relaxation has to
 // remove (the fine-scale part of E is invisible to the coarse curl, so the
 // coarse covered B drifts from the fine average); measuring it after the
-// restriction instead would report zero whenever the plain average_down is
-// used, which carries no information.
+// relaxation instead would report zero, which carries no information.
 void Pic::measure_covered_B_drift(int iLev) {
   BL_PROFILE("Pic::measure_covered_B_drift");
   MultiFab& target = relaxTarget[iLev];
@@ -1392,9 +1384,8 @@ void Pic::measure_covered_B_drift(int iLev) {
 }
 
 //==========================================================
-// ctRestrictB: pull the covered coarse B toward the average of the fine B
-// using divergence-free corrections only, B += curl(A), where the nodal
-// vector potential A is non-zero only on the nodes whose surrounding cells are
+// Pull the covered coarse B toward the average of the fine B using
+// divergence-free corrections only, B += curl(A), where the nodal vector
 // all covered. The uncovered cells and the interface fluxes are untouched, so
 // div(B) of the coarse level stays at round-off, while the drift of the
 // covered B (the fine-scale part of E is invisible to the coarse curl) stays
@@ -1610,11 +1601,10 @@ void Pic::relax_covered_B_to_fine(int iLev) {
 
 //==========================================================
 // Max |divB| per level, split into: cells next to the coarse-fine interface
-// (fine edge cells, or coarse cells neighbouring the refined region), covered
 // coarse cells, and the remaining interior cells. Also reports the drift
-// between the covered coarse B and the average of the fine B, which is the
-// price of ctRestrictB, and the drift of the first fine ghost layer from the
-// coarse interpolation (evolveGhostB). One line per cycle:
+// between the covered coarse B and the average of the fine B, and the drift
+// of the first fine ghost layer from the coarse interpolation. One line per
+// cycle:
 //   divB-AMR n=<cycle> L<lev> if/cv/in=<iface>/<covered>/<interior>/dom=<edge>
 //            dCov=<max|Bc-avg(Bf)|> dGhost=<max|Bghost-interp(Bc)|>
 //            |B|=<max|B|>
@@ -1668,10 +1658,9 @@ void Pic::report_divB_amr() {
                            ? coveredBDrift[iLev]
                            : Real(0.0);
 
-    // Drift of the first fine ghost layer from the coarse interpolation (only
-    // non-zero with evolveGhostB).
+    // Drift of the first fine ghost layer from the coarse interpolation.
     Real ghostDrift = 0;
-    if (evolveGhostB && iLev > 0) {
+    if (iLev > 0) {
       MultiFab tmp(centerB[iLev].boxArray(), centerB[iLev].DistributionMap(),
                    nDim3, centerB[iLev].nGrow());
       MultiFab::Copy(tmp, centerB[iLev], 0, 0, nDim3, centerB[iLev].nGrow());
@@ -1721,13 +1710,12 @@ void Pic::report_divB_amr() {
   line << " dCov=" << maxDrift << " dGhost=" << maxGhostDrift
        << "|B|=" << maxBmag;
 
-  // With evolveGhostB the first fine ghost layer is advanced by the Faraday
-  // update but never re-interpolated from the coarse level, so it can drift
-  // away from it. That drift *saturates*: measured on reconnection_amr to
-  // t=100, dGhost/|B| rises to ~4.7 and then flattens while every AMR div(B)
-  // bucket stays bit-for-bit flat over 5000 cycles. A low fixed threshold
-  // therefore cannot work: it sits below the benign saturation level and fires
-  // on every strong-gradient deck.
+  // The first fine ghost layer is advanced by the Faraday update but never
+  // re-interpolated from the coarse level, so it can drift away from it. That
+  // drift *saturates*: measured on reconnection_amr to t=100, dGhost/|B| rises
+  // to ~4.7 and then flattens while every AMR div(B) bucket stays bit-for-bit
+  // flat over 5000 cycles. A low fixed threshold therefore cannot work: it sits
+  // below the benign saturation level and fires on every strong-gradient deck.
   // Require both a level clearly above anything seen benign (dGhostRunaway) and
   // continued *growth* -- the ratio at least doubling past its own previous
   // maximum -- so the warning tracks a runaway rather than a level.
@@ -1788,17 +1776,16 @@ void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
 
-  if (finest_level > 0 && syncEmfAmr && nDim == 3 && !isFake2D) {
+  if (finest_level > 0 && nDim == 3 && !isFake2D) {
     static bool isWarned = false;
     if (!isWarned) {
       amrex::Print()
           << printPrefix
-          << "Note: #HYBRIDPIC syncEmfAmr on a 3D grid: the nodal "
-             "Note: #HYBRIDPIC syncEmfAmr on a 3D grid: the covered "
+          << "Note: AMR hybrid PIC on a 3D grid: the covered "
              "coarse B drifts from the average of the fine B, since the "
              "2dx-wide curl operator does not telescope between dx and "
-             "dx/2 (ctRestrictB removes the drift each step). div(B) "
-             "itself is preserved in 3D as well.\n";
+             "dx/2 (divergence-free relaxation removes the drift each step). "
+             "div(B) itself is preserved in 3D as well.\n";
       isWarned = true;
     }
   }
@@ -1913,8 +1900,8 @@ void Pic::update_B_hybrid() {
   // Each stage first evaluates curl(E) on ALL levels (faraday_stage_rhs, which
   // also synchronizes E across the coarse-fine interface), then updates every
   // level, then refreshes the ghost cells. nG = faraday_ngrow(iLev) is 1 on
-  // refined levels when evolveGhostB is on: the first ghost layer is advanced
-  // with the same curl(E) as the valid cells.
+  // refined levels: the first ghost layer is advanced with the same curl(E)
+  // as the valid cells.
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
     // Moment time-interpolation weights hstep for RK stages within the
     // sub-step.
@@ -2034,31 +2021,22 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Restriction. With ctRestrictB the covered coarse cells have already been
-  // advanced with the injected fine E, which keeps the coarse level
-  // divergence-consistent; average_down of the cell-centered B would not
-  // (its face weights are (F0+2F1+F2)/4 instead of the CT value (F0+F2)/2).
+  // Restriction. The covered coarse cells have already been advanced with the
+  // injected fine E, which keeps the coarse level divergence-consistent;
+  // average_down of the cell-centered B would not (its face weights are
+  // (F0+2F1+F2)/4 instead of the CT value (F0+F2)/2).
   // Left alone, however, the covered coarse B drifts away from the fine
   // average (the fine-scale part of E is invisible to the coarse curl), so it
   // is relaxed toward it with divergence-free corrections only.
-  const bool useCtRestrict = syncEmfAmr && ctRestrictB;
   if (finest_level > 0) {
     // How far the covered coarse B has drifted from the fine average. This is
     // the quantity the relaxation has to remove, so it must be sampled before
-    // the restriction overwrites the covered cells.
+    // the relaxation updates the covered cells.
     for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
       measure_covered_B_drift(iLev);
     }
-  }
-  if (useCtRestrict && finest_level > 0) {
     for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
       relax_covered_B_to_fine(iLev);
-    }
-  }
-  if (projectDownEmFields && finest_level > 0 && !useCtRestrict) {
-    for (int iLev = finest_level; iLev > 0; iLev--) {
-      average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3,
-                   ref_ratio[iLev - 1]);
     }
   }
 
@@ -2145,7 +2123,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  if (syncEmfAmr && finest_level > 0) {
+  if (finest_level > 0) {
     sync_emf_fine_to_coarse(nodeE);
   }
 

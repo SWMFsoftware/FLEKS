@@ -13,12 +13,12 @@ fluid electrons).
   $B_y(x) = B_1 \exp(-(x/\sigma)^2)$ on a background guide field $B_{x0} = 10^{-9}$ T.
   Analytically divergence-free everywhere ($\nabla \cdot \mathbf{B} = 0$).
 - **AMR div(B) treatment**:
-  - `syncEmfAmr = T`: interface nodes share synchronized nodal electric fields.
-  - `ctRestrictB = T`: covered coarse cells are advanced with injected EMF and relaxed
-    towards fine-cell averages using the true 3D nodal vector potential $\mathbf{A}$
+  - Synchronized nodal electric fields across coarse-fine interface nodes.
+  - Covered coarse cells advanced with injected EMF and relaxed towards fine-cell
+    averages using the true 3D nodal vector potential $\mathbf{A}$
     ($\mathbf{B} \mathrel{+}= \nabla \times \mathbf{A}$).
-  - `evolveGhostB = T`: first fine ghost layer is advanced by Faraday's law rather
-    than re-interpolated from coarse level.
+  - First fine ghost layer advanced by Faraday's law rather than re-interpolated
+    from coarse level.
 - **Divergence monitoring**:
   - `#DIVB` with `alwaysComputeDivB = T` outputs `divB-AMR` diagnostics at every
     `#MONITOR dnReport` step.

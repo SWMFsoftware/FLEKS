@@ -216,7 +216,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerBstar[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
 
-      // ctRestrictB workspace for the divergence-free relaxation of the
+      // Workspace for the divergence-free relaxation of the
       // covered coarse B. The cell-centered arrays need no ghosts except the
       // residual, whose transpose stencil reaches one cell out; the nodal ones
       // are indexed over the nodal BoxArray, which already covers every node

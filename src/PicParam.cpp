@@ -360,18 +360,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
-    // Optional coarse-fine interface switches, so existing decks are
-    // unaffected (see the comment at their declaration in Pic.h).
-    auto read_optional_logical = [&](const std::string& name, bool& var) {
-      std::string sVal;
-      if (param.read_optional(name, sVal)) {
-        var = (sVal == "T" || sVal == "t" || sVal == "true" || sVal == "TRUE" ||
-               sVal == "1");
-      }
-    };
-    read_optional_logical("syncEmfAmr", syncEmfAmr);
-    read_optional_logical("ctRestrictB", ctRestrictB);
-    read_optional_logical("evolveGhostB", evolveGhostB);
   } else if (command == "#RESISTIVITY") {
     param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {
@@ -618,10 +606,7 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
     Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
-  if (useHybridPIC && !syncEmfAmr && (ctRestrictB || evolveGhostB))
-    Abort("Invalid #HYBRIDPIC: ctRestrictB and evolveGhostB require "
-          "syncEmfAmr = T (the covered coarse cells and the fine ghost cells "
-          "are advanced with the synchronized electric field).");
+
   if (useElectronPressureEq) {
     if (!useHybridPIC)
       Abort("Invalid #ELECTRONPRESSURE: the evolved electron pressure "

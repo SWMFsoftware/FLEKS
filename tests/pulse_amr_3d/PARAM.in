@@ -48,9 +48,6 @@ F                       solveEM
 
 #HYBRIDPIC
 T                       useHybridPIC
-T                       syncEmfAmr
-T                       ctRestrictB
-T                       evolveGhostB
 
 #RESISTIVITY
 0.0                     etaResistivity
