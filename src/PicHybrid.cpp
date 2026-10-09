@@ -1458,6 +1458,24 @@ void Pic::relax_covered_B_to_fine(int iLev) {
   const auto period = Geom(iLev).periodicity();
   const auto owner = s.OwnerMask(period);
 
+  // Precompute inner-node mask once before CGLS: nodes surrounded by covered
+  // cells are inner (1), others are boundary/outer (0).
+  iMultiFab innerMask(s.boxArray(), s.DistributionMap(), 1, 0);
+  for (MFIter mfi(innerMask); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const auto& mask = innerMask[mfi].array();
+    const auto& st = cellStatus[iLev][mfi].const_array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      bool inner = true;
+      for (int kk = 0; kk <= kOff && inner; ++kk)
+        for (int jj = 0; jj <= 1 && inner; ++jj)
+          for (int ii = 0; ii <= 1 && inner; ++ii)
+            if (!bit::is_refined(st(i - ii, j - jj, k - kk)))
+              inner = false;
+      mask(i, j, k) = inner ? 1 : 0;
+    });
+  }
+
   // s = curl^T r on the nodes surrounded by covered cells, zero elsewhere.
   // This is the exact adjoint of apply_curl below.
   auto apply_curlT = [&]() {
@@ -1466,15 +1484,9 @@ void Pic::relax_covered_B_to_fine(int iLev) {
       const Box& box = mfi.validbox();
       const auto& sa = s[mfi].array();
       const auto& d = r[mfi].const_array();
-      const auto& st = cellStatus[iLev][mfi].const_array();
+      const auto& mask = innerMask[mfi].const_array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        bool inner = true;
-        for (int kk = 0; kk <= kOff && inner; ++kk)
-          for (int jj = 0; jj <= 1 && inner; ++jj)
-            for (int ii = 0; ii <= 1 && inner; ++ii)
-              if (!bit::is_refined(st(i - ii, j - jj, k - kk)))
-                inner = false;
-        if (!inner) {
+        if (!mask(i, j, k)) {
           for (int iVar = 0; iVar < nDim3; ++iVar)
             sa(i, j, k, iVar) = 0.0;
           return;
@@ -1659,7 +1671,7 @@ void Pic::report_divB_amr() {
     // Drift of the first fine ghost layer from the coarse interpolation (only
     // non-zero with evolveGhostB).
     Real ghostDrift = 0;
-    if (iLev > 0) {
+    if (evolveGhostB && iLev > 0) {
       MultiFab tmp(centerB[iLev].boxArray(), centerB[iLev].DistributionMap(),
                    nDim3, centerB[iLev].nGrow());
       MultiFab::Copy(tmp, centerB[iLev], 0, 0, nDim3, centerB[iLev].nGrow());
@@ -1713,9 +1725,9 @@ void Pic::report_divB_amr() {
   // update but never re-interpolated from the coarse level, so it can drift
   // away from it. That drift *saturates*: measured on reconnection_amr to
   // t=100, dGhost/|B| rises to ~4.7 and then flattens while every AMR div(B)
-  // bucket stays bit-for-bit flat over 5000 cycles (tests/reconnection_amr/
-  // GHOST_DRIFT.md). A low fixed threshold therefore cannot work: it sits below
-  // the benign saturation level and fires on every strong-gradient deck.
+  // bucket stays bit-for-bit flat over 5000 cycles. A low fixed threshold
+  // therefore cannot work: it sits below the benign saturation level and fires
+  // on every strong-gradient deck.
   // Require both a level clearly above anything seen benign (dGhostRunaway) and
   // continued *growth* -- the ratio at least doubling past its own previous
   // maximum -- so the warning tracks a runaway rather than a level.
@@ -1731,8 +1743,7 @@ void Pic::report_divB_amr() {
              "running away from the coarse interpolation: dGhost/|B| = "
           << ratio << " (dGhost=" << maxGhostDrift << ", |B|=" << maxBmag
           << "), up from " << maxRatioSeen
-          << " previously. Saturation near 5x|B| is normal "
-             "(see tests/reconnection_amr/GHOST_DRIFT.md); sustained "
+          << " previously. Saturation near 5x|B| is benign; sustained "
              "growth is not.\n";
       maxRatioSeen = ratio;
     }
@@ -2065,7 +2076,8 @@ void Pic::update_B_hybrid() {
         apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3,
                        &Pic::get_node_B, iLev, true);
       }
-      compute_divB(iLev);
+      ensure_divB(iLev);
+      div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
       correct_B(iLev);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     }
@@ -2113,7 +2125,7 @@ void Pic::update_B_hybrid() {
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
           cell_bilinear_interp);
     }
-    if (alwaysComputeDivB && n_lev() > 1)
+    if (need_divB() && n_lev() > 1 && doReport)
       report_divB_amr();
   }
 

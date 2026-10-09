@@ -114,9 +114,8 @@ python3 tests/validate_tests.py --test=reconnection_amr.hybrid   # hybrid only
 
 ## Long-horizon div(B) / ghost-drift measurements
 
-`GHOST_DRIFT.md` records a 100-time-unit run of the hybrid variant with the
-`#DIVB` diagnostic enabled, used to settle two questions about the coarse-fine
-treatment:
+A 100-time-unit run of the hybrid variant with the `#DIVB` diagnostic enabled
+settled two questions about the coarse-fine treatment:
 
 - every AMR div(B) bucket (level-0 interface / covered / interior and the
   fine-level interior) is **bit-for-bit flat** over 5000 cycles, so the
