@@ -788,7 +788,8 @@ void Pic::post_process_param() {
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
     // Guard: parts may not be fully populated yet.
-    if (i < (int)parts.size() && parts[i] && parts[i]->get_charge() < 0) {
+    if (!useHybridPIC && i < (int)parts.size() && parts[i] &&
+        parts[i]->get_charge() < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
     } else {

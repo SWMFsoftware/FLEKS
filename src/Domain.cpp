@@ -281,11 +281,14 @@ void Domain::init(double time, const int iDomain,
   if (domainParameters.initFromSWMF && !domainParameters.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(
         gm, amrInfo, nGst, gridID, "fi", paramInt,
-        Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
+        Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
+        domainParameters.useHybridPIC);
   } else {
     // if (NOT initFromSWMF) or receiveIConly
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
   }
+
+  fi->set_useHybridPIC(domainParameters.useHybridPIC);
 
   ptInfo.set_fluid_interface(fi.get());
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID,
@@ -329,6 +332,10 @@ void Domain::init(double time, const int iDomain,
   }
   if (source)
     pic->set_fluid_source(source.get());
+
+  if (pic) {
+    fi->set_useHybridPIC(pic->get_useHybridPIC());
+  }
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -1127,6 +1134,8 @@ void Domain::read_domain_parameters(ReadParam &rp) {
       rp.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       rp.read_var("useSource", domainParameters.useSource);
+    } else if (command == "#HYBRIDPIC") {
+      rp.read_var("useHybridPIC", domainParameters.useHybridPIC);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       rp.read_var("loadBalanceStrategy", strategy);

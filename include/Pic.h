@@ -965,6 +965,11 @@ public:
     return e;
   }
 
+  inline amrex::Real get_center_Pe(amrex::MFIter &mfi, amrex::IntVect ijk,
+                                   int iVar, const int iLev) {
+    return fi->get_pe(mfi, ijk, iLev);
+  }
+
   //--------------- Boundary end ------------------------
 
   // Make a new level from scratch using provided BoxArray and
