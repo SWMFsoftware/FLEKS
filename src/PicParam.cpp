@@ -358,8 +358,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
             "the forcefree (magnetic reconnection) initial condition.");
     }
     ic_->read_param(param);
-  } else if (command == "#HYBRIDPIC") {
-    param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {
     param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {
@@ -793,7 +791,8 @@ void Pic::post_process_param() {
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
     // Guard: parts may not be fully populated yet.
-    if (i < (int)parts.size() && parts[i] && parts[i]->get_charge() < 0) {
+    if (!useHybridPIC && i < (int)parts.size() && parts[i] &&
+        parts[i]->get_charge() < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
     } else {

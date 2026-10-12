@@ -628,6 +628,12 @@ void Pic::apply_pe_zero_gradient_bc(int iLev, MultiFab& mf) {
   GpuBndryFuncFab<FabFillNoOp> bfunc(FabFillNoOp{});
   PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
   physbcf(mf, 0, mf.nComp(), mf.nGrowVect(), 0.0, 0);
+
+  if (fi && fi->get_iPe() >= 0 && bcField.has(FieldBC::coupled)) {
+    fill_ext_dir(cellStatus[iLev], mf, 0, mf.nComp(), &Pic::get_center_Pe, iLev,
+                 &bcField);
+  }
+
   mf.FillBoundary(Geom(iLev).periodicity());
 }
 
@@ -711,13 +717,19 @@ void Pic::fill_new_electron_pressure() {
 // compute_ambipolar_E() needs; the evolved-Pe path only reads valid nodes back.
 void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
                                    MultiFab& cellRho, const bool useGrownTile) {
-  for (MFIter mfi(nodalRho); mfi.isValid(); ++mfi) {
-    const Box& box = useGrownTile ? mfi.growntilebox() : mfi.validbox();
-    const Array4<Real>& arrRho = nodalRho[mfi].array();
-    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      arrRho(i, j, k) = moments(i, j, k, iRho_);
-    });
+  nodalRho.setVal(0.0);
+  for (int s = 0; s < nSpecies; ++s) {
+    const Real qomFactor = (fi && s < fi->get_nS() && fi->get_MoMi(s) > 0.0)
+                               ? (fi->get_QoQi(s) / fi->get_MoMi(s))
+                               : 1.0;
+    for (MFIter mfi(nodalRho); mfi.isValid(); ++mfi) {
+      const Box& box = useGrownTile ? mfi.growntilebox() : mfi.validbox();
+      const Array4<Real>& arrRho = nodalRho[mfi].array();
+      const Array4<Real const>& moments = nodePlasma[s][iLev][mfi].array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        arrRho(i, j, k) += qomFactor * moments(i, j, k, iRho_);
+      });
+    }
   }
   nodalRho.FillBoundary(Geom(iLev).periodicity());
   average_node_to_center(nodalRho, cellRho);
