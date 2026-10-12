@@ -1164,22 +1164,13 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 }
 
 //==========================================================
-// BCs for the cell-centered B, applied to the RK trial states and to the new
-// state at the end of each B sub-step.
+// Boundary conditions for cell-centered B, applied to the RK trial states and
+// to the new state at the end of each B sub-step.
 //
-// Every call on a refined level interpolates the whole fine level from the
-// coarse one and then keeps only the level-boundary band, so the cost is set
-// by the full destination volume. Restricting the destination was evaluated
-// and rejected: interp_from_coarse_to_fine goes through AMReX's
-// InterpFromCoarseLevel, which derives the coarse source geometry from the
-// fine BoxArray, so a band sub-BoxArray needs a matching coarse FabArray
-// built for the covering boxes -- fiddly, and the payoff is unclear because
-// the cost is not purely volume-bound (two decks with identical 512+512 grids,
-// amr_equilibrium and reconnection_amr, differ 3.6x in cost per interpolation:
-// 0.094 ms vs 0.343 ms). Cutting the *number* of interpolations is the
-// effective lever instead: set_centerBstar_ghost removed one per stage, and
-// folding the lev_edge and lev_boundary passes into one is unsafe (see
-// sync_emf_fine_to_coarse).
+// For refined levels (iLev > 0), ghost cells at the coarse-fine boundary are
+// interpolated from the coarse level, and physical boundary conditions are
+// applied. When faraday_ngrow > 0, the first fine ghost layer is updated by
+// the Faraday stage instead of being overwritten by coarse interpolation.
 void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
@@ -1243,55 +1234,20 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 }
 
 //==========================================================
-// Make the nodal E single-valued across the levels (same pattern as the
-// full-PIC project_down_E):
-//  1. top-down: the fine nodes ON the coarse-fine interface take the coarse E
-//     (linear interpolation along the coarse edges);
-//  2. bottom-up: the covered coarse nodes take the injected fine E.
-//  3. fill_ghost_emf_from_coarse: the fine ghost nodes take the coarse E.
+// Synchronize nodal E across AMR levels:
+//  1. Top-down: fine nodes on the coarse-fine interface take coarse E
+//     (linear interpolation along coarse edges via fill_fine_lev_edge_from_coarse).
+//  2. Bottom-up: covered coarse nodes take the coincident fine E via
+//     average_down_nodal.
+//  (Ghost nodes of fine levels are subsequently filled in fill_ghost_emf_from_coarse).
 //
-// Do NOT fold step 1 and step 3 into a single interpolation, not even for
-// finest_level == 1. They are not redundant: the lev_edge nodes are filled from
-// the coarse E *before* the bottom-up injection and the lev_boundary ghost
-// nodes *after* it, so one pass would silently switch the fine interface nodes
-// to the injected values. That looks fine on a smooth equilibrium deck (it is
-// the "run the injection first" variant, 8.5e-4 vs 9.0e-4 drift) but it is a
-// 20x div(B) regression on reconnection_amr (level-0 interface 6.2e-4 ->
-// 1.2e-2). Re-adding the pre-injection FillBoundary does not rescue it: the
-// difference is the injection order, not the ghost refresh.
+// Step 1 must precede Step 2 so that fine interface nodes are filled from
+// coarse E before coarse covered nodes are updated with fine values.
 //
-// The fine interface E no longer depends on the interpolated fine ghost B
-// (letting that E drive the coarse cells was found to be unstable at the
-// corners of the fine boxes).
-//
-// amrex::average_down_nodal IS already an exact coincident-node injection, not
-// a weighted average: amrex_avgdown_nodes() is
-//     crse(i,j,k,n) = fine(i*ratio[0], j*ratio[1], k*ratio[2], n)
-// (AMReX_MultiFabUtil_3D_C.H), and on AMR it runs through a coarsened
-// temporary FabArray plus a ParallelCopy, so it is already the cross-rank
-// gather. The covered coarse nodes therefore hold precisely the fine E.
-//
-// Even so, the covered coarse B does not equal the average of the fine B, and
-// the residual is NOT a synchronisation artefact. Measured directly (compare
-// curl_node_to_center(E_coarse) on the covered cells against average_down of
-// curl_node_to_center(E_fine)):
-//
-//   amr_equilibrium 2D: |mismatch| / |K_c E_c| = 0.63 (ring) / 0.66 (deep)
-//   amr_equilibrium 3D: |mismatch| / |K_c E_c| = 0.80 (ring) / 0.83 (deep)
-//   reconnection_amr  : |mismatch| / |K_c E_c| = 0.58 (ring) / 0.53 (deep)
-//
-// i.e. the coarse curl of the synchronized field and the average of the fine
-// curls differ at O(1) *relative*, and -- decisively -- equally in the interior
-// of the covered region and in the boundary ring. So the drift is intrinsic:
-// curl_node_to_center is a 2dx-wide operator, and evaluating the same physics
-// at dx and dx/2 simply does not telescope. No choice of nodal E removes it,
-// and the deep/ring agreement rules out the "interior coarse-edge midpoints are
-// not interpolated" explanation that the lev_edge mask suggested.
-//
-// That per-step difference is exactly what the div-free relaxation
-// removes. The ordering of the two passes is likewise not the lever: on
-// amr_equilibrium, dropping the bottom-up pass makes the drift *worse*
-// (9.7e-4 vs 9.0e-4) and running it first improves it only ~6% (8.5e-4).
+// Because curl_node_to_center is a 2*dx-wide stencil, evaluating curl(E) at dx
+// vs. 2*dx does not telescope: the coarse curl of synchronized E differs from
+// the cell average of fine curl(E). This intrinsic per-step drift between
+// coarse covered B and the fine B average is corrected by relax_covered_B_to_fine.
 void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
   BL_PROFILE("Pic::sync_emf_fine_to_coarse");
   for (int iLev = 1; iLev <= finest_level; ++iLev) {
@@ -1367,11 +1323,8 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, Vector<MultiFab>& Bavg,
 }
 
 //==========================================================
-// Max |avg(B_fine) - B_coarse| over the covered cells of iLev, taken *before*
-// the relaxation updates them. This is the quantity the relaxation has to
-// remove (the fine-scale part of E is invisible to the coarse curl, so the
-// coarse covered B drifts from the fine average); measuring it after the
-// relaxation instead would report zero, which carries no information.
+// Compute max |avg(B_fine) - B_coarse| over the covered cells of iLev, evaluated
+// before divergence-free relaxation updates them.
 void Pic::measure_covered_B_drift(int iLev) {
   BL_PROFILE("Pic::measure_covered_B_drift");
   MultiFab& target = relaxTarget[iLev];
@@ -1396,28 +1349,23 @@ void Pic::measure_covered_B_drift(int iLev) {
 }
 
 //==========================================================
-// Pull the covered coarse B toward the average of the fine B using
-// divergence-free corrections only, B += curl(A), where the nodal vector
-// all covered. The uncovered cells and the interface fluxes are untouched, so
-// div(B) of the coarse level stays at round-off, while the drift of the
-// covered B (the fine-scale part of E is invisible to the coarse curl) stays
-// bounded. A is the least-squares solution of curl(A) = avg(Bf) - Bc,
-// obtained with CGLS.
+// Relax covered coarse B toward the cell-average of fine B using divergence-free
+// corrections, B += curl(A), where A is a nodal potential supported on nodes
+// whose surrounding cells are all covered. Uncovered cells and interface fluxes
+// remain untouched, preserving coarse-level div(B) to machine precision.
+// A is obtained by solving min |avg(B_fine) - B_coarse - curl(A)|^2 with CGLS.
 //
-// Why this is divergence-free: div_node_to_center o average_center_to_node o
-// curl_node_to_center == 0 identically (in 2D and in 3D), so *any* curl
-// correction leaves div(B) untouched -- the CGLS does not have to converge for
-// the property to hold, it only decides how much of the drift is removed.
+// Why this is divergence-free:
+//   div_node_to_center o average_center_to_node o curl_node_to_center == 0
+// identically in 2D and 3D. Any curl correction strictly preserves div(B)
+// regardless of CGLS convergence.
 //
 // Two variants, selected by is_bz_div_free():
-//   * No z extent (2D build, or fake 2D with one cell in z): Bz does not enter
-//     div(B), so it is restricted directly and only (Bx, By) is relaxed with
-//     the scalar potential A_z.
-//   * True 3D: all three components are relaxed with the full nodal vector
-//     potential. The gauge freedom A -> A + grad(phi) leaves curl(A) unchanged
-//     and makes the normal equations singular along the gauge modes; those
-//     modes lie in the null space of the curl operator, so CGLS never amplifies
-//     them and no gauge fixing is needed.
+//   * 2D / fake-2D: Bz does not enter div(B), so it is restricted directly from
+//     fine cells, while (Bx, By) is relaxed via the scalar potential A_z.
+//   * True 3D: all three components are relaxed with the nodal vector potential A.
+//     Gauge modes A -> A + grad(phi) lie in the null space of curl, so CGLS
+//     does not amplify them and explicit gauge fixing is unnecessary.
 void Pic::relax_covered_B_to_fine(int iLev) {
   BL_PROFILE("Pic::relax_covered_B_to_fine");
 
@@ -1584,11 +1532,8 @@ void Pic::relax_covered_B_to_fine(int iLev) {
     });
   }
 
-  // CGLS for min |r - curl(A)|^2: A accumulates the potential and B its curl.
-  // (Warm-starting A from the previous step was measured to give no speed-up:
-  // the drift increment has the same spectral content as the drift itself, so
-  // the convergence rate -- set by the conditioning, not the magnitude -- is
-  // unchanged, and it even cost a couple of extra iterations.)
+  // CGLS for min |r - curl(A)|^2: B directly accumulates the curl corrections
+  // and r tracks the residual.
   apply_curlT();
   MultiFab::Copy(p, s, 0, 0, nDim3, 0);
   Real gamma = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
@@ -1722,17 +1667,13 @@ void Pic::report_divB_amr() {
   line << " dCov=" << maxDrift << " dGhost=" << maxGhostDrift
        << "|B|=" << maxBmag;
 
-  // The first fine ghost layer is advanced by the Faraday update but never
-  // re-interpolated from the coarse level, so it can drift away from it. That
-  // drift *saturates*: measured on reconnection_amr to t=100, dGhost/|B| rises
-  // to ~4.7 and then flattens while every AMR div(B) bucket stays bit-for-bit
-  // flat over 5000 cycles. A low fixed threshold therefore cannot work: it sits
-  // below the benign saturation level and fires on every strong-gradient deck.
-  // Require both a level clearly above anything seen benign (dGhostRunaway) and
-  // continued *growth* -- the ratio at least doubling past its own previous
-  // maximum -- so the warning tracks a runaway rather than a level.
-  constexpr Real dGhostRunaway = 6.0; // ~30% above the worst benign value (4.7)
-  constexpr Real dGrossGrowth = 2.0;  // factor that counts as "still running"
+  // The first fine ghost layer is advanced by the Faraday update rather than
+  // re-interpolated from the coarse level. Its difference from the coarse
+  // interpolation typically saturates at a benign level without impacting div(B).
+  // To avoid false positives on strong gradients, warn only when drift exceeds
+  // a threshold ratio and exhibits continued growth past its previous maximum.
+  constexpr Real dGhostRunaway = 6.0; // threshold ratio above benign saturation
+  constexpr Real dGrossGrowth = 2.0;  // factor that counts as sustained growth
   if (maxBmag > 0) {
     static Real maxRatioSeen = 0.0;
     const Real ratio = maxGhostDrift / maxBmag;
@@ -1753,21 +1694,15 @@ void Pic::report_divB_amr() {
 
 //==========================================================
 // Fill the ghost cells of the time-centered trial state centerBstar from the
-// other RK state instead of interpolating the coarse level a second time.
+// other RK state via linear combination, avoiding an extra coarse interpolation.
 //
-// centerBstar is *exactly* 0.5*(centerBstage + otherB) in the valid region, and
-// the two sources already carry valid ghosts: centerBstage has just been
-// through apply_centerB_BC, and otherB (centerB_n, or centerBstart for
-// ssprk3) is filled once at the top of the step. Since
-// fill_fine_lev_*_from_coarse and the physical field BCs are linear, the
-// interpolated ghost cells are that same linear combination of the two
-// sources' ghost cells, so one LinComb over the whole ghost box reproduces
-// them without any communication. LinComb writes every ghost cell of every
-// box, so no FillBoundary is needed on the result either.
+// centerBstar is 0.5*(centerBstage + otherB) in valid cells, and both sources
+// already possess valid ghost cells. Because coarse interpolation and physical
+// boundary conditions are linear, LinComb across valid and ghost cells
+// reproduces the ghost state without communication.
 //
-// The one exception is project_body_B: the conducting-body projection is not
-// linear (0.5*(proj(A) + proj(B)) != proj(0.5*(A+B))), so a conducting body
-// keeps the interpolated path.
+// Conducting bodies are an exception because project_body_B is non-linear, so
+// they fall back to apply_centerB_BC.
 void Pic::set_centerBstar_ghost(int iLev, const MultiFab& otherB) {
   MultiFab& Bs = centerBstar[iLev];
   if (is_body_conducting()) {
