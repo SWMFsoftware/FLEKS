@@ -18,10 +18,11 @@
 #include <AMReX_VisMF.H>
 
 #include "Constants.h"
-#include "DomainParameters.h"
 #include "Grid.h"
 #include "GridUtility.h"
 #include "ReadParam.h"
+
+struct DomainParameters;
 
 // Immutable SI<->normalized conversion factors, computed once from a
 // FluidInterface and shared read-only (shared_ptr<const>) by all interfaces.
@@ -94,6 +95,7 @@ protected:
   bool useElectronFluid = true;
   bool useAnisoP = false;
   bool useMhdPe = false;
+  bool useHybridPIC = false;
 
   amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
       iUy_I, iUz_I;
@@ -204,13 +206,16 @@ public:
                  int nGst, int id, std::string tag,
                  const amrex::Vector<int>& iParam,
                  const amrex::Vector<double>& norm,
-                 const amrex::Vector<double>& paramComm);
+                 const amrex::Vector<double>& paramComm,
+                 bool useHybridIn = false);
 
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag, FluidType typeIn = PICFluid)
+                 int nGst, int id, std::string tag, bool useHybridIn = false,
+                 FluidType typeIn = PICFluid)
       : Grid(gm, amrInfo, nGst, id, tag), myType(typeIn) {
 
     initFromSWMF = false;
+    useHybridPIC = useHybridIn;
 
     if (myType != PICFluid)
       nS = 0;
@@ -299,6 +304,8 @@ public:
                             const amrex::Real Bz, Basis3x3& norm_DD) const;
 
   void calc_fluid_state(const double* dataPIC_I, double* dataFluid_I) const;
+  void calc_fluid_state_hybrid(const double* dataPIC_I,
+                               double* dataFluid_I) const;
 
   void print_info() const;
 
@@ -334,6 +341,29 @@ public:
   bool get_UseAnisoP() const { return (useAnisoP); }
 
   bool get_useElectronFluid() const { return useElectronFluid; }
+
+  bool get_useHybridPIC() const { return useHybridPIC; }
+
+  bool get_useMhdPe() const { return useMhdPe; }
+  int get_iPe() const { return iPe; }
+
+  double get_MoMi(int is) const {
+    return (is >= 0 && is < static_cast<int>(MoMi_S.size())) ? MoMi_S[is] : 1.0;
+  }
+  double get_QoQi(int is) const {
+    return (is >= 0 && is < static_cast<int>(QoQi_S.size())) ? QoQi_S[is] : 1.0;
+  }
+
+  template <typename Type>
+  amrex::Real get_pe(const amrex::MFIter& mfi, const Type xyz,
+                     const int iLev = 0) const {
+    if (iPe >= 0) {
+      return get_value(mfi, xyz, iPe, iLev);
+    } else if (!iP_I.empty() && iP_I[0] >= 0 && PeRatio > 0.0) {
+      return PeRatio * get_value(mfi, xyz, iP_I[0], iLev);
+    }
+    return 0.0;
+  }
 
   int get_fluid_dimension() const { return (nDimFluid); }
 
@@ -539,6 +569,25 @@ public:
       return Rho / MoMi_S[is];
     }
 
+    if (useHybridPIC) {
+      if (useMultiFluid || useMultiSpecies) {
+        if (is < static_cast<int>(iRho_I.size()) && iRho_I[is] >= 0) {
+          Rho = get_value(mfi, xyz, iRho_I[is], iLev);
+          return (is < static_cast<int>(MoMi_S.size()) && MoMi_S[is] > 0.0)
+                     ? (Rho / MoMi_S[is])
+                     : Rho;
+        }
+      } else {
+        if (!iRho_I.empty() && iRho_I[0] >= 0) {
+          Rho = get_value(mfi, xyz, iRho_I[0], iLev);
+          return (is < static_cast<int>(MoMi_S.size()) && MoMi_S[is] > 0.0)
+                     ? (Rho / MoMi_S[is])
+                     : Rho;
+        }
+      }
+      return 0.0;
+    }
+
     if (useElectronFluid) {
       Rho = get_value(mfi, xyz, iRho_I[is], iLev);
       NumDens = Rho / MoMi_S[is];
@@ -569,6 +618,19 @@ public:
                     const int iLev = 0) const {
 
     amrex::Real U, J, Rhoit, Qit, Rhot;
+
+    if (useHybridPIC) {
+      if (useMultiFluid) {
+        if (is < static_cast<int>(iU_I.size()) && iU_I[is] >= 0) {
+          return get_value(mfi, xyz, iU_I[is], iLev);
+        }
+      } else {
+        if (!iU_I.empty() && iU_I[0] >= 0) {
+          return get_value(mfi, xyz, iU_I[0], iLev);
+        }
+      }
+      return 0.0;
+    }
 
     if (useElectronFluid) {
       U = get_value(mfi, xyz, iU_I[is], iLev);
@@ -700,6 +762,14 @@ public:
                    "multifluid/multispecies!");
     }
 
+    if (useHybridPIC) {
+      if (useMhdPe) {
+        return get_value(mfi, xyz, iPpar_I[0], iLev);
+      } else {
+        return get_value(mfi, xyz, iPpar_I[0], iLev) * (1.0 - PeRatio);
+      }
+    }
+
     if (useElectronFluid) {
       P = get_value(mfi, xyz, iPpar_I[is], iLev);
     } else if (useMhdPe) {
@@ -723,6 +793,33 @@ public:
                     const int iLev = 0) const {
     if (!initFromSWMF && is < static_cast<int>(iP_I.size())) {
       return get_value(mfi, xyz, iP_I[is], iLev);
+    }
+
+    if (useHybridPIC) {
+      if (useMultiFluid) {
+        if (is < static_cast<int>(iP_I.size()) && iP_I[is] >= 0) {
+          return get_value(mfi, xyz, iP_I[is], iLev);
+        }
+        return 0.0;
+      } else {
+        amrex::Real pTotIon = 0.0;
+        if (!iP_I.empty() && iP_I[0] >= 0) {
+          pTotIon = get_value(mfi, xyz, iP_I[0], iLev);
+          if (!useMhdPe) {
+            pTotIon *= (1.0 - PeRatio);
+          }
+        }
+        if (useMultiSpecies && nIon > 1) {
+          amrex::Real numTot = 0.0;
+          for (int iIon = 0; iIon < nIon; ++iIon) {
+            numTot += get_number_density(mfi, xyz, iIon, iLev);
+          }
+          if (numTot > 0.0) {
+            return pTotIon * (get_number_density(mfi, xyz, is, iLev) / numTot);
+          }
+        }
+        return pTotIon;
+      }
     }
 
     amrex::Real P = 0.0;
@@ -1024,7 +1121,10 @@ public:
 
       amrex::Real uz = 0, uy = 0;
 
-      if (OhmU == OhmUe_) {
+      if (useHybridPIC) {
+        uz = get_uz(mfi, xyz, 0, iLev);
+        uy = get_uy(mfi, xyz, 0, iLev);
+      } else if (OhmU == OhmUe_) {
         uz = get_uz(mfi, xyz, 0, iLev);
         uy = get_uy(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUi_) {
@@ -1063,7 +1163,10 @@ public:
 
       amrex::Real ux = 0, uz = 0;
 
-      if (OhmU == OhmUe_) {
+      if (useHybridPIC) {
+        uz = get_uz(mfi, xyz, 0, iLev);
+        ux = get_ux(mfi, xyz, 0, iLev);
+      } else if (OhmU == OhmUe_) {
         uz = get_uz(mfi, xyz, 0, iLev);
         ux = get_ux(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUi_) {
@@ -1103,7 +1206,10 @@ public:
 
       amrex::Real ux = 0, uy = 0;
 
-      if (OhmU == OhmUe_) {
+      if (useHybridPIC) {
+        ux = get_ux(mfi, xyz, 0, iLev);
+        uy = get_uy(mfi, xyz, 0, iLev);
+      } else if (OhmU == OhmUe_) {
         ux = get_ux(mfi, xyz, 0, iLev);
         uy = get_uy(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUi_) {

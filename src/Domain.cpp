@@ -55,7 +55,6 @@ static const ParameterCommand parameter_registry[] = {
   { "#FORCEFREEIC", ParameterOwner::Pic },
   { "#GEMIC", ParameterOwner::Pic },
   { "#HALLTERM", ParameterOwner::Pic },
-  { "#HYBRIDPIC", ParameterOwner::Pic },
   { "#HYPERRESISTIVITY", ParameterOwner::Pic },
   { "#INFLOW", ParameterOwner::Pic },
   { "#KINETICSOURCE", ParameterOwner::Pic },
@@ -269,7 +268,8 @@ void Domain::init(double time, const int iDomain,
   refineRegions.resize(amrInfo.max_level + 1);
 
   if (domainParameters.receiveICOnly) {
-    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
+                                          domainParameters.useHybridPIC);
     ptInfo.set_fluid_interface(fi.get());
     read_param(false);
 
@@ -281,10 +281,12 @@ void Domain::init(double time, const int iDomain,
   if (domainParameters.initFromSWMF && !domainParameters.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(
         gm, amrInfo, nGst, gridID, "fi", paramInt,
-        Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
+        Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
+        domainParameters.useHybridPIC);
   } else {
     // if (NOT initFromSWMF) or receiveIConly
-    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
+                                          domainParameters.useHybridPIC);
   }
 
   ptInfo.set_fluid_interface(fi.get());
@@ -1127,6 +1129,8 @@ void Domain::read_domain_parameters(ReadParam &rp) {
       rp.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       rp.read_var("useSource", domainParameters.useSource);
+    } else if (command == "#HYBRIDPIC") {
+      rp.read_var("useHybridPIC", domainParameters.useHybridPIC);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       rp.read_var("loadBalanceStrategy", strategy);
@@ -1250,6 +1254,8 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       readParam.read_var("useSource", domainParameters.useSource);
+    } else if (command == "#HYBRIDPIC") {
+      readParam.read_var("useHybridPIC", domainParameters.useHybridPIC);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", domainParameters.doRestart);
       domainParameters.doRestartPT = domainParameters.doRestart;

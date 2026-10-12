@@ -18,6 +18,7 @@ struct DomainParameters {
   bool isStandalone = false;
   bool initFromSWMF = true;
   bool receiveICOnly = false;
+  bool useHybridPIC = false;
 
   // Component toggles; gate child construction in Domain::init().
   bool usePT = false;

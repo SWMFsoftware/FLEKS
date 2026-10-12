@@ -38,9 +38,9 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     return;
   }
 
-  // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
+  // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B (+ 1 Pe if hybrid);
   const int nVarPerSpecies = 10;
-  const int nVarPIC = nSpecies * nVarPerSpecies + 6;
+  const int nVarPIC = nSpecies * nVarPerSpecies + 6 + (useHybridPIC ? 1 : 0);
   Vector<double> dataPIC_I(nVarPIC);
 
   const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
@@ -83,6 +83,26 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     for (int iDir = ix_; iDir <= iz_; iDir++) {
       dataPIC_I[iEx_ + iDir] =
           get_value_at_loc(nodeE[iLev], Geom(iLev), xyz, iDir);
+    }
+
+    if (useHybridPIC) {
+      const int iPePIC = iEx_ + 3;
+      if (useElectronPressureEq) {
+        dataPIC_I[iPePIC] =
+            get_value_at_loc(centerPeState[iLev], Geom(iLev), xyz, 0);
+      } else {
+        const Real ne = get_value_at_loc(nodePlasma[nSpecies][iLev], Geom(iLev),
+                                         xyz, iRho_);
+        const Real p0 = electronDensity0 * electronTemperature;
+        const Real invRho0 =
+            (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
+        dataPIC_I[iPePIC] =
+            (electronGamma == 1.0)
+                ? (electronTemperature * ne)
+                : ((ne > 0.0 && electronDensity0 > 0.0)
+                       ? p0 * std::pow(ne * invRho0, electronGamma)
+                       : 0.0);
+      }
     }
 
     // Combine PIC plasma data into MHD fluid data.
