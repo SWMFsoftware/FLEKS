@@ -97,7 +97,7 @@ private:
   bool initEM = true;
 
   // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
-  bool useHybridPIC = false;
+  const bool &useHybridPIC;
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
   amrex::Real etaResistivity = 0.0;
@@ -478,7 +478,8 @@ public:
       : Grid(gm, amrInfo, nGst, id, "pic"),
         fi(fluidIn),
         tc(tcIn),
-        domainParameters(parameters) {
+        domainParameters(parameters),
+        useHybridPIC(domainParameters.useHybridPIC) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 

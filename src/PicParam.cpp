@@ -354,8 +354,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
             "the forcefree (magnetic reconnection) initial condition.");
     }
     ic_->read_param(param);
-  } else if (command == "#HYBRIDPIC") {
-    param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {
     param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {

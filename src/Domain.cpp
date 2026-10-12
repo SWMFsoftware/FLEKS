@@ -55,7 +55,6 @@ static const ParameterCommand parameter_registry[] = {
   { "#FORCEFREEIC", ParameterOwner::Pic },
   { "#GEMIC", ParameterOwner::Pic },
   { "#HALLTERM", ParameterOwner::Pic },
-  { "#HYBRIDPIC", ParameterOwner::Pic },
   { "#HYPERRESISTIVITY", ParameterOwner::Pic },
   { "#INFLOW", ParameterOwner::Pic },
   { "#KINETICSOURCE", ParameterOwner::Pic },
@@ -269,7 +268,8 @@ void Domain::init(double time, const int iDomain,
   refineRegions.resize(amrInfo.max_level + 1);
 
   if (domainParameters.receiveICOnly) {
-    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
+                                          domainParameters);
     ptInfo.set_fluid_interface(fi.get());
     read_param(false);
 
@@ -282,13 +282,12 @@ void Domain::init(double time, const int iDomain,
     fi = std::make_unique<FluidInterface>(
         gm, amrInfo, nGst, gridID, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
-        domainParameters.useHybridPIC);
+        domainParameters);
   } else {
     // if (NOT initFromSWMF) or receiveIConly
-    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
+                                          domainParameters);
   }
-
-  fi->set_useHybridPIC(domainParameters.useHybridPIC);
 
   ptInfo.set_fluid_interface(fi.get());
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID,
@@ -332,10 +331,6 @@ void Domain::init(double time, const int iDomain,
   }
   if (source)
     pic->set_fluid_source(source.get());
-
-  if (pic) {
-    fi->set_useHybridPIC(pic->get_useHybridPIC());
-  }
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -1259,6 +1254,8 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       readParam.read_var("useSource", domainParameters.useSource);
+    } else if (command == "#HYBRIDPIC") {
+      readParam.read_var("useHybridPIC", domainParameters.useHybridPIC);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", domainParameters.doRestart);
       domainParameters.doRestartPT = domainParameters.doRestart;

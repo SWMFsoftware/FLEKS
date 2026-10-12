@@ -230,11 +230,10 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
                                const Vector<int>& iParam,
                                const Vector<double>& norm,
                                const Vector<double>& paramComm,
-                               bool useHybridIn)
-    : Grid(gm, amrInfo, nGst, id, tag) {
+                               const DomainParameters& dp)
+    : Grid(gm, amrInfo, nGst, id, tag), domainParameters(dp) {
 
   initFromSWMF = true;
-  useHybridPIC = useHybridIn;
 
   if (iParam.empty() || norm.empty() || paramComm.empty())
     Abort("Error: one of the input vector is empty!\n");
@@ -259,7 +258,7 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 
   useElectronFluid = iEx > 1;
 
-  if (useHybridPIC) {
+  if (domainParameters.useHybridPIC) {
     useMultiFluid = nFluid > 1;
     nIon = (nSpeciesFluid > 1) ? nSpeciesFluid : nFluid;
     nS = nIon;
@@ -352,7 +351,7 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 
   /** Do not change the order of the following lines. */
   n = 0;
-  if (useHybridPIC) {
+  if (domainParameters.useHybridPIC) {
     for (int i = 0; i < nS; ++i) {
       QoQi_S[i] = paramComm[n++];
       MoMi_S[i] = paramComm[n++];
@@ -865,8 +864,9 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
   if (useMultiSpecies) {
     speciesMassFactor.resize(nIon);
     for (int iIon = 0; iIon < nIon; ++iIon) {
-      speciesMassFactor[iIon] =
-          useHybridPIC ? 1.0 : (1.0 + MoMi_S[0] / MoMi_S[iIon + 1]);
+      speciesMassFactor[iIon] = domainParameters.useHybridPIC
+                                    ? 1.0
+                                    : (1.0 + MoMi_S[0] / MoMi_S[iIon + 1]);
     }
   }
 
@@ -928,7 +928,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
 
 void FluidInterface::set_plasma_charge_and_mass(Real qomEl) {
 
-  if (!useElectronFluid && !useHybridPIC) {
+  if (!useElectronFluid && !domainParameters.useHybridPIC) {
     MoMi_S[0] = QoQi_S[0] / qomEl;
   }
 
@@ -1264,7 +1264,7 @@ void FluidInterface::print_info() const {
 
 void FluidInterface::calc_fluid_state(const double* dataPIC_I,
                                       double* data_I) const {
-  if (useHybridPIC) {
+  if (domainParameters.useHybridPIC) {
     calc_fluid_state_hybrid(dataPIC_I, data_I);
     return;
   }
