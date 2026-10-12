@@ -1371,7 +1371,7 @@ void Pic::update_B_hybrid() {
       continue;
     }
 
-    if (fieldIntegrator == "ssprk3") {
+    if (!useRK4) {
       // Strong-stability-preserving RK3 with time-centered E evaluation.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);

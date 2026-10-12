@@ -365,6 +365,7 @@ private:
 
   std::string fieldIntegrator = "rk4"; // B integrator
   bool useRK4 = false;
+  bool usePredictorCorrector = false;
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;

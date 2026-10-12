@@ -546,6 +546,26 @@ public:
   /// fraction = min(lossRate * dt / rhoExisting, 1).
   void apply_loss(const SourceInterface* source, amrex::Real dt);
 
+  std::unique_ptr<amrex::ParticleContainer<NStructReal, NStructInt> >
+      backupContainer_ = nullptr;
+
+  void backup_particle_state() {
+    if (!backupContainer_) {
+      backupContainer_ =
+          std::make_unique<amrex::ParticleContainer<NStructReal, NStructInt> >(
+              this->GetParGDB());
+    }
+    backupContainer_->copyParticles(*this, true);
+  }
+
+  void restore_particle_state() {
+    if (backupContainer_) {
+      this->copyParticles(*backupContainer_, true);
+    }
+  }
+
+  void release_particle_backup() { backupContainer_.reset(); }
+
   void accumulate_mass_matrix_contribution(int iLev,
                                            const amrex::IntVect& loIdx,
                                            const amrex::RealVect& dShift,
