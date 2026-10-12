@@ -250,9 +250,8 @@ private:
   amrex::Vector<amrex::MultiFab> relaxCurl;
   amrex::Vector<amrex::MultiFab> relaxCurlT;
   amrex::Vector<amrex::MultiFab> relaxDir;
-  amrex::Vector<amrex::MultiFab> relaxPot;
   // Max |avg(B_fine) - B_coarse| over the covered cells of each level, measured
-  // *before* the restriction (see measure_covered_B_drift). Reported as 'dCov'.
+  // *before* relaxation updates them (via measure_covered_B_drift). Reported as 'dCov'.
   amrex::Vector<amrex::Real> coveredBDrift;
 
   amrex::Vector<amrex::MultiFab> dBdt;
@@ -540,12 +539,14 @@ public:
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
-    relaxTarget.resize(n_lev_max());
-    relaxResidual.resize(n_lev_max());
-    relaxCurl.resize(n_lev_max());
-    relaxCurlT.resize(n_lev_max());
-    relaxDir.resize(n_lev_max());
-    coveredBDrift.resize(n_lev_max(), 0.0);
+    if (useHybridPIC && n_lev_max() > 1) {
+      relaxTarget.resize(n_lev_max());
+      relaxResidual.resize(n_lev_max());
+      relaxCurl.resize(n_lev_max());
+      relaxCurlT.resize(n_lev_max());
+      relaxDir.resize(n_lev_max());
+      coveredBDrift.resize(n_lev_max(), 0.0);
+    }
     kStage.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL)
       kStage[iL].resize(4);

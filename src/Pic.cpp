@@ -216,21 +216,21 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerBstar[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
 
-      // Workspace for the divergence-free relaxation of the
-      // covered coarse B. The cell-centered arrays need no ghosts except the
-      // residual, whose transpose stencil reaches one cell out; the nodal ones
-      // are indexed over the nodal BoxArray, which already covers every node
-      // a cell stencil can reach.
-      distribute_FabArray(relaxTarget[iLev], cGrids[iLev],
-                          DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-      distribute_FabArray(relaxResidual[iLev], cGrids[iLev],
-                          DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
-      distribute_FabArray(relaxCurl[iLev], cGrids[iLev], DistributionMap(iLev),
-                          nDim3, 0, doMoveData, 0.0);
-      distribute_FabArray(relaxCurlT[iLev], nGrids[iLev], DistributionMap(iLev),
-                          nDim3, 0, doMoveData, 0.0);
-      distribute_FabArray(relaxDir[iLev], nGrids[iLev], DistributionMap(iLev),
-                          nDim3, 0, doMoveData, 0.0);
+      // Workspace for the divergence-free relaxation of the covered coarse B.
+      // Allocated only on coarse levels that can have covered cells
+      // (iLev < n_lev_max() - 1) in hybrid AMR runs.
+      if (n_lev_max() > 1 && iLev < n_lev_max() - 1) {
+        distribute_FabArray(relaxTarget[iLev], cGrids[iLev],
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxResidual[iLev], cGrids[iLev],
+                            DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
+        distribute_FabArray(relaxCurl[iLev], cGrids[iLev], DistributionMap(iLev),
+                            nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxCurlT[iLev], nGrids[iLev], DistributionMap(iLev),
+                            nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxDir[iLev], nGrids[iLev], DistributionMap(iLev),
+                            nDim3, 0, doMoveData, 0.0);
+      }
 
       // Staggered hybrid solver fields.
       distribute_FabArray(nodeEstage[iLev], nGrids[iLev], DistributionMap(iLev),
