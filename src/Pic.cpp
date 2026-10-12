@@ -68,12 +68,25 @@ void Pic::fill_new_cells() {
     fill_particles();
     sum_moments(true);
     if (useHybridPIC) {
+      seed_first_hybrid_step();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         average_center_to_node(centerB[iLev], nodeB[iLev]);
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
           apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
                          iLev, true);
+        }
+      }
+      update_Pe_hybrid();
+      compute_ambipolar_E();
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
+                       nodeE[iLev], iLev, 0.0,
+                       useElectronPressureEq && ambipolarInStages);
+        nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
+                         &Pic::get_node_E, iLev, false);
         }
       }
     }
@@ -1525,63 +1538,128 @@ void Pic::update(bool doReportIn) {
     update_E();
   }
 
-  // Hybrid path: the particle Boris push happens BEFORE the moment deposit and
-  // the Ohm's-law E computation. The push uses the nodeEth and B^n computed at
-  // the end of the previous step's B update.
-  if (useHybridPIC && isFirstHybridStep) {
-    seed_first_hybrid_step();
-  }
+  auto advance_particles_and_sources = [&]() {
+    particle_mover();
 
-  particle_mover();
+    // Calling re_sampling after particle mover so that all the particles
+    // outside the domain have been deleted.
+    re_sampling();
 
-  // Calling re_sampling after particle mover so that all the particles
-  // outside the domain have been deleted.
-  re_sampling();
+    charge_exchange();
 
-  charge_exchange();
-
-  // Apply chemical loss (recombination, etc.) by reducing particle
-  // weights.  Must come before fill_source_particles() so that loss
-  // and source are applied in the correct order within one step.
-  if (source && source->use_loss_source()) {
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->apply_loss(source, tc->get_dt());
+    // Apply chemical loss (recombination, etc.) by reducing particle
+    // weights.  Must come before fill_source_particles() so that loss
+    // and source are applied in the correct order within one step.
+    if (source && source->use_loss_source()) {
+      for (int i = 0; i < nSpecies; ++i) {
+        parts[i]->apply_loss(source, tc->get_dt());
+      }
     }
-  }
 
-  if (source) {
-    fill_source_particles();
-  }
-
-  inject_particles_for_boundary_cells();
-
-  // Inject incoming flux at physical inflow faces before the moment deposit.
-  // Kept outside inject_particles_for_boundary_cells to avoid t=0
-  // pre-injection.
-  if (usePIC) {
-    const Real dt = tc->get_dt();
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->inject_flux_at_inflow_faces(dt);
+    if (source) {
+      fill_source_particles();
     }
-  }
+
+    inject_particles_for_boundary_cells();
+
+    // Inject incoming flux at physical inflow faces before the moment deposit.
+    // Kept outside inject_particles_for_boundary_cells to avoid t=0
+    // pre-injection.
+    if (usePIC) {
+      const Real dt = tc->get_dt();
+      for (int i = 0; i < nSpecies; ++i) {
+        parts[i]->inject_flux_at_inflow_faces(dt);
+      }
+    }
+  };
 
   isMomentsUpdated = false;
 
   if (solveEM) {
+    advance_particles_and_sources();
     if (projectDownEmFields) {
       project_down_E();
     }
     update_B();
   } else if (useHybridPIC) {
-    // Deposit the fresh ion moments (J^{n+1/2}) AFTER the particle push. The
-    // previous deposit (J^{n-1/2}) is first saved into nodePlasmaPrev so the
-    // Ohm's law can time-interpolate between the two (hstep scheme).
-    save_current_moments_to_prev();
-    sum_moments(false);
-    smooth_moments();
-    update_Pe_hybrid();
-    update_B_hybrid();
-    isFirstHybridStep = false;
+    if (!usePredictorCorrector) {
+      // Standard single-push hybrid path (1st-order coupled).
+      if (isFirstHybridStep) {
+        seed_first_hybrid_step();
+      }
+
+      advance_particles_and_sources();
+
+      // Deposit the fresh ion moments (J^{n+1/2}) AFTER the particle push. The
+      // previous deposit (J^{n-1/2}) is first saved into nodePlasmaPrev so the
+      // Ohm's law can time-interpolate between the two (hstep scheme).
+      save_current_moments_to_prev();
+      sum_moments(false);
+      smooth_moments();
+      update_Pe_hybrid();
+      update_B_hybrid();
+      isFirstHybridStep = false;
+    } else {
+      // 2nd-order Predictor-Corrector path.
+      if (isFirstHybridStep) {
+        seed_first_hybrid_step();
+      }
+
+      // 1. Backup base particle state at t^n
+      for (int i : kineticSpecies_) {
+        parts[i]->backup_particle_state();
+      }
+
+      // 2. Backup base fields B^n and E^n
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, nGst);
+      }
+
+      // 3. Predictor push using (E^n, B^n)
+      advance_particles_and_sources();
+
+      // 4. Deposit trial moments & advance trial field to t^(n+1)
+      save_current_moments_to_prev();
+      sum_moments(false);
+      smooth_moments();
+      update_Pe_hybrid();
+      update_B_hybrid();
+
+      // 5. Construct time-centered fields at t^(n+1/2):
+      //    nodeE = 0.5 * (E^n + E*^(n+1))
+      //    nodeB = 0.5 * (B^n + B*^(n+1))
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev],
+                          0, 0, nDim3, nGst);
+        MultiFab::LinComb(centerBstage[iLev], 0.5, centerB[iLev], 0, 0.5,
+                          centerBstart[iLev], 0, 0, nDim3, nGst);
+        average_center_to_node(centerBstage[iLev], nodeB[iLev]);
+        nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
+                         iLev, true);
+        }
+      }
+
+      // 6. Restore base particle state at t^n
+      for (int i : kineticSpecies_) {
+        parts[i]->restore_particle_state();
+      }
+
+      // 7. Corrector push using time-centered fields (nodeE, nodeB)
+      advance_particles_and_sources();
+
+      // 8. Restore B^n and advance to final B^(n+1) using accepted moments
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        MultiFab::Copy(centerB[iLev], centerBstart[iLev], 0, 0, nDim3, nGst);
+      }
+      sum_moments(false);
+      smooth_moments();
+      update_Pe_hybrid();
+      update_B_hybrid();
+      isFirstHybridStep = false;
+    }
   }
 
   if (solveEM && doCorrectDivE) {
