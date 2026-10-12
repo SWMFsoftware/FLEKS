@@ -1,5 +1,5 @@
 #DESCRIPTION
-3D Alfvén pulse propagation across a central 3D AMR box with hybrid PIC
+3D AMR traveling wave propagation across a central 3D AMR box with hybrid PIC
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -52,8 +52,13 @@ T                       useHybridPIC
 #RESISTIVITY
 0.0                     etaResistivity
 
+#HYPERRESISTIVITY
+0.0                     etaHyperSI
+grid                    etaHyperMode
+0.001                   etaHyperCh
+
 #ELECTRONTEMPERATURE
-10.0                    electronTemperature
+0.1                     electronTemperature
 1.0                     electronGamma
 1.0                     electronDensity0
 
@@ -73,7 +78,7 @@ rk4                     fieldIntegrator
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-116045.0                T [K]
+1160.45                 T [K]
 1.0e-9                  bx [T]
 0.0                     by [T]
 0.0                     bz [T]
@@ -82,12 +87,18 @@ rk4                     fieldIntegrator
 0.0                     ez [V/m]
 
 #TESTCASE
-AlfvenPulse             testCase
+HybridWave              testCase
+
+#WAVEIC
+1                       waveMode
+0.2                     frac
+T                       rightHand
+T                       seedE
 
 #PARTICLES
-4                       nParticle per cell in X
-4                       nParticle per cell in Y
-2                       nParticle per cell in Z
+6                       nParticle per cell in X
+6                       nParticle per cell in Y
+4                       nParticle per cell in Z
 
 #TIMESTEPPING
 T                       useFixedDt
