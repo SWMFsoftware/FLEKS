@@ -269,7 +269,7 @@ void Domain::init(double time, const int iDomain,
 
   if (domainParameters.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
-                                          domainParameters);
+                                          domainParameters.useHybridPIC);
     ptInfo.set_fluid_interface(fi.get());
     read_param(false);
 
@@ -282,11 +282,11 @@ void Domain::init(double time, const int iDomain,
     fi = std::make_unique<FluidInterface>(
         gm, amrInfo, nGst, gridID, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
-        domainParameters);
+        domainParameters.useHybridPIC);
   } else {
     // if (NOT initFromSWMF) or receiveIConly
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
-                                          domainParameters);
+                                          domainParameters.useHybridPIC);
   }
 
   ptInfo.set_fluid_interface(fi.get());

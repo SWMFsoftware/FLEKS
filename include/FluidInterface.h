@@ -18,10 +18,11 @@
 #include <AMReX_VisMF.H>
 
 #include "Constants.h"
-#include "DomainParameters.h"
 #include "Grid.h"
 #include "GridUtility.h"
 #include "ReadParam.h"
+
+struct DomainParameters;
 
 // Immutable SI<->normalized conversion factors, computed once from a
 // FluidInterface and shared read-only (shared_ptr<const>) by all interfaces.
@@ -94,6 +95,7 @@ protected:
   bool useElectronFluid = true;
   bool useAnisoP = false;
   bool useMhdPe = false;
+  bool useHybridPIC = false;
 
   amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
       iUy_I, iUz_I;
@@ -194,8 +196,6 @@ class FluidInterface : public Grid, public FluidInterfaceParameters {
 protected:
   FluidType myType = PICFluid;
 
-  const DomainParameters& domainParameters;
-
   amrex::Vector<amrex::MultiFab> nodeFluid;
   amrex::Vector<amrex::MultiFab> centerB;
 
@@ -207,14 +207,15 @@ public:
                  const amrex::Vector<int>& iParam,
                  const amrex::Vector<double>& norm,
                  const amrex::Vector<double>& paramComm,
-                 const DomainParameters& dp);
+                 bool useHybridIn = false);
 
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag, const DomainParameters& dp,
+                 int nGst, int id, std::string tag, bool useHybridIn = false,
                  FluidType typeIn = PICFluid)
-      : Grid(gm, amrInfo, nGst, id, tag), domainParameters(dp), myType(typeIn) {
+      : Grid(gm, amrInfo, nGst, id, tag), myType(typeIn) {
 
     initFromSWMF = false;
+    useHybridPIC = useHybridIn;
 
     if (myType != PICFluid)
       nS = 0;
@@ -225,7 +226,6 @@ public:
                  FluidType typeIn = PICFluid)
       : Grid(other.Geom(0), other.get_amr_info(), other.get_n_ghost(), id, tag),
         FluidInterfaceParameters(other),
-        domainParameters(other.domainParameters),
         myType(typeIn) {}
 
   ~FluidInterface() = default;
@@ -342,7 +342,7 @@ public:
 
   bool get_useElectronFluid() const { return useElectronFluid; }
 
-  bool get_useHybridPIC() const { return domainParameters.useHybridPIC; }
+  bool get_useHybridPIC() const { return useHybridPIC; }
 
   bool get_useMhdPe() const { return useMhdPe; }
   int get_iPe() const { return iPe; }
@@ -569,7 +569,7 @@ public:
       return Rho / MoMi_S[is];
     }
 
-    if (domainParameters.useHybridPIC) {
+    if (useHybridPIC) {
       if (useMultiFluid || useMultiSpecies) {
         if (is < static_cast<int>(iRho_I.size()) && iRho_I[is] >= 0) {
           Rho = get_value(mfi, xyz, iRho_I[is], iLev);
@@ -619,7 +619,7 @@ public:
 
     amrex::Real U, J, Rhoit, Qit, Rhot;
 
-    if (domainParameters.useHybridPIC) {
+    if (useHybridPIC) {
       if (useMultiFluid) {
         if (is < static_cast<int>(iU_I.size()) && iU_I[is] >= 0) {
           return get_value(mfi, xyz, iU_I[is], iLev);
@@ -762,7 +762,7 @@ public:
                    "multifluid/multispecies!");
     }
 
-    if (domainParameters.useHybridPIC) {
+    if (useHybridPIC) {
       if (useMhdPe) {
         return get_value(mfi, xyz, iPpar_I[0], iLev);
       } else {
@@ -795,7 +795,7 @@ public:
       return get_value(mfi, xyz, iP_I[is], iLev);
     }
 
-    if (domainParameters.useHybridPIC) {
+    if (useHybridPIC) {
       if (useMultiFluid) {
         if (is < static_cast<int>(iP_I.size()) && iP_I[is] >= 0) {
           return get_value(mfi, xyz, iP_I[is], iLev);
@@ -1121,7 +1121,7 @@ public:
 
       amrex::Real uz = 0, uy = 0;
 
-      if (domainParameters.useHybridPIC) {
+      if (useHybridPIC) {
         uz = get_uz(mfi, xyz, 0, iLev);
         uy = get_uy(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUe_) {
@@ -1163,7 +1163,7 @@ public:
 
       amrex::Real ux = 0, uz = 0;
 
-      if (domainParameters.useHybridPIC) {
+      if (useHybridPIC) {
         uz = get_uz(mfi, xyz, 0, iLev);
         ux = get_ux(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUe_) {
@@ -1206,7 +1206,7 @@ public:
 
       amrex::Real ux = 0, uy = 0;
 
-      if (domainParameters.useHybridPIC) {
+      if (useHybridPIC) {
         ux = get_ux(mfi, xyz, 0, iLev);
         uy = get_uy(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUe_) {

@@ -92,12 +92,12 @@ class Pic : public Grid {
   friend ParticleTracker;
   // private variables
 private:
+  const DomainParameters &domainParameters;
+  const bool &useHybridPIC;
+
   bool usePIC = true;
   bool solveEM = true;
   bool initEM = true;
-
-  // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
-  const bool &useHybridPIC;
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
   amrex::Real etaResistivity = 0.0;
@@ -198,8 +198,6 @@ private:
   // Wave-injection boundary-condition manager (#WAVEBC).
   WaveBoundaryManager waveBC;
   TimeCtr *tc = nullptr;
-
-  const DomainParameters &domainParameters;
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
@@ -476,10 +474,10 @@ public:
       FluidInterface *fluidIn, TimeCtr *tcIn, int id,
       const DomainParameters &parameters)
       : Grid(gm, amrInfo, nGst, id, "pic"),
-        fi(fluidIn),
-        tc(tcIn),
         domainParameters(parameters),
-        useHybridPIC(domainParameters.useHybridPIC) {
+        useHybridPIC(parameters.useHybridPIC),
+        fi(fluidIn),
+        tc(tcIn) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
