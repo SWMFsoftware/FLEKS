@@ -60,7 +60,7 @@ def _rewrite_param(text, block, fields):
     return "\n".join(out) + "\n"
 
 
-def run_case(dt, nsub, nprocs=1):
+def run_case(dt, nsub, nprocs=1, integrator="rk4"):
     if os.path.isdir(RUN_DIR):
         shutil.rmtree(RUN_DIR)
     os.makedirs(os.path.join(RUN_DIR, "PC", "plots"), exist_ok=True)
@@ -77,6 +77,8 @@ def run_case(dt, nsub, nprocs=1):
     # the Richardson fit is not noise-limited.
     text = _rewrite_param(text, "#PARTICLES",
                           {"nParticle per cell in X": 20000})
+    if integrator:
+        text = text.replace("#HYBRIDPIC", f"#FIELDINTEGRATOR\n{integrator}                   fieldIntegrator\n\n#HYBRIDPIC")
     with open(os.path.join(RUN_DIR, "PARAM.in"), "w") as f:
         f.write(text)
 
@@ -219,6 +221,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dt", type=float, default=None)
     ap.add_argument("--nproc", type=int, default=1)
+    ap.add_argument("--integrator", type=str, default="rk4-pc",
+                    help="Field integrator (rk4, rk4-pc, ssprk3, ssprk3-pc)")
     args = ap.parse_args()
 
     if args.dt is not None:
@@ -226,10 +230,10 @@ def main():
         # sub-step size dt_sub = dt/nsub at the verified-stable minimum
         # (nBSubcycle = 2 at dt = 0.02, i.e. dt_sub ~ 0.01).
         nsub = max(1, round(2 * 0.02 / args.dt))
-        res = run_case(args.dt, nsub, args.nproc)
+        res = run_case(args.dt, nsub, args.nproc, args.integrator)
         if res is None:
             sys.exit("no frequency measured")
-        print("dt=%-8s omega_code = %.6f" % (args.dt, res["omega_code"]))
+        print("integrator=%s dt=%-8s omega_code = %.6f" % (args.integrator, args.dt, res["omega_code"]))
         return
 
     # dt refinement sequence (halving), subcycling scaled to keep the absolute
@@ -240,10 +244,11 @@ def main():
     base_nsub = 2
     dts = [base_dt / 2**r for r in range(4)]
     omegas = []
+    print("Testing integrator: %s" % args.integrator)
     print("%-10s %-12s %-16s" % ("dt", "nBSubcycle", "omega_code"))
     for dt in dts:
         nsub = max(1, round(base_nsub * base_dt / dt))
-        res = run_case(dt, nsub, args.nproc)
+        res = run_case(dt, nsub, args.nproc, args.integrator)
         if res is None:
             print("%-10.5f %-12d (failed)" % (dt, nsub))
             continue

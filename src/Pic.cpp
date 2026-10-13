@@ -850,7 +850,7 @@ void Pic::re_sampling() {
 }
 
 //==========================================================
-void Pic::particle_mover() {
+void Pic::particle_mover(int pushStage) {
   std::string nameFunc = "Pic::mover";
 
   timing_func(nameFunc);
@@ -861,7 +861,7 @@ void Pic::particle_mover() {
   const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeE : nodeEth;
 
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext);
+    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext, pushStage);
   }
 
   for (int i : kineticSpecies_) {
@@ -1538,8 +1538,8 @@ void Pic::update(bool doReportIn) {
     update_E();
   }
 
-  auto advance_particles_and_sources = [&]() {
-    particle_mover();
+  auto advance_particles_and_sources = [&](int pushStage = 0) {
+    particle_mover(pushStage);
 
     // Calling re_sampling after particle mover so that all the particles
     // outside the domain have been deleted.
@@ -1576,7 +1576,7 @@ void Pic::update(bool doReportIn) {
   isMomentsUpdated = false;
 
   if (solveEM) {
-    advance_particles_and_sources();
+    advance_particles_and_sources(0);
     if (projectDownEmFields) {
       project_down_E();
     }
@@ -1588,7 +1588,7 @@ void Pic::update(bool doReportIn) {
         seed_first_hybrid_step();
       }
 
-      advance_particles_and_sources();
+      advance_particles_and_sources(0);
 
       // Deposit the fresh ion moments (J^{n+1/2}) AFTER the particle push. The
       // previous deposit (J^{n-1/2}) is first saved into nodePlasmaPrev so the
@@ -1616,8 +1616,8 @@ void Pic::update(bool doReportIn) {
         MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, nGst);
       }
 
-      // 3. Predictor push using (E^n, B^n)
-      advance_particles_and_sources();
+      // 3. Predictor push using (E^n, B^n) [pushStage = 1]
+      advance_particles_and_sources(1);
 
       // 4. Deposit trial moments & advance trial field to t^(n+1)
       save_current_moments_to_prev();
@@ -1647,8 +1647,8 @@ void Pic::update(bool doReportIn) {
         parts[i]->restore_particle_state();
       }
 
-      // 7. Corrector push using time-centered fields (nodeE, nodeB)
-      advance_particles_and_sources();
+      // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage = 2]
+      advance_particles_and_sources(2);
 
       // 8. Restore B^n and advance to final B^(n+1) using accepted moments
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
