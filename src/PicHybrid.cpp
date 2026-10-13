@@ -1312,51 +1312,36 @@ void Pic::update_B_hybrid() {
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
 
-        // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
+        // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at B2
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
                           -0.5 * subDt, kStage[iLev][0], 0, 0, nDim3, nGst);
-        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
-        apply_centerB_BC(iLev, centerBstar[iLev]);
-        MultiFab& bStage2 =
-            usePredictorCorrector ? centerBstage[iLev] : centerBstar[iLev];
         assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(bStage2, iLev),
+                       total_center_B(centerBstage[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
 
-        // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
+        // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at B3
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
                           -0.5 * subDt, kStage[iLev][1], 0, 0, nDim3, nGst);
-        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
-        apply_centerB_BC(iLev, centerBstar[iLev]);
-        MultiFab& bStage3 =
-            usePredictorCorrector ? centerBstage[iLev] : centerBstar[iLev];
         assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(bStage3, iLev),
+                       total_center_B(centerBstage[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
         if (is_body_interior_frozen())
           mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
 
-        // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
+        // Stage 4: B4 = B^n - dt k3; evaluate E at B4
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
                           kStage[iLev][2], 0, 0, nDim3, nGst);
-        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
-        apply_centerB_BC(iLev, centerBstar[iLev]);
-        MultiFab& bStage4 =
-            usePredictorCorrector ? centerBstage[iLev] : centerBstar[iLev];
         assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(bStage4, iLev),
+                       total_center_B(centerBstage[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
@@ -1379,7 +1364,7 @@ void Pic::update_B_hybrid() {
     }
 
     if (!useRK4) {
-      // Strong-stability-preserving RK3 with time-centered E evaluation.
+      // Strong-stability-preserving RK3 (Shu-Osher).
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
 
@@ -1393,12 +1378,10 @@ void Pic::update_B_hybrid() {
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
                           kStage[iLev][0], 0, 0, nDim3, nGst);
 
-        // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
-        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
-        apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstar[iLev],
-                       total_center_B(centerBstar[iLev], iLev),
+        // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(B1)))
+        apply_centerB_BC(iLev, centerBstage[iLev]);
+        assemble_ohm_E(centerBstage[iLev],
+                       total_center_B(centerBstage[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
@@ -1410,12 +1393,9 @@ void Pic::update_B_hybrid() {
                         0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
 
-        // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
-        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
-        apply_centerB_BC(iLev, centerBstar[iLev]);
-        assemble_ohm_E(centerBstar[iLev],
-                       total_center_B(centerBstar[iLev], iLev),
+        // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(B2)))
+        assemble_ohm_E(centerBstage[iLev],
+                       total_center_B(centerBstage[iLev], iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
