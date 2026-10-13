@@ -1319,8 +1319,10 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+        MultiFab& bStage2 =
+            usePredictorCorrector ? centerBstage[iLev] : centerBstar[iLev];
         assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstar[iLev], iLev),
+                       total_center_B(bStage2, iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
@@ -1334,8 +1336,10 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+        MultiFab& bStage3 =
+            usePredictorCorrector ? centerBstage[iLev] : centerBstar[iLev];
         assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstar[iLev], iLev),
+                       total_center_B(bStage3, iLev),
                        nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
@@ -1349,8 +1353,10 @@ void Pic::update_B_hybrid() {
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
+        MultiFab& bStage4 =
+            usePredictorCorrector ? centerBstage[iLev] : centerBstar[iLev];
         assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstar[iLev], iLev),
+                       total_center_B(bStage4, iLev),
                        nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
         curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
