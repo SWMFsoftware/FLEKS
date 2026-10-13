@@ -81,8 +81,7 @@ void Pic::fill_new_cells() {
       compute_ambipolar_E();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
-                       nodeE[iLev], iLev, 0.0,
-                       useElectronPressureEq && ambipolarInStages);
+                       nodeE[iLev], iLev, 0.0);
         nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
           apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
