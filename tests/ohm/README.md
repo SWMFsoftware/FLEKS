@@ -17,6 +17,17 @@ The test initializes a 1D periodic plasma with a circularly polarized transverse
 
 Ion-scale normalization is used ($l_\text{norm} \approx d_i$, $u_\text{norm} \approx v_A$), with 2000 particles per cell for kinetic ions. Unlike [`whistler`](../whistler/README.md), which isolates the Hall term, this test activates both finite resistivity ($\eta = 2.0 \times 10^9\ \text{m}^2/\text{s}$) and electron temperature ($T_e = 20\ \text{eV}$) to verify coupled stability and resistive dissipation.
 
+## Timestepping Variants
+
+This test problem runs four field integrator variants under `#FIELDINTEGRATOR` to verify all supported hybrid PIC timestepping schemes on the same physical setup:
+
+| Variant | Config file | Field Integrator | Description |
+| --- | --- | --- | --- |
+| `rk4` | `PARAM.in.rk4` | `rk4` | 4-stage classical Runge–Kutta |
+| `rk4_pc` | `PARAM.in.rk4_pc` | `rk4-pc` | Predictor–corrector 4-stage Runge–Kutta |
+| `ssprk3` | `PARAM.in.ssprk3` | `ssprk3` | 3-stage Strong Stability Preserving Runge–Kutta |
+| `ssprk3_pc` | `PARAM.in.ssprk3_pc` | `ssprk3-pc` | Predictor–corrector 3-stage SSPRK3 |
+
 ## Validation
 
 `validate.py` verifies:
@@ -27,5 +38,10 @@ Ion-scale normalization is used ($l_\text{norm} \approx d_i$, $u_\text{norm} \ap
 ## Running
 
 ```bash
-python3 tests/validate_tests.py --test=ohm
+python3 tests/validate_tests.py --test=ohm             # runs all four variants
+python3 tests/validate_tests.py --test=ohm.rk4         # RK4 only
+python3 tests/validate_tests.py --test=ohm.rk4_pc      # RK4-PC only
+python3 tests/validate_tests.py --test=ohm.ssprk3      # SSPRK3 only
+python3 tests/validate_tests.py --test=ohm.ssprk3_pc   # SSPRK3-PC only
 ```
+

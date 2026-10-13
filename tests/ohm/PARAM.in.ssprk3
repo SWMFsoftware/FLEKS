@@ -1,6 +1,7 @@
 #DESCRIPTION
 Hybrid PIC whistler wave test exercising the full generalized Ohm's law
 (convection, Hall, resistive eta*J, and electron pressure gradient grad Pe).
+Field integrator: 3-stage Strong Stability Preserving Runge-Kutta (SSPRK3).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -30,6 +31,9 @@ T                       isPeriodicZ
 
 #SOLVEEM
 F                       solveEM
+
+#FIELDINTEGRATOR
+ssprk3                  fieldIntegrator
 
 #HYBRIDPIC
 T                       useHybridPIC

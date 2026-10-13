@@ -15,7 +15,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Electron impact       | `electronimpact/`     | Voronov 1997 electron-impact ionization of hot electrons      | [README](electronimpact/README.md) |
 | Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |
 | Whistler wave         | `whistler/`           | Whistler–Alfven wave (Hall term)                              | [README](whistler/README.md) |
-| Ohm's law             | `ohm/`                | Full generalized Ohm's law check | [README](ohm/README.md) |
+| Ohm's law             | `ohm/`                | Full generalized Ohm's law check across 4 timestepping schemes (rk4, rk4-pc, ssprk3, ssprk3-pc) | [README](ohm/README.md) |
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
 | Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
