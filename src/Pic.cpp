@@ -77,7 +77,9 @@ void Pic::fill_new_cells() {
                          iLev, true);
         }
       }
-      update_Pe_hybrid();
+      if (useElectronPressureEq && !peStateInitialized_) {
+        init_electron_pressure();
+      }
       compute_ambipolar_E();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
@@ -1659,6 +1661,9 @@ void Pic::update(bool doReportIn) {
       update_B_hybrid();
       isFirstHybridStep = false;
     }
+  } else {
+    // Pure particle tracking (PT component or static-field particle runs).
+    advance_particles_and_sources(0);
   }
 
   if (solveEM && doCorrectDivE) {
