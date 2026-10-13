@@ -43,7 +43,7 @@ All variants are checked by `tests/freestream/validate.py`:
 
 ## Relationship to other tests
 
-- `whistler/`, `ohm/` — seeded wave tests built on related equilibria.
+- `whistler/` — seeded wave tests built on related equilibria.
 
 ## Running
 

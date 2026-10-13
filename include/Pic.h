@@ -365,6 +365,7 @@ private:
 
   std::string fieldIntegrator = "rk4"; // B integrator
   bool useRK4 = false;
+  bool usePredictorCorrector = false;
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
@@ -659,7 +660,7 @@ public:
 
   void update_part_loc_to_half_stage();
 
-  void particle_mover();
+  void particle_mover(int pushStage = 0);
 
   void re_sampling();
 
