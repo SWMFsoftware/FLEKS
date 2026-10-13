@@ -1611,7 +1611,7 @@ void Pic::update(bool doReportIn) {
 
       // 2. Backup base fields B^n and E^n
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3, nGst);
         MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, nGst);
       }
 
@@ -1632,7 +1632,7 @@ void Pic::update(bool doReportIn) {
         MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev],
                           0, 0, nDim3, nGst);
         MultiFab::LinComb(centerBstage[iLev], 0.5, centerB[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstar[iLev], 0, 0, nDim3, nGst);
         average_center_to_node(centerBstage[iLev], nodeB[iLev]);
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
@@ -1651,7 +1651,7 @@ void Pic::update(bool doReportIn) {
 
       // 8. Restore B^n and advance to final B^(n+1) using accepted moments
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::Copy(centerB[iLev], centerBstart[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3, nGst);
       }
       sum_moments(false);
       smooth_moments();

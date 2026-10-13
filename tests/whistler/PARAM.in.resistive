@@ -1,7 +1,6 @@
 #DESCRIPTION
 Hybrid PIC whistler wave test exercising the full generalized Ohm's law
 (convection, Hall, resistive eta*J, and electron pressure gradient grad Pe).
-Field integrator: 4-stage classical Runge-Kutta (RK4).
 
 #INITFROMSWMF
 F                       initFromSWMF

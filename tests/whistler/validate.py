@@ -28,17 +28,59 @@ Because the dispersion check lives in tests/_shared/hybrid.py and reads only the
 By/Bz components, it applies unchanged to the full-PIC solver output.
 """
 
-import sys
+import glob
+import logging
+import math
 import os
+import sys
+
+logger = logging.getLogger(__name__)
 
 # Make the shared test helpers importable when run directly.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from _shared import hybrid as hybrid_helpers
 
+RUN_DIR = "run_test"
+MAX_GROWTH = 1.9
+
 
 def set_run_dir(run_dir):
     """Mirror the runner's RUN_DIR into the shared hybrid helper."""
+    global RUN_DIR
+    RUN_DIR = run_dir
     hybrid_helpers.set_run_dir(run_dir)
+
+
+def _max_bperp(out_file):
+    """Return maximum transverse field magnitude |B_perp| = hypot(By, Bz)."""
+    data = hybrid_helpers._hyb_load_out(out_file)
+    if not data:
+        return None
+    by, bz = data
+    if not by:
+        return None
+    return max(math.hypot(b, c) for b, c in zip(by, bz))
+
+
+def _check_resistive_damping():
+    """Verify that resistivity measurably limits transverse field growth."""
+    plots = sorted(glob.glob(os.path.join(RUN_DIR, "PC", "plots", "*.out")))
+    if not plots:
+        logger.debug("    [WHISTLER] No .out files (resistive-damping check skipped)")
+        return True, "No .out files (skipped)"
+
+    a0 = _max_bperp(plots[0])
+    a1 = _max_bperp(plots[-1])
+    if a0 is None or a0 <= 0.0 or a1 is None:
+        return True, "Could not measure transverse amplitude"
+
+    growth = a1 / a0
+    logger.debug("    [WHISTLER] Resistive damping: max|B_perp| %.4e -> %.4e "
+                 "(growth %.2fx, bound %.2fx)", a0, a1, growth, MAX_GROWTH)
+    if growth > MAX_GROWTH:
+        return False, ("late/early transverse amplitude grew %.2fx (bound %.2fx) "
+                       "-- resistive term appears inactive" % (growth, MAX_GROWTH))
+    return True, "Passed"
 
 
 def validate_log(pic_diags, test_name=None):
@@ -52,15 +94,20 @@ def validate_log(pic_diags, test_name=None):
 
 
 def validate_plot(test_name):
-    """Seeded-wavelength + whistler-dispersion checks (shared, solver-agnostic).
+    """Seeded-wavelength + whistler-dispersion checks (or resistive damping check).
 
     The dispersion relation is read from tests/whistler/PARAM.in (the
-    full-PIC variant), which both variants share for geometry / normalization.
-    For the hybrid variant that is the exact Hall branch it must reproduce; for
+    full-PIC variant), which all variants share for geometry / normalization.
+    For the hybrid variants that is the exact Hall branch it must reproduce; for
     the full-PIC variant the dominant whistler branch matches this frequency at
     k d_i ~ 1, so the same check is a meaningful regression guard.
     """
-    return hybrid_helpers.validate_plot(test_name)
+    ok, reason = hybrid_helpers.validate_plot(test_name)
+    if not ok:
+        return ok, reason
+    if test_name and "resistive" in test_name:
+        return _check_resistive_damping()
+    return True, reason
 
 
 if __name__ == "__main__":

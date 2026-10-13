@@ -961,6 +961,9 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
     if name == "freestream" and variant_filter == "gmres":
         variant_filter = "full"
 
+    if name == "whistler" and variant_filter == "hybrid":
+        variant_filter = "rk4"
+
     if name == "bc_reflecting" and variant_filter is not None:
         # Backward compatibility for legacy --test=bc_reflecting.full and .hybrid
         if variant_filter == "full":
