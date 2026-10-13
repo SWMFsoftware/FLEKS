@@ -1648,7 +1648,8 @@ void Pic::update(bool doReportIn) {
         parts[i]->restore_particle_state();
       }
 
-      // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage = 2]
+      // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage
+      // = 2]
       advance_particles_and_sources(2);
 
       // 8. Restore B^n and advance to final B^(n+1) using accepted moments

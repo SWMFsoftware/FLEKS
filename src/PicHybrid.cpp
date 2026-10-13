@@ -157,8 +157,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   }
 
   // Moment time-interpolation weights:
-  // For standard leapfrog: X(hstep) = (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
-  // For predictor-corrector: X(hstep) = (1.0-hstep)*X^n + hstep*X^{n+1}.
+  // For standard leapfrog: X(hstep) = (0.5-hstep)*X^{n-1/2} +
+  // (0.5+hstep)*X^{n+1/2}. For predictor-corrector: X(hstep) = (1.0-hstep)*X^n
+  // + hstep*X^{n+1}.
   const Real wPrev = usePredictorCorrector ? (1.0 - hstep) : (0.5 - hstep);
   const Real wCur = usePredictorCorrector ? hstep : (0.5 + hstep);
   const Real invFourPI = 1.0 / fourPI;

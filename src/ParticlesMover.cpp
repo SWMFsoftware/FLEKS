@@ -55,13 +55,10 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 //==========================================================
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
-                                               const Vector<MultiFab>& nodeB,
-                                               const Vector<MultiFab>& nodeB0,
-                                               const Vector<MultiFab>& eBg,
-                                               const Vector<MultiFab>& uBg,
-                                               Real dt, Real dtNext,
-                                               int pushStage) {
+void Particles<NStructReal, NStructInt>::mover(
+    const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
+    const Vector<MultiFab>& nodeB0, const Vector<MultiFab>& eBg,
+    const Vector<MultiFab>& uBg, Real dt, Real dtNext, int pushStage) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
@@ -76,8 +73,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
     const Vector<MultiFab>& nodeB0, const Vector<MultiFab>& eBg,
-    const Vector<MultiFab>& uBg, Real dt, Real dtNext,
-    int pushStage) {
+    const Vector<MultiFab>& uBg, Real dt, Real dtNext, int pushStage) {
   timing_func("Pts::charged_particle_mover");
 
   // nodeB0 is empty when no intrinsic field is configured.
