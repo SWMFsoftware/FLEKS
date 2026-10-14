@@ -862,9 +862,9 @@ public:
   //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
   void advance_explicit_full_pic();
   void update_EB_explicit_leapfrog(amrex::Real dt, int nSub);
-  void advance_B_half_step(amrex::Real dtSub);
+  void advance_B_half_step(amrex::Real dtSub, amrex::Real tSub = -1.0);
   void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,
-                      int iLev);
+                      int iLev, amrex::Real tSub = -1.0);
   void advance_explicit_pc(amrex::Real dt);
   void seed_first_explicit_step();
 
@@ -970,7 +970,8 @@ public:
   void apply_field_bc(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                       const int iStart, const int nComp, GETVALUE func,
                       const int iLev, const bool isB,
-                      amrex::Real dtOverride = -1.0);
+                      amrex::Real dtOverride = -1.0,
+                      amrex::Real timeOverride = -1.0);
 
   // Generic fill: zero-gradient copy on open faces, or values from `func`.
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,

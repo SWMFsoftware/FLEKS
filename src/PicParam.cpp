@@ -852,12 +852,13 @@ void Pic::post_process_param() {
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 
-  // Classify species: negative charge -> electron, otherwise kinetic ion.
+  // Classify species: in semi-implicit full PIC, negative charge -> implicit electron.
+  // In explicit full PIC and hybrid PIC, all particle species are kinetic.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
     // Guard: parts may not be fully populated yet.
-    if (!useHybridPIC && i < (int)parts.size() && parts[i] &&
+    if (!useHybridPIC && !useExplicitPIC && i < (int)parts.size() && parts[i] &&
         parts[i]->get_charge() < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
