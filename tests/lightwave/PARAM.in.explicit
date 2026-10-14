@@ -27,10 +27,14 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#EXPLICITPIC
-T                       useExplicitPIC
-leapfrog                fieldIntegrator
-2                       nEMSubcycle
+#FIELDSOLVER
+explicit
+
+#FIELDINTEGRATOR
+leapfrog
+
+#FIELDSUBCYCLE
+2
 
 #PLASMA
 1                       nSpecies
@@ -61,9 +65,6 @@ lightwave               testCase
 T                       useFixedDt
 0.4                     dt
 
-#DISCRETIZATION
-0.50                    theta
-0.0                     ratioDivC2C
 
 #MONITOR
 10                      dnReport

@@ -27,10 +27,14 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#EXPLICITPIC
-T                       useExplicitPIC
-leapfrog                fieldIntegrator
-1                       nEMSubcycle
+#FIELDSOLVER
+explicit
+
+#FIELDINTEGRATOR
+leapfrog
+
+#FIELDSUBCYCLE
+1
 
 #PLASMA
 1                       nSpecies
@@ -77,9 +81,6 @@ periodic                particleBoxBoundaryHi
 T                       useFixedDt
 0.4                     dt
 
-#DISCRETIZATION
-0.50                    theta
-0.0                     ratioDivC2C
 
 #MONITOR
 10                      dnReport
