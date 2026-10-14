@@ -1238,10 +1238,12 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 //==========================================================
 // Synchronize nodal E across AMR levels:
 //  1. Top-down: fine nodes on the coarse-fine interface take coarse E
-//     (linear interpolation along coarse edges via fill_fine_lev_edge_from_coarse).
+//     (linear interpolation along coarse edges via
+//     fill_fine_lev_edge_from_coarse).
 //  2. Bottom-up: covered coarse nodes take the coincident fine E via
 //     average_down_nodal.
-//  (Ghost nodes of fine levels are subsequently filled in fill_ghost_emf_from_coarse).
+//  (Ghost nodes of fine levels are subsequently filled in
+//  fill_ghost_emf_from_coarse).
 //
 // Step 1 must precede Step 2 so that fine interface nodes are filled from
 // coarse E before coarse covered nodes are updated with fine values.
@@ -1249,7 +1251,8 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 // Because curl_node_to_center is a 2*dx-wide stencil, evaluating curl(E) at dx
 // vs. 2*dx does not telescope: the coarse curl of synchronized E differs from
 // the cell average of fine curl(E). This intrinsic per-step drift between
-// coarse covered B and the fine B average is corrected by relax_covered_B_to_fine.
+// coarse covered B and the fine B average is corrected by
+// relax_covered_B_to_fine.
 void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
   BL_PROFILE("Pic::sync_emf_fine_to_coarse");
   for (int iLev = 1; iLev <= finest_level; ++iLev) {
@@ -1305,8 +1308,8 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
                             bool includeAmbi) {
   BL_PROFILE("Pic::faraday_stage_rhs");
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    assemble_ohm_E(Bin[iLev], total_center_B(Bin[iLev], iLev),
-                   nodeEstage[iLev], iLev, hstep, includeAmbi);
+    assemble_ohm_E(Bin[iLev], total_center_B(Bin[iLev], iLev), nodeEstage[iLev],
+                   iLev, hstep, includeAmbi);
   }
 
   if (finest_level > 0) {
@@ -1325,8 +1328,8 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
 }
 
 //==========================================================
-// Compute max |avg(B_fine) - B_coarse| over the covered cells of iLev, evaluated
-// before divergence-free relaxation updates them.
+// Compute max |avg(B_fine) - B_coarse| over the covered cells of iLev,
+// evaluated before divergence-free relaxation updates them.
 void Pic::measure_covered_B_drift(int iLev) {
   BL_PROFILE("Pic::measure_covered_B_drift");
   MultiFab& target = relaxTarget[iLev];
@@ -1351,11 +1354,12 @@ void Pic::measure_covered_B_drift(int iLev) {
 }
 
 //==========================================================
-// Relax covered coarse B toward the cell-average of fine B using divergence-free
-// corrections, B += curl(A), where A is a nodal potential supported on nodes
-// whose surrounding cells are all covered. Uncovered cells and interface fluxes
-// remain untouched, preserving coarse-level div(B) to machine precision.
-// A is obtained by solving min |avg(B_fine) - B_coarse - curl(A)|^2 with CGLS.
+// Relax covered coarse B toward the cell-average of fine B using
+// divergence-free corrections, B += curl(A), where A is a nodal potential
+// supported on nodes whose surrounding cells are all covered. Uncovered cells
+// and interface fluxes remain untouched, preserving coarse-level div(B) to
+// machine precision. A is obtained by solving min |avg(B_fine) - B_coarse -
+// curl(A)|^2 with CGLS.
 //
 // Why this is divergence-free:
 //   div_node_to_center o average_center_to_node o curl_node_to_center == 0
@@ -1365,7 +1369,8 @@ void Pic::measure_covered_B_drift(int iLev) {
 // Two variants, selected by is_bz_div_free():
 //   * 2D / fake-2D: Bz does not enter div(B), so it is restricted directly from
 //     fine cells, while (Bx, By) is relaxed via the scalar potential A_z.
-//   * True 3D: all three components are relaxed with the nodal vector potential A.
+//   * True 3D: all three components are relaxed with the nodal vector potential
+//   A.
 //     Gauge modes A -> A + grad(phi) lie in the null space of curl, so CGLS
 //     does not amplify them and explicit gauge fixing is unnecessary.
 void Pic::relax_covered_B_to_fine(int iLev) {
@@ -1671,9 +1676,10 @@ void Pic::report_divB_amr() {
 
   // The first fine ghost layer is advanced by the Faraday update rather than
   // re-interpolated from the coarse level. Its difference from the coarse
-  // interpolation typically saturates at a benign level without impacting div(B).
-  // To avoid false positives on strong gradients, warn only when drift exceeds
-  // a threshold ratio and exhibits continued growth past its previous maximum.
+  // interpolation typically saturates at a benign level without impacting
+  // div(B). To avoid false positives on strong gradients, warn only when drift
+  // exceeds a threshold ratio and exhibits continued growth past its previous
+  // maximum.
   constexpr Real dGhostRunaway = 6.0; // threshold ratio above benign saturation
   constexpr Real dGrossGrowth = 2.0;  // factor that counts as sustained growth
   if (maxBmag > 0) {
@@ -1841,8 +1847,8 @@ void Pic::update_B_hybrid() {
       const Real dtThird = -subDt / 3.0;
 
       // Stages 1-3: trial state B_s = B_n - c_s * subDt * k_{s-1}.
-      const Real cStage[3] = {0.5, 0.5, 1.0};
-      const Real hStage[4] = {hstepStart, hstepHalf, hstepHalf, hstepEnd};
+      const Real cStage[3] = { 0.5, 0.5, 1.0 };
+      const Real hStage[4] = { hstepStart, hstepHalf, hstepHalf, hstepEnd };
       for (int s = 0; s < 3; ++s) {
         faraday_stage_rhs(s == 0 ? centerB : centerBstage, s, hStage[s],
                           ambiInStages);

@@ -252,10 +252,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
         distribute_FabArray(relaxResidual[iLev], cGrids[iLev],
                             DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
-        distribute_FabArray(relaxCurl[iLev], cGrids[iLev], DistributionMap(iLev),
-                            nDim3, 0, doMoveData, 0.0);
-        distribute_FabArray(relaxCurlT[iLev], nGrids[iLev], DistributionMap(iLev),
-                            nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxCurl[iLev], cGrids[iLev],
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxCurlT[iLev], nGrids[iLev],
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
         distribute_FabArray(relaxDir[iLev], nGrids[iLev], DistributionMap(iLev),
                             nDim3, 0, doMoveData, 0.0);
       }

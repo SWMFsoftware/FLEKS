@@ -251,7 +251,8 @@ private:
   amrex::Vector<amrex::MultiFab> relaxCurlT;
   amrex::Vector<amrex::MultiFab> relaxDir;
   // Max |avg(B_fine) - B_coarse| over the covered cells of each level, measured
-  // *before* relaxation updates them (via measure_covered_B_drift). Reported as 'dCov'.
+  // *before* relaxation updates them (via measure_covered_B_drift). Reported as
+  // 'dCov'.
   amrex::Vector<amrex::Real> coveredBDrift;
 
   amrex::Vector<amrex::MultiFab> dBdt;
