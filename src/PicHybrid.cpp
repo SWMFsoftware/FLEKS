@@ -2071,8 +2071,6 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     if (fixedUMax >= 0) {
       uMaxLev = fixedUMax;
     } else {
-      const Real vFactor =
-          (fi && fi->get_Si2NoV() > 0.0) ? fi->get_Si2NoV() : 1.0;
       Vector<Real> uMaxSpecies(nSpecies, 0.0);
       for (int i = 0; i < nSpecies; ++i) {
         amrex::MultiFab& momMF = nodePlasma[i][iLev];
@@ -2096,7 +2094,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                   Real vth = (p > 0.0) ? sqrt(p * invRho) : 0.0;
                   return sqrt(uBulk2) + 3.0 * vth;
                 });
-        uMaxSpecies[i] = uSpMax * vFactor;
+        uMaxSpecies[i] = uSpMax;
       }
       ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
       for (int i = 0; i < nSpecies; ++i) {

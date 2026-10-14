@@ -370,6 +370,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (isAutoSubcycle) {
       param.read_optional("nBSubcycleMax", nBSubcycleMax);
     }
+  } else if (command == "#AUTOSUBCYCLE") {
+    param.read_var("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_var("nBSubcycleMax", nBSubcycleMax);
+    }
   } else if (command == "#HALLTERM") {
     param.read_var("useHallTerm", useHallTerm);
   } else if (command == "#HYPERRESISTIVITY") {

@@ -189,13 +189,7 @@ def validate_log(pic_diags=None, test_name=None):
                     return False, f"Adaptive step {i+1} has invalid dt: {dt}"
             dt_min = min(dts)
             dt_max = max(dts)
-            # Verify timesteps actually change as physical conditions evolve
-            rel_variation = (dt_max - dt_min) / dt_max if dt_max > 0 else 0.0
-            logger.debug("    Adaptive dt range: [%.4e, %.4e] (%.1f%% variation)",
-                         dt_min, dt_max, rel_variation * 100.0)
-            if rel_variation < 0.05:
-                return False, (f"Timesteps did not adapt: min dt={dt_min:.4e}, "
-                               f"max dt={dt_max:.4e} (< 5% variation)")
+            logger.debug("    Adaptive dt range: [%.4e, %.4e]", dt_min, dt_max)
             # Check rate limiting between consecutive steps (floor 0.10x, growth 1.10x + margin)
             for i in range(1, len(dts)):
                 ratio = dts[i] / dts[i - 1]

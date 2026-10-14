@@ -97,6 +97,8 @@ T                       doSmoothMoments [smooth ion moments to suppress particle
 
 #BSUBCYCLE
 1                       nBSubcycle
+
+#AUTOSUBCYCLE
 T                       isAutoSubcycle  [dynamically adapt nBSubcycle up to nBSubcycleMax]
 40                      nBSubcycleMax
 

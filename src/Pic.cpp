@@ -1337,45 +1337,53 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodePlasma[nSpecies][iLev].setVal(0.0);
-  }
-
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
-  }
-
-  for (int i : kineticSpecies_) {
+  auto convert_and_sum_moments = [&]() {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      // nodePlasma[nSpecies] holds the sum of all ion species.
-      // kineticSpecies_ excludes the (implicit fluid) electron.
-      MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
-                    nMoments, nGst);
+      nodePlasma[nSpecies][iLev].setVal(0.0);
     }
-  }
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
-  }
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->convert_to_fluid_moments(nodePlasma[i]);
+    }
 
-  if (finest_level > 0) {
-    for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_bny_from_coarse(
-          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
-          nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-
-      if (useHybridPIC) {
-        fill_fine_lev_bny_from_coarse(
-            nodePlasmaPrev[nSpecies][iLev - 1], nodePlasmaPrev[nSpecies][iLev],
-            0, nodePlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
-            Geom(iLev - 1), Geom(iLev), node_status(iLev),
-            node_bilinear_interp);
+    for (int i : kineticSpecies_) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        // nodePlasma[nSpecies] holds the sum of all ion species.
+        // kineticSpecies_ excludes the (implicit fluid) electron.
+        MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
+                      nMoments, nGst);
       }
     }
-  }
 
-  calc_mach_number();
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    if (finest_level > 0) {
+      for (int iLev = 1; iLev < n_lev(); iLev++) {
+        fill_fine_lev_bny_from_coarse(
+            nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+            nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+
+        if (useHybridPIC) {
+          fill_fine_lev_bny_from_coarse(nodePlasmaPrev[nSpecies][iLev - 1],
+                                        nodePlasmaPrev[nSpecies][iLev], 0,
+                                        nodePlasmaPrev[nSpecies][iLev].nComp(),
+                                        ref_ratio[iLev - 1], Geom(iLev - 1),
+                                        Geom(iLev), node_status(iLev),
+                                        node_bilinear_interp);
+        }
+      }
+    }
+
+    calc_mach_number();
+  };
+
+  if (useHybridPIC) {
+    convert_and_sum_moments();
+  }
 
   if (updateDt) {
     Vector<Real> uMax(n_lev(), 0.0);
@@ -1418,9 +1426,7 @@ void Pic::sum_moments(bool updateDt) {
         }
       }
 
-      const Real vFactor =
-          (fi && fi->get_Si2NoV() > 0.0) ? fi->get_Si2NoV() : 1.0;
-      dtMax[iLev] = (uMax[iLev] > 0.0) ? dxMin[iLev] / (uMax[iLev] * vFactor)
+      dtMax[iLev] = (uMax[iLev] > 0.0) ? dxMin[iLev] / uMax[iLev]
                                        : std::numeric_limits<Real>::max();
     }
 
@@ -1467,6 +1473,10 @@ void Pic::sum_moments(bool updateDt) {
                 << std::endl;
       }
     }
+  }
+
+  if (!useHybridPIC) {
+    convert_and_sum_moments();
   }
 
   isMomentsUpdated = true;
