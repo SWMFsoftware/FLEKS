@@ -27,10 +27,14 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#EXPLICITPIC
-T                       useExplicitPIC
-leapfrog                fieldIntegrator
-1                       nEMSubcycle
+#FIELDSOLVER
+explicit
+
+#FIELDINTEGRATOR
+leapfrog
+
+#FIELDSUBCYCLE
+1
 
 #PLASMA
 2                       nSpecies

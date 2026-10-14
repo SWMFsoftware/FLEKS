@@ -95,6 +95,7 @@ private:
   const DomainParameters &domainParameters;
   const bool &useHybridPIC;
 
+  PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
   bool usePIC = true;
   bool solveEM = true;
   bool initEM = true;
@@ -109,8 +110,11 @@ private:
   // Reference charge density. Input [amu/cc], converted to code units.
   amrex::Real electronDensity0In = 1.0;
   amrex::Real electronDensity0 = 0.0;
-  // Number of sub-steps for the B-field update within one dt.
+  // Unified subcycle count for active explicit/hybrid field solver within one
+  // dt.
+  int nSubcycle = 1;
   int nBSubcycle = 1;
+  int nEMSubcycle = 1;
   // Hall term in the generalized Ohm's law.
   bool useHallTerm = true;
 
@@ -184,12 +188,22 @@ private:
   bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
-  std::string explicitIntegrator = "leapfrog";
-  int nEMSubcycle = 1;
   bool isFirstExplicitStep = true;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
   bool reportParticleQuality = false;
+
+  // Command presence tracking flags for cross-solver validation.
+  bool hasFieldSolver_ = false;
+  bool hasFieldIntegrator_ = false;
+  bool hasFieldSubcycle_ = false;
+  bool hasDiscretization_ = false;
+  bool hasEFieldSolver_ = false;
+  bool hasHallTerm_ = false;
+  bool hasResistivity_ = false;
+  bool hasHyperResistivity_ = false;
+  bool hasElectronPressure_ = false;
+  bool hasMinimumDensity_ = false;
 
   PartMode pMode = PartMode::PIC;
 
@@ -482,8 +496,22 @@ public:
       : Grid(gm, amrInfo, nGst, id, "pic"),
         domainParameters(parameters),
         useHybridPIC(parameters.useHybridPIC),
+        fieldSolverMode(parameters.fieldSolverMode),
         fi(fluidIn),
         tc(tcIn) {
+    if (fieldSolverMode == PicSolverMode::Explicit) {
+      useExplicitPIC = true;
+      solveEM = false;
+    } else if (fieldSolverMode == PicSolverMode::Hybrid) {
+      useExplicitPIC = false;
+      solveEM = false;
+    } else if (fieldSolverMode == PicSolverMode::None) {
+      useExplicitPIC = false;
+      solveEM = false;
+    } else {
+      useExplicitPIC = false;
+      solveEM = true;
+    }
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -575,6 +603,21 @@ public:
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
+
+  PicSolverMode get_field_solver_mode() const { return fieldSolverMode; }
+  bool is_implicit_pic() const {
+    return fieldSolverMode == PicSolverMode::Implicit;
+  }
+  bool is_explicit_pic() const {
+    return fieldSolverMode == PicSolverMode::Explicit;
+  }
+  bool is_hybrid_pic() const {
+    return fieldSolverMode == PicSolverMode::Hybrid;
+  }
+  bool is_field_solver_active() const {
+    return fieldSolverMode != PicSolverMode::None;
+  }
+  void set_field_solver_mode(const std::string &modeStr);
 
   // Returns the cell-centered coarse-to-fine interpolater to use.  For the
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,

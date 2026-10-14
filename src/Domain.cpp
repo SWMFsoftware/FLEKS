@@ -45,16 +45,18 @@ static const ParameterCommand parameter_registry[] = {
   { "#ELECTRONPRESSURE", ParameterOwner::Pic },
   { "#ELECTRONTEMPERATURE", ParameterOwner::Pic },
   { "#EXOSPHERE", ParameterOwner::FluidInterface },
-  { "#EXPLICITPIC", ParameterOwner::Pic },
   { "#FADEEVIC", ParameterOwner::Pic },
   { "#FASTMERGE", ParameterOwner::Pic },
   { "#FIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#FIELDINTEGRATOR", ParameterOwner::Pic },
+  { "#FIELDSOLVER", ParameterOwner::Pic },
+  { "#FIELDSUBCYCLE", ParameterOwner::Pic },
   { "#FIXEDUMAX", ParameterOwner::Pic },
   { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
   { "#FORCEFREEIC", ParameterOwner::Pic },
   { "#GEMIC", ParameterOwner::Pic },
   { "#HALLTERM", ParameterOwner::Pic },
+  { "#HYBRIDPIC", ParameterOwner::Pic },
   { "#HYPERRESISTIVITY", ParameterOwner::Pic },
   { "#INFLOW", ParameterOwner::Pic },
   { "#KINETICSOURCE", ParameterOwner::Pic },
@@ -126,6 +128,8 @@ bool is_singleton_command(const std::string &command) {
                                                    "#ELECTRONTEMPERATURE",
                                                    "#FIELDBOXBOUNDARY",
                                                    "#FIELDINTEGRATOR",
+                                                   "#FIELDSOLVER",
+                                                   "#FIELDSUBCYCLE",
                                                    "#GEOMETRY",
                                                    "#HYBRIDPIC",
                                                    "#HYPERRESISTIVITY",
@@ -1129,8 +1133,20 @@ void Domain::read_domain_parameters(ReadParam &rp) {
       rp.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       rp.read_var("useSource", domainParameters.useSource);
+    } else if (command == "#FIELDSOLVER") {
+      std::string mode;
+      rp.read_var("fieldSolverMode", mode);
+      domainParameters.set_field_solver_mode(mode);
     } else if (command == "#HYBRIDPIC") {
-      rp.read_var("useHybridPIC", domainParameters.useHybridPIC);
+      bool useHyb = false;
+      rp.read_var("useHybridPIC", useHyb);
+      if (useHyb)
+        domainParameters.set_field_solver_mode("hybrid");
+    } else if (command == "#SOLVEEM") {
+      bool sEM = true;
+      rp.read_var("solveEM", sEM);
+      if (!sEM && domainParameters.fieldSolverMode != PicSolverMode::Hybrid)
+        domainParameters.set_field_solver_mode("none");
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       rp.read_var("loadBalanceStrategy", strategy);
@@ -1254,8 +1270,20 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("usePT", domainParameters.usePT);
     } else if (command == "#SOURCE") {
       readParam.read_var("useSource", domainParameters.useSource);
+    } else if (command == "#FIELDSOLVER") {
+      std::string mode;
+      readParam.read_var("fieldSolverMode", mode);
+      domainParameters.set_field_solver_mode(mode);
     } else if (command == "#HYBRIDPIC") {
-      readParam.read_var("useHybridPIC", domainParameters.useHybridPIC);
+      bool useHyb = false;
+      readParam.read_var("useHybridPIC", useHyb);
+      if (useHyb)
+        domainParameters.set_field_solver_mode("hybrid");
+    } else if (command == "#SOLVEEM") {
+      bool sEM = true;
+      readParam.read_var("solveEM", sEM);
+      if (!sEM)
+        domainParameters.set_field_solver_mode("none");
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", domainParameters.doRestart);
       domainParameters.doRestartPT = domainParameters.doRestart;

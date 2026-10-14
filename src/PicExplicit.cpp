@@ -212,7 +212,7 @@ void Pic::advance_explicit_pc(Real dt) {
   if (doSmoothJ) {
     smooth_moments();
   }
-  update_EB_explicit_leapfrog(dt, nEMSubcycle);
+  update_EB_explicit_leapfrog(dt, nSubcycle);
 }
 
 //==========================================================
@@ -224,9 +224,9 @@ void Pic::advance_explicit_full_pic() {
   const Real dt = tc->get_dt();
 
   const bool usePC =
-      (explicitIntegrator == "rk4-pc" || explicitIntegrator == "pc-rk4" ||
-       explicitIntegrator == "ssprk3-pc" || explicitIntegrator == "pc-ssprk3" ||
-       explicitIntegrator == "pc");
+      (fieldIntegrator == "rk4-pc" || fieldIntegrator == "pc-rk4" ||
+       fieldIntegrator == "ssprk3-pc" || fieldIntegrator == "pc-ssprk3" ||
+       fieldIntegrator == "pc" || fieldIntegrator == "rk2");
 
   if (usePC) {
     advance_explicit_pc(dt);
@@ -236,7 +236,7 @@ void Pic::advance_explicit_full_pic() {
       seed_first_explicit_step();
     }
 
-    if (nEMSubcycle == 1) {
+    if (nSubcycle == 1) {
       // 1. Advance B half-step: B^n -> B^{n+1/2}
       advance_B_half_step(dt);
 
@@ -275,7 +275,7 @@ void Pic::advance_explicit_full_pic() {
         smooth_moments();
       }
 
-      update_EB_explicit_leapfrog(dt, nEMSubcycle);
+      update_EB_explicit_leapfrog(dt, nSubcycle);
     }
   }
 
