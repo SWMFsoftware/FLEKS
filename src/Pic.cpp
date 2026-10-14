@@ -106,6 +106,19 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     nodePlasma.resize(nSpecies + 1);
   }
 
+  // The relaxation workspace is needed only on coarse levels with an active
+  // fine level. The active-level loop below cannot release a workspace on a
+  // level that disappeared during coarsening, so clear those slots explicitly.
+  if (useHybridPIC && !relaxTarget.empty()) {
+    for (int iLev = finest_level; iLev < n_lev_max(); ++iLev) {
+      relaxTarget[iLev].clear();
+      relaxResidual[iLev].clear();
+      relaxCurl[iLev].clear();
+      relaxCurlT[iLev].clear();
+      relaxDir[iLev].clear();
+    }
+  }
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {
       distribute_FabArray(particleQuality[iLev], cGrids[iLev],
@@ -217,9 +230,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
 
       // Workspace for the divergence-free relaxation of the covered coarse B.
-      // Allocated only on coarse levels that can have covered cells
-      // (iLev < n_lev_max() - 1) in hybrid AMR runs.
-      if (n_lev_max() > 1 && iLev < n_lev_max() - 1) {
+      // Allocate it only for coarse levels with an active fine level. Using
+      // n_lev_max() here would allocate the AMR-only buffers in single-level
+      // runs that merely allow AMR, which needlessly regresses memory use.
+      if (finest_level > 0 && iLev < finest_level) {
         distribute_FabArray(relaxTarget[iLev], cGrids[iLev],
                             DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
         distribute_FabArray(relaxResidual[iLev], cGrids[iLev],
