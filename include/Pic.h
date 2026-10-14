@@ -398,6 +398,7 @@ private:
 
   std::string fieldIntegrator = "rk4"; // B integrator
   bool useRK4 = false;
+  bool usePredictorCorrector = false;
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
@@ -700,7 +701,7 @@ public:
 
   void update_part_loc_to_half_stage();
 
-  void particle_mover();
+  void particle_mover(int pushStage = 0);
 
   void re_sampling();
 
@@ -767,11 +768,6 @@ public:
   // trial states that need fresh ghosts for the Ohm's law stencils.
   void apply_centerB_BC(int iLev);
   void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
-  // Fill the ghost cells of centerBstar[iLev] algebraically as
-  // 0.5*(centerBstage[iLev] + otherB) instead of interpolating the coarse
-  // level again. `otherB` is centerB[iLev] for RK4 and centerBstart[iLev] for
-  // ssprk3, and must already be ghosted over the full nGrow.
-  void set_centerBstar_ghost(int iLev, const amrex::MultiFab &otherB);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion
@@ -785,10 +781,9 @@ public:
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
   // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
-  // E assembled from (Bin, Bavg) at moment fraction hstep, then synchronized
+  // E assembled from Bin at moment fraction hstep, then synchronized
   // across levels.
-  void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin,
-                         amrex::Vector<amrex::MultiFab> &Bavg, int iK,
+  void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin, int iK,
                          amrex::Real hstep, bool includeAmbi);
   // Inject fine nodal E into the coincident coarse nodes, finest first.
   void sync_emf_fine_to_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);

@@ -681,9 +681,11 @@ void Pic::post_process_param() {
     nodePeRho.resize(n_lev_max());
     nodePeAux.resize(n_lev_max());
   }
-  if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3")
+  if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3" &&
+      fieldIntegrator != "rk4-pc" && fieldIntegrator != "pc-rk4" &&
+      fieldIntegrator != "ssprk3-pc" && fieldIntegrator != "pc-ssprk3")
     Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
-          "'. Expected 'rk4' or 'ssprk3'.");
+          "'. Expected 'rk4', 'ssprk3', 'rk4-pc', or 'ssprk3-pc'.");
   if (etaHyperMode != "si" && etaHyperMode != "grid")
     Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
           "'. Expected 'si' or 'grid'.");
@@ -809,8 +811,14 @@ void Pic::post_process_param() {
     // Resistivity SI->code conversions are deferred to
     // finalize_units_conversion().
 
-    useRK4 = (fieldIntegrator == "rk4");
-    Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
+    usePredictorCorrector =
+        (fieldIntegrator == "rk4-pc" || fieldIntegrator == "pc-rk4" ||
+         fieldIntegrator == "ssprk3-pc" || fieldIntegrator == "pc-ssprk3");
+    useRK4 = (fieldIntegrator == "rk4" || fieldIntegrator == "rk4-pc" ||
+              fieldIntegrator == "pc-rk4");
+    Print() << "  fieldIntegrator: " << fieldIntegrator
+            << (usePredictorCorrector ? " (2nd-order Predictor-Corrector)" : "")
+            << "\n";
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       double unormSI = fi->get_unorm_si();

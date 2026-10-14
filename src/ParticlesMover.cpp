@@ -55,16 +55,15 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 //==========================================================
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
-                                               const Vector<MultiFab>& nodeB,
-                                               const Vector<MultiFab>& nodeB0,
-                                               const Vector<MultiFab>& eBg,
-                                               const Vector<MultiFab>& uBg,
-                                               Real dt, Real dtNext) {
+void Particles<NStructReal, NStructInt>::mover(
+    const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
+    const Vector<MultiFab>& nodeB0, const Vector<MultiFab>& eBg,
+    const Vector<MultiFab>& uBg, Real dt, Real dtNext, int pushStage) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
-    charged_particle_mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext);
+    charged_particle_mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext,
+                           pushStage);
   }
 }
 
@@ -74,7 +73,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
     const Vector<MultiFab>& nodeB0, const Vector<MultiFab>& eBg,
-    const Vector<MultiFab>& uBg, Real dt, Real dtNext) {
+    const Vector<MultiFab>& uBg, Real dt, Real dtNext, int pushStage) {
   timing_func("Pts::charged_particle_mover");
 
   // nodeB0 is empty when no intrinsic field is configured.
@@ -113,9 +112,12 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         if (p.id() < 0)
           continue;
 
-        Real up = p.rdata(iup_);
-        Real vp = p.rdata(ivp_);
-        Real wp = p.rdata(iwp_);
+        const Real u_start = p.rdata(iup_);
+        const Real v_start = p.rdata(ivp_);
+        const Real w_start = p.rdata(iwp_);
+        Real up = u_start;
+        Real vp = v_start;
+        Real wp = w_start;
         const Real xp = p.pos(ix_);
         const Real yp = p.pos(iy_);
         const Real zp = nDim > 2 ? p.pos(iz_) : 0;
@@ -127,7 +129,14 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         RealVect dShift;
 
         Real coef[2][2][2];
-        find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
+        RealVect posEval = p.pos();
+        if (pushStage == 2) {
+          posEval[ix_] += 0.5 * u_start * dt;
+          posEval[iy_] += 0.5 * v_start * dt;
+          if (nDim > 2)
+            posEval[iz_] += 0.5 * w_start * dt;
+        }
+        find_node_interpolation(posEval, ploLoc, invDxLoc, loIdx, dShift, coef);
         //-----calculate interpolate coef end-------------
 
         Real bp[3] = { 0, 0, 0 };
@@ -180,10 +189,17 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.rdata(imu_) = cosine(p, bp);
         }
 
-        p.pos(ix_) = xp + unp1 * dtLoc;
-        p.pos(iy_) = yp + vnp1 * dtLoc;
-        if (nDim > 2)
-          p.pos(iz_) = zp + wnp1 * dtLoc;
+        if (pushStage > 0) {
+          p.pos(ix_) = xp + 0.5 * (u_start + unp1) * dtLoc;
+          p.pos(iy_) = yp + 0.5 * (v_start + vnp1) * dtLoc;
+          if (nDim > 2)
+            p.pos(iz_) = zp + 0.5 * (w_start + wnp1) * dtLoc;
+        } else {
+          p.pos(ix_) = xp + unp1 * dtLoc;
+          p.pos(iy_) = yp + vnp1 * dtLoc;
+          if (nDim > 2)
+            p.pos(iz_) = zp + wnp1 * dtLoc;
+        }
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
         if (reflect_or_delete_particle(p, status, ab)) {
@@ -426,11 +442,11 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
                                                  const MultiFab&, Real);       \
   template void T::mover(const Vector<MultiFab>&, const Vector<MultiFab>&,     \
                          const Vector<MultiFab>&, const Vector<MultiFab>&,     \
-                         const Vector<MultiFab>&, Real, Real);                 \
+                         const Vector<MultiFab>&, Real, Real, int);            \
   template void T::charged_particle_mover(                                     \
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
-      const Vector<MultiFab>&, Real, Real);                                    \
+      const Vector<MultiFab>&, Real, Real, int);                               \
   template void T::neutral_mover(Real);                                        \
   template void T::divE_correct_position(const Vector<MultiFab>&, int);
 

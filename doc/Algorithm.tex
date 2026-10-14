@@ -397,7 +397,7 @@ FLEKS resolves interface divergence through a multi-pass synchronization:
 \begin{enumerate}
   \item \textbf{Two-pass $\mathbf{E}$ synchronization:} Prior to evaluating $\nabla \times \mathbf{E}$, fine nodes on the coarse-fine interface are linearly interpolated along coarse edges from coarse nodal $\mathbf{E}$ (\texttt{sync\_emf\_fine\_to\_coarse}, top-down pass). Next, covered coarse nodes take coincident fine nodal values via direct injection (bottom-up pass). Finally, fine ghost nodes are filled from the synchronized coarse $\mathbf{E}$ (\texttt{fill\_ghost\_emf\_from\_coarse}). The top-down edge interpolation must precede bottom-up injection to ensure interface nodes match coarse edge fluxes.
   \item \textbf{Faraday-evolved first fine ghost layer:} Rather than interpolating all fine ghost cells from the coarse level, the first fine ghost layer is evolved directly via Faraday's law using the synchronized nodal $\mathbf{E}$ (\texttt{faraday\_ngrow > 0}). Only outer ghost layers ($\ge 2$) are interpolated from the coarse level.
-  \item \textbf{Linear-combination trial states:} In multi-stage RK schemes, intermediate trial states $\mathbf{B}^* = \frac{1}{2}(\mathbf{B}_{\text{stage}} + \mathbf{B}_{\text{other}})$ update ghost cells directly through linear combination (\texttt{LinComb}), avoiding redundant coarse interpolations while preserving linearity.
+  \item \textbf{True stage evaluation:} Intermediate RK stages evaluate Ohm's law directly at stage states $\mathbf{B}_{\text{stage}}$ with the synchronized $\mathbf{E}$ and Faraday-evolved ghost layer, eliminating ad-hoc lagged states to preserve high-order temporal accuracy.
 \end{enumerate}
 
 \subsubsection{Local divergence-free covered-cell relaxation}

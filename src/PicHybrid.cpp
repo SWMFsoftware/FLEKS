@@ -158,9 +158,11 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   }
 
   // Moment time-interpolation weights:
-  // X(hstep) = (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
-  const Real wPrev = 0.5 - hstep;
-  const Real wCur = 0.5 + hstep;
+  // For standard leapfrog: X(hstep) = (0.5-hstep)*X^{n-1/2} +
+  // (0.5+hstep)*X^{n+1/2}. For predictor-corrector: X(hstep) = (1.0-hstep)*X^n
+  // + hstep*X^{n+1}.
+  const Real wPrev = usePredictorCorrector ? (1.0 - hstep) : (0.5 - hstep);
+  const Real wCur = usePredictorCorrector ? hstep : (0.5 + hstep);
   const Real invFourPI = 1.0 / fourPI;
 
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
@@ -1294,16 +1296,16 @@ void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
 }
 
 //==========================================================
-// kStage[iLev][iK] = curl(E_Ohm(Bin, Bavg)) on all levels. E is assembled on
+// kStage[iLev][iK] = curl(E_Ohm(Bin)) on all levels. E is assembled on
 // every level first, then synchronized across the coarse-fine interfaces, and
 // only then is the curl taken, so that every cell of a level (including the
 // covered coarse cells and the first fine ghost layer) is
 // advanced by one single nodal E field.
-void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, Vector<MultiFab>& Bavg,
-                            int iK, Real hstep, bool includeAmbi) {
+void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
+                            bool includeAmbi) {
   BL_PROFILE("Pic::faraday_stage_rhs");
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    assemble_ohm_E(Bin[iLev], total_center_B(Bavg[iLev], iLev),
+    assemble_ohm_E(Bin[iLev], total_center_B(Bin[iLev], iLev),
                    nodeEstage[iLev], iLev, hstep, includeAmbi);
   }
 
@@ -1693,30 +1695,6 @@ void Pic::report_divB_amr() {
 }
 
 //==========================================================
-// Fill the ghost cells of the time-centered trial state centerBstar from the
-// other RK state via linear combination, avoiding an extra coarse interpolation.
-//
-// centerBstar is 0.5*(centerBstage + otherB) in valid cells, and both sources
-// already possess valid ghost cells. Because coarse interpolation and physical
-// boundary conditions are linear, LinComb across valid and ghost cells
-// reproduces the ghost state without communication.
-//
-// Conducting bodies are an exception because project_body_B is non-linear, so
-// they fall back to apply_centerB_BC.
-void Pic::set_centerBstar_ghost(int iLev, const MultiFab& otherB) {
-  MultiFab& Bs = centerBstar[iLev];
-  if (is_body_conducting()) {
-    apply_centerB_BC(iLev, Bs);
-    return;
-  }
-  MultiFab::LinComb(Bs, 0.5, centerBstage[iLev], 0, 0.5, otherB, 0, 0, nDim3,
-                    Bs.nGrow());
-  // The sources already satisfy the physical BCs; re-applying them is a no-op
-  // for the linear (periodic/outflow) ones and keeps parity with
-  // apply_centerB_BC.
-  apply_field_bc(cellStatus[iLev], Bs, 0, nDim3, &Pic::get_center_B, iLev,
-                 true);
-}
 
 //==========================================================
 void Pic::update_B_hybrid() {
@@ -1862,35 +1840,25 @@ void Pic::update_B_hybrid() {
       const Real dtSixth = -subDt / 6.0;
       const Real dtThird = -subDt / 3.0;
 
-      // Stages 1-3: trial state B_s = B_n - c_s * subDt * k_{s-1}, with the
-      // time-centered state Bstar = (B_s + B_n)/2 for the Hall/convection B.
-      const Real cStage[3] = { 0.5, 0.5, 1.0 };
-      const Real hStage[4] = { hstepStart, hstepHalf, hstepHalf, hstepEnd };
+      // Stages 1-3: trial state B_s = B_n - c_s * subDt * k_{s-1}.
+      const Real cStage[3] = {0.5, 0.5, 1.0};
+      const Real hStage[4] = {hstepStart, hstepHalf, hstepHalf, hstepEnd};
       for (int s = 0; s < 3; ++s) {
-        if (s == 0) {
-          faraday_stage_rhs(centerB, centerB, 0, hStage[0], ambiInStages);
-        } else {
-          faraday_stage_rhs(centerBstage, centerBstar, s, hStage[s],
-                            ambiInStages);
-        }
+        faraday_stage_rhs(s == 0 ? centerB : centerBstage, s, hStage[s],
+                          ambiInStages);
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           const int nG = faraday_ngrow(iLev);
           MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
                             -cStage[s] * subDt, kStage[iLev][s], 0, 0, nDim3,
                             nG);
-          MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                            centerB[iLev], 0, 0, nDim3, nG);
         }
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           apply_centerB_BC(iLev, centerBstage[iLev]);
         }
-        for (int iLev = 0; iLev < n_lev(); ++iLev) {
-          set_centerBstar_ghost(iLev, centerB[iLev]);
-        }
       }
 
       // Stage 4 and the final RK4 combination.
-      faraday_stage_rhs(centerBstage, centerBstar, 3, hStage[3], ambiInStages);
+      faraday_stage_rhs(centerBstage, 3, hStage[3], ambiInStages);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
@@ -1908,52 +1876,39 @@ void Pic::update_B_hybrid() {
       continue;
     }
 
-    if (fieldIntegrator == "ssprk3") {
-      // Strong-stability-preserving RK3 with time-centered E evaluation.
+    if (!useRK4) {
+      // Strong-stability-preserving RK3 (Shu-Osher) across all levels.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Copy the whole ghost box, not just faraday_ngrow(iLev): the star
-        // state uses centerBstart as its second operand, and the algebraic
-        // ghost fill needs that operand ghosted on every layer.
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3,
                        centerBstart[iLev].nGrow());
       }
 
       // Stage 1: B1 = B_n - subDt * curl(E(B_n))
-      faraday_stage_rhs(centerB, centerB, 0, hstepStart, ambiInStages);
+      faraday_stage_rhs(centerB, 0, hstepStart, ambiInStages);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
                           kStage[iLev][0], 0, 0, nDim3, nG);
-        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nG);
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
       }
-      for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        set_centerBstar_ghost(iLev, centerBstart[iLev]);
-      }
 
-      // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
-      faraday_stage_rhs(centerBstar, centerBstar, 1, hstepEnd, ambiInStages);
+      // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(B1)))
+      faraday_stage_rhs(centerBstage, 1, hstepEnd, ambiInStages);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
                           centerBstart[iLev], 0, 0, nDim3, nG);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
                         0, nDim3, nG);
-        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                          centerBstart[iLev], 0, 0, nDim3, nG);
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
       }
-      for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        set_centerBstar_ghost(iLev, centerBstart[iLev]);
-      }
 
-      // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
-      faraday_stage_rhs(centerBstar, centerBstar, 2, hstepHalf, ambiInStages);
+      // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(B2)))
+      faraday_stage_rhs(centerBstage, 2, hstepHalf, ambiInStages);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
