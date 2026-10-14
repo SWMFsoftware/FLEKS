@@ -917,7 +917,7 @@ void Pic::post_process_param() {
             << "  fieldSubcycle: " << nSubcycle << "\n";
   } else if (fieldSolverMode == PicSolverMode::Hybrid) {
     if (fieldIntegrator.empty())
-      fieldIntegrator = "ssprk3";
+      fieldIntegrator = "rk4";
     if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3" &&
         fieldIntegrator != "rk4-pc" && fieldIntegrator != "pc-rk4" &&
         fieldIntegrator != "ssprk3-pc" && fieldIntegrator != "pc-ssprk3")

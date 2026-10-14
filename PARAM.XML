@@ -690,8 +690,8 @@ Time integrator for field update in explicit full PIC and hybrid PIC:
   * leapfrog (default): Boris-Maxwell time-staggered leapfrog scheme.
   * pc (or rk2): 2nd-order Predictor-Corrector scheme.
 - Hybrid PIC (#FIELDSOLVER hybrid):
-  * rk4: classic 4th-order Runge-Kutta on B driven by generalized Ohm's law.
-  * ssprk3 (default): strong-stability-preserving 3rd-order Runge-Kutta.
+  * rk4 (default): classic 4th-order Runge-Kutta on B driven by generalized Ohm's law.
+  * ssprk3: strong-stability-preserving 3rd-order Runge-Kutta.
   * rk4-pc / ssprk3-pc: Predictor-Corrector variant using RK4 / SSPRK3.
 </command>
 
