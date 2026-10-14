@@ -67,6 +67,24 @@ uncluttered.
 - Key file: `src/PicHybrid.cpp`. Standalone tests ship a `PARAM.in.hybrid`
   variant; the runner reports both solver variants when one exists.
 
+### Explicit Full PIC
+
+- **Kinetic ions and kinetic electrons**: resolves full kinetic physics including
+  electron scales without requiring matrix inversions or Krylov solvers.
+- **Explicit Maxwell evolution**: discrete dual staggering where `nodeE` (vertices)
+  and `centerB` (cell centers) are evolved explicitly via discrete curl operators
+  `curl_node_to_center` (Faraday) and `curl_center_to_node` (Ampere).
+- **Exact discrete divergence preservation**: $\nabla \cdot \mathbf{B} = 0$ is
+  preserved to machine precision by construction across all AMR levels.
+- **Integrator options**:
+  * `leapfrog` (default): Subcycled, time-staggered Boris-Maxwell leapfrog.
+  * `pc` / `rk2`: 2nd-order predictor-corrector with intermediate particle push.
+- **Zero regression / minimal footprint**: bypasses allocation of GMRES scratch
+  MultiFabs and mass matrices when active, leaving semi-implicit and hybrid
+  allocations and performance untouched.
+- Enabled by `#EXPLICITPIC`; configurable with `fieldIntegrator` and `nEMSubcycle`.
+- Key file: `src/PicExplicit.cpp`. Standalone tests ship a `PARAM.in.explicit` variant.
+
 ## Algorithm summary
 
 - **Time stepping:** CFL-based or fixed Δt (`#TIMESTEPPING`, typical CFL 0.1–0.4).

@@ -200,6 +200,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#EXPLICITPIC") {
     param.read_var("useExplicitPIC", useExplicitPIC);
+    if (useExplicitPIC) {
+      param.read_optional("fieldIntegrator", explicitIntegrator);
+      param.read_optional("nEMSubcycle", nEMSubcycle);
+    }
   } else if (command == "#EFIELDSOLVER") {
     Real tol;
     int nIter;
@@ -797,8 +801,8 @@ void Pic::post_process_param() {
     }
   }
 
-  // Hybrid and implicit solver are mutually exclusive.
-  if (useHybridPIC)
+  // Hybrid, explicit full-PIC, and implicit solver are mutually exclusive.
+  if (useHybridPIC || useExplicitPIC)
     solveEM = false;
 
   // Convert input units to normalized code units.

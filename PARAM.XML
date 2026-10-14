@@ -410,6 +410,34 @@ Related numerical controls:
 \end{verbatim}
 </command>
 
+<command name="EXPLICITPIC" alias="EXPLICITPIC_FLEKS0,EXPLICITPIC_FLEKS1,EXPLICITPIC_FLEKS2" multiple="T">
+  <parameter name="useExplicitPIC" type="logical" default="F"/>
+  <parameter name="fieldIntegrator" type="string" default="leapfrog"/>
+  <parameter name="nEMSubcycle" type="integer" default="1"/>
+
+#EXPLICITPIC
+T                 useExplicitPIC
+leapfrog          fieldIntegrator
+1                 nEMSubcycle
+
+When true, the explicit full PIC electromagnetic field solver is used instead
+of the semi-implicit full PIC or hybrid PIC solvers.
+
+Features:
+- Solves Maxwell's equations explicitly with speed-of-light wave propagation.
+- Discrete dual staggering: node-centered E and cell-centered B are evolved with
+  exact discrete divergence conservation.
+- Integrator choices:
+    * 'leapfrog' (default): Time-staggered subcycled Boris-Maxwell leapfrog.
+    * 'pc' (or 'rk2'): 2nd-order predictor-corrector with intermediate particle push.
+- nEMSubcycle: Number of Maxwell subcycles per particle time step dt.
+  Allows satisfying the explicit light-wave CFL limit (c*dt_sub/dx &lt; 1/sqrt(D))
+  while taking larger particle time steps.
+- Mutually exclusive with SOLVEEM and HYBRIDPIC.
+- Memory: Automatically skips allocation of GMRES scratch vectors and mass matrices,
+  minimizing memory footprint.
+</command>
+
 <command name="RESISTIVITY" alias="RESISTIVITY_FLEKS0,RESISTIVITY_FLEKS1,RESISTIVITY_FLEKS2" multiple="T">
   <parameter name="etaResistivity" type="real" default="0.0"/>
 

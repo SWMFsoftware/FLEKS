@@ -184,6 +184,9 @@ private:
   bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
+  std::string explicitIntegrator = "leapfrog";
+  int nEMSubcycle = 1;
+  bool isFirstExplicitStep = true;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
   bool reportParticleQuality = false;
@@ -284,6 +287,8 @@ private:
   amrex::Vector<amrex::MultiFab> nodeEstage; // E at a stage B (nodal)
   amrex::Vector<amrex::MultiFab> nodeJ;      // total current J = curl(B)/(4*pi)
                                              // (nodal)
+  amrex::Vector<amrex::MultiFab> nodeCurlB;  // scratch for curl(B) in explicit
+                                             // PIC
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
   // Per-step scratch reused across stages: the advected Pe, then div(q), then
@@ -543,6 +548,7 @@ public:
     solverRhsNode1.resize(n_lev_max());
     solverRhsNode2.resize(n_lev_max());
     centerDB.resize(n_lev_max());
+    nodeCurlB.resize(n_lev_max());
     smoothScratchMF.resize(n_lev_max());
     projectScratchMF.resize(n_lev_max());
 
@@ -661,6 +667,7 @@ public:
   void update_part_loc_to_half_stage();
 
   void particle_mover(int pushStage = 0);
+  void advance_particles_and_sources(int pushStage = 0);
 
   void re_sampling();
 
@@ -741,6 +748,15 @@ public:
   void compute_ambipolar_E(int iLev);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
+
+  //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
+  void advance_explicit_full_pic();
+  void update_EB_explicit_leapfrog(amrex::Real dt, int nSub);
+  void advance_B_half_step(amrex::Real dtSub);
+  void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,
+                      int iLev);
+  void advance_explicit_pc(amrex::Real dt);
+  void seed_first_explicit_step();
 
   //-------------Evolved electron pressure (#ELECTRONPRESSURE)-----------------
   // Advance the scalar electron pressure by one PIC step, operator split:
@@ -843,7 +859,8 @@ public:
   // E).
   void apply_field_bc(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                       const int iStart, const int nComp, GETVALUE func,
-                      const int iLev, const bool isB);
+                      const int iLev, const bool isB,
+                      amrex::Real dtOverride = -1.0);
 
   // Generic fill: zero-gradient copy on open faces, or values from `func`.
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
@@ -859,7 +876,8 @@ public:
   // Absorbing wall: matched-impedance ghost-cell blending.
   void apply_absorbing_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                             const int iStart, const int nComp, const int iLev,
-                            const BoxBC<FieldBC::Type> &bc, bool isB);
+                            const BoxBC<FieldBC::Type> &bc, bool isB,
+                            amrex::Real dtOverride = -1.0);
 
   // Inflow wall: pin physical boundary face nodes and fill ghost cells/nodes.
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,

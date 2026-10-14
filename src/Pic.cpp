@@ -171,7 +171,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, 0, doMoveData);
       }
 
-      if (!useExplicitPIC) {
+      if (!useExplicitPIC && !useHybridPIC) {
         distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
                             1, 1, doMoveData);
         if (nodeMM_comm_data.size() != n_lev()) {
@@ -197,12 +197,24 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(solverRhsNode2[iLev], nGrids[iLev],
                             DistributionMap(iLev), 3, nGst, doMoveData);
       }
+      if (useExplicitPIC) {
+        distribute_FabArray(nodeCurlB[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(nodeJ[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                            nGst, doMoveData);
+        distribute_FabArray(centerBstar[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(centerBstage[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+      }
     }
-    if (useHybridPIC) {
-      // Previous-step ion moments for the Ohm's-law interpolation.
+    if (useHybridPIC || useExplicitPIC) {
+      // Previous-step moments for the Ohm's-law / explicit interpolation.
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
+    }
+    if (useHybridPIC) {
       // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE
       // node-centered.
       distribute_FabArray(centerLapB[iLev], cGrids[iLev], DistributionMap(iLev),
@@ -261,8 +273,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(nodeEtaHyperRegional[iLev], nGrids[iLev],
                             DistributionMap(iLev), 1, nGst, false);
       }
-
-      // Hybrid-only node-grid previous-step moments (J^{n-1/2}), slim layout.
+    }
+    if (useHybridPIC || useExplicitPIC) {
+      // Node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
         if (pl.empty())
           pl.resize(n_lev_max());
@@ -859,7 +872,8 @@ void Pic::particle_mover(int pushStage) {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeE : nodeEth;
+  const Vector<MultiFab>& nodeEpush =
+      (useHybridPIC || useExplicitPIC) ? nodeE : nodeEth;
 
   for (int i : kineticSpecies_) {
     parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext, pushStage);
@@ -1406,7 +1420,7 @@ void Pic::sum_moments(bool updateDt) {
           nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
 
-      if (useHybridPIC) {
+      if (useHybridPIC || useExplicitPIC) {
         fill_fine_lev_bny_from_coarse(
             nodePlasmaPrev[nSpecies][iLev - 1], nodePlasmaPrev[nSpecies][iLev],
             0, nodePlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
@@ -1502,6 +1516,41 @@ void Pic::calc_cost_per_cell() {
   }
 }
 
+void Pic::advance_particles_and_sources(int pushStage) {
+  particle_mover(pushStage);
+
+  // Calling re_sampling after particle mover so that all the particles
+  // outside the domain have been deleted.
+  re_sampling();
+
+  charge_exchange();
+
+  // Apply chemical loss (recombination, etc.) by reducing particle
+  // weights.  Must come before fill_source_particles() so that loss
+  // and source are applied in the correct order within one step.
+  if (source && source->use_loss_source()) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->apply_loss(source, tc->get_dt());
+    }
+  }
+
+  if (source) {
+    fill_source_particles();
+  }
+
+  inject_particles_for_boundary_cells();
+
+  // Inject incoming flux at physical inflow faces before the moment deposit.
+  // Kept outside inject_particles_for_boundary_cells to avoid t=0
+  // pre-injection.
+  if (usePIC) {
+    const Real dt = tc->get_dt();
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->inject_flux_at_inflow_faces(dt);
+    }
+  }
+}
+
 //==========================================================
 void Pic::update(bool doReportIn) {
   std::string nameFunc = "Pic::update";
@@ -1539,44 +1588,11 @@ void Pic::update(bool doReportIn) {
     update_E();
   }
 
-  auto advance_particles_and_sources = [&](int pushStage = 0) {
-    particle_mover(pushStage);
-
-    // Calling re_sampling after particle mover so that all the particles
-    // outside the domain have been deleted.
-    re_sampling();
-
-    charge_exchange();
-
-    // Apply chemical loss (recombination, etc.) by reducing particle
-    // weights.  Must come before fill_source_particles() so that loss
-    // and source are applied in the correct order within one step.
-    if (source && source->use_loss_source()) {
-      for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->apply_loss(source, tc->get_dt());
-      }
-    }
-
-    if (source) {
-      fill_source_particles();
-    }
-
-    inject_particles_for_boundary_cells();
-
-    // Inject incoming flux at physical inflow faces before the moment deposit.
-    // Kept outside inject_particles_for_boundary_cells to avoid t=0
-    // pre-injection.
-    if (usePIC) {
-      const Real dt = tc->get_dt();
-      for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->inject_flux_at_inflow_faces(dt);
-      }
-    }
-  };
-
   isMomentsUpdated = false;
 
-  if (solveEM) {
+  if (useExplicitPIC) {
+    advance_explicit_full_pic();
+  } else if (solveEM) {
     advance_particles_and_sources(0);
     if (projectDownEmFields) {
       project_down_E();
@@ -1667,7 +1683,7 @@ void Pic::update(bool doReportIn) {
     advance_particles_and_sources(0);
   }
 
-  if (solveEM && doCorrectDivE) {
+  if ((solveEM || useExplicitPIC) && doCorrectDivE) {
     if (finest_level == 0) {
       divE_correction();
     } else {
