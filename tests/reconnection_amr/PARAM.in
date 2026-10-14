@@ -16,18 +16,23 @@ F                       initFromSWMF
  31.4                   xMax
 -15.7                   yMin  [code units; Ly = Lx/2 ~ 31.4 d_i]
  15.7                   yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
 
 #NCELL  (level-0 / base grid)
 32                      nCellX
 16                      nCellY
+1                       nCellZ
 
 #MAXBLOCKSIZE
 16                      maxBlockSizeX
 2                       maxBlockSizeY
+1                       maxBlockSizeZ
 
 #PERIODICITY
 T                       isPeriodicX
 F                       isPeriodicY
+T                       isPeriodicZ
 
 Field boundary conditions on the box faces (periodic in x, outflow/float in y).
 #FIELDBOXBOUNDARY
@@ -35,12 +40,16 @@ periodic                fieldBoxBoundaryLo  (x)
 periodic                fieldBoxBoundaryHi
 outflow                 fieldBoxBoundaryLo  (y)
 outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 outflow                 particleBoxBoundaryLo
 outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
 
 Full PIC electromagnetic field solver ON (Maxwell/GMRES E solve).
 #SOLVEEM
@@ -110,17 +119,14 @@ T                       useFixedDt
 #PARTICLES
 4                       nParticle per cell in X
 4                       nParticle per cell in Y
+1                       nParticle per cell in Z
 
 #SAVEPLOT
 1                       nPlot
-z=0 fluid ascii planet  plotString   (z cut; degenerate z in true-2D build)
+z=0 fluid ascii pic     plotString
 -1                      dn
 1.0                     dt
 -1                      dx   (multi-level grid requires unstructured point output)
-
-#STOP
--1                      MaxIter
-3.0                     TimeMax   ~0.5 ion gyroperiod (reconnection onset)
 
 AMR setup: a thin box layer around the current sheet (|y| < 7.85 d_i)
 is refined (REFINEREGION) to 2x resolution (REFINEMENTRATIO 2); see README.
@@ -131,6 +137,8 @@ box                     shape
  31.4                   max
 -7.85                   min
  7.85                   max
+-0.5                    min
+ 0.5                    max
 
 #REFINEREGION
 0                       iLev
@@ -141,3 +149,8 @@ box                     shape
 
 #CONSTANTPPV
 F                       isPPVconstant   (per-cell particle count; PC static AMR)
+
+#STOP
+-1                      MaxIter
+3.0                     TimeMax   ~0.5 ion gyroperiod (reconnection onset)
+

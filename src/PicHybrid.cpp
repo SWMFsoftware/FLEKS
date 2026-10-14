@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include <AMReX_MultiFabUtil.H>
@@ -260,12 +261,27 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   if (doHyper) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
+    // The first ghost layer of B is Faraday-advanced, so the Laplacian
+    // there (needed by the curl at the interface nodes) is computed
+    // directly from it and must not be replaced by coarse interpolation.
+    if (iLev > 0) {
+      fill_fine_lev_outer_bny_from_coarse(
+          centerLapB[iLev - 1], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          *get_cell_interp(), faraday_ngrow(iLev));
+    }
     apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
                    centerLapB[iLev].nComp(), &Pic::get_center_B, iLev, true);
 
     curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
                         Geom(iLev).InvCellSize());
     nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          nodeHyperE[iLev - 1], nodeHyperE[iLev], 0, nodeHyperE[iLev].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+    }
     apply_field_bc(nodeStatus[iLev], nodeHyperE[iLev], 0,
                    nodeHyperE[iLev].nComp(), &Pic::get_node_E, iLev, false);
 
@@ -326,9 +342,6 @@ void Pic::compute_ambipolar_E() {
       fill_fine_lev_bny_from_coarse(
           nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-      fill_fine_lev_edge_from_coarse(
-          nodeEambi[iLev - 1], nodeEambi[iLev], 0, nDim3, ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
 }
@@ -348,10 +361,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
   } else {
     // Copy nodal ion density to nodeRhoTemp and average it to cell centers.
-    // The nodes are filled over the grown tile so the coarse-fine interface
-    // nodes are covered as well (unlike the evolved path, which owns its
-    // density already).
-    compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], true);
+    compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], false);
     centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
 
     // Evaluate electron pressure Pe at cell centers via EOS
@@ -487,8 +497,21 @@ void Pic::smooth_moments() {
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab& moments = nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+          nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    }
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       smooth_multifab(moments, iLev, 1, coefSmoothMoments);
+      if (iLev > 0) {
+        fill_fine_lev_bny_from_coarse(
+            nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+            nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+      }
     }
     moments.FillBoundary(Geom(iLev).periodicity());
 
@@ -542,6 +565,15 @@ void Pic::smooth_moments() {
 
     if (useBody) {
       mask_body(moments, node_status(iLev));
+    }
+  }
+
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); ++iLev) {
+      fill_fine_lev_bny_from_coarse(
+          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+          nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
 }
@@ -1134,8 +1166,13 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 }
 
 //==========================================================
-// BCs for the cell-centered B, applied to the RK trial states and to the new
-// state at the end of each B sub-step.
+// Boundary conditions for cell-centered B, applied to the RK trial states and
+// to the new state at the end of each B sub-step.
+//
+// For refined levels (iLev > 0), ghost cells at the coarse-fine boundary are
+// interpolated from the coarse level, and physical boundary conditions are
+// applied. When faraday_ngrow > 0, the first fine ghost layer is updated by
+// the Faraday stage instead of being overwritten by coarse interpolation.
 void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
@@ -1147,9 +1184,28 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
     MultiFab& coarseB = (&mfB == &centerBstage[iLev])  ? centerBstage[iLev - 1]
                         : (&mfB == &centerBstar[iLev]) ? centerBstar[iLev - 1]
                                                        : centerB[iLev - 1];
-    fill_fine_lev_bny_from_coarse(
-        coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1], Geom(iLev - 1),
-        Geom(iLev), cell_status(iLev), *get_cell_interp());
+    if (faraday_ngrow(iLev) > 0) {
+      // The first ghost layer is advanced by the Faraday update with the
+      // synchronized E; only the outer layers are interpolated.
+      fill_fine_lev_outer_bny_from_coarse(
+          coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1], Geom(iLev - 1),
+          Geom(iLev), cell_status(iLev), *get_cell_interp(),
+          faraday_ngrow(iLev));
+      if (is_bz_div_free() && mfB.nComp() > iz_) {
+        // Without a z extent only Bx, By enter div(B). A free-running ghost Bz
+        // is not needed and piles up where the outflow crosses the interface,
+        // so it is taken from the coarse level in the whole ghost region.
+        // (nDim alone is not enough: a fake-2D deck in a 3D build has nDim ==
+        // 3 but the same single z cell.)
+        fill_fine_lev_bny_from_coarse(coarseB, mfB, iz_, 1, ref_ratio[iLev - 1],
+                                      Geom(iLev - 1), Geom(iLev),
+                                      cell_status(iLev), *get_cell_interp());
+      }
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          coarseB, mfB, 0, mfB.nComp(), ref_ratio[iLev - 1], Geom(iLev - 1),
+          Geom(iLev), cell_status(iLev), *get_cell_interp());
+    }
     apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
                    iLev, true);
   }
@@ -1180,9 +1236,484 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 }
 
 //==========================================================
+// Synchronize nodal E across AMR levels:
+//  1. Top-down: fine nodes on the coarse-fine interface take coarse E
+//     (linear interpolation along coarse edges via fill_fine_lev_edge_from_coarse).
+//  2. Bottom-up: covered coarse nodes take the coincident fine E via
+//     average_down_nodal.
+//  (Ghost nodes of fine levels are subsequently filled in fill_ghost_emf_from_coarse).
+//
+// Step 1 must precede Step 2 so that fine interface nodes are filled from
+// coarse E before coarse covered nodes are updated with fine values.
+//
+// Because curl_node_to_center is a 2*dx-wide stencil, evaluating curl(E) at dx
+// vs. 2*dx does not telescope: the coarse curl of synchronized E differs from
+// the cell average of fine curl(E). This intrinsic per-step drift between
+// coarse covered B and the fine B average is corrected by relax_covered_B_to_fine.
+void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
+  BL_PROFILE("Pic::sync_emf_fine_to_coarse");
+  for (int iLev = 1; iLev <= finest_level; ++iLev) {
+    fill_fine_lev_edge_from_coarse(
+        nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, ref_ratio[iLev - 1],
+        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_field_bc(nodeStatus[iLev], nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
+                   iLev, false);
+    if (useBody) {
+      apply_body_E_bc(nodeEmf[iLev], iLev);
+    }
+  }
+
+  for (int iLev = finest_level; iLev > 0; --iLev) {
+    const int iCrse = iLev - 1;
+    average_down_nodal(nodeEmf[iLev], nodeEmf[iCrse], ref_ratio[iCrse]);
+    nodeEmf[iCrse].FillBoundary(Geom(iCrse).periodicity());
+    apply_field_bc(nodeStatus[iCrse], nodeEmf[iCrse], 0, nDim3,
+                   &Pic::get_node_E, iCrse, false);
+    if (useBody) {
+      apply_body_E_bc(nodeEmf[iCrse], iCrse);
+    }
+  }
+}
+
+//==========================================================
+// Fill the ghost nodes of the fine-level E from the (synchronized) coarse E.
+// Together with the interface nodes (already set from the coarse E), linear
+// interpolation along the coarse edges makes the ghost face fluxes sum to the
+// coarse face fluxes.
+void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
+  BL_PROFILE("Pic::fill_ghost_emf_from_coarse");
+  for (int iLev = 1; iLev <= finest_level; ++iLev) {
+    fill_fine_lev_bny_from_coarse(
+        nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, ref_ratio[iLev - 1],
+        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    apply_field_bc(nodeStatus[iLev], nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
+                   iLev, false);
+    if (useBody) {
+      apply_body_E_bc(nodeEmf[iLev], iLev);
+    }
+  }
+}
+
+//==========================================================
+// kStage[iLev][iK] = curl(E_Ohm(Bin)) on all levels. E is assembled on
+// every level first, then synchronized across the coarse-fine interfaces, and
+// only then is the curl taken, so that every cell of a level (including the
+// covered coarse cells and the first fine ghost layer) is
+// advanced by one single nodal E field.
+void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
+                            bool includeAmbi) {
+  BL_PROFILE("Pic::faraday_stage_rhs");
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    assemble_ohm_E(Bin[iLev], total_center_B(Bin[iLev], iLev),
+                   nodeEstage[iLev], iLev, hstep, includeAmbi);
+  }
+
+  if (finest_level > 0) {
+    sync_emf_fine_to_coarse(nodeEstage);
+    fill_ghost_emf_from_coarse(nodeEstage);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    // curl_node_to_center also fills the first ghost layer, which is used by
+    // the stage update when faraday_ngrow(iLev) > 0.
+    curl_node_to_center(nodeEstage[iLev], kStage[iLev][iK],
+                        Geom(iLev).InvCellSize());
+    if (is_body_interior_frozen())
+      mask_body_interior(kStage[iLev][iK], cellStatus[iLev]);
+  }
+}
+
+//==========================================================
+// Compute max |avg(B_fine) - B_coarse| over the covered cells of iLev, evaluated
+// before divergence-free relaxation updates them.
+void Pic::measure_covered_B_drift(int iLev) {
+  BL_PROFILE("Pic::measure_covered_B_drift");
+  MultiFab& target = relaxTarget[iLev];
+  MultiFab::Copy(target, centerB[iLev], 0, 0, nDim3, 0);
+  average_down(centerB[iLev + 1], target, 0, nDim3, ref_ratio[iLev]);
+  MultiFab::Subtract(target, centerB[iLev], 0, 0, nDim3, 0);
+
+  Real drift = 0;
+  for (MFIter mfi(target); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const auto& d = target[mfi].const_array();
+    const auto& st = cellStatus[iLev][mfi].const_array();
+    amrex::Loop(box, [&](int i, int j, int k) {
+      if (!bit::is_refined(st(i, j, k)))
+        return;
+      for (int iVar = 0; iVar < nDim3; ++iVar)
+        drift = amrex::max(drift, std::abs(d(i, j, k, iVar)));
+    });
+  }
+  ParallelDescriptor::ReduceRealMax(drift);
+  coveredBDrift[iLev] = drift;
+}
+
+//==========================================================
+// Relax covered coarse B toward the cell-average of fine B using divergence-free
+// corrections, B += curl(A), where A is a nodal potential supported on nodes
+// whose surrounding cells are all covered. Uncovered cells and interface fluxes
+// remain untouched, preserving coarse-level div(B) to machine precision.
+// A is obtained by solving min |avg(B_fine) - B_coarse - curl(A)|^2 with CGLS.
+//
+// Why this is divergence-free:
+//   div_node_to_center o average_center_to_node o curl_node_to_center == 0
+// identically in 2D and 3D. Any curl correction strictly preserves div(B)
+// regardless of CGLS convergence.
+//
+// Two variants, selected by is_bz_div_free():
+//   * 2D / fake-2D: Bz does not enter div(B), so it is restricted directly from
+//     fine cells, while (Bx, By) is relaxed via the scalar potential A_z.
+//   * True 3D: all three components are relaxed with the nodal vector potential A.
+//     Gauge modes A -> A + grad(phi) lie in the null space of curl, so CGLS
+//     does not amplify them and explicit gauge fixing is unnecessary.
+void Pic::relax_covered_B_to_fine(int iLev) {
+  BL_PROFILE("Pic::relax_covered_B_to_fine");
+
+  MultiFab& B = centerB[iLev];
+  MultiFab& target = relaxTarget[iLev];
+  MultiFab::Copy(target, B, 0, 0, nDim3, 0);
+  average_down(centerB[iLev + 1], target, 0, nDim3, ref_ratio[iLev]);
+
+  const bool bzFree = is_bz_div_free();
+  // Number of cell components taking part in the relaxation.
+  const int nRelax = bzFree ? 2 : nDim3;
+  if (bzFree) {
+    MultiFab::Copy(B, target, iz_, iz_, 1, 0);
+  }
+
+  MultiFab& r = relaxResidual[iLev];
+  MultiFab& q = relaxCurl[iLev];
+  MultiFab& s = relaxCurlT[iLev];
+  MultiFab& p = relaxDir[iLev];
+
+  // Face-averaged difference operators P_d of curl_node_to_center and their
+  // transposes P_d^T, with c = 1/4 in 3D and 1/2 without a z extent. Writing
+  // D+ for f(.. +1 ..) - f(..) and S- for f(..) + f(.. -1 ..), each acting on
+  // the direction given by its subscript:
+  //   P_x = c/dx * D+_x S+_y S+_z,   P_x^T = c/dx * D-_x S-_y S-_z
+  // and likewise for y and z, with the sums over the *other* two directions.
+  // curl(A) = (P_y A_z - P_z A_y, P_z A_x - P_x A_z, P_x A_y - P_y A_x); its
+  // adjoint collects the coefficient of each A component:
+  //   s_x = P_z^T r_y - P_y^T r_z, s_y = P_x^T r_z - P_z^T r_x,
+  //   s_z = P_y^T r_x - P_x^T r_y.
+  const auto invDx = Geom(iLev).InvCellSizeArray();
+  const bool useZ = !bzFree;
+  const Real cFac = useZ ? 0.25 : 0.5;
+  const Real cInvDx = cFac * invDx[ix_];
+  const Real cInvDy = cFac * invDx[iy_];
+  const Real cInvDz = useZ ? cFac * invDx[iz_] : 0.0;
+  // 1 in 3D, 0 without a z extent: the transverse sums then skip that index.
+  const int kOff = useZ ? 1 : 0;
+  constexpr int maxIter = 30;
+  constexpr Real relTol = 1e-8;
+  const auto period = Geom(iLev).periodicity();
+  const auto owner = s.OwnerMask(period);
+
+  // Precompute inner-node mask once before CGLS: nodes surrounded by covered
+  // cells are inner (1), others are boundary/outer (0).
+  iMultiFab innerMask(s.boxArray(), s.DistributionMap(), 1, 0);
+  for (MFIter mfi(innerMask); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const auto& mask = innerMask[mfi].array();
+    const auto& st = cellStatus[iLev][mfi].const_array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      bool inner = true;
+      for (int kk = 0; kk <= kOff && inner; ++kk)
+        for (int jj = 0; jj <= 1 && inner; ++jj)
+          for (int ii = 0; ii <= 1 && inner; ++ii)
+            if (!bit::is_refined(st(i - ii, j - jj, k - kk)))
+              inner = false;
+      mask(i, j, k) = inner ? 1 : 0;
+    });
+  }
+
+  // s = curl^T r on the nodes surrounded by covered cells, zero elsewhere.
+  // This is the exact adjoint of apply_curl below.
+  auto apply_curlT = [&]() {
+    r.FillBoundary(period);
+    for (MFIter mfi(s); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& sa = s[mfi].array();
+      const auto& d = r[mfi].const_array();
+      const auto& mask = innerMask[mfi].const_array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (!mask(i, j, k)) {
+          for (int iVar = 0; iVar < nDim3; ++iVar)
+            sa(i, j, k, iVar) = 0.0;
+          return;
+        }
+
+        // (P_z^T f)(i,j,k) = c/dz * sum_{ii,jj} [ f(i-ii,j-jj,k-1) -
+        //                                         f(i-ii,j-jj,k)   ]
+        Real pzT_y = 0.0, pzT_x = 0.0;
+        if (useZ) {
+          for (int jj = 0; jj <= 1; ++jj)
+            for (int ii = 0; ii <= 1; ++ii) {
+              pzT_y +=
+                  d(i - ii, j - jj, k - 1, iy_) - d(i - ii, j - jj, k, iy_);
+              pzT_x +=
+                  d(i - ii, j - jj, k - 1, ix_) - d(i - ii, j - jj, k, ix_);
+            }
+          pzT_y *= cInvDz;
+          pzT_x *= cInvDz;
+        }
+
+        // (P_y^T f)(i,j,k) = c/dy * sum_{ii,kk} [ f(i-ii,j-1,k-kk) -
+        //                                         f(i-ii,j,  k-kk) ]
+        Real pyT_x = 0.0, pyT_z = 0.0;
+        for (int kk = 0; kk <= kOff; ++kk)
+          for (int ii = 0; ii <= 1; ++ii) {
+            pyT_x += d(i - ii, j - 1, k - kk, ix_) - d(i - ii, j, k - kk, ix_);
+            pyT_z += d(i - ii, j - 1, k - kk, iz_) - d(i - ii, j, k - kk, iz_);
+          }
+        pyT_x *= cInvDy;
+        pyT_z *= cInvDy;
+
+        // (P_x^T f)(i,j,k) = c/dx * sum_{jj,kk} [ f(i-1,j-jj,k-kk) -
+        //                                         f(i,  j-jj,k-kk) ]
+        Real pxT_z = 0.0, pxT_y = 0.0;
+        for (int kk = 0; kk <= kOff; ++kk)
+          for (int jj = 0; jj <= 1; ++jj) {
+            pxT_z += d(i - 1, j - jj, k - kk, iz_) - d(i, j - jj, k - kk, iz_);
+            pxT_y += d(i - 1, j - jj, k - kk, iy_) - d(i, j - jj, k - kk, iy_);
+          }
+        pxT_z *= cInvDx;
+        pxT_y *= cInvDx;
+
+        sa(i, j, k, ix_) = pzT_y - pyT_z;
+        sa(i, j, k, iy_) = pxT_z - pzT_x;
+        sa(i, j, k, iz_) = pyT_x - pxT_y;
+      });
+    }
+  };
+
+  // q = curl(A) with A = p. Only non-zero on cells whose four (eight) corner
+  // nodes are all inner, because p vanishes on every node touching an
+  // uncovered cell. In 3D this calls the very operator the Faraday update
+  // uses, so the correction is discretely a curl of the same stencil.
+  auto apply_curl = [&]() {
+    if (useZ) {
+      curl_node_to_center(p, q, Geom(iLev).InvCellSize());
+      return;
+    }
+    for (MFIter mfi(q); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& qa = q[mfi].array();
+      const auto& pa = p[mfi].const_array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real pyAz =
+            cInvDy * (pa(i, j + 1, k, iz_) + pa(i + 1, j + 1, k, iz_) -
+                      pa(i, j, k, iz_) - pa(i + 1, j, k, iz_));
+        const Real pxAz =
+            cInvDx * (pa(i + 1, j, k, iz_) + pa(i + 1, j + 1, k, iz_) -
+                      pa(i, j, k, iz_) - pa(i, j + 1, k, iz_));
+        qa(i, j, k, ix_) = pyAz;
+        qa(i, j, k, iy_) = -pxAz;
+        qa(i, j, k, iz_) = 0.0;
+      });
+    }
+  };
+
+  // r = avg(Bf) - Bc on the covered cells, zero elsewhere. The components not
+  // taking part in the relaxation stay zero, so the adjoint never drives their
+  // potential components.
+  r.setVal(0.0);
+  for (MFIter mfi(B); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const auto& d = r[mfi].array();
+    const auto& b = B[mfi].const_array();
+    const auto& t = target[mfi].const_array();
+    const auto& st = cellStatus[iLev][mfi].const_array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_refined(st(i, j, k))) {
+        for (int iVar = 0; iVar < nRelax; ++iVar)
+          d(i, j, k, iVar) = t(i, j, k, iVar) - b(i, j, k, iVar);
+      }
+    });
+  }
+
+  // CGLS for min |r - curl(A)|^2: B directly accumulates the curl corrections
+  // and r tracks the residual.
+  apply_curlT();
+  MultiFab::Copy(p, s, 0, 0, nDim3, 0);
+  Real gamma = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
+  const Real gamma0 = gamma;
+
+  for (int iter = 0; iter < maxIter && gamma > relTol * relTol * gamma0;
+       ++iter) {
+    apply_curl();
+    const Real qq = MultiFab::Dot(q, 0, q, 0, nRelax, 0);
+    if (qq <= 0)
+      break;
+    const Real a = gamma / qq;
+    MultiFab::Saxpy(B, a, q, 0, 0, nRelax, 0);
+    MultiFab::Saxpy(r, -a, q, 0, 0, nRelax, 0);
+    apply_curlT();
+    const Real gammaNew = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
+    MultiFab::Xpay(p, gammaNew / gamma, s, 0, 0, nDim3, 0);
+    gamma = gammaNew;
+  }
+  B.FillBoundary(period);
+}
+
+//==========================================================
+// Max |divB| per level, split into: cells next to the coarse-fine interface
+// coarse cells, and the remaining interior cells. Also reports the drift
+// between the covered coarse B and the average of the fine B, and the drift
+// of the first fine ghost layer from the coarse interpolation. One line per
+// cycle:
+//   divB-AMR n=<cycle> L<lev> if/cv/in=<iface>/<covered>/<interior>/dom=<edge>
+//            dCov=<max|Bc-avg(Bf)|> dGhost=<max|Bghost-interp(Bc)|>
+//            |B|=<max|B|>
+// (cv is omitted on the finest level; a non-finite divB shows as inf. 'dom'
+// holds the cells on the physical domain boundary, which the field BC sets
+// rather than the update, so they are not part of the interior bucket.)
+void Pic::report_divB_amr() {
+  BL_PROFILE("Pic::report_divB_amr");
+  std::ostringstream line;
+  line << std::scientific << std::setprecision(1);
+  line << "divB-AMR n=" << tc->get_cycle();
+  Real maxDrift = 0, maxGhostDrift = 0, maxBmag = 0;
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (divB[iLev].empty())
+      continue;
+    Real maxIface = 0, maxCovered = 0, maxInterior = 0, maxDomain = 0;
+    const bool hasFiner = iLev < finest_level;
+    for (MFIter mfi(divB[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& arr = divB[iLev][mfi].array();
+      const auto& status = cellStatus[iLev][mfi].array();
+      amrex::Loop(box, [&](int i, int j, int k) {
+        const int st = status(i, j, k);
+        const Real raw = arr(i, j, k, 0);
+        const Real v = std::isfinite(raw) ? std::abs(raw)
+                                          : std::numeric_limits<Real>::max();
+        // Cells on the physical domain boundary are set by the field BC, not
+        // by the update, so they are reported separately: leaving them in the
+        // interior bucket makes the solver's div(B) unreadable on decks with
+        // outflow faces.
+        if (bit::is_domain_edge(st)) {
+          maxDomain = amrex::max(maxDomain, v);
+        } else if (hasFiner && bit::is_refined(st)) {
+          maxCovered = amrex::max(maxCovered, v);
+        } else if ((iLev > 0 && bit::is_lev_edge(st)) ||
+                   (hasFiner && bit::is_refined_neighbour(st))) {
+          maxIface = amrex::max(maxIface, v);
+        } else {
+          maxInterior = amrex::max(maxInterior, v);
+        }
+      });
+    }
+    ParallelDescriptor::ReduceRealMax(maxIface);
+    ParallelDescriptor::ReduceRealMax(maxCovered);
+    ParallelDescriptor::ReduceRealMax(maxInterior);
+    ParallelDescriptor::ReduceRealMax(maxDomain);
+
+    // Sampled before the restriction in update_B_hybrid; measuring it here
+    // instead would report zero whenever the plain average_down runs.
+    const Real drift = (hasFiner && iLev < coveredBDrift.size())
+                           ? coveredBDrift[iLev]
+                           : Real(0.0);
+
+    // Drift of the first fine ghost layer from the coarse interpolation.
+    Real ghostDrift = 0;
+    if (iLev > 0) {
+      MultiFab tmp(centerB[iLev].boxArray(), centerB[iLev].DistributionMap(),
+                   nDim3, centerB[iLev].nGrow());
+      MultiFab::Copy(tmp, centerB[iLev], 0, 0, nDim3, centerB[iLev].nGrow());
+      fill_fine_lev_bny_from_coarse(
+          centerB[iLev - 1], tmp, 0, nDim3, ref_ratio[iLev - 1], Geom(iLev - 1),
+          Geom(iLev), cell_status(iLev), *get_cell_interp());
+      for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
+        const Box box = amrex::grow(mfi.validbox(), 1);
+        const auto& a = tmp[mfi].array();
+        const auto& b = centerB[iLev][mfi].array();
+        const auto& status = cellStatus[iLev][mfi].array();
+        amrex::Loop(box, [&](int i, int j, int k) {
+          const int st = status(i, j, k);
+          if (!bit::is_lev_boundary(st) || bit::is_domain_boundary(st))
+            return;
+          for (int iVar = 0; iVar < nDim3; ++iVar)
+            ghostDrift = amrex::max(
+                ghostDrift, std::abs(a(i, j, k, iVar) - b(i, j, k, iVar)));
+        });
+      }
+      ParallelDescriptor::ReduceRealMax(ghostDrift);
+    }
+
+    // Reference magnitude for the dGhost warning below.
+    Real bMag = 0;
+    for (int iVar = 0; iVar < nDim3; ++iVar)
+      bMag = amrex::max(bMag, centerB[iLev].norm0(iVar, 0, false));
+
+    auto fmt = [](Real v) {
+      std::ostringstream s;
+      s << std::scientific << std::setprecision(1);
+      if (v >= std::numeric_limits<Real>::max())
+        s << "inf";
+      else
+        s << v;
+      return s.str();
+    };
+    line << " L" << iLev << (hasFiner ? " if/cv/in=" : " if/in=")
+         << fmt(maxIface) << "/";
+    if (hasFiner)
+      line << fmt(maxCovered) << "/";
+    line << fmt(maxInterior) << "/dom=" << fmt(maxDomain);
+    maxDrift = amrex::max(maxDrift, drift);
+    maxGhostDrift = amrex::max(maxGhostDrift, ghostDrift);
+    maxBmag = amrex::max(maxBmag, bMag);
+  }
+  line << " dCov=" << maxDrift << " dGhost=" << maxGhostDrift
+       << "|B|=" << maxBmag;
+
+  // The first fine ghost layer is advanced by the Faraday update rather than
+  // re-interpolated from the coarse level. Its difference from the coarse
+  // interpolation typically saturates at a benign level without impacting div(B).
+  // To avoid false positives on strong gradients, warn only when drift exceeds
+  // a threshold ratio and exhibits continued growth past its previous maximum.
+  constexpr Real dGhostRunaway = 6.0; // threshold ratio above benign saturation
+  constexpr Real dGrossGrowth = 2.0;  // factor that counts as sustained growth
+  if (maxBmag > 0) {
+    static Real maxRatioSeen = 0.0;
+    const Real ratio = maxGhostDrift / maxBmag;
+    if (ratio > dGhostRunaway && ratio > dGrossGrowth * maxRatioSeen) {
+      amrex::Print()
+          << printPrefix
+          << "Warning: the evolved first fine ghost layer of B is "
+             "running away from the coarse interpolation: dGhost/|B| = "
+          << ratio << " (dGhost=" << maxGhostDrift << ", |B|=" << maxBmag
+          << "), up from " << maxRatioSeen
+          << " previously. Saturation near 5x|B| is benign; sustained "
+             "growth is not.\n";
+      maxRatioSeen = ratio;
+    }
+  }
+  amrex::Print() << printPrefix << line.str() << std::endl;
+}
+
+//==========================================================
+
+//==========================================================
 void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
+
+  if (finest_level > 0 && nDim == 3 && !isFake2D) {
+    static bool isWarned = false;
+    if (!isWarned) {
+      amrex::Print()
+          << printPrefix
+          << "Note: AMR hybrid PIC on a 3D grid: the covered "
+             "coarse B drifts from the average of the fine B, since the "
+             "2dx-wide curl operator does not telescope between dx and "
+             "dx/2 (divergence-free relaxation removes the drift each step). "
+             "div(B) itself is preserved in 3D as well.\n";
+      isWarned = true;
+    }
+  }
 
   const Real dt = tc->get_dt();
   const Real subDt = dt / nBSubcycle;
@@ -1278,17 +1809,24 @@ void Pic::update_B_hybrid() {
   // once per PIC timestep outside the magnetic subcycling steps.
   compute_ambipolar_E();
 
-  // For a polytropic electron pressure curl(-grad(Pe)/(e*n_e)) = 0, so the
-  // ambipolar field does not enter dB/dt and every stage can skip it (the
-  // existing behaviour). An evolved Pe is not a function of the density alone,
-  // so the curl is non-zero (the Biermann-battery-like term) and the field
-  // must be included at every stage. When the flag is false the argument
-  // passed below is exactly the same false as before, so polytropic runs are
-  // bit-for-bit unchanged.
-  const bool ambiInStages = useElectronPressureEq && ambipolarInStages;
+  // Maintain transverse force balance (J x B = grad(Pe)) in Faraday stages.
+  // When ambiInStages was false, the uncompensated diamagnetic Hall field Ey
+  // produced an artificial jump across coarse-fine boundaries, generating
+  // unphysical horizontal dipole stripes of Bz in Harris reconnection.
+  const bool ambiInStages = (electronTemperature > 0);
+
+  // Ensure B ghost cells are fresh across all levels before subcycling.
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    apply_centerB_BC(iLev);
+  }
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
+  // Each stage first evaluates curl(E) on ALL levels (faraday_stage_rhs, which
+  // also synchronizes E across the coarse-fine interface), then updates every
+  // level, then refreshes the ghost cells. nG = faraday_ngrow(iLev) is 1 on
+  // refined levels: the first ghost layer is advanced with the same curl(E)
+  // as the valid cells.
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
     // Moment time-interpolation weights hstep for RK stages within the
     // sub-step.
@@ -1302,120 +1840,105 @@ void Pic::update_B_hybrid() {
       const Real dtSixth = -subDt / 6.0;
       const Real dtThird = -subDt / 3.0;
 
+      // Stages 1-3: trial state B_s = B_n - c_s * subDt * k_{s-1}.
+      const Real cStage[3] = {0.5, 0.5, 1.0};
+      const Real hStage[4] = {hstepStart, hstepHalf, hstepHalf, hstepEnd};
+      for (int s = 0; s < 3; ++s) {
+        faraday_stage_rhs(s == 0 ? centerB : centerBstage, s, hStage[s],
+                          ambiInStages);
+        for (int iLev = 0; iLev < n_lev(); ++iLev) {
+          const int nG = faraday_ngrow(iLev);
+          MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
+                            -cStage[s] * subDt, kStage[iLev][s], 0, 0, nDim3,
+                            nG);
+        }
+        for (int iLev = 0; iLev < n_lev(); ++iLev) {
+          apply_centerB_BC(iLev, centerBstage[iLev]);
+        }
+      }
+
+      // Stage 4 and the final RK4 combination.
+      faraday_stage_rhs(centerBstage, 3, hStage[3], ambiInStages);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Stage 1: k1 = curl(E(B^n)). The Ohm's law uses the total field.
-        // J comes from the evolved field alone (the intrinsic field is
-        // current-free), the cross products use the total field.
-        assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepStart, ambiInStages);
-        curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
-                            Geom(iLev).InvCellSize());
-        if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
-
-        // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at B2
-        MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
-                          -0.5 * subDt, kStage[iLev][0], 0, 0, nDim3, nGst);
-        apply_centerB_BC(iLev, centerBstage[iLev]);
-        assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstage[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
-        curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
-                            Geom(iLev).InvCellSize());
-        if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
-
-        // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at B3
-        MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
-                          -0.5 * subDt, kStage[iLev][1], 0, 0, nDim3, nGst);
-        apply_centerB_BC(iLev, centerBstage[iLev]);
-        assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstage[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
-        curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
-                            Geom(iLev).InvCellSize());
-        if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
-
-        // Stage 4: B4 = B^n - dt k3; evaluate E at B4
-        MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
-                          kStage[iLev][2], 0, 0, nDim3, nGst);
-        apply_centerB_BC(iLev, centerBstage[iLev]);
-        assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstage[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
-        curl_node_to_center(nodeEstage[iLev], kStage[iLev][3],
-                            Geom(iLev).InvCellSize());
-        if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][3], cellStatus[iLev]);
-
-        // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
+        const int nG = faraday_ngrow(iLev);
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
-                        nGst);
+                        nG);
         MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][1], 0, 0, nDim3,
-                        nGst);
+                        nG);
         MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][2], 0, 0, nDim3,
-                        nGst);
+                        nG);
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, nDim3,
-                        nGst);
-
+                        nG);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev);
       }
       continue;
     }
 
     if (!useRK4) {
-      // Strong-stability-preserving RK3 (Shu-Osher).
+      // Strong-stability-preserving RK3 (Shu-Osher) across all levels.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, nDim3,
+                       centerBstart[iLev].nGrow());
+      }
 
-        // Stage 1: B1 = B_n - subDt * curl(E(B_n))
-        assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepStart, ambiInStages);
-        curl_node_to_center(nodeEstage[iLev], kStage[iLev][0],
-                            Geom(iLev).InvCellSize());
-        if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][0], cellStatus[iLev]);
+      // Stage 1: B1 = B_n - subDt * curl(E(B_n))
+      faraday_stage_rhs(centerB, 0, hstepStart, ambiInStages);
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
-                          kStage[iLev][0], 0, 0, nDim3, nGst);
-
-        // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(B1)))
+                          kStage[iLev][0], 0, 0, nDim3, nG);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
-        assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstage[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepEnd, ambiInStages);
-        curl_node_to_center(nodeEstage[iLev], kStage[iLev][1],
-                            Geom(iLev).InvCellSize());
-        if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][1], cellStatus[iLev]);
+      }
+
+      // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(B1)))
+      faraday_stage_rhs(centerBstage, 1, hstepEnd, ambiInStages);
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
-                          centerBstart[iLev], 0, 0, nDim3, nGst);
+                          centerBstart[iLev], 0, 0, nDim3, nG);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
-                        0, nDim3, nGst);
+                        0, nDim3, nG);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev, centerBstage[iLev]);
+      }
 
-        // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(B2)))
-        assemble_ohm_E(centerBstage[iLev],
-                       total_center_B(centerBstage[iLev], iLev),
-                       nodeEstage[iLev], iLev, hstepHalf, ambiInStages);
-        curl_node_to_center(nodeEstage[iLev], kStage[iLev][2],
-                            Geom(iLev).InvCellSize());
-        if (is_body_interior_frozen())
-          mask_body_interior(kStage[iLev][2], cellStatus[iLev]);
+      // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(B2)))
+      faraday_stage_rhs(centerBstage, 2, hstepHalf, ambiInStages);
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
-                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nGst);
+                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nG);
         MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
-                        0, nDim3, nGst);
-
+                        0, nDim3, nG);
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerB_BC(iLev);
       }
       continue;
     }
   }
 
-  if (projectDownEmFields && finest_level > 0) {
-    for (int iLev = finest_level; iLev > 0; iLev--) {
-      average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3, ref_ratio[0]);
+  // Restriction. The covered coarse cells have already been advanced with the
+  // injected fine E, which keeps the coarse level divergence-consistent;
+  // average_down of the cell-centered B would not (its face weights are
+  // (F0+2F1+F2)/4 instead of the CT value (F0+F2)/2).
+  // Left alone, however, the covered coarse B drifts away from the fine
+  // average (the fine-scale part of E is invisible to the coarse curl), so it
+  // is relaxed toward it with divergence-free corrections only.
+  if (finest_level > 0) {
+    // How far the covered coarse B has drifted from the fine average. This is
+    // the quantity the relaxation has to remove, so it must be sampled before
+    // the relaxation updates the covered cells.
+    for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
+      measure_covered_B_drift(iLev);
+    }
+    for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
+      relax_covered_B_to_fine(iLev);
     }
   }
 
@@ -1433,7 +1956,8 @@ void Pic::update_B_hybrid() {
         apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nDim3,
                        &Pic::get_node_B, iLev, true);
       }
-      compute_divB(iLev);
+      ensure_divB(iLev);
+      div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
       correct_B(iLev);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     }
@@ -1467,6 +1991,22 @@ void Pic::update_B_hybrid() {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       compute_divB(iLev);
     }
+    // The .out writer samples a cell-centered variable at the cell whose low
+    // corner is the output node, so the nodes on the high side of a fine box
+    // read a ghost cell. Fill those from the coarse level, so the plot shows
+    // the coarse value there instead of the div of interpolated ghost B.
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(divB[iLev - 1], divB[iLev], 0,
+                                    divB[iLev].nComp(), ref_ratio[iLev - 1],
+                                    Geom(iLev - 1), Geom(iLev),
+                                    cell_status(iLev), cell_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          centerDivB[iLev - 1], centerDivB[iLev], 0, centerDivB[iLev].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
+    }
+    if (need_divB() && n_lev() > 1 && doReport)
+      report_divB_amr();
   }
 
   // Evaluate E^{n+1} into nodeE for the next push.
@@ -1475,24 +2015,26 @@ void Pic::update_B_hybrid() {
                    nodeE[iLev], iLev, 1.0);
   }
 
-  // Fill coarse-fine interface ghost cells and synchronize edge nodes for
-  // nodeE.
+  // Suppress grid-scale E component if enabled. This has to happen *before*
+  // the coarse-fine synchronization: smoothing afterwards would leave the two
+  // levels with different E at the interface nodes again.
+  if (doSmoothE) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+      smooth_E(nodeE[iLev], iLev);
+    }
+  }
+
+  if (finest_level > 0) {
+    sync_emf_fine_to_coarse(nodeE);
+  }
+
+  // Fill coarse-fine interface ghost cells for nodeE.
   if (finest_level > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-      fill_fine_lev_edge_from_coarse(
-          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-    }
-  }
-
-  // Suppress grid-scale E component if enabled.
-  if (doSmoothE) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-      smooth_E(nodeE[iLev], iLev);
     }
   }
 }

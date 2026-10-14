@@ -373,6 +373,67 @@ The complete hybrid PIC time step proceeds through the following stages:
   \item \textbf{Electric field assembly:} The node-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} and stored for the subsequent Boris push.
 \end{enumerate}
 
+\subsection{Divergence-free magnetic field evolution with AMR}
+
+\subsubsection{The divergence problem on AMR hierarchies}
+On a single uniform grid, evaluating Faraday's law $\partial \mathbf{B}/\partial t = -\nabla\times\mathbf{E}$ via the discrete node-to-cell curl guarantees that the discrete divergence vanishes identically to machine precision:
+\begin{equation}
+\nabla \cdot (\nabla \times \mathbf{E}) \equiv 0.
+\end{equation}
+In multi-level block-structured Adaptive Mesh Refinement (AMR), however, standard approaches introduce severe divergence errors:
+\begin{enumerate}
+  \item \textbf{Interface flux mismatch:} When coarse and fine levels evaluate $\mathbf{E}$ independently, electric fields along coarse-fine boundaries are multi-valued, violating flux cancellation across shared cell faces and creating numerical magnetic monopoles.
+  \item \textbf{Ghost cell interpolation:} Interpolating cell-centered $\mathbf{B}$ from coarse to fine ghost cells via standard polynomial/conservative interpolation does not satisfy the discrete divergence constraint, injecting divergence errors at every sub-step.
+  \item \textbf{Covered coarse cell drift:} In block-structured AMR, coarse cells covered by fine patches cannot simply be replaced by the volume average of fine cells ($\mathbf{B}_{\text{coarse}} = \operatorname{avg}(\mathbf{B}_{\text{fine}})$), as direct restriction violates coarse $\nabla \cdot \mathbf{B} = 0$ along the boundary between covered and uncovered cells.
+  Conversely, advancing covered coarse cells with their own coarse Faraday update leads to rapid divergence from the fine solution: the discrete operator $\operatorname{curl}_{\text{node}\to\text{center}}$ is non-telescoping across refinement levels ($2\Delta x$ coarse stencil vs. $\Delta x$ fine stencil). Even when coincident coarse nodes are injected with exact fine electric fields,
+  \begin{equation}
+  \operatorname{curl}_{\text{coarse}}(\mathbf{E}_{\text{synced}}) \neq \operatorname{avg}(\operatorname{curl}_{\text{fine}}(\mathbf{E})),
+  \end{equation}
+  differing at $O(1)$ relative error throughout covered regions. Left uncorrected, covered coarse cells drift linearly away from the fine solution.
+\end{enumerate}
+
+\subsubsection{Interface synchronization and Faraday-evolved ghost layer}
+FLEKS resolves interface divergence through a multi-pass synchronization:
+\begin{enumerate}
+  \item \textbf{Two-pass $\mathbf{E}$ synchronization:} Prior to evaluating $\nabla \times \mathbf{E}$, fine nodes on the coarse-fine interface are linearly interpolated along coarse edges from coarse nodal $\mathbf{E}$ (\texttt{sync\_emf\_fine\_to\_coarse}, top-down pass). Next, covered coarse nodes take coincident fine nodal values via direct injection (bottom-up pass). Finally, fine ghost nodes are filled from the synchronized coarse $\mathbf{E}$ (\texttt{fill\_ghost\_emf\_from\_coarse}). The top-down edge interpolation must precede bottom-up injection to ensure interface nodes match coarse edge fluxes.
+  \item \textbf{Faraday-evolved first fine ghost layer:} Rather than interpolating all fine ghost cells from the coarse level, the first fine ghost layer is evolved directly via Faraday's law using the synchronized nodal $\mathbf{E}$ (\texttt{faraday\_ngrow > 0}). Only outer ghost layers ($\ge 2$) are interpolated from the coarse level.
+  \item \textbf{True stage evaluation:} Intermediate RK stages evaluate Ohm's law directly at stage states $\mathbf{B}_{\text{stage}}$ with the synchronized $\mathbf{E}$ and Faraday-evolved ghost layer, eliminating ad-hoc lagged states to preserve high-order temporal accuracy.
+\end{enumerate}
+
+\subsubsection{Local divergence-free covered-cell relaxation}
+To eliminate the drift of covered coarse cells without violating coarse divergence, FLEKS applies a \emph{local divergence-free relaxation} (\texttt{relax\_covered\_B\_to\_fine}):
+\begin{equation}
+\mathbf{B}_{\text{coarse}} \leftarrow \mathbf{B}_{\text{coarse}} + \nabla \times \mathbf{A},
+\label{eq:relax_update}
+\end{equation}
+where $\mathbf{A}$ is a nodal potential defined strictly on interior nodes of the covered region (nodes whose surrounding cells are all refined). Boundary and uncovered nodes satisfy $\mathbf{A} \equiv 0$.
+
+\paragraph{Divergence preservation:} Because $\operatorname{div}_{\text{node}\to\text{center}} \circ \operatorname{avg}_{\text{center}\to\text{node}} \circ \operatorname{curl}_{\text{node}\to\text{center}} \equiv 0$ holds identically in both 2D and 3D, and $\mathbf{A}$ vanishes outside the fully covered patch, the correction $\nabla \times \mathbf{A}$ has support strictly within covered cells and satisfies:
+\begin{equation}
+\nabla \cdot (\nabla \times \mathbf{A}) \equiv 0.
+\end{equation}
+Uncovered coarse cells and interface fluxes are completely untouched, preserving coarse-level $\nabla \cdot \mathbf{B} = 0$ to machine precision regardless of solver convergence.
+
+\paragraph{Optimization and CGLS solve:} The potential $\mathbf{A}$ is determined by minimizing the least-squares mismatch between the coarse field and the fine cell average:
+\begin{equation}
+\min_{\mathbf{A}} \|\mathbf{r}\|^2 = \min_{\mathbf{A}} \|\operatorname{avg}(\mathbf{B}_{\text{fine}}) - \mathbf{B}_{\text{coarse}} - \nabla \times \mathbf{A}\|^2,
+\end{equation}
+yielding the normal equations:
+\begin{equation}
+(\nabla \times)^T (\nabla \times) \mathbf{A} = (\nabla \times)^T [\operatorname{avg}(\mathbf{B}_{\text{fine}}) - \mathbf{B}_{\text{coarse}}].
+\end{equation}
+This system is solved using the Conjugate Gradient for Least Squares (CGLS) method:
+\begin{itemize}
+  \item In 2D and pseudo-2D ($N_z = 1$), $B_z$ does not enter $\nabla \cdot \mathbf{B}$; it is restricted directly via cell averaging, while $(B_x, B_y)$ are relaxed using the scalar potential $A_z$.
+  \item In true 3D, all three components are relaxed using the vector potential $\mathbf{A} = (A_x, A_y, A_z)$. Gauge transformations $\mathbf{A} \to \mathbf{A} + \nabla \phi$ lie in the null space of $\nabla \times$; CGLS initialized with $\mathbf{A}_0 = 0$ naturally operates orthogonal to the null space, eliminating the need for explicit gauge fixing.
+\end{itemize}
+
+\paragraph{Advantages and limitations:}
+\begin{itemize}
+  \item \emph{Advantages:} Strict machine-precision divergence preservation ($\sim 10^{-15}$); strictly local computation (no global elliptic Poisson solves); unconditional divergence safety under early iteration termination; and clean transmission of plasma waves across AMR interfaces.
+  \item \emph{Limitations:} Nodes on the perimeter of the covered region are constrained to $\mathbf{A} = 0$, leaving a localized residual drift in the outermost covered layer; divergence-carrying numerical noise on the fine level cannot be represented by $\nabla \times \mathbf{A}$; and the Faraday-evolved first ghost layer can drift over long simulation times in strong-gradient regimes (monitored by the \texttt{dGhost} diagnostic).
+\end{itemize}
+
 \section{Miscellaneous}
 \subsection{Calculate total pressure tensor from sub groups}
 Pressure tensor for each sub group is:
