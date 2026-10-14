@@ -101,6 +101,12 @@ void Pic::fill_new_cells() {
         }
       }
     }
+
+    if (need_divB()) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        compute_divB(iLev);
+      }
+    }
   }
 
   doNeedFillNewCell = false;
@@ -112,6 +118,19 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // The last one is the sum of all species.
   if (nodePlasma.empty()) {
     nodePlasma.resize(nSpecies + 1);
+  }
+
+  // The relaxation workspace is needed only on coarse levels with an active
+  // fine level. The active-level loop below cannot release a workspace on a
+  // level that disappeared during coarsening, so clear those slots explicitly.
+  if (useHybridPIC && !relaxTarget.empty()) {
+    for (int iLev = finest_level; iLev < n_lev_max(); ++iLev) {
+      relaxTarget[iLev].clear();
+      relaxResidual[iLev].clear();
+      relaxCurl[iLev].clear();
+      relaxCurlT[iLev].clear();
+      relaxDir[iLev].clear();
+    }
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -235,6 +254,23 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerBstar[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
+
+      // Workspace for the divergence-free relaxation of the covered coarse B.
+      // Allocate it only for coarse levels with an active fine level. Using
+      // n_lev_max() here would allocate the AMR-only buffers in single-level
+      // runs that merely allow AMR, which needlessly regresses memory use.
+      if (finest_level > 0 && iLev < finest_level) {
+        distribute_FabArray(relaxTarget[iLev], cGrids[iLev],
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxResidual[iLev], cGrids[iLev],
+                            DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
+        distribute_FabArray(relaxCurl[iLev], cGrids[iLev],
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxCurlT[iLev], nGrids[iLev],
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxDir[iLev], nGrids[iLev], DistributionMap(iLev),
+                            nDim3, 0, doMoveData, 0.0);
+      }
 
       // Staggered hybrid solver fields.
       distribute_FabArray(nodeEstage[iLev], nGrids[iLev], DistributionMap(iLev),
