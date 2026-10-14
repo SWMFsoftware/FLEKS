@@ -76,8 +76,8 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
 
   // Wave boundary condition overwrites faces where active.
   if (waveBC.active) {
-    const Real t = (timeOverride >= 0.0) ? timeOverride
-                                         : (tc ? tc->get_time() : 0.0);
+    const Real t =
+        (timeOverride >= 0.0) ? timeOverride : (tc ? tc->get_time() : 0.0);
     apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t,
                      func);
   }

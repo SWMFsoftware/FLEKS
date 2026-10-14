@@ -70,10 +70,10 @@ void Pic::advance_B_half_step(Real dtSub, Real tSub) {
       apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
                      &Pic::get_node_B, iLev, true, 0.5 * dtSub, tEval);
     } else {
-      fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
+                                    nodeB[iLev].nComp(), ref_ratio[iLev - 1],
+                                    Geom(iLev - 1), Geom(iLev),
+                                    node_status(iLev), node_bilinear_interp);
     }
   }
 }

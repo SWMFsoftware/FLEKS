@@ -1439,7 +1439,8 @@ void Pic::sum_moments(bool updateDt) {
   for (int i : kineticSpecies_) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       // nodePlasma[nSpecies] holds the sum of all kinetic species.
-      // In semi-implicit full PIC, kineticSpecies_ excludes the (implicit fluid) electron.
+      // In semi-implicit full PIC, kineticSpecies_ excludes the (implicit
+      // fluid) electron.
       MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                     nMoments, nGst);
     }
