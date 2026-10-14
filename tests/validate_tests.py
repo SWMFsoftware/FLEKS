@@ -195,13 +195,16 @@ def run_test(test_dir, nprocs=1, param_text=None):
         logger.warning("  [WARN] PostIDL.exe is missing. Build it with 'make PIDL' "
                        "before running tests that check plot output (.out files).")
 
-    # Use the supplied text (patched solver variant) when given, else the test's
-    # own PARAM.in.
     if param_text is not None:
         with open(RUN_DIR + "/PARAM.in", "w") as f:
             f.write(param_text)
     else:
-        shutil.copy(param_file, RUN_DIR + "/PARAM.in")
+        if os.path.isfile(param_file):
+            shutil.copy(param_file, RUN_DIR + "/PARAM.in")
+        else:
+            candidates = sorted(glob.glob(os.path.join(test_dir, "PARAM.in*")))
+            if candidates:
+                shutil.copy(candidates[0], RUN_DIR + "/PARAM.in")
 
     # Copy the test's own data files (coefficient tables, lookup tables, ...)
     # into the run directory: the decks reference them by a relative name.
@@ -970,6 +973,17 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
             variant_filter = "particles"
         elif variant_filter == "hybrid":
             variant_filter = "hybrid.particles"
+
+    if variant_filter == "full":
+        has_full = any(_variant_token(pf) == "full" for pf, _, _ in variants)
+        has_implicit = any(_variant_token(pf) == "implicit" for pf, _, _ in variants)
+        if not has_full and has_implicit:
+            variant_filter = "implicit"
+    elif variant_filter == "implicit":
+        has_implicit = any(_variant_token(pf) == "implicit" for pf, _, _ in variants)
+        has_full = any(_variant_token(pf) == "full" for pf, _, _ in variants)
+        if not has_implicit and has_full:
+            variant_filter = "full"
 
     if variant_filter is not None:
         kept = []

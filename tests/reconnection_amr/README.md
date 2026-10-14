@@ -6,14 +6,12 @@ AMR grid** that refines the thin layer around the central reconnecting current
 sheet, so the reconnection zone is resolved more finely than the surrounding
 region at a fraction of the uniform-grid cost.
 
-Two solver variants share this grid and setup — see `#SOLVEEM` / `#HYBRIDPIC`:
+Two solver variants share this grid and setup — see `#FIELDSOLVER`:
 
-- **Full PIC** (`PARAM.in`): Maxwell + implicit GMRES solve.
-- **Hybrid PIC** (`PARAM.in.hybrid`): kinetic ions + fluid electrons
+- **Full PIC** (`PARAM.in.implicit`): Maxwell + implicit GMRES solve (`#FIELDSOLVER implicit`).
+- **Hybrid PIC** (`PARAM.in.hybrid`): kinetic ions + fluid electrons (`#FIELDSOLVER hybrid`).
 
-The runner auto-detects `PARAM.in.hybrid` and executes both variants, listing
-them as `RECONNECTION_AMR` and `RECONNECTION_AMR (HYBRID)` in
-`tests/summary.md`.
+The runner auto-detects both variants, listing them as `RECONNECTION_AMR (IMPLICIT)` and `RECONNECTION_AMR (HYBRID)` in `tests/summary.md`.
 
 ## Grid hierarchy
 

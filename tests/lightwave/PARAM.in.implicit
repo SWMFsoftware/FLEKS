@@ -27,8 +27,8 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#SOLVEEM
-T                       solveEM
+#FIELDSOLVER
+implicit
 
 #PLASMA
 1                       nSpecies

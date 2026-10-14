@@ -46,8 +46,8 @@ periodic                particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 
-#SOLVEEM
-T                       solveEM
+#FIELDSOLVER
+implicit
 
 #DISCRETIZATION
 0.5                     theta
