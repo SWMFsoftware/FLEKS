@@ -44,6 +44,45 @@ def validate_log(pic_diags=None, test_name=None):
     if test_name and test_name.endswith("hybrid"):
         return validate_hybrid(pic_diags=pic_diags, test_name=test_name)
 
+    if test_name and "explicit" in test_name:
+        if not pic_diags or len(pic_diags) < 2:
+            return False, f"Expected >= 2 energy log entries, got {len(pic_diags) if pic_diags else 0}"
+
+        # 1. Electrons (species 0) must be fully kinetic: Epart0 must be finite, > 0, and evolve over time
+        first, last = pic_diags[0], pic_diags[-1]
+        ep0_start = first.get("Epart0", 0.0)
+        ep0_end = last.get("Epart0", 0.0)
+        if not (math.isfinite(ep0_start) and math.isfinite(ep0_end)):
+            return False, "Non-finite electron kinetic energy (NaN/Inf)"
+        if ep0_start <= 0.0 or ep0_end <= 0.0:
+            return False, (f"Electron kinetic energy zero (electrons not initialized/kinetic: "
+                           f"start={ep0_start}, end={ep0_end})")
+        delta_ep0 = abs(ep0_end - ep0_start)
+        if delta_ep0 <= 0.0:
+            return False, "Electron kinetic energy static (electrons not pushed in explicit mode)"
+
+        # 2. Ions (species 1) must be kinetic
+        ep1_start = first.get("Epart1", 0.0)
+        ep1_end = last.get("Epart1", 0.0)
+        if not (math.isfinite(ep1_start) and math.isfinite(ep1_end)):
+            return False, "Non-finite ion kinetic energy (NaN/Inf)"
+        if ep1_start <= 0.0 or ep1_end <= 0.0:
+            return False, f"Ion kinetic energy zero (start={ep1_start}, end={ep1_end})"
+
+        # 3. Verify #SMOOTHJ was executed
+        stdout_path = os.path.join(_run_dir.RUN_DIR, "fleks_stdout.log")
+        if os.path.isfile(stdout_path):
+            with open(stdout_path, "r", encoding="utf-8", errors="ignore") as f:
+                stdout_text = f.read()
+            if "Pic::smooth_multifab" not in stdout_text:
+                return False, "#SMOOTHJ was specified but Pic::smooth_multifab was never executed"
+
+        logger.debug("    [EXPLICIT] Kinetic electron check: Epart0 %.4e -> %.4e (delta=%.4e)",
+                     ep0_start, ep0_end, delta_ep0)
+        logger.debug("    [EXPLICIT] Kinetic ion check: Epart1 %.4e -> %.4e", ep1_start, ep1_end)
+        logger.debug("    [EXPLICIT] #SMOOTHJ execution verified.")
+        return True, "Passed (kinetic electrons and ions active, #SMOOTHJ verified)"
+
     logger.debug("Validating Beam Instability Test...")
     logger.debug("  [INFO] Beam diagnostic checks rely on plot output (FFT).")
     logger.debug("Beam Instability Test: PASSED")

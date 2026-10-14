@@ -80,6 +80,10 @@ F                       useFixedDt
 #MONITOR
 1                       dnReport
 
+#SAVELOG
+1                       dnSavePic
+-1                      dnSavePT
+
 #PARTICLES
 100                     nParticle per cell in X
 1                       nParticle per cell in Y
