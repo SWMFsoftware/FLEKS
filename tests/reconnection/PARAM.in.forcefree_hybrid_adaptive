@@ -140,11 +140,11 @@ F                       useFixedDt
 1.0e5                   uNormSI  [m/s; uNorm = 100 km/s ~ vA, tNorm = 1 s]
 
 #MONITOR
-10                      dnReport
+1                       dnReport
 
 #SAVELOG
-10                      dnSavePic
-10                      dnSavePT
+1                       dnSavePic
+1                       dnSavePT
 
 #PARTICLES
 10                      nParticle per cell in X  [10x10 = 100 PPC]

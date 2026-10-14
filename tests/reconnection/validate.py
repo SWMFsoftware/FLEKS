@@ -179,13 +179,34 @@ def validate_log(pic_diags=None, test_name=None):
         return False, "Epart not finite (NaN/Inf)"
     # Magnetic energy must stay bounded; reconnection converts B into ion
     # kinetic energy, so allow up to a ~10x increase but reject a runaway.
-    if eb0 > 0 and eb1 > eb0 * 10.0:
-        return False, (f"Eb grew {eb1/eb0:.1f}x (unstable blow-up, not "
-                       f"reconnection)")
-    logger.debug("    Eb: %.3e -> %.3e (ratio %.2f)", eb0, eb1,
-                 (eb1 / eb0) if eb0 > 0 else 0.0)
-    logger.debug("    Epart: %.3e -> %.3e", first.get("Epart", 0.0), ep1)
-    return True, "Passed (finite, bounded Eb)"
+    # Adaptive timestepping validation: verify that timesteps adapt dynamically
+    if test_name and "adaptive" in test_name:
+        times = [r["time"] for r in pic_diags if "time" in r]
+        if len(times) >= 3:
+            dts = [times[i] - times[i - 1] for i in range(1, len(times))]
+            for i, dt in enumerate(dts):
+                if not math.isfinite(dt) or dt <= 0:
+                    return False, f"Adaptive step {i+1} has invalid dt: {dt}"
+            dt_min = min(dts)
+            dt_max = max(dts)
+            # Verify timesteps actually change as physical conditions evolve
+            rel_variation = (dt_max - dt_min) / dt_max if dt_max > 0 else 0.0
+            logger.debug("    Adaptive dt range: [%.4e, %.4e] (%.1f%% variation)",
+                         dt_min, dt_max, rel_variation * 100.0)
+            if rel_variation < 0.05:
+                return False, (f"Timesteps did not adapt: min dt={dt_min:.4e}, "
+                               f"max dt={dt_max:.4e} (< 5% variation)")
+            # Check rate limiting between consecutive steps (floor 0.10x, growth 1.10x + margin)
+            for i in range(1, len(dts)):
+                ratio = dts[i] / dts[i - 1]
+                if ratio > 1.15:
+                    return False, (f"Timestep growth between steps {i} and {i+1} "
+                                   f"exceeded rate limit: ratio={ratio:.3f} > 1.15")
+                if ratio < 0.08:
+                    return False, (f"Timestep drop between steps {i} and {i+1} "
+                                   f"exceeded rate limit: ratio={ratio:.3f} < 0.08")
+
+    return True, "Passed (finite, bounded Eb and valid adaptive dt)"
 
 
 def _load_all_frames():

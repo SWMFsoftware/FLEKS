@@ -2056,7 +2056,8 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
   Real dtMacroMin = std::numeric_limits<Real>::max();
   Real dtSubMin = std::numeric_limits<Real>::max();
-  std::string localReason = "ion kinetics";
+  std::string localMacroReason = "ion kinetics";
+  std::string localSubReason = "field advance";
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     const auto dx = Geom(iLev).CellSizeArray();
@@ -2065,15 +2066,37 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       dxMin = amrex::min(dxMin, dx[d]);
     }
 
-    // Ion particle motion
+    // 1. Kinetic ion advection limit (including bulk flow + thermal spread)
     Real uMaxLev = 0.0;
     if (fixedUMax >= 0) {
       uMaxLev = fixedUMax;
     } else {
+      const Real vFactor =
+          (fi && fi->get_Si2NoV() > 0.0) ? fi->get_Si2NoV() : 1.0;
       Vector<Real> uMaxSpecies(nSpecies, 0.0);
       for (int i = 0; i < nSpecies; ++i) {
         amrex::MultiFab& momMF = nodePlasma[i][iLev];
-        uMaxSpecies[i] = parts[i]->calc_max_thermal_velocity(momMF);
+        auto const& ma = momMF.const_arrays();
+        Real uSpMax = ParReduce(
+            TypeList<ReduceOpMax>{}, TypeList<Real>{}, momMF, IntVect(0),
+            [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
+                noexcept -> GpuTuple<Real> {
+                  Array4<Real const> const& arr = ma[nb];
+                  Real rho = arr(i, j, k, iRho_);
+                  if (rho <= 0.0)
+                    return 0.0;
+                  Real invRho = 1.0 / rho;
+                  Real uBulk2 = (arr(i, j, k, iUx_) * arr(i, j, k, iUx_) +
+                                 arr(i, j, k, iUy_) * arr(i, j, k, iUy_) +
+                                 arr(i, j, k, iUz_) * arr(i, j, k, iUz_)) *
+                                (invRho * invRho);
+                  Real p = (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
+                            arr(i, j, k, iPzz_)) *
+                           (1.0 / 3.0);
+                  Real vth = (p > 0.0) ? sqrt(p * invRho) : 0.0;
+                  return sqrt(uBulk2) + 3.0 * vth;
+                });
+        uMaxSpecies[i] = uSpMax * vFactor;
       }
       ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
       for (int i = 0; i < nSpecies; ++i) {
@@ -2083,17 +2106,27 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       }
     }
 
-    // Maximum magnetic field on this level
-    Real bMaxLev = 0.0;
-    for (int d = 0; d < 3; ++d) {
-      bMaxLev = amrex::max(bMaxLev, centerB[iLev].norm0(d, 0, false));
-    }
+    // 2. Maximum magnetic field magnitude on this level (including intrinsic
+    // B0)
+    const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
+    auto const& bArrays = bForCfl.const_arrays();
+    Real bMaxLev = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl,
+                             IntVect(0),
+                             [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
+                                 noexcept -> GpuTuple<Real> {
+                                   Array4<Real const> const& arr = bArrays[nb];
+                                   Real b2 = arr(i, j, k, 0) * arr(i, j, k, 0) +
+                                             arr(i, j, k, 1) * arr(i, j, k, 1) +
+                                             arr(i, j, k, 2) * arr(i, j, k, 2);
+                                   return sqrt(b2);
+                                 });
+    ParallelDescriptor::ReduceRealMax(bMaxLev);
 
-    // 1. Kinetic advection limit
+    // Kinetic advection limit
     Real dtPart =
         (uMaxLev > 0.0) ? (dxMin / uMaxLev) : std::numeric_limits<Real>::max();
 
-    // 2. Ion gyrofrequency limit (Omega_ci * dt <= thetaGyro)
+    // Ion gyrofrequency limit (Omega_ci * dt <= thetaGyro)
     Real dtGyro = std::numeric_limits<Real>::max();
     if (bMaxLev > 0.0) {
       Real maxQom = 0.0;
@@ -2111,9 +2144,9 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     if (dtMacroLev < dtMacroMin) {
       dtMacroMin = dtMacroLev;
       if (dtGyro < dtPart) {
-        localReason = "ion gyro-frequency";
+        localMacroReason = "ion gyro-frequency";
       } else {
-        localReason = "ion particle CFL";
+        localMacroReason = "ion particle CFL";
       }
     }
 
@@ -2131,16 +2164,37 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     }
 
     if (sMax > 0.0) {
+      const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
+      const Real rhoEff = amrex::max(
+          rhoMinLev, amrex::max(rhoMinOhm, static_cast<Real>(1e-10)));
+
       if (useHallTerm && bMaxLev > 0.0) {
-        const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
-        const Real rhoEff = amrex::max(
-            rhoMinLev, amrex::max(rhoMinOhm, static_cast<Real>(1e-10)));
         const Real omegaWhistler = (sMax * bMaxLev) / (fourPI * rhoEff);
         if (omegaWhistler > 0.0) {
           Real dtWhistler = (cflLimit * fieldSafety) / omegaWhistler;
           if (dtWhistler < dtSubMin) {
             dtSubMin = dtWhistler;
-            localReason = "whistler wave";
+            localSubReason = "whistler wave";
+          }
+        }
+      }
+
+      // Fast magnetosonic / Alfvén wave limit (governs when useHallTerm is
+      // false or on coarse cells)
+      if (bMaxLev > 0.0 && rhoEff > 0.0) {
+        Real vA = bMaxLev / std::sqrt(fourPI * rhoEff);
+        Real cs = 0.0;
+        if (electronTemperature > 0.0) {
+          Real gammaE = (electronGamma > 0.0) ? electronGamma : 1.0;
+          cs = std::sqrt(gammaE * electronTemperature);
+        }
+        Real vFast = std::sqrt(vA * vA + cs * cs);
+        if (vFast > 0.0) {
+          Real dtWave = (cflLimit * fieldSafety) * dxMin / vFast;
+          if (dtWave < dtSubMin) {
+            dtSubMin = dtWave;
+            localSubReason =
+                useHallTerm ? "Alfvén / fast wave" : "ideal-MHD wave";
           }
         }
       }
@@ -2151,7 +2205,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
           Real dtEta = (cflLimit * fieldSafety) / omegaEta;
           if (dtEta < dtSubMin) {
             dtSubMin = dtEta;
-            localReason = "resistive diffusion";
+            localSubReason = "resistive diffusion";
           }
         }
       }
@@ -2162,7 +2216,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
           Real dtHyper = (cflLimit * fieldSafety) / omegaHyper;
           if (dtHyper < dtSubMin) {
             dtSubMin = dtHyper;
-            localReason = "hyper-resistivity";
+            localSubReason = "hyper-resistivity";
           }
         }
       }
@@ -2171,10 +2225,10 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
   const Real userCFL = (tc->get_cfl() > 0.0) ? tc->get_cfl() : 0.2;
   const Real dtMacroTarget = userCFL * dtMacroMin;
-  dtLimitingReason = localReason;
+  dtLimitingReason = localMacroReason;
 
   if (tc->get_cfl() <= 0.0) {
-    // Fixed macro dt mode
+    // Fixed macro dt mode (e.g. SWMF coupling or user-fixed dt)
     Real dtFixed = tc->get_dt();
     if (dtFixed <= 0.0) {
       dtFixed = tc->get_next_dt();
@@ -2186,9 +2240,11 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       nSubReq = std::clamp(nSubReq, nBSubcycleMin, nBSubcycleMax);
 
       if (nSubReq > nBSubcycle) {
+        // Immediate increase for numerical stability
         nSubNext = nSubReq;
         subcycleHoldCount = 0;
       } else if (nSubReq < nBSubcycle) {
+        // Hysteresis with 15% safety buffer before decreasing
         if (dtFixed / (nBSubcycle - 1) <= 0.85 * dtSubMin) {
           subcycleHoldCount++;
           if (subcycleHoldCount >= 3) {
@@ -2208,6 +2264,8 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     } else {
       nSubNext = nBSubcycle;
     }
+    dtLimitingReason =
+        isAutoSubcycle ? (localSubReason + " (subcycling)") : "fixed dt";
   } else {
     // Adaptive macro dt mode
     if (!isAutoSubcycle) {
@@ -2215,13 +2273,15 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       Real dtTarget = std::min(dtMacroTarget, dtFieldLimit);
       if (dtTarget == dtFieldLimit &&
           dtSubMin < std::numeric_limits<Real>::max()) {
-        dtLimitingReason = "field advance (fixed subcycles)";
+        dtLimitingReason = localSubReason + " (fixed subcycles)";
       }
 
       Real dtOld = tc->get_dt();
       if (dtOld > 0.0) {
+        // Fast drop allowed (down to 0.10x floor), smooth growth limited
+        // to 1.10x
         dtNext = std::min(dtTarget, static_cast<Real>(1.10) * dtOld);
-        dtNext = std::max(dtNext, static_cast<Real>(0.50) * dtOld);
+        dtNext = std::max(dtNext, static_cast<Real>(0.10) * dtOld);
       } else {
         dtNext = dtTarget;
       }
@@ -2236,10 +2296,12 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
           dtSubMin < std::numeric_limits<Real>::max()) {
         nSubNext = nBSubcycleMax;
         dtTarget = nBSubcycleMax * dtSubMin;
-        dtLimitingReason = "whistler / field (capped at max subcycles)";
+        dtLimitingReason = localSubReason + " (capped at nBSubcycleMax)";
+        subcycleHoldCount = 0;
       } else {
         int nTarget = std::clamp(nIdeal, nBSubcycleMin, nBSubcycleMax);
         if (nTarget > nBSubcycle) {
+          // Immediate increase for numerical stability
           nSubNext = nTarget;
           subcycleHoldCount = 0;
         } else if (nTarget < nBSubcycle) {
@@ -2263,12 +2325,18 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
       Real dtOld = tc->get_dt();
       if (dtOld > 0.0) {
+        // Fast drop allowed (down to 0.10x floor), smooth growth limited
+        // to 1.10x
         dtNext = std::min(dtTarget, static_cast<Real>(1.10) * dtOld);
-        dtNext = std::max(dtNext, static_cast<Real>(0.50) * dtOld);
+        dtNext = std::max(dtNext, static_cast<Real>(0.10) * dtOld);
       } else {
         dtNext = dtTarget;
       }
     }
+  }
+
+  if (dtMacroMin > 0.0 && dtMacroMin < std::numeric_limits<Real>::max()) {
+    maxCFL = dtNext / dtMacroMin;
   }
 
   if (doReport && !domainParameters.doCompact) {
