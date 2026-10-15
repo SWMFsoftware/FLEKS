@@ -423,6 +423,17 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             dl = dl / refMax;
           }
         }
+      } else if (isPPVconstant && isTargetPPCDefined) {
+        // #CONSTANTPPV: the goal is the target of this level, not the
+        // particles per cell of the base grid (that would split the refined
+        // levels back up to the base number in a few steps).
+        const auto tppc = target_PPC(iLev)[pti].array();
+        const Box tbx = pti.tilebox();
+        const int target = tppc(tbx.smallEnd());
+        nLowerLimit = target * limit;
+        nGoal = target;
+        dl = 0.1 * Geom(iLev).CellSize()[ix_] /
+             std::max(1.0, std::cbrt(static_cast<Real>(target)));
       } else {
         nLowerLimit = nInitial * limit * pow(pLevRatio, iLev);
         nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;

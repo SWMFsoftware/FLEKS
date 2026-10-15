@@ -830,6 +830,8 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       std::string sName = "Mpart" + std::to_string(i);
       picLogStream << "\t" << std::setw(wCol) << sName;
     }
+    // Number of macroparticles of all species and levels (memory, resampling).
+    picLogStream << "\t" << std::setw(wCol) << "nParticles";
     picLogStream << std::endl;
   }
 
@@ -864,6 +866,9 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     Vector<Real> speciesMass(nSpecies, 0.0);
     for (int i = 0; i < nSpecies; ++i)
       speciesMass[i] = parts[i]->total_moments()[0];
+    Long nParticles = 0;
+    for (int i = 0; i < nSpecies; ++i)
+      nParticles += parts[i]->TotalNumberOfParticles(true, false);
 
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
@@ -889,6 +894,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       }
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
+      picLogStream << "\t" << std::setw(wCol) << static_cast<Real>(nParticles);
       picLogStream << std::endl;
     }
   }

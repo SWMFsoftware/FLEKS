@@ -1062,12 +1062,17 @@ void Pic::re_sampling() {
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
       if (maxWeightRatio > 1) {
+        // The reference weight is the average of the cell: with #CONSTANTPPV
+        // that catches the heavy particles entering a finer level, without
+        // the large displacement of the target-based splitting.
         parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral(),
                                pInfo.doPreSplitting);
       }
       parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral(),
                       pInfo.doPreSplitting);
-      parts[i]->merge(reSamplingHighLimit, pInfo.doPreSplitting);
+      // With #CONSTANTPPV the merging goal is the target of every level.
+      parts[i]->merge(reSamplingHighLimit,
+                      pInfo.doPreSplitting || pInfo.isPPVconstant);
     }
   }
 }
