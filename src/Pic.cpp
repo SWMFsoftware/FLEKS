@@ -1337,6 +1337,54 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
+  auto convert_and_sum_moments = [&]() {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[nSpecies][iLev].setVal(0.0);
+    }
+
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->convert_to_fluid_moments(nodePlasma[i]);
+    }
+
+    for (int i : kineticSpecies_) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        // nodePlasma[nSpecies] holds the sum of all ion species.
+        // kineticSpecies_ excludes the (implicit fluid) electron.
+        MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
+                      nMoments, nGst);
+      }
+    }
+
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    if (finest_level > 0) {
+      for (int iLev = 1; iLev < n_lev(); iLev++) {
+        fill_fine_lev_bny_from_coarse(
+            nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+            nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+
+        if (useHybridPIC) {
+          fill_fine_lev_bny_from_coarse(nodePlasmaPrev[nSpecies][iLev - 1],
+                                        nodePlasmaPrev[nSpecies][iLev], 0,
+                                        nodePlasmaPrev[nSpecies][iLev].nComp(),
+                                        ref_ratio[iLev - 1], Geom(iLev - 1),
+                                        Geom(iLev), node_status(iLev),
+                                        node_bilinear_interp);
+        }
+      }
+    }
+
+    calc_mach_number();
+  };
+
+  if (useHybridPIC) {
+    convert_and_sum_moments();
+  }
+
   if (updateDt) {
     Vector<Real> uMax(n_lev(), 0.0);
     Vector<Real> dxMin(n_lev());
@@ -1382,7 +1430,20 @@ void Pic::sum_moments(bool updateDt) {
                                        : std::numeric_limits<Real>::max();
     }
 
-    if (tc->get_cfl() > 0) {
+    if (useHybridPIC && (tc->get_cfl() > 0 || isAutoSubcycle)) {
+      Real dtNext = tc->get_next_dt();
+      int nSubNext = nBSubcycle;
+      calc_hybrid_dt_and_subcycle(dtNext, nSubNext, doReport);
+      if (tc->get_cfl() > 0) {
+        tc->set_next_dt(dtNext);
+        if (tc->get_dt() < 0) {
+          tc->set_dt(dtNext);
+        }
+      }
+      if (isAutoSubcycle) {
+        nBSubcycle = nSubNext;
+      }
+    } else if (tc->get_cfl() > 0) {
       Real dt0 = *std::min_element(dtMax.begin(), dtMax.end());
       Real dt = tc->get_cfl() * dt0;
       tc->set_next_dt(dt);
@@ -1414,45 +1475,9 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodePlasma[nSpecies][iLev].setVal(0.0);
+  if (!useHybridPIC) {
+    convert_and_sum_moments();
   }
-
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
-  }
-
-  for (int i : kineticSpecies_) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      // nodePlasma[nSpecies] holds the sum of all ion species.
-      // kineticSpecies_ excludes the (implicit fluid) electron.
-      MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
-                    nMoments, nGst);
-    }
-  }
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
-  }
-
-  if (finest_level > 0) {
-    for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_bny_from_coarse(
-          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
-          nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-
-      if (useHybridPIC) {
-        fill_fine_lev_bny_from_coarse(
-            nodePlasmaPrev[nSpecies][iLev - 1], nodePlasmaPrev[nSpecies][iLev],
-            0, nodePlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
-            Geom(iLev - 1), Geom(iLev), node_status(iLev),
-            node_bilinear_interp);
-      }
-    }
-  }
-
-  calc_mach_number();
 
   isMomentsUpdated = true;
 }
@@ -1711,12 +1736,30 @@ void Pic::update(bool doReportIn) {
     }
   }
 
-  tc->set_dt(tc->get_next_dt());
-
 #ifdef _PC_COMPONENT_
-  //  For PT simulations, moments are only useful for output. So, there is no
-  //  need to call sum_moments() for every step.
-  sum_moments(true);
+  if (useHybridPIC) {
+    // For hybrid PIC, accepted moments were already deposited and smoothed in
+    // advance_hybrid(). We update hybrid dt and subcycle directly without a
+    // redundant sum_moments() particle pass that would overwrite smoothed
+    // moments.
+    if (tc->get_cfl() > 0 || isAutoSubcycle) {
+      Real dtNext = tc->get_next_dt();
+      int nSubNext = nBSubcycle;
+      calc_hybrid_dt_and_subcycle(dtNext, nSubNext, doReport);
+      if (tc->get_cfl() > 0) {
+        tc->set_next_dt(dtNext);
+        tc->set_dt(dtNext);
+      }
+      if (isAutoSubcycle) {
+        nBSubcycle = nSubNext;
+      }
+    }
+  } else {
+    tc->set_dt(tc->get_next_dt());
+    //  For PT simulations, moments are only useful for output. So, there is no
+    //  need to call sum_moments() for every step.
+    sum_moments(true);
+  }
 #endif
 
 #ifdef _PT_COMPONENT_

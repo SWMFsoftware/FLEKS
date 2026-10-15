@@ -605,7 +605,22 @@ is always exactly one coarse step dt: nBSubcycle full integrator steps of
 size dt/nBSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nBSubcycle
 nested 4th-order Runge-Kutta steps). Because RK4 has a large linear-stability
 region along the imaginary axis (where the Hall-whistler oscillatory modes live),
-with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability.
+with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability
+in weakly magnetized or moderate-resolution regimes.
+Only used when #HYBRIDPIC is T.
+</command>
+
+<command name="AUTOSUBCYCLE" alias="AUTOSUBCYCLE_FLEKS0,AUTOSUBCYCLE_FLEKS1,AUTOSUBCYCLE_FLEKS2" multiple="T">
+  <parameter name="isAutoSubcycle" type="logical" default="F"/>
+  <parameter name="nBSubcycleMax" type="integer" min="1" default="40" if="$isAutoSubcycle"/>
+
+#AUTOSUBCYCLE
+F                 isAutoSubcycle
+40                nBSubcycleMax (if isAutoSubcycle is true)
+
+Enable dynamic adaptation of magnetic subcycling (nBSubcycle) up to nBSubcycleMax
+in the hybrid solver based on explicit field CFL limits (whistler wave, resistivity,
+and hyper-resistivity).
 Only used when #HYBRIDPIC is T.
 </command>
 
