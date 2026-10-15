@@ -363,7 +363,7 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
 # no ionization source term is applied, so the physics checks fail.
 EXO_SOURCE_TESTS = {
     "chargeexchange", "photoionization", "electronimpact",
-    "recombination", "chemistry", "reactions",
+    "recombination", "chemistry", "reactions", "mars",
 }
 
 # Tests that require AMR (nLevMax >= 2).
@@ -373,7 +373,7 @@ AMR_TESTS = {
 }
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
-AMREX3D_TESTS = {"lightwave", "wave_amr_3d"}
+AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "mars"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
 AMREX2D_TESTS = {"photoionization", "body"}

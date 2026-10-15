@@ -1235,6 +1235,13 @@ void Pic::convert_inflow_state() {
     // Species beyond the last declared block reuse that block, so a single
     // block still describes a uniform multi-species upstream plasma.
     const int iB = std::min(iS, nBlock - 1);
+    // An optional block is only recognized when its first line is named
+    // "rho", so a relabeled line silently falls back to the last block.
+    if (iB != iS && nBlock > 1 && inflowRho_I[iB] > 0)
+      Print() << "  Warning: #INFLOW has no block for species " << iS
+              << ", which reuses the block of species " << iB
+              << " (n = " << inflowRho_I[iB] << " /cc). Every optional "
+              << "block must start with a line named 'rho'.\n";
 
     const double rho = inflowRho_I[iB] * rhoFactor;
     const double T = inflowT_I[iB] * tFactor;
