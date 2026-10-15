@@ -43,11 +43,8 @@ periodic
 periodic
 periodic
 
-#SOLVEEM
-T                       solveEM
-
-#HYBRIDPIC
-F                       useHybridPIC
+#FIELDSOLVER
+implicit
 
 #PLASMA
 2                       nSpecies

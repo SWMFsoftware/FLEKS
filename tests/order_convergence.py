@@ -95,8 +95,10 @@ def run_case(test_name, dt, nsub, nprocs=1, integrator="rk4-pc", time_max=4.0):
     with open(param_file) as f:
         text = f.read()
 
-    text = _rewrite_param(text, "#TIMESTEPPING", {"dt": dt})
-    text = _rewrite_param(text, "#BSUBCYCLE", {"nBSubcycle": nsub})
+    if "#FIELDSUBCYCLE" in text:
+        text = _rewrite_param(text, "#FIELDSUBCYCLE", {"nSubcycle": nsub})
+    else:
+        text = _rewrite_param(text, "#BSUBCYCLE", {"nBSubcycle": nsub})
     text = _rewrite_param(text, "#STOP", {"TimeMax": time_max})
     text = _rewrite_param(text, "#SAVEPLOT", {"dn": "-1", "dt": plot_dt})
 
@@ -104,10 +106,16 @@ def run_case(test_name, dt, nsub, nprocs=1, integrator="rk4-pc", time_max=4.0):
         text = _rewrite_param(text, "#PARTICLES", {"nParticle per cell in X": 20000})
 
     if integrator:
-        text = text.replace(
-            "#HYBRIDPIC",
-            f"#FIELDINTEGRATOR\n{integrator}                   fieldIntegrator\n\n#HYBRIDPIC",
-        )
+        if "#FIELDSOLVER" in text:
+            text = text.replace(
+                "#FIELDSOLVER",
+                f"#FIELDINTEGRATOR\n{integrator}                   fieldIntegrator\n\n#FIELDSOLVER",
+            )
+        else:
+            text = text.replace(
+                "#HYBRIDPIC",
+                f"#FIELDINTEGRATOR\n{integrator}                   fieldIntegrator\n\n#HYBRIDPIC",
+            )
 
     with open(os.path.join(RUN_DIR, "PARAM.in"), "w") as f:
         f.write(text)

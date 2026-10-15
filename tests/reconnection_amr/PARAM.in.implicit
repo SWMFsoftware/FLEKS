@@ -51,12 +51,8 @@ outflow                 particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 
-Full PIC electromagnetic field solver ON (Maxwell/GMRES E solve).
-#SOLVEEM
-T                       solveEM
-
-#HYBRIDPIC
-F                       useHybridPIC
+#FIELDSOLVER
+implicit
 
 Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
 #PLASMA

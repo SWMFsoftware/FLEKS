@@ -56,7 +56,7 @@ def validate_log(pic_diags=None, test_name=None):
     e0 = first.get("Etot", 0.0)
     e1 = last.get("Etot", 0.0)
 
-    if test_name == "bc_reflecting_fields":
+    if test_name in ("bc_reflecting_fields", "bc_reflecting_explicit_fields"):
         return _validate_log_fields(e0, e1, first, last)
     if test_name == "bc_reflecting_hybrid_fields":
         return _validate_log_hybrid_fields(pic_diags)
@@ -179,7 +179,7 @@ def validate_plot(test_name):
         logger.debug("    [RW] No .out files; skipping plot check.")
         return True, "No .out files (skipped)"
 
-    if test_name == "bc_reflecting_fields":
+    if test_name in ("bc_reflecting_fields", "bc_reflecting_explicit_fields"):
         return _check_fields_plot(out_files)
     if test_name == "bc_reflecting_hybrid_fields":
         return _check_hybrid_fields_plot(out_files)

@@ -95,6 +95,7 @@ private:
   const DomainParameters &domainParameters;
   const bool &useHybridPIC;
 
+  PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
   bool usePIC = true;
   bool solveEM = true;
   bool initEM = true;
@@ -125,8 +126,11 @@ private:
   // Reference charge density. Input [amu/cc], converted to code units.
   amrex::Real electronDensity0In = 1.0;
   amrex::Real electronDensity0 = 0.0;
-  // Number of sub-steps for the B-field update within one dt.
+  // Unified subcycle count for active explicit/hybrid field solver within one
+  // dt.
+  int nSubcycle = 1;
   int nBSubcycle = 1;
+  int nEMSubcycle = 1;
   // Adaptive subcycling control for hybrid field advance.
   bool isAutoSubcycle = false;
   int nBSubcycleMax = 40;
@@ -206,9 +210,22 @@ private:
   bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
+  bool isFirstExplicitStep = true;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
   bool reportParticleQuality = false;
+
+  // Command presence tracking flags for cross-solver validation.
+  bool hasFieldSolver_ = false;
+  bool hasFieldIntegrator_ = false;
+  bool hasFieldSubcycle_ = false;
+  bool hasDiscretization_ = false;
+  bool hasEFieldSolver_ = false;
+  bool hasHallTerm_ = false;
+  bool hasResistivity_ = false;
+  bool hasHyperResistivity_ = false;
+  bool hasElectronPressure_ = false;
+  bool hasMinimumDensity_ = false;
 
   PartMode pMode = PartMode::PIC;
 
@@ -324,6 +341,8 @@ private:
   amrex::Vector<amrex::MultiFab> nodeEstage; // E at a stage B (nodal)
   amrex::Vector<amrex::MultiFab> nodeJ;      // total current J = curl(B)/(4*pi)
                                              // (nodal)
+  amrex::Vector<amrex::MultiFab> nodeCurlB;  // scratch for curl(B) in explicit
+                                             // PIC
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
   // Per-step scratch reused across stages: the advected Pe, then div(q), then
@@ -517,8 +536,22 @@ public:
       : Grid(gm, amrInfo, nGst, id, "pic"),
         domainParameters(parameters),
         useHybridPIC(parameters.useHybridPIC),
+        fieldSolverMode(parameters.fieldSolverMode),
         fi(fluidIn),
         tc(tcIn) {
+    if (fieldSolverMode == PicSolverMode::Explicit) {
+      useExplicitPIC = true;
+      solveEM = false;
+    } else if (fieldSolverMode == PicSolverMode::Hybrid) {
+      useExplicitPIC = false;
+      solveEM = false;
+    } else if (fieldSolverMode == PicSolverMode::None) {
+      useExplicitPIC = false;
+      solveEM = false;
+    } else {
+      useExplicitPIC = false;
+      solveEM = true;
+    }
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -591,6 +624,7 @@ public:
     solverRhsNode1.resize(n_lev_max());
     solverRhsNode2.resize(n_lev_max());
     centerDB.resize(n_lev_max());
+    nodeCurlB.resize(n_lev_max());
     smoothScratchMF.resize(n_lev_max());
     projectScratchMF.resize(n_lev_max());
 
@@ -617,6 +651,21 @@ public:
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
+
+  PicSolverMode get_field_solver_mode() const { return fieldSolverMode; }
+  bool is_implicit_pic() const {
+    return fieldSolverMode == PicSolverMode::Implicit;
+  }
+  bool is_explicit_pic() const {
+    return fieldSolverMode == PicSolverMode::Explicit;
+  }
+  bool is_hybrid_pic() const {
+    return fieldSolverMode == PicSolverMode::Hybrid;
+  }
+  bool is_field_solver_active() const {
+    return fieldSolverMode != PicSolverMode::None;
+  }
+  void set_field_solver_mode(const std::string &modeStr);
 
   // Returns the cell-centered coarse-to-fine interpolater to use.  For the
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
@@ -709,6 +758,7 @@ public:
   void update_part_loc_to_half_stage();
 
   void particle_mover(int pushStage = 0);
+  void advance_particles_and_sources(int pushStage = 0);
 
   void re_sampling();
 
@@ -817,6 +867,15 @@ public:
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 
+  //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
+  void advance_explicit_full_pic();
+  void update_EB_explicit_leapfrog(amrex::Real dt, int nSub);
+  void advance_B_half_step(amrex::Real dtSub, amrex::Real tSub = -1.0);
+  void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,
+                      int iLev, amrex::Real tSub = -1.0);
+  void advance_explicit_pc(amrex::Real dt);
+  void seed_first_explicit_step();
+
   //-------------Evolved electron pressure (#ELECTRONPRESSURE)-----------------
   // Advance the scalar electron pressure by one PIC step, operator split:
   //   dPe/dt + div(u_e Pe) + (gamma_e-1) Pe div(u_e)
@@ -918,7 +977,9 @@ public:
   // E).
   void apply_field_bc(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                       const int iStart, const int nComp, GETVALUE func,
-                      const int iLev, const bool isB);
+                      const int iLev, const bool isB,
+                      amrex::Real dtOverride = -1.0,
+                      amrex::Real timeOverride = -1.0);
 
   // Generic fill: zero-gradient copy on open faces, or values from `func`.
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
@@ -934,7 +995,8 @@ public:
   // Absorbing wall: matched-impedance ghost-cell blending.
   void apply_absorbing_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                             const int iStart, const int nComp, const int iLev,
-                            const BoxBC<FieldBC::Type> &bc, bool isB);
+                            const BoxBC<FieldBC::Type> &bc, bool isB,
+                            amrex::Real dtOverride = -1.0);
 
   // Inflow wall: pin physical boundary face nodes and fill ghost cells/nodes.
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,

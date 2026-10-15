@@ -15,12 +15,64 @@
 using namespace amrex;
 
 //==========================================================
+void Pic::set_field_solver_mode(const std::string& modeStr) {
+  std::string s = modeStr;
+  for (char& c : s)
+    c = std::tolower(c);
+  if (s == "implicit" || s == "semi-implicit") {
+    fieldSolverMode = PicSolverMode::Implicit;
+    solveEM = true;
+    useExplicitPIC = false;
+  } else if (s == "explicit" || s == "explicit-pic") {
+    fieldSolverMode = PicSolverMode::Explicit;
+    solveEM = false;
+    useExplicitPIC = true;
+  } else if (s == "hybrid" || s == "hybrid-pic") {
+    fieldSolverMode = PicSolverMode::Hybrid;
+    solveEM = false;
+    useExplicitPIC = false;
+  } else if (s == "none" || s == "off" || s == "false") {
+    fieldSolverMode = PicSolverMode::None;
+    solveEM = false;
+    useExplicitPIC = false;
+  } else {
+    Abort("Invalid #FIELDSOLVER mode '" + modeStr +
+          "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
+  }
+}
+
+//==========================================================
 void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
+  } else if (command == "#FIELDSOLVER") {
+    hasFieldSolver_ = true;
+    std::string s;
+    param.read_var("fieldSolverMode", s);
+    set_field_solver_mode(s);
   } else if (command == "#SOLVEEM") {
+    Print() << "  Warning: #SOLVEEM is deprecated; use #FIELDSOLVER instead.\n";
     param.read_var("solveEM", solveEM);
+    if (!hasFieldSolver_) {
+      if (solveEM) {
+        fieldSolverMode = PicSolverMode::Implicit;
+        useExplicitPIC = false;
+      } else if (fieldSolverMode != PicSolverMode::Hybrid) {
+        fieldSolverMode = PicSolverMode::None;
+        useExplicitPIC = false;
+      }
+    }
+  } else if (command == "#HYBRIDPIC") {
+    Print()
+        << "  Warning: #HYBRIDPIC is deprecated; use #FIELDSOLVER instead.\n";
+    bool useHyb = false;
+    param.read_var("useHybridPIC", useHyb);
+    if (!hasFieldSolver_ && useHyb) {
+      fieldSolverMode = PicSolverMode::Hybrid;
+      useExplicitPIC = false;
+      solveEM = false;
+    }
   } else if (command == "#PARTMODE") {
     std::string s;
     param.read_var("partMode", s);
@@ -198,9 +250,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doCorrectDivE) {
       param.read_var("nDivECorrection", nDivECorrection);
     }
-  } else if (command == "#EXPLICITPIC") {
-    param.read_var("useExplicitPIC", useExplicitPIC);
   } else if (command == "#EFIELDSOLVER") {
+    hasEFieldSolver_ = true;
     Real tol;
     int nIter;
     param.read_var("tol", tol);
@@ -222,6 +273,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ELECTRON") {
     param.read_var("qom", qomEl);
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
+    hasDiscretization_ = true;
     param.read_var("theta", fsolver.theta);
     param.read_var("coefDiff", fsolver.coefDiff);
   } else if (command == "#COMOVING") {
@@ -359,31 +411,53 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
     ic_->read_param(param);
   } else if (command == "#RESISTIVITY") {
+    hasResistivity_ = true;
     param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {
+    hasElectronPressure_ = true;
     param.read_var("electronTemperature", electronTemperatureEV);
     param.read_var("electronGamma", electronGamma);
     param.read_var("electronDensity0", electronDensity0In);
+  } else if (command == "#FIELDSUBCYCLE") {
+    hasFieldSubcycle_ = true;
+    param.read_var("nSubcycle", nSubcycle);
+    param.read_optional("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_optional("nSubcycleMax", nBSubcycleMax);
+    }
+    nBSubcycle = nSubcycle;
+    nEMSubcycle = nSubcycle;
   } else if (command == "#BSUBCYCLE") {
+    hasFieldSubcycle_ = true;
+    Print()
+        << "  Warning: #BSUBCYCLE is deprecated; use #FIELDSUBCYCLE instead.\n";
     param.read_var("nBSubcycle", nBSubcycle);
     param.read_optional("isAutoSubcycle", isAutoSubcycle);
     if (isAutoSubcycle) {
       param.read_optional("nBSubcycleMax", nBSubcycleMax);
     }
+    nSubcycle = nBSubcycle;
+    nEMSubcycle = nBSubcycle;
   } else if (command == "#AUTOSUBCYCLE") {
+    Print() << "  Warning: #AUTOSUBCYCLE is deprecated; use #FIELDSUBCYCLE "
+               "instead.\n";
     param.read_var("isAutoSubcycle", isAutoSubcycle);
     if (isAutoSubcycle) {
       param.read_var("nBSubcycleMax", nBSubcycleMax);
     }
   } else if (command == "#HALLTERM") {
+    hasHallTerm_ = true;
     param.read_var("useHallTerm", useHallTerm);
   } else if (command == "#HYPERRESISTIVITY") {
+    hasHyperResistivity_ = true;
     param.read_var("etaHyperSI", etaHyperSI);
     param.read_var("etaHyperMode", etaHyperMode);
     param.read_var("etaHyperCh", etaHyperCh);
   } else if (command == "#MINIMUMDENSITY") {
+    hasMinimumDensity_ = true;
     param.read_var("rhoMinOhm", rhoMinOhm);
   } else if (command == "#ELECTRONPRESSURE") {
+    hasElectronPressure_ = true;
     param.read_var("useElectronPressureEq", useElectronPressureEq);
     if (useElectronPressureEq) {
       param.read_var("heatCondKappa0SI", heatCondKappa0SI);
@@ -396,18 +470,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("ambipolarInStages", ambipolarInStages);
     }
   } else if (command == "#ELECTRONADVECTION") {
+    hasElectronPressure_ = true;
     param.read_var("peAdvectionLimiter", peAdvectionLimiter);
     param.read_var("peCompressionScheme", peCompressionScheme);
   } else if (command == "#ELECTRONCONDUCTION") {
+    hasElectronPressure_ = true;
     param.read_var("heatCondMethod", heatCondMethod);
     param.read_var("nCondIter", nCondIter);
     param.read_var("nCondSubcycleMax", nCondSubcycleMax);
   } else if (command == "#ELECTRONCOLLISION") {
+    hasElectronPressure_ = true;
     param.read_var("useHeatExchange", useHeatExchange);
     if (useHeatExchange) {
       param.read_var("collisionFactor", collisionFactor);
     }
   } else if (command == "#FIELDINTEGRATOR") {
+    hasFieldIntegrator_ = true;
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -601,10 +679,13 @@ void Pic::post_process_param() {
   // These values are used in denominators and dispatch solver branches, so
   // silently correcting them can produce a run with different physics than
   // the input deck describes.
-  if (nBSubcycle < 1)
-    Abort("Invalid #BSUBCYCLE: nBSubcycle must be at least 1.");
-  if (isAutoSubcycle && nBSubcycleMax < nBSubcycle)
-    Abort("Invalid #BSUBCYCLE: nBSubcycleMax must be >= nBSubcycle.");
+  if (nSubcycle < 1)
+    Abort("Invalid #FIELDSUBCYCLE: nSubcycle must be at least 1.");
+  if (isAutoSubcycle && !useHybridPIC)
+    Abort("Auto-subcycling (#FIELDSUBCYCLE isAutoSubcycle=T) is currently "
+          "only supported for the hybrid PIC solver.");
+  if (isAutoSubcycle && nBSubcycleMax < nSubcycle)
+    Abort("Invalid #FIELDSUBCYCLE: nSubcycleMax must be >= nSubcycle.");
   if (electronGamma <= 0)
     Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
   if (electronDensity0In <= 0)
@@ -692,14 +773,6 @@ void Pic::post_process_param() {
     nodePeRho.resize(n_lev_max());
     nodePeAux.resize(n_lev_max());
   }
-  if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3" &&
-      fieldIntegrator != "rk4-pc" && fieldIntegrator != "pc-rk4" &&
-      fieldIntegrator != "ssprk3-pc" && fieldIntegrator != "pc-ssprk3")
-    Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
-          "'. Expected 'rk4', 'ssprk3', 'rk4-pc', or 'ssprk3-pc'.");
-  if (etaHyperMode != "si" && etaHyperMode != "grid")
-    Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
-          "'. Expected 'si' or 'grid'.");
 
   if (useBody) {
     if (bodyRadius <= 0)
@@ -799,12 +872,14 @@ void Pic::post_process_param() {
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 
-  // Classify species: negative charge -> electron, otherwise kinetic ion.
+  // Classify species: in semi-implicit full PIC, negative charge -> implicit
+  // electron. In explicit full PIC and hybrid PIC, all particle species are
+  // kinetic.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
     // Guard: parts may not be fully populated yet.
-    if (!useHybridPIC && i < (int)parts.size() && parts[i] &&
+    if (!useHybridPIC && !useExplicitPIC && i < (int)parts.size() && parts[i] &&
         parts[i]->get_charge() < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
@@ -813,25 +888,84 @@ void Pic::post_process_param() {
     }
   }
 
-  // Hybrid and implicit solver are mutually exclusive.
-  if (useHybridPIC)
-    solveEM = false;
+  // Cross-solver command validation
+  if (fieldSolverMode != PicSolverMode::Implicit) {
+    if (hasDiscretization_)
+      Abort("Invalid command: #DISCRETIZATION is only valid for implicit full "
+            "PIC (#FIELDSOLVER implicit).");
+    if (hasEFieldSolver_)
+      Abort("Invalid command: #EFIELDSOLVER is only valid for implicit full "
+            "PIC (#FIELDSOLVER implicit).");
+  }
 
-  // Convert input units to normalized code units.
-  if (useHybridPIC) {
-    // Resistivity SI->code conversions are deferred to
-    // finalize_units_conversion().
+  if (fieldSolverMode != PicSolverMode::Hybrid) {
+    if (hasHallTerm_)
+      Abort("Invalid command: #HALLTERM is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasResistivity_)
+      Abort("Invalid command: #RESISTIVITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasHyperResistivity_)
+      Abort("Invalid command: #HYPERRESISTIVITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasElectronPressure_)
+      Abort("Invalid command: electron pressure commands (#ELECTRON*) are only "
+            "valid for hybrid PIC (#FIELDSOLVER hybrid).");
+    if (hasMinimumDensity_)
+      Abort("Invalid command: #MINIMUMDENSITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+  }
+
+  if (fieldSolverMode == PicSolverMode::Implicit ||
+      fieldSolverMode == PicSolverMode::None) {
+    if (hasFieldIntegrator_)
+      Abort("Invalid command: #FIELDINTEGRATOR is only valid for explicit full "
+            "PIC or hybrid PIC.");
+    if (hasFieldSubcycle_)
+      Abort("Invalid command: #FIELDSUBCYCLE is only valid for explicit full "
+            "PIC or hybrid PIC.");
+  }
+
+  // Convert input units to normalized code units and configure solver branches.
+  if (fieldSolverMode == PicSolverMode::Explicit) {
+    if (fieldIntegrator.empty())
+      fieldIntegrator = "leapfrog";
+    if (fieldIntegrator != "leapfrog" && fieldIntegrator != "pc" &&
+        fieldIntegrator != "rk2")
+      Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+            "' for explicit full PIC. Expected 'leapfrog' or 'pc'.");
+    usePredictorCorrector =
+        (fieldIntegrator == "pc" || fieldIntegrator == "rk2");
+    Print() << "  fieldSolverMode: explicit\n"
+            << "  fieldIntegrator: " << fieldIntegrator
+            << (usePredictorCorrector ? " (2nd-order Predictor-Corrector)"
+                                      : " (leapfrog)")
+            << "\n"
+            << "  fieldSubcycle: " << nSubcycle << "\n";
+  } else if (fieldSolverMode == PicSolverMode::Hybrid) {
+    if (fieldIntegrator.empty())
+      fieldIntegrator = "rk4";
+    if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3" &&
+        fieldIntegrator != "rk4-pc" && fieldIntegrator != "pc-rk4" &&
+        fieldIntegrator != "ssprk3-pc" && fieldIntegrator != "pc-ssprk3")
+      Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+            "' for hybrid PIC. Expected 'rk4', 'ssprk3', 'rk4-pc', or "
+            "'ssprk3-pc'.");
+    if (etaHyperMode != "si" && etaHyperMode != "grid")
+      Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
+            "'. Expected 'si' or 'grid'.");
 
     usePredictorCorrector =
         (fieldIntegrator == "rk4-pc" || fieldIntegrator == "pc-rk4" ||
          fieldIntegrator == "ssprk3-pc" || fieldIntegrator == "pc-ssprk3");
     useRK4 = (fieldIntegrator == "rk4" || fieldIntegrator == "rk4-pc" ||
               fieldIntegrator == "pc-rk4");
-    Print() << "  fieldIntegrator: " << fieldIntegrator
+    Print() << "  fieldSolverMode: hybrid\n"
+            << "  fieldIntegrator: " << fieldIntegrator
             << (usePredictorCorrector ? " (2nd-order Predictor-Corrector)" : "")
-            << "\n";
+            << "\n"
+            << "  fieldSubcycle: " << nSubcycle << "\n";
     if (electronTemperatureEV > 0) {
-      // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       double unormSI = fi->get_unorm_si();
       electronTemperature = electronTemperatureEV * cUnitChargeSI /
                             (cProtonMassSI * unormSI * unormSI);
@@ -839,10 +973,13 @@ void Pic::post_process_param() {
               << " [eV] -> " << electronTemperature << " [code units]\n";
     }
 
-    // Conversion to code units deferred until convert_electron_density0()
-    // (Si2NoRho is not yet available here).
     if (rhoMinOhm <= 0)
       rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
+  } else if (fieldSolverMode == PicSolverMode::Implicit) {
+    Print() << "  fieldSolverMode: implicit (theta = " << fsolver.theta
+            << ")\n";
+  } else {
+    Print() << "  fieldSolverMode: none (particle tracer / static field)\n";
   }
   // report_bc_warnings() is called by Domain after BC autofill and validation.
 }

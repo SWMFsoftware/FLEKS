@@ -37,7 +37,8 @@ inline BoxArray get_boundary_active_ba(const BoxArray& activeRegion,
 //==========================================================
 void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
                          const int iStart, const int nComp, GETVALUE func,
-                         const int iLev, const bool isB) {
+                         const int iLev, const bool isB, Real dtOverride,
+                         Real timeOverride) {
   if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
     return;
 
@@ -70,11 +71,13 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   }
 
   if (hasAbsorbBC_)
-    apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+    apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB,
+                         dtOverride);
 
   // Wave boundary condition overwrites faces where active.
   if (waveBC.active) {
-    const Real t = tc ? tc->get_time() : 0.0;
+    const Real t =
+        (timeOverride >= 0.0) ? timeOverride : (tc ? tc->get_time() : 0.0);
     apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t,
                      func);
   }
@@ -334,9 +337,9 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
 void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
                                const int iStart, const int nComp,
                                const int iLev, const BoxBC<FieldBC::Type>& bc,
-                               bool isB) {
+                               bool isB, Real dtOverride) {
   (void)isB;
-  const Real dt = tc ? tc->get_dt() : 0.0;
+  const Real dt = (dtOverride > 0.0) ? dtOverride : (tc ? tc->get_dt() : 0.0);
   if (dt <= 0.0)
     return;
 

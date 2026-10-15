@@ -340,13 +340,28 @@ T                   usePIC
 Turning on/off the PIC module. 
 </command>
 
-<command name="EXPLICITPIC" alias="EXPLICITPIC_FLEKS0,EXPLICITPIC_FLEKS1,EXPLICITPIC_FLEKS2" multiple="T">
-  <parameter name="useExplicitPIC" type="logical" default="F"/>
+<command name="FIELDSOLVER" alias="FIELDSOLVER_FLEKS0,FIELDSOLVER_FLEKS1,FIELDSOLVER_FLEKS2" multiple="T">
+  <parameter name="fieldSolverMode" type="string" input="select" required="T">
+    <option value="implicit"/>
+    <option value="explicit"/>
+    <option value="hybrid"/>
+    <option value="none"/>
+  </parameter>
 
-#EXPLICITPIC
-F                 useExplicitPIC
+#FIELDSOLVER
+implicit          fieldSolverMode
 
-When this flag is true, the simulation will use an explicit PIC solver.
+Select the electromagnetic field solver mode for FLEKS:
+- implicit (default): Semi-implicit full PIC solver. Solves Maxwell's equations
+  with the theta-scheme linear/nonlinear solver.
+- explicit: Explicit full PIC solver. Advances E and B explicitly with speed-of-light
+  wave propagation and discrete dual staggering. Requires setting #FIELDINTEGRATOR
+  (leapfrog or pc) and #FIELDSUBCYCLE.
+- hybrid: Hybrid PIC solver. Treats electrons as a neutralizing fluid and ions as kinetic
+  particles, advancing B using the generalized Ohm's law and Faraday's law. Requires setting
+  #FIELDINTEGRATOR (rk4, ssprk3, rk4-pc, or ssprk3-pc) and #FIELDSUBCYCLE.
+- none: Particle tracer / static field mode. Particles move through background/static fields
+  without updating the electromagnetic fields.
 </command>
 
 <command name="COMOVING" alias="COMOVING_FLEKS0,COMOVING_FLEKS1,COMOVING_FLEKS2" multiple="T">
@@ -366,7 +381,8 @@ This command enables solving the electromagnetic fields in a co-moving frame of 
 #SOLVEEM
 T                 solveEM
 
-This command enables or disables the electromagnetic field solver.
+[Deprecated] This command enables or disables the electromagnetic field solver.
+Please use #FIELDSOLVER instead (#FIELDSOLVER implicit or none).
 </command>
 
 <command name="HYBRIDPIC" alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2" multiple="T">
@@ -375,9 +391,7 @@ This command enables or disables the electromagnetic field solver.
 #HYBRIDPIC
 F                 useHybridPIC
 
-When true, the hybrid PIC field solver (generalized Ohm's law with kinetic
-ions and a fluid electron) is used instead of the full PIC field solver.
-Mutually exclusive with SOLVEEM.
+[Deprecated] When true, the hybrid PIC field solver is used. Please use #FIELDSOLVER hybrid instead.
 
 On multi-level (AMR) grids, the hybrid PIC solver uses a robust,
 divergence-preserving interface treatment for the Faraday update
@@ -408,20 +422,19 @@ Ohm's law
       - grad(Pe)/rho_q   (electron pressure/ambipolar, #ELECTRONTEMPERATURE)
       - (eta_h/4pi) curl(nabla^2 B)  (hyper-resistivity, #HYPERRESISTIVITY)
 \end{verbatim}
-Each term is enabled/disabled and parametrised independently of #HYBRIDPIC, so
-you can build arbitrary subsets (e.g. Hall-only, resistive-MHD-like, with/without
-electron pressure). Time accuracy: the hybrid scheme is second order in time via
-a staggered leapfrog with linear time-interpolation of the ion moments. Within
-each magnetic sub-step the ion velocity moment and density used in the Ohm's law
-are interpolated between the previous deposit $(J^{n-1/2})$ and the current one
-$(J^{n+1/2})$ as
+Each term is enabled/disabled and parametrised independently, so you can build
+arbitrary subsets (e.g. Hall-only, resistive-MHD-like, with/without electron pressure).
+Time accuracy: the hybrid scheme is second order in time via a staggered leapfrog
+with linear time-interpolation of the ion moments. Within each magnetic sub-step
+the ion velocity moment and density used in the Ohm's law are interpolated between
+the previous deposit $(J^{n-1/2})$ and the current one $(J^{n+1/2})$ as
 $X(h) = (0.5 - h) X^{n-1/2} + (0.5 + h) X^{n+1/2}$,
 where h is the sub-step fraction (h=0 gives $J^n = 1/2(J^{n-1/2}+J^{n+1/2})$;
 h=1 gives $J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2})$. The particle Boris push
 uses the integer-step E field from the previous field advance.
 Related numerical controls:
 \begin{verbatim}
-    #BSUBCYCLE - sub-steps for the explicit Hall-whistler CFL,
+    #FIELDSUBCYCLE - sub-steps for the explicit Hall-whistler CFL (#BSUBCYCLE is deprecated),
     #MINIMUMDENSITY - caps the 1/rho factors in the Hall and pressure terms,
     #FIELDINTEGRATOR - time integrator for the Faraday (B) update,
     #SMOOTHMOMENTS - damps PIC shot noise in the Ohm's law.
@@ -593,21 +606,33 @@ which is unconditionally stable and strictly preserves thermal balance.
 Pi is computed from the scalar ion pressure Tr(P_i)/3 in nodePlasma.
 </command>
 
+<command name="FIELDSUBCYCLE" alias="FIELDSUBCYCLE_FLEKS0,FIELDSUBCYCLE_FLEKS1,FIELDSUBCYCLE_FLEKS2" multiple="T">
+  <parameter name="nSubcycle" type="integer" min="1" default="1"/>
+  <parameter name="isAutoSubcycle" type="logical" default="F"/>
+  <parameter name="nSubcycleMax" type="integer" min="1" default="40" if="$isAutoSubcycle"/>
+
+#FIELDSUBCYCLE
+1                 nSubcycle
+F                 isAutoSubcycle
+40                nSubcycleMax (if isAutoSubcycle is true)
+
+Subcycling control for electromagnetic field advance:
+- nSubcycle: Number of sub-steps used to advance the electromagnetic fields within one
+  coarse PIC time step dt. Applies to both explicit full PIC (explicit Maxwell advance)
+  and hybrid PIC (Faraday/Ohm's law advance).
+- isAutoSubcycle: Enable dynamic adaptation of subcycling up to nSubcycleMax
+  (hybrid PIC only).
+- nSubcycleMax: Maximum allowed subcycle count when isAutoSubcycle is true.
+</command>
+
 <command name="BSUBCYCLE" alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2" multiple="T">
   <parameter name="nBSubcycle" type="integer" min="1" default="1"/>
 
 #BSUBCYCLE
 1                 nBSubcycle
 
-Number of sub-steps used to advance the magnetic field within one coarse time
-step in the hybrid solver (refines the B-field integration). The total advance
-is always exactly one coarse step dt: nBSubcycle full integrator steps of
-size dt/nBSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nBSubcycle
-nested 4th-order Runge-Kutta steps). Because RK4 has a large linear-stability
-region along the imaginary axis (where the Hall-whistler oscillatory modes live),
-with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability
-in weakly magnetized or moderate-resolution regimes.
-Only used when #HYBRIDPIC is T.
+[Deprecated] Number of sub-steps used to advance the magnetic field within one coarse time
+step in the hybrid solver. Please use #FIELDSUBCYCLE instead.
 </command>
 
 <command name="AUTOSUBCYCLE" alias="AUTOSUBCYCLE_FLEKS0,AUTOSUBCYCLE_FLEKS1,AUTOSUBCYCLE_FLEKS2" multiple="T">
@@ -618,10 +643,8 @@ Only used when #HYBRIDPIC is T.
 F                 isAutoSubcycle
 40                nBSubcycleMax (if isAutoSubcycle is true)
 
-Enable dynamic adaptation of magnetic subcycling (nBSubcycle) up to nBSubcycleMax
-in the hybrid solver based on explicit field CFL limits (whistler wave, resistivity,
-and hyper-resistivity).
-Only used when #HYBRIDPIC is T.
+[Deprecated] Enable dynamic adaptation of magnetic subcycling up to nBSubcycleMax
+in the hybrid solver. Please use #FIELDSUBCYCLE instead.
 </command>
 
 <command name="HALLTERM" alias="HALLTERM_FLEKS0,HALLTERM_FLEKS1,HALLTERM_FLEKS2" multiple="T">
@@ -688,21 +711,27 @@ Only used when #HYBRIDPIC is T.
 
 <command name="FIELDINTEGRATOR" alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2" multiple="T">
   <parameter name="fieldIntegrator" type="string" input="select" required="T">
+    <option value="leapfrog"/>
+    <option value="pc"/>
+    <option value="rk2"/>
     <option value="rk4"/>
     <option value="ssprk3"/>
+    <option value="rk4-pc"/>
+    <option value="ssprk3-pc"/>
   </parameter>
 
 #FIELDINTEGRATOR
-rk4               fieldIntegrator
+leapfrog          fieldIntegrator
 
-Time integrator for the hybrid Faraday (B) update driven by the generalized Ohm's
-law. This is the single control for the time integration of B (there is no
-separate time-centring flag). "rk4" is the classic 4th-order Runge-Kutta on B,
-evaluating the Ohm's law at four trial B states; it is the default and has a
-large linear-stability region, so with rk4 you typically do not need a large
-#BSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
-a time-centered E. Only used when HYBRIDPIC is T.
-    </command>
+Time integrator for field update in explicit full PIC and hybrid PIC:
+- Explicit full PIC (#FIELDSOLVER explicit):
+  * leapfrog (default): Boris-Maxwell time-staggered leapfrog scheme.
+  * pc (or rk2): 2nd-order Predictor-Corrector scheme.
+- Hybrid PIC (#FIELDSOLVER hybrid):
+  * rk4 (default): classic 4th-order Runge-Kutta on B driven by generalized Ohm's law.
+  * ssprk3: strong-stability-preserving 3rd-order Runge-Kutta.
+  * rk4-pc / ssprk3-pc: Predictor-Corrector variant using RK4 / SSPRK3.
+</command>
 
 <command name="PARTMODE" alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2" multiple="T">
   <parameter name="partMode" type="string" input="select" required="T">

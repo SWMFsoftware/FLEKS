@@ -490,10 +490,18 @@ void Pic::smooth_moments() {
   std::string nameFunc = "Pic::smooth_moments";
   timing_func(nameFunc);
 
-  if (!doSmoothMoments || nSmoothMoments <= 0)
+  const bool shouldSmooth = useExplicitPIC
+                                ? ((doSmoothJ && nSmoothJ > 0) ||
+                                   (doSmoothMoments && nSmoothMoments > 0))
+                                : (doSmoothMoments && nSmoothMoments > 0);
+  if (!shouldSmooth)
     return;
 
-  // Smooth the total ion moments on the node grid.
+  const int nSmooth = (useExplicitPIC && doSmoothJ) ? nSmoothJ : nSmoothMoments;
+  const Real coefSmooth =
+      (useExplicitPIC && doSmoothJ) ? coefSmoothJ : coefSmoothMoments;
+
+  // Smooth the total plasma moments on the node grid.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab& moments = nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
@@ -503,8 +511,8 @@ void Pic::smooth_moments() {
           nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
-    for (int icount = 0; icount < nSmoothMoments; ++icount) {
-      smooth_multifab(moments, iLev, 1, coefSmoothMoments);
+    for (int icount = 0; icount < nSmooth; ++icount) {
+      smooth_multifab(moments, iLev, 1, coefSmooth);
       if (iLev > 0) {
         fill_fine_lev_bny_from_coarse(
             nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
