@@ -1495,7 +1495,6 @@ void Pic::sum_moments(bool updateDt) {
     convert_and_sum_moments();
   }
 
-
   isMomentsUpdated = true;
 }
 
