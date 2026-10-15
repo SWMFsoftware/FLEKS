@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Validator for the unresolved photoproduction test (tests/photoproduction).
+
+An exponential atmosphere n0 exp(-(r - R)/H) with H = dx/33 surrounds a body
+of radius R. The photoproduction per time is
+  P = nu n0 4 pi (R^2 H + 2 R H^2 + 2 H^3).
+The source sampled at the nodes would alias with the grid (a node either
+hits the thin layer or not); with the dual-cell averages the injected mass
+per step must match P within 10% for both grid offsets.
+
+The mass unit is the uniform seed: Mpart1(0) = m n_seed V_seed, with V_seed
+the volume of the cells outside the body.
+"""
+import logging
+import math
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+R, H = 1.5e5, 1.0e3        # [m]
+N0, NU = 1.0e12, 1.0e-3    # [m^-3], [1/s]
+NSEED = 1.0e3              # [m^-3]
+DT = 0.1                   # [s]
+NCELL, LNORM = 24, 1.0e5
+
+
+def _seed_volume(lo):
+    dx = 8.0 / NCELL
+    c = lo + (np.arange(NCELL) + 0.5) * dx
+    x, y, z = np.meshgrid(c, c, c, indexing="ij")
+    outside = x * x + y * y + z * z >= (R / LNORM)**2
+    return outside.sum() * (dx * LNORM)**3
+
+
+def validate_log(pic_diags=None, test_name=None):
+    d = pic_diags
+    if not d or len(d) < 3 or "Mpart1" not in d[0]:
+        return False, "missing log or Mpart1 column"
+    lo = -3.9 if test_name and test_name.endswith("shifted") else -4.0
+
+    seed = NSEED * _seed_volume(lo)          # seed ions
+    unit = d[0]["Mpart1"] / seed             # code mass per ion
+    perStep = [(b["Mpart1"] - a["Mpart1"]) / unit for a, b in zip(d, d[1:])]
+    produced = np.mean(perStep) / DT
+    P = NU * N0 * 4 * math.pi * (R**2 * H + 2 * R * H**2 + 2 * H**3)
+    ratio = produced / P
+    logger.debug("    production %.4e /s vs analytic %.4e /s: ratio %.3f",
+                 produced, P, ratio)
+    if abs(ratio - 1) > 0.10:
+        return False, f"production = {ratio:.3f} x analytic (tol 10%)"
+    return True, "Passed"

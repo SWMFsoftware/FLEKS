@@ -347,8 +347,10 @@ void Domain::init(double time, const int iDomain,
   } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
   }
-  if (source)
+  if (source) {
     pic->set_fluid_source(source.get());
+    source->set_inner_radius_si(pic->get_body_radius_si());
+  }
 
   // Copy-constructed after read_param so that it carries fi's final layout.
   if (source && !domainParameters.initFromSWMF)

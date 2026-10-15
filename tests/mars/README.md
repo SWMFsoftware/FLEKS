@@ -8,8 +8,13 @@ photochemistry with EUV optical depth; absorbing, conducting body at 100 km
 altitude; Parker-spiral IMF) on a coarse 24 x 32 x 32 grid
 (dx = 0.25 R_M), run for 20 s.
 
-It is not a physics benchmark (the ionosphere is unresolved at this
-resolution); it guards the setup against the bugs found while building it:
+It is not a physics benchmark: the ionospheric layer (scale heights of
+6.5-13 km) is unresolved on 849 km cells. The sources are averaged over the
+dual cell of every node, so the column production is right, and
+`#PHOTOCHEMICALBOUNDARY` (200 km altitude) drops the ionization below the
+photochemical boundary, where the ions recombine locally; injected into a
+cell-diluted layer they would barely recombine and pile up. The test guards
+the setup against the bugs found while building it:
 
 * `#INFLOW` blocks must start with a line named `rho`; a relabeled line made
   the heavy ions inherit the solar-wind block and flow in from upstream;

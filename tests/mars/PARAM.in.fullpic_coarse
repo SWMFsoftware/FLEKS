@@ -166,6 +166,9 @@ F                       chapmanFunction      matches UseChapman = F
 11.5                    tauCutoff
 5.0e-4                  cosSzaFloor
 
+#PHOTOCHEMICALBOUNDARY
+3596000.0               radius [m]  200 km altitude: below it the ions recombine locally
+
 #CHEMISTRY
 10                      nReactions
 0                       reactantIon   R1: H + hv -> H+ + e-

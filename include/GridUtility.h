@@ -883,6 +883,55 @@ void rescale_body_surface_nodes(amrex::FabArray<FAB>& dst,
   }
 }
 
+// Divide node values by the fraction of the 2^nDim cells around the node that
+// are outside the inner body, and zero them where no cell is outside. Unlike
+// rescale_body_surface_nodes() it also acts on the body nodes (onlyBodyNodes
+// restricts it to them). Used for the source terms: a node's production must
+// reach the plasma cells, which are the only ones that receive particles.
+template <class FAB>
+void scale_by_body_outside_fraction(amrex::FabArray<FAB>& dst,
+                                    const amrex::iMultiFab& cellStatus,
+                                    const amrex::iMultiFab& nodeStatus,
+                                    const amrex::Box& cellDomain,
+                                    const int nDim, const bool onlyBodyNodes) {
+  const int nComp = dst.nComp();
+  const int clo[3] = { AMREX_D_DECL(
+      cellDomain.smallEnd(0), cellDomain.smallEnd(1), cellDomain.smallEnd(2)) };
+  const int chi[3] = { AMREX_D_DECL(cellDomain.bigEnd(0), cellDomain.bigEnd(1),
+                                    cellDomain.bigEnd(2)) };
+
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.validbox();
+    auto data = dst[mfi].array();
+    const auto cellArr = cellStatus[mfi].array();
+    const auto nodeArr = nodeStatus[mfi].array();
+
+    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (onlyBodyNodes && !bit::is_body(nodeArr(i, j, k)))
+        return;
+
+      const int nCombo = 1 << nDim;
+      int nOut = 0;
+      for (int iCombo = 0; iCombo < nCombo; ++iCombo) {
+        int ii = i - ((iCombo & 1) != 0 ? 1 : 0);
+        int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
+        int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
+        ii = amrex::min(amrex::max(ii, clo[0]), chi[0]);
+        jj = amrex::min(amrex::max(jj, clo[1]), chi[1]);
+        kk = amrex::min(amrex::max(kk, clo[2]), chi[2]);
+        if (!bit::is_body(cellArr(ii, jj, kk)))
+          ++nOut;
+      }
+
+      if (nOut == nCombo)
+        return;
+      const amrex::Real scale = nOut > 0 ? amrex::Real(nCombo) / nOut : 0.0;
+      for (int iVar = 0; iVar < nComp; ++iVar)
+        data(i, j, k, iVar) *= scale;
+    });
+  }
+}
+
 template <class FAB>
 void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
                          int startvar = 0, int stopvar = -1) {

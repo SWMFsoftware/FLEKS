@@ -793,8 +793,15 @@ public:
   // stand-alone source terms, whose rates depend on the local plasma.
   void fill_plasma_state(FluidInterface &dst);
 
-  // Zero the source terms (production) at the nodes inside the inner body.
+  // Adapt the source terms to the inner body: zero them at the body nodes
+  // with #BODYIONOSPHERE, otherwise deliver the production of the surface
+  // nodes to the plasma cells.
   void mask_body_source(SourceInterface &src);
+
+  // Radius of the inner body [m], 0 without one.
+  amrex::Real get_body_radius_si() const {
+    return useBody ? bodyRadius * fi->get_No2SiL() : 0.0;
+  }
 
   void inject_particles_for_new_cells() {
     if (!usePIC)

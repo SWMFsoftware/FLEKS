@@ -999,8 +999,17 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
 
     // The body nodes are not plasma: with #BODYIONOSPHERE they carry the
     // ghost layer, whose ions are re-injected every step and must not react.
-    if (useBody)
-      mask_body(stateMF, node_status(iLev));
+    // Otherwise their moments are diluted by the empty body cells (the other
+    // surface nodes were rescaled in sum_moments()): rescale them as well, so
+    // that the state is the density of the plasma next to the surface.
+    if (useBody) {
+      if (bodyIono.use)
+        mask_body(stateMF, node_status(iLev));
+      else
+        scale_by_body_outside_fraction(stateMF, cellStatus[iLev],
+                                       nodeStatus[iLev], Geom(iLev).Domain(),
+                                       nDim, true);
+    }
   }
 }
 
@@ -1008,14 +1017,21 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
 void Pic::mask_body_source(SourceInterface& src) {
   if (!useBody || isGridEmpty)
     return;
-  // No reaction inside the body: a raised body (#BODYIONOSPHERE) hides the
-  // thermosphere below it, and the production or the loss frequency of a body
-  // node would leak into the first plasma cells through the interpolation.
-  // Masking both keeps the products consistent with the reactant loss.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    mask_body(src.get_node_fluid(iLev), node_status(iLev));
-    if (src.has_loss_array(iLev))
-      mask_body(src.get_node_loss_fluid(iLev), node_status(iLev));
+    if (bodyIono.use) {
+      // The body nodes carry the re-injected ghost layer: no reaction there.
+      mask_body(src.get_node_fluid(iLev), node_status(iLev));
+      if (src.has_loss_array(iLev))
+        mask_body(src.get_node_loss_fluid(iLev), node_status(iLev));
+    } else {
+      // The production of a node is the average over its dual cell outside
+      // the body (UserSource), but only the plasma cells around the node
+      // receive particles: scale it up by the inverse outside fraction. The
+      // loss frequencies are intensive and stay as they are.
+      scale_by_body_outside_fraction(src.get_node_fluid(iLev), cellStatus[iLev],
+                                     nodeStatus[iLev], Geom(iLev).Domain(),
+                                     nDim, false);
+    }
   }
 }
 
