@@ -30,12 +30,14 @@ using namespace amrex;
  * @param ppc Particles per cell.
  * @param tpVel User-defined velocity for initializing test particles.
  * @param dt Time step for density change rate.
+ * @param weightScale Factor applied to every particle weight (the weight
+ * floor of the source particles, see add_particles_source()).
  */
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
-    const Vel& tpVel, Real dt) {
+    const Vel& tpVel, Real dt, Real weightScale) {
 
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
@@ -271,7 +273,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           p.rdata(ivp_) = v;
           p.rdata(iwp_) = w;
           // Convert 'density changing rate' to 'density' if necessary.
-          p.rdata(iqp_) = q * dt;
+          p.rdata(iqp_) = q * dt * weightScale;
 
           if (NStructInt > iRecordCount_) {
             // For test particle only.
@@ -289,8 +291,19 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
     const FluidInterface* interface, const FluidInterface* const stateOH,
-    Real dt, IntVect ppc, const bool doSelectRegion, const bool adaptivePPC) {
+    Real dt, IntVect ppc, const bool doSelectRegion, const bool adaptivePPC,
+    const Real minWeightRatio) {
   timing_func("Pts::add_particles_source");
+
+  // Weight floor (#SOURCEWEIGHTFLOOR): a source particle is not lighter than
+  // minWeightRatio times the weight of a particle of the reference plasma
+  // (all ions of fi, i.e. #UNIFORMSTATE stand-alone). A cell whose whole
+  // source of the step is below the floor gets one particle of the floor
+  // weight with the probability source/floor ("Russian roulette"): the mass
+  // is conserved on average, and the weak sources that cover most of an
+  // extended exosphere no longer create a particle in every cell and step.
+  const bool useWeightFloor = minWeightRatio > 0.0;
+  const Real initPPCFloor = product(nPartPerCell);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
@@ -342,8 +355,40 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                 }
               }
 
+              Real weightScale = 1.0;
+              if (useWeightFloor) {
+                RealVect xyzC;
+                for (int iDim = 0; iDim < nDim; iDim++)
+                  xyzC[iDim] =
+                      (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
+
+                // Number density of the step's source and of the reference
+                // plasma, in code units.
+                Real nSource =
+                    interface->get_number_density(mfi, xyzC, speciesID, iLev);
+                if (dt > 0)
+                  nSource *= dt;
+                Real nRef = 0;
+                for (int iS = 0; iS < fi->get_nS(); iS++)
+                  if (fi->get_species_charge(iS) > 0)
+                    nRef += fi->get_number_density(mfi, xyzC, iS, iLev);
+                const Real wMin = minWeightRatio * nRef / initPPCFloor;
+
+                if (nSource <= 0.0)
+                  continue;
+                if (nSource / product(ppcCell) < wMin) {
+                  ppcCell = IntVect(1);
+                  if (nSource < wMin) {
+                    set_random_seed(iLev, ijk, IntVect(919));
+                    if (randNum() * wMin >= nSource)
+                      continue;
+                    weightScale = wMin / nSource;
+                  }
+                }
+              }
+
               add_particles_cell(iLev, mfi, ijk, interface, false, ppcCell,
-                                 Vel(), dt);
+                                 Vel(), dt, weightScale);
             }
           }
     }
@@ -465,10 +510,10 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
   template void T::add_particles_domain();                                     \
   template void T::add_particles_cell(const int, const MFIter&, const IntVect, \
                                       const FluidInterface*, bool, IntVect,    \
-                                      const Vel&, Real);                       \
-  template void T::add_particles_source(const FluidInterface*,                 \
-                                        const FluidInterface* const, Real,     \
-                                        IntVect, const bool, const bool);      \
+                                      const Vel&, Real, Real);                 \
+  template void T::add_particles_source(                                       \
+      const FluidInterface*, const FluidInterface* const, Real, IntVect,       \
+      const bool, const bool, const Real);                                     \
   template void T::add_source_particles(std::unique_ptr<PicParticles>&,        \
                                         IntVect, const bool);
 

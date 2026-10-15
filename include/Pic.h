@@ -329,8 +329,9 @@ private:
   int nSpecies;
   int iTot;
 
-  // Hybrid species IDs
-  // iElectron_ (-1 if none); kineticSpecies_ = non-electron species.
+  // Species classification (see post_process_param): iElectron_ is the hybrid
+  // fluid-electron slot (-1 if none); kineticSpecies_ are the particle
+  // species, i.e. all species in full PIC and the ions in hybrid PIC.
   int iElectron_ = -1;
   std::vector<int> kineticSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
@@ -383,6 +384,9 @@ private:
   // Particle Per Cell (PPC) of source particles.
   amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
   bool adaptiveSourcePPC = false;
+  // Weight floor of the source particles relative to a reference particle
+  // (#SOURCEWEIGHTFLOOR); 0 switches it off.
+  amrex::Real sourceMinWeightRatio = 0.0;
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;
@@ -764,12 +768,20 @@ public:
 
   void fill_source_particles();
 
+  // Write the plasma state of the particles (per-species density, bulk
+  // velocity and scalar pressure, from the moments of the last update) into
+  // the stand-alone state `dst`, which has fi's layout. In hybrid PIC the
+  // fluid-electron slot gets n_e = sum(Z_i n_i), the ion charge-averaged
+  // velocity and the electron pressure of the hybrid closure. Used by the
+  // stand-alone source terms, whose rates depend on the local plasma.
+  void fill_plasma_state(FluidInterface &dst);
+
   void inject_particles_for_new_cells() {
     if (!usePIC)
       return;
 
-    for (auto &pts : parts) {
-      pts->add_particles_domain();
+    for (int i : kineticSpecies_) {
+      parts[i]->add_particles_domain();
     }
   }
 
@@ -777,8 +789,8 @@ public:
     if (!usePIC)
       return;
 
-    for (auto &pts : parts) {
-      pts->inject_particles_at_boundary();
+    for (int i : kineticSpecies_) {
+      parts[i]->inject_particles_at_boundary();
     }
   }
 
@@ -839,6 +851,11 @@ public:
                       bool includeAmbi = true);
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
+  // Nodal electron pressure of the hybrid closure for the nodal electron
+  // density `nodeNe`: the evolved Pe (#ELECTRONPRESSURE) averaged to the
+  // nodes, or the polytropic closure of #ELECTRONTEMPERATURE.
+  void compute_node_electron_pressure(int iLev, const amrex::MultiFab &nodeNe,
+                                      amrex::MultiFab &nodePe);
   // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
   // E assembled from Bin at moment fraction hstep, then synchronized
   // across levels.

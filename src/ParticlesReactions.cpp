@@ -495,13 +495,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 }
 
 //==========================================================
-// Apply chemical loss (recombination, etc.) by proportionally
-// reducing particle weights.  For each cell, reads the ion loss
-// rate from source->nodeLossFluid and the existing ion mass density
-// from fi, then reduces every particle's weight by the fraction
-//   fraction = min(lossRate * dt / rhoExisting, 1.0).
-// In hybrid PIC mode, only ion species (charge > 0) have particles;
-// in full PIC mode, electron particle weights are also reduced proportionally.
+// Apply chemical loss (recombination, charge exchange, ion-neutral
+// chemistry) by reducing the particle weights. The loss frequency nu of the
+// species (source->nodeLossFluid, computed from the plasma state by
+// UserSource::set_source) is interpolated to every particle, whose weight is
+// multiplied by exp(-nu*dt). In hybrid PIC only the ions have particles; in
+// full PIC the electron weights are reduced the same way.
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::apply_loss(
@@ -522,8 +521,8 @@ void Particles<NStructReal, NStructInt>::apply_loss(
     if (!source->has_loss_array(iLev))
       continue;
 
-    const Real* plo = Geom(iLev).ProbLo();
-    const Real* inv_dx = Geom(iLev).InvCellSize();
+    // Beyond this nu*dt the remaining weight (< 1e-21) is discarded.
+    constexpr Real maxLossNuDt = 50.0;
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
@@ -536,37 +535,24 @@ void Particles<NStructReal, NStructInt>::apply_loss(
         if (p.id() < 0)
           continue;
 
-        // Find the cell index for this particle.
-        IntVect ijk;
-        for (int iDim = 0; iDim < nDim; ++iDim) {
-          ijk[iDim] = static_cast<int>(
-              std::floor((p.pos(iDim) - plo[iDim]) * inv_dx[iDim]));
-        }
+        RealVect xyz;
+        for (int iDim = 0; iDim < nDim; ++iDim)
+          xyz[iDim] = p.pos(iDim);
 
-        // Existing mass density (normalized) from the plasma state.
-        Real rhoExisting =
-            fi->get_fluid_mass_density(pti, ijk, speciesID, iLev);
-        if (rhoExisting <= 0.0)
+        // Loss frequency of this species at the particle position.
+        const Real nu = source->get_loss_frequency(pti, xyz, speciesID, iLev);
+        if (nu <= 0.0)
           continue;
 
-        // Loss rate (normalized mass-density rate) from nodeLossFluid.
-        Real lossRate = source->get_loss_value(pti, ijk, speciesID, iLev);
-        if (lossRate <= 0.0)
-          continue;
-
-        // Fraction of mass to remove in this step.
-        Real fraction = lossRate * dt / rhoExisting;
-        if (fraction > 1.0)
-          fraction = 1.0;
-        if (fraction <= 0.0)
-          continue;
-
-        // Reduce particle weight proportionally.  The sign is preserved
-        // (ions have positive weight, electrons negative).
-        p.rdata(iqp_) *= (1.0 - fraction);
-        if (fraction >= 1.0) {
+        // Exponential decay over the step: exact for a constant rate and
+        // stable however stiff the reaction is (nu*dt >> 1). The sign of the
+        // weight is preserved (ions positive, electrons negative).
+        const Real nuDt = nu * dt;
+        if (nuDt > maxLossNuDt) {
           p.id() = -1;
+          continue;
         }
+        p.rdata(iqp_) *= std::exp(-nuDt);
       }
     }
   }

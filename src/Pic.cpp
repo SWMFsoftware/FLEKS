@@ -857,8 +857,105 @@ void Pic::fill_source_particles() {
   if (source) {
     for (int i : kineticSpecies_) {
       parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
-                                     doSelectRegion, adaptiveSourcePPC);
+                                     doSelectRegion, adaptiveSourcePPC,
+                                     sourceMinWeightRatio);
     }
+  }
+}
+
+//==========================================================
+void Pic::fill_plasma_state(FluidInterface& dst) {
+  timing_func("Pic::fill_plasma_state");
+
+  if (isGridEmpty || !usePIC)
+    return;
+
+  const int nS = dst.get_nS();
+  const int iE = useHybridPIC ? iElectron_ : -1;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab& stateMF = dst.get_node_fluid(iLev);
+    AMREX_ALWAYS_ASSERT(stateMF.boxArray() == nodePlasma[0][iLev].boxArray() &&
+                        stateMF.DistributionMap() ==
+                            nodePlasma[0][iLev].DistributionMap());
+
+    // Hybrid fluid electron: n_e = sum(Z_i n_i) from the ion moments.
+    MultiFab nodeNe, nodePe;
+    if (iE >= 0) {
+      nodeNe.define(nodePlasma[nSpecies][iLev].boxArray(),
+                    nodePlasma[nSpecies][iLev].DistributionMap(), 1, 0);
+      nodePe.define(nodeNe.boxArray(), nodeNe.DistributionMap(), 1, 0);
+      nodeNe.setVal(0.0);
+      for (int s : kineticSpecies_) {
+        const Real zom = fi->get_QoQi(s) / fi->get_MoMi(s);
+        MultiFab::Saxpy(nodeNe, zom, nodePlasma[s][iLev], iRho_, 0, 1, 0);
+      }
+      compute_node_electron_pressure(iLev, nodeNe, nodePe);
+    }
+
+    for (MFIter mfi(stateMF); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& state = stateMF[mfi].array();
+
+      for (int s = 0; s < nS && s < nSpecies; s++) {
+        const int iRho = dst.get_iRho(s), iUx = dst.get_iUx(s),
+                  iUy = dst.get_iUy(s), iUz = dst.get_iUz(s),
+                  iP = dst.get_iP(s);
+
+        if (s == iE) {
+          const Real massE = fi->get_MoMi(s);
+          const Array4<Real const>& ne = nodeNe[mfi].const_array();
+          const Array4<Real const>& pe = nodePe[mfi].const_array();
+          // Charge-weighted ion velocity, the electron velocity without the
+          // Hall current. Accumulated below from the per-species momenta.
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            state(i, j, k, iRho) = massE * ne(i, j, k);
+            state(i, j, k, iUx) = 0.0;
+            state(i, j, k, iUy) = 0.0;
+            state(i, j, k, iUz) = 0.0;
+            state(i, j, k, iP) = (ne(i, j, k) > 0.0) ? pe(i, j, k) : 0.0;
+          });
+          for (int si : kineticSpecies_) {
+            const Real zom = fi->get_QoQi(si) / fi->get_MoMi(si);
+            const Array4<Real const>& mom = nodePlasma[si][iLev][mfi].array();
+            ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+              const Real n = ne(i, j, k);
+              if (n > 0.0) {
+                state(i, j, k, iUx) += zom * mom(i, j, k, iMx_) / n;
+                state(i, j, k, iUy) += zom * mom(i, j, k, iMy_) / n;
+                state(i, j, k, iUz) += zom * mom(i, j, k, iMz_) / n;
+              }
+            });
+          }
+          continue;
+        }
+
+        const Array4<Real const>& mom = nodePlasma[s][iLev][mfi].array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real rho = mom(i, j, k, iRho_);
+          if (rho > 0.0) {
+            const Real invRho = 1.0 / rho;
+            state(i, j, k, iRho) = rho;
+            state(i, j, k, iUx) = mom(i, j, k, iMx_) * invRho;
+            state(i, j, k, iUy) = mom(i, j, k, iMy_) * invRho;
+            state(i, j, k, iUz) = mom(i, j, k, iMz_) * invRho;
+            // nodePlasma holds the thermal pressure tensor (see
+            // convert_to_fluid_moments); the scalar pressure is its trace/3.
+            state(i, j, k, iP) = (mom(i, j, k, iPxx_) + mom(i, j, k, iPyy_) +
+                                  mom(i, j, k, iPzz_)) /
+                                 3.0;
+          } else {
+            state(i, j, k, iRho) = 0.0;
+            state(i, j, k, iUx) = 0.0;
+            state(i, j, k, iUy) = 0.0;
+            state(i, j, k, iUz) = 0.0;
+            state(i, j, k, iP) = 0.0;
+          }
+        });
+      }
+    }
+
+    stateMF.FillBoundary(Geom(iLev).periodicity());
   }
 }
 
@@ -1362,9 +1459,8 @@ void Pic::sum_moments(bool updateDt) {
 
     for (int i : kineticSpecies_) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        // nodePlasma[nSpecies] holds the sum of all kinetic species.
-        // In semi-implicit full PIC, kineticSpecies_ excludes the (implicit
-        // fluid) electron.
+        // nodePlasma[nSpecies] holds the sum of all kinetic species, i.e.
+        // all species in full PIC and the ions in hybrid PIC.
         MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                       nMoments, nGst);
       }
@@ -1495,7 +1591,6 @@ void Pic::sum_moments(bool updateDt) {
     convert_and_sum_moments();
   }
 
-
   isMomentsUpdated = true;
 }
 
@@ -1609,7 +1704,7 @@ void Pic::advance_particles_and_sources(int pushStage) {
   // pre-injection.
   if (usePIC) {
     const Real dt = tc->get_dt();
-    for (int i = 0; i < nSpecies; ++i) {
+    for (int i : kineticSpecies_) {
       parts[i]->inject_flux_at_inflow_faces(dt);
     }
   }

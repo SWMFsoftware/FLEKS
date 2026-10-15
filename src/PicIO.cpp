@@ -821,6 +821,12 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
     }
+    // Total mass of the particles of each species (code units), e.g. to
+    // check the source and loss terms against their analytic rates.
+    for (int i = 0; i < nSpecies; ++i) {
+      std::string sName = "Mpart" + std::to_string(i);
+      picLogStream << "\t" << std::setw(wCol) << sName;
+    }
     picLogStream << std::endl;
   }
 
@@ -849,6 +855,11 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           ParallelDescriptor::IOProcessorNumber());
     }
 
+    // total_moments() reduces to the IO processor itself.
+    Vector<Real> speciesMass(nSpecies, 0.0);
+    for (int i = 0; i < nSpecies; ++i)
+      speciesMass[i] = parts[i]->total_moments()[0];
+
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
         picLogStream.open(logFile.c_str(), std::fstream::app);
@@ -868,6 +879,8 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
       }
+      for (int i = 0; i < nSpecies; ++i)
+        picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
       picLogStream << std::endl;
     }
   }

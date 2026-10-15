@@ -363,7 +363,7 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
 # no ionization source term is applied, so the physics checks fail.
 EXO_SOURCE_TESTS = {
     "chargeexchange", "photoionization", "electronimpact",
-    "recombination", "chemistry",
+    "recombination", "chemistry", "reactions",
 }
 
 # Tests that require AMR (nLevMax >= 2).
@@ -380,7 +380,7 @@ AMREX2D_TESTS = {"photoionization", "body"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
-    "chemistry",
+    "chemistry", "reactions",
 }
 
 

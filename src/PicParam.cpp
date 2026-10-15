@@ -340,6 +340,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#ADAPTIVESOURCEPPC") {
     param.read_var("adaptiveSourcePPC", adaptiveSourcePPC);
+  } else if (command == "#SOURCEWEIGHTFLOOR") {
+    param.read_var("minWeightRatio", sourceMinWeightRatio);
+    if (sourceMinWeightRatio < 0)
+      Abort("Invalid #SOURCEWEIGHTFLOOR: minWeightRatio must be >= 0.");
   } else if (command == "#MERGELIGHT") {
     param.read_var("mergeLight", pInfo.mergeLight);
     if (pInfo.mergeLight) {
@@ -872,15 +876,17 @@ void Pic::post_process_param() {
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 
-  // Classify species: in semi-implicit full PIC, negative charge -> implicit
-  // electron. In explicit full PIC and hybrid PIC, all particle species are
-  // kinetic.
+  // Classify species. Every full-PIC species (implicit or explicit) is
+  // kinetic. In hybrid PIC the electrons are a massless fluid, so a
+  // negative-charge species is only a fluid-electron slot (e.g. the species 0
+  // that the #CHEMISTRY / #RECOMBINATION source terms require): it never gets
+  // particles, is never pushed and does not enter the ion charge density.
+  // The charge comes from fi because the particle containers do not exist yet
+  // when the parameters are post-processed.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
-    // Guard: parts may not be fully populated yet.
-    if (!useHybridPIC && !useExplicitPIC && i < (int)parts.size() && parts[i] &&
-        parts[i]->get_charge() < 0) {
+    if (useHybridPIC && fi->get_species_charge(i) < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
     } else {
@@ -1104,7 +1110,7 @@ void Pic::convert_electron_density0() {
   if (rhoMinOhm <= 0)
     rhoMinOhm = 1.0e-6 * electronDensity0;
 
-  Print() << "  electronDensity0: " << electronDensity0In << " [amu/cc] -> "
+  Print() << "  electronDensity0: " << electronDensity0In << " [/cc] -> "
           << electronDensity0
           << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho() << ")\n";
 }
@@ -1215,7 +1221,8 @@ void Pic::convert_inflow_state() {
             << "#PLASMA only defines " << nSpecies
             << "; the extra blocks are ignored.\n";
 
-  // Conversion factors: rho [amu/cc], u [km/s], T [K] -> code units.
+  // Conversion factors: n [/cc] (the "rho" of #INFLOW is a number density, as
+  // in #UNIFORMSTATE), u [km/s], T [K] -> code units.
   const double Si2NoRho = fi->get_Si2NoRho();
   const double rhoFactor = 1.0e6 * cProtonMassSI * Si2NoRho;
   const double vFactor = 1.0e3 * fi->get_Si2NoV();

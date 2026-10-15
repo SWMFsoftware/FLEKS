@@ -14,6 +14,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Photoionization       | `photoionization/`    | Chamberlain neutral atmosphere with photoionization           | [README](photoionization/README.md) |
 | Electron impact       | `electronimpact/`     | Voronov 1997 electron-impact ionization of hot electrons      | [README](electronimpact/README.md) |
 | Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |
+| Reactions             | `reactions/`          | Analytic checks of the source/loss terms against the particle plasma state: ion-neutral chemistry (incl. stiff), recombination (full/hybrid), charge exchange, source weight floor | [README](reactions/README.md) |
 | Whistler & Ohm's law  | `whistler/`           | 1D whistler–Alfvén wave, full generalized Ohm's law, and 4 hybrid timestepping schemes (rk4, rk4-pc, ssprk3, ssprk3-pc) | [README](whistler/README.md) |
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
 | Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |

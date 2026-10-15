@@ -467,7 +467,8 @@ public:
                           const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
-                          const Vel& tpVel = Vel(), amrex::Real dt = -1);
+                          const Vel& tpVel = Vel(), amrex::Real dt = -1,
+                          amrex::Real weightScale = 1.0);
   void inject_particles_at_boundary();
 
   // Inflow (ParticleBC::inflow) particle boundary
@@ -483,7 +484,8 @@ public:
                             amrex::Real dt = -1,
                             amrex::IntVect ppc = amrex::IntVect(),
                             const bool doSelectRegion = false,
-                            const bool adaptivePPC = false);
+                            const bool adaptivePPC = false,
+                            const amrex::Real minWeightRatio = 0.0);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.

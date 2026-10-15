@@ -88,6 +88,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#SMOOTHMOMENTS", ParameterOwner::Pic },
   { "#SOLVEEM", ParameterOwner::Pic },
   { "#SOURCEPARTICLES", ParameterOwner::Pic },
+  { "#SOURCEWEIGHTFLOOR", ParameterOwner::Pic },
   { "#SUPID", ParameterOwner::Pic },
   { "#TESTCASE", ParameterOwner::Pic },
   { "#TESTPARTICLENUMBER", ParameterOwner::ParticleTracker },
@@ -338,6 +339,11 @@ void Domain::init(double time, const int iDomain,
   if (source)
     pic->set_fluid_source(source.get());
 
+  // Copy-constructed after read_param so that it carries fi's final layout.
+  if (source && !domainParameters.initFromSWMF)
+    plasmaState = std::make_unique<FluidInterface>(*fi, gridID,
+                                                   "picPlasmaState", PICFluid);
+
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
   fi->print_info();
@@ -404,6 +410,10 @@ void Domain::calc_refine_region() {
     source->is_new_grid(isNewGrid);
   }
 
+  if (plasmaState) {
+    plasmaState->is_new_grid(isNewGrid);
+  }
+
   if (stateOH) {
     stateOH->is_new_grid(isNewGrid);
   }
@@ -460,7 +470,12 @@ void Domain::update() {
   //   unchanged between couplings, so skip here.
   // - OH-PT: not applicable; charge_exchange() handles source terms.
   if (source && !domainParameters.initFromSWMF) {
-    source->set_source(*fi);
+    // The rates that depend on the plasma (recombination, ion-neutral
+    // chemistry, electron impact, charge exchange) and the loss frequencies
+    // must see the plasma the particles carry now, not the #UNIFORMSTATE.
+    pic->fill_plasma_state(*plasmaState);
+    source->set_dt_si(tc->get_dt_si());
+    source->set_source(*plasmaState);
     source->convert_moment_to_velocity(true, false);
     source->fill_boundary();
     source->fill_loss_boundary();
@@ -592,6 +607,9 @@ void Domain::load_balance() {
   if (source)
     source->load_balance(fi.get());
 
+  if (plasmaState)
+    plasmaState->load_balance(fi.get());
+
   if (stateOH)
     stateOH->load_balance(fi.get());
 
@@ -646,6 +664,10 @@ void Domain::regrid() {
 
   if (source) {
     source->regrid(activeRegion, fi.get());
+  }
+
+  if (plasmaState) {
+    plasmaState->regrid(activeRegion, fi.get());
   }
 
   if (stateOH) {
@@ -754,6 +776,7 @@ void Domain::set_state_var(double *data, int *index,
     // Pic::charge_exchange() using OH-PT charge exchange physics, so
     // set_source must not be called here.
     if (source && !stateOH) {
+      source->set_dt_si(tc->get_dt_si());
       source->set_source(*fi);
       source->convert_moment_to_velocity(true, false);
       source->fill_boundary();

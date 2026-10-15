@@ -468,8 +468,9 @@ the electron pressure gradient term -grad(Pe)/rho in the Ohm's law. Converted to
 code units internally
 (TeCode = TeEV * e / (mp * uNormSI\^2)).
 0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
-otherwise adiabatic Pe = P0 (rho/rho0)\^gamma. electronDensity0 is in code
-units (default 1.0 = reference charge density).
+otherwise adiabatic Pe = P0 (rho/rho0)\^gamma. electronDensity0 is the
+reference electron number density rho0 [/cc] (the same unit as the rho of
+#UNIFORMSTATE), converted to code units internally.
 </command>
 
 <command name="ELECTRONPRESSURE" alias="ELECTRONPRESSURE_FLEKS0,ELECTRONPRESSURE_FLEKS1,ELECTRONPRESSURE_FLEKS2" multiple="T">
@@ -1423,6 +1424,23 @@ T                  useAdaptiveSourcePPC
 
 If it is true, the particle number per cell per step for the sources will 
 be reduced to as low as 1 if the source density is low.
+</command>
+
+<command name="SOURCEWEIGHTFLOOR" alias="SOURCEWEIGHTFLOOR_FLEKS0,SOURCEWEIGHTFLOOR_FLEKS1,SOURCEWEIGHTFLOOR_FLEKS2" multiple="T">
+  <parameter name="minWeightRatio" type="real" min="0" default="0"/>
+
+#SOURCEWEIGHTFLOOR
+1.0e-3             minWeightRatio
+
+Lower limit of the weight of the source particles (#SOURCE), relative to the
+weight of a particle of the reference plasma: the number density of all ions
+of the fluid state (#UNIFORMSTATE in a stand-alone run, the MHD state in a
+coupled run) divided by the particles per cell of #PARTICLES. A cell whose
+source of one step is smaller than one particle of the floor weight gets a
+single particle of the floor weight with the probability source/floor, so the
+injected mass is conserved on average. Without the floor, an extended
+exosphere creates a particle in every cell and every step, most of them with
+negligible weight. The default 0 switches the floor off.
 </command>
 
 <command name="SUPID" alias="SUPID_FLEKS0,SUPID_FLEKS1,SUPID_FLEKS2" multiple="T">
