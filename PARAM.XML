@@ -608,13 +608,21 @@ Pi is computed from the scalar ion pressure Tr(P_i)/3 in nodePlasma.
 
 <command name="FIELDSUBCYCLE" alias="FIELDSUBCYCLE_FLEKS0,FIELDSUBCYCLE_FLEKS1,FIELDSUBCYCLE_FLEKS2" multiple="T">
   <parameter name="nSubcycle" type="integer" min="1" default="1"/>
+  <parameter name="isAutoSubcycle" type="logical" default="F"/>
+  <parameter name="nSubcycleMax" type="integer" min="1" default="40" if="$isAutoSubcycle"/>
 
 #FIELDSUBCYCLE
 1                 nSubcycle
+F                 isAutoSubcycle
+40                nSubcycleMax (if isAutoSubcycle is true)
 
-Number of sub-steps used to advance the electromagnetic fields within one coarse PIC time
-step dt. Applies to both explicit full PIC (explicit Maxwell advance) and hybrid PIC
-(Faraday/Ohm's law advance).
+Subcycling control for electromagnetic field advance:
+- nSubcycle: Number of sub-steps used to advance the electromagnetic fields within one
+  coarse PIC time step dt. Applies to both explicit full PIC (explicit Maxwell advance)
+  and hybrid PIC (Faraday/Ohm's law advance).
+- isAutoSubcycle: Enable dynamic adaptation of subcycling up to nSubcycleMax
+  (hybrid PIC only).
+- nSubcycleMax: Maximum allowed subcycle count when isAutoSubcycle is true.
 </command>
 
 <command name="BSUBCYCLE" alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2" multiple="T">
@@ -625,6 +633,18 @@ step dt. Applies to both explicit full PIC (explicit Maxwell advance) and hybrid
 
 [Deprecated] Number of sub-steps used to advance the magnetic field within one coarse time
 step in the hybrid solver. Please use #FIELDSUBCYCLE instead.
+</command>
+
+<command name="AUTOSUBCYCLE" alias="AUTOSUBCYCLE_FLEKS0,AUTOSUBCYCLE_FLEKS1,AUTOSUBCYCLE_FLEKS2" multiple="T">
+  <parameter name="isAutoSubcycle" type="logical" default="F"/>
+  <parameter name="nBSubcycleMax" type="integer" min="1" default="40" if="$isAutoSubcycle"/>
+
+#AUTOSUBCYCLE
+F                 isAutoSubcycle
+40                nBSubcycleMax (if isAutoSubcycle is true)
+
+[Deprecated] Enable dynamic adaptation of magnetic subcycling up to nBSubcycleMax
+in the hybrid solver. Please use #FIELDSUBCYCLE instead.
 </command>
 
 <command name="HALLTERM" alias="HALLTERM_FLEKS0,HALLTERM_FLEKS1,HALLTERM_FLEKS2" multiple="T">

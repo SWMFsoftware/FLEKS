@@ -24,6 +24,7 @@ struct ParameterCommand {
 static const ParameterCommand parameter_registry[] = {
   { "#ABSORB", ParameterOwner::Pic },
   { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
+  { "#AUTOSUBCYCLE", ParameterOwner::Pic },
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#BODY", ParameterOwner::Pic },
   { "#BODYBOUNDARY", ParameterOwner::Pic },
@@ -119,7 +120,8 @@ const ParameterCommand *find_parameter_command(const std::string &command) {
 }
 
 bool is_singleton_command(const std::string &command) {
-  static const char *const singletonCommands[] = { "#BSUBCYCLE",
+  static const char *const singletonCommands[] = { "#AUTOSUBCYCLE",
+                                                   "#BSUBCYCLE",
                                                    "#DISCRETIZE",
                                                    "#ELECTRONADVECTION",
                                                    "#ELECTRONCOLLISION",

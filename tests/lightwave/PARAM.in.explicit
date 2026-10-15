@@ -34,7 +34,8 @@ explicit
 leapfrog
 
 #FIELDSUBCYCLE
-2
+2                       nSubcycle
+F                       isAutoSubcycle
 
 #PLASMA
 1                       nSpecies

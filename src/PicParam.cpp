@@ -421,6 +421,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#FIELDSUBCYCLE") {
     hasFieldSubcycle_ = true;
     param.read_var("nSubcycle", nSubcycle);
+    param.read_optional("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_optional("nSubcycleMax", nBSubcycleMax);
+    }
     nBSubcycle = nSubcycle;
     nEMSubcycle = nSubcycle;
   } else if (command == "#BSUBCYCLE") {
@@ -428,8 +432,19 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     Print()
         << "  Warning: #BSUBCYCLE is deprecated; use #FIELDSUBCYCLE instead.\n";
     param.read_var("nBSubcycle", nBSubcycle);
+    param.read_optional("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_optional("nBSubcycleMax", nBSubcycleMax);
+    }
     nSubcycle = nBSubcycle;
     nEMSubcycle = nBSubcycle;
+  } else if (command == "#AUTOSUBCYCLE") {
+    Print() << "  Warning: #AUTOSUBCYCLE is deprecated; use #FIELDSUBCYCLE "
+               "instead.\n";
+    param.read_var("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_var("nBSubcycleMax", nBSubcycleMax);
+    }
   } else if (command == "#HALLTERM") {
     hasHallTerm_ = true;
     param.read_var("useHallTerm", useHallTerm);
@@ -666,6 +681,11 @@ void Pic::post_process_param() {
   // the input deck describes.
   if (nSubcycle < 1)
     Abort("Invalid #FIELDSUBCYCLE: nSubcycle must be at least 1.");
+  if (isAutoSubcycle && !useHybridPIC)
+    Abort("Auto-subcycling (#FIELDSUBCYCLE isAutoSubcycle=T) is currently "
+          "only supported for the hybrid PIC solver.");
+  if (isAutoSubcycle && nBSubcycleMax < nSubcycle)
+    Abort("Invalid #FIELDSUBCYCLE: nSubcycleMax must be >= nSubcycle.");
   if (electronGamma <= 0)
     Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
   if (electronDensity0In <= 0)
