@@ -347,6 +347,7 @@ public:
 
   // Fill neuAvg[iLev] for the nodes of nodeFluid[iLev].
   void build_neutral_average(int iLev) {
+    timing_func("UserSource::build_neutral_average");
     const int nC = nExoComponent;
     if (static_cast<int>(neuAvg.size()) < n_lev_max()) {
       neuAvg.resize(n_lev_max());
@@ -426,14 +427,25 @@ public:
   }
 
   // Make sure the neutral averages match the current grid of every level.
+  // The averages are expensive (minutes on a refined grid), so a load
+  // balance, which only moves the boxes between processors, copies them.
   void update_neutral_average() {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (nodeFluid[iLev].empty())
         continue;
-      if (iLev < static_cast<int>(neuAvg.size()) && !neuAvg[iLev].empty() &&
-          neuAvgGrids[iLev] == nodeFluid[iLev].boxArray() &&
-          neuAvg[iLev].DistributionMap() == nodeFluid[iLev].DistributionMap())
+      const bool cached =
+          iLev < static_cast<int>(neuAvg.size()) && !neuAvg[iLev].empty();
+      if (cached && neuAvgGrids[iLev] == nodeFluid[iLev].boxArray()) {
+        if (neuAvg[iLev].DistributionMap() !=
+            nodeFluid[iLev].DistributionMap()) {
+          amrex::MultiFab moved(nodeFluid[iLev].boxArray(),
+                                nodeFluid[iLev].DistributionMap(),
+                                neuAvg[iLev].nComp(), 0);
+          moved.ParallelCopy(neuAvg[iLev]);
+          neuAvg[iLev] = std::move(moved);
+        }
         continue;
+      }
       build_neutral_average(iLev);
     }
   }
@@ -1052,6 +1064,7 @@ public:
 
   // Set nodeFluid from plasma-state-dependent ionization processes.
   void set_source(const FluidInterface& other) override {
+    timing_func("UserSource::set_source");
     set_node_fluid(other);
     set_node_loss_fluid_to_zero();
 

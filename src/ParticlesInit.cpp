@@ -374,7 +374,13 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                 for (int iS = 0; iS < fi->get_nS(); iS++)
                   if (fi->get_species_charge(iS) > 0)
                     nRef += fi->get_number_density(mfi, xyzC, iS, iLev);
-                const Real wMin = minWeightRatio * nRef / initPPCFloor;
+                // The reference particle of the cell: with #CONSTANTPPV a
+                // refined cell has fewer particles per cell than the base.
+                const Real ppcRef =
+                    (isTargetPPCDefined && !isFake2D)
+                        ? static_cast<Real>(target_PPC(iLev)[mfi].array()(ijk))
+                        : initPPCFloor;
+                const Real wMin = minWeightRatio * nRef / ppcRef;
 
                 if (nSource <= 0.0)
                   continue;
