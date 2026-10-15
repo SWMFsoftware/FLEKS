@@ -2276,10 +2276,9 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
       Real dtOld = tc->get_dt();
       if (dtOld > 0.0) {
-        // Fast drop allowed (down to 0.10x floor), smooth growth limited
-        // to 1.10x
+        // Allow stability limits to force an immediate drop; limit growth to
+        // 1.10x.
         dtNext = std::min(dtTarget, static_cast<Real>(1.10) * dtOld);
-        dtNext = std::max(dtNext, static_cast<Real>(0.10) * dtOld);
       } else {
         dtNext = dtTarget;
       }
@@ -2323,10 +2322,9 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
       Real dtOld = tc->get_dt();
       if (dtOld > 0.0) {
-        // Fast drop allowed (down to 0.10x floor), smooth growth limited
-        // to 1.10x
+        // Allow stability limits to force an immediate drop; limit growth to
+        // 1.10x.
         dtNext = std::min(dtTarget, static_cast<Real>(1.10) * dtOld);
-        dtNext = std::max(dtNext, static_cast<Real>(0.10) * dtOld);
       } else {
         dtNext = dtTarget;
       }

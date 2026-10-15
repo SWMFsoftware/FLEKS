@@ -190,15 +190,12 @@ def validate_log(pic_diags=None, test_name=None):
             dt_min = min(dts)
             dt_max = max(dts)
             logger.debug("    Adaptive dt range: [%.4e, %.4e]", dt_min, dt_max)
-            # Check rate limiting between consecutive steps (floor 0.10x, growth 1.10x + margin)
+            # Stability limits may force an immediate drop; only growth is rate-limited.
             for i in range(1, len(dts)):
                 ratio = dts[i] / dts[i - 1]
                 if ratio > 1.15:
                     return False, (f"Timestep growth between steps {i} and {i+1} "
                                    f"exceeded rate limit: ratio={ratio:.3f} > 1.15")
-                if ratio < 0.08:
-                    return False, (f"Timestep drop between steps {i} and {i+1} "
-                                   f"exceeded rate limit: ratio={ratio:.3f} < 0.08")
 
     return True, "Passed (finite, bounded Eb and valid adaptive dt)"
 
