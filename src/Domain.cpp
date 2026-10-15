@@ -28,6 +28,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#BODY", ParameterOwner::Pic },
   { "#BODYBOUNDARY", ParameterOwner::Pic },
+  { "#BODYIONOSPHERE", ParameterOwner::Pic },
   { "#BSUBCYCLE", ParameterOwner::Pic },
   { "#CMAXE", ParameterOwner::Pic },
   { "#COMOVING", ParameterOwner::Pic },
@@ -110,6 +111,16 @@ static const ParameterCommand parameter_registry[] = {
 };
 
 const ParameterCommand *find_parameter_command(const std::string &command) {
+  // The look-up is a binary search: an entry out of order makes commands
+  // silently unknown ("Can not find this command").
+  static const bool isSorted = std::is_sorted(
+      std::begin(parameter_registry), std::end(parameter_registry),
+      [](const ParameterCommand &a, const ParameterCommand &b) {
+        return std::strcmp(a.name, b.name) < 0;
+      });
+  if (!isSorted)
+    amrex::Abort("Error: parameter_registry in Domain.cpp is not sorted.");
+
   const auto it = std::lower_bound(
       std::begin(parameter_registry), std::end(parameter_registry), command,
       [](const ParameterCommand &entry, const std::string &value) {
@@ -476,6 +487,7 @@ void Domain::update() {
     pic->fill_plasma_state(*plasmaState);
     source->set_dt_si(tc->get_dt_si());
     source->set_source(*plasmaState);
+    pic->mask_body_source(*source);
     source->convert_moment_to_velocity(true, false);
     source->fill_boundary();
     source->fill_loss_boundary();
@@ -778,6 +790,7 @@ void Domain::set_state_var(double *data, int *index,
     if (source && !stateOH) {
       source->set_dt_si(tc->get_dt_si());
       source->set_source(*fi);
+      pic->mask_body_source(*source);
       source->convert_moment_to_velocity(true, false);
       source->fill_boundary();
       source->fill_loss_boundary();

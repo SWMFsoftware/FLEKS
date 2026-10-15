@@ -416,6 +416,9 @@ protected:
   amrex::Real bodyAbsorbCount = 0;
   amrex::Real bodyAbsorbCharge = 0;
   amrex::Real bodyAbsorbMass = 0;
+  // Cumulative number / mass of the particles injected by #BODYIONOSPHERE.
+  amrex::Real bodyInjectCount = 0;
+  amrex::Real bodyInjectMass = 0;
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
@@ -468,7 +471,19 @@ public:
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel& tpVel = Vel(), amrex::Real dt = -1,
-                          amrex::Real weightScale = 1.0);
+                          amrex::Real weightScale = 1.0,
+                          bool allowBody = false);
+
+  // Ionospheric boundary of the inner body (#BODYIONOSPHERE): refill the
+  // one-cell-thick surface layer of the body with a Maxwellian of number
+  // density nDensAt(xyz) [code units, xyz relative to the body center], thermal
+  // speed vth and zero bulk velocity. Called after every push, like the ghost
+  // cells of a domain boundary: the layer is part of the moments and of the
+  // field solve, the particles that leave the body in the next push enter the
+  // plasma and the others are absorbed by the body.
+  void inject_particles_at_body(
+      const std::function<amrex::Real(const amrex::Real*)>& nDensAt,
+      amrex::Real vth);
   void inject_particles_at_boundary();
 
   // Inflow (ParticleBC::inflow) particle boundary
@@ -1213,6 +1228,8 @@ public:
   amrex::Real get_body_absorb_count() const { return bodyAbsorbCount; }
   amrex::Real get_body_absorb_charge() const { return bodyAbsorbCharge; }
   amrex::Real get_body_absorb_mass() const { return bodyAbsorbMass; }
+  amrex::Real get_body_inject_count() const { return bodyInjectCount; }
+  amrex::Real get_body_inject_mass() const { return bodyInjectMass; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

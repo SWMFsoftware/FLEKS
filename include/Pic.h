@@ -387,6 +387,19 @@ private:
   // Weight floor of the source particles relative to a reference particle
   // (#SOURCEWEIGHTFLOOR); 0 switches it off.
   amrex::Real sourceMinWeightRatio = 0.0;
+
+  // Ionospheric boundary of the inner body (#BODYIONOSPHERE). The input is
+  // per species n0 [/cc], T [K] and the solar-zenith-angle exponent p of
+  //   n = n0 * max(cos(SZA), cosSzaFloor)^p;
+  // a kinetic electron species gets the quasi-neutral sum of the ions.
+  struct BodyIonosphere {
+    bool use = false;
+    amrex::Real solarDir[3] = { 1.0, 0.0, 0.0 };
+    amrex::Real cosSzaFloor = 1.0e-3;
+    amrex::Vector<amrex::Real> n0SI, tempSI, szaExponent;
+    // Code units, set by convert_body_ionosphere().
+    amrex::Vector<amrex::Real> n0, vth;
+  } bodyIono;
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;
@@ -731,6 +744,7 @@ public:
   void convert_electron_heat_conduction();
   void convert_electron_collision();
   void convert_inflow_state();
+  void convert_body_ionosphere();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
   void convert_intrinsic_B();
@@ -768,6 +782,9 @@ public:
 
   void fill_source_particles();
 
+  // Refill the ghost layer of the body with the #BODYIONOSPHERE plasma.
+  void inject_body_ionosphere();
+
   // Write the plasma state of the particles (per-species density, bulk
   // velocity and scalar pressure, from the moments of the last update) into
   // the stand-alone state `dst`, which has fi's layout. In hybrid PIC the
@@ -775,6 +792,9 @@ public:
   // velocity and the electron pressure of the hybrid closure. Used by the
   // stand-alone source terms, whose rates depend on the local plasma.
   void fill_plasma_state(FluidInterface &dst);
+
+  // Zero the source terms (production) at the nodes inside the inner body.
+  void mask_body_source(SourceInterface &src);
 
   void inject_particles_for_new_cells() {
     if (!usePIC)

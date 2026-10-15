@@ -1426,6 +1426,50 @@ If it is true, the particle number per cell per step for the sources will
 be reduced to as low as 1 if the source density is low.
 </command>
 
+<command name="BODYIONOSPHERE" alias="BODYIONOSPHERE_FLEKS0,BODYIONOSPHERE_FLEKS1,BODYIONOSPHERE_FLEKS2" multiple="F">
+  <parameter name="solarDirX" type="real" default="1.0"/>
+  <parameter name="solarDirY" type="real" default="0.0"/>
+  <parameter name="solarDirZ" type="real" default="0.0"/>
+  <parameter name="cosSzaFloor" type="real" min="0" max="1" default="1e-3"/>
+  <for from="1" to="$nS">
+    <parameter name="n0" type="real" min="0" default="0"/>
+    <parameter name="T" type="real" min="0" default="0"/>
+    <parameter name="szaExponent" type="real" default="0"/>
+  </for>
+
+#BODYIONOSPHERE
+1.0                solarDirX   unit vector toward the Sun
+0.0                solarDirY
+0.0                solarDirZ
+1.0e-3             cosSzaFloor
+0.0                n0 [/cc]    Species 0: electron (quasi-neutral sum, n0 ignored)
+3000.0             T [K]
+0.0                szaExponent
+1.0e3              n0 [/cc]    Species 1: O2+
+1000.0             T [K]
+0.5                szaExponent n ~ sqrt(cos SZA)
+
+Ionospheric boundary condition of the inner body (#BODY, #BODYBOUNDARY with
+particleBoundary absorb). After every particle push (and at the start) the
+one-cell-thick surface layer of the body is refilled with a Maxwellian of each
+species at rest, with the number density
+n = n0 * max(cos(SZA), cosSzaFloor)^szaExponent and the temperature T. The
+layer acts as the ghost cells of a density (Dirichlet) boundary, like the
+photochemical-equilibrium body of BATSRUS ModUserMars: it is part of the
+moments, the current and the field solve (so the charge of the ionospheric
+plasma sets the ambipolar field), the particles that leave the body in the
+next push become plasma and the others are absorbed. One block per species in #PLASMA order. A kinetic
+electron species always gets the quasi-neutral sum of the ions (its n0 is
+ignored); in hybrid PIC the electron slot has no particles. The PIC log gains
+the cumulative nBodyInject and mBodyInject columns (the injected particles
+that stay in the body are counted in nBodyAbsorb/mBodyAbsorb as well).
+The body nodes carry no source or loss terms (#SOURCE), so the thermosphere
+below a raised body does not react. Hybrid PIC is the intended use. In full
+PIC the layer is reset to a neutral plasma at rest every step, which erases
+its polarization charge: the magnetized electrons E x B drift out of it while
+the cold ions stay, and the plasma charges up (experimental).
+</command>
+
 <command name="SOURCEWEIGHTFLOOR" alias="SOURCEWEIGHTFLOOR_FLEKS0,SOURCEWEIGHTFLOOR_FLEKS1,SOURCEWEIGHTFLOOR_FLEKS2" multiple="T">
   <parameter name="minWeightRatio" type="real" min="0" default="0"/>
 

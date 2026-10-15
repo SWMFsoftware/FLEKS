@@ -32,12 +32,14 @@ using namespace amrex;
  * @param dt Time step for density change rate.
  * @param weightScale Factor applied to every particle weight (the weight
  * floor of the source particles, see add_particles_source()).
+ * @param allowBody Also fill a cell inside the inner body (the ionospheric
+ * ghost layer of inject_particles_at_body()).
  */
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
-    const Vel& tpVel, Real dt, Real weightScale) {
+    const Vel& tpVel, Real dt, Real weightScale, bool allowBody) {
 
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
@@ -61,7 +63,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   // particle absorption and the field mask. This covers the initial fill, the
   // source particles and the boundary (ghost) injection, which all funnel
   // through this function.
-  if (grid != nullptr && grid->use_body()) {
+  if (grid != nullptr && grid->use_body() && !allowBody) {
     Real cellCenter[nDim];
     for (int iDim = 0; iDim < nDim; iDim++)
       cellCenter[iDim] = (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
@@ -396,6 +398,57 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 }
 
 //==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::inject_particles_at_body(
+    const std::function<Real(const Real*)>& nDensAt, Real vth) {
+  timing_func("Pts::inject_particles_at_body");
+
+  if (grid == nullptr || !grid->use_body())
+    return;
+
+  const Real* center = grid->get_body_center();
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const Real vol = dx[iLev].product();
+    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const auto& status = cell_status(iLev)[mfi].array();
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const int st = status(i, j, k);
+            // The surface layer: body cells that touch the plasma.
+            if (!bit::is_body(st) || bit::is_body_interior(st) ||
+                bit::is_refined(st))
+              continue;
+
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            Real xyz[3] = { 0.0, 0.0, 0.0 };
+            for (int iDim = 0; iDim < nDim; iDim++)
+              xyz[iDim] = (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim] -
+                          center[iDim];
+
+            const Real n = nDensAt(xyz);
+            if (n <= 0)
+              continue;
+
+            Vel state;
+            state.tag = speciesID;
+            state.nDens = n;
+            state.vth = vth;
+            add_particles_cell(iLev, mfi, ijk, fi, false, IntVect(), state, -1,
+                               1.0, true);
+            bodyInjectCount += product(nPartPerCell);
+            // Same sign convention as body_absorb_tally (weight * mass).
+            bodyInjectMass += qomSign * n * vol * mass;
+          }
+    }
+  }
+}
+
+//==========================================================
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
@@ -510,7 +563,9 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
   template void T::add_particles_domain();                                     \
   template void T::add_particles_cell(const int, const MFIter&, const IntVect, \
                                       const FluidInterface*, bool, IntVect,    \
-                                      const Vel&, Real, Real);                 \
+                                      const Vel&, Real, Real, bool);           \
+  template void T::inject_particles_at_body(                                   \
+      const std::function<Real(const Real*)>&, Real);                          \
   template void T::add_particles_source(                                       \
       const FluidInterface*, const FluidInterface* const, Real, IntVect,       \
       const bool, const bool, const Real);                                     \

@@ -690,7 +690,13 @@ public:
           "(negative charge). Got Q/Qi[0] = " + std::to_string(QoQi_S[0]) +
           ". Reorder #PLASMA so the electron is first.");
     }
-    if (nExoComponent > nS - 1) {
+    // #PHOTOIONIZATION, #ELECTRONIMPACT and #CHARGEEXCHANGE turn component iC
+    // into ion species iC + 1. #CHEMISTRY names the product of every reaction
+    // explicitly, so any number of components may feed the same ion (e.g. the
+    // cold and the hot oxygen corona).
+    const bool mapsComponentToIon =
+        usePhotoIonization || useElectronImpact || useChargeExchange;
+    if (mapsComponentToIon && nExoComponent > nS - 1) {
       amrex::Abort(printPrefix + "Error: #EXOSPHERE nComponent (" +
                    std::to_string(nExoComponent) +
                    ") exceeds the number of ion species (" +

@@ -181,6 +181,8 @@ public:
     return get_value_at_loc(nodeLossFluid[iLev], mfi, Geom(iLev), xyz, iSp);
   }
 
+  amrex::MultiFab& get_node_loss_fluid(int iLev) { return nodeLossFluid[iLev]; }
+
   bool use_loss_source() const {
     return useRecombination || useChemistry || useChargeExchange;
   }

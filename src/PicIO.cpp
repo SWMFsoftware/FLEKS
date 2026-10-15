@@ -820,6 +820,9 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
+      if (bodyIono.use)
+        picLogStream << "\t" << std::setw(wCol) << "nBodyInject" << "\t"
+                     << std::setw(wCol) << "mBodyInject";
     }
     // Total mass of the particles of each species (code units), e.g. to
     // check the source and loss terms against their analytic rates.
@@ -843,12 +846,14 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
     // Cumulative number / charge / mass of the particles absorbed by the
     // inner body (#BODY), summed over all species and all MPI ranks.
-    Vector<Real> bodyAbsorb(3, 0.0);
+    Vector<Real> bodyAbsorb(5, 0.0);
     if (useBody) {
       for (auto& part : parts) {
         bodyAbsorb[0] += part->get_body_absorb_count();
         bodyAbsorb[1] += part->get_body_absorb_charge();
         bodyAbsorb[2] += part->get_body_absorb_mass();
+        bodyAbsorb[3] += part->get_body_inject_count();
+        bodyAbsorb[4] += part->get_body_inject_mass();
       }
       ParallelDescriptor::ReduceRealSum(
           bodyAbsorb.data(), bodyAbsorb.size(),
@@ -878,6 +883,9 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
+        if (bodyIono.use)
+          picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[3] << "\t"
+                       << std::setw(wCol) << bodyAbsorb[4];
       }
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
