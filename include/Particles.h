@@ -77,6 +77,9 @@ public:
 
   bool isParticleLocationRandom = true;
   bool isPPVconstant = false;
+  // #CONSTANTPPV: lower limit of the particles per cell and dimension on the
+  // refined levels (1 = the plain constant particles per volume).
+  int minPPCPerDim = 1;
   bool doPreSplitting = false;
 
   bool fastMerge = false;

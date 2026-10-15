@@ -243,6 +243,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("isParticleLocationRandom", pInfo.isParticleLocationRandom);
   } else if (command == "#CONSTANTPPV") {
     param.read_var("isPPVconstant", pInfo.isPPVconstant);
+    if (pInfo.isPPVconstant) {
+      param.read_optional("minPPCPerDim", pInfo.minPPCPerDim);
+      if (pInfo.minPPCPerDim < 1)
+        Abort("Invalid #CONSTANTPPV: minPPCPerDim must be >= 1.");
+    }
   } else if (command == "#PRESPLITTING") {
     param.read_var("doPreSplitting", pInfo.doPreSplitting);
   } else if (command == "#DIVE") {

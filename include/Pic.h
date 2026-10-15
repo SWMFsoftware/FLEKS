@@ -1227,9 +1227,12 @@ public:
           amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
           if (pInfo.isPPVconstant) {
             int tmp = 1;
+            // The integer division would leave a deep level without
+            // particles; minPPCPerDim keeps a few per cell and dimension.
             for (int i = 0; i < nDim; i++) {
-              tmp *=
-                  (pInfo.nPartPerCell[i] / pow((ref_ratio[iLev].max()), iLev));
+              const int n = static_cast<int>(
+                  pInfo.nPartPerCell[i] / pow((ref_ratio[iLev].max()), iLev));
+              tmp *= std::max(n, pInfo.minPPCPerDim);
             }
             ppcArr(ijk, 0) = tmp;
           } else {
