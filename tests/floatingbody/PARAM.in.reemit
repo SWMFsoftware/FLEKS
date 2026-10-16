@@ -1,0 +1,117 @@
+#DESCRIPTION
+Floating body (FLOATINGBODY): an absorbing sphere of radius 1.5 in a uniform
+electron-proton plasma at rest (T = 1e5 K, mi/me = 16), full PIC with the
+fields off (ballistic particles) and reflecting walls (closed box).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-4.0                    xMin
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-4.0                    zMin
+ 4.0                    zMax
+
+#NCELL
+24                      nCellX
+24                      nCellY
+24                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+F                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e6                   uNormSI
+
+#BODY
+sphere                  type
+1.5                     radius
+0.0                     center x
+0.0                     center y
+0.0                     center z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+insulating              fieldBoundary
+
+#SOLVEEM
+F                       solveEM
+
+#PLASMA
+2                       nSpecies
+0.0625                  mass        Species 0: electron (mi/me = 16)
+-1.0                    charge
+1.0                     mass        Species 1: H+
+1.0                     charge
+
+#UNIFORMSTATE
+1.0                     rho [/cc]  Species 0: electron
+0.0                     ux
+0.0                     uy
+0.0                     uz
+100000.0                T [K]
+1.0                     rho [/cc]  Species 1: H+
+0.0                     ux
+0.0                     uy
+0.0                     uz
+100000.0                T [K]
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#FIELDBOXBOUNDARY
+outflow                 x-
+outflow                 x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#PARTICLEBOXBOUNDARY
+reflect                 x-
+reflect                 x+
+reflect                 y-
+reflect                 y+
+reflect                 z-
+reflect                 z+
+
+#FLOATINGBODY
+reemit                  type
+1.8e5                   radius [m]  re-emission sphere (body 1.5e5 m, cells 3.3e4 m)
+100000.0                T [K]
+8                       particlesPerCell
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#PARTICLES
+3                       npcelx
+3                       npcely
+3                       npcelz
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+-1                      MaxIter
+20.0                    TimeMax

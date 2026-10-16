@@ -1479,6 +1479,58 @@ its polarization charge: the magnetized electrons E x B drift out of it while
 the cold ions stay, and the plasma charges up (experimental).
 </command>
 
+<command name="FLOATINGBODY" alias="FLOATINGBODY_FLEKS0,FLOATINGBODY_FLEKS1,FLOATINGBODY_FLEKS2" multiple="F">
+  <parameter name="type" type="string" input="select">
+    <option name="sheath" default="T"/>
+    <option name="reemit"/>
+  </parameter>
+  <if expr="$type eq 'sheath'">
+    <parameter name="relaxationTime" type="real" min="0" default="1.0"/>
+  </if>
+  <if expr="$type eq 'reemit'">
+    <parameter name="radius" type="real" min="0"/>
+    <parameter name="T" type="real" min="0"/>
+    <parameter name="particlesPerCell" type="integer" min="1" default="8"/>
+  </if>
+
+#FLOATINGBODY
+sheath             type
+1.0                relaxationTime [s]
+
+Full PIC only (ignored in hybrid PIC, whose fluid electrons are
+quasi-neutral). Makes the absorbing body (#BODYBOUNDARY particleBoundary
+absorb) float: an object in a plasma charges up until it takes no net
+current, but the absorbing body has no surface charge and would take the
+electrons, which reach it faster than the ions, without limit, so the
+plasma charges positive. The body is one conductor (the ionosphere): the
+condition is on its total current.
+
+sheath: a subgrid sheath (the Debye length is far below the cell size). An
+electron that enters the sphere is absorbed only if its normal kinetic energy
+per charge exceeds the body potential phi, otherwise it is reflected
+specularly; ions are always absorbed. phi starts at 0 and follows an integral
+control toward zero net absorbed current with the relaxation time
+relaxationTime [s], in units of the mean normal energy per charge of the
+electrons that reach the sphere (about kT_e/e). For Maxwellian fluxes the
+balance is at e phi = kT_e ln(sigma_e/sigma_i). The test of the sphere uses
+the exact radius, so the staircase body cells outside it do not absorb
+electrons.
+
+reemit: the net electron charge absorbed in a step (if the electrons
+dominate) is re-emitted in the next one as an outward half-Maxwellian of
+temperature T [K], spread over the plasma cells crossed by the sphere of the
+given radius [m] by their area, with particlesPerCell particles per cell; the
+current closes through the body. It is counted in nBodyInject/mBodyInject.
+
+The PIC log gains, for each species, the cumulative signed charge absorbed by
+the body (qBodyS0, qBodyS1, ...), and the potential phiBody [V], the number of
+reflected electrons nBodyReflect, the cumulative weight of the electrons that
+reached the sphere wBodyHit, their weight times normal energy per charge
+eBodyHit [V] (the difference of eBodyHit over that of wBodyHit is the mean
+normal energy of the electrons that reach the body) and the re-emitted charge
+qBodyReemit.
+</command>
+
 <command name="IONOSPHEREEMISSION" alias="IONOSPHEREEMISSION_FLEKS0,IONOSPHEREEMISSION_FLEKS1,IONOSPHEREEMISSION_FLEKS2" multiple="F">
   <parameter name="radius" type="real" min="0" default="0"/>
   <parameter name="solarDirX" type="real" default="1.0"/>

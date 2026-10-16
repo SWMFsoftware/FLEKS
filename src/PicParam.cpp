@@ -405,6 +405,24 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       if (ie.rateSI[iS] < 0 || ie.tempSI[iS] < 0)
         Abort("Invalid #IONOSPHEREEMISSION: totalRate and T must be >= 0.");
     }
+  } else if (command == "#FLOATINGBODY") {
+    auto& fb = floatingBody;
+    fb.use = true;
+    param.read_var("type", fb.type);
+    if (fb.type == "sheath") {
+      param.read_var("relaxationTime", fb.tauSI);
+      if (fb.tauSI <= 0)
+        Abort("Error: #FLOATINGBODY relaxationTime must be positive.");
+    } else if (fb.type == "reemit") {
+      param.read_var("radius", fb.radiusSI);
+      param.read_var("T", fb.tempSI);
+      param.read_var("particlesPerCell", fb.nPPC);
+      if (fb.radiusSI <= 0 || fb.tempSI < 0 || fb.nPPC < 1)
+        Abort("Error: #FLOATINGBODY reemit needs radius > 0, T >= 0 and "
+              "particlesPerCell >= 1.");
+    } else {
+      Abort("Error: #FLOATINGBODY type must be sheath or reemit.");
+    }
   } else if (command == "#IONOSPHEREEMISSIONPROFILE") {
     param.read_var("type", ionoEmission.profile);
     if (ionoEmission.profile == "photochemistry")
@@ -1072,6 +1090,7 @@ void Pic::finalize_units_conversion() {
   convert_inflow_state();
   convert_body_ionosphere();
   convert_ionosphere_emission();
+  convert_floating_body();
   check_light_speed();
   convert_intrinsic_B();
 }
@@ -1102,6 +1121,38 @@ void Pic::convert_ionosphere_emission() {
                            : std::to_string(ie.rateSI[iS]) + " /s")
             << ", T = " << ie.tempSI[iS] << " K\n";
   }
+}
+
+//==========================================================
+void Pic::convert_floating_body() {
+  auto& fb = floatingBody;
+  if (!fb.use)
+    return;
+  if (!useBody || bodyParticleBC != ParticleBC::absorb)
+    Abort("Error: #FLOATINGBODY needs an absorbing body (#BODY, "
+          "#BODYBOUNDARY particleBoundary absorb).");
+  if (useHybridPIC) {
+    Print() << "Warning: #FLOATINGBODY is ignored in hybrid PIC (the fluid "
+               "electrons are quasi-neutral).\n";
+    fb.use = false;
+    return;
+  }
+  int iE = -1;
+  for (int i : kineticSpecies_)
+    if (fi->get_species_charge(i) < 0 && iE < 0)
+      iE = i;
+  if (iE < 0)
+    Abort("Error: #FLOATINGBODY needs a kinetic electron species.");
+  const double unormSI = fi->get_unorm_si();
+  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
+  fb.vth = std::sqrt(fb.tempSI * tFactor / fi->get_species_mass(iE));
+  if (fb.type == "sheath")
+    Print() << "  #FLOATINGBODY sheath: relaxation time " << fb.tauSI
+            << " s\n";
+  else
+    Print() << "  #FLOATINGBODY reemit: r = " << fb.radiusSI / 1e3
+            << " km, T = " << fb.tempSI << " K, " << fb.nPPC
+            << " particles per cell\n";
 }
 
 //==========================================================

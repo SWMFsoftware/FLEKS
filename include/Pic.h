@@ -408,6 +408,21 @@ private:
   // a = noon + (night - noon)(1 - cos SZA) on the dayside, a = night on the
   // nightside, as an outward half-Maxwellian of temperature T. A kinetic
   // electron species gets the charge of the injected ions.
+  // Weights of the plasma cells crossed by a sphere around the body center:
+  // area of the sphere in the cell times a profile, normalized to 1 over all
+  // levels and ranks. Cached per grid.
+  struct ShellWeights {
+    amrex::Vector<amrex::MultiFab> weight;
+    amrex::Vector<amrex::BoxArray> grids;
+    amrex::Vector<amrex::DistributionMapping> dms;
+  };
+  bool shell_weights_up_to_date(const ShellWeights &sw);
+  void build_shell_weights(
+      ShellWeights &sw, amrex::Real radiusSI,
+      const std::function<amrex::Real(const amrex::Real *, amrex::Real)>
+          &profile,
+      const std::string &name);
+
   struct IonosphereEmission {
     bool use = false;
     amrex::Real radiusSI = 0;
@@ -422,10 +437,30 @@ private:
     amrex::Vector<amrex::Real> rateSI, tempSI;
     // Code units / caches.
     amrex::Vector<amrex::Real> vth;
-    amrex::Vector<amrex::MultiFab> weight; // area * profile, normalized
-    amrex::Vector<amrex::BoxArray> weightGrids;
-    amrex::Vector<amrex::DistributionMapping> weightDMs;
+    ShellWeights shell; // area * profile
   } ionoEmission;
+
+  // #FLOATINGBODY: the absorbing body floats, i.e. it takes no net current.
+  // sheath: a body potential phi (code units of energy per charge), relaxed
+  // with the time tau toward zero net absorbed current, reflects the
+  // electrons whose normal energy is below it (subgrid sheath).
+  // reemit: the net electron charge absorbed in a step is re-emitted as an
+  // outward half-Maxwellian of temperature T over the sphere of the given
+  // radius (current closure through the conducting body).
+  struct FloatingBody {
+    bool use = false;
+    std::string type = "sheath";
+    amrex::Real tauSI = 1.0;
+    amrex::Real radiusSI = 0, tempSI = 0, vth = 0;
+    int nPPC = 8;
+    amrex::Real phi = 0;
+    // Cumulative global tallies at the last update.
+    amrex::Real qIon = 0, qEle = 0, hitW = 0, hitE = 0, nReflect = 0;
+    amrex::Real qReemit = 0;
+    ShellWeights shell; // area only
+  } floatingBody;
+
+  void update_floating_body();
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;
@@ -772,6 +807,7 @@ public:
   void convert_inflow_state();
   void convert_body_ionosphere();
   void convert_ionosphere_emission();
+  void convert_floating_body();
   void check_light_speed();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.

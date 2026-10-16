@@ -904,64 +904,40 @@ void Pic::inject_body_ionosphere() {
 }
 
 //==========================================================
-void Pic::build_emission_weights() {
-  timing_func("Pic::build_emission_weights");
-  auto& ie = ionoEmission;
-
-  bool upToDate = (int)ie.weight.size() == n_lev();
+bool Pic::shell_weights_up_to_date(const ShellWeights& sw) {
+  bool upToDate = (int)sw.weight.size() == n_lev();
   for (int iLev = 0; upToDate && iLev < n_lev(); iLev++)
-    upToDate = ie.weightGrids[iLev] == cell_status(iLev).boxArray() &&
-               ie.weightDMs[iLev] == cell_status(iLev).DistributionMap();
-  if (upToDate)
-    return;
+    upToDate = sw.grids[iLev] == cell_status(iLev).boxArray() &&
+               sw.dms[iLev] == cell_status(iLev).DistributionMap();
+  return upToDate;
+}
 
-  ie.weight.clear();
-  ie.weight.resize(n_lev());
-  ie.weightGrids.resize(n_lev());
-  ie.weightDMs.resize(n_lev());
+//==========================================================
+void Pic::build_shell_weights(
+    ShellWeights& sw, Real radiusSI,
+    const std::function<Real(const Real*, Real)>& profile,
+    const std::string& name) {
+  timing_func("Pic::build_shell_weights");
 
-  const Real R = ie.radiusSI * fi->get_Si2NoL();
+  sw.weight.clear();
+  sw.weight.resize(n_lev());
+  sw.grids.resize(n_lev());
+  sw.dms.resize(n_lev());
+
+  const Real R = radiusSI * fi->get_Si2NoL();
   const Real* c = bodyCenter;
-  const Real* sd = ie.solarDir;
   // Area of the sphere in a cell: the volume of a thin shell |r - R| < h/2
   // inside the cell, divided by h, sampled on a stratified nSub^3 grid.
   constexpr int nSub = 24;
   constexpr Real hRel = 0.2;
 
-  // Emission profile a(direction from the center).
-  const bool photochem = ie.profile == "photochemistry";
-  Real phiSubsolar = 0;
-  if (photochem) {
-    if (source == nullptr)
-      Abort("Error: #IONOSPHEREEMISSIONPROFILE photochemistry needs the "
-            "source terms (#SOURCE).");
-    phiSubsolar = source->column_photoproduction_si(sd, 0.0, ie.radiusSI);
-    if (phiSubsolar <= 0)
-      Abort("Error: #IONOSPHEREEMISSIONPROFILE photochemistry: no "
-            "photoionization below the emission sphere at the subsolar "
-            "point.");
-  }
-  auto profile_factor = [&](const Real* x, Real rc) {
-    const Real cosSza =
-        rc > 0 ? (x[0] * sd[0] + x[1] * sd[1] + x[2] * sd[2]) / rc : 1.0;
-    if (!photochem)
-      // rhybrid ionoCosSzaDayConstantNight profile.
-      return cosSza > 0 ? ie.noon + (ie.night - ie.noon) * (1 - cosSza)
-                        : ie.night;
-    const Real dir[3] = { x[0] / rc, x[1] / rc, x[2] / rc };
-    const Real phi =
-        source->column_photoproduction_si(dir, 0.0, ie.radiusSI) / phiSubsolar;
-    return ie.night +
-           (ie.noon - ie.night) * std::pow(std::max(phi, 0.0), ie.exponent);
-  };
-
   Real total = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto& cs = cell_status(iLev);
-    ie.weightGrids[iLev] = cs.boxArray();
-    ie.weightDMs[iLev] = cs.DistributionMap();
-    ie.weight[iLev].define(cs.boxArray(), cs.DistributionMap(), 1, 0);
-    ie.weight[iLev].setVal(0.0);
+    sw.grids[iLev] = cs.boxArray();
+    sw.dms[iLev] = cs.DistributionMap();
+    sw.weight[iLev].define(cs.boxArray(), cs.DistributionMap(), 1, 0);
+    sw.weight[iLev].setVal(0.0);
 
     const auto& dxl = Geom(iLev).CellSize();
     const auto& plol = Geom(iLev).ProbLo();
@@ -970,9 +946,9 @@ void Pic::build_emission_weights() {
     const Real dV = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) /
                     (nSub * nSub * (nDim > 2 ? nSub : 1));
 
-    for (MFIter mfi(ie.weight[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(sw.weight[iLev]); mfi.isValid(); ++mfi) {
       const auto& status = cs[mfi].const_array();
-      const auto& w = ie.weight[iLev][mfi].array();
+      const auto& w = sw.weight[iLev][mfi].array();
       const Box& box = mfi.validbox();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
@@ -1010,7 +986,7 @@ void Pic::build_emission_weights() {
               continue;
             const Real area = nHit * dV / h;
 
-            w(i, j, k) = area * profile_factor(xc, rc);
+            w(i, j, k) = area * profile(xc, rc);
             total += w(i, j, k);
           }
     }
@@ -1018,15 +994,54 @@ void Pic::build_emission_weights() {
 
   ParallelDescriptor::ReduceRealSum(total);
   if (total <= 0) {
-    Print() << "Warning: #IONOSPHEREEMISSION: the emission sphere crosses no "
-               "plasma cell; nothing is injected.\n";
+    Print() << "Warning: " << name
+            << ": the sphere crosses no plasma cell; nothing is injected.\n";
+    sw.weight.clear();
     return;
   }
   for (int iLev = 0; iLev < n_lev(); iLev++)
-    ie.weight[iLev].mult(1.0 / total);
-  Print() << "  #IONOSPHEREEMISSION weights rebuilt, sphere area in plasma "
-             "cells / 4 pi R^2 (profile-weighted) = "
+    sw.weight[iLev].mult(1.0 / total);
+  Print() << "  " << name
+          << " weights rebuilt, sphere area in plasma cells / 4 pi R^2 "
+             "(profile-weighted) = "
           << total / (4 * M_PI * R * R) << "\n";
+}
+
+//==========================================================
+void Pic::build_emission_weights() {
+  auto& ie = ionoEmission;
+  if (shell_weights_up_to_date(ie.shell))
+    return;
+
+  const Real* sd = ie.solarDir;
+  // Emission profile a(direction from the center).
+  const bool photochem = ie.profile == "photochemistry";
+  Real phiSubsolar = 0;
+  if (photochem) {
+    if (source == nullptr)
+      Abort("Error: #IONOSPHEREEMISSIONPROFILE photochemistry needs the "
+            "source terms (#SOURCE).");
+    phiSubsolar = source->column_photoproduction_si(sd, 0.0, ie.radiusSI);
+    if (phiSubsolar <= 0)
+      Abort("Error: #IONOSPHEREEMISSIONPROFILE photochemistry: no "
+            "photoionization below the emission sphere at the subsolar "
+            "point.");
+  }
+  auto profile_factor = [&](const Real* x, Real rc) {
+    const Real cosSza =
+        rc > 0 ? (x[0] * sd[0] + x[1] * sd[1] + x[2] * sd[2]) / rc : 1.0;
+    if (!photochem)
+      // rhybrid ionoCosSzaDayConstantNight profile.
+      return cosSza > 0 ? ie.noon + (ie.night - ie.noon) * (1 - cosSza)
+                        : ie.night;
+    const Real dir[3] = { x[0] / rc, x[1] / rc, x[2] / rc };
+    const Real phi =
+        source->column_photoproduction_si(dir, 0.0, ie.radiusSI) / phiSubsolar;
+    return ie.night +
+           (ie.noon - ie.night) * std::pow(std::max(phi, 0.0), ie.exponent);
+  };
+  build_shell_weights(ie.shell, ie.radiusSI, profile_factor,
+                      "#IONOSPHEREEMISSION");
 }
 
 //==========================================================
@@ -1037,7 +1052,7 @@ void Pic::inject_ionosphere_emission() {
   timing_func("Pic::inject_ionosphere_emission");
 
   build_emission_weights();
-  if ((int)ie.weight.size() != n_lev())
+  if ((int)ie.shell.weight.size() != n_lev())
     return;
 
   // rate [#/s] * dt [s] * weight / V [m^3] -> n [/m^3] -> code units.
@@ -1061,12 +1076,84 @@ void Pic::inject_ionosphere_emission() {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const Real* dxl = Geom(iLev).CellSize();
       const Real volSI = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) * l3;
-      nAdd[iLev].define(ie.weight[iLev].boxArray(),
-                        ie.weight[iLev].DistributionMap(), 1, 0);
-      MultiFab::Copy(nAdd[iLev], ie.weight[iLev], 0, 0, 1, 0);
+      const auto& w = ie.shell.weight[iLev];
+      nAdd[iLev].define(w.boxArray(), w.DistributionMap(), 1, 0);
+      MultiFab::Copy(nAdd[iLev], w, 0, 0, 1, 0);
       nAdd[iLev].mult(rate * dtSI / volSI * nFactor);
     }
     parts[i]->inject_emission_shell(nAdd, ie.vth[i], ie.nPPC, bodyCenter);
+  }
+}
+
+//==========================================================
+void Pic::update_floating_body() {
+  auto& fb = floatingBody;
+  if (!fb.use || !usePIC || isGridEmpty)
+    return;
+  timing_func("Pic::update_floating_body");
+
+  // Global cumulative tallies: absorbed ion charge (> 0), absorbed electron
+  // charge (< 0), electrons that reached the sphere, reflected electrons.
+  Vector<Real> t(5, 0.0);
+  for (int i : kineticSpecies_) {
+    const Real q = parts[i]->get_body_absorb_charge();
+    if (parts[i]->get_charge() > 0)
+      t[0] += q;
+    else
+      t[1] += q;
+    t[2] += parts[i]->get_body_hit_weight();
+    t[3] += parts[i]->get_body_hit_energy();
+    t[4] += parts[i]->get_body_reflect_count();
+  }
+  ParallelDescriptor::ReduceRealSum(t.data(), t.size());
+  const Real dQi = t[0] - fb.qIon, dQe = -(t[1] - fb.qEle);
+  const Real dHitW = t[2] - fb.hitW, dHitE = t[3] - fb.hitE;
+  fb.qIon = t[0];
+  fb.qEle = t[1];
+  fb.hitW = t[2];
+  fb.hitE = t[3];
+  fb.nReflect = t[4];
+
+  if (fb.type == "sheath") {
+    // Integral control toward zero net absorbed current, in units of the
+    // mean normal energy per charge of the electrons reaching the sphere
+    // (~kTe/e), with the relaxation time tau.
+    if (dQi + dQe > 0 && dHitW > 0) {
+      const Real f = (dQe - dQi) / (dQe + dQi);
+      fb.phi = std::max(0.0, fb.phi + tc->get_dt_si() / fb.tauSI *
+                                          (dHitE / dHitW) * f);
+    }
+    for (int i : kineticSpecies_)
+      if (parts[i]->get_charge() < 0)
+        parts[i]->set_body_sheath(true, fb.phi);
+    return;
+  }
+
+  // reemit: return the net electron charge absorbed in this step.
+  const Real deficit = dQe - dQi;
+  if (deficit <= 0)
+    return;
+  if (!shell_weights_up_to_date(fb.shell))
+    build_shell_weights(
+        fb.shell, fb.radiusSI, [](const Real*, Real) { return 1.0; },
+        "#FLOATINGBODY reemit");
+  if ((int)fb.shell.weight.size() != n_lev())
+    return;
+  for (int i : kineticSpecies_) {
+    if (parts[i]->get_charge() >= 0)
+      continue;
+    Vector<MultiFab> nAdd(n_lev());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const auto& w = fb.shell.weight[iLev];
+      nAdd[iLev].define(w.boxArray(), w.DistributionMap(), 1, 0);
+      MultiFab::Copy(nAdd[iLev], w, 0, 0, 1, 0);
+      // Charge deficit * weight / volume -> number density of electrons.
+      nAdd[iLev].mult(deficit / get_cell_volume(iLev) /
+                      std::abs(parts[i]->get_charge()));
+    }
+    parts[i]->inject_emission_shell(nAdd, fb.vth, fb.nPPC, bodyCenter);
+    fb.qReemit += deficit;
+    break; // The first electron species carries the current.
   }
 }
 
@@ -1937,6 +2024,10 @@ void Pic::calc_cost_per_cell() {
 
 void Pic::advance_particles_and_sources(int pushStage) {
   particle_mover(pushStage);
+
+  // Floating body (#FLOATINGBODY): update the sheath potential from the
+  // currents of this push, or re-emit the net absorbed electron charge.
+  update_floating_body();
 
   // Calling re_sampling after particle mover so that all the particles
   // outside the domain have been deleted.

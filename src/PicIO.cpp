@@ -820,7 +820,8 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
-      if (bodyIono.use || ionoEmission.use)
+      if (bodyIono.use || ionoEmission.use ||
+          (floatingBody.use && floatingBody.type == "reemit"))
         picLogStream << "\t" << std::setw(wCol) << "nBodyInject" << "\t"
                      << std::setw(wCol) << "mBodyInject";
     }
@@ -832,6 +833,19 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     }
     // Number of macroparticles of all species and levels (memory, resampling).
     picLogStream << "\t" << std::setw(wCol) << "nParticles";
+    // Cumulative signed charge absorbed by the body, per species; the
+    // floating body (#FLOATINGBODY) potential [V], the reflected electrons
+    // and the re-emitted charge.
+    if (useBody)
+      for (int i = 0; i < nSpecies; ++i)
+        picLogStream << "\t" << std::setw(wCol)
+                     << "qBodyS" + std::to_string(i);
+    if (floatingBody.use)
+      picLogStream << "\t" << std::setw(wCol) << "phiBody" << "\t"
+                   << std::setw(wCol) << "nBodyReflect" << "\t"
+                   << std::setw(wCol) << "wBodyHit" << "\t"
+                   << std::setw(wCol) << "eBodyHit" << "\t"
+                   << std::setw(wCol) << "qBodyReemit";
     picLogStream << std::endl;
   }
 
@@ -862,6 +876,15 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           ParallelDescriptor::IOProcessorNumber());
     }
 
+    Vector<Real> speciesBodyQ(nSpecies, 0.0);
+    if (useBody) {
+      for (int i = 0; i < nSpecies; ++i)
+        speciesBodyQ[i] = parts[i]->get_body_absorb_charge();
+      ParallelDescriptor::ReduceRealSum(
+          speciesBodyQ.data(), speciesBodyQ.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
     // total_moments() reduces to the IO processor itself.
     Vector<Real> speciesMass(nSpecies, 0.0);
     for (int i = 0; i < nSpecies; ++i)
@@ -888,13 +911,30 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
-        if (bodyIono.use || ionoEmission.use)
+        if (bodyIono.use || ionoEmission.use ||
+            (floatingBody.use && floatingBody.type == "reemit"))
           picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[3] << "\t"
                        << std::setw(wCol) << bodyAbsorb[4];
       }
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
       picLogStream << "\t" << std::setw(wCol) << static_cast<Real>(nParticles);
+      if (useBody)
+        for (int i = 0; i < nSpecies; ++i)
+          picLogStream << "\t" << std::setw(wCol) << speciesBodyQ[i];
+      if (floatingBody.use) {
+        // Energy per charge in code units -> volts.
+        const Real u = fi->get_unorm_si();
+        picLogStream << "\t" << std::setw(wCol)
+                     << floatingBody.phi * cProtonMassSI * u * u /
+                            cUnitChargeSI
+                     << "\t" << std::setw(wCol) << floatingBody.nReflect
+                     << "\t" << std::setw(wCol) << floatingBody.hitW
+                     << "\t" << std::setw(wCol)
+                     << floatingBody.hitE * cProtonMassSI * u * u /
+                            cUnitChargeSI
+                     << "\t" << std::setw(wCol) << floatingBody.qReemit;
+      }
       picLogStream << std::endl;
     }
   }

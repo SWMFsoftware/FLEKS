@@ -54,6 +54,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#FIELDSOLVER", ParameterOwner::Pic },
   { "#FIELDSUBCYCLE", ParameterOwner::Pic },
   { "#FIXEDUMAX", ParameterOwner::Pic },
+  { "#FLOATINGBODY", ParameterOwner::Pic },
   { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
   { "#FORCEFREEIC", ParameterOwner::Pic },
   { "#GEMIC", ParameterOwner::Pic },
