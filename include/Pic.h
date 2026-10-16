@@ -400,6 +400,27 @@ private:
     // Code units, set by convert_body_ionosphere().
     amrex::Vector<amrex::Real> n0, vth;
   } bodyIono;
+
+  // Ionospheric emission shell (#IONOSPHEREEMISSION), after the
+  // IonosphereInjector of rhybrid: every step each species is injected into
+  // the plasma cells crossed by the sphere r = radius, with the total rate
+  // [#/s] spread by the area of the sphere in each cell and the profile
+  // a = noon + (night - noon)(1 - cos SZA) on the dayside, a = night on the
+  // nightside, as an outward half-Maxwellian of temperature T. A kinetic
+  // electron species gets the charge of the injected ions.
+  struct IonosphereEmission {
+    bool use = false;
+    amrex::Real radiusSI = 0;
+    amrex::Real solarDir[3] = { 1.0, 0.0, 0.0 };
+    amrex::Real noon = 1.0, night = 0.1;
+    int nPPC = 8;
+    amrex::Vector<amrex::Real> rateSI, tempSI;
+    // Code units / caches.
+    amrex::Vector<amrex::Real> vth;
+    amrex::Vector<amrex::MultiFab> weight; // area * profile, normalized
+    amrex::Vector<amrex::BoxArray> weightGrids;
+    amrex::Vector<amrex::DistributionMapping> weightDMs;
+  } ionoEmission;
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;
@@ -745,6 +766,7 @@ public:
   void convert_electron_collision();
   void convert_inflow_state();
   void convert_body_ionosphere();
+  void convert_ionosphere_emission();
   void check_light_speed();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
@@ -785,6 +807,11 @@ public:
 
   // Refill the ghost layer of the body with the #BODYIONOSPHERE plasma.
   void inject_body_ionosphere();
+
+  // #IONOSPHEREEMISSION: (re)build the shell weights for the current grid,
+  // and inject the particles of one step.
+  void build_emission_weights();
+  void inject_ionosphere_emission();
 
   // Write the plasma state of the particles (per-species density, bulk
   // velocity and scalar pressure, from the moments of the last update) into

@@ -61,6 +61,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#HYBRIDPIC", ParameterOwner::Pic },
   { "#HYPERRESISTIVITY", ParameterOwner::Pic },
   { "#INFLOW", ParameterOwner::Pic },
+  { "#IONOSPHEREEMISSION", ParameterOwner::Pic },
   { "#KINETICSOURCE", ParameterOwner::Pic },
   { "#LAGGEDLIMITER", ParameterOwner::Pic },
   { "#MAXCHARGEEXCHANGERATE", ParameterOwner::Pic },

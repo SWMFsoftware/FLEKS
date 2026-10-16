@@ -477,6 +477,15 @@ public:
                           amrex::Real weightScale = 1.0,
                           bool allowBody = false);
 
+  // Ionospheric emission shell (#IONOSPHEREEMISSION): add nPPC particles of
+  // this species to every cell where nAdd (cell-centered, code-unit number
+  // density added this step) is positive, uniformly in the cell, with a
+  // Maxwellian of thermal speed vth whose radial component (from `center`)
+  // is flipped outward, as the IonosphereInjector of rhybrid does.
+  void inject_emission_shell(const amrex::Vector<amrex::MultiFab>& nAdd,
+                             amrex::Real vth, int nPPC,
+                             const amrex::Real* center);
+
   // Ionospheric boundary of the inner body (#BODYIONOSPHERE): refill the
   // one-cell-thick surface layer of the body with a Maxwellian of number
   // density nDensAt(xyz) [code units, xyz relative to the body center], thermal

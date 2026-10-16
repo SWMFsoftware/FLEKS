@@ -820,7 +820,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
-      if (bodyIono.use)
+      if (bodyIono.use || ionoEmission.use)
         picLogStream << "\t" << std::setw(wCol) << "nBodyInject" << "\t"
                      << std::setw(wCol) << "mBodyInject";
     }
@@ -888,7 +888,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
-        if (bodyIono.use)
+        if (bodyIono.use || ionoEmission.use)
           picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[3] << "\t"
                        << std::setw(wCol) << bodyAbsorb[4];
       }

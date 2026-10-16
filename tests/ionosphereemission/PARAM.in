@@ -1,0 +1,141 @@
+#DESCRIPTION
+Ionospheric emission shell (IONOSPHEREEMISSION): H+ at 1e16 /s and O+ at
+2e15 /s emitted at r = 2 above an absorbing body of radius 1.5, into vacuum.
+Hybrid PIC with B = 0 and Te = 0, so E = 0 and the ions fly ballistically.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-4.0                    xMin
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-4.0                    zMin
+ 4.0                    zMax
+
+#NCELL
+24                      nCellX
+24                      nCellY
+24                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+F                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#BODY
+sphere                  type
+1.5                     radius
+0.0                     center x
+0.0                     center y
+0.0                     center z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+insulating              fieldBoundary
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature [eV]
+1.0                     electronGamma
+1.0                     electronDensity0 [/cc] (prints the code unit of 1 /cc)
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+2                       nSpecies
+1.0                     mass        Species 0: H+
+1.0                     charge
+16.0                    mass        Species 1: O+
+1.0                     charge
+
+#UNIFORMSTATE
+1.0e-12                 rho [/cc]  (near) vacuum: 5e11 ions, negligible
+0.0                     ux
+0.0                     uy
+0.0                     uz
+100000.0                T
+1.0e-12                 rho [/cc]
+0.0                     ux
+0.0                     uy
+0.0                     uz
+100000.0                T
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#FIELDBOXBOUNDARY
+outflow                 x-
+outflow                 x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#PARTICLEBOXBOUNDARY
+outflow                 x-
+outflow                 x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#IONOSPHEREEMISSION
+2.0e5                   radius [m] = 2 code units
+1.0                     solarDirX
+0.0                     solarDirY
+0.0                     solarDirZ
+1.0                     noon
+0.1                     night
+4                       particlesPerCell
+1.0e16                  totalRate [#/s]  Species 0: H+
+100000.0                T [K]
+2.0e15                  totalRate [#/s]  Species 1: O+
+100000.0                T [K]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#PARTICLES
+2                       npcelx
+2                       npcely
+2                       npcelz
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax

@@ -904,6 +904,153 @@ void Pic::inject_body_ionosphere() {
 }
 
 //==========================================================
+void Pic::build_emission_weights() {
+  timing_func("Pic::build_emission_weights");
+  auto& ie = ionoEmission;
+
+  bool upToDate = (int)ie.weight.size() == n_lev();
+  for (int iLev = 0; upToDate && iLev < n_lev(); iLev++)
+    upToDate = ie.weightGrids[iLev] == cell_status(iLev).boxArray() &&
+               ie.weightDMs[iLev] == cell_status(iLev).DistributionMap();
+  if (upToDate)
+    return;
+
+  ie.weight.clear();
+  ie.weight.resize(n_lev());
+  ie.weightGrids.resize(n_lev());
+  ie.weightDMs.resize(n_lev());
+
+  const Real R = ie.radiusSI * fi->get_Si2NoL();
+  const Real* c = bodyCenter;
+  const Real* sd = ie.solarDir;
+  // Area of the sphere in a cell: the volume of a thin shell |r - R| < h/2
+  // inside the cell, divided by h, sampled on a stratified nSub^3 grid.
+  constexpr int nSub = 24;
+  constexpr Real hRel = 0.2;
+
+  Real total = 0;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto& cs = cell_status(iLev);
+    ie.weightGrids[iLev] = cs.boxArray();
+    ie.weightDMs[iLev] = cs.DistributionMap();
+    ie.weight[iLev].define(cs.boxArray(), cs.DistributionMap(), 1, 0);
+    ie.weight[iLev].setVal(0.0);
+
+    const auto& dxl = Geom(iLev).CellSize();
+    const auto& plol = Geom(iLev).ProbLo();
+    const Real dxMax = std::max({ AMREX_D_DECL(dxl[0], dxl[1], dxl[2]) });
+    const Real h = hRel * dxMax;
+    const Real dV = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) /
+                    (nSub * nSub * (nDim > 2 ? nSub : 1));
+
+    for (MFIter mfi(ie.weight[iLev]); mfi.isValid(); ++mfi) {
+      const auto& status = cs[mfi].const_array();
+      const auto& w = ie.weight[iLev][mfi].array();
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const int st = status(i, j, k);
+            if (bit::is_body(st) || bit::is_refined(st))
+              continue;
+            const int ijk[3] = { i, j, k };
+            Real xc[3] = { 0, 0, 0 };
+            for (int iDim = 0; iDim < nDim; iDim++)
+              xc[iDim] = (ijk[iDim] + 0.5) * dxl[iDim] + plol[iDim] - c[iDim];
+            const Real rc =
+                std::sqrt(xc[0] * xc[0] + xc[1] * xc[1] + xc[2] * xc[2]);
+            if (std::abs(rc - R) > 0.9 * dxMax + h)
+              continue;
+
+            int nHit = 0;
+            const int nk = nDim > 2 ? nSub : 1;
+            for (int kk = 0; kk < nk; kk++)
+              for (int jj = 0; jj < nSub; jj++)
+                for (int ii = 0; ii < nSub; ii++) {
+                  const int sub[3] = { ii, jj, kk };
+                  Real x[3] = { 0, 0, 0 };
+                  for (int iDim = 0; iDim < nDim; iDim++)
+                    x[iDim] = xc[iDim] +
+                              ((sub[iDim] + 0.5) / nSub - 0.5) * dxl[iDim];
+                  const Real r =
+                      std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+                  if (std::abs(r - R) < 0.5 * h)
+                    nHit++;
+                }
+            if (nHit == 0)
+              continue;
+            const Real area = nHit * dV / h;
+
+            // rhybrid ionoCosSzaDayConstantNight profile.
+            const Real cosSza =
+                rc > 0 ? (xc[0] * sd[0] + xc[1] * sd[1] + xc[2] * sd[2]) / rc
+                       : 1.0;
+            const Real a =
+                cosSza > 0 ? ie.noon + (ie.night - ie.noon) * (1 - cosSza)
+                           : ie.night;
+            w(i, j, k) = area * a;
+            total += w(i, j, k);
+          }
+    }
+  }
+
+  ParallelDescriptor::ReduceRealSum(total);
+  if (total <= 0) {
+    Print() << "Warning: #IONOSPHEREEMISSION: the emission sphere crosses no "
+               "plasma cell; nothing is injected.\n";
+    return;
+  }
+  for (int iLev = 0; iLev < n_lev(); iLev++)
+    ie.weight[iLev].mult(1.0 / total);
+  Print() << "  #IONOSPHEREEMISSION weights rebuilt, sphere area in plasma "
+             "cells / 4 pi R^2 (profile-weighted) = "
+          << total / (4 * M_PI * R * R) << "\n";
+}
+
+//==========================================================
+void Pic::inject_ionosphere_emission() {
+  const auto& ie = ionoEmission;
+  if (!ie.use || !usePIC || isGridEmpty)
+    return;
+  timing_func("Pic::inject_ionosphere_emission");
+
+  build_emission_weights();
+  if ((int)ie.weight.size() != n_lev())
+    return;
+
+  // rate [#/s] * dt [s] * weight / V [m^3] -> n [/m^3] -> code units.
+  const Real dtSI = tc->get_dt_si();
+  const Real l3 = std::pow(fi->get_No2SiL(), 3);
+  const Real nFactor = cProtonMassSI * fi->get_Si2NoRho();
+
+  // Charge of all the ions injected in one step [#/s].
+  Real ionCharge = 0;
+  for (int iS = 0; iS < nSpecies; iS++)
+    if (fi->get_species_charge(iS) > 0)
+      ionCharge += fi->get_species_charge(iS) * ie.rateSI[iS];
+
+  for (int i : kineticSpecies_) {
+    const bool isElectron = parts[i]->get_charge() < 0;
+    const Real rate = isElectron ? ionCharge : ie.rateSI[i];
+    if (rate <= 0)
+      continue;
+
+    Vector<MultiFab> nAdd(n_lev());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const Real* dxl = Geom(iLev).CellSize();
+      const Real volSI = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) * l3;
+      nAdd[iLev].define(ie.weight[iLev].boxArray(),
+                        ie.weight[iLev].DistributionMap(), 1, 0);
+      MultiFab::Copy(nAdd[iLev], ie.weight[iLev], 0, 0, 1, 0);
+      nAdd[iLev].mult(rate * dtSI / volSI * nFactor);
+    }
+    parts[i]->inject_emission_shell(nAdd, ie.vth[i], ie.nPPC, bodyCenter);
+  }
+}
+
+//==========================================================
 void Pic::fill_plasma_state(FluidInterface& dst) {
   timing_func("Pic::fill_plasma_state");
 
@@ -1798,6 +1945,9 @@ void Pic::advance_particles_and_sources(int pushStage) {
   // plasma of the boundary in the moments, the current and the mass matrix,
   // so that the field solver sees its charge (the ambipolar field).
   inject_body_ionosphere();
+
+  // Ionospheric emission shell (#IONOSPHEREEMISSION).
+  inject_ionosphere_emission();
 
   // Inject incoming flux at physical inflow faces before the moment deposit.
   // Kept outside inject_particles_for_boundary_cells to avoid t=0
