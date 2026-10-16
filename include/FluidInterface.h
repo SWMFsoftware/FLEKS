@@ -1026,7 +1026,8 @@ public:
     amrex::Real uth = 0, p, ni;
     p = get_p(mfi, xyz, is, iLev);
     ni = get_number_density(mfi, xyz, is, iLev);
-    if (ni > 0)
+    // A node pressure from few particles can come out slightly negative.
+    if (ni > 0 && p > 0)
       uth = sqrt(p / (ni * MoMi_S[is]));
     return uth;
   }

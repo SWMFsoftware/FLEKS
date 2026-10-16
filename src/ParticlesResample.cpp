@@ -46,7 +46,13 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
         if (target <= 0)
           continue;
         avg = totalMass / target;
-        dl = 4.0 * Geom(iLev).CellSize()[ix_] / sqrt(static_cast<Real>(target));
+        // Pre-splitting spreads the fragments over the cell; with #CONSTANTPPV
+        // they stay close (a large shift can leave the domain).
+        dl = isPPVconstant
+                 ? 0.1 * Geom(iLev).CellSize()[ix_] /
+                       std::max(1.0, std::cbrt(static_cast<Real>(target)))
+                 : 4.0 * Geom(iLev).CellSize()[ix_] /
+                       sqrt(static_cast<Real>(target));
       } else {
         avg = totalMass / particles.size();
         dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();

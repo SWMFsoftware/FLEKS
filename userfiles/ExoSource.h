@@ -1033,8 +1033,8 @@ public:
       const amrex::Real nReac =
           species_number_density_si(other, mfi, idx, iLev, iSpReac);
       if (nReac > 0) {
-        const amrex::Real p_reac_si =
-            other.get_p(mfi, idx, iSpReac, iLev) / get_Si2NoP();
+        const amrex::Real p_reac_si = amrex::max(
+            0.0, other.get_p(mfi, idx, iSpReac, iLev) / get_Si2NoP());
         srcP[iSpProd] += sRate * p_reac_si / nReac;
       }
     } else {

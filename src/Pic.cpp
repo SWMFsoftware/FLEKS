@@ -981,9 +981,12 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
             state(i, j, k, iUz) = mom(i, j, k, iMz_) * invRho;
             // nodePlasma holds the thermal pressure tensor (see
             // convert_to_fluid_moments); the scalar pressure is its trace/3.
-            state(i, j, k, iP) = (mom(i, j, k, iPxx_) + mom(i, j, k, iPyy_) +
-                                  mom(i, j, k, iPzz_)) /
-                                 3.0;
+            // With few particles at a node, the second moment minus rho*u^2
+            // can come out negative: clamp it.
+            state(i, j, k, iP) =
+                amrex::max(0.0, (mom(i, j, k, iPxx_) + mom(i, j, k, iPyy_) +
+                                 mom(i, j, k, iPzz_)) /
+                                    3.0);
           } else {
             state(i, j, k, iRho) = 0.0;
             state(i, j, k, iUx) = 0.0;
@@ -1005,10 +1008,18 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
     if (useBody) {
       if (bodyIono.use)
         mask_body(stateMF, node_status(iLev));
-      else
-        scale_by_body_outside_fraction(stateMF, cellStatus[iLev],
-                                       nodeStatus[iLev], Geom(iLev).Domain(),
-                                       nDim, true);
+      else {
+        // Only the densities and the pressures: the velocities are not
+        // diluted by the empty body cells.
+        for (int s = 0; s < dst.get_nS() && s < nSpecies; s++) {
+          for (const int iVar : { dst.get_iRho(s), dst.get_iP(s) }) {
+            MultiFab alias(stateMF, amrex::make_alias, iVar, 1);
+            scale_by_body_outside_fraction(alias, cellStatus[iLev],
+                                           nodeStatus[iLev],
+                                           Geom(iLev).Domain(), nDim, true);
+          }
+        }
+      }
     }
   }
 }
@@ -1062,11 +1073,12 @@ void Pic::re_sampling() {
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
       if (maxWeightRatio > 1) {
-        // The reference weight is the average of the cell: with #CONSTANTPPV
-        // that catches the heavy particles entering a finer level, without
-        // the large displacement of the target-based splitting.
+        // With #CONSTANTPPV (or pre-splitting) the reference weight is that
+        // of the level target. The cell average would not do: the light
+        // source particles of a cell next to the body lower it, and the
+        // ordinary particles are then split again and again.
         parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral(),
-                               pInfo.doPreSplitting);
+                               pInfo.doPreSplitting || pInfo.isPPVconstant);
       }
       parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral(),
                       pInfo.doPreSplitting);
@@ -2093,8 +2105,11 @@ void Pic::update_U0_E0() {
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 0) {
           const Real invRho = 1. / rho;
-          for (int iu = iUx_; iu <= iUz_; iu++)
-            arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
+          for (int iu = iUx_; iu <= iUz_; iu++) {
+            // A (near-)denormal density overflows 1/rho.
+            const Real u = arrMoments(i, j, k, iu) * invRho;
+            arrU(i, j, k, iu - iUx_) = std::isfinite(u) ? u : 0.0;
+          }
         }
       });
 

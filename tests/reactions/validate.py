@@ -59,8 +59,11 @@ def _validate_ionneutral(d, nu, tol_decay, tol_cons, check_drift, reasons):
     worstDecay = worstCons = 0.0
     for e in d[1:]:
         t = e["time"] - t0
-        worstDecay = max(worstDecay,
-                         _rel(e["Mpart1"] / mA0, math.exp(-nu * t)))
+        # Below ~1e-6 of a reference particle the decayed weights play Russian
+        # roulette (apply_loss), so the decay is only compared well above it.
+        if math.exp(-nu * t) > 1e-3:
+            worstDecay = max(worstDecay,
+                             _rel(e["Mpart1"] / mA0, math.exp(-nu * t)))
         nTot = e["Mpart1"] / 16.0 + e["Mpart2"] / 32.0
         worstCons = max(worstCons, _rel(nTot, nTot0))
     tEnd = d[-1]["time"] - t0
