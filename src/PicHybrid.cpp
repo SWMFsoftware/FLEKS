@@ -270,8 +270,12 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
           *get_cell_interp(), faraday_ngrow(iLev));
     }
+    // Dirichlet faces (fixed / inflow / coupled) must get the Laplacian of
+    // the prescribed B, not B itself: copying B here leaves a jump of size B0
+    // at the boundary cell, and its curl drives a spurious hyper-resistive E
+    // at the nodes next to the face. The prescribed state is uniform, so zero.
     apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
-                   centerLapB[iLev].nComp(), &Pic::get_center_B, iLev, true);
+                   centerLapB[iLev].nComp(), &Pic::get_zero, iLev, true);
 
     curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
                         Geom(iLev).InvCellSize());
@@ -282,8 +286,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
     }
+    // Likewise curl(nabla^2 B) of the prescribed state is zero, not the
+    // prescribed (motional) E.
     apply_field_bc(nodeStatus[iLev], nodeHyperE[iLev], 0,
-                   nodeHyperE[iLev].nComp(), &Pic::get_node_E, iLev, false);
+                   nodeHyperE[iLev].nComp(), &Pic::get_zero, iLev, false);
 
     const Real fGlobal = etaHyperLev[iLev] / fourPI;
 
