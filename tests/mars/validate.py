@@ -8,7 +8,9 @@ bounds that the setup bugs fixed on the mars-standalone-fixes branch violated:
   mass, which no reaction produces from the trace seeds, stays put in step 1;
 * the photochemistry runs on the plasma carried by the particles: O2+, the
   product of CO2+ + O and O+ + CO2, outnumbers CO2+ by the end;
-* the plasma stays quasi-neutral (|sum q n| < 1% of the solar-wind H+);
+* the plasma stays quasi-neutral (|sum q n| < 0.2% of the solar-wind H+;
+  8e-4 with the outflowthermal faces, 4e-3 when the electrons drain through
+  plain outflow faces);
 * the field energies stay bounded.
 """
 import logging
@@ -47,7 +49,7 @@ def validate_log(pic_diags=None, test_name=None):
     for e in d:
         q = -n(e, 0) + sum(n(e, i) for i in range(1, 5))
         worstQ = max(worstQ, abs(q) / n(e, 1))
-    check(worstQ < 0.01, f"quasi-neutral: max |net charge|/N(H+) = {worstQ:.2e}")
+    check(worstQ < 2e-3, f"quasi-neutral: max |net charge|/N(H+) = {worstQ:.2e}")
 
     for k in ("Eb", "Ee"):
         r = last[k] / first[k]

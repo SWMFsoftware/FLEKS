@@ -10,7 +10,7 @@ Physics & Features:
 - 10-reaction Martian photochemistry and charge-exchange chemistry model.
 - EUV optical depth attenuation (OPTICALDEPTH) with solar direction along +x.
 - Realistic 2 nT Parker spiral IMF in x-y plane (SwBx = -1.12 nT, SwBy = 1.66 nT).
-- Inflow solar wind upstream (+x) at 300 km/s, outflow at downstream (-x) and flanks (+/-y, +/-z).
+- Inflow solar wind upstream (+x) at 300 km/s; open (outflowthermal) downstream (-x) and flanks (+/-y, +/-z).
 - Uniform grid dx = dy = dz = 0.25 R_M = 849 km (24x32x32 = 24,576 cells).
 
 #INITFROMSWMF
@@ -127,12 +127,12 @@ outflow                 fieldBoxBoundaryLo   z- (polar)
 outflow                 fieldBoxBoundaryHi   z+ (polar)
 
 #PARTICLEBOXBOUNDARY
-outflow                 particleBoxBoundaryLo   x-
+outflowthermal          particleBoxBoundaryLo   x-
 inflow                  particleBoxBoundaryHi   x+   flux injection (#INFLOW)
-outflow                 particleBoxBoundaryLo   y-
-outflow                 particleBoxBoundaryHi   y+
-outflow                 particleBoxBoundaryLo   z-
-outflow                 particleBoxBoundaryHi   z+
+outflowthermal          particleBoxBoundaryLo   y-
+outflowthermal          particleBoxBoundaryHi   y+
+outflowthermal          particleBoxBoundaryLo   z-
+outflowthermal          particleBoxBoundaryHi   z+
 
 #EXOSPHERE
 Exponential             typeProfile
