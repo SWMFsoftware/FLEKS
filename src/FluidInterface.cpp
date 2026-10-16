@@ -423,7 +423,15 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     exoH0.resize(nExoComponent);
     exoT0.resize(nExoComponent);
     exoK0.resize(nExoComponent);
+    exoTypeC.assign(nExoComponent, exosphereType);
     for (int i = 0; i < nExoComponent; ++i) {
+      if (exosphereType == "Mixed")
+        param.read_var("typeComponent", exoTypeC[i]);
+      if (exoTypeC[i] != "Exponential" && exoTypeC[i] != "Chamberlain" &&
+          exoTypeC[i] != "Power-Law" && exoTypeC[i] != "None")
+        amrex::Abort("Error: #EXOSPHERE profile '" + exoTypeC[i] +
+                     "' is not Exponential, Chamberlain, Power-Law, None "
+                     "or (typeProfile only) Mixed.");
       param.read_var("n0", exoN0[i]);
       param.read_var("H0", exoH0[i]);
       param.read_var("T0", exoT0[i]);

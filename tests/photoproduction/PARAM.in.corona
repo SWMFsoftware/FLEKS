@@ -1,0 +1,179 @@
+#DESCRIPTION
+Photoproduction of a Chamberlain corona (Mixed profile, next to an exponential
+component without ionization) with the optical depth on: transparent, so only
+the geometric shadow of the planet behind it is dark. The production must match
+the integral of the corona over the box outside the body and the shadow.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-4.0                    xMin
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-4.0                    zMin
+ 4.0                    zMax
+
+#NCELL
+24                      nCellX
+24                      nCellY
+24                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+F                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#BODY
+sphere                  type
+1.5                     radius
+0.0                     center x
+0.0                     center y
+0.0                     center z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+insulating              fieldBoundary
+
+#PLANETRADIUS
+1.5e5                   radius [m] = body radius
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+3                       nSpecies
+0.0625                  mass        Species 0: fluid electron slot
+-1.0                    charge
+44.0                    mass        Species 1: corona ion
+1.0                     charge
+44.0                    mass        Species 2: layer ion (not produced)
+1.0                     charge
+
+#UNIFORMSTATE
+1.0e-3                  rho [/cc]   Species 0
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0                     T [K]
+1.0e-3                  rho [/cc]   Species 1: seed (sets the mass unit)
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0                     T [K]
+1.0e-3                  rho [/cc]   Species 2
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0                     T [K]
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#FIELDBOXBOUNDARY
+outflow                 x-
+outflow                 x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#PARTICLEBOXBOUNDARY
+outflow                 x-
+outflow                 x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#EXOSPHERE
+Mixed                   typeProfile
+2                       nComponent
+Chamberlain             typeComponent   Component 0: corona
+1.0e12                  n0 [m^-3] at the body surface
+1.5e6                   H0 [m]  n = n0 exp(-H0 (1/R - 1/r)), local scale height 15 km at R
+100.0                   T0 [K]
+0.0                     k0
+Exponential             typeComponent   Component 1: thin layer, not ionized
+1.0e12                  n0 [m^-3] at the body surface
+1000.0                  H0 [m]
+100.0                   T0 [K]
+0.0                     k0
+
+#PHOTOIONIZATION
+1.0e-3                  nuPhoto0 [1/s]  Component 0 -> species 1
+0.0                     nuPhoto0 [1/s]  Component 1 -> species 2
+
+#OPTICALDEPTH
+0.0                     crossSection [m^2]   corona: transparent
+1.0e-20                 crossSection [m^2]   thin layer: column <= 1e-5
+-1                      scaleHeight [m]
+-1                      scaleHeight [m]
+1.0                     solarDirX
+0.0                     solarDirY
+0.0                     solarDirZ
+F                       chapmanFunction
+1.0e-10                 minProduction
+0.0                     tauFloor
+11.5                    tauCutoff
+5.0e-4                  cosSzaFloor
+
+#SOURCE
+T                       useSource
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#PARTICLES
+2                       npcelx
+2                       npcely
+2                       npcelz
+
+#SOURCEPARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+4                       MaxIter
+-1.0                    TimeMax

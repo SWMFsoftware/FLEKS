@@ -100,11 +100,12 @@ public:
       return optScaleHeight[iC];
     if (r <= 0.0)
       return 0.0;
-    if (exosphereType == "Exponential")
+    const std::string& type = exoTypeC[iC];
+    if (type == "Exponential")
       return (exoH0[iC] > 0.0 ? exoH0[iC] : 0.0);
-    if (exosphereType == "Chamberlain")
+    if (type == "Chamberlain")
       return (exoH0[iC] > 0.0 ? r * r / exoH0[iC] : 0.0);
-    if (exosphereType == "Power-Law")
+    if (type == "Power-Law")
       return (exoK0[iC] > 0.0 ? r / exoK0[iC] : 0.0);
     return 0.0;
   }
@@ -125,6 +126,27 @@ public:
       if (h <= 0.0)
         continue;
       tau += get_exosphere_component_density(r, iC) * sigma * h;
+    }
+    return tau;
+  }
+
+  // Optical depth along a ray that grazes the planet at the tangent radius p
+  // [m]: the Chapman grazing-incidence column sum_c sigma_c n_c(p) H_c
+  // sqrt(2 pi p / H_c), all of which lies between the Sun and a point behind
+  // the terminator plane.
+  amrex::Real grazing_optical_depth(amrex::Real p) const {
+    amrex::Real tau = 0.0;
+    for (int iC = 0; iC < nExoComponent; ++iC) {
+      const amrex::Real sigma = (iC < static_cast<int>(optCrossSection.size()))
+                                    ? optCrossSection[iC]
+                                    : 0.0;
+      if (sigma <= 0.0)
+        continue;
+      const amrex::Real h = exosphere_scale_height(p, iC);
+      if (h <= 0.0)
+        continue;
+      tau += get_exosphere_component_density(p, iC) * sigma * h *
+             std::sqrt(2.0 * M_PI * p / h);
     }
     return tau;
   }
@@ -167,6 +189,8 @@ public:
   amrex::Real photo_attenuation(const amrex::Real xyz[3], amrex::Real r) const {
     if (!useOpticalDepth)
       return is_in_shadow(xyz[0], xyz[1], xyz[2]) ? 0.0 : 1.0;
+    if (is_in_shadow(xyz[0], xyz[1], xyz[2]))
+      return optMinProduction;
 
     const amrex::Real r_safe = std::max(r, 1.0e-3);
     const amrex::Real proj = xyz[0] * optSolarDir[0] + xyz[1] * optSolarDir[1] +
@@ -194,9 +218,23 @@ public:
       return std::max(exp(-tauV * chap), optMinProduction);
     }
 
-    const amrex::Real tauV = vertical_optical_depth(r, -1);
-    const amrex::Real tau = std::max(tauV, optTauFloor) / mu;
-    if (tau >= optTauCutoff || proj <= 0.0)
+    amrex::Real tau;
+    if (proj <= 0.0) {
+      // Behind the terminator plane (BATSRUS: dark). That holds for the
+      // thermosphere, but a corona extends to several planetary radii: only
+      // the geometric shadow of the planet (radius from #SHADOWCYLINDER,
+      // otherwise #PLANETRADIUS) is dark, and elsewhere the solar ray grazes
+      // the planet at the tangent radius p.
+      const amrex::Real p = std::sqrt(std::max(r * r - proj * proj, 0.0));
+      const amrex::Real rShadow =
+          useShadowCylinder ? shadowCylinderRadius : get_rPlanet_SI();
+      if (p <= rShadow)
+        return optMinProduction;
+      tau = std::max(grazing_optical_depth(p), optTauFloor);
+    } else {
+      tau = std::max(vertical_optical_depth(r, -1), optTauFloor) / mu;
+    }
+    if (tau >= optTauCutoff)
       return optMinProduction;
     return std::max(exp(-tau), optMinProduction);
   }
@@ -453,31 +491,9 @@ public:
   // ---- Exosphere density profiles ----
 
   amrex::Real get_exosphere_density(amrex::Real r) const override {
-    if (exosphereType == "None")
-      return 0.0;
-    if (r < get_rPlanet_SI())
-      return 0.0;
-
     amrex::Real sum = 0.0;
-    if (exosphereType == "Exponential") {
-      for (int i = 0; i < nExoComponent; ++i) {
-        if (exoH0[i] > 0.0) {
-          sum += exoN0[i] * exp(-(r - get_rPlanet_SI()) / exoH0[i]);
-        }
-      }
-    } else if (exosphereType == "Power-Law") {
-      for (int i = 0; i < nExoComponent; ++i) {
-        if (r > 0.0) {
-          sum += exoN0[i] * pow(get_rPlanet_SI() / r, exoK0[i]);
-        }
-      }
-    } else if (exosphereType == "Chamberlain") {
-      for (int i = 0; i < nExoComponent; ++i) {
-        if (get_rPlanet_SI() > 0.0 && r > 0.0) {
-          sum += exoN0[i] * exp(-exoH0[i] * (1.0 / get_rPlanet_SI() - 1.0 / r));
-        }
-      }
-    }
+    for (int i = 0; i < nExoComponent; ++i)
+      sum += get_exosphere_component_density(r, i);
     return sum;
   }
 
@@ -490,15 +506,16 @@ public:
     if (r < get_rPlanet_SI())
       return 0.0;
 
-    if (exosphereType == "Exponential") {
+    const std::string& type = exoTypeC[iC];
+    if (type == "Exponential") {
       if (exoH0[iC] > 0.0) {
         return exoN0[iC] * exp(-(r - get_rPlanet_SI()) / exoH0[iC]);
       }
-    } else if (exosphereType == "Power-Law") {
+    } else if (type == "Power-Law") {
       if (r > 0.0) {
         return exoN0[iC] * pow(get_rPlanet_SI() / r, exoK0[iC]);
       }
-    } else if (exosphereType == "Chamberlain") {
+    } else if (type == "Chamberlain") {
       if (get_rPlanet_SI() > 0.0 && r > 0.0) {
         return exoN0[iC] * exp(-exoH0[iC] * (1.0 / get_rPlanet_SI() - 1.0 / r));
       }

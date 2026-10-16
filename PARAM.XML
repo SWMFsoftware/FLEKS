@@ -2108,6 +2108,7 @@ accepted: rename it to #PLANETRADIUS in existing input decks.
 <command name="EXOSPHERE" alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2" multiple="T">
   <parameter name="typeProfile" type="string"/>
   <parameter name="nComponent" type="integer"/>
+  <parameter name="typeComponent" type="string" if="$typeProfile eq 'Mixed'"/>
   <parameter name="n0" type="real"/>
   <parameter name="H0" type="real"/>
   <parameter name="T0" type="real"/>
@@ -2122,7 +2123,26 @@ Exponential      typeProfile
 0.0              k0
 
 This command configures the static exospheric neutral density profile.
-The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
+The typeProfile can be "Exponential", "Power-Law", "Chamberlain" or "Mixed".
+With "Mixed" each component starts with its own typeComponent (one of the
+other three), e.g. a cold exponential thermosphere next to a hot Chamberlain
+hydrogen corona:
+
+\begin{verbatim}
+Mixed            typeProfile
+2                nComponent
+Exponential      typeComponent
+8.5e15           n0
+13340            H0
+134.0            T0
+0.0              k0
+Chamberlain      typeComponent
+1.0e11           n0
+25965e3          H0
+6500.0           T0
+0.0              k0
+\end{verbatim}
+
 The coefficients n0, H0, T0, k0 are specified as multi-component arrays
 for each neutral species. The total neutral density at radius $r$ (measured
 from the planet center, with $r \geq r_{planet}$) is the sum over all
@@ -2264,7 +2284,15 @@ while the point is on the dayside and $\tau/\mu$ stays below tauCutoff, and
 $$
   A = A_{min}
 $$
-otherwise, with $\tau$ floored at tauFloor.
+otherwise, with $\tau$ floored at tauFloor. Behind the terminator plane the
+point is dark ($A = A_{min}$) only in the geometric shadow of the planet, a
+cylinder of the #SHADOWCYLINDER radius (otherwise #PLANETRADIUS) around the
+anti-solar axis. Elsewhere the solar ray grazes the planet at the tangent
+radius $p$ (the distance from that axis) and crosses the column
+$\tau = \sum_c \sigma_c n_c(p) H_c(p) \sqrt{2\pi p/H_c(p)}$, so a corona
+that extends to several planetary radii stays sunlit on the nightside while the
+thermosphere there is dark. With #SHADOWCYLINDER, a point in the cylinder is
+dark in every branch.
 
 With chapmanFunction = T only the component named by chapmanComponent
 contributes to $\tau$, which is then multiplied by the Chapman function

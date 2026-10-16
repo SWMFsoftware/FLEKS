@@ -10,6 +10,11 @@ per step must match P within 10% for both grid offsets.
 
 The mass unit is the uniform seed: Mpart1(0) = m n_seed V_seed, with V_seed
 the volume of the cells outside the body.
+
+The corona variant: a transparent Chamberlain corona n0 exp(-H0 (1/R - 1/r))
+with the optical depth on. Only the geometric shadow of the planet (x < 0,
+y^2 + z^2 < R^2) is dark, so P = nu * integral of n over the box outside the
+body and the shadow (5%); a dark nightside would give about half of it.
 """
 import logging
 import math
@@ -33,6 +38,25 @@ def _seed_volume(lo):
     return outside.sum() * (dx * LNORM)**3
 
 
+H0_CORONA = 1.5e6           # [m]
+
+
+def _corona_production(lo, n=320):
+    """nu * integral of the corona over the box, outside body and shadow."""
+    edges = np.linspace(lo, lo + 8.0, n + 1) * LNORM
+    c = 0.5 * (edges[1:] + edges[:-1])
+    dv = (edges[1] - edges[0])**3
+    y, z = np.meshgrid(c, c, indexing="ij")
+    perp2 = y * y + z * z
+    total = 0.0
+    for x in c:
+        r = np.sqrt(x * x + perp2)
+        lit = (r > R) & ~((x < 0) & (perp2 < R * R))
+        nCor = N0 * np.exp(-H0_CORONA * (1 / R - 1 / np.maximum(r, R)))
+        total += (nCor * lit).sum() * dv
+    return NU * total
+
+
 def validate_log(pic_diags=None, test_name=None):
     d = pic_diags
     if not d or len(d) < 3 or "Mpart1" not in d[0]:
@@ -43,10 +67,15 @@ def validate_log(pic_diags=None, test_name=None):
     unit = d[0]["Mpart1"] / seed             # code mass per ion
     perStep = [(b["Mpart1"] - a["Mpart1"]) / unit for a, b in zip(d, d[1:])]
     produced = np.mean(perStep) / DT
-    P = NU * N0 * 4 * math.pi * (R**2 * H + 2 * R * H**2 + 2 * H**3)
+    corona = test_name and test_name.endswith("corona")
+    if corona:
+        P = _corona_production(lo)
+    else:
+        P = NU * N0 * 4 * math.pi * (R**2 * H + 2 * R * H**2 + 2 * H**3)
+    tol = 0.05 if corona else 0.10
     ratio = produced / P
     logger.debug("    production %.4e /s vs analytic %.4e /s: ratio %.3f",
                  produced, P, ratio)
-    if abs(ratio - 1) > 0.10:
-        return False, f"production = {ratio:.3f} x analytic (tol 10%)"
+    if abs(ratio - 1) > tol:
+        return False, f"production = {ratio:.3f} x analytic (tol {tol:.0%})"
     return True, "Passed"

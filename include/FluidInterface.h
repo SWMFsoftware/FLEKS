@@ -154,6 +154,9 @@ protected:
   // Exosphere neutral profile parameters
   std::string exosphereType = "None";
   int nExoComponent = 0;
+  // Profile of each component: exosphereType, or with typeProfile "Mixed"
+  // the typeComponent read for each component.
+  amrex::Vector<std::string> exoTypeC;
   amrex::Vector<double> exoN0;
   amrex::Vector<double> exoH0;
   amrex::Vector<double> exoT0;
