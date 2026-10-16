@@ -1976,6 +1976,7 @@ void Pic::advance_particles_and_sources(int pushStage) {
     const Real dt = tc->get_dt();
     for (int i : kineticSpecies_) {
       parts[i]->inject_flux_at_inflow_faces(dt);
+      parts[i]->inject_flux_at_open_faces(dt, nodePlasma[i][0]);
     }
   }
 }

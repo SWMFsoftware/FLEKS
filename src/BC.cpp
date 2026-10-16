@@ -14,6 +14,7 @@ const std::vector<bc_detail::Entry>& ParticleBC::table() {
     { "periodic", ParticleBC::periodic, Legacy::none },
     { "coupled", ParticleBC::coupled, Legacy::none },
     { "outflow", ParticleBC::outflow, Legacy::none },
+    { "outflowthermal", ParticleBC::outflowthermal, Legacy::none },
     { "open", ParticleBC::outflow, Legacy::silent },
     { "vacuum", ParticleBC::vacuum, Legacy::none },
     { "vacume", ParticleBC::vacuum, Legacy::silent },

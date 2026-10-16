@@ -367,7 +367,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
             const bool doFold =
                 (faceBc == ParticleBC::reflect ||
                  faceBc == ParticleBC::inflow ||
-                 faceBc == ParticleBC::outflow ||
+                 ParticleBC::is_outflow(
+                     static_cast<ParticleBC::Type>(faceBc)) ||
                  faceBc == ParticleBC::vacuum || faceBc == ParticleBC::absorb);
             if (!doFold)
               continue;

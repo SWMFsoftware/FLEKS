@@ -379,6 +379,7 @@ AMR3_TESTS = {"constantppv", "mars_amr"}
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
 AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "mars", "bodyionosphere",
+                 "openboundary",
                  "ionosphereemission",
                  "photoproduction", "constantppv", "mars_amr"}
 

@@ -110,10 +110,17 @@ enum Type {
   vacuum = 3,
   reflect = 4,
   absorb = 5,
-  inflow = 6
+  inflow = 6,
+  // outflow with a thermal re-entry flux from the local plasma state
+  outflowthermal = 7
 };
 
 const std::vector<bc_detail::Entry> &table();
+
+// Faces through which the particles leave freely (deleted beyond the face).
+inline bool is_outflow(const Type t) {
+  return t == outflow || t == outflowthermal;
+}
 
 inline bool is_valid(const Type t) {
   for (const bc_detail::Entry &e : table()) {

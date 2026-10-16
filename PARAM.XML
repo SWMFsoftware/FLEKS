@@ -2025,7 +2025,9 @@ warning) if no #BODY is given. The defaults are 'absorb' and 'linetied'.
 particleBoundary:
 
   absorb  - a particle pushed into a body cell is removed and tallied
-            (nBodyAbsorb, qBodyAbsorb, mBodyAbsorb in the log).
+            (nBodyAbsorb, qBodyAbsorb, mBodyAbsorb in the log: the number
+            of macroparticles, the signed charge and the mass, summed over
+            the species in the units of the Mpart columns).
   reflect - specular reflection on the sphere: with n the radial direction
             from the body center to the particle, the position is mirrored to
             r -> 2R - r and the velocity to v -> v - 2(v.n)n. The particle and
@@ -2710,6 +2712,7 @@ accordingly for the next step. This is only used for OH-PT coupling.
       <option value="coupled"/>
       <option value="outflow"/>
       <option value="open"/>
+      <option value="outflowthermal"/>
       <option value="vacuum"/>
       <option value="reflect"/>
       <option value="absorb"/>
@@ -2720,6 +2723,7 @@ accordingly for the next step. This is only used for OH-PT coupling.
       <option value="coupled"/>
       <option value="outflow"/>
       <option value="open"/>
+      <option value="outflowthermal"/>
       <option value="vacuum"/>
       <option value="reflect"/>
       <option value="absorb"/>
@@ -2744,6 +2748,15 @@ This command defines the kinetic boundary conditions for all particle species.
   from the fluid / MHD state.
 * `outflow` (alias `open`) -- particles crossing the face are deleted; there
   is no tally and no ghost-cell population (Hybrid-VPIC "open").
+* `outflowthermal` -- like `outflow`, plus a thermal re-entry flux: every
+  face cell receives, per species, the inward half-flux n vtherm g(vd) of the
+  drifting Maxwellian of that species one node layer inside the face (a
+  zero-gradient open boundary). The normal drift enters only with its outward
+  part, which reduces the re-entry of a sub- or supersonic outflow; inflow
+  belongs to `inflow` faces. With `outflow`, a plasma at rest drains through
+  the face at its one-sided thermal flux n sigma/sqrt(2 pi), so the light
+  species (the kinetic electrons of full PIC) leave first and the boundary
+  layer charges up; with `outflowthermal` each species keeps its density.
 * `vacuum` -- like `outflow`, and additionally asserts that nothing exists
   beyond the face; no tally.
 * `reflect` -- specular reflection: position and normal velocity are
