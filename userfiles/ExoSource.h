@@ -562,6 +562,58 @@ public:
     return photoNu0[iC] * photo_attenuation(xyz, r_m);
   }
 
+  // Unattenuated photoionization frequency [s^-1] of neutral component iC,
+  // summed over #PHOTOIONIZATION and the photo reactions of #CHEMISTRY.
+  amrex::Real photo_nu0_total(int iC) const {
+    amrex::Real nu = 0.0;
+    if (usePhotoIonization && iC < static_cast<int>(photoNu0.size()))
+      nu += photoNu0[iC];
+    if (useChemistry)
+      for (const auto& rxn : chemReactions)
+        if (rxn.rateType == 1 && rxn.neutralComp == iC)
+          nu += rxn.rateCoef;
+    return nu;
+  }
+
+  amrex::Real column_photoproduction_si(const amrex::Real dir[3],
+                                        amrex::Real r0,
+                                        amrex::Real r1) const override {
+    r0 = std::max(r0, get_rPlanet_SI());
+    if (r1 <= r0)
+      return 0.0;
+    amrex::Vector<amrex::Real> nu(nExoComponent);
+    bool any = false;
+    for (int iC = 0; iC < nExoComponent; ++iC) {
+      nu[iC] = photo_nu0_total(iC);
+      any = any || nu[iC] > 0;
+    }
+    if (!any)
+      return 0.0;
+
+    // Midpoint rule with steps resolving the smallest local scale height.
+    amrex::Real col = 0.0, r = r0;
+    const amrex::Real drMax = (r1 - r0) / 200;
+    while (r < r1) {
+      amrex::Real dr = drMax;
+      for (int iC = 0; iC < nExoComponent; ++iC) {
+        const amrex::Real h = exosphere_scale_height(r, iC);
+        if (nu[iC] > 0 && h > 0)
+          dr = std::min(dr, h / 8);
+      }
+      dr = std::min(dr, r1 - r);
+      const amrex::Real rm = r + 0.5 * dr;
+      const amrex::Real xyz[3] = { rm * dir[0], rm * dir[1], rm * dir[2] };
+      const amrex::Real att = photo_attenuation(xyz, rm);
+      amrex::Real q = 0.0;
+      for (int iC = 0; iC < nExoComponent; ++iC)
+        if (nu[iC] > 0)
+          q += nu[iC] * get_exosphere_component_density(rm, iC);
+      col += q * att * dr;
+      r += dr;
+    }
+    return col;
+  }
+
   // Electron-impact ionization frequency [s^-1] for neutral component iC.
   amrex::Real impact_ionization_rate(amrex::Real ne, amrex::Real Te_eV,
                                      int iC) const {

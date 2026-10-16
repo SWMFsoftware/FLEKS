@@ -136,6 +136,14 @@ T                       doCompact
 1                       dnSavePic
 1                       dnSavePT
 
+#SAVEPLOT
+1                       nPlot
+3d var ascii si         plotString
+1                       dn   step 1 holds only the particles of one injection
+-1.0                    dt
+1                       dx
+rhoS0 rhoS1             NameVars
+
 #STOP
 -1                      MaxIter
 2.0                     TimeMax

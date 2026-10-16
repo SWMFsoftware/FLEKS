@@ -129,6 +129,16 @@ public:
     return 0.0;
   }
 
+  /// Photoionization column [m^-2 s^-1] along the unit direction dir from
+  /// r0 to r1 [m]: the integral of sum_c nu_c n_c A over the radius, with the
+  /// attenuation A of the production (#OPTICALDEPTH, shadow).
+  virtual amrex::Real column_photoproduction_si(const amrex::Real dir[3],
+                                                amrex::Real r0,
+                                                amrex::Real r1) const {
+    amrex::ignore_unused(dir, r0, r1);
+    return 0.0;
+  }
+
   // ---- Loss term management ----
   // Requires species ordering: species 0 = electron, 1..nS-1 = ions.
 

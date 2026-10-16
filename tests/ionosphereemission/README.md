@@ -19,4 +19,15 @@ code mass of a proton `e^2 / (1e7 lNormSI m_p)`:
 * the body absorbs nothing (the emission is outward);
 * each species' mass in the box grows at its own rate (relative 1e-3).
 
+* (plot) step 1 holds one injection only: the ratio of the ion mass on the
+  dayside and nightside nodes equals the ratio of the shell weights, which the
+  validator recomputes as `Pic::build_emission_weights` does (measured within
+  0.5%).
+
+The `photochem` variant uses `#IONOSPHEREEMISSIONPROFILE photochemistry` with
+exponent 0.5 over an optically thick layer (tau = 100) whose photoionization
+column is proportional to cos(SZA); the validator recomputes the column with
+the attenuation of the source terms. A photochemical boundary at the shell
+keeps the layer's ions out of the box, so the log checks are unchanged.
+
 Needs a 3D AMReX build.
