@@ -364,21 +364,22 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
 EXO_SOURCE_TESTS = {
     "chargeexchange", "photoionization", "electronimpact",
     "recombination", "chemistry", "reactions", "mars", "photoproduction",
+    "mars_amr",
 }
 
 # Tests that require AMR (nLevMax >= 2).
 AMR_TESTS = {
     "amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr",
-    "wave_amr_3d", "constantppv",
+    "wave_amr_3d", "constantppv", "mars_amr",
 }
 
 # Tests that need three AMR levels (nLevMax >= 3); skipped on the default
 # two-level build.
-AMR3_TESTS = {"constantppv"}
+AMR3_TESTS = {"constantppv", "mars_amr"}
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
 AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "mars", "bodyionosphere",
-                 "photoproduction", "constantppv"}
+                 "photoproduction", "constantppv", "mars_amr"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
 AMREX2D_TESTS = {"photoionization", "body"}
