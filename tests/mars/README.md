@@ -22,4 +22,7 @@ the setup against the bugs found while building it:
   ion-neutral chemistry) becomes the dominant ionospheric ion;
 * the run must stay quasi-neutral and the field energies bounded.
 
+The speed of light of a stand-alone run is uNormSI: it is 3000 km/s here, 10x the
+solar wind (the decks used 100 km/s at first, i.e. a flow 3x faster than light).
+
 Cost: ~4 min on 8 ranks. Marked expensive (`--test=mars` or `--all`).

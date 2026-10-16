@@ -32,7 +32,7 @@ F                       isPeriodicZ
 
 #NORMALIZATION
 3396000.0               lNormSI   [m]   1 Mars radius (R_M)
-100000.0                uNormSI   [m/s] 100 km/s (tNormSI = 33.96 s)
+3000000.0               uNormSI   [m/s] = the speed of light in a stand-alone run: c = 3000 km/s = 10 u_sw
 
 #BODY
 sphere                  type

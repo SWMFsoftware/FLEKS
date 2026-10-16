@@ -1800,6 +1800,11 @@ normalization should be set here. Both lNorm and uNorm are in SI units.
 
 Code units map from SI as code_length = SI_length/lNorm and
 code_time = SI_time * uNorm/lNorm (so tNorm = lNorm/uNorm s per code-time unit).
+
+uNorm is also the speed of light of the stand-alone run (c = 1 in code units).
+In full PIC it must be well above the bulk speeds of the plasma and the Alfven
+speed (by ~10): FLEKS warns when a #UNIFORMSTATE or #INFLOW speed exceeds
+0.3 c. Hybrid PIC (Ohm's law, no displacement current) does not depend on it.
 </command>
 
 <command name="SCALINGFACTOR" alias="SCALINGFACTOR_FLEKS0,SCALINGFACTOR_FLEKS1,SCALINGFACTOR_FLEKS2" multiple="T">

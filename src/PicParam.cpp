@@ -1034,7 +1034,47 @@ void Pic::finalize_units_conversion() {
   convert_electron_collision();
   convert_inflow_state();
   convert_body_ionosphere();
+  check_light_speed();
   convert_intrinsic_B();
+}
+
+//==========================================================
+void Pic::check_light_speed() {
+  // In a stand-alone full-PIC run the speed of light is uNormSI (c = 1 in code
+  // units, see #NORMALIZATION). A flow at or above c is unphysical and
+  // distorts the field response; ~10 times the flow is a safe margin.
+  if (useHybridPIC || domainParameters.initFromSWMF)
+    return;
+
+  double uMaxSI = 0;
+  const auto& state = fi->get_uniform_state();
+  const int nS = fi->get_nS();
+  if (static_cast<int>(state.size()) >= 5 * nS) {
+    for (int iS = 0; iS < nS; iS++) {
+      const double rho = state[5 * iS];
+      if (rho <= 0)
+        continue;
+      const double u = std::sqrt(state[5 * iS + 1] * state[5 * iS + 1] +
+                                 state[5 * iS + 2] * state[5 * iS + 2] +
+                                 state[5 * iS + 3] * state[5 * iS + 3]) /
+                       rho;
+      uMaxSI = std::max(uMaxSI, u);
+    }
+  }
+  for (size_t iB = 0; iB < inflowUx_I.size(); iB++)
+    if (inflowRho_I[iB] > 0)
+      uMaxSI =
+          std::max(uMaxSI, 1e3 * std::sqrt(inflowUx_I[iB] * inflowUx_I[iB] +
+                                           inflowUy_I[iB] * inflowUy_I[iB] +
+                                           inflowUz_I[iB] * inflowUz_I[iB]));
+
+  const double cSI = fi->get_cLight_SI();
+  if (cSI > 0 && uMaxSI > 0.3 * cSI)
+    Print() << "  Warning: the bulk speed " << uMaxSI / 1e3
+            << " km/s of #UNIFORMSTATE/#INFLOW is " << uMaxSI / cSI
+            << " times the speed of light c = uNormSI = " << cSI / 1e3
+            << " km/s (#NORMALIZATION). Full PIC needs c well above the flow"
+            << " and Alfven speeds (~10x): raise uNormSI.\n";
 }
 
 //==========================================================

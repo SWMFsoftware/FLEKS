@@ -745,6 +745,7 @@ public:
   void convert_electron_collision();
   void convert_inflow_state();
   void convert_body_ionosphere();
+  void check_light_speed();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
   void convert_intrinsic_B();
