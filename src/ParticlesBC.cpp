@@ -211,26 +211,32 @@ struct InflowSpeedSampler {
     const Real rIdx = r * LUT_SIZE;
     const int idx = std::min(std::max(static_cast<int>(rIdx), 0), LUT_SIZE - 1);
     const Real frac = rIdx - idx;
-    Real w = lut[idx] + frac * (lut[idx + 1] - lut[idx]);
-
-    // 2-3 Newton-Raphson polish iterations
-    for (int it = 0; it < 3; ++it) {
+    // The root lies in [lut[idx], lut[idx+1]] (F is monotone). Newton,
+    // safeguarded by bisection inside that bracket: in the last bin, which
+    // reaches up to wHi, an unguarded step from the far end (where dF ~
+    // exp(-wHi^2)) stays there and over-samples the tail.
+    Real lo = lut[idx], hi = lut[idx + 1];
+    Real w = (idx == LUT_SIZE - 1) ? lo : lo + frac * (hi - lo);
+    for (int it = 0; it < 40; ++it) {
       const Real diff = w - vd;
       const Real exp_term = std::exp(-diff * diff);
       const Real Fw =
           0.5 * ((e0 - exp_term) + vd * sqpi * (erfc_mvd - std::erfc(diff)));
+      if (Fw < target)
+        lo = w;
+      else
+        hi = w;
       const Real dF = w * exp_term;
-      if (std::abs(dF) < 1e-300)
-        break;
-      Real wNew = w - (Fw - target) / dF;
-      if (wNew < 0.0 || wNew > wHi)
-        wNew = 0.5 * (std::max(static_cast<Real>(0.0), w) + wHi);
+      Real wNew = (dF > 0) ? w - (Fw - target) / dF : 0.5 * (lo + hi);
+      if (!(wNew > lo && wNew < hi))
+        wNew = 0.5 * (lo + hi);
       if (std::abs(wNew - w) < 1e-13 * (1.0 + w))
-        break;
+        return wNew;
       w = wNew;
     }
     return w;
   }
+
 };
 } // namespace
 
@@ -531,11 +537,26 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
             const Real sigma = std::sqrt(p / rho);
             const Real nDens = rho / nNode / m;
             const Real vtherm = std::sqrt(2.0) * sigma;
-            // Only the outward part of the normal drift: the re-entered
-            // particles all move inward, so they bias the measured drift
-            // inward, which would raise the re-entry and bias it further
-            // (unstable). Inflow belongs to inflow faces (#INFLOW).
-            const Real vd = std::min(u[iDim] * inward, 0.0) / vtherm;
+            // Normal drift, averaged in time per face cell (about 10 steps):
+            // a single-step estimate is noisy (~0.1 vtherm), and the clamp
+            // below would turn zero-mean noise into a deficit of re-entry.
+            const int64_t key =
+                ((((int64_t)iDim * 2 + side) << 40) |
+                 ((int64_t)(c1 - domain.smallEnd(t1)) << 20) |
+                 (int64_t)(nDim > 2 ? c2 - domain.smallEnd(t2) : 0));
+            const Real vdNow = u[iDim] * inward / vtherm;
+            auto it = openFaceDrift.find(key);
+            if (it == openFaceDrift.end())
+              it = openFaceDrift.emplace(key, vdNow).first;
+            else
+              it->second += 0.1 * (vdNow - it->second);
+            // Only the outward part of the normal drift, beyond a deadband of
+            // 0.05 vtherm: the re-entered particles all move inward, so they
+            // bias the measured drift inward, which would raise the re-entry
+            // and bias it further (unstable). Inflow belongs to inflow faces
+            // (#INFLOW).
+            constexpr Real deadband = 0.05;
+            const Real vd = std::min(it->second + deadband, 0.0);
 
             // Expected macroparticles: n vtherm g(vd) dt dA / (n vol/nppc).
             const Real expected =

@@ -364,6 +364,9 @@ protected:
   // boundary-transverse cell; the value is the not-yet-injected fractional
   // macroparticle count carried between steps.
   std::map<int64_t, amrex::Real> injectFluxAcc;
+  // Time average of the normal drift (in units of vtherm) of each
+  // outflowthermal face cell, keyed by (iDim, side, global transverse index).
+  std::map<int64_t, amrex::Real> openFaceDrift;
 
   amrex::Vector<amrex::RealVect> plo, phi, dx, invDx;
   amrex::Vector<amrex::Real> invVol;

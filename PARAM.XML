@@ -2751,8 +2751,9 @@ This command defines the kinetic boundary conditions for all particle species.
 * `outflowthermal` -- like `outflow`, plus a thermal re-entry flux: every
   face cell receives, per species, the inward half-flux n vtherm g(vd) of the
   drifting Maxwellian of that species one node layer inside the face (a
-  zero-gradient open boundary). The normal drift enters only with its outward
-  part, which reduces the re-entry of a sub- or supersonic outflow; inflow
+  zero-gradient open boundary). The normal drift, averaged in time per face
+  cell over about 10 steps, enters only with its outward part beyond 0.05
+  vtherm, which reduces the re-entry of a sub- or supersonic outflow; inflow
   belongs to `inflow` faces. With `outflow`, a plasma at rest drains through
   the face at its one-sided thermal flux n sigma/sqrt(2 pi), so the light
   species (the kinetic electrons of full PIC) leave first and the boundary

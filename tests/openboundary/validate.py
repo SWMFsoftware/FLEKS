@@ -14,7 +14,14 @@ the convective flux n u only, so a subsonic drift would lose the thermal
 back-streaming through it.) With plain outflow H+ would lose about half of
 its mass in the 10 s of the run.
 
-Check: Mpart_s(t)/Mpart_s(0) within 3% for both species over the whole run.
+Checks over the whole run, both species: Mpart_s(t)/Mpart_s(0) within 3%,
+and (rest only) the temperature, Epart_s/Mpart_s relative to its initial
+value, within 3%: the re-entered particles must carry the energy flux 2 kT
+per particle (a flux-weighted speed sampler that over-sampled its tail heated
+H+ by 23%; a clamp of the noisy single-step drift cooled it by 7%). In the
+drift variant Epart includes the bulk flow, and the inflow face, which
+injects |u + sigma g| at the convective rate, lowers it by 17% with plain
+outflow at x+ as well, so the energy is not checked there.
 """
 import logging
 
@@ -34,6 +41,14 @@ def validate_log(pic_diags=None, test_name=None):
         if abs(worst - 1) > 0.03:
             reasons.append(f"species {iS}: mass/initial = {worst:.4f} "
                            f"(tol 3%)")
+    for iS in ((0, 1) if not (test_name or "").endswith("drift") else ()):
+        e0 = d[0][f"Epart{iS}"] / d[0][f"Mpart{iS}"]
+        ratios = [e[f"Epart{iS}"] / e[f"Mpart{iS}"] / e0 for e in d]
+        worst = max(ratios, key=lambda r: abs(r - 1))
+        logger.debug("    species %d: T/T0 in [%.4f, %.4f], end %.4f",
+                     iS, min(ratios), max(ratios), ratios[-1])
+        if abs(worst - 1) > 0.03:
+            reasons.append(f"species {iS}: T/T0 = {worst:.4f} (tol 3%)")
     if reasons:
         return False, "; ".join(reasons)
     return True, "Passed"

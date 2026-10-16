@@ -17,10 +17,17 @@ species' local Maxwellian, measured one node layer inside the face, with only
 the outward part of the normal drift (the re-entered particles bias the
 measured drift inward, which otherwise feeds back and runs away).
 
+The measured normal drift is averaged in time per face cell (about 10 steps)
+and enters beyond a deadband of 0.05 vtherm: clamping the noisy single-step
+drift would turn zero-mean noise into a deficit of re-entry.
+
 ## Validation
 
 The mass of each species stays within 3% of its initial value over 10 s
-(measured: rest 1.1%, drift 1.7%). With plain `outflow`, H+ loses 0.87% per
-step, about half of its mass over the run.
+(measured: rest 0.6%, drift 0.9%), and at rest the temperature as well
+(measured 1.4%). With plain `outflow`, H+ loses 0.87% per step, about half of
+its mass over the run. In the drift variant the energy per mass is not
+checked: it includes the bulk flow, which the `inflow` face (convective rate,
+|u + sigma g| speeds) lowers by 17% independently of the outflow faces.
 
 Needs a 3D AMReX build.
