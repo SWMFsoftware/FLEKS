@@ -1,0 +1,146 @@
+#DESCRIPTION
+2D hybrid free-stream through a fixed-field/inflow-particle face: no Bx layer
+
+Regression test for spurious Bx growth next to a Dirichlet (fixed field +
+inflow particle) upstream face. The setup is the upstream state and the +x boundary of a 2D perpendicular
+shock deck, without the reflecting wall: a uniform plasma flows along -x
+(n = 5 /cc, ux = -1163 km/s, T = 6.28e5 K) across B = (0, By, 0) with the
+motional field E = -u x B. The +x face injects the flow (fixed field +
+inflow particles, the shock-deck upstream boundary); the -x face is open.
+Hall term, warm adiabatic electrons (Te = 141 eV) and grid hyper-resistivity
+are on, as in the shock decks.
+
+A uniform flow must stay uniform, so Bx stays at the PIC noise level
+everywhere. Two boundary bugs made Bx grow in a layer next to the inflow
+face (to ~0.09 |B| by t = 10): the hyper-resistive E used the prescribed B
+instead of its Laplacian at Dirichlet faces, and the last physical cell of
+cell-centered B was overwritten with the prescribed state every call.
+validate.py checks that Bx next to the inflow face stays at the interior
+noise level.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+0.0                     xMin
+32.0                    xMax
+-8.0                    yMin
+ 8.0                    yMax
+-0.5                    zMin  one cell: the invariant direction
+ 0.5                    zMax
+
+#NCELL
+32                      nCellX
+16                      nCellY
+1                       nCellZ
+
+Same block shape as the 2D shock decks: block seams in both x and y.
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+8                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo
+fixed                   fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo
+inflow                  particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+hybrid
+
+#HALLTERM
+T                       useHallTerm
+
+#FIELDSUBCYCLE
+4                       nSubcycle
+F                       isAutoSubcycle
+
+#RESISTIVITY
+1.0e7                   etaResistivity  [m^2/s]
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI
+grid                    etaHyperMode
+0.003                   etaHyperCh
+
+#ELECTRONTEMPERATURE
+141.0                   electronTemperature  [eV]
+1.6667                  electronGamma
+5.0                     electronDensity0
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#INFLOW
+5.0                     rho [/cc]
+-1163.0                 ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+6.28e5                  T [K]
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+-1163.0                 ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+6.28e5                  T [K]
+0.0                     bx [T]
+1.044e-8                by [T]       |B| = 10.44 nT, perpendicular to the flow
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+1.214e-2                ez [V/m]     Ez = ux * By (E = -u x B)
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]
+1.0e5                   uNormSI   [m/s]
+
+#MONITOR
+100                     dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+10                      npcelx
+10                      npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+1.0                     dt
+1                       dx
+
+The Bx layer grows steadily; by t = 10 it is several times the interior noise
+on the broken code, while the flow (11.6 code units/s) has crossed the box
+~3.6 times.
+#STOP
+-1                      MaxIter
+10.0                    TimeMax
