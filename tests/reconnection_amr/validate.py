@@ -4,6 +4,7 @@ import glob
 import logging
 import math
 import os
+import re
 
 import numpy as np
 
@@ -153,8 +154,96 @@ def _xpoint(x, f):
     return min(nulls, key=lambda n: abs(n - 0.0))
 
 
+# divB-AMR report line (hybrid only), e.g.
+#   divB-AMR n=100 L0 if/cv/in=1.7e-04/3.7e-04/1.6e-04/dom=2.5e-01
+#                  L1 if/in=4.4e-05/9.5e-05/dom=4.7e-05 dCov=... dGhost=...
+_DIVB_LINE_RE = re.compile(r"divB-AMR\s+n=(\d+)\s+(.*)")
+_DIVB_LEVEL_RE = re.compile(
+    r"L(\d+)\s+if(?:/cv)?/in=([^/\s]+)/(?:([^/\s]+)/)?([^/\s]+)/dom=([^\s]+)")
+# Interface div(B) on the fine level may exceed the largest interior value by
+# at most this factor. The interface cells see the coarse-fine stencil, so
+# they are not at round-off, but a fine level whose interface ghost cells are
+# overwritten with the uniform state (B = 0 here) gives a ratio of ~1e4.
+DIVB_IFACE_RATIO = 10.0
+# Drift of the first fine ghost layer from the coarse interpolation, relative
+# to max |B| (dGhost/|B| of the divB-AMR line). The layer is advanced by the
+# Faraday update, so it departs from the interpolation only by the fine-scale
+# structure: ~0.03 at the first cycle and ~0.1-0.2 later in a correct run.
+# Ghost cells overwritten with the uniform state give ~1 from the first cycle.
+# Unlike the interface bucket, which is empty when the fine level spans the
+# whole box in z (fake 2D in a 3D build), this works on every build.
+DGHOST_FIRST_MAX = 0.2
+DGHOST_RUN_MAX = 0.5
+_DGHOST_RE = re.compile(r"dGhost=([^|\s]+)\|B\|=([^\s]+)")
+
+
+def _fine_iface_divb():
+    """Return (ok, message) for the coarse-fine interface div(B).
+
+    Reads the divB-AMR lines that FLEKS prints with #DIVB alwaysComputeDivB
+    (hybrid PIC only) from the saved stdout. Without them (full PIC) the check
+    is skipped.
+    """
+    path = os.path.join(RUN_DIR, "fleks_stdout.log")
+    if not os.path.isfile(path):
+        return True, "no stdout log"
+    lines = [ln for ln in open(path, encoding="utf-8", errors="replace")
+             if "divB-AMR" in ln]
+    if not lines:
+        return True, "no divB-AMR lines"
+    worst = worst_ghost = 0.0
+    for ln in lines:
+        m = _DIVB_LINE_RE.search(ln)
+        if not m:
+            continue
+        cycle = int(m.group(1))
+        iface, interior = {}, {}
+        for lm in _DIVB_LEVEL_RE.finditer(m.group(2)):
+            try:
+                iface[int(lm.group(1))] = float(lm.group(2))
+                interior[int(lm.group(1))] = float(lm.group(4))
+            except ValueError:  # 'inf'
+                return False, f"div(B) not finite at cycle {cycle}"
+        if 1 not in iface:
+            continue
+        gm = _DGHOST_RE.search(m.group(2))
+        if gm:
+            try:
+                dghost, bmax = float(gm.group(1)), float(gm.group(2))
+            except ValueError:
+                return False, f"dGhost not finite at cycle {cycle}"
+            rel = dghost / bmax if bmax > 0 else math.inf
+            limit = DGHOST_FIRST_MAX if ln is lines[0] else DGHOST_RUN_MAX
+            worst_ghost = max(worst_ghost, rel)
+            if not rel <= limit:
+                return False, (f"cycle {cycle}: first fine ghost layer is "
+                               f"{rel:.2f} |B| away from the coarse "
+                               f"interpolation (limit {limit})")
+        ref = max(interior.values())
+        if not all(math.isfinite(v) for v in list(iface.values()) + [ref]):
+            return False, f"div(B) not finite at cycle {cycle}"
+        ratio = iface[1] / ref if ref > 0 else (0.0 if iface[1] == 0 else math.inf)
+        worst = max(worst, ratio)
+        if ratio > DIVB_IFACE_RATIO:
+            return False, (f"cycle {cycle}: fine-level interface div(B) = "
+                           f"{iface[1]:.2e} is {ratio:.0f}x the interior "
+                           f"max {ref:.2e} (limit {DIVB_IFACE_RATIO:.0f}x)")
+    logger.debug("    interface div(B): worst ratio to interior = %.2f, "
+                 "dGhost/|B| <= %.3f over %d divB-AMR lines", worst,
+                 worst_ghost, len(lines))
+    return True, (f"interface div(B) <= {worst:.2f}x interior, "
+                  f"dGhost/|B| <= {worst_ghost:.2f}")
+
+
 def validate_log(pic_diags=None, test_name=None):
-    """Energy-log sanity: finite, bounded Eb; Epart grows (reconnection)."""
+    """Energy-log sanity: finite, bounded Eb; Epart grows (reconnection).
+
+    For hybrid PIC also checks the coarse-fine interface div(B) (see
+    _fine_iface_divb).
+    """
+    ok, msg = _fine_iface_divb()
+    if not ok:
+        return False, msg
     if not pic_diags or len(pic_diags) < 2:
         return True, "Passed (no pic log)"
     first, last = pic_diags[0], pic_diags[-1]
