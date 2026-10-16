@@ -478,45 +478,14 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         }
       }
 
-      // 2. Boundary cells on physical inflow wall for cell-centered B
-      // (centerB). Enforcing prescribed B on the boundary cell prevents Faraday
-      // curl mismatch between the pinned inflow boundary node and the interior
-      // solution.
-      for (int d = 0; d < nDim; ++d) {
-        if (bnd.isNode[d] || !isB)
-          continue;
+      // Cell-centered data is not pinned here: for cell-centered B the cell at
+      // loBnd/hiBnd is the last *physical* cell, advanced by Faraday's law.
+      // Overwriting it with the prescribed state every call breaks div(B) = 0
+      // against its evolving neighbour, so Bx grows in a layer next to the
+      // face. The prescribed state enters through the ghost cells (filled by
+      // fill_ext_dir) and the pinned boundary nodes above.
 
-        const bool onLoWall = ((bnd.bcLo[d] == FieldBC::inflow ||
-                                bnd.bcLo[d] == FieldBC::fixed) &&
-                               (ijk[d] == bnd.loBnd[d]));
-        const bool onHiWall = ((bnd.bcHi[d] == FieldBC::inflow ||
-                                bnd.bcHi[d] == FieldBC::fixed) &&
-                               (ijk[d] == bnd.hiBnd[d]));
-        if (onLoWall || onHiWall) {
-          bool inValid = true;
-          for (int od = 0; od < nDim; ++od) {
-            if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
-              inValid = false;
-              break;
-            }
-          }
-          if (inValid) {
-            for (int iVar = 0; iVar < nComp; ++iVar) {
-              const int comp = iStart + iVar;
-              if (func != nullptr) {
-                arr(i, j, k, comp) = (this->*func)(
-                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
-              } else {
-                int m[3] = { i, j, k };
-                m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
-                arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
-              }
-            }
-          }
-        }
-      }
-
-      // 3. Ghost cells/nodes outside domain if func == nullptr
+      // 2. Ghost cells/nodes outside domain if func == nullptr
       // (When func != nullptr, fill_ext_dir handles them).
       if (func == nullptr && bit::is_lev_boundary(statusArr(i, j, k, 0))) {
         int m[3] = { i, j, k };
