@@ -506,6 +506,15 @@ public:
   // prescribed #INFLOW state.
   void inject_flux_at_inflow_faces(amrex::Real dt);
 
+  // Thermal re-entry at outflowthermal faces: each face cell receives the
+  // inward half-flux n vtherm g(vd) of the drifting Maxwellian of this
+  // species at the face nodes (nodeMom: fluid moments of the species on the
+  // base level, as after convert_to_fluid_moments). A plasma at rest then
+  // keeps its density at the face, each species separately, so the fast
+  // electrons do not drain out of the box ahead of the ions.
+  void inject_flux_at_open_faces(amrex::Real dt,
+                                 const amrex::MultiFab& nodeMom);
+
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
                             amrex::Real dt = -1,
@@ -904,11 +913,13 @@ public:
     }
   }
 
-  // Tally a particle absorbed by the inner body (see #BODY).
+  // Tally a particle absorbed by the inner body (see #BODY). The weight
+  // carries the sign of the charge (qomSign), as in total_moments(): the
+  // charge is signed and the mass positive.
   inline void body_absorb_tally(amrex::Real weight) {
     bodyAbsorbCount += 1.0;
-    bodyAbsorbCharge += weight * charge;
-    bodyAbsorbMass += weight * mass;
+    bodyAbsorbCharge += qomSign * weight * charge;
+    bodyAbsorbMass += qomSign * weight * mass;
   }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,

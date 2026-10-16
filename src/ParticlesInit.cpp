@@ -461,7 +461,7 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
               tile.push_back(p);
             }
             bodyInjectCount += nPPC;
-            bodyInjectMass += qomSign * n * vol * mass;
+            bodyInjectMass += n * vol * mass;
           }
     }
   }
@@ -510,8 +510,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_body(
             add_particles_cell(iLev, mfi, ijk, fi, false, IntVect(), state, -1,
                                1.0, true);
             bodyInjectCount += product(nPartPerCell);
-            // Same sign convention as body_absorb_tally (weight * mass).
-            bodyInjectMass += qomSign * n * vol * mass;
+            // Positive mass, as in body_absorb_tally().
+            bodyInjectMass += n * vol * mass;
           }
     }
   }
