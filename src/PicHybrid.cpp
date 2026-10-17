@@ -2037,6 +2037,17 @@ void Pic::update_B_hybrid() {
   }
 
   if (finest_level > 0) {
+    // Smoothing also changes the wall and body nodes; restore their
+    // constraints on the base level (sync_emf_at_interface does it on the
+    // refined levels).
+    if (doSmoothE) {
+      nodeE[0].FillBoundary(Geom(0).periodicity());
+      apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
+                     false);
+      if (useBody) {
+        apply_body_E_bc(nodeE[0], 0);
+      }
+    }
     sync_emf_at_interface(nodeE);
   }
 

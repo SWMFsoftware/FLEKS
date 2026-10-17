@@ -227,13 +227,18 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
     // 2. Extrapolate from nearest valid neighbor for embedded active-region
-    // boundaries:
+    // boundaries, and on a refined level also into the coarse-fine interface
+    // ghosts, which nothing else fills for these fields (the hyperbolic-
+    // cleaning potential is advanced with a level-dependent speed, so the
+    // coarse value does not fit there). activeRegion is in level-0 index
+    // space, so the whole-fab test below only means something on level 0; on
+    // a refined level it skipped an arbitrary subset of the fabs.
     const BoxArray ba =
         get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
-      if (!ba.contains(bxFab)) {
+      if (iLev > 0 || !ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
         const Array4<const int>& statusArr = status[mfi].array();
         Box box = bxValid;
