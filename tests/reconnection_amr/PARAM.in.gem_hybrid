@@ -1,0 +1,175 @@
+#DESCRIPTION
+2-level AMR GEM-like Harris sheet, hybrid PIC: coarse-fine interface stability
+
+A small Harris sheet with the GEM challenge parameters (Birn et al. 2001):
+lambda0 = 0.5 d_i, nb = 0.2, Ti/Te = 5, B0 = 1, conducting y walls, code units
+with d_i = v_A = 1/sqrt(4*pi) and Omega_ci = 1. The box is only 1.6 x 3.2 d_i
+and the run is 30 steps long, so it is not a reconnection benchmark: it checks
+that a refined patch with fine dx = 0.05 d_i (base 0.1 d_i) next to low-density
+lobes stays stable. Injecting the fine E into the covered coarse nodes drove a
+2*dx_coarse mode along the interface here; max |B| reached 3x B0 within 26
+steps. validate.py checks the coarse-fine interface
+diagnostics (divB-AMR) and that max |B| stays near its initial value.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-0.22568                xMin  [Lx = 1.6 d_i]
+ 0.22568                xMax
+-0.45135                yMin  [Ly = 3.2 d_i]
+ 0.45135                yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+16                      nCellX  [base dx = 0.1 d_i; level 1: 0.05 d_i]
+32                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+32                      maxBlockSizeX  [one block per level patch: small blocks multiply the
+32                      maxBlockSizeY   coarse-fine fills, which dominate the cost here]
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+conducting              fieldBoxBoundaryLo  (y; conducting walls matching GEM challenge)
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo  (y; reflecting walls matching GEM challenge)
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+hybrid
+
+#RESISTIVITY
+8.0e5                   etaResistivity  [m^2/s; small background resistivity]
+
+#ELECTRONTEMPERATURE
+0.6923                  electronTemperature  [eV; Te_code = 1/(48*pi) ~ 0.00663 code units, Ti/Te = 5]
+1.0                     electronGamma        [isothermal fluid electrons]
+65.15939                electronDensity0     [1/cc; n_e0 = 1.0 code units]
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI      [m^4/s; unused in grid mode]
+grid                    etaHyperMode
+0.01                    etaHyperCh
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments [smooth ion moments to suppress particle shot noise]
+3                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#MINIMUMDENSITY
+0.1                     rhoMinOhm
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
+#FIELDSUBCYCLE
+80                      nSubcycle      [whistler CFL at the level-1 dx = 0.05 d_i]
+F                       isAutoSubcycle
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#PLASMA
+1                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+
+#UNIFORMSTATE
+13.03188                rho [/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+40168.0                 T [K]          ion temperature (Ti_code = 5/(48*pi) ~ 0.03316, Ti/Te = 5)
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+gem
+
+#GEMIC
+1.0                     b0       [asymptotic in-plane field B0 = 1.0]
+0.5                     tp       [tp = 0.5 yields delta_n = 1.0, so n(0) = nb + n0 = 0.2 + 1.0 = 1.2]
+0.14105                 lambda0  [current sheet half-width = 0.5 d_i = 0.5 / sqrt(4*pi) code units]
+0.02821                 apert    [vector potential perturbation amplitude psi0 = 0.1 * B0 * d_i]
+T                       useStandardGem
+F                       useUniformPressure
+T                       useUniformIonPressure  [stationary ions; electron fluid carries diamagnetic current]
+0.2                     nb       [background density ratio nb = 0.2]
+standard                pertType
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt       [Omega_ci^-1]
+
+#NORMALIZATION
+1.0e5                   lNormSI  [m; lNorm = 100 km]
+1.0e5                   uNormSI  [m/s; uNorm = 100 km/s]
+
+#MONITOR
+5                       dnReport
+
+#SAVELOG
+10                      dnSavePic
+100                     dnSavePT
+
+#PARTICLES
+3                       nParticle per cell in X
+3                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.15                    dt
+-1                      dx  [native AMR output]
+
+The box |x| < 0.4 d_i, |y| < 1.2 d_i is refined 2x. Its y interfaces lie in the
+lobes (n ~ 0.23), where the grid-scale mode grew in the full GEM deck.
+#REGION
+layer                   name
+box                     shape
+-0.11284                xMin  [|x| < 0.4 d_i]
+ 0.11284                xMax
+-0.33852                yMin  [|y| < 1.2 d_i]
+ 0.33852                yMax
+-0.5                    zMin  [read by 3D builds only]
+ 0.5                    zMax
+
+#REFINEREGION
+0                       iLev
++layer                  regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#CONSTANTPPV
+F                       isPPVconstant   (per-cell particle count; PC static AMR)
+
+#STOP
+-1                      MaxIter
+0.15                    TimeMax  [30 steps]
+
