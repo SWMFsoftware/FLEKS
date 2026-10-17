@@ -16,7 +16,7 @@ under periodic boundary conditions. Two variants are provided:
   Matching Walén velocity kick and motional $\mathbf{E} = -\mathbf{u} \times \mathbf{B}$ produce a unidirectional wave propagating along $+x$.
 - **AMR div(B) treatment (Hybrid)**:
   - Synchronized nodal electric fields across coarse-fine interface nodes.
-  - Covered coarse cells advanced with injected EMF and relaxed towards fine-cell
+  - Covered coarse cells advanced with the coarse EMF and relaxed towards fine-cell
     averages using the true 3D nodal vector potential $\mathbf{A}$
     ($\mathbf{B} \mathrel{+}= \nabla \times \mathbf{A}$).
   - First fine ghost layer advanced by Faraday's law rather than re-interpolated
