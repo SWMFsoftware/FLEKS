@@ -1038,7 +1038,8 @@ public:
   // Fill external Dirichlet (coupled / fixed) ghost cells from func.
   void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                     const int iStart, const int nComp, GETVALUE func,
-                    const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
+                    const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr,
+                    bool skipCoarseFineGhosts = false);
 
   amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {

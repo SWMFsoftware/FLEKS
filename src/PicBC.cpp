@@ -21,19 +21,10 @@ struct AbsorbWeights {
   Real drive[3] = { 0.0, 0.0, 0.0 };
 };
 
-// The active region of the level of geom, in the index type of mf.
-// activeRegion is in level-0 index space (geom0), so it is refined first:
-// compared with the fabs of a refined level as it is, it would mark every fine
-// fab as touching the boundary.
 inline BoxArray get_boundary_active_ba(const BoxArray& activeRegion,
                                        const MultiFab& mf, const Geometry& geom,
-                                       const Geometry& geom0, int nDimVal,
-                                       int iz) {
-  IntVect ratio(1);
-  for (int d = 0; d < AMREX_SPACEDIM; ++d)
-    ratio[d] = geom.Domain().length(d) / geom0.Domain().length(d);
-  BoxArray ba =
-      convert(amrex::refine(activeRegion, ratio), mf.boxArray().ixType());
+                                       int nDimVal, int iz) {
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
   const IntVect& ngrow = mf.nGrowVect();
   if (nDimVal > 2 && geom.Domain().bigEnd(iz) == geom.Domain().smallEnd(iz)) {
     ba.grow(iz, ngrow[iz]);
@@ -41,15 +32,28 @@ inline BoxArray get_boundary_active_ba(const BoxArray& activeRegion,
   return ba;
 }
 
+// The active region of the level of geom in the index type of mf: activeRegion
+// is in level-0 index space (geom0), so it is refined to that level first.
+inline BoxArray get_level_active_ba(const BoxArray& activeRegion,
+                                    const MultiFab& mf, const Geometry& geom,
+                                    const Geometry& geom0, int nDimVal,
+                                    int iz) {
+  IntVect ratio(1);
+  for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    ratio[d] = geom.Domain().length(d) / geom0.Domain().length(d);
+  return get_boundary_active_ba(amrex::refine(activeRegion, ratio), mf, geom,
+                                nDimVal, iz);
+}
+
 // True if the level-boundary (ghost) cell/node iv of a level lies outside
-// the active region ba of that level (see get_boundary_active_ba), once it is
+// the active region ba of that level (see get_level_active_ba), once it is
 // mapped across the periodic boundaries onto the cell/node it is an image of.
 // Only those ghosts are outer boundary ghosts. On a refined level the
 // coarse-fine interface ghosts are level boundary too, but they lie inside the
-// active region: they belong to the coarse solution and are filled from it.
-// (The domain-boundary status bit cannot tell them apart: it is also set on
-// ghost nodes lying exactly on a domain face, e.g. on a periodic seam or on
-// both z layers of a fake-2D grid.)
+// active region: they belong to the coarse solution. (The domain-boundary
+// status bit cannot tell them apart: it is also set on ghost nodes lying
+// exactly on a domain face, e.g. on a periodic seam or on both z layers of a
+// fake-2D grid.)
 inline bool is_outside_active(const BoxArray& ba, const Geometry& geom,
                               const BoundaryBounds& bnd, int nDimVal,
                               IntVect iv) {
@@ -88,8 +92,11 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
   // Fill external Dirichlet (coupled / fixed) faces from func if provided:
+  // Hybrid PIC fills (or, for the first B layer, Faraday-advances) the
+  // coarse-fine ghosts of a refined level itself, so the prescribed state must
+  // stay out of them. The full-PIC solver still relies on this fill there.
   if (func != nullptr) {
-    fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField);
+    fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField, useHybridPIC);
   }
 
   // Node-centered conducting wall requires zeroing boundary wall nodes
@@ -118,13 +125,22 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                        const int nComp, GETVALUE func, const int iLev,
-                       const BoxBC<FieldBC::Type>* bc) {
+                       const BoxBC<FieldBC::Type>* bc,
+                       bool skipCoarseFineGhosts) {
   if (!func)
     return;
 
+  // With skipCoarseFineGhosts only the ghosts outside the active region of the
+  // level are filled. Otherwise every level-boundary ghost of a fab that is
+  // not inside the level-0 active region is, which on a refined level includes
+  // the coarse-fine interface ghosts.
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim, iz_);
+      skipCoarseFineGhosts
+          ? get_level_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim,
+                                iz_)
+          : get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
+  const Geometry& geom = Geom(iLev);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
@@ -134,17 +150,14 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
     Array4<Real> const arr = mf.array(mfi);
     Array4<const int> const statusArr = status.array(mfi);
 
-    const Geometry& geom = Geom(iLev);
-
     // Note: [&mfi] is retained because host member-function pointer func
     // requires mfi. All other data are captured by value for GPU readiness.
     ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
-      // Only ghost cells outside the active region take the prescribed
-      // state (see is_outside_active).
-      if (!is_outside_active(ba, geom, bnd, nDim,
+      if (skipCoarseFineGhosts &&
+          !is_outside_active(ba, geom, bnd, nDim,
                              IntVect(AMREX_D_DECL(i, j, k))))
         return;
 
@@ -215,10 +228,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
     // 2. Extrapolate from nearest valid neighbor for embedded active-region
     // boundaries:
-    const BoxArray ba = get_boundary_active_ba(activeRegion, mf, Geom(iLev),
-                                               Geom(0), nDim, iz_);
-    const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType());
-    const Geometry& geom = Geom(iLev);
+    const BoxArray ba =
+        get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
@@ -228,9 +239,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         Box box = bxValid;
         box.grow(1);
         ParallelFor(box, [&](int i, int j, int k) {
-          if (bit::is_lev_boundary(statusArr(i, j, k, 0)) &&
-              is_outside_active(ba, geom, bnd, nDim,
-                                IntVect(AMREX_D_DECL(i, j, k)))) {
+          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             bool isNeiFound = false;
             const int kmin = (nDim > 2) ? -1 : 0;
             const int kmax = (nDim > 2) ? 1 : 0;
@@ -265,7 +274,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
   timing_func(nameFunc);
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim, iz_);
+      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
@@ -394,7 +403,7 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
   const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim, iz_);
+      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
   const Real* dx = Geom(iLev).CellSize();
 
@@ -468,7 +477,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
   timing_func(nameFunc);
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim, iz_);
+      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
@@ -610,7 +619,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
   timing_func(nameFunc);
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim, iz_);
+      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   const Real* plo = Geom(iLev).ProbLo();
