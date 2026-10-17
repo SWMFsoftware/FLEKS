@@ -22,6 +22,9 @@ H+ by 23%; a clamp of the noisy single-step drift cooled it by 7%). In the
 drift variant Epart includes the bulk flow, and the inflow face, which
 injects |u + sigma g| at the convective rate, lowers it by 17% with plain
 outflow at x+ as well, so the energy is not checked there.
+
+Budget: without body or sources the mass change of each species equals the
+mass injected minus removed at the faces (mIn_/mOut_ log columns), 1e-9.
 """
 import logging
 
@@ -49,6 +52,20 @@ def validate_log(pic_diags=None, test_name=None):
                      iS, min(ratios), max(ratios), ratios[-1])
         if abs(worst - 1) > 0.03:
             reasons.append(f"species {iS}: T/T0 = {worst:.4f} (tol 3%)")
+    faces = ["xm", "xp", "ym", "yp", "zm", "zp"]
+    if "mIn_xm_S0" in d[0]:
+        for iS in (0, 1):
+            net = sum(d[-1][f"mIn_{f}_S{iS}"] - d[-1][f"mOut_{f}_S{iS}"]
+                      for f in faces)
+            dM = d[-1][f"Mpart{iS}"] - d[0][f"Mpart{iS}"]
+            inflow = sum(d[-1][f"mIn_{f}_S{iS}"] for f in faces)
+            err = abs(dM - net) / inflow
+            logger.debug("    species %d: budget residual %.2e", iS, err)
+            if err > 1e-9:
+                reasons.append(f"species {iS}: dM - (in - out) = {err:.2e} "
+                               f"of the injected mass (tol 1e-9)")
+    else:
+        reasons.append("missing mIn_/mOut_ face budget columns")
     if reasons:
         return False, "; ".join(reasons)
     return True, "Passed"

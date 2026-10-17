@@ -422,6 +422,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           }
 
           particles.push_back(p);
+          faceInMass[2 * iDim + side] += qomSign * q * get_mass();
         }
       }
     }
@@ -602,6 +603,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
               if (NStructInt > iRecordCount_)
                 pt.idata(iRecordCount_) = 0;
               particles.push_back(pt);
+              faceInMass[2 * iDim + side] += qomSign * q * m;
             }
           }
       }

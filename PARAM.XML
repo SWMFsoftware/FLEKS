@@ -2810,6 +2810,10 @@ This command defines the kinetic boundary conditions for all particle species.
   the face at its one-sided thermal flux n sigma/sqrt(2 pi), so the light
   species (the kinetic electrons of full PIC) leave first and the boundary
   layer charges up; with `outflowthermal` each species keeps its density.
+  When any face is `inflow` or `outflowthermal`, the PIC log carries the
+  cumulative mass of each species injected through (mIn_<face>_S<i>) and
+  removed across (mOut_<face>_S<i>) each face, face = xm, xp, ym, yp, zm, zp,
+  for the particle budget.
 * `vacuum` -- like `outflow`, and additionally asserts that nothing exists
   beyond the face; no tally.
 * `reflect` -- specular reflection: position and normal velocity are

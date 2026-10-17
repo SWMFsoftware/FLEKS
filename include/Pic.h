@@ -461,6 +461,19 @@ private:
   } floatingBody;
 
   void update_floating_body();
+
+  // The log carries the per-face particle budget (mIn_/mOut_ columns) when a
+  // face injects particles (inflow, outflowthermal).
+  bool log_face_budget() const {
+    for (int i = 0; i < nSpecies; ++i)
+      for (int d = 0; d < nDim; ++d)
+        for (int side = 0; side < 2; ++side) {
+          const int t = side ? pInfo.pBCs[i].hi[d] : pInfo.pBCs[i].lo[d];
+          if (t == ParticleBC::inflow || t == ParticleBC::outflowthermal)
+            return true;
+        }
+    return false;
+  }
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;

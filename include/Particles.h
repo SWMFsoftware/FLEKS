@@ -413,6 +413,10 @@ protected:
 
   // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
   amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
+  // Cumulative mass (positive, as total_moments) injected through and removed
+  // across each domain face (2*d + {0=lo,1=hi}), for the particle budget.
+  amrex::Real faceInMass[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real faceOutMass[6] = { 0, 0, 0, 0, 0, 0 };
   amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
   amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
 
@@ -900,15 +904,34 @@ public:
       }
     }
 
-    if (!isLocateValid)
-      return is_outside_active_region(p, status, ab);
+    const bool isOut =
+        !isLocateValid ? is_outside_active_region(p, status, ab)
+                       : (isInsideBox ? bit::is_domain_boundary(cellMask)
+                                      : is_outside_active_region(p, ab));
+    if (isOut)
+      face_exit_tally(p);
+    return isOut;
+  }
 
-    return isInsideBox ? bit::is_domain_boundary(cellMask)
-                       : is_outside_active_region(p, ab);
+  // Tally the mass of a particle deleted beyond a domain face.
+  inline void face_exit_tally(const ParticleType& p) {
+    const amrex::Real* lo = Geom(0).ProbLo();
+    const amrex::Real* hi = Geom(0).ProbHi();
+    for (int d = 0; d < nDim; ++d) {
+      if (p.pos(d) < lo[d]) {
+        faceOutMass[2 * d] += qomSign * p.rdata(iqp_) * mass;
+        return;
+      }
+      if (p.pos(d) > hi[d]) {
+        faceOutMass[2 * d + 1] += qomSign * p.rdata(iqp_) * mass;
+        return;
+      }
+    }
   }
 
   // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
   inline void absorb_tally(int face, amrex::Real weight) {
+    faceOutMass[face] += qomSign * weight * mass;
     absorbTallyCount[face] += 1.0;
     absorbTallyCharge[face] += weight * charge;
     absorbTallyMass[face] += weight * mass;
@@ -1291,6 +1314,8 @@ public:
     return absorbTallyCharge[face];
   }
   amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
+  amrex::Real get_face_in_mass(int face) const { return faceInMass[face]; }
+  amrex::Real get_face_out_mass(int face) const { return faceOutMass[face]; }
 
   // Tallies for the particles absorbed by the inner body (see #BODY).
   amrex::Real get_body_absorb_count() const { return bodyAbsorbCount; }

@@ -840,6 +840,17 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol)
                      << "qBodyS" + std::to_string(i);
+    if (log_face_budget()) {
+      const char* fName[6] = { "xm", "xp", "ym", "yp", "zm", "zp" };
+      for (int i = 0; i < nSpecies; ++i)
+        for (int f = 0; f < 2 * nDim; ++f)
+          picLogStream << "\t" << std::setw(wCol)
+                       << std::string("mIn_") + fName[f] + "_S" +
+                              std::to_string(i)
+                       << "\t" << std::setw(wCol)
+                       << std::string("mOut_") + fName[f] + "_S" +
+                              std::to_string(i);
+    }
     if (floatingBody.use)
       picLogStream << "\t" << std::setw(wCol) << "phiBody" << "\t"
                    << std::setw(wCol) << "nBodyReflect" << "\t"
@@ -873,6 +884,19 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       }
       ParallelDescriptor::ReduceRealSum(
           bodyAbsorb.data(), bodyAbsorb.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
+    // Mass injected through / removed across each face, per species.
+    Vector<Real> faceBudget(12 * nSpecies, 0.0);
+    if (log_face_budget()) {
+      for (int i = 0; i < nSpecies; ++i)
+        for (int f = 0; f < 6; ++f) {
+          faceBudget[i * 12 + 2 * f] = parts[i]->get_face_in_mass(f);
+          faceBudget[i * 12 + 2 * f + 1] = parts[i]->get_face_out_mass(f);
+        }
+      ParallelDescriptor::ReduceRealSum(
+          faceBudget.data(), faceBudget.size(),
           ParallelDescriptor::IOProcessorNumber());
     }
 
@@ -922,6 +946,12 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       if (useBody)
         for (int i = 0; i < nSpecies; ++i)
           picLogStream << "\t" << std::setw(wCol) << speciesBodyQ[i];
+      if (log_face_budget())
+        for (int i = 0; i < nSpecies; ++i)
+          for (int f = 0; f < 2 * nDim; ++f)
+            picLogStream << "\t" << std::setw(wCol)
+                         << faceBudget[i * 12 + 2 * f] << "\t"
+                         << std::setw(wCol) << faceBudget[i * 12 + 2 * f + 1];
       if (floatingBody.use) {
         // Energy per charge in code units -> volts.
         const Real u = fi->get_unorm_si();
