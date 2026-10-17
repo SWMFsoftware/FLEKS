@@ -178,6 +178,13 @@ box                     shape
 #CONSTANTPPV
 F                       isPPVconstant   (per-cell particle count; PC static AMR)
 
+Print the per-level div(B) report (divB-AMR lines in stdout) without cleaning;
+validate.py checks that div(B) at the coarse-fine interface stays at the
+interior level.
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
 #STOP
 -1                      MaxIter
 20.0                    TimeMax   ~3.2 ion gyroperiods (reconnection develops)
