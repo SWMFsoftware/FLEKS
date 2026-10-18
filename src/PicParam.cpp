@@ -1178,7 +1178,7 @@ void Pic::check_light_speed() {
       uMaxSI = std::max(uMaxSI, u);
     }
   }
-  for (size_t iB = 0; iB < inflowUx_I.size(); iB++)
+  for (int iB = 0; iB < static_cast<int>(inflowUx_I.size()); iB++)
     if (inflowRho_I[iB] > 0)
       uMaxSI =
           std::max(uMaxSI, 1e3 * std::sqrt(inflowUx_I[iB] * inflowUx_I[iB] +

@@ -1158,9 +1158,6 @@ public:
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
-          const amrex::Real* dx = Geom(iLev).CellSize();
-          const auto plo = Geom(iLev).ProbLo();
-
           const amrex::Box& box = mfi.validbox();
           const auto lo = lbound(box);
           const auto hi = ubound(box);
