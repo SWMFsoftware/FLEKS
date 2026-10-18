@@ -4,6 +4,7 @@ import glob
 import logging
 import math
 import os
+import re
 
 import numpy as np
 
@@ -63,6 +64,8 @@ def _load_frame(path):
            "Bx": data[:, idx["Bx"]], "By": data[:, idx["By"]]}
     if "Bz" in idx:
         res["Bz"] = data[:, idx["Bz"]]
+    if "rhoS0" in idx:
+        res["rho"] = data[:, idx["rhoS0"]]
     return res
 
 
@@ -153,8 +156,133 @@ def _xpoint(x, f):
     return min(nulls, key=lambda n: abs(n - 0.0))
 
 
+# divB-AMR report line (hybrid only), e.g.
+#   divB-AMR n=100 L0 if/cv/in=1.7e-04/3.7e-04/1.6e-04/dom=2.5e-01
+#                  L1 if/in=4.4e-05/9.5e-05/dom=4.7e-05 dCov=... dGhost=...
+_DIVB_LINE_RE = re.compile(r"divB-AMR\s+n=(\d+)\s+(.*)")
+_DIVB_LEVEL_RE = re.compile(
+    r"L(\d+)\s+if(?:/cv)?/in=([^/\s]+)/(?:([^/\s]+)/)?([^/\s]+)/dom=([^\s]+)")
+# Interface div(B) on the fine level may exceed the largest interior value by
+# at most this factor. The interface cells see the coarse-fine stencil, so
+# they are not at round-off, but a fine level whose interface ghost cells are
+# overwritten with the uniform state (B = 0 here) gives a ratio of ~1e4.
+DIVB_IFACE_RATIO = 10.0
+# Drift of the first fine ghost layer from the coarse interpolation, relative
+# to max |B| (dGhost/|B| of the divB-AMR line). The layer is advanced by the
+# Faraday update, so it departs from the interpolation only by the fine-scale
+# structure: ~0.03 at the first cycle and ~0.1-0.2 later in a correct run.
+# Ghost cells overwritten with the uniform state give ~1 from the first cycle.
+# Unlike the interface bucket, which is empty when the fine level spans the
+# whole box in z (fake 2D in a 3D build), this works on every build.
+DGHOST_FIRST_MAX = 0.2
+DGHOST_RUN_MAX = 0.5
+_DGHOST_RE = re.compile(r"dGhost=([^|\s]+)\|B\|=([^\s]+)")
+# Short force-free and GEM-like variants: max |B| (printed by divB-AMR) may
+# exceed its first value by at most this factor. Both equilibria keep max |B|
+# near B0 over these runs (particle noise adds ~15%); the 2*dx_coarse mode that
+# the fine-to-coarse E injection drove on the GEM-like deck took it to 2x B0
+# within 26 steps.
+BMAX_GROWTH = 1.5
+
+
+def _variant(test_name):
+    """Which deck a variant runs: 'forcefree', 'gem' or the Fadeev default."""
+    name = test_name or ""
+    if "forcefree" in name:
+        return "forcefree"
+    if "gem" in name:
+        return "gem"
+    return "fadeev"
+
+
+def _fine_iface_divb(test_name=None):
+    """Return (ok, message) for the coarse-fine interface div(B).
+
+    Reads the divB-AMR lines that FLEKS prints with #DIVB alwaysComputeDivB
+    from the saved stdout. The hybrid variants must print them, and every line
+    must carry the level-1 record and the ghost drift: on a fake-2D grid the
+    level-1 interface bucket is empty, so dGhost is the check that catches a
+    broken coarse-fine treatment there, and a missing field must not read as
+    zero drift. Only the full-PIC variant, which has no such report, may skip
+    the check. For the force-free and GEM-like variants max |B| must also stay
+    within BMAX_GROWTH of its first value.
+    """
+    required = test_name is None or test_name.endswith("hybrid")
+    check_bmax = _variant(test_name) in ("forcefree", "gem")
+    bmax0 = None
+    path = os.path.join(RUN_DIR, "fleks_stdout.log")
+    if not os.path.isfile(path):
+        if required:
+            return False, "no stdout log (fleks_stdout.log) to read divB-AMR from"
+        return True, "no stdout log"
+    lines = [ln for ln in open(path, encoding="utf-8", errors="replace")
+             if "divB-AMR" in ln]
+    if not lines:
+        if required:
+            return False, ("no divB-AMR lines in the stdout "
+                           "(#DIVB alwaysComputeDivB missing?)")
+        return True, "no divB-AMR lines"
+    worst = worst_ghost = 0.0
+    for ln in lines:
+        m = _DIVB_LINE_RE.search(ln)
+        if not m:
+            return False, f"unparseable divB-AMR line: {ln.strip()}"
+        cycle = int(m.group(1))
+        iface, interior = {}, {}
+        for lm in _DIVB_LEVEL_RE.finditer(m.group(2)):
+            try:
+                iface[int(lm.group(1))] = float(lm.group(2))
+                interior[int(lm.group(1))] = float(lm.group(4))
+            except ValueError:  # 'inf'
+                return False, f"div(B) not finite at cycle {cycle}"
+        if 0 not in iface or 1 not in iface:
+            return False, f"cycle {cycle}: divB-AMR line lacks the L0 or L1 record"
+        gm = _DGHOST_RE.search(m.group(2))
+        if not gm:
+            return False, f"cycle {cycle}: divB-AMR line lacks dGhost and |B|"
+        try:
+            dghost, bmax = float(gm.group(1)), float(gm.group(2))
+        except ValueError:
+            return False, f"dGhost not finite at cycle {cycle}"
+        if check_bmax:
+            if bmax0 is None:
+                bmax0 = bmax
+            elif not bmax <= BMAX_GROWTH * bmax0:
+                return False, (f"cycle {cycle}: max |B| = {bmax:.2g} grew "
+                               f"beyond {BMAX_GROWTH} x its initial "
+                               f"{bmax0:.2g} (interface instability)")
+        rel = dghost / bmax if bmax > 0 else math.inf
+        limit = DGHOST_FIRST_MAX if ln is lines[0] else DGHOST_RUN_MAX
+        worst_ghost = max(worst_ghost, rel)
+        if not rel <= limit:
+            return False, (f"cycle {cycle}: first fine ghost layer is "
+                           f"{rel:.2f} |B| away from the coarse "
+                           f"interpolation (limit {limit})")
+        ref = max(interior.values())
+        if not all(math.isfinite(v) for v in list(iface.values()) + [ref]):
+            return False, f"div(B) not finite at cycle {cycle}"
+        ratio = iface[1] / ref if ref > 0 else (0.0 if iface[1] == 0 else math.inf)
+        worst = max(worst, ratio)
+        if ratio > DIVB_IFACE_RATIO:
+            return False, (f"cycle {cycle}: fine-level interface div(B) = "
+                           f"{iface[1]:.2e} is {ratio:.0f}x the interior "
+                           f"max {ref:.2e} (limit {DIVB_IFACE_RATIO:.0f}x)")
+    logger.debug("    interface div(B): worst ratio to interior = %.2f, "
+                 "dGhost/|B| <= %.3f over %d divB-AMR lines", worst,
+                 worst_ghost, len(lines))
+    return True, (f"interface div(B) <= {worst:.2f}x interior, "
+                  f"dGhost/|B| <= {worst_ghost:.2f}")
+
+
 def validate_log(pic_diags=None, test_name=None):
-    """Energy-log sanity: finite, bounded Eb; Epart grows (reconnection)."""
+    """Energy-log sanity: finite, bounded Eb; Epart grows (reconnection).
+
+    For hybrid PIC also checks the coarse-fine interface div(B) (see
+    _fine_iface_divb).
+    """
+    ok, msg = _fine_iface_divb(test_name)
+    if not ok:
+        return False, msg
     if not pic_diags or len(pic_diags) < 2:
         return True, "Passed (no pic log)"
     first, last = pic_diags[0], pic_diags[-1]
@@ -187,6 +315,85 @@ def _load_all_frames():
     return frames, None
 
 
+def _has_two_levels(frame):
+    """True if the frame mixes two x spacings with ratio 2 (AMR output)."""
+    spacings = set()
+    for yy in np.unique(np.round(frame["y"], 6)):
+        xs = np.unique(frame["x"][np.abs(frame["y"] - yy) < 1e-6])
+        if xs.size >= 3:
+            spacings.add(round(float(np.min(np.diff(xs))), 6))
+    if len(spacings) < 2:
+        return False
+    lo, hi = min(spacings), max(spacings)
+    return abs(hi / lo - 2.0) < 0.05
+
+
+# |B|^2 must stay uniform in the force-free sheet: std/mean over all points
+# at t=0 (the equilibrium) and at the end, and the mean |B|^2 of the refined
+# patch must match the coarse level.
+FF_B2_STD_T0 = 0.05
+FF_B2_STD_END = 0.10
+FF_B2_LEVEL_MISMATCH = 0.03
+FF_BOX = (0.70524, 0.35262)  # refined patch half-widths (code units)
+
+
+def _validate_forcefree_amr_plot(frames):
+    """Force-free AMR variant: |B|^2 uniform on both levels, start and end."""
+    if not _has_two_levels(frames[0][1]):
+        return False, "AMR grid not detected (no two x spacings in ratio 2)"
+    stats = []
+    for (fname, fr), lim in ((frames[0], FF_B2_STD_T0),
+                             (frames[-1], FF_B2_STD_END)):
+        b2 = fr["Bx"]**2 + fr["By"]**2 + fr["Bz"]**2
+        if not np.all(np.isfinite(b2)):
+            return False, f"{fname}: non-finite B"
+        rel_std = float(b2.std() / b2.mean())
+        if rel_std > lim:
+            return False, (f"{fname}: |B|^2 not uniform (std/mean = "
+                           f"{rel_std:.3f} > {lim})")
+        inside = (np.abs(fr["x"]) < FF_BOX[0]) & (np.abs(fr["y"]) < FF_BOX[1])
+        mismatch = abs(float(b2[inside].mean() / b2[~inside].mean()) - 1.0)
+        if mismatch > FF_B2_LEVEL_MISMATCH:
+            return False, (f"{fname}: mean |B|^2 of the refined patch differs "
+                           f"from the coarse level by {mismatch:.3f} "
+                           f"(> {FF_B2_LEVEL_MISMATCH})")
+        stats.append((rel_std, mismatch))
+    logger.debug("    force-free |B|^2 std/mean %.3f -> %.3f, patch/coarse "
+                 "mismatch %.4f -> %.4f", stats[0][0], stats[1][0],
+                 stats[0][1], stats[1][1])
+    return True, (f"force-free AMR: |B|^2 std/mean {stats[0][0]:.3f} -> "
+                  f"{stats[1][0]:.3f}, patch/coarse {stats[1][1]:.4f}")
+
+
+def _validate_gem_amr_plot(frames):
+    """GEM-like AMR variant: Harris sheet at t=0, bounded field at the end."""
+    first = frames[0][1]
+    if not _has_two_levels(first):
+        return False, "AMR grid not detected (no two x spacings in ratio 2)"
+    y = first["y"]
+    top = first["Bx"][y > y.max() - 1e-6].mean()
+    bot = first["Bx"][y < y.min() + 1e-6].mean()
+    if not (top > 0.9 and bot < -0.9):
+        return False, (f"t=0: Bx does not form the Harris sheet "
+                       f"(top={top:.2f}, bottom={bot:.2f})")
+    if "rho" in first:
+        rho_peak = float(first["rho"].max())
+        rho_lobe = float(first["rho"][y > y.max() - 1e-6].mean())
+        if not 0.9 < rho_peak < 1.5 or rho_lobe > 0.4:
+            return False, (f"t=0: density peak {rho_peak:.2f} / lobe "
+                           f"{rho_lobe:.2f} not the GEM profile (1.2 / 0.2)")
+    fname, last = frames[-1]
+    b = np.sqrt(last["Bx"]**2 + last["By"]**2 + last["Bz"]**2)
+    if not np.all(np.isfinite(b)):
+        return False, f"{fname}: non-finite B"
+    if float(b.max()) > BMAX_GROWTH:
+        return False, (f"{fname}: max |B| = {b.max():.2f} > {BMAX_GROWTH} B0 "
+                       f"(interface instability)")
+    logger.debug("    GEM AMR: Bx top/bottom %.2f/%.2f, final max |B| %.3f",
+                 top, bot, float(b.max()))
+    return True, f"GEM-like AMR: final max |B| {b.max():.3f} B0"
+
+
 def validate_plot(test_name):
     """AMR reconnection plot check.
 
@@ -198,6 +405,11 @@ def validate_plot(test_name):
     frames, err = _load_all_frames()
     if err is not None:
         return False, err
+    variant = _variant(test_name)
+    if variant == "forcefree":
+        return _validate_forcefree_amr_plot(frames)
+    if variant == "gem":
+        return _validate_gem_amr_plot(frames)
 
     # ---- (1) AMR refinement present ----
     coarse0, fine0, layer0 = _frame_stats(frames[0][1])

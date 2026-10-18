@@ -1250,25 +1250,27 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 }
 
 //==========================================================
-// Synchronize nodal E across AMR levels:
-//  1. Top-down: fine nodes on the coarse-fine interface take coarse E
-//     (linear interpolation along coarse edges via
-//     fill_fine_lev_edge_from_coarse).
-//  2. Bottom-up: covered coarse nodes take the coincident fine E via
-//     average_down_nodal.
-//  (Ghost nodes of fine levels are subsequently filled in
-//  fill_ghost_emf_from_coarse).
+// Synchronize nodal E at the coarse-fine interfaces: the fine nodes on the
+// interface take the coarse E (linear interpolation along the coarse edges,
+// fill_fine_lev_edge_from_coarse). Both levels then advance the cells that
+// share an interface face with the same E, which keeps div(B) at round-off
+// across the interface. (The ghost nodes of the fine levels are filled
+// afterwards in fill_ghost_emf_from_coarse.)
 //
-// Step 1 must precede Step 2 so that fine interface nodes are filled from
-// coarse E before coarse covered nodes are updated with fine values.
-//
-// Because curl_node_to_center is a 2*dx-wide stencil, evaluating curl(E) at dx
-// vs. 2*dx does not telescope: the coarse curl of synchronized E differs from
-// the cell average of fine curl(E). This intrinsic per-step drift between
-// coarse covered B and the fine B average is corrected by
-// relax_covered_B_to_fine.
-void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
-  BL_PROFILE("Pic::sync_emf_fine_to_coarse");
+// The covered coarse nodes keep the coarse E. Injecting the coincident fine E
+// into them instead does not make the covered coarse B follow the fine one:
+// curl_node_to_center is a 2*dx-wide stencil, so the coarse curl of any nodal
+// E differs from the cell average of the fine curl at O(1) relative error
+// (0.5-0.8 measured on the AMR tests). The covered coarse B is kept close to
+// the fine average by relax_covered_B_to_fine instead. The injection was also
+// harmful: it copies the grid-scale part of the fine E onto the coarse nodes,
+// where it drives a 2*dx_coarse mode that the coarse level barely damps (the
+// grid-mode hyper-resistivity is set by the finest dx). On a 2-level GEM deck
+// (base dx = 0.1 d_i) that mode grew along the interface from the first
+// cycle and blew the run up within an ion gyroperiod; with the coarse E kept,
+// the run is stable and the covered coarse B stays closer to the fine average.
+void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf) {
+  BL_PROFILE("Pic::sync_emf_at_interface");
   for (int iLev = 1; iLev <= finest_level; ++iLev) {
     fill_fine_lev_edge_from_coarse(
         nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, ref_ratio[iLev - 1],
@@ -1278,17 +1280,6 @@ void Pic::sync_emf_fine_to_coarse(Vector<MultiFab>& nodeEmf) {
                    iLev, false);
     if (useBody) {
       apply_body_E_bc(nodeEmf[iLev], iLev);
-    }
-  }
-
-  for (int iLev = finest_level; iLev > 0; --iLev) {
-    const int iCrse = iLev - 1;
-    average_down_nodal(nodeEmf[iLev], nodeEmf[iCrse], ref_ratio[iCrse]);
-    nodeEmf[iCrse].FillBoundary(Geom(iCrse).periodicity());
-    apply_field_bc(nodeStatus[iCrse], nodeEmf[iCrse], 0, nDim3,
-                   &Pic::get_node_E, iCrse, false);
-    if (useBody) {
-      apply_body_E_bc(nodeEmf[iCrse], iCrse);
     }
   }
 }
@@ -1327,7 +1318,7 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
   }
 
   if (finest_level > 0) {
-    sync_emf_fine_to_coarse(nodeEstage);
+    sync_emf_at_interface(nodeEstage);
     fill_ghost_emf_from_coarse(nodeEstage);
   }
 
@@ -1943,8 +1934,8 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Restriction. The covered coarse cells have already been advanced with the
-  // injected fine E, which keeps the coarse level divergence-consistent;
+  // Restriction. The covered coarse cells have already been advanced by the
+  // coarse Faraday update, which keeps the coarse level divergence-consistent;
   // average_down of the cell-centered B would not (its face weights are
   // (F0+2F1+F2)/4 instead of the CT value (F0+F2)/2).
   // Left alone, however, the covered coarse B drifts away from the fine
@@ -2046,7 +2037,18 @@ void Pic::update_B_hybrid() {
   }
 
   if (finest_level > 0) {
-    sync_emf_fine_to_coarse(nodeE);
+    // Smoothing also changes the wall and body nodes; restore their
+    // constraints on the base level (sync_emf_at_interface does it on the
+    // refined levels).
+    if (doSmoothE) {
+      nodeE[0].FillBoundary(Geom(0).periodicity());
+      apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
+                     false);
+      if (useBody) {
+        apply_body_E_bc(nodeE[0], 0);
+      }
+    }
+    sync_emf_at_interface(nodeE);
   }
 
   // Fill coarse-fine interface ghost cells for nodeE.
