@@ -1462,7 +1462,7 @@ Ionospheric boundary condition of the inner body (#BODY, #BODYBOUNDARY with
 particleBoundary absorb). After every particle push (and at the start) the
 one-cell-thick surface layer of the body is refilled with a Maxwellian of each
 species at rest, with the number density
-n = n0 * max(cos(SZA), cosSzaFloor)^szaExponent and the temperature T. The
+n = n0 * max(cos(SZA), cosSzaFloor)\^szaExponent and the temperature T. The
 layer acts as the ghost cells of a density (Dirichlet) boundary, like the
 photochemical-equilibrium body of BATSRUS ModUserMars: it is part of the
 moments, the current and the field solve (so the charge of the ionospheric
@@ -1589,16 +1589,17 @@ photochemistry     type
 Shape of the #IONOSPHEREEMISSION emission over the sphere. cosSza (default) is
 the rhybrid profile a = noon + (night - noon)(1 - cos SZA) on the dayside and
 a = night on the nightside. photochemistry uses
-a = night + (noon - night) (Phi / Phi_subsolar)^exponent, where Phi is the
+a = night + (noon - night) (Phi / Phi_subsolar)\^exponent, where Phi is the
 photoionization column below the emission sphere along each direction: the
 integral from #PLANETRADIUS to the sphere of sum_c nu_c n_c A over the
 radius, with the #PHOTOIONIZATION and photo #CHEMISTRY frequencies, the
 #EXOSPHERE profiles and the attenuation A of the production (#OPTICALDEPTH,
 #SHADOWCYLINDER). The profile then follows the solar zenith angle dependence
 of the ionospheric production computed by the source terms; for an optically
-thick atmosphere Phi ~ cos SZA, so exponent 1 recovers the cosSza profile.
+thick atmosphere Phi is proportional to cos SZA, so exponent 1 recovers the
+cosSza profile.
 Exponent 0.5 follows the peak density of a Chapman layer in photochemical
-equilibrium, n ~ sqrt(production). The solar direction of Phi_subsolar is the
+equilibrium, n proportional to sqrt(production). The solar direction of Phi_subsolar is the
 one of #IONOSPHEREEMISSION; keep it equal to that of #OPTICALDEPTH. Needs
 #SOURCE.
 </command>
@@ -1616,7 +1617,7 @@ reactions of #CHEMISTRY) is not injected into the plasma. The neutral
 densities that set the frequencies of the ion-neutral reactions and of the
 charge exchange keep the whole atmosphere. Use it when the grid cannot
 resolve the ionospheric layer: diluted over a cell, the ions recombine far
-too slowly (the loss scales with n^2), so the full column production would
+too slowly (the loss scales with n\^2), so the full column production would
 pile up next to the body. The default 0 injects all the ionization.
 </command>
 
@@ -2811,9 +2812,9 @@ This command defines the kinetic boundary conditions for all particle species.
   species (the kinetic electrons of full PIC) leave first and the boundary
   layer charges up; with `outflowthermal` each species keeps its density.
   When any face is `inflow` or `outflowthermal`, the PIC log carries the
-  cumulative mass of each species injected through (mIn_<face>_S<i>) and
-  removed across (mOut_<face>_S<i>) each face, face = xm, xp, ym, yp, zm, zp,
-  for the particle budget.
+  cumulative mass of each species injected through and removed across each
+  face, in the columns mIn_FACE_Sn and mOut_FACE_Sn (FACE = xm, xp, ym, yp,
+  zm, zp; n = species index), for the particle budget.
 * `vacuum` -- like `outflow`, and additionally asserts that nothing exists
   beyond the face; no tally.
 * `reflect` -- specular reflection: position and normal velocity are
