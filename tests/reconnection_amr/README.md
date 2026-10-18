@@ -111,7 +111,9 @@ variants, with solver-aware thresholds:
    run is longer).
 
 For every hybrid variant `validate_log` also reads the `divB-AMR` lines
-(`#DIVB alwaysComputeDivB`) from the saved stdout: the fine-level interface
+(`#DIVB alwaysComputeDivB`) from the saved stdout. They must be there, each
+with the level-0 and level-1 records and the `dGhost=...|B|=...` field (only
+the full-PIC variant, which prints no such report, may skip the check): the fine-level interface
 div(B) must stay within 10x the interior maximum, and the drift of the first
 fine ghost layer from the coarse interpolation (`dGhost/|B|`) below 0.2 at the
 first cycle and 0.5 afterwards. The ghost limit catches coarse-fine ghost

@@ -199,24 +199,34 @@ def _fine_iface_divb(test_name=None):
     """Return (ok, message) for the coarse-fine interface div(B).
 
     Reads the divB-AMR lines that FLEKS prints with #DIVB alwaysComputeDivB
-    (hybrid PIC only) from the saved stdout. Without them (full PIC) the check
-    is skipped. For the force-free and GEM-like variants max |B| must also stay
+    from the saved stdout. The hybrid variants must print them, and every line
+    must carry the level-1 record and the ghost drift: on a fake-2D grid the
+    level-1 interface bucket is empty, so dGhost is the check that catches a
+    broken coarse-fine treatment there, and a missing field must not read as
+    zero drift. Only the full-PIC variant, which has no such report, may skip
+    the check. For the force-free and GEM-like variants max |B| must also stay
     within BMAX_GROWTH of its first value.
     """
+    required = test_name is None or test_name.endswith("hybrid")
     check_bmax = _variant(test_name) in ("forcefree", "gem")
     bmax0 = None
     path = os.path.join(RUN_DIR, "fleks_stdout.log")
     if not os.path.isfile(path):
+        if required:
+            return False, "no stdout log (fleks_stdout.log) to read divB-AMR from"
         return True, "no stdout log"
     lines = [ln for ln in open(path, encoding="utf-8", errors="replace")
              if "divB-AMR" in ln]
     if not lines:
+        if required:
+            return False, ("no divB-AMR lines in the stdout "
+                           "(#DIVB alwaysComputeDivB missing?)")
         return True, "no divB-AMR lines"
     worst = worst_ghost = 0.0
     for ln in lines:
         m = _DIVB_LINE_RE.search(ln)
         if not m:
-            continue
+            return False, f"unparseable divB-AMR line: {ln.strip()}"
         cycle = int(m.group(1))
         iface, interior = {}, {}
         for lm in _DIVB_LEVEL_RE.finditer(m.group(2)):
@@ -225,28 +235,29 @@ def _fine_iface_divb(test_name=None):
                 interior[int(lm.group(1))] = float(lm.group(4))
             except ValueError:  # 'inf'
                 return False, f"div(B) not finite at cycle {cycle}"
-        if 1 not in iface:
-            continue
+        if 0 not in iface or 1 not in iface:
+            return False, f"cycle {cycle}: divB-AMR line lacks the L0 or L1 record"
         gm = _DGHOST_RE.search(m.group(2))
-        if gm:
-            try:
-                dghost, bmax = float(gm.group(1)), float(gm.group(2))
-            except ValueError:
-                return False, f"dGhost not finite at cycle {cycle}"
-            if check_bmax:
-                if bmax0 is None:
-                    bmax0 = bmax
-                elif not bmax <= BMAX_GROWTH * bmax0:
-                    return False, (f"cycle {cycle}: max |B| = {bmax:.2g} grew "
-                                   f"beyond {BMAX_GROWTH} x its initial "
-                                   f"{bmax0:.2g} (interface instability)")
-            rel = dghost / bmax if bmax > 0 else math.inf
-            limit = DGHOST_FIRST_MAX if ln is lines[0] else DGHOST_RUN_MAX
-            worst_ghost = max(worst_ghost, rel)
-            if not rel <= limit:
-                return False, (f"cycle {cycle}: first fine ghost layer is "
-                               f"{rel:.2f} |B| away from the coarse "
-                               f"interpolation (limit {limit})")
+        if not gm:
+            return False, f"cycle {cycle}: divB-AMR line lacks dGhost and |B|"
+        try:
+            dghost, bmax = float(gm.group(1)), float(gm.group(2))
+        except ValueError:
+            return False, f"dGhost not finite at cycle {cycle}"
+        if check_bmax:
+            if bmax0 is None:
+                bmax0 = bmax
+            elif not bmax <= BMAX_GROWTH * bmax0:
+                return False, (f"cycle {cycle}: max |B| = {bmax:.2g} grew "
+                               f"beyond {BMAX_GROWTH} x its initial "
+                               f"{bmax0:.2g} (interface instability)")
+        rel = dghost / bmax if bmax > 0 else math.inf
+        limit = DGHOST_FIRST_MAX if ln is lines[0] else DGHOST_RUN_MAX
+        worst_ghost = max(worst_ghost, rel)
+        if not rel <= limit:
+            return False, (f"cycle {cycle}: first fine ghost layer is "
+                           f"{rel:.2f} |B| away from the coarse "
+                           f"interpolation (limit {limit})")
         ref = max(interior.values())
         if not all(math.isfinite(v) for v in list(iface.values()) + [ref]):
             return False, f"div(B) not finite at cycle {cycle}"
