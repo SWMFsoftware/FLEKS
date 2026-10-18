@@ -850,6 +850,10 @@ void rescale_body_surface_nodes(amrex::FabArray<FAB>& dst,
     const auto& box = mfi.fabbox();
     auto data = dst[mfi].array();
     const auto cellArr = cellStatus[mfi].array();
+    // The node box (with ghosts) reaches one cell beyond the ghost cells of
+    // cellStatus: clamp to the cells this tile holds as well as the domain.
+    const auto cLo = amrex::lbound(cellStatus[mfi].box());
+    const auto cHi = amrex::ubound(cellStatus[mfi].box());
     const auto nodeArr = nodeStatus[mfi].array();
 
     amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -864,9 +868,12 @@ void rescale_body_surface_nodes(amrex::FabArray<FAB>& dst,
         int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
         int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
 
-        ii = amrex::min(amrex::max(ii, clo[0]), chi[0]);
-        jj = amrex::min(amrex::max(jj, clo[1]), chi[1]);
-        kk = amrex::min(amrex::max(kk, clo[2]), chi[2]);
+        ii = amrex::min(amrex::max(ii, amrex::max(clo[0], cLo.x)),
+                        amrex::min(chi[0], cHi.x));
+        jj = amrex::min(amrex::max(jj, amrex::max(clo[1], cLo.y)),
+                        amrex::min(chi[1], cHi.y));
+        kk = amrex::min(amrex::max(kk, amrex::max(clo[2], cLo.z)),
+                        amrex::min(chi[2], cHi.z));
 
         if (!bit::is_body(cellArr(ii, jj, kk)))
           ++nOut;
@@ -904,6 +911,10 @@ void scale_by_body_outside_fraction(amrex::FabArray<FAB>& dst,
     const auto& box = mfi.validbox();
     auto data = dst[mfi].array();
     const auto cellArr = cellStatus[mfi].array();
+    // The node box (with ghosts) reaches one cell beyond the ghost cells of
+    // cellStatus: clamp to the cells this tile holds as well as the domain.
+    const auto cLo = amrex::lbound(cellStatus[mfi].box());
+    const auto cHi = amrex::ubound(cellStatus[mfi].box());
     const auto nodeArr = nodeStatus[mfi].array();
 
     amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -916,9 +927,12 @@ void scale_by_body_outside_fraction(amrex::FabArray<FAB>& dst,
         int ii = i - ((iCombo & 1) != 0 ? 1 : 0);
         int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
         int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
-        ii = amrex::min(amrex::max(ii, clo[0]), chi[0]);
-        jj = amrex::min(amrex::max(jj, clo[1]), chi[1]);
-        kk = amrex::min(amrex::max(kk, clo[2]), chi[2]);
+        ii = amrex::min(amrex::max(ii, amrex::max(clo[0], cLo.x)),
+                        amrex::min(chi[0], cHi.x));
+        jj = amrex::min(amrex::max(jj, amrex::max(clo[1], cLo.y)),
+                        amrex::min(chi[1], cHi.y));
+        kk = amrex::min(amrex::max(kk, amrex::max(clo[2], cLo.z)),
+                        amrex::min(chi[2], cHi.z));
         if (!bit::is_body(cellArr(ii, jj, kk)))
           ++nOut;
       }
