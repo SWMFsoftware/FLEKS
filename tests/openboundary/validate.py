@@ -14,7 +14,7 @@ the convective flux n u only, so a subsonic drift would lose the thermal
 back-streaming through it.) With plain outflow H+ would lose about half of
 its mass in the 10 s of the run.
 
-Checks over the whole run, both species: Mpart_s(t)/Mpart_s(0) within 3%,
+Checks over the whole run (6 s), both species: Mpart_s(t)/Mpart_s(0) within 3%,
 and (rest only) the temperature, Epart_s/Mpart_s relative to its initial
 value, within 3%: the re-entered particles must carry the energy flux 2 kT
 per particle (a flux-weighted speed sampler that over-sampled its tail heated
@@ -25,9 +25,9 @@ outflow at x+ as well, so the energy is not checked there.
 
 Budget: without body or sources the mass change of each species equals the
 mass injected minus removed at the faces (mIn_/mOut_ log columns), 1e-9.
-drift_pc runs drift with the predictor-corrector step (rk4-pc), whose trial
-push is discarded: its fluxes must not stay in the tallies. periodic is rest
-with a periodic x: nothing may be booked to the x faces.
+drift runs with the predictor-corrector step (rk4-pc), whose trial push is
+discarded: its fluxes must not stay in the tallies. rest is periodic in x:
+nothing may be booked to the x faces.
 """
 import logging
 import math
@@ -82,7 +82,7 @@ def validate_log(pic_diags=None, test_name=None):
             if err > 1e-9:
                 reasons.append(f"species {iS}: dM - (in - out) = {err:.2e} "
                                f"of the injected mass (tol 1e-9)")
-        if (test_name or "").endswith("periodic"):
+        if (test_name or "").endswith("rest"):
             # A particle that wraps through x is no loss; one that leaves a y
             # or z face across a box edge must be booked there, not at x.
             xFlux = sum(d[-1][f"m{io}_{f}_S{iS}"] for io in ("In", "Out")

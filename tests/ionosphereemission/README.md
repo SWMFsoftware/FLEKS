@@ -6,7 +6,7 @@ An absorbing spherical body (`#BODY`, radius 1.5) sits inside an emission
 sphere of radius 2 (`#IONOSPHEREEMISSION`, after the rhybrid
 IonosphereInjector): H+ at 1e16 /s and O+ at 2e15 /s, T = 1e5 K, outward
 half-Maxwellian, noon/night profile 1/0.1. Hybrid PIC with B = 0 and Te = 0,
-so E = 0 and the ions fly ballistically into vacuum (3D, 24^3 cells, 2 s).
+so E = 0 and the ions fly ballistically into vacuum (3D, 24^3 cells, 1 s).
 
 ## Validation
 

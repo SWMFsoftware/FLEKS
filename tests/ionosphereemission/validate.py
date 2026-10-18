@@ -7,7 +7,7 @@ m1 = e^2 / (1e7 lNormSI m_p) (FluidInterface: Mnorm = 1e3 mNormSI [g]), so
 
 * the injected mass grows at (1e16 * 1 + 2e15 * 16) m1 per second (1e-6);
 * the emission is outward, so the body absorbs nothing (< 1e-3);
-* within 2 s no ion reaches the walls: the mass of each species in the box
+* within 1 s no ion reaches the walls: the mass of each species in the box
   grows at its own rate times its mass (1e-3; the vacuum seed is negligible).
 
 validate_plot: step 1 holds the particles of one injection only, so the

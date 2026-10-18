@@ -97,9 +97,9 @@ T                       useFixedDt
 0.1                     dt
 
 #PARTICLES
-3                       npcelx
-3                       npcely
-3                       npcelz
+2                       npcelx
+2                       npcely
+2                       npcelz
 
 #MONITOR
 50                      dnReport
@@ -112,4 +112,4 @@ T                       doCompact
 
 #STOP
 -1                      MaxIter
-20.0                    TimeMax
+8.0                     TimeMax

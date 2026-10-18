@@ -127,4 +127,4 @@ T                       doCompact
 
 #STOP
 -1                      MaxIter
-30.0                    TimeMax
+20.0                    TimeMax

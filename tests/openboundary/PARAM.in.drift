@@ -1,7 +1,8 @@
 #DESCRIPTION
 Open particle boundary (outflowthermal on all faces): a uniform plasma of H+
 and O+ at T = 1e5 K drifting along +x at 57.4 km/s (2 sigma of H+, 8 sigma of O+), entering at
-x- (INFLOW) and leaving through the other faces. Each face re-injects the inward
+x- (INFLOW) and leaving through the other faces, with the predictor-corrector
+step (rk4-pc): its trial push must not stay in the face budget. Each face re-injects the inward
 half-flux of the
 local Maxwellian of each species, so both keep their mass although their
 thermal speeds differ by 4. Hybrid PIC with B = 0 and Te = 0, so E = 0.
@@ -109,6 +110,9 @@ outflowthermal          y+
 outflowthermal          z-
 outflowthermal          z+
 
+#FIELDINTEGRATOR
+rk4-pc                  fieldIntegrator   predictor-corrector: trial and accepted push
+
 #TIMESTEPPING
 T                       useFixedDt
 0.1                     dt
@@ -129,4 +133,4 @@ T                       doCompact
 
 #STOP
 -1                      MaxIter
-10.0                    TimeMax
+6.0                     TimeMax

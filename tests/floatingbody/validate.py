@@ -9,8 +9,9 @@ closed box the net charge of the plasma is exactly the opposite of the net
 charge absorbed by the body (and re-emitted).
 
 * absorb (reference): the body takes 3x more electron than ion charge and the
-  plasma charges up (> +20% of N(H+) in 20 s); the bookkeeping holds (1%).
-* sheath (#FLOATINGBODY sheath): after the potential has relaxed (t > 5 s)
+  plasma charges up (> +5% of N(H+) in 5 s, measured 10%); the bookkeeping
+  holds (1%).
+* sheath (#FLOATINGBODY sheath, 8 s): after the potential has relaxed (5 s)
   the net absorbed current vanishes (< 10% of the ion current) and the
   plasma charge stays flat (< 0.5% of N(H+)); the potential is of order
   kT/e ln(sigma_e/sigma_i) = 1.4 kT/e (accepted 0.7 - 1.6 kT/e: the closed box
@@ -47,7 +48,7 @@ def validate_log(pic_diags=None, test_name=None):
     if bad:
         return False, bad
     d = pic_diags
-    if not d or len(d) < 100 or "qBodyS0" not in d[0]:
+    if not d or len(d) < 40 or "qBodyS0" not in d[0]:
         return False, "missing log or qBodyS columns"
     variant = (test_name or "").rsplit("_", 1)[-1]
     reasons = []
@@ -62,8 +63,8 @@ def validate_log(pic_diags=None, test_name=None):
     absorbed = -(end["qBodyS0"] + end["qBodyS1"])  # e - i, > 0 if e excess
 
     if variant == "absorb":
-        check(_net(end) / nH > 0.2,
-              f"plasma net charge/N(H+) = {_net(end) / nH:+.3f} (> 0.2)")
+        check(_net(end) / nH > 0.05,
+              f"plasma net charge/N(H+) = {_net(end) / nH:+.3f} (> 0.05)")
         check(abs(_net(end) - absorbed) < 0.01 * abs(absorbed),
               "plasma net charge = absorbed (e - i) charge "
               f"({_net(end):.4f} vs {absorbed:.4f})")

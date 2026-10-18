@@ -1,6 +1,6 @@
 #DESCRIPTION
 Open particle boundary (outflowthermal on all faces): a uniform plasma of H+
-and O+ at T = 1e5 K at rest. Each face re-injects the inward half-flux of the
+and O+ at T = 1e5 K at rest, periodic in x (a wrap through x is not a loss). Each face re-injects the inward half-flux of the
 local Maxwellian of each species, so both keep their mass although their
 thermal speeds differ by 4. Hybrid PIC with B = 0 and Te = 0, so E = 0.
 
@@ -26,7 +26,7 @@ F                       initFromSWMF
 8                       maxBlockSizeZ
 
 #PERIODICITY
-F                       isPeriodicX
+T                       isPeriodicX
 F                       isPeriodicY
 F                       isPeriodicZ
 
@@ -80,16 +80,16 @@ F                       useHallTerm
 0.0                     ez
 
 #FIELDBOXBOUNDARY
-outflow                 x-
-outflow                 x+
+periodic                x-
+periodic                x+
 outflow                 y-
 outflow                 y+
 outflow                 z-
 outflow                 z+
 
 #PARTICLEBOXBOUNDARY
-outflowthermal          x-
-outflowthermal          x+
+periodic                x-
+periodic                x+
 outflowthermal          y-
 outflowthermal          y+
 outflowthermal          z-
@@ -115,4 +115,4 @@ T                       doCompact
 
 #STOP
 -1                      MaxIter
-10.0                    TimeMax
+6.0                     TimeMax

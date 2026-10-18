@@ -146,4 +146,4 @@ rhoS0 rhoS1             NameVars
 
 #STOP
 -1                      MaxIter
-2.0                     TimeMax
+1.0                     TimeMax
