@@ -965,7 +965,8 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
         variants.append((pf, display_name, base_name))
 
     if name == "freestream":
-        # Free-stream test variants: full (original GMRES), upwind, hybrid, and 2D hybrid.
+        # Free-stream test variants: full (original GMRES), upwind, hybrid, 2D
+        # hybrid, and the 2D hybrid inflow-layer regression test.
         variants = [
             (os.path.join(test_dir, "PARAM.in.full"),
              "FREESTREAM (FULL PIC GMRES)", "freestream_full"),
@@ -975,6 +976,8 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
              "FREESTREAM (HYBRID HALL-OFF)", "freestream_hybrid"),
             (os.path.join(test_dir, "PARAM.in.hybrid_2d"),
              "FREESTREAM (HYBRID 2D INFLOW)", "freestream_hybrid_2d"),
+            (os.path.join(test_dir, "PARAM.in.hybrid_inflow"),
+             "FREESTREAM (HYBRID INFLOW LAYER)", "freestream_hybrid_inflow"),
         ]
 
     # Restrict to a single PARAM variant when requested.  The variant token is

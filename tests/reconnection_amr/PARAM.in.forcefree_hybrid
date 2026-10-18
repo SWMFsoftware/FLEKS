@@ -1,0 +1,170 @@
+#DESCRIPTION
+2-level AMR force-free current sheet, hybrid PIC: coarse-fine interface quality
+
+The force-free sheet of ../reconnection/PARAM.in.forcefree_hybrid (Le et al.
+2016; lambda = 1 d_i, Bg = 0.3 B0, beta_i = 0.5, Ti/Te = 5, uniform density)
+on a 10 x 5 d_i box: base 32 x 16 (dx = 0.3125 d_i, the resolution of the
+uniform deck) with a 2x refined patch around the X-point, for half an ion
+gyroperiod. In this equilibrium |B| = sqrt(B0^2 + Bg^2) and n are uniform, so
+any structure the coarse-fine interface imprints on the field stands out.
+validate.py checks the interface diagnostics (divB-AMR: div(B) at the
+interface, drift of the first fine ghost layer) and the uniformity of |B|^2 on
+both levels at the start and at the end.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1.41047                xMin  [Lx = 10 d_i = 2.82095 code units]
+ 1.41047                xMax
+-0.70524                yMin  [Ly = 5 d_i]
+ 0.70524                yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+32                      nCellX  [base dx = 0.3125 d_i; level 1: 0.156 d_i]
+16                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+32                      maxBlockSizeX  [one block per level patch]
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+conducting              fieldBoxBoundaryLo  (y; matches WarpX Dirichlet at transverse boundaries)
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo  (y; matches WarpX Reflecting at transverse boundaries)
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+hybrid
+
+#RESISTIVITY
+4.77465e6               etaResistivity  [m^2/s; corresponds to D_m = 6e-3 * d_i * v_A]
+
+#ELECTRONTEMPERATURE
+0.4154                  electronTemperature  [eV; Te_code = 0.05 / (4*pi) ~ 0.00398, beta_e = 0.10]
+1.0                     electronGamma        [isothermal electrons]
+65.15939                electronDensity0     [amu/cc; n_e0 = 1.0 in code units]
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI      [m^4/s; unused in grid mode]
+grid                    etaHyperMode
+0.0                     etaHyperCh      [without hyper-resistivity]
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+2                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#MINIMUMDENSITY
+0.0                     rhoMinOhm
+
+#FIELDSUBCYCLE
+4                       nSubcycle  [whistler CFL at the level-1 dx = 0.156 d_i]
+F                       isAutoSubcycle
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+65.15939                rho [/cc; n_i0 = 1.0 in code units]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+24191.0                 T [K; Ti_code = 0.25 / (4*pi) ~ 0.01989, beta_i = 0.50, Ti/Te = 5]
+0.0                     bx [T; set by ForceFreeIC]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+forcefree
+
+#FORCEFREEIC
+0.2821                  lambda   [current sheet half-width = 1.0 d_i = 1/sqrt(4*pi) code units]
+1.0                     b0       [asymptotic in-plane field B0]
+0.3                     bg       [guide field ratio Bg/B0 = 0.3]
+0.01                    perturb  [initial perturbation amplitude dB/B0 = 0.01]
+T                       useUniformIonPressure [stationary ion background]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.0062831853            dt       [dt = 1e-3 * t_ci, where t_ci = 2*pi / Omega_ci ~ 6.283185 s]
+
+#NORMALIZATION
+1.0e5                   lNormSI  [m; lNorm = 100 km ~ d_i]
+1.0e5                   uNormSI  [m/s; uNorm = 100 km/s ~ vA, tNorm = 1 s]
+
+#MONITOR
+25                      dnReport
+
+#SAVELOG
+100                     dnSavePic
+100                     dnSavePT
+
+#PARTICLES
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+3.1415927               dt
+-1                      dx  [native AMR output]
+
+The box |x| < 2.5 d_i, |y| < 1.25 d_i around the X-point is refined 2x, so the
+refined patch has x and y interfaces and corners.
+#REGION
+box1                    name
+box                     shape
+-0.70524                xMin  [|x| < 2.5 d_i]
+ 0.70524                xMax
+-0.35262                yMin  [|y| < 1.25 d_i]
+ 0.35262                yMax
+-0.5                    zMin  [read by 3D builds only]
+ 0.5                    zMax
+
+#REFINEREGION
+0                       iLev
++box1                   regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#CONSTANTPPV
+F                       isPPVconstant
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
+#STOP
+-1                      MaxIter
+3.1415927               TimeMax     [0.5 t_ci = 500 steps]

@@ -32,6 +32,42 @@ inline BoxArray get_boundary_active_ba(const BoxArray& activeRegion,
   return ba;
 }
 
+// The active region of the level of geom in the index type of mf: activeRegion
+// is in level-0 index space (geom0), so it is refined to that level first.
+inline BoxArray get_level_active_ba(const BoxArray& activeRegion,
+                                    const MultiFab& mf, const Geometry& geom,
+                                    const Geometry& geom0, int nDimVal,
+                                    int iz) {
+  IntVect ratio(1);
+  for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    ratio[d] = geom.Domain().length(d) / geom0.Domain().length(d);
+  return get_boundary_active_ba(amrex::refine(activeRegion, ratio), mf, geom,
+                                nDimVal, iz);
+}
+
+// True if the level-boundary (ghost) cell/node iv of a level lies outside
+// the active region ba of that level (see get_level_active_ba), once it is
+// mapped across the periodic boundaries onto the cell/node it is an image of.
+// Only those ghosts are outer boundary ghosts. On a refined level the
+// coarse-fine interface ghosts are level boundary too, but they lie inside the
+// active region: they belong to the coarse solution. (The domain-boundary
+// status bit cannot tell them apart: it is also set on ghost nodes lying
+// exactly on a domain face, e.g. on a periodic seam or on both z layers of a
+// fake-2D grid.)
+inline bool is_outside_active(const BoxArray& ba, const Geometry& geom,
+                              const BoundaryBounds& bnd, int nDimVal,
+                              IntVect iv) {
+  for (int d = 0; d < nDimVal; ++d) {
+    if (!geom.isPeriodic(d))
+      continue;
+    if (iv[d] < bnd.loBnd[d])
+      iv[d] += geom.Domain().length(d);
+    else if (iv[d] > bnd.hiBnd[d])
+      iv[d] -= geom.Domain().length(d);
+  }
+  return !ba.contains(iv);
+}
+
 } // namespace
 
 //==========================================================
@@ -56,8 +92,11 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
   // Fill external Dirichlet (coupled / fixed) faces from func if provided:
+  // Hybrid PIC fills (or, for the first B layer, Faraday-advances) the
+  // coarse-fine ghosts of a refined level itself, so the prescribed state must
+  // stay out of them. The full-PIC solver still relies on this fill there.
   if (func != nullptr) {
-    fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField);
+    fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField, useHybridPIC);
   }
 
   // Node-centered conducting wall requires zeroing boundary wall nodes
@@ -86,13 +125,22 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                        const int nComp, GETVALUE func, const int iLev,
-                       const BoxBC<FieldBC::Type>* bc) {
+                       const BoxBC<FieldBC::Type>* bc,
+                       bool skipCoarseFineGhosts) {
   if (!func)
     return;
 
+  // With skipCoarseFineGhosts only the ghosts outside the active region of the
+  // level are filled. Otherwise every level-boundary ghost of a fab that is
+  // not inside the level-0 active region is, which on a refined level includes
+  // the coarse-fine interface ghosts.
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+      skipCoarseFineGhosts
+          ? get_level_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim,
+                                iz_)
+          : get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
+  const Geometry& geom = Geom(iLev);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
@@ -106,6 +154,11 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
     // requires mfi. All other data are captured by value for GPU readiness.
     ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      if (skipCoarseFineGhosts &&
+          !is_outside_active(ba, geom, bnd, nDim,
+                             IntVect(AMREX_D_DECL(i, j, k))))
         return;
 
       // If at an outer physical boundary with non-Dirichlet condition,
@@ -174,13 +227,18 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
     // 2. Extrapolate from nearest valid neighbor for embedded active-region
-    // boundaries:
+    // boundaries, and on a refined level also into the coarse-fine interface
+    // ghosts, which nothing else fills for these fields (the hyperbolic-
+    // cleaning potential is advanced with a level-dependent speed, so the
+    // coarse value does not fit there). activeRegion is in level-0 index
+    // space, so the whole-fab test below only means something on level 0; on
+    // a refined level it skipped an arbitrary subset of the fabs.
     const BoxArray ba =
         get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
-      if (!ba.contains(bxFab)) {
+      if (iLev > 0 || !ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
         const Array4<const int>& statusArr = status[mfi].array();
         Box box = bxValid;
@@ -478,45 +536,14 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         }
       }
 
-      // 2. Boundary cells on physical inflow wall for cell-centered B
-      // (centerB). Enforcing prescribed B on the boundary cell prevents Faraday
-      // curl mismatch between the pinned inflow boundary node and the interior
-      // solution.
-      for (int d = 0; d < nDim; ++d) {
-        if (bnd.isNode[d] || !isB)
-          continue;
+      // Cell-centered data is not pinned here: for cell-centered B the cell at
+      // loBnd/hiBnd is the last *physical* cell, advanced by Faraday's law.
+      // Overwriting it with the prescribed state every call breaks div(B) = 0
+      // against its evolving neighbour, so Bx grows in a layer next to the
+      // face. The prescribed state enters through the ghost cells (filled by
+      // fill_ext_dir) and the pinned boundary nodes above.
 
-        const bool onLoWall = ((bnd.bcLo[d] == FieldBC::inflow ||
-                                bnd.bcLo[d] == FieldBC::fixed) &&
-                               (ijk[d] == bnd.loBnd[d]));
-        const bool onHiWall = ((bnd.bcHi[d] == FieldBC::inflow ||
-                                bnd.bcHi[d] == FieldBC::fixed) &&
-                               (ijk[d] == bnd.hiBnd[d]));
-        if (onLoWall || onHiWall) {
-          bool inValid = true;
-          for (int od = 0; od < nDim; ++od) {
-            if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
-              inValid = false;
-              break;
-            }
-          }
-          if (inValid) {
-            for (int iVar = 0; iVar < nComp; ++iVar) {
-              const int comp = iStart + iVar;
-              if (func != nullptr) {
-                arr(i, j, k, comp) = (this->*func)(
-                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
-              } else {
-                int m[3] = { i, j, k };
-                m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
-                arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
-              }
-            }
-          }
-        }
-      }
-
-      // 3. Ghost cells/nodes outside domain if func == nullptr
+      // 2. Ghost cells/nodes outside domain if func == nullptr
       // (When func != nullptr, fill_ext_dir handles them).
       if (func == nullptr && bit::is_lev_boundary(statusArr(i, j, k, 0))) {
         int m[3] = { i, j, k };

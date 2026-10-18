@@ -105,13 +105,12 @@ private:
   // The update dB/dt = -curl_node_to_center(E) is a hidden face-staggered
   // constrained transport, so div_node_to_center(avg_center_to_node(B)) is
   // preserved when every cell of a level is advanced by one single nodal E:
-  //   1) Nodal E is synchronized across coarse-fine interfaces (fine interface
-  //      nodes take the coarse E, and fine E is injected into covered coarse
-  //      nodes).
+  //   1) Nodal E is synchronized at the coarse-fine interfaces (fine interface
+  //      nodes take the coarse E).
   //   2) The in-plane B of the first fine ghost layer is advanced by Faraday's
   //      law with synchronized/interpolated nodal E.
-  //   3) Covered coarse cells are advanced with the injected fine E, and
-  //      relaxed toward the fine average with divergence-free curl corrections
+  //   3) Covered coarse cells are advanced with the coarse E, and relaxed
+  //      toward the fine average with divergence-free curl corrections
   //      (relax_covered_B_to_fine).
   // The identity div(avg(curl(E))) == 0 holds in both 2D and 3D, keeping
   // div(B) at round-off across all refinement levels.
@@ -970,8 +969,8 @@ public:
   // across levels.
   void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin, int iK,
                          amrex::Real hstep, bool includeAmbi);
-  // Inject fine nodal E into the coincident coarse nodes, finest first.
-  void sync_emf_fine_to_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // Set the fine nodal E on the coarse-fine interfaces from the coarse E.
+  void sync_emf_at_interface(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Fill the fine-level ghost nodes of E from the coarse E.
   void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
@@ -1164,7 +1163,8 @@ public:
   // Fill external Dirichlet (coupled / fixed) ghost cells from func.
   void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                     const int iStart, const int nComp, GETVALUE func,
-                    const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
+                    const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr,
+                    bool skipCoarseFineGhosts = false);
 
   amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {
