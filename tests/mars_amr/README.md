@@ -4,7 +4,7 @@ The setup of `tests/mars` (coarse base grid dx = 0.25 R_M, absorbing and
 conducting body at 100 km altitude, 10-reaction photochemistry, dual-cell source
 averages, `#PHOTOCHEMICALBOUNDARY` at 200 km) with two refinement levels: 0.125
 R_M inside 2 R_M and 0.0625 R_M (212 km) in the shell 0.95-1.3 R_M around the
-body. `#CONSTANTPPV T` with `minPPCPerDim 2` and `#RESAMPLING` keep 64/8/8
+body. `#CONSTANTPPV T` with `#MINPARTICLESPERCELL 2` and `#RESAMPLING` keep 64/8/8
 particles per cell. Runs 20 s; the checks are those of `tests/mars`.
 
 Measured (8 ranks, ~1.3 h): net charge < 0.3% of the solar-wind H+, Eb/Eb0 = 1.43

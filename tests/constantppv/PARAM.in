@@ -141,6 +141,8 @@ box                     shape
 
 #CONSTANTPPV
 T                       isPPVconstant   8 ppc on level 1, 8 (floor) on level 2
+
+#MINPARTICLESPERCELL
 2                       minPPCPerDim
 
 #RESAMPLING

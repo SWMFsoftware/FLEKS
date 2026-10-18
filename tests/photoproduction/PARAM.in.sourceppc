@@ -113,6 +113,8 @@ T                       useSource
 
 #CONSTANTPPV
 T                       isPPVconstant   single level: target = 2 x 2 x 2
+
+#MINPARTICLESPERCELL
 1                       minPPCPerDim
 
 #TIMESTEPPING

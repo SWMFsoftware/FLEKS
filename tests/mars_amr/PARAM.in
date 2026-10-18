@@ -335,6 +335,8 @@ node) of the many small fine boxes needs ~9 GB alone.
 
 #CONSTANTPPV
 T                       isPPVconstant   64 ppc on level 0, 8 ppc on levels 1-2
+
+#MINPARTICLESPERCELL
 2                       minPPCPerDim
 
 #RESAMPLING

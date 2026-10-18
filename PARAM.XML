@@ -782,21 +782,27 @@ Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 
 <command name="CONSTANTPPV" alias="CONSTANTPPV_FLEKS0,CONSTANTPPV_FLEKS1,CONSTANTPPV_FLEKS2" multiple="T">
   <parameter name="isPPVconstant" type="logical" default="F"/>
-  <if expr="$isPPVconstant">
-    <parameter name="minPPCPerDim" type="integer" min="1" default="1"/>
-  </if>
 
 #CONSTANTPPV
-T                   isPPVconstant
-2                   minPPCPerDim (optional)
+F                   isPPVconstant 
 
 If isPPVconstant is true then particles per volume is constant across all refinement levels,
 otherwise particles per cell is constant. With a constant particles per volume the
 particles per cell and dimension are divided by the refinement ratio on every level
-(integer division); the optional minPPCPerDim (default 1) is a lower limit, so that
-deep levels keep a few particles per cell. The particles that move into a finer cell
-are then heavier than its target weight: use #RESAMPLING with maxWeightRatio > 1 to
-split them.
+(integer division), down to the lower limit of #MINPARTICLESPERCELL. The particles that
+move into a finer cell are then heavier than its target weight: use #RESAMPLING with
+maxWeightRatio > 1 to split them.
+</command>
+
+<command name="MINPARTICLESPERCELL" alias="MINPARTICLESPERCELL_FLEKS0,MINPARTICLESPERCELL_FLEKS1,MINPARTICLESPERCELL_FLEKS2" multiple="T">
+  <parameter name="minPPCPerDim" type="integer" min="1" default="1"/>
+
+#MINPARTICLESPERCELL
+2                   minPPCPerDim
+
+Lower limit of the particles per cell and dimension on the refined levels with
+#CONSTANTPPV (default 1, which also keeps the deep levels from getting no particles at
+all), so that they keep a few particles per cell.
 </command>
 
 <command name="PRESPLITTING" alias="PRESPLITTING_FLEKS0,PRESPLITTING_FLEKS1,PRESPLITTING_FLEKS2" multiple="T">

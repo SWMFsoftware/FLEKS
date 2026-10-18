@@ -70,6 +70,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#MEMORY", ParameterOwner::Pic },
   { "#MERGELIGHT", ParameterOwner::Pic },
   { "#MINIMUMDENSITY", ParameterOwner::Pic },
+  { "#MINPARTICLESPERCELL", ParameterOwner::Pic },
   { "#NORMALIZATION", ParameterOwner::FluidInterface },
   { "#OHION", ParameterOwner::Pic },
   { "#PARTICLEBOXBOUNDARY", ParameterOwner::Pic },
