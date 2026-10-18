@@ -756,11 +756,16 @@ void Pic::compute_node_electron_pressure(int iLev, const MultiFab& nodeNe,
                                          MultiFab& nodePe) {
   if (useElectronPressureEq && peStateInitialized_) {
     // Evolved Pe: average the cell-centered state to the nodes. The ghost
-    // cells need the same zero-gradient fill as in compute_ambipolar_E.
+    // cells are filled as in compute_ambipolar_E: same level, coarse-fine
+    // boundary from the coarser level, zero gradient at the domain boundary.
     MultiFab centerTmp(centerPeState[iLev].boxArray(),
                        centerPeState[iLev].DistributionMap(), 1, 1);
-    MultiFab::Copy(centerTmp, centerPeState[iLev], 0, 0, 1, 0);
+    MultiFab::Copy(centerTmp, centerPeState[iLev], 0, 0, 1, 1);
     centerTmp.FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0)
+      fill_fine_lev_bny_from_coarse(
+          centerPeState[iLev - 1], centerTmp, 0, 1, ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
     if (!Geom(iLev).isAllPeriodic())
       apply_pe_zero_gradient_bc(iLev, centerTmp);
     average_center_to_node(centerTmp, nodePe);

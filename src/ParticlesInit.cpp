@@ -36,7 +36,7 @@ using namespace amrex;
  * ghost layer of inject_particles_at_body()).
  */
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::add_particles_cell(
+int Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
     const Vel& tpVel, Real dt, Real weightScale, bool allowBody) {
@@ -56,7 +56,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   }
 
   if (nPPC == 0)
-    return;
+    return 0;
 
   // No particle is created inside the absorbing inner body (see #BODY). The
   // test uses the cell center, i.e., the same cell-based staircase as the
@@ -69,10 +69,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
       cellCenter[iDim] = (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
 
     if (grid->is_inside_body(cellCenter))
-      return;
+      return 0;
   }
 
-  if (isTargetPPCDefined && !isFake2D) {
+  // The level target (#CONSTANTPPV, pre-splitting) applies only when the
+  // caller does not ask for an explicit count (the source particles do).
+  if (ppc == 0 && isTargetPPCDefined && !isFake2D) {
     const auto tppc = target_PPC(iLev)[mfi].array();
     for (int i = 0; i < nDim; ++i) {
       if (nDim > 2) {
@@ -287,6 +289,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           icount++;
         }
       }
+  return icount;
 }
 
 //==========================================================
@@ -507,9 +510,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_body(
             state.tag = speciesID;
             state.nDens = n;
             state.vth = vth;
-            add_particles_cell(iLev, mfi, ijk, fi, false, IntVect(), state, -1,
-                               1.0, true);
-            bodyInjectCount += product(nPartPerCell);
+            bodyInjectCount += add_particles_cell(
+                iLev, mfi, ijk, fi, false, IntVect(), state, -1, 1.0, true);
             // Positive mass, as in body_absorb_tally().
             bodyInjectMass += n * vol * mass;
           }
@@ -630,9 +632,9 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
 
 #define INSTANTIATE_PARTICLES_INIT(T)                                          \
   template void T::add_particles_domain();                                     \
-  template void T::add_particles_cell(const int, const MFIter&, const IntVect, \
-                                      const FluidInterface*, bool, IntVect,    \
-                                      const Vel&, Real, Real, bool);           \
+  template int T::add_particles_cell(const int, const MFIter&, const IntVect,  \
+                                     const FluidInterface*, bool, IntVect,     \
+                                     const Vel&, Real, Real, bool);            \
   template void T::inject_emission_shell(const Vector<MultiFab>&, Real, int,  \
                                          const Real*);                         \
   template void T::inject_particles_at_body(                                   \

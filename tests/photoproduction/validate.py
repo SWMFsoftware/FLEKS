@@ -57,10 +57,42 @@ def _corona_production(lo, n=320):
     return NU * total
 
 
+def _non_finite(diags):
+    """Reason string if a log value is NaN/inf (comparisons with NaN are false,
+    so a tolerance check alone would pass a broken run), else None."""
+    keys = sorted({k for e in (diags or []) for k, v in e.items()
+                   if isinstance(v, float) and not math.isfinite(v)})
+    if keys:
+        return f"non-finite log values in {', '.join(keys[:6])}"
+    return None
+
+
+def _validate_source_ppc(d):
+    """sourceppc: with #CONSTANTPPV the cells carry a target particle count
+    (2 x 2 x 2 here); #SOURCEPARTICLES 1 x 1 x 1 must still add one particle
+    per cell and step (the target overrode it: 8 per cell). The source covers
+    the 24^3 box; the cold seed barely moves, so the macroparticle count grows
+    by about one per cell per step (5%)."""
+    if "nParticles" not in d[0] or len(d) < 3:
+        return False, "missing nParticles log column"
+    perStep = [(b["nParticles"] - a["nParticles"]) for a, b in zip(d, d[1:])]
+    ratio = sum(perStep) / len(perStep) / NCELL**3
+    logger.debug("    source particles per cell and step: %.3f", ratio)
+    if not math.isfinite(ratio) or abs(ratio - 1) > 0.05:
+        return False, (f"source particles per cell and step = {ratio:.3f} "
+                       "(expected 1, tol 5%)")
+    return True, "Passed"
+
+
 def validate_log(pic_diags=None, test_name=None):
+    bad = _non_finite(pic_diags)
+    if bad:
+        return False, bad
     d = pic_diags
     if not d or len(d) < 3 or "Mpart1" not in d[0]:
         return False, "missing log or Mpart1 column"
+    if test_name and test_name.endswith("sourceppc"):
+        return _validate_source_ppc(d)
     lo = -3.9 if test_name and test_name.endswith("shifted") else -4.0
 
     seed = NSEED * _seed_volume(lo)          # seed ions
@@ -76,6 +108,6 @@ def validate_log(pic_diags=None, test_name=None):
     ratio = produced / P
     logger.debug("    production %.4e /s vs analytic %.4e /s: ratio %.3f",
                  produced, P, ratio)
-    if abs(ratio - 1) > tol:
+    if not math.isfinite(ratio) or abs(ratio - 1) > tol:
         return False, f"production = {ratio:.3f} x analytic (tol {tol:.0%})"
     return True, "Passed"

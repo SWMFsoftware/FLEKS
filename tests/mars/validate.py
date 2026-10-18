@@ -15,6 +15,7 @@ bounds that the setup bugs fixed on the mars-standalone-fixes branch violated:
 """
 import glob
 import logging
+import math
 import os
 
 import numpy as np
@@ -31,7 +32,20 @@ def set_run_dir(run_dir):
 MASS = [0.0625, 1.0, 32.0, 16.0, 44.0]
 
 
+def _non_finite(diags):
+    """Reason string if a log value is NaN/inf (comparisons with NaN are false,
+    so a tolerance check alone would pass a broken run), else None."""
+    keys = sorted({k for e in (diags or []) for k, v in e.items()
+                   if isinstance(v, float) and not math.isfinite(v)})
+    if keys:
+        return f"non-finite log values in {', '.join(keys[:6])}"
+    return None
+
+
 def validate_log(pic_diags=None, test_name=None):
+    bad = _non_finite(pic_diags)
+    if bad:
+        return False, bad
     if (test_name or "").endswith("emission"):
         return _validate_emission_log(pic_diags)
     d = pic_diags
@@ -184,7 +198,7 @@ def validate_plot(test_name=None):
     day = (x > 0) & (np.hypot(x, y) < 2.0)
     bMax = B[day].max() * 1e9
     logger.debug("    dayside max |B| = %.1f nT", bMax)
-    if bMax < 15:
+    if not bMax >= 15:
         reasons.append(f"dayside max |B| = {bMax:.1f} nT (> 15)")
 
     if reasons:

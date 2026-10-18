@@ -426,7 +426,6 @@ protected:
   amrex::Real bodyAbsorbCount = 0;
   amrex::Real bodyAbsorbCharge = 0;
   amrex::Real bodyAbsorbMass = 0;
-  // Cumulative number / mass of the particles injected by #BODYIONOSPHERE.
   // #FLOATINGBODY sheath: an electron that enters the sphere is absorbed only
   // if its normal kinetic energy per charge exceeds bodySheathPhi (code units
   // of energy per charge), otherwise it is reflected specularly. Cumulative
@@ -435,8 +434,61 @@ protected:
   bool bodySheath = false;
   amrex::Real bodySheathPhi = 0;
   amrex::Real bodyHitWeight = 0, bodyHitEnergy = 0, bodyReflectCount = 0;
+  // Cumulative number / mass of the particles injected at the body
+  // (#BODYIONOSPHERE, #IONOSPHEREEMISSION, #FLOATINGBODY reemit).
   amrex::Real bodyInjectCount = 0;
   amrex::Real bodyInjectMass = 0;
+
+  // The cumulative tallies and boundary histories above, saved with the
+  // particles by backup_particle_state(): a predictor-corrector step pushes
+  // twice and restore_particle_state() discards the trial push, so its
+  // fluxes must not stay in the tallies.
+  struct TallyState {
+    amrex::Real absorbCount[6], absorbCharge[6], absorbMass[6];
+    amrex::Real faceIn[6], faceOut[6];
+    amrex::Real bodyAbsorb[3], bodyHit[3], bodyInject[2];
+    std::map<int64_t, amrex::Real> fluxAcc, openDrift;
+  } tallyBackup;
+
+  void save_tallies(TallyState& t) const {
+    for (int f = 0; f < 6; ++f) {
+      t.absorbCount[f] = absorbTallyCount[f];
+      t.absorbCharge[f] = absorbTallyCharge[f];
+      t.absorbMass[f] = absorbTallyMass[f];
+      t.faceIn[f] = faceInMass[f];
+      t.faceOut[f] = faceOutMass[f];
+    }
+    t.bodyAbsorb[0] = bodyAbsorbCount;
+    t.bodyAbsorb[1] = bodyAbsorbCharge;
+    t.bodyAbsorb[2] = bodyAbsorbMass;
+    t.bodyHit[0] = bodyHitWeight;
+    t.bodyHit[1] = bodyHitEnergy;
+    t.bodyHit[2] = bodyReflectCount;
+    t.bodyInject[0] = bodyInjectCount;
+    t.bodyInject[1] = bodyInjectMass;
+    t.fluxAcc = injectFluxAcc;
+    t.openDrift = openFaceDrift;
+  }
+
+  void load_tallies(const TallyState& t) {
+    for (int f = 0; f < 6; ++f) {
+      absorbTallyCount[f] = t.absorbCount[f];
+      absorbTallyCharge[f] = t.absorbCharge[f];
+      absorbTallyMass[f] = t.absorbMass[f];
+      faceInMass[f] = t.faceIn[f];
+      faceOutMass[f] = t.faceOut[f];
+    }
+    bodyAbsorbCount = t.bodyAbsorb[0];
+    bodyAbsorbCharge = t.bodyAbsorb[1];
+    bodyAbsorbMass = t.bodyAbsorb[2];
+    bodyHitWeight = t.bodyHit[0];
+    bodyHitEnergy = t.bodyHit[1];
+    bodyReflectCount = t.bodyHit[2];
+    bodyInjectCount = t.bodyInject[0];
+    bodyInjectMass = t.bodyInject[1];
+    injectFluxAcc = t.fluxAcc;
+    openFaceDrift = t.openDrift;
+  }
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
@@ -484,7 +536,8 @@ public:
   int n_lev_max() const { return maxLevel() + 1; }
 
   void add_particles_domain();
-  void add_particles_cell(const int iLev, const amrex::MFIter& mfi,
+  // Returns the number of particles added.
+  int add_particles_cell(const int iLev, const amrex::MFIter& mfi,
                           const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
@@ -609,11 +662,13 @@ public:
               this->GetParGDB());
     }
     backupContainer_->copyParticles(*this, true);
+    save_tallies(tallyBackup);
   }
 
   void restore_particle_state() {
     if (backupContainer_) {
       this->copyParticles(*backupContainer_, true);
+      load_tallies(tallyBackup);
     }
   }
 
@@ -913,11 +968,14 @@ public:
     return isOut;
   }
 
-  // Tally the mass of a particle deleted beyond a domain face.
+  // Tally the mass of a particle deleted beyond a domain face. A periodic
+  // direction is skipped: crossing it wraps, it is not a loss.
   inline void face_exit_tally(const ParticleType& p) {
     const amrex::Real* lo = Geom(0).ProbLo();
     const amrex::Real* hi = Geom(0).ProbHi();
     for (int d = 0; d < nDim; ++d) {
+      if (Geom(0).isPeriodic(d))
+        continue;
       if (p.pos(d) < lo[d]) {
         faceOutMass[2 * d] += qomSign * p.rdata(iqp_) * mass;
         return;

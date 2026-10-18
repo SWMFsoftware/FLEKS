@@ -13,7 +13,20 @@ import math
 logger = logging.getLogger(__name__)
 
 
+def _non_finite(diags):
+    """Reason string if a log value is NaN/inf (comparisons with NaN are false,
+    so a tolerance check alone would pass a broken run), else None."""
+    keys = sorted({k for e in (diags or []) for k, v in e.items()
+                   if isinstance(v, float) and not math.isfinite(v)})
+    if keys:
+        return f"non-finite log values in {', '.join(keys[:6])}"
+    return None
+
+
 def validate_log(pic_diags=None, test_name=None):
+    bad = _non_finite(pic_diags)
+    if bad:
+        return False, bad
     d = pic_diags
     if not d or len(d) < 10 or "nParticles" not in d[0]:
         return False, "missing log or nParticles column"

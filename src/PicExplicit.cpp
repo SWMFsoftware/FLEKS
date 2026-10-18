@@ -167,6 +167,7 @@ void Pic::advance_explicit_pc(Real dt) {
   for (int i : kineticSpecies_) {
     parts[i]->backup_particle_state();
   }
+  backup_floating_body();
 
   // 2. Backup base fields B^n and E^n
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -208,6 +209,7 @@ void Pic::advance_explicit_pc(Real dt) {
   for (int i : kineticSpecies_) {
     parts[i]->restore_particle_state();
   }
+  restore_floating_body();
 
   // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage = 2]
   advance_particles_and_sources(2);

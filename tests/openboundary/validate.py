@@ -25,13 +25,30 @@ outflow at x+ as well, so the energy is not checked there.
 
 Budget: without body or sources the mass change of each species equals the
 mass injected minus removed at the faces (mIn_/mOut_ log columns), 1e-9.
+drift_pc runs drift with the predictor-corrector step (rk4-pc), whose trial
+push is discarded: its fluxes must not stay in the tallies. periodic is rest
+with a periodic x: nothing may be booked to the x faces.
 """
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
 
+def _non_finite(diags):
+    """Reason string if a log value is NaN/inf (comparisons with NaN are false,
+    so a tolerance check alone would pass a broken run), else None."""
+    keys = sorted({k for e in (diags or []) for k, v in e.items()
+                   if isinstance(v, float) and not math.isfinite(v)})
+    if keys:
+        return f"non-finite log values in {', '.join(keys[:6])}"
+    return None
+
+
 def validate_log(pic_diags=None, test_name=None):
+    bad = _non_finite(pic_diags)
+    if bad:
+        return False, bad
     d = pic_diags
     if not d or len(d) < 50 or "Mpart1" not in d[0]:
         return False, "missing log or Mpart columns"
@@ -44,7 +61,8 @@ def validate_log(pic_diags=None, test_name=None):
         if abs(worst - 1) > 0.03:
             reasons.append(f"species {iS}: mass/initial = {worst:.4f} "
                            f"(tol 3%)")
-    for iS in ((0, 1) if not (test_name or "").endswith("drift") else ()):
+    isDrift = "drift" in (test_name or "")
+    for iS in ((0, 1) if not isDrift else ()):
         e0 = d[0][f"Epart{iS}"] / d[0][f"Mpart{iS}"]
         ratios = [e[f"Epart{iS}"] / e[f"Mpart{iS}"] / e0 for e in d]
         worst = max(ratios, key=lambda r: abs(r - 1))
@@ -64,6 +82,13 @@ def validate_log(pic_diags=None, test_name=None):
             if err > 1e-9:
                 reasons.append(f"species {iS}: dM - (in - out) = {err:.2e} "
                                f"of the injected mass (tol 1e-9)")
+        if (test_name or "").endswith("periodic"):
+            # A particle that wraps through x is no loss; one that leaves a y
+            # or z face across a box edge must be booked there, not at x.
+            xFlux = sum(d[-1][f"m{io}_{f}_S{iS}"] for io in ("In", "Out")
+                        for f in ("xm", "xp") for iS in (0, 1))
+            if xFlux != 0:
+                reasons.append(f"periodic x faces carry a flux ({xFlux:.3g})")
     else:
         reasons.append("missing mIn_/mOut_ face budget columns")
     if reasons:

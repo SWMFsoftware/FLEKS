@@ -49,7 +49,20 @@ RATES = [1.0e16, 2.0e15]
 MASSES = [1.0, 16.0]
 
 
+def _non_finite(diags):
+    """Reason string if a log value is NaN/inf (comparisons with NaN are false,
+    so a tolerance check alone would pass a broken run), else None."""
+    keys = sorted({k for e in (diags or []) for k, v in e.items()
+                   if isinstance(v, float) and not math.isfinite(v)})
+    if keys:
+        return f"non-finite log values in {', '.join(keys[:6])}"
+    return None
+
+
 def validate_log(pic_diags=None, test_name=None):
+    bad = _non_finite(pic_diags)
+    if bad:
+        return False, bad
     d = pic_diags
     if not d or len(d) < 10 or "mBodyInject" not in d[0]:
         return False, "missing log or mBodyInject column"
@@ -193,7 +206,7 @@ def validate_plot(test_name=None):
     for iS, ratio in zip((i0, i0 + 1), ratios):
         logger.debug("    species %d: day/night emission %.4f, expected %.4f",
                      iS, ratio, expected)
-        if abs(ratio / expected - 1) > 0.03:
+        if not math.isfinite(ratio) or abs(ratio / expected - 1) > 0.03:
             reasons.append(f"species {iS}: day/night = {ratio:.3f}, "
                            f"expected {expected:.3f} (tol 3%)")
     if reasons:

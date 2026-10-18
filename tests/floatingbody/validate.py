@@ -19,6 +19,7 @@ charge absorbed by the body (and re-emitted).
   electron minus ion charge (1e-6) and the plasma stays neutral (1e-3).
 """
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,20 @@ def _net(e):
     return e["Mpart1"] - e["Mpart0"] / ME
 
 
+def _non_finite(diags):
+    """Reason string if a log value is NaN/inf (comparisons with NaN are false,
+    so a tolerance check alone would pass a broken run), else None."""
+    keys = sorted({k for e in (diags or []) for k, v in e.items()
+                   if isinstance(v, float) and not math.isfinite(v)})
+    if keys:
+        return f"non-finite log values in {', '.join(keys[:6])}"
+    return None
+
+
 def validate_log(pic_diags=None, test_name=None):
+    bad = _non_finite(pic_diags)
+    if bad:
+        return False, bad
     d = pic_diags
     if not d or len(d) < 100 or "qBodyS0" not in d[0]:
         return False, "missing log or qBodyS columns"

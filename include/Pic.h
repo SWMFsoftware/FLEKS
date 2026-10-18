@@ -459,6 +459,28 @@ private:
     ShellWeights shell; // area only
   } floatingBody;
 
+  // The floating-body state of the last accepted push, kept across the
+  // trial push of a predictor-corrector step (see backup_particle_state()).
+  amrex::Real floatingBodyBackup[7] = { 0, 0, 0, 0, 0, 0, 0 };
+  void backup_floating_body() {
+    const auto& fb = floatingBody;
+    const amrex::Real v[7] = { fb.phi,  fb.qIon,     fb.qEle,   fb.hitW,
+                               fb.hitE, fb.nReflect, fb.qReemit };
+    for (int i = 0; i < 7; ++i)
+      floatingBodyBackup[i] = v[i];
+  }
+  void restore_floating_body() {
+    auto& fb = floatingBody;
+    amrex::Real* v[7] = { &fb.phi,  &fb.qIon,     &fb.qEle,   &fb.hitW,
+                          &fb.hitE, &fb.nReflect, &fb.qReemit };
+    for (int i = 0; i < 7; ++i)
+      *v[i] = floatingBodyBackup[i];
+    if (fb.use && fb.type == "sheath")
+      for (int i : kineticSpecies_)
+        if (parts[i]->get_charge() < 0)
+          parts[i]->set_body_sheath(true, fb.phi);
+  }
+
   void update_floating_body();
 
   // The log carries the per-face particle budget (mIn_/mOut_ columns) when a
