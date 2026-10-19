@@ -483,17 +483,32 @@ private:
 
   void update_floating_body();
 
-  // The log carries the per-face particle budget (mIn_/mOut_ columns) when a
-  // face injects particles (inflow, outflowthermal).
-  bool log_face_budget() const {
+  // Is any particle box face of any species of the given type?
+  bool has_particle_face(ParticleBC::Type type) const {
     for (int i = 0; i < nSpecies; ++i)
       for (int d = 0; d < nDim; ++d)
-        for (int side = 0; side < 2; ++side) {
-          const int t = side ? pInfo.pBCs[i].hi[d] : pInfo.pBCs[i].lo[d];
-          if (t == ParticleBC::inflow || t == ParticleBC::outflowthermal)
-            return true;
-        }
+        if (pInfo.pBCs[i].lo[d] == type || pInfo.pBCs[i].hi[d] == type)
+          return true;
     return false;
+  }
+
+  // Standalone log diagnostics, each written only when the commands it
+  // diagnoses are used:
+  // - Mpart<i>: particles are created or removed (#SOURCE, #BODY, inflow or
+  //   outflowthermal faces);
+  bool log_species_mass() const {
+    return source != nullptr || useBody ||
+           has_particle_face(ParticleBC::inflow) ||
+           has_particle_face(ParticleBC::outflowthermal);
+  }
+  // - nParticles: the macroparticle count is managed (#CONSTANTPPV,
+  //   #PRESPLITTING, source particles);
+  bool log_particle_count() const {
+    return pInfo.isPPVconstant || pInfo.doPreSplitting || source != nullptr;
+  }
+  // - mIn_/mOut_ per face: the thermal re-entry of outflowthermal faces.
+  bool log_face_budget() const {
+    return has_particle_face(ParticleBC::outflowthermal);
   }
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;

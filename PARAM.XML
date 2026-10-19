@@ -213,6 +213,24 @@ This command controls the frequency and format of printing simulation progress t
 The frequencies of saving log information for the PIC and 
 particle tracker components, respectively. 
 
+In standalone runs the PIC log also carries diagnostic columns, each only when
+the commands it diagnoses are used (coupled runs keep the basic columns):
+
+  Mpart0, Mpart1, ...   mass of each species (code units): with #SOURCE,
+                        #BODY, or an inflow or outflowthermal particle face
+  nParticles            number of macroparticles of all species and levels:
+                        with #SOURCE, #CONSTANTPPV or #PRESPLITTING
+  qBodyS0, qBodyS1, ... signed charge absorbed by the body per species: #BODY
+  nBodyInject, mBodyInject  particles injected at the body: #BODYIONOSPHERE,
+                        #IONOSPHEREEMISSION, #FLOATINGBODY reemit
+  mIn_FACE_Sn, mOut_FACE_Sn  mass injected through / removed across each face
+                        (FACE = xm, xp, ym, yp, zm, zp; n = species): with an
+                        outflowthermal particle face
+  phiBody, nBodyReflect, wBodyHit, eBodyHit  #FLOATINGBODY sheath
+  qBodyReemit           #FLOATINGBODY reemit
+
+All counts and masses are cumulative from the start of the run.
+
 </command>
 
 <command name="TPSAVE" alias="TPSAVE_FLEKS0,TPSAVE_FLEKS1,TPSAVE_FLEKS2" multiple="T">
@@ -1527,13 +1545,13 @@ temperature T [K], spread over the plasma cells crossed by the sphere of the
 given radius [m] by their area, with particlesPerCell particles per cell; the
 current closes through the body. It is counted in nBodyInject/mBodyInject.
 
-The PIC log gains, for each species, the cumulative signed charge absorbed by
-the body (qBodyS0, qBodyS1, ...), and the potential phiBody [V], the number of
-reflected electrons nBodyReflect, the cumulative weight of the electrons that
-reached the sphere wBodyHit, their weight times normal energy per charge
-eBodyHit [V] (the difference of eBodyHit over that of wBodyHit is the mean
-normal energy of the electrons that reach the body) and the re-emitted charge
-qBodyReemit.
+The PIC log gains (standalone runs, see #SAVELOG), for sheath, the potential
+phiBody [V], the number of reflected electrons nBodyReflect, the cumulative
+weight of the electrons that reached the sphere wBodyHit and their weight
+times normal energy per charge eBodyHit [V] (the difference of eBodyHit over
+that of wBodyHit is the mean normal energy of the electrons that reach the
+body); for reemit, the re-emitted charge qBodyReemit. The charge absorbed per
+species is in qBodyS0, qBodyS1, ...
 </command>
 
 <command name="IONOSPHEREEMISSION" alias="IONOSPHEREEMISSION_FLEKS0,IONOSPHEREEMISSION_FLEKS1,IONOSPHEREEMISSION_FLEKS2" multiple="F">
@@ -2816,10 +2834,10 @@ This command defines the kinetic boundary conditions for all particle species.
   the face at its one-sided thermal flux n sigma/sqrt(2 pi), so the light
   species (the kinetic electrons of full PIC) leave first and the boundary
   layer charges up; with `outflowthermal` each species keeps its density.
-  When any face is `inflow` or `outflowthermal`, the PIC log carries the
+  With an `outflowthermal` face, the PIC log of a standalone run carries the
   cumulative mass of each species injected through and removed across each
   face, in the columns mIn_FACE_Sn and mOut_FACE_Sn (FACE = xm, xp, ym, yp,
-  zm, zp; n = species index), for the particle budget.
+  zm, zp; n = species index), for the particle budget (see #SAVELOG).
 * `vacuum` -- like `outflow`, and additionally asserts that nothing exists
   beyond the face; no tally.
 * `reflect` -- specular reflection: position and normal velocity are

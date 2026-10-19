@@ -794,8 +794,18 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
   const int wCol = 24;
   const int wStep = 10;
-  // Diagnostics columns added for the standalone tests (particle budget).
+  // The diagnostics below (particle budget, floating body) exist in
+  // standalone runs only, and only for the commands they diagnose: the coupled
+  // runs keep the log format of their SWMF reference solutions.
   const bool standaloneLog = domainParameters.isStandalone;
+  const bool logMass = standaloneLog && log_species_mass();
+  const bool logCount = standaloneLog && log_particle_count();
+  const bool logFaces = standaloneLog && log_face_budget();
+  const bool logBodyQ = standaloneLog && useBody;
+  const bool logSheath =
+      standaloneLog && floatingBody.use && floatingBody.type == "sheath";
+  const bool logReemit =
+      standaloneLog && floatingBody.use && floatingBody.type == "reemit";
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     if (picLogStream.is_open()) {
@@ -827,26 +837,22 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         picLogStream << "\t" << std::setw(wCol) << "nBodyInject" << "\t"
                      << std::setw(wCol) << "mBodyInject";
     }
-    // The columns below exist in standalone runs only: the coupled runs keep
-    // the log format of their SWMF reference solutions.
     // Total mass of the particles of each species (code units), e.g. to
     // check the source and loss terms against their analytic rates.
-    if (standaloneLog)
+    if (logMass)
       for (int i = 0; i < nSpecies; ++i) {
         std::string sName = "Mpart" + std::to_string(i);
         picLogStream << "\t" << std::setw(wCol) << sName;
       }
     // Number of macroparticles of all species and levels (memory, resampling).
-    if (standaloneLog)
+    if (logCount)
       picLogStream << "\t" << std::setw(wCol) << "nParticles";
-    // Cumulative signed charge absorbed by the body, per species; the
-    // floating body (#FLOATINGBODY) potential [V], the reflected electrons
-    // and the re-emitted charge.
-    if (useBody && standaloneLog)
+    // Cumulative signed charge absorbed by the body, per species.
+    if (logBodyQ)
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol)
                      << "qBodyS" + std::to_string(i);
-    if (log_face_budget()) {
+    if (logFaces) {
       const char* fName[6] = { "xm", "xp", "ym", "yp", "zm", "zp" };
       for (int i = 0; i < nSpecies; ++i)
         for (int f = 0; f < 2 * nDim; ++f)
@@ -857,12 +863,16 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                        << std::string("mOut_") + fName[f] + "_S" +
                               std::to_string(i);
     }
-    if (floatingBody.use)
+    // #FLOATINGBODY sheath: the body potential [V], the reflected electrons,
+    // the weight and normal energy [V] of the electrons that reach the body;
+    // reemit: the re-emitted charge.
+    if (logSheath)
       picLogStream << "\t" << std::setw(wCol) << "phiBody" << "\t"
                    << std::setw(wCol) << "nBodyReflect" << "\t"
                    << std::setw(wCol) << "wBodyHit" << "\t"
-                   << std::setw(wCol) << "eBodyHit" << "\t"
-                   << std::setw(wCol) << "qBodyReemit";
+                   << std::setw(wCol) << "eBodyHit";
+    if (logReemit)
+      picLogStream << "\t" << std::setw(wCol) << "qBodyReemit";
     picLogStream << std::endl;
   }
 
@@ -895,7 +905,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
     // Mass injected through / removed across each face, per species.
     Vector<Real> faceBudget(12 * nSpecies, 0.0);
-    if (log_face_budget()) {
+    if (logFaces) {
       for (int i = 0; i < nSpecies; ++i)
         for (int f = 0; f < 6; ++f) {
           faceBudget[i * 12 + 2 * f] = parts[i]->get_face_in_mass(f);
@@ -907,7 +917,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     }
 
     Vector<Real> speciesBodyQ(nSpecies, 0.0);
-    if (useBody) {
+    if (logBodyQ) {
       for (int i = 0; i < nSpecies; ++i)
         speciesBodyQ[i] = parts[i]->get_body_absorb_charge();
       ParallelDescriptor::ReduceRealSum(
@@ -917,12 +927,13 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
     // total_moments() reduces to the IO processor itself.
     Vector<Real> speciesMass(nSpecies, 0.0);
-    if (standaloneLog)
+    if (logMass)
       for (int i = 0; i < nSpecies; ++i)
         speciesMass[i] = parts[i]->total_moments()[0];
     Long nParticles = 0;
-    for (int i = 0; i < nSpecies; ++i)
-      nParticles += parts[i]->TotalNumberOfParticles(true, false);
+    if (logCount)
+      for (int i = 0; i < nSpecies; ++i)
+        nParticles += parts[i]->TotalNumberOfParticles(true, false);
 
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
@@ -947,34 +958,31 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[3] << "\t"
                        << std::setw(wCol) << bodyAbsorb[4];
       }
-      if (standaloneLog) {
+      if (logMass)
         for (int i = 0; i < nSpecies; ++i)
           picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
+      if (logCount)
         picLogStream << "\t" << std::setw(wCol)
                      << static_cast<Real>(nParticles);
-      }
-      if (useBody && standaloneLog)
+      if (logBodyQ)
         for (int i = 0; i < nSpecies; ++i)
           picLogStream << "\t" << std::setw(wCol) << speciesBodyQ[i];
-      if (log_face_budget())
+      if (logFaces)
         for (int i = 0; i < nSpecies; ++i)
           for (int f = 0; f < 2 * nDim; ++f)
             picLogStream << "\t" << std::setw(wCol)
                          << faceBudget[i * 12 + 2 * f] << "\t"
                          << std::setw(wCol) << faceBudget[i * 12 + 2 * f + 1];
-      if (floatingBody.use) {
-        // Energy per charge in code units -> volts.
-        const Real u = fi->get_unorm_si();
-        picLogStream << "\t" << std::setw(wCol)
-                     << floatingBody.phi * cProtonMassSI * u * u /
-                            cUnitChargeSI
+      // Energy per charge in code units -> volts.
+      const Real toVolt = cProtonMassSI * fi->get_unorm_si() *
+                          fi->get_unorm_si() / cUnitChargeSI;
+      if (logSheath)
+        picLogStream << "\t" << std::setw(wCol) << floatingBody.phi * toVolt
                      << "\t" << std::setw(wCol) << floatingBody.nReflect
-                     << "\t" << std::setw(wCol) << floatingBody.hitW
-                     << "\t" << std::setw(wCol)
-                     << floatingBody.hitE * cProtonMassSI * u * u /
-                            cUnitChargeSI
-                     << "\t" << std::setw(wCol) << floatingBody.qReemit;
-      }
+                     << "\t" << std::setw(wCol) << floatingBody.hitW << "\t"
+                     << std::setw(wCol) << floatingBody.hitE * toVolt;
+      if (logReemit)
+        picLogStream << "\t" << std::setw(wCol) << floatingBody.qReemit;
       picLogStream << std::endl;
     }
   }
