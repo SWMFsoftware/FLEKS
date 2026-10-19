@@ -563,7 +563,8 @@ private:
   void update_bc_flags() {
     hasConductingBC_ = bcField.has(FieldBC::conducting);
     hasAbsorbBC_ = bcField.has(FieldBC::absorb);
-    hasInflowBC_ = bcField.has(FieldBC::inflow) || bcField.has(FieldBC::fixed);
+    hasInflowBC_ = bcField.has(FieldBC::inflow) ||
+                   bcField.has(FieldBC::fixed) || bcField.has(FieldBC::wave);
   }
 
   // Is any particle box face of any species of the given type?
