@@ -1729,18 +1729,19 @@ void Pic::update_B_hybrid() {
   const Real dt = tc->get_dt();
   const Real subDt = dt / nBSubcycle;
 
-  // Grid-mode hyper-resistivity: uniform eta_h based on finest dx to keep
-  // diffusion stable across levels.
+  // Grid-mode hyper-resistivity: every level is damped at its own grid scale,
+  // eta_h = 4*pi*C_h*dx_min^4/dt with the dx of that level. The damping rate
+  // of the grid-scale mode, C_h*(k dx)^4/dt, and the hyper-resistive CFL
+  // number are then the same on every level. With the finest dx on all levels
+  // the coarse Nyquist mode was damped 2^4 = 16 times less than the fine one,
+  // and its noise reached the fine level through the coarse-fine interface E.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
-    const int iFinest = n_lev() - 1;
-    const auto dxFine = Geom(iFinest).CellSizeArray();
-    Real dxMinFine = dxFine[0];
-    for (int d = 1; d < nDim; ++d)
-      dxMinFine = amrex::min(dxMinFine, dxFine[d]);
-
-    const Real etaHyper = fourPI * etaHyperCh * std::pow(dxMinFine, 4) / dt;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      etaHyperLev[iLev] = etaHyper;
+      const auto dxLev = Geom(iLev).CellSizeArray();
+      Real dxMin = dxLev[0];
+      for (int d = 1; d < nDim; ++d)
+        dxMin = amrex::min(dxMin, dxLev[d]);
+      etaHyperLev[iLev] = fourPI * etaHyperCh * std::pow(dxMin, 4) / dt;
     }
   }
 
