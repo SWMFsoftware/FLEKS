@@ -53,6 +53,8 @@ struct WaveComponent {
 
   amrex::Real pol[3] = { 0, 1, 0 };   // polarisation vector
   amrex::Real k_vec[3] = { 0, 0, 0 }; // precomputed (2*pi/waveLength) * dir
+
+  bool isCodeUnits = false; // set once convert_units() has processed it
 };
 
 // Per-face emitter stack.
@@ -99,7 +101,11 @@ public:
   bool active = false;
   std::vector<WaveFace> faces; // indexed by (direction, side)
 
-  void read_param(ReadParam& param, const FluidInterface* fi);
+  // Parse a #WAVEBC block. Values stay in input units until convert_units(),
+  // because the normalization is only final after all commands are read.
+  void read_param(ReadParam& param);
+  // Convert newly read components to code units and precompute k_vec.
+  void convert_units(const FluidInterface* fi);
   amrex::Real value(const WaveComponent& c, amrex::Real t,
                     const amrex::Real* pos) const;
 

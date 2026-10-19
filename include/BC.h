@@ -155,6 +155,12 @@ enum Type {
   wave = 8
 };
 
+// Faces whose state is prescribed (Dirichlet): the upstream state, plus the
+// #WAVEBC hard source on a 'wave' face.
+AMREX_GPU_HOST_DEVICE inline bool is_dirichlet(int type) {
+  return type == inflow || type == fixed || type == wave;
+}
+
 enum class Quantity { Magnetic, Electric, Scalar };
 
 // Translate physical FieldBC boundary conditions on domain faces into

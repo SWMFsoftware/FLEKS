@@ -240,7 +240,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   }
 
   if (useZeroBC) {
-    // For Dirichlet physical boundaries (inflow, fixed), the correction in the
+    // For Dirichlet physical boundaries (inflow, fixed, wave), the correction in the
     // Krylov subspace must be identically zero on the boundary nodes.
     const BoundaryBounds bnd(Geom(iLev), vecMF.boxArray().ixType(), &bcField);
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
@@ -252,11 +252,9 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                     for (int d = 0; d < nDim; ++d) {
                       if (!bnd.isNode[d])
                         continue;
-                      if (((bnd.bcLo[d] == FieldBC::inflow ||
-                            bnd.bcLo[d] == FieldBC::fixed) &&
+                      if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
                            ijk[d] == bnd.loBnd[d]) ||
-                          ((bnd.bcHi[d] == FieldBC::inflow ||
-                            bnd.bcHi[d] == FieldBC::fixed) &&
+                          (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
                            ijk[d] == bnd.hiBnd[d])) {
                         arrVec(i, j, k, c) = 0.0;
                       }
@@ -401,7 +399,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
-  // Dirichlet physical boundaries (inflow, fixed): enforce A_ii = 1, A_ij = 0
+  // Dirichlet physical boundaries (inflow, fixed, wave): enforce A_ii = 1, A_ij = 0
   // by copying vecMF to matvecMF on boundary nodes.
   {
     const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
@@ -416,11 +414,9 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                     for (int d = 0; d < nDim; ++d) {
                       if (!bnd.isNode[d])
                         continue;
-                      if (((bnd.bcLo[d] == FieldBC::inflow ||
-                            bnd.bcLo[d] == FieldBC::fixed) &&
+                      if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
                            ijk[d] == bnd.loBnd[d]) ||
-                          ((bnd.bcHi[d] == FieldBC::inflow ||
-                            bnd.bcHi[d] == FieldBC::fixed) &&
+                          (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
                            ijk[d] == bnd.hiBnd[d])) {
                         arrOut(i, j, k, c) = arrIn(i, j, k, c);
                       }
@@ -569,27 +565,38 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
                   tempNode.nGrow());
   }
 
-  // Dirichlet physical boundaries (inflow, fixed): the right-hand side for the
-  // total field must equal nodeE, so that the initial residual rhs - A(E_old)
-  // evaluates to exactly zero on Dirichlet boundary nodes.
+  // Dirichlet physical boundaries (inflow, fixed, wave): the right-hand side for
+  // the total field must equal the boundary value that update_E_matvec() puts
+  // into A(E_old), so that the initial residual rhs - A(E_old) is exactly zero
+  // on Dirichlet boundary nodes. The Krylov corrections are zero there, so any
+  // residual left on these nodes is never removed and grows. On level 0 that
+  // value is the prescribed state at the solve time (including the #WAVEBC
+  // source), not the nodeE of the previous step.
   {
+    const MultiFab* dirichletE = &nodeE[iLev];
+    if (iLev == 0) {
+      MultiFab::Copy(tempNode, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                     tempNode.nGrow());
+      apply_field_bc(nodeStatus[iLev], tempNode, 0, nDim3, &Pic::get_node_E,
+                     iLev, false);
+      dirichletE = &tempNode;
+    }
+
     const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
                              &bcField);
     for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrRHS = temp2Node[mfi].array();
-      const Array4<Real const>& arrE = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arrE = (*dirichletE)[mfi].const_array();
       ParallelFor(bx, temp2Node.nComp(),
                   [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
                     const int ijk[3] = { i, j, k };
                     for (int d = 0; d < nDim; ++d) {
                       if (!bnd.isNode[d])
                         continue;
-                      if (((bnd.bcLo[d] == FieldBC::inflow ||
-                            bnd.bcLo[d] == FieldBC::fixed) &&
+                      if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
                            ijk[d] == bnd.loBnd[d]) ||
-                          ((bnd.bcHi[d] == FieldBC::inflow ||
-                            bnd.bcHi[d] == FieldBC::fixed) &&
+                          (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
                            ijk[d] == bnd.hiBnd[d])) {
                         arrRHS(i, j, k, c) = arrE(i, j, k, c);
                       }

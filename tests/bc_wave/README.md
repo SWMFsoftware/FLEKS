@@ -20,7 +20,8 @@ Both variants exercise the **wave-injection boundary condition** (`BC::wave` +
 2. **`bc_inject_mono` plot**: a monochromatic transverse `Bz` wave injected at a
    boundary face propagates into a pure-EM domain; `Bz` non-zero in the interior.
 3. **`bc_inject_alfven` plot**: a self-consistent shear Alfvén wave (`δBy` +
-   `δv_y = -δB_y/v_A`, with `v_A ≈ 1` in code units) injected at the `-x` face
+   `δv_y = -δB_y/sqrt(μ0 ρ)`, about -1.02 km/s; `#WAVEBC` amplitudes are SI)
+   injected at the `-x` face
    into an initially uniform magnetized hybrid plasma propagates along `+x`;
    `By` non-zero in the interior and `By/Bx < 10%` (linear wave).
 

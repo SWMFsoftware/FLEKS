@@ -108,7 +108,8 @@ WaveFace& WaveBoundaryManager::face(int direction, int side) {
 
 void WaveBoundaryManager::add_component(int direction, int side,
                                         const WaveComponent& c) {
-  WaveComponent comp = c;
+  WaveComponent comp = c; // already in code units
+  comp.isCodeUnits = true;
   if (comp.waveLength > 0.0) {
     const amrex::Real k = cTwoPi / comp.waveLength;
     for (int d = 0; d < 3; ++d)
@@ -153,8 +154,7 @@ amrex::Real WaveBoundaryManager::value(const WaveComponent& c, amrex::Real t,
   return prof->value(c, t, pos) * env;
 }
 
-void WaveBoundaryManager::read_param(ReadParam& param,
-                                     const FluidInterface* fi) {
+void WaveBoundaryManager::read_param(ReadParam& param) {
   active = true;
   int nFace = 0;
   param.read_var("nWaveFace", nFace);
@@ -217,6 +217,17 @@ void WaveBoundaryManager::read_param(ReadParam& param,
           c.pol[d] /= polNorm;
       }
 
+      f.comps.push_back(c);
+    }
+  }
+}
+
+void WaveBoundaryManager::convert_units(const FluidInterface* fi) {
+  for (auto& f : faces) {
+    for (auto& c : f.comps) {
+      if (c.isCodeUnits)
+        continue;
+
       // SI -> code conversion (unless the block was marked 'code').
       if (siInput && fi) {
         const amrex::Real f_si2no = si2no(fi, c.iField);
@@ -253,7 +264,7 @@ void WaveBoundaryManager::read_param(ReadParam& param,
                      "injection may be nonlinear/unstable.");
       }
 
-      f.comps.push_back(c);
+      c.isCodeUnits = true;
     }
   }
 }
