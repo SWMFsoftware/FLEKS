@@ -794,6 +794,8 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
   const int wCol = 24;
   const int wStep = 10;
+  // Diagnostics columns added for the standalone tests (particle budget).
+  const bool standaloneLog = domainParameters.isStandalone;
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     if (picLogStream.is_open()) {
@@ -825,18 +827,22 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         picLogStream << "\t" << std::setw(wCol) << "nBodyInject" << "\t"
                      << std::setw(wCol) << "mBodyInject";
     }
+    // The columns below exist in standalone runs only: the coupled runs keep
+    // the log format of their SWMF reference solutions.
     // Total mass of the particles of each species (code units), e.g. to
     // check the source and loss terms against their analytic rates.
-    for (int i = 0; i < nSpecies; ++i) {
-      std::string sName = "Mpart" + std::to_string(i);
-      picLogStream << "\t" << std::setw(wCol) << sName;
-    }
+    if (standaloneLog)
+      for (int i = 0; i < nSpecies; ++i) {
+        std::string sName = "Mpart" + std::to_string(i);
+        picLogStream << "\t" << std::setw(wCol) << sName;
+      }
     // Number of macroparticles of all species and levels (memory, resampling).
-    picLogStream << "\t" << std::setw(wCol) << "nParticles";
+    if (standaloneLog)
+      picLogStream << "\t" << std::setw(wCol) << "nParticles";
     // Cumulative signed charge absorbed by the body, per species; the
     // floating body (#FLOATINGBODY) potential [V], the reflected electrons
     // and the re-emitted charge.
-    if (useBody)
+    if (useBody && standaloneLog)
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol)
                      << "qBodyS" + std::to_string(i);
@@ -911,8 +917,9 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
     // total_moments() reduces to the IO processor itself.
     Vector<Real> speciesMass(nSpecies, 0.0);
-    for (int i = 0; i < nSpecies; ++i)
-      speciesMass[i] = parts[i]->total_moments()[0];
+    if (standaloneLog)
+      for (int i = 0; i < nSpecies; ++i)
+        speciesMass[i] = parts[i]->total_moments()[0];
     Long nParticles = 0;
     for (int i = 0; i < nSpecies; ++i)
       nParticles += parts[i]->TotalNumberOfParticles(true, false);
@@ -940,10 +947,13 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[3] << "\t"
                        << std::setw(wCol) << bodyAbsorb[4];
       }
-      for (int i = 0; i < nSpecies; ++i)
-        picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
-      picLogStream << "\t" << std::setw(wCol) << static_cast<Real>(nParticles);
-      if (useBody)
+      if (standaloneLog) {
+        for (int i = 0; i < nSpecies; ++i)
+          picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
+        picLogStream << "\t" << std::setw(wCol)
+                     << static_cast<Real>(nParticles);
+      }
+      if (useBody && standaloneLog)
         for (int i = 0; i < nSpecies; ++i)
           picLogStream << "\t" << std::setw(wCol) << speciesBodyQ[i];
       if (log_face_budget())
