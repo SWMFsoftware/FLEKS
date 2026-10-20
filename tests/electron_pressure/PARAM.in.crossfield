@@ -105,13 +105,13 @@ neutralizing massless fluid, so no electron particle species is present.
 1.0                     charge
 
 #UNIFORMSTATE
-1.0                     rho [amu/cc]   Species 0: ions
+1.0                     rho [/cc]   Species 0: ions
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 400000.0                T [K]
-0.0                     bx [T]         weak guide field along Y, see below
-1.0e-10                 by [T]         sets the conduction direction only
+0.0                     bx [T]      weak guide field along Y, see below
+1.0e-10                 by [T]      sets the conduction direction only
 0.0                     bz [T]
 0.0                     ex [V/m]
 0.0                     ey [V/m]
@@ -153,5 +153,3 @@ Pe rhoS0                plotVar
 #STOP
 -1                      MaxIter
 5.0                     TimeMax   ~0.3 of the n=1 ion-acoustic period
-
-#RUN

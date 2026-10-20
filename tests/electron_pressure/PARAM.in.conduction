@@ -108,12 +108,12 @@ neutralizing massless fluid, so no electron particle species is present.
 1.0                     charge
 
 #UNIFORMSTATE
-1.0                     rho [amu/cc]   Species 0: ions
+1.0                     rho [/cc]   Species 0: ions
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 400000.0                T [K]
-0.0                     bx [T]         UNMAGNETIZED Bx0 = 0
+0.0                     bx [T]      UNMAGNETIZED Bx0 = 0
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -156,5 +156,3 @@ Pe rhoS0                plotVar
 #STOP
 -1                      MaxIter
 5.0                     TimeMax   ~0.3 of the n=1 ion-acoustic period
-
-#RUN

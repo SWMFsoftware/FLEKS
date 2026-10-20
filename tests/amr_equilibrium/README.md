@@ -1,6 +1,6 @@
 # AMR Plasma Thermal Equilibrium Test
 
-This test verifies the stability and accuracy of a uniform plasma thermal equilibrium across a stationary coarse-fine AMR interface using both the Full PIC solver (`PARAM.in`) and the Hybrid PIC solver (`PARAM.in.hybrid`).
+This test verifies the stability and accuracy of a uniform plasma thermal equilibrium across a stationary coarse-fine AMR interface using both the Full PIC solver (`PARAM.in.implicit`) and the Hybrid PIC solver (`PARAM.in.hybrid`).
 
 ## Physical Setup
 
@@ -8,10 +8,10 @@ This test verifies the stability and accuracy of a uniform plasma thermal equili
   - Kinetic ions ($q = 1, m = 1$, $n_0 = 1.0\ \text{amu/cc}$, $T_i = 10\ \text{eV}$) and neutralizing massless fluid electrons ($T_e = 10\ \text{eV}$, isothermal $\gamma = 1.0$).
   - Perpendicular uniform guide field: $B_{z0} = 1.0\ \text{nT}$.
   - Tests the generalized Ohm's law and ambipolar field $\mathbf{E}_{\text{ambi}} = -\nabla P_e / (e n_e)$ across AMR interfaces.
-- **Full PIC (`PARAM.in`)**:
+- **Full PIC (`PARAM.in.implicit`)**:
   - Kinetic ions ($m_i = 1.0, q_i = 1$) and kinetic electrons ($m_e = 0.04, q_e = -1$, $m_i/m_e = 25$).
   - Charge neutral ($n_e = n_i = 1.0$) and equal initial temperature ($T_i = T_e = 10\ \text{eV}$).
-  - Semi-implicit field solver with GMRES.
+  - Semi-implicit field solver with GMRES (`#FIELDSOLVER implicit`).
 
 ## Mesh Refinement Geometry
 

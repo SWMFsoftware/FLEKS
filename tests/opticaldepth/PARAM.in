@@ -49,17 +49,17 @@ T                       solveEM
 1.0                     charge
 
 #UNIFORMSTATE
-0.05                    rho [amu/cc]   Species 0: electron (quasi-neutral)
+5.0                     rho [/cc]   Species 0: electron (quasi-neutral)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [amu/cc]   Species 1: H+ background
+5.0                     rho [/cc]   Species 1: H+ background
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-1.0e-12                 rho [amu/cc]   Species 2: O+ background (tiny seed)
+6.25e-14                rho [/cc]   Species 2: O+ background (tiny seed)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -159,5 +159,3 @@ rhoS1 rhoS2 pS1 pS2     NameVars
 #STOP
 10                      MaxIter
 1.0                     TimeMax
-
-#RUN

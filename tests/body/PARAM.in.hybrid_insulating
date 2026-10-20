@@ -49,7 +49,7 @@ periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 
 #INFLOW
-5.0                     rho [amu/cc]
+5.0                     rho [/cc]
 100.0                   ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -90,7 +90,7 @@ T                       doSmoothMoments
 0.0                     temperature    [eV]
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions
+5.0                     rho [/cc]   Species 0: ions
 100.0                   ux [km/s]      u_code = 1 (uNormSI = 1e5 m/s)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -144,5 +144,3 @@ body rhoS0 Ex Ey Ez Bx By Bz   plotVar
 #STOP
 -1                      MaxIter
 2.0                     TimeMax
-
-#RUN

@@ -74,7 +74,7 @@ Single kinetic ion species (q = m = 1).
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions
+5.0                     rho [/cc]   Species 0: ions
 80.0                    ux [km/s]      bulk flow toward +x wall (U_code = 0.8)
 4.0                     uy [km/s]      small oblique component (~2.9 deg)
 0.0                     uz [km/s]
@@ -118,5 +118,3 @@ rhoS0 uxS0 uyS0 uzS0 Bx By Bz Ex Ey Ez   plotVar
 -1                      MaxIter
 12.0                    TimeMax   (transit = Lx/U_code = 6.4/0.8 = 8; 12 covers a
                                   full transit + one reflection)
-
-#RUN

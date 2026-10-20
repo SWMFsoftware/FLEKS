@@ -1,14 +1,19 @@
 # HYBRID_WHISTLER
 
-Parallel whistler–Alfvén wave test in FLEKS.  This directory runs **two
-variants of the same Helicon-type transverse wave**:
+Parallel whistler–Alfvén wave test in FLEKS.  This directory runs **six
+variants of the same Helicon-type transverse wave**, comparing Full PIC, all four
+hybrid timestepping schemes, and the full resistive generalized Ohm's law:
 
-| Variant | Config file | Field solver | Species | Expected dispersion |
-| --- | --- | --- | --- | --- |
-| **Full PIC** | `PARAM.in` | Maxwell / θ-scheme (`solveEM=T`) | kinetic ions **and** kinetic electrons | full cold plasma (electron inertia + displacement current) |
-| **Hybrid** | `PARAM.in.hybrid` | generalized Ohm's law (`useHybridPIC=T`) | kinetic ions + massless fluid electrons | Hall / massless-electron limit |
+| Variant | Config file | Field solver / Integrator | Physics |
+| --- | --- | --- | --- |
+| **Full PIC** | `PARAM.in` | Maxwell / θ-scheme (`solveEM=T`) | Kinetic ions & electrons (displacement current) |
+| **RK4** | `PARAM.in.rk4` | Hybrid PIC (`rk4`) | Hall whistler eigenmode (classical RK4) |
+| **RK4-PC** | `PARAM.in.rk4_pc` | Hybrid PIC (`rk4-pc`) | Hall whistler eigenmode (predictor–corrector RK4) |
+| **SSPRK3** | `PARAM.in.ssprk3` | Hybrid PIC (`ssprk3`) | Hall whistler eigenmode (3-stage SSPRK3) |
+| **SSPRK3-PC** | `PARAM.in.ssprk3_pc` | Hybrid PIC (`ssprk3-pc`) | Hall whistler eigenmode (predictor–corrector SSPRK3) |
+| **Resistive** | `PARAM.in.resistive` | Hybrid PIC (`rk4`) | Full Ohm's law with finite resistivity $\eta$ and $T_e$ |
 
-Both variants are seeded with the same x-aligned, transverse, circularly
+All variants are seeded with the same x-aligned, transverse, circularly
 polarized **right-hand (whistler)** wave (`#TESTCASE HybridWave`,
 `#WAVEIC rightHand T`, `frac = 0.02`).
 
@@ -89,9 +94,13 @@ u_perp    = -walenFactor * B_perp / B0        (code units, B0 ~ 1)
 ## Running
 
 ```
-python3 tests/validate_tests.py --test=whistler          # both variants
-python3 tests/validate_tests.py --test=whistler.full     # full PIC only (PARAM.in)
-python3 tests/validate_tests.py --test=whistler.hybrid   # hybrid only (PARAM.in.hybrid)
+python3 tests/validate_tests.py --test=whistler              # all variants
+python3 tests/validate_tests.py --test=whistler.full         # Full PIC only (PARAM.in)
+python3 tests/validate_tests.py --test=whistler.rk4          # Hybrid RK4 (alias: whistler.hybrid)
+python3 tests/validate_tests.py --test=whistler.rk4_pc       # Hybrid RK4-PC
+python3 tests/validate_tests.py --test=whistler.ssprk3       # Hybrid SSPRK3
+python3 tests/validate_tests.py --test=whistler.ssprk3_pc    # Hybrid SSPRK3-PC
+python3 tests/validate_tests.py --test=whistler.resistive    # Full generalized Ohm's law
 ```
 
 ### Dispersion-relation scan

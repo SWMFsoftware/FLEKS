@@ -195,13 +195,16 @@ def run_test(test_dir, nprocs=1, param_text=None):
         logger.warning("  [WARN] PostIDL.exe is missing. Build it with 'make PIDL' "
                        "before running tests that check plot output (.out files).")
 
-    # Use the supplied text (patched solver variant) when given, else the test's
-    # own PARAM.in.
     if param_text is not None:
         with open(RUN_DIR + "/PARAM.in", "w") as f:
             f.write(param_text)
     else:
-        shutil.copy(param_file, RUN_DIR + "/PARAM.in")
+        if os.path.isfile(param_file):
+            shutil.copy(param_file, RUN_DIR + "/PARAM.in")
+        else:
+            candidates = sorted(glob.glob(os.path.join(test_dir, "PARAM.in*")))
+            if candidates:
+                shutil.copy(candidates[0], RUN_DIR + "/PARAM.in")
 
     # Copy the test's own data files (coefficient tables, lookup tables, ...)
     # into the run directory: the decks reference them by a relative name.
@@ -223,6 +226,15 @@ def run_test(test_dir, nprocs=1, param_text=None):
     result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result.stdout = (result.stdout or b"").decode("utf-8", errors="replace")
     result.stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+    # Keep FLEKS's stdout on disk. Several per-cycle diagnostics (notably the
+    # AMR div(B) report) are only printed to stdout, so validators that assert
+    # on them need a file to read.
+    try:
+        with open(os.path.join(RUN_DIR, "fleks_stdout.log"), "w",
+                  encoding="utf-8", errors="replace") as _f:
+            _f.write(result.stdout)
+    except OSError:
+        pass
     if result.returncode != 0:
         logger.error("Error running FLEKS.exe for %s:", test_dir)
         logger.error("--- FLEKS stdout ---")
@@ -355,13 +367,16 @@ EXO_SOURCE_TESTS = {
 }
 
 # Tests that require AMR (nLevMax >= 2).
-AMR_TESTS = {"amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr"}
+AMR_TESTS = {
+    "amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr",
+    "wave_amr_3d",
+}
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
-AMREX3D_TESTS = {"lightwave"}
+AMREX3D_TESTS = {"lightwave", "wave_amr_3d"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
-AMREX2D_TESTS = {"reconnection_amr", "photoionization", "body"}
+AMREX2D_TESTS = {"photoionization", "body"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
@@ -937,7 +952,8 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
         variants.append((pf, display_name, base_name))
 
     if name == "freestream":
-        # Free-stream test variants: full (original GMRES), upwind, hybrid, and 2D hybrid.
+        # Free-stream test variants: full (original GMRES), upwind, hybrid, 2D
+        # hybrid, and the 2D hybrid inflow-layer regression test.
         variants = [
             (os.path.join(test_dir, "PARAM.in.full"),
              "FREESTREAM (FULL PIC GMRES)", "freestream_full"),
@@ -947,6 +963,8 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
              "FREESTREAM (HYBRID HALL-OFF)", "freestream_hybrid"),
             (os.path.join(test_dir, "PARAM.in.hybrid_2d"),
              "FREESTREAM (HYBRID 2D INFLOW)", "freestream_hybrid_2d"),
+            (os.path.join(test_dir, "PARAM.in.hybrid_inflow"),
+             "FREESTREAM (HYBRID INFLOW LAYER)", "freestream_hybrid_inflow"),
         ]
 
     # Restrict to a single PARAM variant when requested.  The variant token is
@@ -961,12 +979,26 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
     if name == "freestream" and variant_filter == "gmres":
         variant_filter = "full"
 
+    if name == "whistler" and variant_filter == "hybrid":
+        variant_filter = "rk4"
+
     if name == "bc_reflecting" and variant_filter is not None:
         # Backward compatibility for legacy --test=bc_reflecting.full and .hybrid
         if variant_filter == "full":
             variant_filter = "particles"
         elif variant_filter == "hybrid":
             variant_filter = "hybrid.particles"
+
+    if variant_filter == "full":
+        has_full = any(_variant_token(pf) == "full" for pf, _, _ in variants)
+        has_implicit = any(_variant_token(pf) == "implicit" for pf, _, _ in variants)
+        if not has_full and has_implicit:
+            variant_filter = "implicit"
+    elif variant_filter == "implicit":
+        has_implicit = any(_variant_token(pf) == "implicit" for pf, _, _ in variants)
+        has_full = any(_variant_token(pf) == "full" for pf, _, _ in variants)
+        if not has_implicit and has_full:
+            variant_filter = "full"
 
     if variant_filter is not None:
         kept = []

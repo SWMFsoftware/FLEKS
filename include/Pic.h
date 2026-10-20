@@ -93,12 +93,28 @@ class Pic : public GridAccess {
   friend ParticleTracker;
   // private variables
 private:
+  const DomainParameters &domainParameters;
+  const bool &useHybridPIC;
+
+  PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
   bool usePIC = true;
   bool solveEM = true;
   bool initEM = true;
 
   // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
-  bool useHybridPIC = false;
+  // Coarse-fine interface treatment of the hybrid Faraday update on AMR grids.
+  // The update dB/dt = -curl_node_to_center(E) is a hidden face-staggered
+  // constrained transport, so div_node_to_center(avg_center_to_node(B)) is
+  // preserved when every cell of a level is advanced by one single nodal E:
+  //   1) Nodal E is synchronized at the coarse-fine interfaces (fine interface
+  //      nodes take the coarse E).
+  //   2) The in-plane B of the first fine ghost layer is advanced by Faraday's
+  //      law with synchronized/interpolated nodal E.
+  //   3) Covered coarse cells are advanced with the coarse E, and relaxed
+  //      toward the fine average with divergence-free curl corrections
+  //      (relax_covered_B_to_fine).
+  // The identity div(avg(curl(E))) == 0 holds in both 2D and 3D, keeping
+  // div(B) at round-off across all refinement levels.
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
   amrex::Real etaResistivity = 0.0;
@@ -110,8 +126,17 @@ private:
   // Reference charge density. Input [amu/cc], converted to code units.
   amrex::Real electronDensity0In = 1.0;
   amrex::Real electronDensity0 = 0.0;
-  // Number of sub-steps for the B-field update within one dt.
+  // Unified subcycle count for active explicit/hybrid field solver within one
+  // dt.
+  int nSubcycle = 1;
   int nBSubcycle = 1;
+  int nEMSubcycle = 1;
+  // Adaptive subcycling control for hybrid field advance.
+  bool isAutoSubcycle = false;
+  int nBSubcycleMax = 40;
+  int nBSubcycleMin = 1;
+  int subcycleHoldCount = 0;
+  std::string dtLimitingReason = "";
   // Hall term in the generalized Ohm's law.
   bool useHallTerm = true;
 
@@ -185,9 +210,22 @@ private:
   bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
+  bool isFirstExplicitStep = true;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
   bool reportParticleQuality = false;
+
+  // Command presence tracking flags for cross-solver validation.
+  bool hasFieldSolver_ = false;
+  bool hasFieldIntegrator_ = false;
+  bool hasFieldSubcycle_ = false;
+  bool hasDiscretization_ = false;
+  bool hasEFieldSolver_ = false;
+  bool hasHallTerm_ = false;
+  bool hasResistivity_ = false;
+  bool hasHyperResistivity_ = false;
+  bool hasElectronPressure_ = false;
+  bool hasMinimumDensity_ = false;
 
   PartMode pMode = PartMode::PIC;
 
@@ -199,8 +237,6 @@ private:
   // Wave-injection boundary-condition manager (#WAVEBC).
   WaveBoundaryManager waveBC;
   TimeCtr *tc = nullptr;
-
-  const DomainParameters &domainParameters;
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
@@ -223,6 +259,24 @@ private:
   // RK persistent scratch.
   amrex::Vector<amrex::MultiFab> centerBstart;
   amrex::Vector<amrex::MultiFab> centerBstar; // time-centered state used by E
+
+  // ---- Divergence-free relaxation of the covered coarse B ----
+  // Persistent per-level workspace of relax_covered_B_to_fine, allocated in
+  // distribute_arrays so a regrid rebuilds it with the new BoxArray.
+  //   relaxTarget   : avg(B_fine) restricted onto the coarse level (cell)
+  //   relaxResidual : r = target - B on the covered cells (cell, 1 ghost)
+  //   relaxCurl     : q = curl(potential)              (cell)
+  //   relaxCurlT    : s = transpose(curl) applied to r (nodal)
+  //   relaxDir      : CGLS search direction             (nodal)
+  amrex::Vector<amrex::MultiFab> relaxTarget;
+  amrex::Vector<amrex::MultiFab> relaxResidual;
+  amrex::Vector<amrex::MultiFab> relaxCurl;
+  amrex::Vector<amrex::MultiFab> relaxCurlT;
+  amrex::Vector<amrex::MultiFab> relaxDir;
+  // Max |avg(B_fine) - B_coarse| over the covered cells of each level, measured
+  // *before* relaxation updates them (via measure_covered_B_drift). Reported as
+  // 'dCov'.
+  amrex::Vector<amrex::Real> coveredBDrift;
 
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
@@ -287,6 +341,8 @@ private:
   amrex::Vector<amrex::MultiFab> nodeEstage; // E at a stage B (nodal)
   amrex::Vector<amrex::MultiFab> nodeJ;      // total current J = curl(B)/(4*pi)
                                              // (nodal)
+  amrex::Vector<amrex::MultiFab> nodeCurlB;  // scratch for curl(B) in explicit
+                                             // PIC
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
   // Per-step scratch reused across stages: the advected Pe, then div(q), then
@@ -368,6 +424,7 @@ private:
 
   std::string fieldIntegrator = "rk4"; // B integrator
   bool useRK4 = false;
+  bool usePredictorCorrector = false;
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
@@ -436,11 +493,17 @@ private:
   // Characteristic speed for the absorbing BC; 0 = auto (light speed).
   amrex::Real absorbCharSpeed = 0.0;
 
-  // Inflow boundary upstream state set by #INFLOW (in code units).
+  // Upstream state declared by #INFLOW, stored as read from PARAM.in
+  // (rho [1/cc] i.e. the species number density, ux/uy/uz [km/s], T [K] --
+  // note that these are NOT SI: km/s and 1/cc are not).  One block may be
+  // given per species, in #PLASMA order; species
+  // without a block of their own reuse the last declared block, so a single
+  // block still describes a uniform quasi-neutral multi-species upstream
+  // plasma.  rho <= 0 switches the injection off for that species.
+  // convert_inflow_state() turns these into code units.
   bool inflowDefined_ = false;
-  amrex::Real inflowRho_ = 0.0;
-  amrex::Real inflowUx_ = 0.0, inflowUy_ = 0.0, inflowUz_ = 0.0;
-  amrex::Real inflowT_ = 0.0;
+  amrex::Vector<amrex::Real> inflowRho_I, inflowUx_I, inflowUy_I, inflowUz_I,
+      inflowT_I;
 
   // Static intrinsic magnetic field B0 of the planet (#DIPOLE /
   // #CRUSTALFIELD). It never evolves: it is added to the evolved field B1
@@ -489,12 +552,27 @@ public:
   Pic(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
       const DomainParameters &parameters)
       : GridAccess(gridIn),
+        domainParameters(parameters),
+        useHybridPIC(parameters.useHybridPIC),
+        fieldSolverMode(parameters.fieldSolverMode),
         fi(fluidIn),
         tc(tcIn),
-        domainParameters(parameters),
         gridID(id) {
     gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = gridName + " pic: ";
+    if (fieldSolverMode == PicSolverMode::Explicit) {
+      useExplicitPIC = true;
+      solveEM = false;
+    } else if (fieldSolverMode == PicSolverMode::Hybrid) {
+      useExplicitPIC = false;
+      solveEM = false;
+    } else if (fieldSolverMode == PicSolverMode::None) {
+      useExplicitPIC = false;
+      solveEM = false;
+    } else {
+      useExplicitPIC = false;
+      solveEM = true;
+    }
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -523,6 +601,14 @@ public:
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
+    if (useHybridPIC && n_lev_max() > 1) {
+      relaxTarget.resize(n_lev_max());
+      relaxResidual.resize(n_lev_max());
+      relaxCurl.resize(n_lev_max());
+      relaxCurlT.resize(n_lev_max());
+      relaxDir.resize(n_lev_max());
+      coveredBDrift.resize(n_lev_max(), 0.0);
+    }
     kStage.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL)
       kStage[iL].resize(4);
@@ -559,6 +645,7 @@ public:
     solverRhsNode1.resize(n_lev_max());
     solverRhsNode2.resize(n_lev_max());
     centerDB.resize(n_lev_max());
+    nodeCurlB.resize(n_lev_max());
     smoothScratchMF.resize(n_lev_max());
     projectScratchMF.resize(n_lev_max());
 
@@ -586,6 +673,21 @@ public:
   bool are_particles_initialized() const { return particlesInitialized; }
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
+
+  PicSolverMode get_field_solver_mode() const { return fieldSolverMode; }
+  bool is_implicit_pic() const {
+    return fieldSolverMode == PicSolverMode::Implicit;
+  }
+  bool is_explicit_pic() const {
+    return fieldSolverMode == PicSolverMode::Explicit;
+  }
+  bool is_hybrid_pic() const {
+    return fieldSolverMode == PicSolverMode::Hybrid;
+  }
+  bool is_field_solver_active() const {
+    return fieldSolverMode != PicSolverMode::None;
+  }
+  void set_field_solver_mode(const std::string &modeStr);
 
   // Returns the cell-centered coarse-to-fine interpolater to use.  For the
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
@@ -676,7 +778,8 @@ public:
 
   void update_part_loc_to_half_stage();
 
-  void particle_mover();
+  void particle_mover(int pushStage = 0);
+  void advance_particles_and_sources(int pushStage = 0);
 
   void re_sampling();
 
@@ -738,6 +841,8 @@ public:
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   void smooth_moments();
   void update_B_hybrid();
+  void calc_hybrid_dt_and_subcycle(amrex::Real &dtNext, int &nSubNext,
+                                   bool doReport);
   // Apply periodic and physical boundary conditions (and coarse-fine interface
   // ghosts on refined levels) to the cell-centered B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.
@@ -755,8 +860,42 @@ public:
                       bool includeAmbi = true);
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
+  // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
+  // E assembled from Bin at moment fraction hstep, then synchronized
+  // across levels.
+  void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin, int iK,
+                         amrex::Real hstep, bool includeAmbi);
+  // Set the fine nodal E on the coarse-fine interfaces from the coarse E.
+  void sync_emf_at_interface(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // Fill the fine-level ghost nodes of E from the coarse E.
+  void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // Number of ghost layers advanced by the Faraday stage update on iLev.
+  int faraday_ngrow(int iLev) const { return (iLev > 0) ? 1 : 0; }
+  // True when Bz does not enter div(B), i.e. when the grid has no z extent:
+  // either a true-2D AMReX build or a 3D build with a single cell in z
+  // (fake 2D, where the two z node planes coincide).  `nDim` is the
+  // compile-time amrex::SpaceDim, so a bare `nDim == 2` test silently excludes
+  // the fake-2D case in a 3D build -- always use this helper instead.
+  bool is_bz_div_free() const { return (nDim == 2) || is_fake_2d(); }
+  // Per-level div(B) report split into interface / covered / interior cells.
+  void report_divB_amr();
+  // Max |avg(B_fine) - B_coarse| over the covered cells of iLev, measured
+  // before any restriction overwrites them, stored into coveredBDrift[iLev].
+  void measure_covered_B_drift(int iLev);
+  // Relax the covered coarse B on iLev toward the restriction of the fine B
+  // with a discrete-curl correction, so the coarse div(B) is preserved.
+  void relax_covered_B_to_fine(int iLev);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
+
+  //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
+  void advance_explicit_full_pic();
+  void update_EB_explicit_leapfrog(amrex::Real dt, int nSub);
+  void advance_B_half_step(amrex::Real dtSub, amrex::Real tSub = -1.0);
+  void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,
+                      int iLev, amrex::Real tSub = -1.0);
+  void advance_explicit_pc(amrex::Real dt);
+  void seed_first_explicit_step();
 
   //-------------Evolved electron pressure (#ELECTRONPRESSURE)-----------------
   // Advance the scalar electron pressure by one PIC step, operator split:
@@ -859,7 +998,9 @@ public:
   // E).
   void apply_field_bc(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                       const int iStart, const int nComp, GETVALUE func,
-                      const int iLev, const bool isB);
+                      const int iLev, const bool isB,
+                      amrex::Real dtOverride = -1.0,
+                      amrex::Real timeOverride = -1.0);
 
   // Generic fill: zero-gradient copy on open faces, or values from `func`.
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
@@ -875,7 +1016,8 @@ public:
   // Absorbing wall: matched-impedance ghost-cell blending.
   void apply_absorbing_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                             const int iStart, const int nComp, const int iLev,
-                            const BoxBC<FieldBC::Type> &bc, bool isB);
+                            const BoxBC<FieldBC::Type> &bc, bool isB,
+                            amrex::Real dtOverride = -1.0);
 
   // Inflow wall: pin physical boundary face nodes and fill ghost cells/nodes.
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
@@ -917,7 +1059,8 @@ public:
   // Fill external Dirichlet (coupled / fixed) ghost cells from func.
   void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                     const int iStart, const int nComp, GETVALUE func,
-                    const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
+                    const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr,
+                    bool skipCoarseFineGhosts = false);
 
   amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {
@@ -979,6 +1122,11 @@ public:
       e = fi->get_ez(mfi, ijk, iLev);
 
     return e;
+  }
+
+  inline amrex::Real get_center_Pe(amrex::MFIter &mfi, amrex::IntVect ijk,
+                                   int iVar, const int iLev) {
+    return fi->get_pe(mfi, ijk, iLev);
   }
 
   //--------------- Boundary end ------------------------

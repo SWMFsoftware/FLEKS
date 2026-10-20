@@ -4,13 +4,12 @@
 streams into a reflecting wall, exercising a reflecting wall and an upstream
 inflow boundary in the same deck.  Two solver variants are provided:
 
-* **`PARAM.in`** — the **FULL PIC** solver (kinetic ions + kinetic electrons,
-  reduced mass ratio `m_i/m_e = 25`).
+* **`PARAM.in.implicit`** — the **SEMI-IMPLICIT FULL PIC** solver (kinetic ions + kinetic electrons,
+  reduced mass ratio `m_i/m_e = 25`, `#FIELDSOLVER implicit`).
 * **`PARAM.in.hybrid`** — the **HYBRID** solver (kinetic ions, massless
-  electron fluid at `Te ≈ 140 eV`).
+  electron fluid at `Te ≈ 140 eV`, `#FIELDSOLVER hybrid`).
 
-Both variants share the same physics; only the field solver (`solveEM` /
-`useHybridPIC`) differs.
+Both variants share the same physics; only the field solver mode differs.
 
 ## Setup
 

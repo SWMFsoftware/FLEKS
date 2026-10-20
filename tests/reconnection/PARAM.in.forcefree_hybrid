@@ -110,7 +110,7 @@ rk4                     fieldIntegrator
 1.0                     charge
 
 #UNIFORMSTATE
-65.15939                rho [amu/cc; n_i0 = 1.0 in code units]
+65.15939                rho [/cc; n_i0 = 1.0 in code units]
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -162,5 +162,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 6.2831853               TimeMax     [1.0 * t_ci = 1000 steps]
-
-#RUN

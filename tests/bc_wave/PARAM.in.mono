@@ -52,7 +52,7 @@ T                       solveEM
 -1.0                    charge
 
 #UNIFORMSTATE
-1.0                     rho
+100.0                   rho
 0.0                     ux
 0.0                     uy
 0.0                     uz
@@ -160,5 +160,3 @@ Ex Ey Ez Bx By Bz       plotVar
 #STOP
 -1                      MaxIter
 40.0                    TimeMax
-
-#RUN

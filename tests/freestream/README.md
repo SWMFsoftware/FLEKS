@@ -20,6 +20,7 @@ The directory holds three parameter files that share the identical grid, normali
 | `PARAM.in.upwind` | Full PIC implicit Maxwell/GMRES (`#SOLVEEM T`, `#HYBRIDPIC F`) | Species 0: ions ($m=1, q=1$), Species 1: electrons ($m=0.04, q=-1$) | Full kinetic E-B solve with comoving current & upwind damping |
 | `PARAM.in.hybrid` | Hybrid (Ohm + Faraday) (`#SOLVEEM F`, `#HYBRIDPIC T`, `#HALLTERM F`) | Species 0: ions ($m=1, q=1$), massless fluid electrons | Convective Ohm's-law advance (1D periodic) |
 | `PARAM.in.hybrid_2d` | Hybrid (Ohm + Faraday) (`#SOLVEEM F`, `#HYBRIDPIC T`, `#HALLTERM F`) | Species 0: ions ($m=1, q=1$), massless fluid electrons | 2D domain ($32\times 16$) with open $x$-inflow/outflow; validates boundary uniformity |
+| `PARAM.in.hybrid_inflow` | Hybrid (`#FIELDSOLVER hybrid`, Hall on, $T_e = 141$ eV, grid hyper-resistivity) | Species 0: ions ($m=1, q=1$), massless fluid electrons | 2D ($32\times 16$, $16\times 8$ blocks) shock-deck upstream state and `+x` face (fixed field + inflow particles), no wall; validates that no $B_x$ layer grows next to the inflow face |
 
 ## Validation
 
@@ -29,7 +30,8 @@ All variants are checked by `tests/freestream/validate.py`:
   - Bulk velocity: $u_{xS0}$ (and $u_{xS1}$ for full PIC) is preserved to within 5%; transverse velocities remain negligible noise.
   - Temperature / pressure: Mean scalar pressure $\langle p_{S0} \rangle$ (and $\langle p_{S1} \rangle$ for full PIC) is conserved to within 5%, ensuring no numerical heating or cooling.
   - Magnetic & electric fields: Normal field $B_x$ is strictly uniform and preserved; mean field components match the theoretical convective equilibrium, with spatial spread $\le 10\%$ in Full PIC.
-  - **Inflow boundary uniformity (2D):** On the inflow boundary face $x = x_{\min}$, fields $B_x, B_y, E_z$ are verified to be strictly uniform along $y$ (spread $< 10^{-4}$), ensuring no spurious stripes or oscillations enter the domain.
+  - **Inflow boundary uniformity (2D):** On the inflow boundary face ($x_{\min}$ or $x_{\max}$, read from `#FIELDBOXBOUNDARY`), fields $B_x, B_y, E_z$ are verified to be strictly uniform along $y$ (spread $< 10^{-4}$), ensuring no spurious stripes or oscillations enter the domain.
+  - **Inflow layer (`hybrid_inflow`):** At $t = 10$ s, the column rms of $B_x$ (about its $y$-mean) over the 8 cells next to the inflow face must stay at the interior noise level: $\le 0.02\,|B|$ and $\le 1.8\times$ the median of the middle third of the domain. $B = (0, B_y, 0)$, so $B_x$ is pure noise in a correct run. This guards two fixed boundary bugs that grew a $B_x$ layer next to Dirichlet (fixed / inflow) faces in the hybrid solver: the hyper-resistive $E$ used the prescribed $B$ instead of its Laplacian there, and the last physical cell of cell-centered $B$ was overwritten with the prescribed state on every boundary fill. On the broken code the layer reached $0.09\,|B|$ ($5.9\times$ the interior).
 
 ## Physics scales
 
@@ -43,14 +45,14 @@ All variants are checked by `tests/freestream/validate.py`:
 
 ## Relationship to other tests
 
-- `whistler/`, `ohm/` — seeded wave tests built on related equilibria.
+- `whistler/` — seeded wave tests built on related equilibria.
 
 ## Running
 
-All four variants run together under the test name:
+All five variants run together under the test name:
 
 ```bash
-python3 tests/validate_tests.py --test=freestream          # all 4 variants
+python3 tests/validate_tests.py --test=freestream          # all 5 variants
 ```
 
 To run a **single variant**, append its token to the test name:
@@ -60,4 +62,5 @@ python3 tests/validate_tests.py --test=freestream.full       # full PIC original
 python3 tests/validate_tests.py --test=freestream.upwind     # full PIC upwind (PARAM.in.upwind)
 python3 tests/validate_tests.py --test=freestream.hybrid     # hybrid 1D periodic (PARAM.in.hybrid)
 python3 tests/validate_tests.py --test=freestream.hybrid_2d  # hybrid 2D with inflow (PARAM.in.hybrid_2d)
+python3 tests/validate_tests.py --test=freestream.hybrid_inflow  # hybrid 2D inflow-layer regression (PARAM.in.hybrid_inflow)
 ```

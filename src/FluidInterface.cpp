@@ -4,6 +4,7 @@
 #include <AMReX_PlotFileUtil.H>
 
 #include "Bit.h"
+#include "DomainParameters.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
 
@@ -228,12 +229,14 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
 FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
                                const Vector<int>& iParam,
                                const Vector<double>& norm,
-                               const Vector<double>& paramComm)
+                               const Vector<double>& paramComm,
+                               bool useHybridIn)
     : GridAccess(gridIn), tag(tagIn), gridID(gridIn.get_id()) {
 
   gridName = std::string("FLEKS") + std::to_string(gridID);
   printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
   initFromSWMF = true;
+  useHybridPIC = useHybridIn;
 
   if (iParam.empty() || norm.empty() || paramComm.empty())
     Abort("Error: one of the input vector is empty!\n");
@@ -258,7 +261,11 @@ FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
 
   useElectronFluid = iEx > 1;
 
-  if (useElectronFluid) {
+  if (useHybridPIC) {
+    useMultiFluid = nFluid > 1;
+    nIon = (nSpeciesFluid > 1) ? nSpeciesFluid : nFluid;
+    nS = nIon;
+  } else if (useElectronFluid) {
     useMultiFluid = false;
     nIon = -1;
     nS = nFluid;
@@ -347,7 +354,12 @@ FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
 
   /** Do not change the order of the following lines. */
   n = 0;
-  if (useElectronFluid) {
+  if (useHybridPIC) {
+    for (int i = 0; i < nS; ++i) {
+      QoQi_S[i] = paramComm[n++];
+      MoMi_S[i] = paramComm[n++];
+    }
+  } else if (useElectronFluid) {
     for (int i = 0; i < nS; ++i) {
       QoQi_S[i] = paramComm[n++];
       MoMi_S[i] = paramComm[n++];
@@ -476,10 +488,13 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     }
     double tmp;
     for (int i = 0; i < nS; ++i) {
-      double rho;
-      param.read_var("rho", rho);
-      // amu/cc -> kg/m^3
-      rho *= 1e6 * cProtonMassSI;
+      double n;
+      param.read_var("rho", n);
+      double mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
+                          ? MoMi_S[i] * cProtonMassSI
+                          : cProtonMassSI;
+      // [1/cc] -> [1/m^3] -> mass density [kg/m^3]
+      double rho = n * 1e6 * mass_i;
       uniformState.push_back(rho);
       param.read_var("ux", tmp);
       // km/s -> m/s
@@ -492,12 +507,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       tmp *= 1e3;
       uniformState.push_back(tmp * rho);
       param.read_var("T", tmp);
-      double mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
-                          ? MoMi_S[i] * cProtonMassSI
-                          : cProtonMassSI;
-      double n = rho / mass_i;
       // p = nkT
-      double p = n * cBoltzmannSI * tmp;
+      double p = n * 1e6 * cBoltzmannSI * tmp;
       uniformState.push_back(p);
     }
     param.read_var("bx", tmp);
@@ -855,7 +866,8 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
   if (useMultiSpecies) {
     speciesMassFactor.resize(nIon);
     for (int iIon = 0; iIon < nIon; ++iIon) {
-      speciesMassFactor[iIon] = 1.0 + MoMi_S[0] / MoMi_S[iIon + 1];
+      speciesMassFactor[iIon] =
+          useHybridPIC ? 1.0 : (1.0 + MoMi_S[0] / MoMi_S[iIon + 1]);
     }
   }
 
@@ -917,7 +929,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
 
 void FluidInterface::set_plasma_charge_and_mass(Real qomEl) {
 
-  if (!useElectronFluid) {
+  if (!useElectronFluid && !useHybridPIC) {
     MoMi_S[0] = QoQi_S[0] / qomEl;
   }
 
@@ -1253,6 +1265,10 @@ void FluidInterface::print_info() const {
 
 void FluidInterface::calc_fluid_state(const double* dataPIC_I,
                                       double* data_I) const {
+  if (useHybridPIC) {
+    calc_fluid_state_hybrid(dataPIC_I, data_I);
+    return;
+  }
   /* Input: dataPIC_I
      Output: data_I
      Function:
@@ -1469,6 +1485,123 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
         data_I[iP_I[0]] = (PtXX + PtYY + PtZZ) / 3.0;
     }
   } // useElectronFluid is true or false
+
+  // Convert to SI units
+  for (int iVar = 0; iVar < nVarFluid; ++iVar) {
+    data_I[iVar] *= get_No2Si_V(iVar);
+  }
+}
+
+void FluidInterface::calc_fluid_state_hybrid(const double* dataPIC_I,
+                                             double* data_I) const {
+  const int nVarSpecies = 10;
+  const int iRhoPIC = 0, iMxPIC = 1, iMyPIC = 2, iMzPIC = 3, iPxxPIC = 4,
+            iPyyPIC = 5, iPzzPIC = 6, iPxyPIC = 7, iPxzPIC = 8, iPyzPIC = 9;
+  const int iBxPIC = nS * nVarSpecies, iByPIC = iBxPIC + 1, iBzPIC = iByPIC + 1,
+            iExPIC = iBzPIC + 1, iEyPIC = iExPIC + 1, iEzPIC = iEyPIC + 1,
+            iPePIC = iExPIC + 3;
+
+  std::fill_n(data_I, nVarFluid, 0.0);
+
+  const double BX = dataPIC_I[iBxPIC];
+  const double BY = dataPIC_I[iByPIC];
+  const double BZ = dataPIC_I[iBzPIC];
+
+  data_I[iBx] = BX;
+  data_I[iBy] = BY;
+  data_I[iBz] = BZ;
+
+  if (iEx >= 0) {
+    data_I[iEx] = dataPIC_I[iExPIC];
+    data_I[iEy] = dataPIC_I[iEyPIC];
+    data_I[iEz] = dataPIC_I[iEzPIC];
+  }
+
+  const double invB2 = 1.0 / (BX * BX + BY * BY + BZ * BZ + 1e-40);
+
+  const double Pe = dataPIC_I[iPePIC];
+  if (useMhdPe && iPe >= 0) {
+    data_I[iPe] = Pe;
+  }
+
+  double totalRho = 0.0;
+  double totalMx = 0.0, totalMy = 0.0, totalMz = 0.0;
+  double totalPi = 0.0;
+  double totalPiXX = 0.0, totalPiYY = 0.0, totalPiZZ = 0.0;
+  double totalPiXY = 0.0, totalPiXZ = 0.0, totalPiYZ = 0.0;
+
+  for (int iS = 0; iS < nS; ++iS) {
+    const double Rhoi = dataPIC_I[iRhoPIC + iS * nVarSpecies];
+    const double Mix = dataPIC_I[iMxPIC + iS * nVarSpecies];
+    const double Miy = dataPIC_I[iMyPIC + iS * nVarSpecies];
+    const double Miz = dataPIC_I[iMzPIC + iS * nVarSpecies];
+
+    const double PiXX = dataPIC_I[iPxxPIC + iS * nVarSpecies];
+    const double PiYY = dataPIC_I[iPyyPIC + iS * nVarSpecies];
+    const double PiZZ = dataPIC_I[iPzzPIC + iS * nVarSpecies];
+    const double PiXY = dataPIC_I[iPxyPIC + iS * nVarSpecies];
+    const double PiXZ = dataPIC_I[iPxzPIC + iS * nVarSpecies];
+    const double PiYZ = dataPIC_I[iPyzPIC + iS * nVarSpecies];
+    const double Pi = (PiXX + PiYY + PiZZ) / 3.0;
+
+    totalRho += Rhoi;
+    totalMx += Mix;
+    totalMy += Miy;
+    totalMz += Miz;
+    totalPi += Pi;
+    totalPiXX += PiXX;
+    totalPiYY += PiYY;
+    totalPiZZ += PiZZ;
+    totalPiXY += PiXY;
+    totalPiXZ += PiXZ;
+    totalPiYZ += PiYZ;
+
+    if (useMultiFluid || useMultiSpecies) {
+      if (iS < static_cast<int>(iRho_I.size()) && iRho_I[iS] >= 0)
+        data_I[iRho_I[iS]] = Rhoi;
+      if (useMultiFluid) {
+        if (iS < static_cast<int>(iRhoUx_I.size()) && iRhoUx_I[iS] >= 0) {
+          data_I[iRhoUx_I[iS]] = Mix;
+          data_I[iRhoUy_I[iS]] = Miy;
+          data_I[iRhoUz_I[iS]] = Miz;
+        }
+        if (iS < static_cast<int>(iP_I.size()) && iP_I[iS] >= 0)
+          data_I[iP_I[iS]] = Pi;
+      }
+    }
+  }
+
+  if (!(useMultiFluid || useMultiSpecies)) {
+    data_I[iRho_I[0]] = totalRho;
+    data_I[iRhoUx_I[0]] = totalMx;
+    data_I[iRhoUy_I[0]] = totalMy;
+    data_I[iRhoUz_I[0]] = totalMz;
+    data_I[iP_I[0]] = useMhdPe ? totalPi : (totalPi + Pe);
+
+    if (useAnisoP) {
+      const double Ppar =
+          (BX * totalPiXX * BX + BY * totalPiYY * BY + BZ * totalPiZZ * BZ +
+           2.0 * BX * totalPiXY * BY + 2.0 * BX * totalPiXZ * BZ +
+           2.0 * BY * totalPiYZ * BZ) *
+          invB2;
+      data_I[iPpar_I[0]] = useMhdPe ? Ppar : (Ppar + Pe);
+    }
+  } else if (!useMultiFluid && useMultiSpecies) {
+    if (iRhoTotal >= 0)
+      data_I[iRhoTotal] = totalRho;
+    data_I[iRhoUx_I[0]] = totalMx;
+    data_I[iRhoUy_I[0]] = totalMy;
+    data_I[iRhoUz_I[0]] = totalMz;
+    data_I[iP_I[0]] = useMhdPe ? totalPi : (totalPi + Pe);
+    if (useAnisoP) {
+      const double Ppar =
+          (BX * totalPiXX * BX + BY * totalPiYY * BY + BZ * totalPiZZ * BZ +
+           2.0 * BX * totalPiXY * BY + 2.0 * BX * totalPiXZ * BZ +
+           2.0 * BY * totalPiYZ * BZ) *
+          invB2;
+      data_I[iPpar_I[0]] = useMhdPe ? Ppar : (Ppar + Pe);
+    }
+  }
 
   // Convert to SI units
   for (int iVar = 0; iVar < nVarFluid; ++iVar) {

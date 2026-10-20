@@ -171,7 +171,9 @@ jobs:
             tests/bc_reflecting/PARAM.in.fields
             tests/freestream/PARAM.in.hybrid
             tests/freestream/PARAM.in.hybrid_2d
-            tests/lightwave/PARAM.in
+            tests/freestream/PARAM.in.hybrid_inflow
+            tests/lightwave/PARAM.in.implicit
+            tests/lightwave/PARAM.in.explicit
             tests/shock/PARAM.in.hybrid
           )
 

@@ -87,12 +87,12 @@ neutralizing massless fluid, so no electron particle species is present.
 1.0                     charge
 
 #UNIFORMSTATE
-12.5                    rho [amu/cc]   background ions (n_code ~ nb = 0.2)
+12.5                    rho [/cc]   background ions (n_code ~ nb = 0.2)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-304000.0                T [K]          ion temperature (beta_i ~ 0.5)
-0.0                     bx [T]         guide field set by FadeevIC (bg = 0)
+304000.0                T [K]       ion temperature (beta_i ~ 0.5)
+0.0                     bx [T]      guide field set by FadeevIC (bg = 0)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -143,5 +143,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 20.0                    TimeMax   ~3.2 ion gyroperiods (reconnection develops)
-
-#RUN

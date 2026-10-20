@@ -18,6 +18,9 @@ The test validates that the uniform equilibrium remains steady:
   * Normal magnetic field Bx strictly uniform and preserved.
   * Mean magnetic and electric fields preserved.
   * For Full PIC: comoving-upwind scheme ensures spatial spread of B and E stays small (<10%).
+  * Open inflow variants: fields on the inflow face are uniform along y.
+  * Inflow-layer variant (PARAM.in.hybrid_inflow): Bx next to the inflow face
+    stays at the interior noise level (no boundary-driven Bx layer).
 """
 import glob
 import logging
@@ -37,6 +40,14 @@ VEL_TOL = 0.05           # bulk velocity preserved to +/-5%
 BX_SPREAD_TOL = 0.05     # normal field Bx spatial spread <= 5% of mean
 FULL_PIC_SPREAD_TOL = 0.10 # Full PIC transverse field spread <= 10% of magnitude
 TRANSVERSE_VEL_MAX = 0.05  # transverse spurious velocity <= 5% of bulk flow
+
+# Inflow-layer check (PARAM.in.hybrid_inflow): column rms of Bx (about its
+# y-mean) over the cells next to the inflow face, relative to mean |B|.
+# Fixed code: <= 0.010 and ~0.6-0.9x the interior median through t = 10;
+# broken code reached 0.034-0.090 and 2.9-5.9x the interior median.
+INFLOW_LAYER_NCELL = 8       # columns next to the inflow face (face column excluded)
+INFLOW_LAYER_MAX = 0.02      # absolute limit on the near-face column rms
+INFLOW_LAYER_RATIO = 1.8     # limit relative to the interior (middle third) median
 
 
 def set_run_dir(run_dir):
@@ -133,6 +144,55 @@ _fs_load_out = _run_dir._read_out_file
 _fs_col = _run_dir.col
 
 
+def _x_inflow_side(run_dir):
+    """'hi' if the +x field face is a Dirichlet upstream face, else 'lo'."""
+    try:
+        with open(os.path.join(run_dir, "PARAM.in")) as f:
+            lines = [l.split() for l in f]
+    except OSError:
+        return "lo"
+    for i, tok in enumerate(lines):
+        if tok and tok[0] == "#FIELDBOXBOUNDARY":
+            faces = [t[0] for t in lines[i + 1:] if t][:2]
+            if len(faces) == 2 and faces[1] in ("inflow", "fixed") \
+                    and faces[0] not in ("inflow", "fixed"):
+                return "hi"
+            break
+    return "lo"
+
+
+def _inflow_layer_check(vidx, rows, side):
+    """Column rms of Bx/|B| next to the inflow face vs the interior median.
+
+    Returns (near_max, interior_median) or None if the frame cannot be parsed.
+    """
+    xs = _fs_col(vidx, rows, "X")
+    bx = _fs_col(vidx, rows, "BX")
+    by = _fs_col(vidx, rows, "BY")
+    bz = _fs_col(vidx, rows, "BZ")
+    if not (xs and bx and by and bz):
+        return None
+    b_mag = sum(math.sqrt(a * a + b * b + c * c) for a, b, c in zip(bx, by, bz)) / len(bx)
+    if b_mag <= 0:
+        return None
+    columns = {}
+    for x, b in zip(xs, bx):
+        columns.setdefault(round(x, 6), []).append(b)
+    xcol = sorted(columns)
+    crms = []
+    for x in xcol:
+        c = columns[x]
+        m = sum(c) / len(c)
+        crms.append(math.sqrt(sum((v - m) ** 2 for v in c) / len(c)) / b_mag)
+    n = len(crms)
+    if n < 3 * INFLOW_LAYER_NCELL:
+        return None
+    # The face column itself is pinned to the prescribed state; skip it.
+    near = crms[n - 1 - INFLOW_LAYER_NCELL:n - 1] if side == "hi" else crms[1:1 + INFLOW_LAYER_NCELL]
+    inner = sorted(crms[n // 3: 2 * n // 3])
+    return max(near), inner[len(inner) // 2]
+
+
 def validate_plot(test_name):
     """Strict plot checks: bulk velocities, temperatures, B and E fields."""
     import tests._shared.hybrid as _hyb
@@ -210,6 +270,11 @@ def validate_plot(test_name):
     # 4. Magnetic field components (BX, BY, BZ).
     bx0 = _fs_col(vidx0, rows0, "BX")
     b_scale = abs(sum(bx0) / len(bx0)) if bx0 else 1.0
+    if b_scale < 1e-12:
+        # No normal field (e.g. B = (0, By, 0)): scale by the mean |B| instead.
+        b_mag0 = [math.sqrt(sum(v * v for v in comps)) for comps in
+                  zip(*(_fs_col(vidx0, rows0, c) or [0.0] * len(bx0) for c in ("BX", "BY", "BZ")))]
+        b_scale = sum(b_mag0) / len(b_mag0) if b_mag0 else 1.0
     bx_spread_tol = 1.20 if is_open_inflow else BX_SPREAD_TOL
     for b_comp in ("BX", "BY", "BZ"):
         b0 = _fs_col(vidx0, rows0, b_comp)
@@ -264,20 +329,22 @@ def validate_plot(test_name):
                     reasons.append(f"spurious electric field component <{e_comp}> = {mel:.4f}")
 
     # 6. Inflow boundary uniformity check (for open inflow tests)
-    # Verifies that on the inflow face (x = x_min), fields along y are strictly uniform.
+    # Verifies that on the inflow face (x_min or x_max, read from the deck),
+    # fields along y are strictly uniform.
+    inflow_side = _x_inflow_side(_hyb.RUN_DIR)
     if is_open_inflow:
         xs = _fs_col(vidxl, rowsl, "X")
         if xs:
-            x_min = min(xs)
-            inflow_bx = [row[vidxl["BX"]] for row, x_val in zip(rowsl, xs) if abs(x_val - x_min) < 1e-5]
-            inflow_by = [row[vidxl["BY"]] for row, x_val in zip(rowsl, xs) if abs(x_val - x_min) < 1e-5]
-            inflow_ez = [row[vidxl["EZ"]] for row, x_val in zip(rowsl, xs) if abs(x_val - x_min) < 1e-5]
+            x_face = max(xs) if inflow_side == "hi" else min(xs)
+            inflow_bx = [row[vidxl["BX"]] for row, x_val in zip(rowsl, xs) if abs(x_val - x_face) < 1e-5]
+            inflow_by = [row[vidxl["BY"]] for row, x_val in zip(rowsl, xs) if abs(x_val - x_face) < 1e-5]
+            inflow_ez = [row[vidxl["EZ"]] for row, x_val in zip(rowsl, xs) if abs(x_val - x_face) < 1e-5]
             if len(inflow_bx) > 1:
                 spread_inflow_bx = max(inflow_bx) - min(inflow_bx)
                 spread_inflow_by = max(inflow_by) - min(inflow_by)
                 spread_inflow_ez = max(inflow_ez) - min(inflow_ez)
                 logger.debug("    [FS 2D Inflow] Spreads along y at x=%.2f: Bx=%.2e, By=%.2e, Ez=%.2e",
-                             x_min, spread_inflow_bx, spread_inflow_by, spread_inflow_ez)
+                             x_face, spread_inflow_bx, spread_inflow_by, spread_inflow_ez)
                 if spread_inflow_bx > 1e-4:
                     passed = False
                     reasons.append(
@@ -290,6 +357,25 @@ def validate_plot(test_name):
                     passed = False
                     reasons.append(
                         f"inflow boundary Ez has non-uniform stripes along y (spread = {spread_inflow_ez:.4e})")
+
+    # 7. No boundary-driven Bx layer next to the inflow face (inflow-layer variant).
+    # test_name is the runner's base name, e.g. "freestream_hybrid_inflow".
+    if (test_name or "").lower().endswith("hybrid_inflow"):
+        layer = _inflow_layer_check(vidxl, rowsl, inflow_side)
+        if layer is None:
+            passed = False
+            reasons.append("inflow-layer check: could not parse Bx columns from the last frame")
+        else:
+            near, inner = layer
+            ratio = near / inner if inner > 0 else float("inf")
+            logger.debug("    [FS Inflow layer] near-face max rms(Bx)/|B| = %.4f, "
+                         "interior median = %.4f (ratio %.2f)", near, inner, ratio)
+            if near > INFLOW_LAYER_MAX or ratio > INFLOW_LAYER_RATIO:
+                passed = False
+                reasons.append(
+                    f"Bx layer next to the inflow face: column rms {near:.4f} |B| "
+                    f"(limit {INFLOW_LAYER_MAX}), {ratio:.2f}x the interior "
+                    f"(limit {INFLOW_LAYER_RATIO})")
 
     if passed:
         return True, "Passed (strict: state stays uniform, bulk flow, pressure, B & E preserved)"

@@ -133,6 +133,10 @@ def _spreads():
     plots = sorted(glob.glob(os.path.join(RUN_DIR, "PC", "plots", "*.out")))
     best = None
     for path in plots:
+        # Skip the t=0 / step 0 frame: it contains the initial condition
+        # (always seeded adiabatically) before dynamical evolution / conduction.
+        if "_t00000000_n00000000" in path:
+            continue
         stats = _frame_stats(path)
         if stats is None:
             continue
@@ -140,6 +144,8 @@ def _spreads():
         if spread_rho is None or spread_a is None or spread_i is None:
             continue
         gap = abs(spread_a - spread_i)
+        logger.debug("Plot frame %s: gap=%.4f, spread_a=%.4f, spread_i=%.4f",
+                     os.path.basename(path), gap, spread_a, spread_i)
         if best is None or gap > best[0]:
             best = (gap, spread_a, spread_i)
 

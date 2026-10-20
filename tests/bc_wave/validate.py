@@ -41,7 +41,7 @@ def validate_log(pic_diags=None, test_name=None):
     if e1 <= 0:
         return False, "Final Etot is zero (wave did not inject energy)"
 
-    if test_name and ("mono" in test_name):
+    if test_name and ("mono" in test_name or "explicit" in test_name):
         # Pure-EM domain begins in vacuum (e0 = 0); boundary wave injects positive energy.
         return True, "Passed (wave injected positive finite energy)"
 
@@ -102,6 +102,14 @@ def validate_plot(test_name):
     vidx, rows = _read_plot()
     if test_name and ("alfven" in test_name):
         return _check_alfven(vidx, rows)
+    if test_name and ("explicit" in test_name):
+        ok, msg = _check_wave_in_interior(vidx, rows, "BZ")
+        if not ok:
+            return False, msg
+        ok, msg = _check_wave_in_interior(vidx, rows, "EY")
+        if not ok:
+            return False, msg
+        return True, "Passed (explicit subcycled wave injected Bz and Ey into interior)"
     # default: mono wave
     return _check_wave_in_interior(vidx, rows, "BZ")
 

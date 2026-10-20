@@ -63,12 +63,26 @@ void Pic::fill_new_cells() {
     fill_particles();
     sum_moments(true);
     if (useHybridPIC) {
+      seed_first_hybrid_step();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         average_center_to_node(centerB[iLev], nodeB[iLev]);
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
           apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
                          iLev, true);
+        }
+      }
+      if (useElectronPressureEq && !peStateInitialized_) {
+        init_electron_pressure();
+      }
+      compute_ambipolar_E();
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
+                       nodeE[iLev], iLev, 0.0);
+        nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
+                         &Pic::get_node_E, iLev, false);
         }
       }
     }
@@ -82,6 +96,12 @@ void Pic::fill_new_cells() {
         }
       }
     }
+
+    if (need_divB()) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        compute_divB(iLev);
+      }
+    }
   }
 
   doNeedFillNewCell = false;
@@ -93,6 +113,19 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // The last one is the sum of all species.
   if (nodePlasma.empty()) {
     nodePlasma.resize(nSpecies + 1);
+  }
+
+  // The relaxation workspace is needed only on coarse levels with an active
+  // fine level. The active-level loop below cannot release a workspace on a
+  // level that disappeared during coarsening, so clear those slots explicitly.
+  if (useHybridPIC && !relaxTarget.empty()) {
+    for (int iLev = finestLevel(); iLev < n_lev_max(); ++iLev) {
+      relaxTarget[iLev].clear();
+      relaxResidual[iLev].clear();
+      relaxCurl[iLev].clear();
+      relaxCurlT[iLev].clear();
+      relaxDir[iLev].clear();
+    }
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -152,7 +185,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, 0, doMoveData);
       }
 
-      if (!useExplicitPIC) {
+      if (!useExplicitPIC && !useHybridPIC) {
         distribute_FabArray(nodeMM[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 1, 1, doMoveData);
         if (nodeMM_comm_data.size() != n_lev()) {
@@ -184,12 +217,28 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
       }
+      if (useExplicitPIC) {
+        distribute_FabArray(nodeCurlB[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(nodeJ[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(centerBstar[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(centerBstage[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+      }
     }
-    if (useHybridPIC) {
-      // Previous-step ion moments for the Ohm's-law interpolation.
+    if (useHybridPIC || useExplicitPIC) {
+      // Previous-step moments for the Ohm's-law / explicit interpolation.
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
+    }
+    if (useHybridPIC) {
       // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE
       // node-centered.
       distribute_FabArray(centerLapB[iLev], boxArray(iLev),
@@ -211,6 +260,23 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
       distribute_FabArray(centerBstar[iLev], boxArray(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+
+      // Workspace for the divergence-free relaxation of the covered coarse B.
+      // Allocate it only for coarse levels with an active fine level. Using
+      // n_lev_max() here would allocate the AMR-only buffers in single-level
+      // runs that merely allow AMR, which needlessly regresses memory use.
+      if (finestLevel() > 0 && iLev < finestLevel()) {
+        distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxResidual[iLev], boxArray(iLev),
+                            DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
+        distribute_FabArray(relaxCurl[iLev], boxArray(iLev),
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxCurlT[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxDir[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+      }
 
       // Staggered hybrid solver fields.
       distribute_FabArray(nodeEstage[iLev], node_box_array(iLev),
@@ -254,8 +320,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(nodeEtaHyperRegional[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 1, get_n_ghost(), false);
       }
-
-      // Hybrid-only node-grid previous-step moments (J^{n-1/2}), slim layout.
+    }
+    if (useHybridPIC || useExplicitPIC) {
+      // Node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
         if (pl.empty())
           pl.resize(n_lev_max());
@@ -834,7 +901,7 @@ void Pic::re_sampling() {
 }
 
 //==========================================================
-void Pic::particle_mover() {
+void Pic::particle_mover(int pushStage) {
   std::string nameFunc = "Pic::mover";
 
   timing_func(nameFunc);
@@ -842,10 +909,11 @@ void Pic::particle_mover() {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeE : nodeEth;
+  const Vector<MultiFab>& nodeEpush =
+      (useHybridPIC || useExplicitPIC) ? nodeE : nodeEth;
 
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext);
+    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext, pushStage);
   }
 
   for (int i : kineticSpecies_) {
@@ -1286,6 +1354,55 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
+  auto convert_and_sum_moments = [&]() {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[nSpecies][iLev].setVal(0.0);
+    }
+
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->convert_to_fluid_moments(nodePlasma[i]);
+    }
+
+    for (int i : kineticSpecies_) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        // nodePlasma[nSpecies] holds the sum of all kinetic species.
+        // In semi-implicit full PIC, kineticSpecies_ excludes the (implicit
+        // fluid) electron.
+        MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
+                      nMoments, get_n_ghost());
+      }
+    }
+
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    if (finestLevel() > 0) {
+      for (int iLev = 1; iLev < n_lev(); iLev++) {
+        fill_fine_lev_bny_from_coarse(
+            nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
+            nodePlasma[nSpecies][iLev].nComp(), refRatio(iLev - 1),
+            Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+
+        if (useHybridPIC || useExplicitPIC) {
+          fill_fine_lev_bny_from_coarse(nodePlasmaPrev[nSpecies][iLev - 1],
+                                        nodePlasmaPrev[nSpecies][iLev], 0,
+                                        nodePlasmaPrev[nSpecies][iLev].nComp(),
+                                        refRatio(iLev - 1), Geom(iLev - 1),
+                                        Geom(iLev), node_status(iLev),
+                                        node_bilinear_interp);
+        }
+      }
+    }
+
+    calc_mach_number();
+  };
+
+  if (useHybridPIC) {
+    convert_and_sum_moments();
+  }
+
   if (updateDt) {
     Vector<Real> uMax(n_lev(), 0.0);
     Vector<Real> dxMin(n_lev());
@@ -1331,7 +1448,21 @@ void Pic::sum_moments(bool updateDt) {
                                        : std::numeric_limits<Real>::max();
     }
 
-    if (tc->get_cfl() > 0) {
+    if (useHybridPIC && (tc->get_cfl() > 0 || isAutoSubcycle)) {
+      Real dtNext = tc->get_next_dt();
+      int nSubNext = nBSubcycle;
+      calc_hybrid_dt_and_subcycle(dtNext, nSubNext, doReport);
+      if (tc->get_cfl() > 0) {
+        tc->set_next_dt(dtNext);
+        if (tc->get_dt() < 0) {
+          tc->set_dt(dtNext);
+        }
+      }
+      if (isAutoSubcycle) {
+        nBSubcycle = nSubNext;
+        nSubcycle = nSubNext;
+      }
+    } else if (tc->get_cfl() > 0) {
       Real dt0 = *std::min_element(dtMax.begin(), dtMax.end());
       Real dt = tc->get_cfl() * dt0;
       tc->set_next_dt(dt);
@@ -1363,45 +1494,9 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodePlasma[nSpecies][iLev].setVal(0.0);
+  if (!useHybridPIC) {
+    convert_and_sum_moments();
   }
-
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
-  }
-
-  for (int i : kineticSpecies_) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      // nodePlasma[nSpecies] holds the sum of all ion species.
-      // kineticSpecies_ excludes the (implicit fluid) electron.
-      MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
-                    nMoments, get_n_ghost());
-    }
-  }
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
-  }
-
-  if (finestLevel() > 0) {
-    for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_bny_from_coarse(
-          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
-          nodePlasma[nSpecies][iLev].nComp(), refRatio(iLev - 1),
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-
-      if (useHybridPIC) {
-        fill_fine_lev_bny_from_coarse(
-            nodePlasmaPrev[nSpecies][iLev - 1], nodePlasmaPrev[nSpecies][iLev],
-            0, nodePlasmaPrev[nSpecies][iLev].nComp(), refRatio(iLev - 1),
-            Geom(iLev - 1), Geom(iLev), node_status(iLev),
-            node_bilinear_interp);
-      }
-    }
-  }
-
-  calc_mach_number();
 
   isMomentsUpdated = true;
 }
@@ -1487,6 +1582,41 @@ void Pic::calc_cost_per_cell() {
   }
 }
 
+void Pic::advance_particles_and_sources(int pushStage) {
+  particle_mover(pushStage);
+
+  // Calling re_sampling after particle mover so that all the particles
+  // outside the domain have been deleted.
+  re_sampling();
+
+  charge_exchange();
+
+  // Apply chemical loss (recombination, etc.) by reducing particle
+  // weights.  Must come before fill_source_particles() so that loss
+  // and source are applied in the correct order within one step.
+  if (source && source->use_loss_source()) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->apply_loss(source, tc->get_dt());
+    }
+  }
+
+  if (source) {
+    fill_source_particles();
+  }
+
+  inject_particles_for_boundary_cells();
+
+  // Inject incoming flux at physical inflow faces before the moment deposit.
+  // Kept outside inject_particles_for_boundary_cells to avoid t=0
+  // pre-injection.
+  if (usePIC) {
+    const Real dt = tc->get_dt();
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->inject_flux_at_inflow_faces(dt);
+    }
+  }
+}
+
 //==========================================================
 void Pic::update(bool doReportIn) {
   std::string nameFunc = "Pic::update";
@@ -1524,66 +1654,104 @@ void Pic::update(bool doReportIn) {
     update_E();
   }
 
-  // Hybrid path: the particle Boris push happens BEFORE the moment deposit and
-  // the Ohm's-law E computation. The push uses the nodeEth and B^n computed at
-  // the end of the previous step's B update.
-  if (useHybridPIC && isFirstHybridStep) {
-    seed_first_hybrid_step();
-  }
-
-  particle_mover();
-
-  // Calling re_sampling after particle mover so that all the particles
-  // outside the domain have been deleted.
-  re_sampling();
-
-  charge_exchange();
-
-  // Apply chemical loss (recombination, etc.) by reducing particle
-  // weights.  Must come before fill_source_particles() so that loss
-  // and source are applied in the correct order within one step.
-  if (source && source->use_loss_source()) {
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->apply_loss(source, tc->get_dt());
-    }
-  }
-
-  if (source) {
-    fill_source_particles();
-  }
-
-  inject_particles_for_boundary_cells();
-
-  // Inject incoming flux at physical inflow faces before the moment deposit.
-  // Kept outside inject_particles_for_boundary_cells to avoid t=0
-  // pre-injection.
-  if (usePIC) {
-    const Real dt = tc->get_dt();
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->inject_flux_at_inflow_faces(dt);
-    }
-  }
-
   isMomentsUpdated = false;
 
-  if (solveEM) {
+  if (useExplicitPIC) {
+    advance_explicit_full_pic();
+  } else if (solveEM) {
+    advance_particles_and_sources(0);
     if (projectDownEmFields) {
       project_down_E();
     }
     update_B();
   } else if (useHybridPIC) {
-    // Deposit the fresh ion moments (J^{n+1/2}) AFTER the particle push. The
-    // previous deposit (J^{n-1/2}) is first saved into nodePlasmaPrev so the
-    // Ohm's law can time-interpolate between the two (hstep scheme).
-    save_current_moments_to_prev();
-    sum_moments(false);
-    smooth_moments();
-    update_Pe_hybrid();
-    update_B_hybrid();
-    isFirstHybridStep = false;
+    if (!usePredictorCorrector) {
+      // Standard single-push hybrid path (1st-order coupled).
+      if (isFirstHybridStep) {
+        seed_first_hybrid_step();
+      }
+
+      advance_particles_and_sources(0);
+
+      // Deposit the fresh ion moments (J^{n+1/2}) AFTER the particle push. The
+      // previous deposit (J^{n-1/2}) is first saved into nodePlasmaPrev so the
+      // Ohm's law can time-interpolate between the two (hstep scheme).
+      save_current_moments_to_prev();
+      sum_moments(false);
+      smooth_moments();
+      update_Pe_hybrid();
+      update_B_hybrid();
+      isFirstHybridStep = false;
+    } else {
+      // 2nd-order Predictor-Corrector path.
+      if (isFirstHybridStep) {
+        seed_first_hybrid_step();
+      }
+
+      // 1. Backup base particle state at t^n
+      for (int i : kineticSpecies_) {
+        parts[i]->backup_particle_state();
+      }
+
+      // 2. Backup base fields B^n and E^n
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3,
+                       get_n_ghost());
+        MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
+      }
+
+      // 3. Predictor push using (E^n, B^n) [pushStage = 1]
+      advance_particles_and_sources(1);
+
+      // 4. Deposit trial moments & advance trial field to t^(n+1)
+      save_current_moments_to_prev();
+      sum_moments(false);
+      smooth_moments();
+      update_Pe_hybrid();
+      update_B_hybrid();
+
+      // 5. Construct time-centered fields at t^(n+1/2):
+      //    nodeE = 0.5 * (E^n + E*^(n+1))
+      //    nodeB = 0.5 * (B^n + B*^(n+1))
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev],
+                          0, 0, nDim3, get_n_ghost());
+        MultiFab::LinComb(centerBstage[iLev], 0.5, centerB[iLev], 0, 0.5,
+                          centerBstar[iLev], 0, 0, nDim3, get_n_ghost());
+        average_center_to_node(centerBstage[iLev], nodeB[iLev]);
+        nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
+                         iLev, true);
+        }
+      }
+
+      // 6. Restore base particle state at t^n
+      for (int i : kineticSpecies_) {
+        parts[i]->restore_particle_state();
+      }
+
+      // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage
+      // = 2]
+      advance_particles_and_sources(2);
+
+      // 8. Restore B^n and advance to final B^(n+1) using accepted moments
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3,
+                       get_n_ghost());
+      }
+      sum_moments(false);
+      smooth_moments();
+      update_Pe_hybrid();
+      update_B_hybrid();
+      isFirstHybridStep = false;
+    }
+  } else {
+    // Pure particle tracking (PT component or static-field particle runs).
+    advance_particles_and_sources(0);
   }
 
-  if (solveEM && doCorrectDivE) {
+  if ((solveEM || useExplicitPIC) && doCorrectDivE) {
     if (finestLevel() == 0) {
       divE_correction();
     } else {
@@ -1591,12 +1759,31 @@ void Pic::update(bool doReportIn) {
     }
   }
 
-  tc->set_dt(tc->get_next_dt());
-
 #ifdef _PC_COMPONENT_
-  //  For PT simulations, moments are only useful for output. So, there is no
-  //  need to call sum_moments() for every step.
-  sum_moments(true);
+  if (useHybridPIC) {
+    // For hybrid PIC, accepted moments were already deposited and smoothed in
+    // advance_hybrid(). We update hybrid dt and subcycle directly without a
+    // redundant sum_moments() particle pass that would overwrite smoothed
+    // moments.
+    if (tc->get_cfl() > 0 || isAutoSubcycle) {
+      Real dtNext = tc->get_next_dt();
+      int nSubNext = nBSubcycle;
+      calc_hybrid_dt_and_subcycle(dtNext, nSubNext, doReport);
+      if (tc->get_cfl() > 0) {
+        tc->set_next_dt(dtNext);
+        tc->set_dt(dtNext);
+      }
+      if (isAutoSubcycle) {
+        nBSubcycle = nSubNext;
+        nSubcycle = nSubNext;
+      }
+    }
+  } else {
+    tc->set_dt(tc->get_next_dt());
+    //  For PT simulations, moments are only useful for output. So, there is no
+    //  need to call sum_moments() for every step.
+    sum_moments(true);
+  }
 #endif
 
 #ifdef _PT_COMPONENT_

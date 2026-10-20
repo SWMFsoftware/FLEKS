@@ -14,14 +14,14 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Photoionization       | `photoionization/`    | Chamberlain neutral atmosphere with photoionization           | [README](photoionization/README.md) |
 | Electron impact       | `electronimpact/`     | Voronov 1997 electron-impact ionization of hot electrons      | [README](electronimpact/README.md) |
 | Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |
-| Whistler wave         | `whistler/`           | Whistler–Alfven wave (Hall term)                              | [README](whistler/README.md) |
-| Ohm's law             | `ohm/`                | Full generalized Ohm's law check | [README](ohm/README.md) |
+| Whistler & Ohm's law  | `whistler/`           | 1D whistler–Alfvén wave, full generalized Ohm's law, and 4 hybrid timestepping schemes (rk4, rk4-pc, ssprk3, ssprk3-pc) | [README](whistler/README.md) |
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
 | Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
 | Reconnection          | `reconnection/`       | Current-sheet reconnection: force-free sheet in CI; Fadeev, classic GEM challenge, and asymmetric reconnection are expensive variants | [README](reconnection/README.md) |
-| AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
+| AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid; short force-free and GEM-like hybrid decks check the coarse-fine interface | [README](reconnection_amr/README.md) |
 | AMR equilibrium       | `amr_equilibrium/`    | Uniform thermal equilibrium across a stationary AMR interface | [README](amr_equilibrium/README.md) |
+| 3D AMR wave           | `wave_amr_3d/`        | 3D traveling wave propagation across a central 3D AMR box (hybrid PIC) | [README](wave_amr_3d/README.md) |
 | Reflecting & PEC BC   | `bc_reflecting/`      | Specular reflecting particle walls + conducting (PEC) field walls (4 variants: full/hybrid fields/particles) | [README](bc_reflecting/README.md) |
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
 | Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |

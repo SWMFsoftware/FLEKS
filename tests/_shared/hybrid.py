@@ -294,10 +294,12 @@ def _solver_and_species(param_path):
     mu = None
     if len(masses) >= 2 and masses[1] > 0:
         mu = masses[0] / masses[1]
+    # rho is a NUMBER density [1/cc] -- the convention shared by #UNIFORMSTATE
+    # and #INFLOW -- so it is used directly, without dividing by the mass.
     ne_over_ni = None
-    if mu and len(rhos) >= 2 and rhos[0] > 0 and masses[0] > 0:
-        n_i = rhos[0] / masses[0]
-        n_e = rhos[1] / masses[1]
+    if mu and len(rhos) >= 2 and rhos[0] > 0:
+        n_i = rhos[0]
+        n_e = rhos[1]
         if n_i > 0:
             ne_over_ni = n_e / n_i
     return is_full_em, mu, ne_over_ni

@@ -44,6 +44,45 @@ def validate_log(pic_diags=None, test_name=None):
     if test_name and test_name.endswith("hybrid"):
         return validate_hybrid(pic_diags=pic_diags, test_name=test_name)
 
+    if test_name and "explicit" in test_name:
+        if not pic_diags or len(pic_diags) < 2:
+            return False, f"Expected >= 2 energy log entries, got {len(pic_diags) if pic_diags else 0}"
+
+        # 1. Electrons (species 0) must be fully kinetic: Epart0 must be finite, > 0, and evolve over time
+        first, last = pic_diags[0], pic_diags[-1]
+        ep0_start = first.get("Epart0", 0.0)
+        ep0_end = last.get("Epart0", 0.0)
+        if not (math.isfinite(ep0_start) and math.isfinite(ep0_end)):
+            return False, "Non-finite electron kinetic energy (NaN/Inf)"
+        if ep0_start <= 0.0 or ep0_end <= 0.0:
+            return False, (f"Electron kinetic energy zero (electrons not initialized/kinetic: "
+                           f"start={ep0_start}, end={ep0_end})")
+        delta_ep0 = abs(ep0_end - ep0_start)
+        if delta_ep0 <= 0.0:
+            return False, "Electron kinetic energy static (electrons not pushed in explicit mode)"
+
+        # 2. Ions (species 1) must be kinetic
+        ep1_start = first.get("Epart1", 0.0)
+        ep1_end = last.get("Epart1", 0.0)
+        if not (math.isfinite(ep1_start) and math.isfinite(ep1_end)):
+            return False, "Non-finite ion kinetic energy (NaN/Inf)"
+        if ep1_start <= 0.0 or ep1_end <= 0.0:
+            return False, f"Ion kinetic energy zero (start={ep1_start}, end={ep1_end})"
+
+        # 3. Verify #SMOOTHJ was executed
+        stdout_path = os.path.join(_run_dir.RUN_DIR, "fleks_stdout.log")
+        if os.path.isfile(stdout_path):
+            with open(stdout_path, "r", encoding="utf-8", errors="ignore") as f:
+                stdout_text = f.read()
+            if "Pic::smooth_multifab" not in stdout_text:
+                return False, "#SMOOTHJ was specified but Pic::smooth_multifab was never executed"
+
+        logger.debug("    [EXPLICIT] Kinetic electron check: Epart0 %.4e -> %.4e (delta=%.4e)",
+                     ep0_start, ep0_end, delta_ep0)
+        logger.debug("    [EXPLICIT] Kinetic ion check: Epart1 %.4e -> %.4e", ep1_start, ep1_end)
+        logger.debug("    [EXPLICIT] #SMOOTHJ execution verified.")
+        return True, "Passed (kinetic electrons and ions active, #SMOOTHJ verified)"
+
     logger.debug("Validating Beam Instability Test...")
     logger.debug("  [INFO] Beam diagnostic checks rely on plot output (FFT).")
     logger.debug("Beam Instability Test: PASSED")
@@ -97,9 +136,8 @@ def _check_beam_transverse_wave():
     iby, ibz, ibx = vidx["BY"], vidx["BZ"], vidx["BX"]
     # The H+ ion density column is requested in #SAVEPLOT varName.  In PLANETARY
     # output it is converted back to amu/cc, so it must round-trip to the input
-    # #UNIFORMSTATE value (5.0 amu/cc).  The species index differs between the
-    # full-PIC (H+ = species 1, rhoS1) and hybrid (single H+ species, rhoS0)
-    # variants.
+    # #UNIFORMSTATE value.  The species index differs between the full-PIC
+    # (H+ = species 1, rhoS1) and hybrid (single H+ species, rhoS0) variants.
     irho = vidx.get("RHOS1")
     if irho is None:
         irho = vidx.get("RHOS0")
@@ -227,9 +265,9 @@ def _check_beam_transverse_wave():
     n_res = max(1, round(k_res / k1))
 
     # ---- Check 0: output density round-trips to the input value -----------
-    # #UNIFORMSTATE sets the H+ background density rho = 5.0 amu/cc.  The code
-    # converts it to code units (x1e6*m_p*Si2NoRho) internally, and PLANETARY
-    # output converts it back to amu/cc (No2OutRho = 1/Si2NoRho /m_p *1e-6).
+    # #UNIFORMSTATE sets the H+ background density n = 5.0 /cc.
+    # The code converts it to code units (x1e6*m_p*Si2NoRho) internally, and
+    # PLANETARY output converts it back to amu/cc.
     # The round trip is the identity, so the plotted density column must
     # reproduce the input.  Guard against a unit mismatch (e.g. rho interpreted
     # as PIC/code units in the validator) with a tight relative tolerance.

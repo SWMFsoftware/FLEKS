@@ -151,5 +151,3 @@ rhoS0 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0   plotVar
 #STOP
 -1                      MaxIter
 10.0                    TimeMax
-
-#RUN

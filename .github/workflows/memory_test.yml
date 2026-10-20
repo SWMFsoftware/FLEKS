@@ -59,10 +59,14 @@ jobs:
         uses: actions/cache@v5
         with:
           path: SWMF/PC/FLEKS/memory_master.json
-          # v3 invalidates captures whose metadata was read after the
-          # workflow checked out the PR tree, which mislabeled the base binary
-          # with the candidate commit.
-          key: memory-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}
+          # v3 invalidated captures whose metadata was read after the workflow
+          # checked out the PR tree, which mislabeled the base binary with the
+          # candidate commit.  v4 also keys on the analysis scripts: the
+          # reference is produced by capture_memory.py, so a change to it (or to
+          # the profiler parser / the selection in validate_tests.py) must not
+          # reuse a reference captured by older code.  The bump to v4 drops
+          # every v3 entry as well.
+          key: memory-v4-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.amrex-hash }}-${{ github.event.pull_request.base.sha }}-${{ hashFiles('tests/capture_memory.py', 'tests/profiler.py', 'tests/validate_tests.py') }}
 
       - name: Checkout PR head
         working-directory: SWMF/PC/FLEKS
@@ -109,10 +113,26 @@ jobs:
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
+          set -euo pipefail
+          # Each binary must run the decks it was written for.  This capture
+          # happens with the PR tree checked out (the capture scripts live in
+          # tests/ and are taken from the PR), so a PR that changes the MEANING
+          # of a deck value would otherwise be measured against a base binary
+          # that misreads the new deck.  That is not hypothetical: changing
+          # #UNIFORMSTATE rho from amu/cc to 1/cc makes the base binary inject
+          # 100x too many electrons for tests/beam, which changes the
+          # CFL-limited step count and produced a fake nalloc/call regression.
+          git checkout "${{ github.event.pull_request.base.sha }}" -- tests
+          # The measuring instrument, however, comes from the PR, so both
+          # captures are analysed by exactly the same code.
+          git checkout "${{ github.event.pull_request.head.sha }}" -- \
+            tests/capture_memory.py tests/profiler.py tests/validate_tests.py
           python3 tests/capture_memory.py \
             --exe "$RUNNER_TEMP/FLEKS_base.exe" \
             --out memory_master.json --ref master \
             --commit "${{ github.event.pull_request.base.sha }}"
+          # Back to the PR tree for the candidate capture.
+          git checkout "${{ github.event.pull_request.head.sha }}" -- tests
 
       - name: Capture candidate memory
         working-directory: SWMF/PC/FLEKS

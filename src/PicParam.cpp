@@ -15,12 +15,64 @@
 using namespace amrex;
 
 //==========================================================
+void Pic::set_field_solver_mode(const std::string& modeStr) {
+  std::string s = modeStr;
+  for (char& c : s)
+    c = std::tolower(c);
+  if (s == "implicit" || s == "semi-implicit") {
+    fieldSolverMode = PicSolverMode::Implicit;
+    solveEM = true;
+    useExplicitPIC = false;
+  } else if (s == "explicit" || s == "explicit-pic") {
+    fieldSolverMode = PicSolverMode::Explicit;
+    solveEM = false;
+    useExplicitPIC = true;
+  } else if (s == "hybrid" || s == "hybrid-pic") {
+    fieldSolverMode = PicSolverMode::Hybrid;
+    solveEM = false;
+    useExplicitPIC = false;
+  } else if (s == "none" || s == "off" || s == "false") {
+    fieldSolverMode = PicSolverMode::None;
+    solveEM = false;
+    useExplicitPIC = false;
+  } else {
+    Abort("Invalid #FIELDSOLVER mode '" + modeStr +
+          "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
+  }
+}
+
+//==========================================================
 void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
+  } else if (command == "#FIELDSOLVER") {
+    hasFieldSolver_ = true;
+    std::string s;
+    param.read_var("fieldSolverMode", s);
+    set_field_solver_mode(s);
   } else if (command == "#SOLVEEM") {
+    Print() << "  Warning: #SOLVEEM is deprecated; use #FIELDSOLVER instead.\n";
     param.read_var("solveEM", solveEM);
+    if (!hasFieldSolver_) {
+      if (solveEM) {
+        fieldSolverMode = PicSolverMode::Implicit;
+        useExplicitPIC = false;
+      } else if (fieldSolverMode != PicSolverMode::Hybrid) {
+        fieldSolverMode = PicSolverMode::None;
+        useExplicitPIC = false;
+      }
+    }
+  } else if (command == "#HYBRIDPIC") {
+    Print()
+        << "  Warning: #HYBRIDPIC is deprecated; use #FIELDSOLVER instead.\n";
+    bool useHyb = false;
+    param.read_var("useHybridPIC", useHyb);
+    if (!hasFieldSolver_ && useHyb) {
+      fieldSolverMode = PicSolverMode::Hybrid;
+      useExplicitPIC = false;
+      solveEM = false;
+    }
   } else if (command == "#PARTMODE") {
     std::string s;
     param.read_var("partMode", s);
@@ -66,18 +118,36 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#INFLOW") {
-    double tmp;
-    param.read_var("rho", tmp);
-    inflowRho_ = tmp; // [amu/cc]
-    param.read_var("ux", tmp);
-    inflowUx_ = tmp; // [km/s]
-    param.read_var("uy", tmp);
-    inflowUy_ = tmp; // [km/s]
-    param.read_var("uz", tmp);
-    inflowUz_ = tmp; // [km/s]
-    param.read_var("T", tmp);
-    inflowT_ = tmp; // [K]
     inflowDefined_ = true;
+    inflowRho_I.clear();
+    inflowUx_I.clear();
+    inflowUy_I.clear();
+    inflowUz_I.clear();
+    inflowT_I.clear();
+
+    double rho = 0.0, ux = 0.0, uy = 0.0, uz = 0.0, temp = 0.0;
+    param.read_var("rho", rho);
+    param.read_var("ux", ux);
+    param.read_var("uy", uy);
+    param.read_var("uz", uz);
+    param.read_var("T", temp);
+    inflowRho_I.push_back(rho);
+    inflowUx_I.push_back(ux);
+    inflowUy_I.push_back(uy);
+    inflowUz_I.push_back(uz);
+    inflowT_I.push_back(temp);
+
+    while (param.read_optional("rho", rho)) {
+      param.read_optional("ux", ux);
+      param.read_optional("uy", uy);
+      param.read_optional("uz", uz);
+      param.read_optional("T", temp);
+      inflowRho_I.push_back(rho);
+      inflowUx_I.push_back(ux);
+      inflowUy_I.push_back(uy);
+      inflowUz_I.push_back(uz);
+      inflowT_I.push_back(temp);
+    }
   } else if (command == "#DIPOLE") {
     // Static dipole of the inner body. Everything is SI; convert_intrinsic_B()
     // turns it into code units once the normalization is known.
@@ -180,9 +250,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doCorrectDivE) {
       param.read_var("nDivECorrection", nDivECorrection);
     }
-  } else if (command == "#EXPLICITPIC") {
-    param.read_var("useExplicitPIC", useExplicitPIC);
   } else if (command == "#EFIELDSOLVER") {
+    hasEFieldSolver_ = true;
     Real tol;
     int nIter;
     param.read_var("tol", tol);
@@ -204,6 +273,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ELECTRON") {
     param.read_var("qom", qomEl);
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
+    hasDiscretization_ = true;
     param.read_var("theta", fsolver.theta);
     param.read_var("coefDiff", fsolver.coefDiff);
   } else if (command == "#COMOVING") {
@@ -248,7 +318,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("hypDecay", hypDecay);
     }
     // Optional, so existing decks are unaffected: fill divB without cleaning.
-    param.read_optional("alwaysComputeDivB", alwaysComputeDivB);
+    std::string sVal;
+    if (param.read_optional("alwaysComputeDivB", sVal)) {
+      alwaysComputeDivB = (sVal == "T" || sVal == "t" || sVal == "true" ||
+                           sVal == "TRUE" || sVal == "1");
+    }
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -336,25 +410,54 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
             "the forcefree (magnetic reconnection) initial condition.");
     }
     ic_->read_param(param);
-  } else if (command == "#HYBRIDPIC") {
-    param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {
+    hasResistivity_ = true;
     param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {
+    hasElectronPressure_ = true;
     param.read_var("electronTemperature", electronTemperatureEV);
     param.read_var("electronGamma", electronGamma);
     param.read_var("electronDensity0", electronDensity0In);
+  } else if (command == "#FIELDSUBCYCLE") {
+    hasFieldSubcycle_ = true;
+    param.read_var("nSubcycle", nSubcycle);
+    param.read_optional("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_optional("nSubcycleMax", nBSubcycleMax);
+    }
+    nBSubcycle = nSubcycle;
+    nEMSubcycle = nSubcycle;
   } else if (command == "#BSUBCYCLE") {
+    hasFieldSubcycle_ = true;
+    Print()
+        << "  Warning: #BSUBCYCLE is deprecated; use #FIELDSUBCYCLE instead.\n";
     param.read_var("nBSubcycle", nBSubcycle);
+    param.read_optional("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_optional("nBSubcycleMax", nBSubcycleMax);
+    }
+    nSubcycle = nBSubcycle;
+    nEMSubcycle = nBSubcycle;
+  } else if (command == "#AUTOSUBCYCLE") {
+    Print() << "  Warning: #AUTOSUBCYCLE is deprecated; use #FIELDSUBCYCLE "
+               "instead.\n";
+    param.read_var("isAutoSubcycle", isAutoSubcycle);
+    if (isAutoSubcycle) {
+      param.read_var("nBSubcycleMax", nBSubcycleMax);
+    }
   } else if (command == "#HALLTERM") {
+    hasHallTerm_ = true;
     param.read_var("useHallTerm", useHallTerm);
   } else if (command == "#HYPERRESISTIVITY") {
+    hasHyperResistivity_ = true;
     param.read_var("etaHyperSI", etaHyperSI);
     param.read_var("etaHyperMode", etaHyperMode);
     param.read_var("etaHyperCh", etaHyperCh);
   } else if (command == "#MINIMUMDENSITY") {
+    hasMinimumDensity_ = true;
     param.read_var("rhoMinOhm", rhoMinOhm);
   } else if (command == "#ELECTRONPRESSURE") {
+    hasElectronPressure_ = true;
     param.read_var("useElectronPressureEq", useElectronPressureEq);
     if (useElectronPressureEq) {
       param.read_var("heatCondKappa0SI", heatCondKappa0SI);
@@ -367,18 +470,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("ambipolarInStages", ambipolarInStages);
     }
   } else if (command == "#ELECTRONADVECTION") {
+    hasElectronPressure_ = true;
     param.read_var("peAdvectionLimiter", peAdvectionLimiter);
     param.read_var("peCompressionScheme", peCompressionScheme);
   } else if (command == "#ELECTRONCONDUCTION") {
+    hasElectronPressure_ = true;
     param.read_var("heatCondMethod", heatCondMethod);
     param.read_var("nCondIter", nCondIter);
     param.read_var("nCondSubcycleMax", nCondSubcycleMax);
   } else if (command == "#ELECTRONCOLLISION") {
+    hasElectronPressure_ = true;
     param.read_var("useHeatExchange", useHeatExchange);
     if (useHeatExchange) {
       param.read_var("collisionFactor", collisionFactor);
     }
   } else if (command == "#FIELDINTEGRATOR") {
+    hasFieldIntegrator_ = true;
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -572,8 +679,13 @@ void Pic::post_process_param() {
   // These values are used in denominators and dispatch solver branches, so
   // silently correcting them can produce a run with different physics than
   // the input deck describes.
-  if (nBSubcycle < 1)
-    Abort("Invalid #BSUBCYCLE: nBSubcycle must be at least 1.");
+  if (nSubcycle < 1)
+    Abort("Invalid #FIELDSUBCYCLE: nSubcycle must be at least 1.");
+  if (isAutoSubcycle && !useHybridPIC)
+    Abort("Auto-subcycling (#FIELDSUBCYCLE isAutoSubcycle=T) is currently "
+          "only supported for the hybrid PIC solver.");
+  if (isAutoSubcycle && nBSubcycleMax < nSubcycle)
+    Abort("Invalid #FIELDSUBCYCLE: nSubcycleMax must be >= nSubcycle.");
   if (electronGamma <= 0)
     Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
   if (electronDensity0In <= 0)
@@ -584,6 +696,7 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
     Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+
   if (useElectronPressureEq) {
     if (!useHybridPIC)
       Abort("Invalid #ELECTRONPRESSURE: the evolved electron pressure "
@@ -660,12 +773,6 @@ void Pic::post_process_param() {
     nodePeRho.resize(n_lev_max());
     nodePeAux.resize(n_lev_max());
   }
-  if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3")
-    Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
-          "'. Expected 'rk4' or 'ssprk3'.");
-  if (etaHyperMode != "si" && etaHyperMode != "grid")
-    Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
-          "'. Expected 'si' or 'grid'.");
 
   if (use_body()) {
     if (get_body_radius() <= 0)
@@ -766,12 +873,15 @@ void Pic::post_process_param() {
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 
-  // Classify species: negative charge -> electron, otherwise kinetic ion.
+  // Classify species: in semi-implicit full PIC, negative charge -> implicit
+  // electron. In explicit full PIC and hybrid PIC, all particle species are
+  // kinetic.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
     // Guard: parts may not be fully populated yet.
-    if (i < (int)parts.size() && parts[i] && parts[i]->get_charge() < 0) {
+    if (!useHybridPIC && !useExplicitPIC && i < (int)parts.size() && parts[i] &&
+        parts[i]->get_charge() < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
     } else {
@@ -779,19 +889,84 @@ void Pic::post_process_param() {
     }
   }
 
-  // Hybrid and implicit solver are mutually exclusive.
-  if (useHybridPIC)
-    solveEM = false;
+  // Cross-solver command validation
+  if (fieldSolverMode != PicSolverMode::Implicit) {
+    if (hasDiscretization_)
+      Abort("Invalid command: #DISCRETIZATION is only valid for implicit full "
+            "PIC (#FIELDSOLVER implicit).");
+    if (hasEFieldSolver_)
+      Abort("Invalid command: #EFIELDSOLVER is only valid for implicit full "
+            "PIC (#FIELDSOLVER implicit).");
+  }
 
-  // Convert input units to normalized code units.
-  if (useHybridPIC) {
-    // Resistivity SI->code conversions are deferred to
-    // finalize_units_conversion().
+  if (fieldSolverMode != PicSolverMode::Hybrid) {
+    if (hasHallTerm_)
+      Abort("Invalid command: #HALLTERM is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasResistivity_)
+      Abort("Invalid command: #RESISTIVITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasHyperResistivity_)
+      Abort("Invalid command: #HYPERRESISTIVITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasElectronPressure_)
+      Abort("Invalid command: electron pressure commands (#ELECTRON*) are only "
+            "valid for hybrid PIC (#FIELDSOLVER hybrid).");
+    if (hasMinimumDensity_)
+      Abort("Invalid command: #MINIMUMDENSITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+  }
 
-    useRK4 = (fieldIntegrator == "rk4");
-    Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
+  if (fieldSolverMode == PicSolverMode::Implicit ||
+      fieldSolverMode == PicSolverMode::None) {
+    if (hasFieldIntegrator_)
+      Abort("Invalid command: #FIELDINTEGRATOR is only valid for explicit full "
+            "PIC or hybrid PIC.");
+    if (hasFieldSubcycle_)
+      Abort("Invalid command: #FIELDSUBCYCLE is only valid for explicit full "
+            "PIC or hybrid PIC.");
+  }
+
+  // Convert input units to normalized code units and configure solver branches.
+  if (fieldSolverMode == PicSolverMode::Explicit) {
+    if (fieldIntegrator.empty())
+      fieldIntegrator = "leapfrog";
+    if (fieldIntegrator != "leapfrog" && fieldIntegrator != "pc" &&
+        fieldIntegrator != "rk2")
+      Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+            "' for explicit full PIC. Expected 'leapfrog' or 'pc'.");
+    usePredictorCorrector =
+        (fieldIntegrator == "pc" || fieldIntegrator == "rk2");
+    Print() << "  fieldSolverMode: explicit\n"
+            << "  fieldIntegrator: " << fieldIntegrator
+            << (usePredictorCorrector ? " (2nd-order Predictor-Corrector)"
+                                      : " (leapfrog)")
+            << "\n"
+            << "  fieldSubcycle: " << nSubcycle << "\n";
+  } else if (fieldSolverMode == PicSolverMode::Hybrid) {
+    if (fieldIntegrator.empty())
+      fieldIntegrator = "rk4";
+    if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3" &&
+        fieldIntegrator != "rk4-pc" && fieldIntegrator != "pc-rk4" &&
+        fieldIntegrator != "ssprk3-pc" && fieldIntegrator != "pc-ssprk3")
+      Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+            "' for hybrid PIC. Expected 'rk4', 'ssprk3', 'rk4-pc', or "
+            "'ssprk3-pc'.");
+    if (etaHyperMode != "si" && etaHyperMode != "grid")
+      Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
+            "'. Expected 'si' or 'grid'.");
+
+    usePredictorCorrector =
+        (fieldIntegrator == "rk4-pc" || fieldIntegrator == "pc-rk4" ||
+         fieldIntegrator == "ssprk3-pc" || fieldIntegrator == "pc-ssprk3");
+    useRK4 = (fieldIntegrator == "rk4" || fieldIntegrator == "rk4-pc" ||
+              fieldIntegrator == "pc-rk4");
+    Print() << "  fieldSolverMode: hybrid\n"
+            << "  fieldIntegrator: " << fieldIntegrator
+            << (usePredictorCorrector ? " (2nd-order Predictor-Corrector)" : "")
+            << "\n"
+            << "  fieldSubcycle: " << nSubcycle << "\n";
     if (electronTemperatureEV > 0) {
-      // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       double unormSI = fi->get_unorm_si();
       electronTemperature = electronTemperatureEV * cUnitChargeSI /
                             (cProtonMassSI * unormSI * unormSI);
@@ -799,10 +974,13 @@ void Pic::post_process_param() {
               << " [eV] -> " << electronTemperature << " [code units]\n";
     }
 
-    // Conversion to code units deferred until convert_electron_density0()
-    // (Si2NoRho is not yet available here).
     if (rhoMinOhm <= 0)
       rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
+  } else if (fieldSolverMode == PicSolverMode::Implicit) {
+    Print() << "  fieldSolverMode: implicit (theta = " << fsolver.theta
+            << ")\n";
+  } else {
+    Print() << "  fieldSolverMode: none (particle tracer / static field)\n";
   }
   // report_bc_warnings() is called by Domain after BC autofill and validation.
 }
@@ -1023,67 +1201,87 @@ void Pic::convert_electron_collision() {
 }
 
 //==========================================================
+// #INFLOW (rho [1/cc], ux/uy/uz [km/s], T [K]) -> code units.
+// See PARAM.XML for the per-species blocks and the inheritance rule.
 void Pic::convert_inflow_state() {
   if (!inflowDefined_)
     return;
 
-  // Convert density from amu/cc to code units.
+  const int nBlock = static_cast<int>(inflowRho_I.size());
+  if (nBlock == 0)
+    return;
+
+  if (nBlock > nSpecies)
+    Print() << "  Warning: #INFLOW declares " << nBlock
+            << " species blocks but "
+            << "#PLASMA only defines " << nSpecies
+            << "; the extra blocks are ignored.\n";
+
+  // Conversion factors: rho [amu/cc], u [km/s], T [K] -> code units.
   const double Si2NoRho = fi->get_Si2NoRho();
-  inflowRho_ *= 1.0e6 * cProtonMassSI * Si2NoRho;
-
-  // Convert velocity from km/s to code units.
+  const double rhoFactor = 1.0e6 * cProtonMassSI * Si2NoRho;
   const double vFactor = 1.0e3 * fi->get_Si2NoV();
-  inflowUx_ *= vFactor;
-  inflowUy_ *= vFactor;
-  inflowUz_ *= vFactor;
-
-  // Convert temperature T [K] to code units (kT / (m_p * uNorm^2)).
   const double unormSI = fi->get_unorm_si();
-  inflowT_ = cBoltzmannSI * inflowT_ / (cProtonMassSI * unormSI * unormSI);
+  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
 
-  // Publish converted state to FluidInterface for boundary particle injection.
-  FluidInterfaceParameters::InflowVel baseVel;
-  baseVel.nDens = inflowRho_;
-  baseVel.ux = inflowUx_;
-  baseVel.uy = inflowUy_;
-  baseVel.uz = inflowUz_;
-  baseVel.vth = 0.0;
+  Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies);
 
-  Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies, baseVel);
-  const int nParts = static_cast<int>(parts.size());
   for (int iS = 0; iS < nSpecies; ++iS) {
-    const double mass_i =
-        (iS < nParts && parts[iS]) ? parts[iS]->get_mass() : 1.0;
-    if (inflowT_ > 0 && mass_i > 0)
-      stateVec[iS].vth = std::sqrt(inflowT_ / mass_i);
+    // Species beyond the last declared block reuse that block, so a single
+    // block still describes a uniform multi-species upstream plasma.
+    const int iB = std::min(iS, nBlock - 1);
+
+    const double rho = inflowRho_I[iB] * rhoFactor;
+    const double T = inflowT_I[iB] * tFactor;
+
+    stateVec[iS].nDens = rho;
+    stateVec[iS].ux = inflowUx_I[iB] * vFactor;
+    stateVec[iS].uy = inflowUy_I[iB] * vFactor;
+    stateVec[iS].uz = inflowUz_I[iB] * vFactor;
+    stateVec[iS].vth = 0.0;
+
+    if (rho <= 0)
+      continue; // species is not injected at the inflow face
+
+    // vth is the 1-D thermal std sigma = sqrt(kT/m), with the species mass in
+    // proton units from the fluid interface (parts[] is built later).
+    const double mass_i = (iS < fi->get_nS() && fi->get_species_mass(iS) > 0.0)
+                              ? fi->get_species_mass(iS)
+                              : 1.0;
+    if (T > 0)
+      stateVec[iS].vth = std::sqrt(T / mass_i);
+
+    Print() << "  #INFLOW species " << iS << " (code units):"
+            << " n=" << rho << " u=(" << stateVec[iS].ux << ","
+            << stateVec[iS].uy << "," << stateVec[iS].uz << ")"
+            << " vth=" << stateVec[iS].vth << "\n";
   }
+
   fi->set_inflow_state(stateVec);
   fi->set_inflow_defined(true);
 
-  Print() << "  #INFLOW state (code units):"
-          << " n=" << inflowRho_ << " u=(" << inflowUx_ << "," << inflowUy_
-          << "," << inflowUz_ << ")"
-          << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
-          << "  (Si2NoRho=" << Si2NoRho << ", Si2NoV=" << fi->get_Si2NoV()
-          << ")\n";
+  // A non-neutral injected mixture drives a spurious sheath at the inflow
+  // face, so warn about it -- but only when the electrons are kinetic.
+  bool hasElectronSpecies = false;
+  for (int iS = 0; iS < nSpecies; ++iS) {
+    if (iS < fi->get_nS() && fi->get_species_charge(iS) < 0.0)
+      hasElectronSpecies = true;
+  }
 
-  const auto& unif = fi->get_uniform_state();
-  if (nSpecies > 1 && !unif.empty()) {
-    const double rawInflowN = inflowRho_ / (1.0e6 * cProtonMassSI * Si2NoRho);
-    for (int iS = 0; iS < nSpecies; ++iS) {
-      if (iS * 5 < static_cast<int>(unif.size()) && iS < fi->get_nS() &&
-          fi->get_species_mass(iS) > 0.0) {
-        const double speciesN =
-            unif[iS * 5] / (fi->get_species_mass(iS) * cProtonMassSI * 1.0e6);
-        if (std::abs(speciesN - rawInflowN) >
-            1e-4 * std::max(speciesN, rawInflowN)) {
-          Print()
-              << "  Warning: #INFLOW supplies a single uniform number density "
-              << "(n=" << rawInflowN << " /cc) for all species, but species "
-              << iS << " has #UNIFORMSTATE density n=" << speciesN << " /cc.\n";
-          break;
-        }
-      }
+  if (nSpecies > 1 && !useHybridPIC && hasElectronSpecies) {
+    double netCharge = 0.0, totalN = 0.0;
+    for (int iS = 0; iS < nSpecies && iS < fi->get_nS(); ++iS) {
+      const double ni = stateVec[iS].nDens / rhoFactor; // back to /cc
+      if (ni <= 0)
+        continue;
+      netCharge += fi->get_species_charge(iS) * ni;
+      totalN += ni;
     }
+
+    if (totalN > 0 &&
+        std::abs(netCharge) > 1e-4 * std::max(totalN, std::abs(netCharge)))
+      Print() << "  Warning: the #INFLOW mixture is not charge neutral: "
+              << "sum(q_i*n_i) = " << netCharge
+              << " e/cc vs sum(n_i) = " << totalN << " /cc.\n";
   }
 }

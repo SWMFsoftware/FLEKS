@@ -60,17 +60,20 @@ uncluttered.
 
 ## Field solvers
 
-### Full (implicit) PIC
+FLEKS provides three simulation field solver modes selected via `#FIELDSOLVER` (plus static field mode `none`). By default, `#FIELDSOLVER implicit` is active:
+
+### Full (implicit) PIC (default: `#FIELDSOLVER implicit`)
 
 - Kinetic ions *and* electrons, semi-implicit θ-scheme (default θ = 0.51) with
   a Boris mover.
 - The implicit electric field is solved every step by the GMRES
   `LinearSolver`.
 - Most robust for strongly kinetic phenomena: reconnection, shock surfing,
-  light waves.
+  light waves with dt larger than explicit CFL.
 - Key files: `src/PicFieldSolver.cpp`, `src/PicDivE.cpp`.
+- Configured by `#DISCRETIZATION` and `#EFIELDSOLVER`.
 
-### Hybrid PIC
+### Hybrid PIC (`#FIELDSOLVER hybrid`)
 
 - **Kinetic ions + massless fluid electrons**: electrons are a
   charge-neutralizing fluid governed by a generalized Ohm's law (Hall term,
@@ -78,11 +81,33 @@ uncluttered.
   time-scale.
 - Fields advance explicitly with an **RK4/SSPRK3 Faraday advance** — no GMRES
   solve.
-- Enabled by `#HYBRIDPIC`; tuned with `#HALLTERM`, `#RESISTIVITY`,
-  `#HYPERRESISTIVITY`, `#ELECTRON*`, `#FIELDINTEGRATOR`, `#BSUBCYCLE`,
-  `#MINIMUMDENSITY`, `#SMOOTHMOMENTS`, `#DIVE`/`#DIVB`.
+- Enabled by `#FIELDSOLVER hybrid` (legacy `#HYBRIDPIC` deprecated); tuned with
+  `#HALLTERM`, `#RESISTIVITY`, `#HYPERRESISTIVITY`, `#ELECTRON*`,
+  `#FIELDINTEGRATOR` (`rk4`, `ssprk3`, `rk4-pc`, `ssprk3-pc`),
+  `#FIELDSUBCYCLE` (legacy `#BSUBCYCLE` deprecated), `#MINIMUMDENSITY`,
+  `#SMOOTHMOMENTS`, `#DIVE`/`#DIVB`.
 - Key file: `src/PicHybrid.cpp`. Standalone tests ship a `PARAM.in.hybrid`
-  variant; the runner reports both solver variants when one exists.
+  variant; the runner reports all solver variants when present.
+
+### Explicit Full PIC (`#FIELDSOLVER explicit`)
+
+- **Kinetic ions and kinetic electrons**: resolves full kinetic physics including
+  electron scales without requiring matrix inversions or Krylov solvers.
+- **Explicit Maxwell evolution**: discrete dual staggering where `nodeE` (vertices)
+  and `centerB` (cell centers) are evolved explicitly via discrete curl operators
+  `curl_node_to_center` (Faraday) and `curl_center_to_node` (Ampere).
+- **Exact discrete divergence preservation**: $\nabla \cdot \mathbf{B} = 0$ is
+  preserved to machine precision by construction across all AMR levels.
+- **Integrator options**: `#FIELDINTEGRATOR`
+  * `leapfrog` (default): Subcycled, time-staggered Boris-Maxwell leapfrog.
+  * `pc` / `rk2`: 2nd-order predictor-corrector with intermediate particle push.
+- **Subcycling**: `#FIELDSUBCYCLE` sets the number of explicit Maxwell subcycles
+  per particle time step dt.
+- **Zero regression / minimal footprint**: bypasses allocation of GMRES scratch
+  MultiFabs and mass matrices when active, leaving semi-implicit and hybrid
+  allocations and performance untouched.
+- Enabled by `#FIELDSOLVER explicit`; key file: `src/PicExplicit.cpp`. Standalone
+  tests ship a `PARAM.in.explicit` variant.
 
 ## Algorithm summary
 

@@ -104,7 +104,7 @@ neutralizing massless fluid, so no electron particle species is present.
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -168,5 +168,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 40.0                    TimeMax      t*Omega_ci = 40 ~ 6.4 gyro-periods (tNorm=1)
-
-#RUN

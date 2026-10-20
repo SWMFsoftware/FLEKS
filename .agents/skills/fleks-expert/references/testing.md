@@ -21,9 +21,8 @@ imports another's code. Code shared by several tests lives in `tests/_shared/`.
 | Test | Dir | Physics |
 |---|---|---|
 | Beam instability | `beam/` | Ion beam cyclotron instability; full PIC + hybrid |
-| Whistler wave | `whistler/` | Whistler–Alfvén wave (Hall term) |
+| Whistler & Ohm's law | `whistler/` | Whistler–Alfvén wave, full generalized Ohm's law, and 4 hybrid timestepping schemes |
 | Ion acoustic wave | `iaw/` | Electron-pressure branch + ion Landau damping |
-| Hybrid Ohm's law | `ohm/` | Convection + Hall + resistive + electron-pressure terms |
 | Free-stream | `freestream/` | 1D uniform equilibrium; full PIC + hybrid (Hall off) |
 | Light wave | `lightwave/` | 3D vacuum transverse wave on a periodic AMR grid |
 | PCAI | `pcai/` | Proton-cyclotron anisotropy instability (hybrid benchmark) |

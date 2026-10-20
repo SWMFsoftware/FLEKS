@@ -61,7 +61,7 @@ Single kinetic ion species (q = m = 1); electron is implicit neutralizing fluid.
 
 Uniform guide field Bx0; zero bulk velocity so U_i x B = 0 too.
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -116,5 +116,3 @@ z=0 fluid ascii pic     plotString
 #STOP
 -1                      MaxIter
 2.0                     TimeMax   frozen-field (curl B=0) run
-
-#RUN
