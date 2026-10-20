@@ -129,7 +129,7 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
 }
 
 void Grid::restore_grid(const Vector<BoxArray>& boxes) {
-  if (boxes.empty() || boxes.size() > static_cast<std::size_t>(n_lev_max()))
+  if (boxes.empty() || static_cast<int>(boxes.size()) > n_lev_max())
     Abort("Invalid restart grid level count.");
 
   cGridsOld = cGrids;
