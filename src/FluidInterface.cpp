@@ -226,14 +226,15 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
   finalize_normalization();
 }
 
-FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
-                               int nGst, int id, std::string tag,
+FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
                                const Vector<int>& iParam,
                                const Vector<double>& norm,
                                const Vector<double>& paramComm,
                                bool useHybridIn)
-    : Grid(gm, amrInfo, nGst, id, tag) {
+    : GridAccess(gridIn), tag(tagIn), gridID(gridIn.get_id()) {
 
+  gridName = std::string("FLEKS") + std::to_string(gridID);
+  printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
   initFromSWMF = true;
   useHybridPIC = useHybridIn;
 
@@ -544,18 +545,17 @@ void FluidInterface::distribute_arrays() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     // Nodes that receive no data from the source component are set with value
     // 0 in the regions created by the regrid.
-    distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
-                        nVarNode, nGst, doCopy, 0.0);
-    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doCopy, 0.0);
+    distribute_FabArray(nodeFluid[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), nVarNode, get_n_ghost(), doCopy,
+                        0.0);
+    distribute_FabArray(centerB[iLev], boxArray(iLev), DistributionMap(iLev), 3,
+                        get_n_ghost(), doCopy, 0.0);
   }
-
-  distribute_grid_arrays(cGridsOld);
 }
 
 //==========================================================
 void FluidInterface::fill_new_cells() {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   if (!isnodeFluidReady)
@@ -569,14 +569,14 @@ void FluidInterface::fill_new_cells() {
     nodeFluid[iLev - 1].FillBoundary(Geom(iLev - 1).periodicity());
 
     fill_fine_lev_new_from_coarse(nodeFluid[iLev - 1], nodeFluid[iLev], 0,
-                                  nodeFluid[iLev].nComp(), ref_ratio[iLev - 1],
+                                  nodeFluid[iLev].nComp(), refRatio(iLev - 1),
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   amrex::node_bilinear_interp);
 
     nodeFluid[iLev].FillBoundary(Geom(iLev).periodicity());
 
     fill_fine_lev_bny_from_coarse(nodeFluid[iLev - 1], nodeFluid[iLev], 0,
-                                  nodeFluid[iLev].nComp(), ref_ratio[iLev - 1],
+                                  nodeFluid[iLev].nComp(), refRatio(iLev - 1),
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   amrex::node_bilinear_interp);
 
@@ -663,7 +663,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const Box& validBox = mfi.validbox();
 
       const Array4<Real>& arr = fluid[mfi].array();
-      const auto& status = nodeStatus[iLev][mfi].array();
+      const auto& status = node_status(iLev)[mfi].array();
 
       const auto lo = lbound(box);
       const auto hi = ubound(box);
@@ -707,7 +707,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
 
     if (doFill) {
       fluid.FillBoundary(Geom(iLev).periodicity());
-      if (isFake2D) {
+      if (is_fake_2d()) {
         // Make sure there is no variation in the z-direction.
         Periodicity period(IntVect(AMREX_D_DECL(0, 0, 1)));
         fluid.FillBoundary(period);
@@ -731,7 +731,7 @@ void FluidInterface::set_node_fluid(const double* const data,
                                     const std::vector<std::string>& names) {
   timing_func("FI::set_node_fluid");
 
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   if (varNames.size() == 0) {
@@ -766,7 +766,7 @@ void FluidInterface::set_node_fluid(const double* const data,
 void FluidInterface::set_node_fluid() {
   timing_func("FI::set_node_fluid_1");
 
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   if (uniformState.empty())
@@ -787,7 +787,7 @@ void FluidInterface::set_node_fluid() {
 }
 
 void FluidInterface::set_node_fluid(const FluidInterface& other) {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -802,7 +802,7 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
 }
 
 void FluidInterface::calc_current() {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   if (!useCurrent)
@@ -1625,7 +1625,7 @@ void FluidInterface::save_amrex_file() {
   }
 
   WriteMultiLevelPlotfile(filename, n_lev(), GetVecOfConstPtrs(nodeFluid),
-                          plotNames, geom, 0.0, Vector<int>(n_lev(), 0),
+                          plotNames, Geom(), 0.0, Vector<int>(n_lev(), 0),
                           refRatio());
 }
 

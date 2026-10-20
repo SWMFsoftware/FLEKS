@@ -12,10 +12,11 @@
 #include "DomainParameters.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
-#include "Grid.h"
+#include "GridAccess.h"
 #include "InitialCondition.h"
 #include "IntrinsicBField.h"
 #include "LinearSolver.h"
+#include "MeshChange.h"
 #include "OHInterface.h"
 #include "Particles.h"
 #include "ReadParam.h"
@@ -87,7 +88,7 @@ struct NodeMMCommData {
 };
 
 // The grid is defined in DomainGrid. This class contains the data on the grid.
-class Pic : public Grid {
+class Pic : public GridAccess {
   friend PlotWriter;
   friend ParticleTracker;
   // private variables
@@ -453,13 +454,10 @@ private:
   bool bodyBoundarySet_ = false;
 
   bool is_body_linetied() const {
-    return useBody && bodyFieldBC == BodyFieldBC::linetied;
+    return use_body() && bodyFieldBC == BodyFieldBC::linetied;
   }
   bool is_body_conducting() const {
-    return useBody && bodyFieldBC == BodyFieldBC::conducting;
-  }
-  bool is_body_insulating() const {
-    return useBody && bodyFieldBC == BodyFieldBC::insulating;
+    return use_body() && bodyFieldBC == BodyFieldBC::conducting;
   }
   // Static intrinsic field of the planet (#DIPOLE / #CRUSTALFIELD), on the
   // same grids as the evolved field. Filled at init and after every regrid,
@@ -477,7 +475,7 @@ private:
   // 'insulating' body lets EM waves propagate inside via the wave equation;
   // in hybrid PIC, vacuum cavities have no wave propagation and stay frozen.
   bool is_body_interior_frozen() const {
-    return useBody &&
+    return use_body() &&
            (!useHybridPIC ? (bodyFieldBC != BodyFieldBC::insulating) : true);
   }
 
@@ -533,17 +531,41 @@ private:
   std::string logFile;
   std::ofstream picLogStream;
 
+protected:
+  // The shared Grid reference and the mesh queries live in GridAccess.
+  std::string tag = "pic";
+  std::string gridName;
+  std::string printPrefix;
+  int gridID;
+
+  amrex::Vector<amrex::iMultiFab> targetPPC;
+  bool isTargetPPCDefined = false;
+  bool doNeedFillNewCell = false;
+  bool particlesInitialized = false;
+
   // public methods
 public:
-  Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
-      FluidInterface *fluidIn, TimeCtr *tcIn, int id,
+  // Shared mesh queries (n_lev, Geom, DistributionMap, cell_status,
+  // get_base_grid, lev_string, get_finest_lev, ...) are inherited from
+  // GridAccess. The operations below are PIC-specific.
+  const amrex::iMultiFab &target_PPC(int iLev) const { return targetPPC[iLev]; }
+  void set_body(const amrex::Real *center, const amrex::Real radius) {
+    grid.set_body(center, radius);
+  }
+  ParticleBC::Type &body_particle_bc() { return grid.bodyParticleBC; }
+  ParticleBC::Type body_particle_bc() const { return grid.bodyParticleBC; }
+
+  Pic(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
       const DomainParameters &parameters)
-      : Grid(gm, amrInfo, nGst, id, "pic"),
+      : GridAccess(gridIn),
         domainParameters(parameters),
         useHybridPIC(parameters.useHybridPIC),
         fieldSolverMode(parameters.fieldSolverMode),
         fi(fluidIn),
-        tc(tcIn) {
+        tc(tcIn),
+        gridID(id) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = gridName + " pic: ";
     if (fieldSolverMode == PicSolverMode::Explicit) {
       useExplicitPIC = true;
       solveEM = false;
@@ -656,6 +678,7 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
+  bool are_particles_initialized() const { return particlesInitialized; }
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
 
@@ -691,18 +714,19 @@ public:
   void set_fluid_source(SourceInterface *in) { source = in; }
 
   //--------------Initialization begin-------------------------------
-  virtual void pre_regrid() override;
-  virtual void post_regrid() override;
+  void pre_regrid();
+  void post_regrid(MeshChangeReason reason = MeshChangeReason::Topology);
 
-  void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld);
+  void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld =
+                             amrex::Vector<amrex::BoxArray>());
 
   void fill_new_cells();
-  void fill_E_B_fields();
+  void fill_E_B_fields(bool fillAll = false);
 
-  void fill_new_node_E();
+  void fill_new_node_E(bool fillAll = false);
 
-  void fill_new_node_B();
-  void fill_new_center_B();
+  void fill_new_node_B(bool fillAll = false);
+  void fill_new_center_B(bool fillAll = false);
 
   void fill_particles();
 
@@ -750,8 +774,6 @@ public:
   void fill_regional_resistivity_field(int iLev);
   void fill_regional_hyper_field(int iLev);
   void update_regional_hyper_grid_mode(amrex::Real dt);
-  // dst <- dst + B0, for a MultiFab living on the same centering as dst.
-  void add_intrinsic_B(amrex::MultiFab &dst, int iLev);
   // Cell-centered total field: returns `src + B0` built in a scratch array, or
   // `src` itself when no intrinsic field is configured.
   amrex::MultiFab &total_center_B(amrex::MultiFab &src, int iLev);
@@ -781,7 +803,7 @@ public:
       return;
 
     for (auto &pts : parts) {
-      pts->add_particles_domain();
+      pts->add_particles_domain(!particlesInitialized);
     }
   }
 
@@ -867,7 +889,7 @@ public:
   // (fake 2D, where the two z node planes coincide).  `nDim` is the
   // compile-time amrex::SpaceDim, so a bare `nDim == 2` test silently excludes
   // the fake-2D case in a 3D build -- always use this helper instead.
-  bool is_bz_div_free() const { return (nDim == 2) || isFake2D; }
+  bool is_bz_div_free() const { return (nDim == 2) || is_fake_2d(); }
   // Per-level div(B) report split into interface / covered / interior cells.
   void report_divB_amr();
   // Max |avg(B_fine) - B_coarse| over the covered cells of iLev, measured
@@ -1133,33 +1155,12 @@ public:
 
   //--------------- Boundary end ------------------------
 
-  // Make a new level from scratch using provided BoxArray and
-  // DistributionMapping. Only used during initialization. overrides the pure
-  // virtual function in AmrCore
-  virtual void MakeNewLevelFromScratch(
-      int iLev, amrex::Real time, const amrex::BoxArray &ba,
-      const amrex::DistributionMapping &dm) override {
-    std::string nameFunc = "Pic::MakeNewLevelFromScratch";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
-                   << std::endl;
-  };
-
-  // Make a new level using provided BoxArray and DistributionMapping and
-  // fill with interpolated coarse level data.
-  // overrides the pure virtual function in AmrCore
-  virtual void MakeNewLevelFromCoarse(
-      int iLev, amrex::Real time, const amrex::BoxArray &ba,
-      const amrex::DistributionMapping &dm) override {
-    std::string nameFunc = "Pic::MakeNewLevelFromCoarse";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
-                   << std::endl;
-  };
-
   void WriteDivEErrorToParaView() {
     amrex::Vector<amrex::MultiFab> errorDivE;
     errorDivE.resize(n_lev());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      errorDivE[iLev].define(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+      errorDivE[iLev].define(boxArray(iLev), DistributionMap(iLev), 1,
+                             get_n_ghost());
       errorDivE[iLev].setVal(0.0);
 
       for (amrex::MFIter mfi(errorDivE[iLev]); mfi.isValid(); ++mfi) {
@@ -1180,7 +1181,7 @@ public:
         });
       }
     }
-    WriteMF(errorDivE, finest_level, "errorDivE");
+    grid.write_mf(errorDivE, finestLevel(), "errorDivE");
   }
 
   void SetTargetPPC(int npresplitcells) {
@@ -1199,6 +1200,9 @@ public:
       }
     }
     for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const int refRatioMax = (pInfo.isPPVconstant || pInfo.doPreSplitting)
+                                  ? refRatio(iLev).max()
+                                  : 1;
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
         const auto &ppcArr = targetPPC[iLev][mfi].array();
@@ -1208,8 +1212,7 @@ public:
           if (pInfo.isPPVconstant) {
             int tmp = 1;
             for (int i = 0; i < nDim; i++) {
-              tmp *=
-                  (pInfo.nPartPerCell[i] / pow((ref_ratio[iLev].max()), iLev));
+              tmp *= (pInfo.nPartPerCell[i] / pow(refRatioMax, iLev));
             }
             ppcArr(ijk, 0) = tmp;
           } else {
@@ -1223,8 +1226,8 @@ public:
                       ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
                   if (bit::is_refined(status(ijk2)) &&
                       !bit::is_refined(status(ijk))) {
-                    ppcArr(ijk, 0) = product(pInfo.nPartPerCell) *
-                                     pow(ref_ratio[iLev].max(), nDim);
+                    ppcArr(ijk, 0) =
+                        product(pInfo.nPartPerCell) * pow(refRatioMax, nDim);
                   }
                 }
               }
@@ -1237,9 +1240,9 @@ public:
 
   void WriteParticleQualityToParaView() {
     parts[0]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality0");
+    grid.write_mf(particleQuality, finestLevel(), "particleQuality0");
     parts[1]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality1");
+    grid.write_mf(particleQuality, finestLevel(), "particleQuality1");
   }
   // private methods
 private:

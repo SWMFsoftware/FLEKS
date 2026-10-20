@@ -134,11 +134,11 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
   // level are filled. Otherwise every level-boundary ghost of a fab that is
   // not inside the level-0 active region is, which on a refined level includes
   // the coarse-fine interface ghosts.
-  const BoxArray ba =
-      skipCoarseFineGhosts
-          ? get_level_active_ba(activeRegion, mf, Geom(iLev), Geom(0), nDim,
-                                iz_)
-          : get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+  const BoxArray ba = skipCoarseFineGhosts
+                          ? get_level_active_ba(active_region_ref(), mf,
+                                                Geom(iLev), Geom(0), nDim, iz_)
+                          : get_boundary_active_ba(active_region_ref(), mf,
+                                                   Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
   const Geometry& geom = Geom(iLev);
 
@@ -234,7 +234,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     // space, so the whole-fab test below only means something on level 0; on
     // a refined level it skipped an arbitrary subset of the fabs.
     const BoxArray ba =
-        get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+        get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
@@ -279,7 +279,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
   timing_func(nameFunc);
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+      get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
@@ -408,7 +408,7 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
   const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+      get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
   const Real* dx = Geom(iLev).CellSize();
 
@@ -482,7 +482,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
   timing_func(nameFunc);
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+      get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
@@ -624,7 +624,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
   timing_func(nameFunc);
 
   const BoxArray ba =
-      get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+      get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   const Real* plo = Geom(iLev).ProbLo();
@@ -818,9 +818,9 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
 
   const auto plo = Geom(iLev).ProbLo();
   const auto dx = Geom(iLev).CellSize();
-  const Real cx = bodyCenter[ix_];
-  const Real cy = bodyCenter[iy_];
-  const Real cz = bodyCenter[iz_];
+  const Real cx = get_body_center()[ix_];
+  const Real cy = get_body_center()[iy_];
+  const Real cz = get_body_center()[iz_];
   const auto& status = node_status(iLev);
 
   const int activeDim = get_dim();
@@ -871,9 +871,9 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
   const auto& status = isCell ? cell_status(iLev) : node_status(iLev);
   const auto plo = Geom(iLev).ProbLo();
   const auto dx = Geom(iLev).CellSize();
-  const Real cx = bodyCenter[ix_];
-  const Real cy = bodyCenter[iy_];
-  const Real cz = bodyCenter[iz_];
+  const Real cx = get_body_center()[ix_];
+  const Real cy = get_body_center()[iy_];
+  const Real cz = get_body_center()[iz_];
   // Cell centers sit half a cell above the lower node.
   const Real shift = isCell ? 0.5 : 0.0;
   const int activeDim = get_dim();
@@ -999,7 +999,7 @@ void Pic::fill_body_E_insulating(amrex::MultiFab& mf, const int iLev) {
 
 //==========================================================
 void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
-  if (!useBody)
+  if (!use_body())
     return;
 
   if (bodyFieldBC == BodyFieldBC::linetied) {
