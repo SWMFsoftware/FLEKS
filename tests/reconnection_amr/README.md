@@ -13,7 +13,7 @@ Two solver variants share this grid and setup — see `#FIELDSOLVER`:
 
 The runner auto-detects both variants, listing them as `RECONNECTION_AMR (IMPLICIT)` and `RECONNECTION_AMR (HYBRID)` in `tests/summary.md`.
 
-Two short hybrid decks check the coarse-fine interface itself rather than
+Three short hybrid decks check the coarse-fine interface itself rather than
 reconnection:
 
 - **`PARAM.in.forcefree_hybrid`**: the force-free sheet of
@@ -29,8 +29,17 @@ reconnection:
   low-density lobes, where injecting the fine E into the covered coarse nodes
   drove a `2 dx_coarse` mode along the interface (`max |B|` reached 3x B0
   within 26 steps here, and the full GEM AMR deck blew up).
+- **`PARAM.in.lobe_hybrid`**: the GEM lobe plasma alone (`n = 0.2`,
+  `B = B0 x`, `Ti/Te = 5`, no current sheet) in a periodic `3.2 x 3.2 d_i`
+  box, base `32 x 32` (`dx = 0.1 d_i`) with the patch `|x|, |y| < 0.8 d_i`
+  refined to `0.05 d_i`, for 50 steps. Its `x` interfaces are normal to `B`,
+  so parallel whistlers cross them. With the coarse E on the interface nodes,
+  the covered-cell relaxation closed a feedback loop that grew a mode ~6 fine
+  cells long at ~40-70 `Omega_ci` (`max |B|` reached 2.3 B0 here, and the
+  mode filled the refined patch of the full GEM AMR deck). The transverse
+  field must stay at the particle noise level (`max |B_perp| < 0.1 B0`).
 
-Both use a single block per level patch: with many small blocks the
+All three use a single block per level patch: with many small blocks the
 coarse-fine fills dominate the run time.
 
 ## Grid hierarchy
