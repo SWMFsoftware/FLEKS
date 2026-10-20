@@ -1,5 +1,5 @@
 #DESCRIPTION
-Explicit full PIC, leapfrog: 1D uniform unmagnetized thermal plasma, energy-conservation check (FLEKS issue 170). Code units c = 1, n = 1: omega_pe = 35.4, v_te = 0.354, lambda_De = 0.010, dx = 2.8 lambda_De, c dt/dx = 0.36, omega_pe dt = 0.35; 500 steps.
+Langmuir test, explicit full PIC (leapfrog) in a uniform magnetic field at 45 degrees to x (electron w_ce = 0.3 w_pe): a 1D uniform thermal plasma (m_i/m_e = 100) whose E_x noise carries the Langmuir branch; checks energy conservation. Code units c = 1, n = 1: omega_pe = 35.4, v_te = 0.354, lambda_De = 0.010, dx = 2.8 lambda_De, c dt/dx = 0.36, omega_pe dt = 0.35; 800 steps (FLEKS issue 170).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -59,8 +59,8 @@ F                       isAutoSubcycle
 0.0                     uy
 0.0                     uz
 1514.3                  T        (Te = 1.25e-3 code)
-0.0                     bx
-0.0                     by
+7.839654e-10            bx       (|B| = 0.106 code: w_ce = 0.3 w_pe)
+7.839654e-10            by
 0.0                     bz
 0.0                     ex
 0.0                     ey
@@ -79,6 +79,16 @@ T                       useFixedDt
 10                      dnSavePic
 10                      dnSavePT
 
+E_x every 0.04 (4 steps; omega_pe = 35.4 needs < 0.089) for the
+omega-k spectrum of the thermal Langmuir noise.
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+-1                      dn
+0.04                    dt
+1                       dx
+Ex                      varName
+
 #STOP
 -1                      MaxIter
-5.0                     TimeMax
+8.0                     TimeMax  (800 steps)
