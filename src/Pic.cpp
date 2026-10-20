@@ -42,7 +42,8 @@ void Pic::fill_new_cells() {
   if (initEM) {
     // Tracker-only runs refresh retained fields at every coupling without
     // changing the shared mesh's new-cell classification.
-    fill_E_B_fields(!usePIC);
+    // The first PIC fill also initializes retained fluid-restart cells.
+    fill_E_B_fields(!usePIC || !particlesInitialized);
   }
   init_regional_fields();
 
