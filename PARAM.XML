@@ -2929,30 +2929,34 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
 
 <command name="WAVEBC" alias="WAVEBC_FLEKS" multiple="F">
   <parameter name="nWaveFace" type="integer" default="0"/>
-  <parameter name="direction" type="integer"/>
-  <parameter name="side" type="string" input="select">
-    <option value="lo"/>
-    <option value="hi"/>
-  </parameter>
-  <parameter name="nComp" type="integer"/>
-  <parameter name="iField" type="integer"/>
-  <parameter name="iSpecies" type="integer"/>
-  <parameter name="profile" type="integer"/>
-  <parameter name="amplitude" type="real"/>
-  <parameter name="frequency" type="real"/>
-  <parameter name="waveLength" type="real"/>
-  <parameter name="phase" type="real"/>
-  <for from="1" to="3">
-    <parameter name="dir" type="real"/>
+  <for name="iWaveFace" from="1" to="$nWaveFace">
+    <parameter name="direction" type="integer"/>
+    <parameter name="side" type="string" input="select">
+      <option value="lo"/>
+      <option value="hi"/>
+    </parameter>
+    <parameter name="nComp" type="integer"/>
+    <for name="iComp" from="1" to="$nComp">
+      <parameter name="iField" type="integer"/>
+      <parameter name="iSpecies" type="integer"/>
+      <parameter name="profile" type="integer"/>
+      <parameter name="amplitude" type="real"/>
+      <parameter name="frequency" type="real"/>
+      <parameter name="waveLength" type="real"/>
+      <parameter name="phase" type="real"/>
+      <for from="1" to="3">
+        <parameter name="dir" type="real"/>
+      </for>
+      <for from="1" to="3">
+        <parameter name="pol" type="real"/>
+      </for>
+      <parameter name="tStart" type="real"/>
+      <parameter name="tEnd" type="real"/>
+      <parameter name="rampTime" type="real"/>
+      <parameter name="tCenter" type="real"/>
+      <parameter name="tWidth" type="real"/>
+    </for>
   </for>
-  <for from="1" to="3">
-    <parameter name="pol" type="real"/>
-  </for>
-  <parameter name="tStart" type="real"/>
-  <parameter name="tEnd" type="real"/>
-  <parameter name="rampTime" type="real"/>
-  <parameter name="tCenter" type="real"/>
-  <parameter name="tWidth" type="real"/>
 
 #WAVEBC
 1                       nWaveFace
