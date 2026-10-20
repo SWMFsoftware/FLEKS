@@ -1250,27 +1250,89 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 }
 
 //==========================================================
-// Synchronize nodal E at the coarse-fine interfaces: the fine nodes on the
-// interface take the coarse E (linear interpolation along the coarse edges,
-// fill_fine_lev_edge_from_coarse). Both levels then advance the cells that
-// share an interface face with the same E, which keeps div(B) at round-off
-// across the interface. (The ghost nodes of the fine levels are filled
-// afterwards in fill_ghost_emf_from_coarse.)
+// Synchronize nodal E at the coarse-fine interfaces, so that both levels
+// advance the cells that share an interface face with the same E, which keeps
+// div(B) at round-off across the interface:
+//   1) the coarse nodes on the interface take the E of the coincident fine
+//      nodes (finest level first);
+//   2) the fine interface nodes take the coarse E, linearly interpolated along
+//      the coarse edges (fill_fine_lev_edge_from_coarse). On the coincident
+//      nodes this returns the fine E of step 1; the midpoints get the average
+//      of their two neighbors, so the circulation of E along every coarse
+//      interface edge is the same on both levels.
+// (The ghost nodes of the fine levels are filled afterwards in
+// fill_ghost_emf_from_coarse.)
 //
-// The covered coarse nodes keep the coarse E. Injecting the coincident fine E
-// into them instead does not make the covered coarse B follow the fine one:
-// curl_node_to_center is a 2*dx-wide stencil, so the coarse curl of any nodal
-// E differs from the cell average of the fine curl at O(1) relative error
-// (0.5-0.8 measured on the AMR tests). The covered coarse B is kept close to
-// the fine average by relax_covered_B_to_fine instead. The injection was also
-// harmful: it copies the grid-scale part of the fine E onto the coarse nodes,
-// where it drives a 2*dx_coarse mode that the coarse level barely damps (the
-// grid-mode hyper-resistivity is set by the finest dx). On a 2-level GEM deck
-// (base dx = 0.1 d_i) that mode grew along the interface from the first
-// cycle and blew the run up within an ion gyroperiod; with the coarse E kept,
-// the run is stable and the covered coarse B stays closer to the fine average.
+// Why the interface E comes from the fine level: with the coarse E there, the
+// covered-cell relaxation closes a feedback loop. Each particle step it
+// copies the fine B onto the covered coarse cells; the coarse grid propagates
+// a whistler that is 3 coarse cells long with the wrong dispersion and, through
+// the interface E, drives the fine level with the wrong phase. Parallel
+// whistlers crossing an interface normal to B then grow at a rate set by the
+// particle step, not the field sub-step (a linear 1D model of the scheme gives
+// 38 Omega_ci for n = 0.2 and dx_coarse = 0.1 d_i, wavelength ~6 fine cells,
+// as measured). With the fine E on the interface, the fine level only sees the
+// coarse level through its ghost cells and the loop is neutral.
+//
+// The covered coarse nodes inside the interface keep the coarse E. Injecting
+// the coincident fine E into them does not make the covered coarse B follow
+// the fine one: curl_node_to_center is a 2*dx-wide stencil, so the coarse
+// curl of any nodal E differs from the cell average of the fine curl at O(1)
+// relative error (0.5-0.8 measured on the AMR tests). The covered coarse B is
+// kept close to the fine average by relax_covered_B_to_fine instead. That
+// injection was also harmful: it copies the grid-scale part of the fine E onto
+// the coarse nodes, where it drives a 2*dx_coarse mode that the coarse level
+// barely damped (the grid-mode hyper-resistivity was set by the finest dx). On
+// a 2-level GEM deck (base dx = 0.1 d_i) that mode grew along the interface
+// from the first cycle and blew the run up within an ion gyroperiod.
 void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf) {
   BL_PROFILE("Pic::sync_emf_at_interface");
+  for (int iLev = finestLevel(); iLev >= 1; --iLev) {
+    // A node shared by two fine boxes can hold two values (each box computes
+    // E from its own copy of the evolved ghost cells); take the owner's, so
+    // that every coarse box receives the same one.
+    nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
+    MultiFab& crse = nodeEmf[iLev - 1];
+    // Restrict onto the coarsened fine layout, then copy with the coarse
+    // periodicity: when the fine level touches a periodic face on one side
+    // only, the coarse node on the opposite face is the same interface node
+    // and must get the fine value too.
+    MultiFab crseOfFine(
+        amrex::coarsen(nodeEmf[iLev].boxArray(), refRatio(iLev - 1)),
+        nodeEmf[iLev].DistributionMap(), nDim3, 0);
+    average_down_nodal(nodeEmf[iLev], crseOfFine, refRatio(iLev - 1));
+    MultiFab fromFine(crse.boxArray(), crse.DistributionMap(), nDim3, 0);
+    fromFine.setVal(0.0);
+    fromFine.ParallelCopy(crseOfFine, 0, 0, nDim3, IntVect(0), IntVect(0),
+                          Geom(iLev - 1).periodicity());
+    for (MFIter mfi(crse); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& e = crse[mfi].array();
+      const auto& ef = fromFine[mfi].const_array();
+      const auto& cell = cell_status(iLev - 1)[mfi].const_array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        // An interface node touches a covered cell and an uncovered cell
+        // inside the domain.
+        bool hasCovered = false, hasUncovered = false;
+        const int kmin = nDim > 2 ? k - 1 : k;
+        for (int kk = kmin; kk <= k; ++kk)
+          for (int jj = j - 1; jj <= j; ++jj)
+            for (int ii = i - 1; ii <= i; ++ii) {
+              const int st = cell(ii, jj, kk);
+              if (bit::is_refined(st))
+                hasCovered = true;
+              else if (!bit::is_domain_boundary(st))
+                hasUncovered = true;
+            }
+        if (hasCovered && hasUncovered)
+          for (int iVar = 0; iVar < nDim3; ++iVar)
+            e(i, j, k, iVar) = ef(i, j, k, iVar);
+      });
+    }
+    crse.OverrideSync(Geom(iLev - 1).periodicity());
+    crse.FillBoundary(Geom(iLev - 1).periodicity());
+  }
+
   for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
     fill_fine_lev_edge_from_coarse(
         nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, refRatio(iLev - 1),
@@ -1729,18 +1791,19 @@ void Pic::update_B_hybrid() {
   const Real dt = tc->get_dt();
   const Real subDt = dt / nBSubcycle;
 
-  // Grid-mode hyper-resistivity: uniform eta_h based on finest dx to keep
-  // diffusion stable across levels.
+  // Grid-mode hyper-resistivity: every level is damped at its own grid scale,
+  // eta_h = 4*pi*C_h*dx_min^4/dt with the dx of that level. The damping rate
+  // of the grid-scale mode, C_h*(k dx)^4/dt, and the hyper-resistive CFL
+  // number are then the same on every level. With the finest dx on all levels
+  // the coarse Nyquist mode was damped 2^4 = 16 times less than the fine one,
+  // and its noise reached the fine level through the coarse-fine interface E.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
-    const int iFinest = n_lev() - 1;
-    const auto dxFine = Geom(iFinest).CellSizeArray();
-    Real dxMinFine = dxFine[0];
-    for (int d = 1; d < nDim; ++d)
-      dxMinFine = amrex::min(dxMinFine, dxFine[d]);
-
-    const Real etaHyper = fourPI * etaHyperCh * std::pow(dxMinFine, 4) / dt;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      etaHyperLev[iLev] = etaHyper;
+      const auto dxLev = Geom(iLev).CellSizeArray();
+      Real dxMin = dxLev[0];
+      for (int d = 1; d < nDim; ++d)
+        dxMin = amrex::min(dxMin, dxLev[d]);
+      etaHyperLev[iLev] = fourPI * etaHyperCh * std::pow(dxMin, 4) / dt;
     }
   }
 
@@ -2037,14 +2100,16 @@ void Pic::update_B_hybrid() {
 
   if (finestLevel() > 0) {
     // Smoothing also changes the wall and body nodes; restore their
-    // constraints on the base level (sync_emf_at_interface does it on the
-    // refined levels).
+    // constraints on every level before sync_emf_at_interface copies the fine
+    // E onto the coarse interface nodes.
     if (doSmoothE) {
-      nodeE[0].FillBoundary(Geom(0).periodicity());
-      apply_field_bc(node_status(0), nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
-                     false);
-      if (use_body()) {
-        apply_body_E_bc(nodeE[0], 0);
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+        apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
+                       &Pic::get_node_E, iLev, false);
+        if (use_body()) {
+          apply_body_E_bc(nodeE[iLev], iLev);
+        }
       }
     }
     sync_emf_at_interface(nodeE);
