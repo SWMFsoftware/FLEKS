@@ -652,7 +652,9 @@ void Domain::regrid() {
   if (pic) {
     pic->post_regrid();
 
-    if (refineRegions.is_modified()) {
+    // Do not fill cells before initial particle setup (e.g. #REGRIDONRESTART
+    // on a fluid-only restart marks refineRegions modified before set_ic()).
+    if (refineRegions.is_modified() && pic->are_particles_initialized()) {
       pic->fill_new_cells();
       // Add functions to fill in EM fields for new cells.
       // Some thoughts:

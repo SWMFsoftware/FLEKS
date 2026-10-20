@@ -583,6 +583,7 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
+  bool are_particles_initialized() const { return particlesInitialized; }
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
 

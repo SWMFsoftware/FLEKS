@@ -355,17 +355,14 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain(bool fillAll) {
   timing_func("Pts::add_particles_domain");
-  // Full-domain seeding occurs on initial particle filling (cycle 0 or
-  // first fill following a fluid-only restart with fillAll=true).
+  // Full-domain seeding occurs on initial particle filling (fillAll=true, e.g.
+  // cold start or first fill following a fluid-only restart).
   // Dynamic AMR regrids rely on AMReX Redistribute() to migrate existing
   // particles to newly refined levels; re-seeding iLev > 0 would duplicate
   // particles. After initial fill, only newly activated level-0 base domain
   // cells (if any) are seeded.
-  int iLevMax = 0;
-  if (fillAll || tc->get_cycle() == 0) {
-    iLevMax = n_lev() - 1;
-  }
-  for (int iLev = 0; iLev <= iLevMax; iLev++) {
+  const int nLev = fillAll ? n_lev() : 1;
+  for (int iLev = 0; iLev < nLev; iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
 
       const auto& status = cell_status(iLev)[mfi].array();
