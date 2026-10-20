@@ -221,14 +221,18 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, nGst, doMoveData);
         distribute_FabArray(nodeJ[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                             nGst, doMoveData);
+        distribute_FabArray(nodeJexpl[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(nodeJexplPrev[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
         distribute_FabArray(centerBstar[iLev], cGrids[iLev],
                             DistributionMap(iLev), 3, nGst, doMoveData);
         distribute_FabArray(centerBstage[iLev], cGrids[iLev],
                             DistributionMap(iLev), 3, nGst, doMoveData);
       }
     }
-    if (useHybridPIC || useExplicitPIC) {
-      // Previous-step moments for the Ohm's-law / explicit interpolation.
+    if (useHybridPIC) {
+      // Previous-step moments for the Ohm's-law interpolation.
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
@@ -310,7 +314,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 1, nGst, false);
       }
     }
-    if (useHybridPIC || useExplicitPIC) {
+    if (useHybridPIC) {
       // Node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
         if (pl.empty())
@@ -915,6 +919,25 @@ void Pic::particle_mover(int pushStage) {
     parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext, pushStage);
   }
 
+  // A kick-only push does not move the particles.
+  if (pushStage == PicParticles::kPushKickOnly)
+    return;
+
+  for (int i : kineticSpecies_) {
+    parts[i]->redistribute_particles();
+  }
+}
+
+//==========================================================
+void Pic::particle_drift() {
+  std::string nameFunc = "Pic::particle_drift";
+
+  timing_func(nameFunc);
+
+  for (int i : kineticSpecies_) {
+    parts[i]->drift(tc->get_dt(), tc->get_next_dt());
+  }
+
   for (int i : kineticSpecies_) {
     parts[i]->redistribute_particles();
   }
@@ -1382,7 +1405,7 @@ void Pic::sum_moments(bool updateDt) {
             Geom(iLev - 1), Geom(iLev), node_status(iLev),
             node_bilinear_interp);
 
-        if (useHybridPIC || useExplicitPIC) {
+        if (useHybridPIC) {
           fill_fine_lev_bny_from_coarse(nodePlasmaPrev[nSpecies][iLev - 1],
                                         nodePlasmaPrev[nSpecies][iLev], 0,
                                         nodePlasmaPrev[nSpecies][iLev].nComp(),
@@ -1581,7 +1604,11 @@ void Pic::calc_cost_per_cell() {
 
 void Pic::advance_particles_and_sources(int pushStage) {
   particle_mover(pushStage);
+  finish_particle_push();
+}
 
+//==========================================================
+void Pic::finish_particle_push() {
   // Calling re_sampling after particle mover so that all the particles
   // outside the domain have been deleted.
   re_sampling();

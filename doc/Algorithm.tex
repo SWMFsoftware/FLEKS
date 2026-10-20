@@ -483,18 +483,29 @@ the Maxwell equations can be subcycled within one particle coarse time step $\De
 Two time-advancement algorithms are provided via \texttt{\#FIELDINTEGRATOR}:
 \begin{enumerate}
   \item \textbf{Boris--Maxwell leapfrog} (\texttt{leapfrog}, default):
-  The magnetic and electric fields are time-staggered: $\mathbf{B}$ is defined at half-integer steps $t^{n+1/2}$ and $\mathbf{E}$ at integer steps $t^n$. Within each subcycle:
-  \begin{align}
-  \mathbf{B}^{m+1/2} &= \mathbf{B}^{m-1/2} - c\,\Delta t_{\text{sub}}\,\operatorname{curl}_{\text{node}\to\text{center}}(\mathbf{E}^m), \\
-  \mathbf{E}^{m+1} &= \mathbf{E}^m + c\,\Delta t_{\text{sub}}\,\operatorname{curl}_{\text{center}\to\text{node}}(\mathbf{B}^{m+1/2}) - 4\pi\,\Delta t_{\text{sub}}\,\mathbf{J}^{m+1/2}.
-  \end{align}
-  Particles are advanced using the Boris pusher with the centered fields $\mathbf{E}^n$ and $\bar{\mathbf{B}}^n = \frac{1}{2}(\mathbf{B}^{n-1/2} + \mathbf{B}^{n+1/2})$ averaged to grid nodes.
-  
+  Particle positions and the fields $\mathbf{E}$, $\mathbf{B}$ are stored at integer steps $t^n$ and particle velocities at half-integer steps $t^{n+1/2}$. One step proceeds as:
+  \begin{enumerate}
+    \item Kick: $\mathbf{v}^{n-1/2} \to \mathbf{v}^{n+1/2}$ with the Boris pusher and $(\mathbf{E}^n, \mathbf{B}^n)$ interpolated to $\mathbf{x}^n$.
+    \item Current: deposit at $\mathbf{x}^n$, drift $\mathbf{x}^{n+1} = \mathbf{x}^n + \Delta t\,\mathbf{v}^{n+1/2}$, deposit again, and average,
+    \begin{equation}
+    \mathbf{J}^{n+1/2} = \frac{1}{2} \sum_p q_p \mathbf{v}_p^{n+1/2} \left[ S(\mathbf{x}_p^n) + S(\mathbf{x}_p^{n+1}) \right],
+    \end{equation}
+    where $S$ is the node shape function. This is the charge current $\sum_s q_s n_s \mathbf{u}_s$, centered in time with the velocities.
+    \item Fields, within each subcycle $m$ (Strang splitting with $\mathbf{J}^{n+1/2}$ held fixed):
+    \begin{align}
+    \mathbf{B}^{m+1/2} &= \mathbf{B}^{m} - \tfrac{1}{2} c\,\Delta t_{\text{sub}}\,\operatorname{curl}_{\text{node}\to\text{center}}(\mathbf{E}^m), \\
+    \mathbf{E}^{m+1} &= \mathbf{E}^m + c\,\Delta t_{\text{sub}}\,\operatorname{curl}_{\text{center}\to\text{node}}(\mathbf{B}^{m+1/2}) - 4\pi\,\Delta t_{\text{sub}}\,\mathbf{J}^{n+1/2}, \\
+    \mathbf{B}^{m+1} &= \mathbf{B}^{m+1/2} - \tfrac{1}{2} c\,\Delta t_{\text{sub}}\,\operatorname{curl}_{\text{node}\to\text{center}}(\mathbf{E}^{m+1}).
+    \end{align}
+  \end{enumerate}
+  For a cold plasma oscillation this scheme is neutrally stable for $\omega_{pe}\Delta t < 2$. A current averaged from the deposits at $(\mathbf{x}^n, \mathbf{v}^{n-1/2})$ and $(\mathbf{x}^{n+1}, \mathbf{v}^{n+1/2})$ would be centered at $t^n$ instead and grows at $\gamma \approx \omega_{pe}^2 \Delta t / 4$.
+
   \item \textbf{Predictor-Corrector / Runge--Kutta 2} (\texttt{pc} or \texttt{rk2}):
   For scenarios where time-staggering is undesirable or when coupling with intermediate physics stages:
   \begin{itemize}
     \item \emph{Predictor step}: Particles and fields at $t^n$ are used to predict intermediate states $\mathbf{x}^*, \mathbf{v}^*$ and $\mathbf{E}^*, \mathbf{B}^*$ at $t^{n+1/2}$.
     \item \emph{Corrector step}: Predicted fields and deposited currents $\mathbf{J}^*$ evaluate the final Boris push and field update to $t^{n+1}$, achieving second-order temporal accuracy without permanent field time-staggering.
+    \item Here velocities live at integer steps, so the field subcycles interpolate the charge current in time between the deposits $\mathbf{J}^n$ and $\mathbf{J}^{n+1}$ (or the predicted $\mathbf{J}^*$).
   \end{itemize}
 \end{enumerate}
 
