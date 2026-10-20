@@ -40,6 +40,7 @@ FLEKS/
 | Fluid / coupling state | `src/FluidInterface.cpp` |
 | Output | `src/PlotWriter.cpp`, `src/PicIO.cpp` |
 | AMR grid / load balancing | `src/Grid.cpp`, `src/FleksDistributionMap.cpp` |
+| Shared mesh queries (`n_lev`, `Geom`, `DistributionMap`, ...) | `include/GridAccess.h` |
 | Standalone driver | `src/main.cpp` |
 | SWMF entry points | `srcInterface/FleksInterface.cpp` |
 

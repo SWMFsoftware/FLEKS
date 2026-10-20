@@ -5,9 +5,9 @@
 
 class UserSource : public SourceInterface {
 public:
-  UserSource(const FluidInterface& other, int id, std::string tag,
+  UserSource(Grid& gridIn, const FluidInterface& other, int id, std::string tag,
              FluidType typeIn, const DomainParameters& dp)
-      : SourceInterface(other, id, tag, typeIn, dp) {
+      : SourceInterface(gridIn, other, id, tag, typeIn, dp) {
     info = "Exosphere Source";
     useFluidSource = true;
   }
@@ -1108,7 +1108,7 @@ public:
       }
     }
 
-    if (!isGridEmpty && useCurrent) {
+    if (!grid.is_grid_empty() && useCurrent) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         amrex::MultiFab currentMF(nodeFluid[iLev], amrex::make_alias, iJx, 3);
         currentMF.setVal(0, currentMF.nGrow());

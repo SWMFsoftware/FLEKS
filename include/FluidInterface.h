@@ -19,6 +19,7 @@
 
 #include "Constants.h"
 #include "Grid.h"
+#include "GridAccess.h"
 #include "GridUtility.h"
 #include "ReadParam.h"
 
@@ -183,18 +184,18 @@ public:
   }
 };
 
-class FluidInterface : public Grid, public FluidInterfaceParameters {
+class FluidInterface : public GridAccess, public FluidInterfaceParameters {
   // NormalizationParams is a derived, immutable snapshot of fi's parameters.
   friend class NormalizationParams;
-  /*
-  Q: It is preferable to declare copyable variables in
-    FluidInterfaceParameters. Why?
-  A: Grid's base class AmrCore deletes the copy constructor.
-    So FluidInterface's default constructor is also deleted. It is much
-    easier to copy variables in FluidInterfaceParameters.
-  */
+
 protected:
+  // The shared Grid reference and the mesh queries live in GridAccess.
   FluidType myType = PICFluid;
+
+  std::string tag;
+  std::string gridName;
+  std::string printPrefix;
+  int gridID;
 
   amrex::Vector<amrex::MultiFab> nodeFluid;
   amrex::Vector<amrex::MultiFab> centerB;
@@ -202,18 +203,21 @@ protected:
   bool isnodeFluidReady = false;
 
 public:
-  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag,
+  // Shared mesh queries (n_lev, Geom(iLev), DistributionMap, cell_status,
+  // get_base_grid, lev_string, get_finest_lev, ...) are inherited from
+  // GridAccess.
+
+  FluidInterface(Grid& gridIn, std::string tag,
                  const amrex::Vector<int>& iParam,
                  const amrex::Vector<double>& norm,
                  const amrex::Vector<double>& paramComm,
                  bool useHybridIn = false);
 
-  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag, bool useHybridIn = false,
+  FluidInterface(Grid& gridIn, std::string tag, bool useHybridIn = false,
                  FluidType typeIn = PICFluid)
-      : Grid(gm, amrInfo, nGst, id, tag), myType(typeIn) {
-
+      : GridAccess(gridIn), myType(typeIn), tag(tag), gridID(gridIn.get_id()) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
     initFromSWMF = false;
     useHybridPIC = useHybridIn;
 
@@ -222,13 +226,18 @@ public:
   }
 
   // Initialization from other FluidInterface
-  FluidInterface(const FluidInterface& other, int id, std::string tag,
-                 FluidType typeIn = PICFluid)
-      : Grid(other.Geom(0), other.get_amr_info(), other.get_n_ghost(), id, tag),
+  FluidInterface(Grid& gridIn, const FluidInterface& other, int id,
+                 std::string tag, FluidType typeIn = PICFluid)
+      : GridAccess(gridIn),
         FluidInterfaceParameters(other),
-        myType(typeIn) {}
+        myType(typeIn),
+        tag(tag),
+        gridID(id) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = tag.empty() ? gridName + ": " : gridName + " " + tag + ": ";
+  }
 
-  ~FluidInterface() = default;
+  virtual ~FluidInterface() = default;
 
   FluidType my_type() { return myType; }
 
@@ -253,7 +262,7 @@ public:
 
   void post_process_param(const DomainParameters& parameters);
 
-  void post_regrid() override {
+  virtual void post_regrid() {
     // Array redistribution creates fine nodes before their fluid state can be
     // interpolated from the retained coarse level.
     distribute_arrays();
@@ -423,14 +432,14 @@ public:
     for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
       sum_two_lev_interface_node(
           nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
-          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+          refRatio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
     }
 
     // Correct domain edge nodes
     for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
       interp_from_coarse_to_fine_for_domain_edge(
           nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
-          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+          refRatio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
     }
   }
 
@@ -475,7 +484,7 @@ public:
   }
 
   void save_restart_data() {
-    if (isGridEmpty)
+    if (is_grid_empty())
       return;
 
     std::string restartDir = get_restart_out_dir();
@@ -491,7 +500,7 @@ public:
   }
 
   void read_restart() {
-    if (isGridEmpty)
+    if (is_grid_empty())
       return;
 
     std::string restartDir = component + "/restartIN/";

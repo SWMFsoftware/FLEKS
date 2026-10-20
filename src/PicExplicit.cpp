@@ -32,13 +32,13 @@ void Pic::advance_B_half_step(Real dtSub, Real tSub) {
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     if (centerDB[iLev].empty()) {
-      distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
-                          nDim3, nGst);
+      distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
+                          nDim3, get_n_ghost());
     }
     curl_node_to_center(nodeE[iLev], centerDB[iLev], Geom(iLev).InvCellSize());
 
     if (is_body_interior_frozen()) {
-      mask_body_interior(centerDB[iLev], cellStatus[iLev]);
+      mask_body_interior(centerDB[iLev], cell_status(iLev));
     }
 
     MultiFab::Saxpy(centerB[iLev], -0.5 * dtSub, centerDB[iLev], 0, 0, nDim3,
@@ -46,32 +46,32 @@ void Pic::advance_B_half_step(Real dtSub, Real tSub) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 
-  if (projectDownEmFields && finest_level > 0) {
-    for (int iLev = finest_level; iLev > 0; --iLev) {
-      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[0]);
+  if (projectDownEmFields && finestLevel() > 0) {
+    for (int iLev = finestLevel(); iLev > 0; --iLev) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, refRatio(0));
     }
   }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
                      &Pic::get_center_B, iLev, true, 0.5 * dtSub, tEval);
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
           *get_cell_interp());
     }
 
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+      apply_field_bc(node_status(iLev), nodeB[iLev], 0, nodeB[iLev].nComp(),
                      &Pic::get_node_B, iLev, true, 0.5 * dtSub, tEval);
     } else {
       fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
-                                    nodeB[iLev].nComp(), ref_ratio[iLev - 1],
+                                    nodeB[iLev].nComp(), refRatio(iLev - 1),
                                     Geom(iLev - 1), Geom(iLev),
                                     node_status(iLev), node_bilinear_interp);
     }
@@ -99,11 +99,11 @@ void Pic::advance_E_step(Real dtSub, const MultiFab& currentMF, int iLev,
 
   nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+    apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3, &Pic::get_node_E,
                    iLev, false, dtSub, tEval);
   } else {
     fill_fine_lev_bny_from_coarse(
-        nodeE[iLev - 1], nodeE[iLev], 0, nDim3, ref_ratio[iLev - 1],
+        nodeE[iLev - 1], nodeE[iLev], 0, nDim3, refRatio(iLev - 1),
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
   }
 
@@ -132,18 +132,18 @@ void Pic::update_EB_explicit_leapfrog(Real dt, int nSub) {
       if (nSub == 1) {
         MultiFab::LinComb(nodeJ[iLev], 0.5, nodePlasmaPrev[nSpecies][iLev],
                           iMx_, 0.5, nodePlasma[nSpecies][iLev], iMx_, 0, nDim3,
-                          nGst);
+                          get_n_ghost());
       } else {
         const Real wPrev = 1.0 - hstep;
         const Real wCurr = hstep;
         MultiFab::LinComb(nodeJ[iLev], wPrev, nodePlasmaPrev[nSpecies][iLev],
                           iMx_, wCurr, nodePlasma[nSpecies][iLev], iMx_, 0,
-                          nDim3, nGst);
+                          nDim3, get_n_ghost());
       }
       advance_E_step(subDt, nodeJ[iLev], iLev, tE_full);
     }
 
-    if (projectDownEmFields && finest_level > 0) {
+    if (projectDownEmFields && finestLevel() > 0) {
       project_down_E();
     }
 
@@ -170,8 +170,9 @@ void Pic::advance_explicit_pc(Real dt) {
 
   // 2. Backup base fields B^n and E^n
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3, nGst);
-    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, nGst);
+    MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3,
+                   get_n_ghost());
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
   }
 
   // 3. Predictor push using (E^n, B^n) [pushStage = 1]
@@ -189,17 +190,17 @@ void Pic::advance_explicit_pc(Real dt) {
   const Real t0 = tc ? tc->get_time() : 0.0;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev], 0,
-                      0, nDim3, nGst);
+                      0, nDim3, get_n_ghost());
     MultiFab::LinComb(centerBstage[iLev], 0.5, centerB[iLev], 0, 0.5,
-                      centerBstar[iLev], 0, 0, nDim3, nGst);
+                      centerBstar[iLev], 0, 0, nDim3, get_n_ghost());
     average_center_to_node(centerBstage[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
+      apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
                      iLev, true, -1.0, t0 + 0.5 * dt);
     } else {
       fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, 3, ref_ratio[iLev - 1],
+          nodeB[iLev - 1], nodeB[iLev], 0, 3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
@@ -215,8 +216,9 @@ void Pic::advance_explicit_pc(Real dt) {
   // 8. Restore B^n and advance to final (B^{n+1}, E^{n+1}) using accepted
   // moments
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3, nGst);
-    MultiFab::Copy(nodeE[iLev], nodeEth[iLev], 0, 0, nDim3, nGst);
+    MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3,
+                   get_n_ghost());
+    MultiFab::Copy(nodeE[iLev], nodeEth[iLev], 0, 0, nDim3, get_n_ghost());
   }
   sum_moments(false);
   if (doSmoothJ || doSmoothMoments) {
@@ -266,11 +268,11 @@ void Pic::advance_explicit_full_pic() {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         MultiFab::LinComb(nodeJ[iLev], 0.5, nodePlasmaPrev[nSpecies][iLev],
                           iMx_, 0.5, nodePlasma[nSpecies][iLev], iMx_, 0, nDim3,
-                          nGst);
+                          get_n_ghost());
         advance_E_step(dt, nodeJ[iLev], iLev, t0 + dt);
       }
 
-      if (projectDownEmFields && finest_level > 0) {
+      if (projectDownEmFields && finestLevel() > 0) {
         project_down_E();
       }
 
@@ -292,7 +294,7 @@ void Pic::advance_explicit_full_pic() {
 
   // Div(E) correction (Gauss's law cleaning) if configured
   if (doCorrectDivE) {
-    if (finest_level == 0) {
+    if (finestLevel() == 0) {
       divE_correction();
     } else {
       amr_divE_correction();

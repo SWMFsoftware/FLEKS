@@ -4,26 +4,28 @@
 #include <AMReX_Vector.H>
 
 #include "Grid.h"
+#include "GridAccess.h"
 #include "Particles.h"
 #include "Pic.h"
 #include "TestParticles.h"
 
-class ParticleTracker : public Grid {
+class ParticleTracker : public GridAccess {
 public:
-  ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
-                  int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
+  ParticleTracker(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
                   ParticleTrackerInfo &info, const DomainParameters & /*dp*/)
-      : Grid(gm, amrInfo, nGst, id, "pt"),
-        tc(tcIn),
-        fi(fluidIn),
-        pInfo(&info) {}
+      : GridAccess(gridIn), tc(tcIn), fi(fluidIn), gridID(id), pInfo(&info) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
+    printPrefix = gridName + " pt: ";
+  }
 
-  ~ParticleTracker() override;
+  ~ParticleTracker();
 
+  // Shared mesh queries (n_lev, Geom, DistributionMap, is_grid_empty, ...)
+  // are inherited from GridAccess.
   void post_process_param();
 
-  void pre_regrid() override;
-  void post_regrid() override;
+  void pre_regrid();
+  void post_regrid();
 
   void update_field(Pic &pic, bool needJacobian = false);
   void set_ic(Pic &pic);
@@ -39,8 +41,14 @@ public:
   void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape> > &shapes);
 
 private:
+  // The shared Grid reference lives in GridAccess.
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
+
+  std::string tag = "pt";
+  std::string gridName;
+  std::string printPrefix;
+  int gridID;
 
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).

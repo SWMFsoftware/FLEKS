@@ -24,7 +24,7 @@ using namespace amrex;
 void Pic::fill_new_cells() {
   std::string nameFunc = "Pic::fill_new_cells";
 
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   if (usePIC && !doNeedFillNewCell)
@@ -32,15 +32,7 @@ void Pic::fill_new_cells() {
 
   timing_func(nameFunc);
 
-  if (!usePIC) {
-    // If this method is called when PIC component is off, it suggests the test
-    // particle component is activated. The test particle component copies EM
-    // field from PIC, so PIC EM field should be updated here.
-
-    update_grid_status();
-  }
-
-  if (pInfo.isPPVconstant || pInfo.doPreSplitting) {
+  if (usePIC && (pInfo.isPPVconstant || pInfo.doPreSplitting)) {
     SetTargetPPC(2);
     isTargetPPCDefined = true;
     for (int i = 0; i < nSpecies; i++) {
@@ -48,7 +40,10 @@ void Pic::fill_new_cells() {
     }
   }
   if (initEM) {
-    fill_E_B_fields();
+    // Tracker-only runs refresh retained fields at every coupling without
+    // changing the shared mesh's new-cell classification.
+    // The first PIC fill also initializes retained fluid-restart cells.
+    fill_E_B_fields(!usePIC || !particlesInitialized);
   }
   init_regional_fields();
 
@@ -73,7 +68,7 @@ void Pic::fill_new_cells() {
         average_center_to_node(centerB[iLev], nodeB[iLev]);
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
-          apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
+          apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
                          iLev, true);
         }
       }
@@ -86,14 +81,14 @@ void Pic::fill_new_cells() {
                        nodeE[iLev], iLev, 0.0);
         nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
-          apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
+          apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
                          &Pic::get_node_E, iLev, false);
         }
       }
     }
     // div(E)-correction fields are full-PIC only.
     if (!useHybridPIC) {
-      if (finest_level == 0) {
+      if (finestLevel() == 0) {
         sum_to_center(false);
       } else if (doCorrectDivE) {
         for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -124,7 +119,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // fine level. The active-level loop below cannot release a workspace on a
   // level that disappeared during coarsening, so clear those slots explicitly.
   if (useHybridPIC && !relaxTarget.empty()) {
-    for (int iLev = finest_level; iLev < n_lev_max(); ++iLev) {
+    for (int iLev = finestLevel(); iLev < n_lev_max(); ++iLev) {
       relaxTarget[iLev].clear();
       relaxResidual[iLev].clear();
       relaxCurl[iLev].clear();
@@ -135,96 +130,106 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {
-      distribute_FabArray(particleQuality[iLev], cGrids[iLev],
+      distribute_FabArray(particleQuality[iLev], boxArray(iLev),
                           DistributionMap(iLev), 18, 0);
     }
-    distribute_FabArray(targetPPC[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                        nGst);
-    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst);
-    distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst);
+    distribute_FabArray(targetPPC[iLev], boxArray(iLev), DistributionMap(iLev),
+                        1, get_n_ghost());
+    distribute_FabArray(centerB[iLev], boxArray(iLev), DistributionMap(iLev), 3,
+                        get_n_ghost());
+    distribute_FabArray(nodeB[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
     if (use_intrinsic_B()) {
       // B0 is analytic: there is nothing to copy on a regrid, the array is
       // simply rebuilt and refilled by fill_intrinsic_B().
-      distribute_FabArray(nodeB0[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, false);
-      distribute_FabArray(centerB0[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, false);
+      distribute_FabArray(nodeB0[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), false);
+      distribute_FabArray(centerB0[iLev], boxArray(iLev), DistributionMap(iLev),
+                          3, get_n_ghost(), false);
       // The Ohm's-law scratch is rebuilt on demand, and must not survive a
       // regrid with a stale BoxArray.
       centerBtotal[iLev].clear();
     }
-    distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst);
+    distribute_FabArray(nodeE[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
     // Keep old theta-field values where grids overlap and initialize nodes
     // introduced by AMR before the next field solve.
-    distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, true, 0.0);
+    distribute_FabArray(nodeEth[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost(), true, 0.0);
 
     bool doMoveData = false;
     // div(E)/div(B) correction and implicit E-solver arrays (full-PIC only).
     if (!useHybridPIC) {
-      distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 1, nGst);
-      distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 1, nGst);
-      distribute_FabArray(centerNetChargeNew[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 1, nGst);
-      distribute_FabArray(centerDivE[iLev], cGrids[iLev], DistributionMap(iLev),
-                          1, nGst);
-      distribute_FabArray(centerPhi[iLev], cGrids[iLev], DistributionMap(iLev),
-                          1, nGst);
+      distribute_FabArray(centerNetChargeOld[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost());
+      distribute_FabArray(centerNetChargeN[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost());
+      distribute_FabArray(centerNetChargeNew[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost());
+      distribute_FabArray(centerDivE[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost());
+      distribute_FabArray(centerPhi[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost());
 
       // A diagnostic: read as zero, not as uninitialised, when not cleaned.
-      distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData, 0.0);
-      distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
+      distribute_FabArray(divB[iLev], boxArray(iLev), DistributionMap(iLev), 3,
+                          get_n_ghost(), doMoveData, 0.0);
+      distribute_FabArray(hypPhi[iLev], boxArray(iLev), DistributionMap(iLev),
+                          3, get_n_ghost(), doMoveData);
 
-      distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
-                          nDim3, nGst, doMoveData);
+      distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
+                          nDim3, get_n_ghost(), doMoveData);
 
       if (projectDownEmFields) {
-        distribute_FabArray(projectScratchMF[iLev], nGrids[iLev],
+        distribute_FabArray(projectScratchMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 0, doMoveData);
       }
 
       if (!useExplicitPIC && !useHybridPIC) {
-        distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
-                            1, 1, doMoveData);
+        distribute_FabArray(nodeMM[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 1, 1, doMoveData);
         if (nodeMM_comm_data.size() != n_lev()) {
           nodeMM_comm_data.resize(n_lev());
         }
         nodeMM_comm_data[iLev].is_initialized = false;
-        distribute_FabArray(solverVecMF[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
-        distribute_FabArray(solverMatvecMF[iLev], nGrids[iLev],
+        distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 1, doMoveData);
-        distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
-        distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+        distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(solverCenterLapMF[iLev], boxArray(iLev),
                             DistributionMap(iLev), 3, 1, doMoveData);
         if (fsolver.coefDiff > 0) {
-          distribute_FabArray(solverTempCenter3[iLev], cGrids[iLev],
-                              DistributionMap(iLev), 3, nGst, doMoveData);
-          distribute_FabArray(solverTempCenter1[iLev], cGrids[iLev],
-                              DistributionMap(iLev), 1, nGst, doMoveData);
+          distribute_FabArray(solverTempCenter3[iLev], boxArray(iLev),
+                              DistributionMap(iLev), 3, get_n_ghost(),
+                              doMoveData);
+          distribute_FabArray(solverTempCenter1[iLev], boxArray(iLev),
+                              DistributionMap(iLev), 1, get_n_ghost(),
+                              doMoveData);
         }
-        distribute_FabArray(solverRhsNode1[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
-        distribute_FabArray(solverRhsNode2[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(solverRhsNode1[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(solverRhsNode2[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
       }
       if (useExplicitPIC) {
-        distribute_FabArray(nodeCurlB[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
-        distribute_FabArray(nodeJ[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                            nGst, doMoveData);
-        distribute_FabArray(centerBstar[iLev], cGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
-        distribute_FabArray(centerBstage[iLev], cGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(nodeCurlB[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(nodeJ[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(centerBstar[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(centerBstage[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
       }
     }
     if (useHybridPIC || useExplicitPIC) {
@@ -236,78 +241,84 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     if (useHybridPIC) {
       // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE
       // node-centered.
-      distribute_FabArray(centerLapB[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-      distribute_FabArray(nodeHyperE[iLev], nGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
+      distribute_FabArray(centerLapB[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+      distribute_FabArray(nodeHyperE[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
 
       // RK4 / ssprk3 shared intermediate solver scratch.
-      distribute_FabArray(centerBstage[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerBstage[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
       for (int kk = 0; kk < 4; ++kk)
-        distribute_FabArray(kStage[iLev][kk], cGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(kStage[iLev][kk], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
 
       // rk3/rk4 persistent scratch: centerBstart = B_n; centerBstar =
       // (trial+B_n)/2.
-      distribute_FabArray(centerBstart[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
-      distribute_FabArray(centerBstar[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerBstart[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+      distribute_FabArray(centerBstar[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
 
       // Workspace for the divergence-free relaxation of the covered coarse B.
       // Allocate it only for coarse levels with an active fine level. Using
       // n_lev_max() here would allocate the AMR-only buffers in single-level
       // runs that merely allow AMR, which needlessly regresses memory use.
-      if (finest_level > 0 && iLev < finest_level) {
-        distribute_FabArray(relaxTarget[iLev], cGrids[iLev],
+      if (finestLevel() > 0 && iLev < finestLevel()) {
+        distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
                             DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-        distribute_FabArray(relaxResidual[iLev], cGrids[iLev],
+        distribute_FabArray(relaxResidual[iLev], boxArray(iLev),
                             DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
-        distribute_FabArray(relaxCurl[iLev], cGrids[iLev],
+        distribute_FabArray(relaxCurl[iLev], boxArray(iLev),
                             DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-        distribute_FabArray(relaxCurlT[iLev], nGrids[iLev],
+        distribute_FabArray(relaxCurlT[iLev], node_box_array(iLev),
                             DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-        distribute_FabArray(relaxDir[iLev], nGrids[iLev], DistributionMap(iLev),
-                            nDim3, 0, doMoveData, 0.0);
+        distribute_FabArray(relaxDir[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
       }
 
       // Staggered hybrid solver fields.
-      distribute_FabArray(nodeEstage[iLev], nGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-      distribute_FabArray(nodeJ[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
-      distribute_FabArray(nodeBstage[iLev], nGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-      distribute_FabArray(centerPe[iLev], cGrids[iLev], DistributionMap(iLev),
-                          1, nGst, doMoveData);
-      distribute_FabArray(nodeEambi[iLev], nGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-      distribute_FabArray(nodeRhoTemp[iLev], nGrids[iLev],
-                          DistributionMap(iLev), 1, nGst, doMoveData);
+      distribute_FabArray(nodeEstage[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+      distribute_FabArray(nodeJ[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+      distribute_FabArray(nodeBstage[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+      distribute_FabArray(centerPe[iLev], boxArray(iLev), DistributionMap(iLev),
+                          1, get_n_ghost(), doMoveData);
+      distribute_FabArray(nodeEambi[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+      distribute_FabArray(nodeRhoTemp[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost(), doMoveData);
       if (useElectronPressureEq) {
         // The evolved field must survive a regrid (doCopy = true); the
         // scratch arrays are rebuilt and recomputed every step.
-        distribute_FabArray(centerPeState[iLev], cGrids[iLev],
-                            DistributionMap(iLev), 1, nGst, true);
-        distribute_FabArray(centerPeRho[iLev], cGrids[iLev],
-                            DistributionMap(iLev), 1, nGst, doMoveData);
-        distribute_FabArray(centerPeTe[iLev], cGrids[iLev],
-                            DistributionMap(iLev), 1, nGst, doMoveData);
-        distribute_FabArray(nodePeVec[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 3, nGst, doMoveData);
-        distribute_FabArray(nodePeRho[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 1, nGst, doMoveData);
-        distribute_FabArray(nodePeAux[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 4, nGst, doMoveData);
+        distribute_FabArray(centerPeState[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 1, get_n_ghost(), true);
+        distribute_FabArray(centerPeRho[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 1, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(centerPeTe[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 1, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(nodePeVec[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(nodePeRho[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 1, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(nodePeAux[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 4, get_n_ghost(),
+                            doMoveData);
       }
       if (hasRegionalResistivity_) {
-        distribute_FabArray(nodeEtaRegional[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 1, nGst, false);
+        distribute_FabArray(nodeEtaRegional[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 1, get_n_ghost(), false);
       }
       if (hasRegionalHyper_) {
-        distribute_FabArray(nodeEtaHyperRegional[iLev], nGrids[iLev],
-                            DistributionMap(iLev), 1, nGst, false);
+        distribute_FabArray(nodeEtaHyperRegional[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 1, get_n_ghost(), false);
       }
     }
     if (useHybridPIC || useExplicitPIC) {
@@ -315,48 +326,47 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       for (auto& pl : nodePlasmaPrev) {
         if (pl.empty())
           pl.resize(n_lev_max());
-        distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
-                            nHybridMomentsComps, nGst, doMoveData);
+        distribute_FabArray(pl[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), nHybridMomentsComps,
+                            get_n_ghost(), doMoveData);
       }
     }
-    distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doMoveData);
+    distribute_FabArray(dBdt[iLev], node_box_array(iLev), DistributionMap(iLev),
+                        3, get_n_ghost(), doMoveData);
 
     // mMach: node grid for both full-PIC and hybrid.
-    distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
-                        nGst, doMoveData);
+    distribute_FabArray(mMach[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 1, get_n_ghost(), doMoveData);
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
     // E current (jHat), and node-centered moments (nodePlasma): full-PIC only.
     if (!useHybridPIC) {
-      distribute_FabArray(eBg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
+      distribute_FabArray(eBg[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
 
-      distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
+      distribute_FabArray(uBg[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
 
-      distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev),
-                          1, nGst, doMoveData);
+      distribute_FabArray(centerMM[iLev], boxArray(iLev), DistributionMap(iLev),
+                          1, get_n_ghost(), doMoveData);
 
-      distribute_FabArray(divEInMF[iLev], cGrids[iLev], DistributionMap(iLev),
+      distribute_FabArray(divEInMF[iLev], boxArray(iLev), DistributionMap(iLev),
                           1, 1, false);
 
-      distribute_FabArray(divEOutMF[iLev], cGrids[iLev], DistributionMap(iLev),
-                          1, 0, false);
+      distribute_FabArray(divEOutMF[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 1, 0, false);
 
-      distribute_FabArray(jHat[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
+      distribute_FabArray(jHat[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
     }
 
     for (auto& pl : nodePlasma) {
       if (pl.empty())
         pl.resize(n_lev_max());
-      distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
-                          nMoments, nGst, doMoveData);
+      distribute_FabArray(pl[iLev], node_box_array(iLev), DistributionMap(iLev),
+                          nMoments, get_n_ghost(), doMoveData);
     }
   }
-
-  distribute_grid_arrays(cGridsOld);
 }
 
 //==========================================================
@@ -370,9 +380,11 @@ void Pic::pre_regrid() {
   }
 }
 
-void Pic::post_regrid() {
+void Pic::post_regrid(MeshChangeReason reason) {
 
-  distribute_arrays(cGridsOld);
+  if (reason != MeshChangeReason::LoadBalance)
+    doNeedFillNewCell = true;
+  distribute_arrays();
 
   // B0 lives on the same grids as B1 and is analytic, so the new boxes are
   // filled by re-evaluating the model rather than by interpolating the old
@@ -401,14 +413,16 @@ void Pic::post_regrid() {
 
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<PicParticles>(
-          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           pInfo, pMode, ic_.get());
+      ptr->set_target_ppc_source(targetPPC);
 
       parts.push_back(std::move(ptr));
 
       auto ptrSource = std::make_unique<PicParticles>(
-          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           pInfo, pMode, ic_.get());
+      ptrSource->set_target_ppc_source(targetPPC);
 
       sourceParts.push_back(std::move(ptrSource));
     }
@@ -462,7 +476,7 @@ void Pic::post_regrid() {
 }
 
 //==========================================================
-void Pic::fill_new_node_E() {
+void Pic::fill_new_node_E(bool fillAll) {
   {
     Real xL = 0, xR = 0;
     if (ic_ && ic_->is_tophat()) {
@@ -475,11 +489,11 @@ void Pic::fill_new_node_E() {
       FArrayBox& fab = nodeE[iLev][mfi];
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = fab.array();
-      const auto& status = nodeStatus[iLev][mfi].array();
+      const auto& status = node_status(iLev)[mfi].array();
 
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_new(status(ijk))) {
+        if (fillAll || bit::is_new(status(ijk))) {
           if (ic_ && ic_->is_tophat()) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
@@ -495,19 +509,19 @@ void Pic::fill_new_node_E() {
       });
     }
   }
-  if (finest_level > 0) {
+  if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_new_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp, 1.0, fillAll);
     }
   }
 
   // The initial/new electric field has to satisfy the inner-body condition
   // (see #BODYBOUNDARY) as well, otherwise the body would start with the
   // ambient field.
-  if (useBody) {
+  if (use_body()) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       apply_body_E_bc(nodeE[iLev], iLev);
     }
@@ -515,7 +529,7 @@ void Pic::fill_new_node_E() {
 }
 
 //==========================================================
-void Pic::fill_new_node_B() {
+void Pic::fill_new_node_B(bool fillAll) {
   {
     Real xL = 0, xR = 0;
     if (ic_ && ic_->is_tophat()) {
@@ -527,11 +541,11 @@ void Pic::fill_new_node_B() {
     for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
-      const auto& status = nodeStatus[iLev][mfi].array();
+      const auto& status = node_status(iLev)[mfi].array();
 
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_new(status(ijk))) {
+        if (fillAll || bit::is_new(status(ijk))) {
           if (ic_ && ic_->is_tophat()) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
@@ -548,31 +562,31 @@ void Pic::fill_new_node_B() {
     }
   }
 
-  if (finest_level > 0) {
+  if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_new_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp, 1.0, fillAll);
     }
   }
 }
 
 //==========================================================
-void Pic::fill_new_center_B() {
+void Pic::fill_new_center_B(bool fillAll) {
   {
     int iLev = 0;
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& centerArr = centerB[iLev][mfi].array();
       const auto& nodeArr = nodeB[iLev][mfi].array();
-      const auto& status = cellStatus[iLev][mfi].array();
+      const auto& status = cell_status(iLev)[mfi].array();
 
       ParallelFor(
           box, centerB[iLev].nComp(), [&](int i, int j, int k, int iVar) {
             IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-            if (bit::is_new(status(ijk))) {
+            if (fillAll || bit::is_new(status(ijk))) {
               centerArr(ijk, iVar) = 0;
 
               Box subBox(ijk, ijk + 1);
@@ -584,22 +598,22 @@ void Pic::fill_new_center_B() {
           });
     }
   }
-  if (finest_level > 0) {
+  if (finestLevel() > 0) {
     auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_new_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
-                                    centerB[iLev - 1].nComp(),
-                                    ref_ratio[iLev - 1], Geom(iLev - 1),
-                                    Geom(iLev), cell_status(iLev), cellInterp);
+      fill_fine_lev_new_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cellInterp, 1.0, fillAll);
     }
   }
 }
 
 //==========================================================
-void Pic::fill_E_B_fields() {
-  fill_new_node_E();
-  fill_new_node_B();
-  fill_new_center_B();
+void Pic::fill_E_B_fields(bool fillAll) {
+  fill_new_node_E(fillAll);
+  fill_new_node_B(fillAll);
+  fill_new_center_B(fillAll);
 
   fill_intrinsic_B();
 
@@ -609,32 +623,33 @@ void Pic::fill_E_B_fields() {
   nodeB[0].FillBoundary(Geom(0).periodicity());
   centerB[0].FillBoundary(Geom(0).periodicity());
   // NOTE: apply_field_bc() also applies the wave hard source.
-  apply_field_bc(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, true);
-  apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0, false);
-  apply_field_bc(cellStatus[0], centerB[0], 0, centerB[0].nComp(),
+  apply_field_bc(node_status(0), nodeB[0], 0, nDim3, &Pic::get_node_B, 0, true);
+  apply_field_bc(node_status(0), nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
+                 false);
+  apply_field_bc(cell_status(0), centerB[0], 0, centerB[0].nComp(),
                  &Pic::get_center_B, 0, true);
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   auto& cellInterp = *get_cell_interp();
-  for (int iLev = 1; iLev <= finest_level; iLev++) {
+  for (int iLev = 1; iLev <= finestLevel(); iLev++) {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
     fill_fine_lev_bny_from_coarse(nodeE[iLev - 1], nodeE[iLev], 0,
-                                  nodeE[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  nodeE[iLev - 1].nComp(), refRatio(iLev - 1),
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   node_bilinear_interp);
 
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
-                                  nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  nodeB[iLev - 1].nComp(), refRatio(iLev - 1),
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   node_bilinear_interp);
 
     fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
-                                  centerB[iLev - 1].nComp(),
-                                  ref_ratio[iLev - 1], Geom(iLev - 1),
-                                  Geom(iLev), cell_status(iLev), cellInterp);
+                                  centerB[iLev - 1].nComp(), refRatio(iLev - 1),
+                                  Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+                                  cellInterp);
   }
 
   // Seed the theta field from E on all levels after newly refined E nodes have
@@ -650,7 +665,7 @@ void Pic::fill_E_B_fields() {
       average_center_to_node(centerB[iLev], nodeB[iLev]);
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
-        apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
+        apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
                        iLev, true);
       }
     }
@@ -662,8 +677,8 @@ void Pic::fill_E_B_fields() {
       project_body_B(nodeB[iLev], iLev);
       // A perfect conductor shields its cavity: the initial uniform B is not
       // tangential and leaks into the surface nodes through the nodal average.
-      mask_body_interior(centerB[iLev], cellStatus[iLev]);
-      mask_body_interior(nodeB[iLev], nodeStatus[iLev]);
+      mask_body_interior(centerB[iLev], cell_status(iLev));
+      mask_body_interior(nodeB[iLev], node_status(iLev));
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     }
@@ -687,11 +702,11 @@ void Pic::fill_intrinsic_B() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (nodeB0[iLev].empty())
-      distribute_FabArray(nodeB0[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, false);
+      distribute_FabArray(nodeB0[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), false);
     if (centerB0[iLev].empty())
-      distribute_FabArray(centerB0[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, false);
+      distribute_FabArray(centerB0[iLev], boxArray(iLev), DistributionMap(iLev),
+                          3, get_n_ghost(), false);
 
     const auto plo = Geom(iLev).ProbLo();
     const auto dx = Geom(iLev).CellSize();
@@ -813,9 +828,9 @@ amrex::MultiFab& Pic::total_center_B(amrex::MultiFab& src, const int iLev) {
     return src;
 
   amrex::MultiFab& dst = centerBtotal[iLev];
-  const int nG = std::max(src.nGrow(), nGst);
+  const int nG = std::max(src.nGrow(), get_n_ghost());
   if (dst.empty() || dst.nGrow() < src.nGrow())
-    distribute_FabArray(dst, cGrids[iLev], DistributionMap(iLev), nDim3, nG,
+    distribute_FabArray(dst, boxArray(iLev), DistributionMap(iLev), nDim3, nG,
                         false);
 
   const int nGrow = std::min(dst.nGrow(), centerB0[iLev].nGrow());
@@ -825,23 +840,9 @@ amrex::MultiFab& Pic::total_center_B(amrex::MultiFab& src, const int iLev) {
 }
 
 //==========================================================
-void Pic::add_intrinsic_B(amrex::MultiFab& dst, const int iLev) {
-  if (!use_intrinsic_B())
-    return;
-
-  const amrex::MultiFab& src =
-      dst.ixType().cellCentered() ? centerB0[iLev] : nodeB0[iLev];
-  if (src.empty())
-    return;
-
-  const int nComp = std::min(dst.nComp(), src.nComp());
-  const int nGrow = std::min(dst.nGrow(), src.nGrow());
-  amrex::MultiFab::Add(dst, src, 0, 0, nComp, nGrow);
-}
-
-//==========================================================
 void Pic::fill_particles() {
   inject_particles_for_new_cells();
+  particlesInitialized = true;
   inject_particles_for_boundary_cells();
 }
 
@@ -1150,7 +1151,7 @@ void Pic::sum_boundary_node_mm(int iLev) {
 void Pic::calc_mass_matrix() {
   std::string nameFunc = "Pic::calc_mass_matrix";
 
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   timing_func(nameFunc);
@@ -1193,9 +1194,9 @@ void Pic::calc_mass_matrix() {
     // Undo the geometric dilution of the current at the staircase surface of
     // the inner body: the cells inside the body are empty, so a CIC node on
     // the surface only collects part of the current of the plasma there.
-    if (useBody)
-      rescale_body_surface_nodes(jHat[iLev], cellStatus[iLev], nodeStatus[iLev],
-                                 Geom(iLev).Domain(), nDim);
+    if (use_body())
+      rescale_body_surface_nodes(jHat[iLev], cell_status(iLev),
+                                 node_status(iLev), Geom(iLev).Domain(), nDim);
 
     if (doSmoothJ) {
       for (int icount = 0; icount < nSmoothJ; icount++) {
@@ -1208,22 +1209,23 @@ void Pic::calc_mass_matrix() {
 
       // Same correction as jHat above: the mass matrix of the plasma next to
       // the body surface is diluted by the empty body cells.
-      if (useBody)
-        rescale_body_surface_nodes(nodeMM[iLev], cellStatus[iLev],
-                                   nodeStatus[iLev], Geom(iLev).Domain(), nDim);
+      if (use_body())
+        rescale_body_surface_nodes(nodeMM[iLev], cell_status(iLev),
+                                   node_status(iLev), Geom(iLev).Domain(),
+                                   nDim);
     }
   }
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
     sum_two_lev_interface_node(jHat[iLev], jHat[iLev + 1], 0,
-                               jHat[iLev].nComp(), ref_ratio[iLev], Geom(iLev),
+                               jHat[iLev].nComp(), refRatio(iLev), Geom(iLev),
                                Geom(iLev + 1), node_status(iLev + 1));
   }
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
-    sum_two_lev_interface_node(
-        nodeMM[iLev], nodeMM[iLev + 1], 0, nodeMM[iLev].nComp(),
-        ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+    sum_two_lev_interface_node(nodeMM[iLev], nodeMM[iLev + 1], 0,
+                               nodeMM[iLev].nComp(), refRatio(iLev), Geom(iLev),
+                               Geom(iLev + 1), node_status(iLev + 1));
   }
 
   // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
@@ -1233,7 +1235,7 @@ void Pic::calc_mass_matrix() {
 void Pic::calc_mass_matrix_amr() {
   std::string nameFunc = "Pic::calc_mass_matrix";
 
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     nodeMM[iLev].setVal(0.0);
@@ -1259,7 +1261,7 @@ void Pic::calc_mass_matrix_amr() {
   for (int iLev = 1; iLev < n_lev(); iLev++) {
     BoxArray bac = nodeB[iLev].boxArray();
     for (int i = iLev - 1; i >= 0; i--) {
-      bac.coarsen(ref_ratio[iLev]);
+      bac.coarsen(refRatio(iLev));
       jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
       nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
                            nodeMM[iLev].nComp(), 0);
@@ -1269,7 +1271,7 @@ void Pic::calc_mass_matrix_amr() {
   }
   for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
     BoxArray baf = nodeB[iLev].boxArray();
-    baf.refine(ref_ratio[iLev]);
+    baf.refine(refRatio(iLev));
     jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
     nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
                       0);
@@ -1285,7 +1287,7 @@ void Pic::calc_mass_matrix_amr() {
       parts[i]->calc_mass_matrix_amr(nodeMM[iLev], nmmc, nmmf, jHat[iLev], jhc,
                                      jhf, nodeB[iLev], nodeB0Lev, uBg[iLev],
                                      tc->get_dt(), iLev, solveFieldInCoMov,
-                                     cellStatus);
+                                     cell_status());
     }
   }
   //////////////////////////////////////////////////////////////////////
@@ -1301,14 +1303,14 @@ void Pic::calc_mass_matrix_amr() {
     }
   }
 
-  for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
-    for (int i = finest_level; i > iLev; i--) {
+  for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
+    for (int i = finestLevel(); i > iLev; i--) {
       jHat[iLev].ParallelAdd(jhc[i][iLev]);
       nmmc[i][iLev] *= (invVol[iLev] / invVol[i]);
       nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
     }
   }
-  for (int iLev = finest_level; iLev > 0; iLev--) {
+  for (int iLev = finestLevel(); iLev > 0; iLev--) {
     jHat[iLev].ParallelAdd(jhf[iLev - 1]);
     nmmf[iLev - 1] *= (invVol[iLev] / invVol[iLev - 1]);
     nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
@@ -1327,7 +1329,7 @@ void Pic::calc_mass_matrix_amr() {
 //==========================================================
 void Pic::sum_moments(bool updateDt) {
   std::string nameFunc = "Pic::sum_moments";
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   timing_func(nameFunc);
@@ -1343,10 +1345,11 @@ void Pic::sum_moments(bool updateDt) {
     // the raw moments are linear in the particle weight, so rescaling them
     // leaves the bulk velocity and the pressure unchanged while the density
     // becomes the density of the plasma that is really there.
-    if (useBody) {
+    if (use_body()) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        rescale_body_surface_nodes(nodePlasma[i][iLev], cellStatus[iLev],
-                                   nodeStatus[iLev], Geom(iLev).Domain(), nDim);
+        rescale_body_surface_nodes(nodePlasma[i][iLev], cell_status(iLev),
+                                   node_status(iLev), Geom(iLev).Domain(),
+                                   nDim);
       }
     }
   }
@@ -1366,7 +1369,7 @@ void Pic::sum_moments(bool updateDt) {
         // In semi-implicit full PIC, kineticSpecies_ excludes the (implicit
         // fluid) electron.
         MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
-                      nMoments, nGst);
+                      nMoments, get_n_ghost());
       }
     }
 
@@ -1374,11 +1377,11 @@ void Pic::sum_moments(bool updateDt) {
       nodePlasma[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
     }
 
-    if (finest_level > 0) {
+    if (finestLevel() > 0) {
       for (int iLev = 1; iLev < n_lev(); iLev++) {
         fill_fine_lev_bny_from_coarse(
             nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
-            nodePlasma[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            nodePlasma[nSpecies][iLev].nComp(), refRatio(iLev - 1),
             Geom(iLev - 1), Geom(iLev), node_status(iLev),
             node_bilinear_interp);
 
@@ -1386,7 +1389,7 @@ void Pic::sum_moments(bool updateDt) {
           fill_fine_lev_bny_from_coarse(nodePlasmaPrev[nSpecies][iLev - 1],
                                         nodePlasmaPrev[nSpecies][iLev], 0,
                                         nodePlasmaPrev[nSpecies][iLev].nComp(),
-                                        ref_ratio[iLev - 1], Geom(iLev - 1),
+                                        refRatio(iLev - 1), Geom(iLev - 1),
                                         Geom(iLev), node_status(iLev),
                                         node_bilinear_interp);
         }
@@ -1541,18 +1544,18 @@ void Pic::calc_cost_per_cell() {
   }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (balanceStrategy == BalanceStrategy::Cell) {
-      cellCost[iLev].setVal(1.0);
+      grid.cell_cost()[iLev].setVal(1.0);
     } else {
-      average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
-                                 iNum_, cellCost[iLev].nComp(),
-                                 cellCost[iLev].nGrow());
+      average_node_to_cellcenter(
+          grid.cell_cost()[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
+          grid.cell_cost()[iLev].nComp(), grid.cell_cost()[iLev].nGrow());
     }
 
-    for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(grid.cell_cost()[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      const Array4<Real>& cost = cellCost[iLev][mfi].array();
-      const Array4<int const> status = cellStatus[iLev][mfi].array();
+      const Array4<Real>& cost = grid.cell_cost()[iLev][mfi].array();
+      const Array4<int const> status = cell_status(iLev)[mfi].array();
 
       ParallelFor(box, [&](int i, int j, int k) {
         if (bit::is_refined(status(i, j, k))) {
@@ -1618,7 +1621,7 @@ void Pic::advance_particles_and_sources(int pushStage) {
 void Pic::update(bool doReportIn) {
   std::string nameFunc = "Pic::update";
 
-  if (isGridEmpty || !usePIC)
+  if (is_grid_empty() || !usePIC)
     return;
 
   timing_func(nameFunc);
@@ -1640,7 +1643,7 @@ void Pic::update(bool doReportIn) {
   }
 
   if (solveEM) {
-    if (finest_level == 0) {
+    if (finestLevel() == 0) {
       calc_mass_matrix();
     } else {
       calc_mass_matrix_amr();
@@ -1692,8 +1695,9 @@ void Pic::update(bool doReportIn) {
 
       // 2. Backup base fields B^n and E^n
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3, nGst);
-        MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3,
+                       get_n_ghost());
+        MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
       }
 
       // 3. Predictor push using (E^n, B^n) [pushStage = 1]
@@ -1711,13 +1715,13 @@ void Pic::update(bool doReportIn) {
       //    nodeB = 0.5 * (B^n + B*^(n+1))
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev],
-                          0, 0, nDim3, nGst);
+                          0, 0, nDim3, get_n_ghost());
         MultiFab::LinComb(centerBstage[iLev], 0.5, centerB[iLev], 0, 0.5,
-                          centerBstar[iLev], 0, 0, nDim3, nGst);
+                          centerBstar[iLev], 0, 0, nDim3, get_n_ghost());
         average_center_to_node(centerBstage[iLev], nodeB[iLev]);
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
-          apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, 3, &Pic::get_node_B,
+          apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
                          iLev, true);
         }
       }
@@ -1733,7 +1737,8 @@ void Pic::update(bool doReportIn) {
 
       // 8. Restore B^n and advance to final B^(n+1) using accepted moments
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3, nGst);
+        MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3,
+                       get_n_ghost());
       }
       sum_moments(false);
       smooth_moments();
@@ -1747,7 +1752,7 @@ void Pic::update(bool doReportIn) {
   }
 
   if ((solveEM || useExplicitPIC) && doCorrectDivE) {
-    if (finest_level == 0) {
+    if (finestLevel() == 0) {
       divE_correction();
     } else {
       amr_divE_correction();
@@ -1809,7 +1814,7 @@ void Pic::update(bool doReportIn) {
 
   if (doReport) {
     Real tEnd = second();
-    Real nPoint = activeRegion.d_numPts();
+    Real nPoint = active_region_ref().d_numPts();
     int nProc = ParallelDescriptor::NProcs();
     // The unit of the speed is (cell per processor per second)
     Real speed = nPoint / nProc / (tEnd - tStart);
@@ -1902,7 +1907,7 @@ void Pic::update_U0_E0() {
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
-      const Array4<const int>& status = nodeStatus[iLev][mfi].array();
+      const Array4<const int>& status = node_status(iLev)[mfi].array();
 
       // Fill in the physical nodes
       ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
@@ -1937,7 +1942,7 @@ void Pic::update_U0_E0() {
       const Array4<Real>& arrE = eBg[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
-      const Array4<const int>& status = nodeStatus[iLev][mfi].array();
+      const Array4<const int>& status = node_status(iLev)[mfi].array();
 
       // Fill in the physical nodes
       ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
