@@ -186,12 +186,14 @@ BMAX_GROWTH = 1.5
 
 
 def _variant(test_name):
-    """Which deck a variant runs: 'forcefree', 'gem' or the Fadeev default."""
+    """Which deck a variant runs: 'forcefree', 'gem', 'lobe' or the Fadeev default."""
     name = test_name or ""
     if "forcefree" in name:
         return "forcefree"
     if "gem" in name:
         return "gem"
+    if "lobe" in name:
+        return "lobe"
     return "fadeev"
 
 
@@ -204,11 +206,11 @@ def _fine_iface_divb(test_name=None):
     level-1 interface bucket is empty, so dGhost is the check that catches a
     broken coarse-fine treatment there, and a missing field must not read as
     zero drift. Only the full-PIC variant, which has no such report, may skip
-    the check. For the force-free and GEM-like variants max |B| must also stay
-    within BMAX_GROWTH of its first value.
+    the check. For the force-free, GEM-like and lobe variants max |B| must
+    also stay within BMAX_GROWTH of its first value.
     """
     required = test_name is None or test_name.endswith("hybrid")
-    check_bmax = _variant(test_name) in ("forcefree", "gem")
+    check_bmax = _variant(test_name) in ("forcefree", "gem", "lobe")
     bmax0 = None
     path = os.path.join(RUN_DIR, "fleks_stdout.log")
     if not os.path.isfile(path):
@@ -394,6 +396,30 @@ def _validate_gem_amr_plot(frames):
     return True, f"GEM-like AMR: final max |B| {b.max():.3f} B0"
 
 
+# Lobe variant: the uniform lobe plasma (B = B0 x) has no transverse field at
+# t = 0, and only particle noise (~0.03 B0 at the end) should build one. The
+# whistler feedback loop at the x interfaces took max |B_perp| to 0.7 B0.
+LOBE_BPERP_MAX = 0.1
+
+
+def _validate_lobe_amr_plot(frames):
+    """Lobe AMR variant: uniform B0 x at t=0, no transverse field at the end."""
+    first = frames[0][1]
+    if not _has_two_levels(first):
+        return False, "AMR grid not detected (no two x spacings in ratio 2)"
+    if not np.allclose(first["Bx"], 1.0, atol=0.01):
+        return False, "t=0: Bx is not the uniform lobe field B0 = 1"
+    fname, last = frames[-1]
+    bperp = np.hypot(last["By"], last.get("Bz", np.zeros_like(last["By"])))
+    if not np.all(np.isfinite(bperp)):
+        return False, f"{fname}: non-finite B"
+    if float(bperp.max()) > LOBE_BPERP_MAX:
+        return False, (f"{fname}: max |B_perp| = {bperp.max():.2f} B0 > "
+                       f"{LOBE_BPERP_MAX} (whistler instability at the interface)")
+    logger.debug("    lobe AMR: final max |B_perp| %.3f B0", float(bperp.max()))
+    return True, f"lobe AMR: final max |B_perp| {bperp.max():.3f} B0"
+
+
 def validate_plot(test_name):
     """AMR reconnection plot check.
 
@@ -410,6 +436,8 @@ def validate_plot(test_name):
         return _validate_forcefree_amr_plot(frames)
     if variant == "gem":
         return _validate_gem_amr_plot(frames)
+    if variant == "lobe":
+        return _validate_lobe_amr_plot(frames)
 
     # ---- (1) AMR refinement present ----
     coarse0, fine0, layer0 = _frame_stats(frames[0][1])

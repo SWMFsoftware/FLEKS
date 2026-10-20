@@ -1,0 +1,161 @@
+#DESCRIPTION
+2-level AMR hybrid PIC in a uniform lobe plasma: whistlers across the interface
+
+The GEM lobe state (n = 0.2, B = B0 x, Ti/Te = 5, B0 = 1, code units with
+d_i = v_A = 1/sqrt(4*pi) and Omega_ci = 1) in a periodic 3.2 x 3.2 d_i box,
+base 32 x 32 (dx = 0.1 d_i), with the patch |x|, |y| < 0.8 d_i refined to
+0.05 d_i. The x interfaces are normal to B, so parallel whistlers cross them.
+With the coarse E on the interface nodes, the covered-cell relaxation and the
+coarse dispersion of the fine-scale whistlers closed a feedback loop: a mode
+~6 fine cells long grew at ~40-70 Omega_ci and max |B| doubled within 50
+steps (it also showed up in the full GEM AMR deck). Nothing happens in this
+equilibrium otherwise, so the transverse field must stay at the particle
+noise level. validate.py checks the coarse-fine interface diagnostics
+(divB-AMR), max |B| and the transverse field.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-0.45135                xMin  [Lx = 3.2 d_i]
+ 0.45135                xMax
+-0.45135                yMin  [Ly = 3.2 d_i]
+ 0.45135                yMax
+-0.5                    zMin  [thin invariant direction, 1 cell]
+ 0.5                    zMax
+
+#NCELL
+32                      nCellX  [base dx = 0.1 d_i; level 1: 0.05 d_i]
+32                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+32                      maxBlockSizeX  [one block per level patch: small blocks multiply the
+32                      maxBlockSizeY   coarse-fine fills, which dominate the cost here]
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (y)
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+hybrid
+
+#RESISTIVITY
+8.0e5                   etaResistivity  [m^2/s; small background resistivity]
+
+#ELECTRONTEMPERATURE
+0.6923                  electronTemperature  [eV; Te_code = 1/(48*pi) ~ 0.00663 code units, Ti/Te = 5]
+1.0                     electronGamma        [isothermal fluid electrons]
+65.15939                electronDensity0     [1/cc; n_e0 = 1.0 code units]
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI      [m^4/s; unused in grid mode]
+grid                    etaHyperMode
+0.01                    etaHyperCh
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments [smooth ion moments to suppress particle shot noise]
+3                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#MINIMUMDENSITY
+0.1                     rhoMinOhm
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
+#FIELDSUBCYCLE
+80                      nSubcycle      [whistler CFL at the level-1 dx = 0.05 d_i]
+F                       isAutoSubcycle
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#PLASMA
+1                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+
+#UNIFORMSTATE
+13.03188                rho [/cc]   Species 0: ions (n = 0.20 code units = 0.20 * 65.15939)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+40168.0                 T [K]          ion temperature (Ti_code = 5/(48*pi) ~ 0.03316, Ti/Te = 5)
+1.0437e-8               bx [T]         B0 = 1 code unit
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt       [Omega_ci^-1]
+
+#NORMALIZATION
+1.0e5                   lNormSI  [m; lNorm = 100 km]
+1.0e5                   uNormSI  [m/s; uNorm = 100 km/s]
+
+#MONITOR
+5                       dnReport
+
+#SAVELOG
+10                      dnSavePic
+100                     dnSavePT
+
+#PARTICLES
+3                       nParticle per cell in X
+3                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.25                    dt
+-1                      dx  [native AMR output]
+
+The box |x|, |y| < 0.8 d_i is refined 2x.
+#REGION
+layer                   name
+box                     shape
+-0.22568                xMin  [|x| < 0.8 d_i]
+ 0.22568                xMax
+-0.22568                yMin  [|y| < 0.8 d_i]
+ 0.22568                yMax
+-0.5                    zMin  [read by 3D builds only]
+ 0.5                    zMax
+
+#REFINEREGION
+0                       iLev
++layer                  regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#CONSTANTPPV
+F                       isPPVconstant   (per-cell particle count; PC static AMR)
+
+#STOP
+-1                      MaxIter
+0.25                    TimeMax  [50 steps]

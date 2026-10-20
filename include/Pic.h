@@ -105,8 +105,9 @@ private:
   // The update dB/dt = -curl_node_to_center(E) is a hidden face-staggered
   // constrained transport, so div_node_to_center(avg_center_to_node(B)) is
   // preserved when every cell of a level is advanced by one single nodal E:
-  //   1) Nodal E is synchronized at the coarse-fine interfaces (fine interface
-  //      nodes take the coarse E).
+  //   1) Nodal E is synchronized at the coarse-fine interfaces: the coarse
+  //      interface nodes take the E of the coincident fine nodes, then the
+  //      fine interface nodes are interpolated along the coarse edges.
   //   2) The in-plane B of the first fine ghost layer is advanced by Faraday's
   //      law with synchronized/interpolated nodal E.
   //   3) Covered coarse cells are advanced with the coarse E, and relaxed
