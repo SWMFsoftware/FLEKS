@@ -1293,9 +1293,18 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf) {
     // that every coarse box receives the same one.
     nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
     MultiFab& crse = nodeEmf[iLev - 1];
+    // Restrict onto the coarsened fine layout, then copy with the coarse
+    // periodicity: when the fine level touches a periodic face on one side
+    // only, the coarse node on the opposite face is the same interface node
+    // and must get the fine value too.
+    MultiFab crseOfFine(
+        amrex::coarsen(nodeEmf[iLev].boxArray(), ref_ratio[iLev - 1]),
+        nodeEmf[iLev].DistributionMap(), nDim3, 0);
+    average_down_nodal(nodeEmf[iLev], crseOfFine, ref_ratio[iLev - 1]);
     MultiFab fromFine(crse.boxArray(), crse.DistributionMap(), nDim3, 0);
     fromFine.setVal(0.0);
-    average_down_nodal(nodeEmf[iLev], fromFine, ref_ratio[iLev - 1]);
+    fromFine.ParallelCopy(crseOfFine, 0, 0, nDim3, IntVect(0), IntVect(0),
+                          Geom(iLev - 1).periodicity());
     for (MFIter mfi(crse); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& e = crse[mfi].array();
@@ -2092,14 +2101,16 @@ void Pic::update_B_hybrid() {
 
   if (finest_level > 0) {
     // Smoothing also changes the wall and body nodes; restore their
-    // constraints on the base level (sync_emf_at_interface does it on the
-    // refined levels).
+    // constraints on every level before sync_emf_at_interface copies the fine
+    // E onto the coarse interface nodes.
     if (doSmoothE) {
-      nodeE[0].FillBoundary(Geom(0).periodicity());
-      apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
-                     false);
-      if (useBody) {
-        apply_body_E_bc(nodeE[0], 0);
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+        apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
+                       &Pic::get_node_E, iLev, false);
+        if (useBody) {
+          apply_body_E_bc(nodeE[iLev], iLev);
+        }
       }
     }
     sync_emf_at_interface(nodeE);
