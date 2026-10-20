@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -89,6 +90,31 @@ std::unique_ptr<WaveProfile> WaveRegistry::create(const WaveComponent& c) {
       break;
   }
   return std::make_unique<MonoWave>();
+}
+
+amrex::Real WaveWindow::weight(const amrex::Real* pos) const {
+  const amrex::Real x = pos[direction];
+  if (x < lo || x > hi)
+    return 0.0;
+  const amrex::Real d = std::min(x - lo, hi - x);
+  if (taper > 0.0 && d < taper)
+    return 0.5 * (1.0 - std::cos(dPI * d / taper));
+  return 1.0;
+}
+
+void WaveBoundaryManager::read_window(ReadParam& param) {
+  param.read_var("direction", window.direction);
+  if (window.direction < 0 || window.direction >= 3)
+    amrex::Abort("WAVEBCWINDOW: direction must be 0 (x), 1 (y), or 2 (z).");
+  param.read_var("min", window.lo);
+  param.read_var("max", window.hi);
+  param.read_var("taperWidth", window.taper);
+  if (window.hi <= window.lo)
+    amrex::Abort("WAVEBCWINDOW: max must be larger than min.");
+  if (window.taper < 0.0)
+    amrex::Abort("WAVEBCWINDOW: taperWidth must be non-negative.");
+  window.active = true;
+  window.isCodeUnits = false;
 }
 
 void WaveBoundaryManager::clear() {
@@ -223,6 +249,15 @@ void WaveBoundaryManager::read_param(ReadParam& param) {
 }
 
 void WaveBoundaryManager::convert_units(const FluidInterface* fi) {
+  if (window.active && !window.isCodeUnits) {
+    if (siInput && fi && fi->get_Si2NoL() > 0.0) {
+      window.lo *= fi->get_Si2NoL();
+      window.hi *= fi->get_Si2NoL();
+      window.taper *= fi->get_Si2NoL();
+    }
+    window.isCodeUnits = true;
+  }
+
   for (auto& f : faces) {
     for (auto& c : f.comps) {
       if (c.isCodeUnits)

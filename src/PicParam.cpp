@@ -230,6 +230,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     regionalHyperResistivityConfigs.push_back(cfg);
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param);
+  } else if (command == "#WAVEBCWINDOW") {
+    waveBC.read_window(param);
   } else if (command == "#MEMORY") {
     param.read_var("dnMemory", dnMemory);
   } else if (command == "#RANDOMPARTICLESLOCATION") {

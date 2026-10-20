@@ -814,6 +814,9 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       }
 
       if (hasWave) {
+        const Real w = waveBC.window_weight(pos);
+        for (int iVar = 0; iVar < 3; ++iVar)
+          waveVal[iVar] *= w;
         if (isBndNode && func) {
           // Reset nodal physical boundary from base state before superimposing
           // wave.
@@ -856,6 +859,10 @@ void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
       dvz += val * c.pol[2];
     }
   }
+  const Real w = waveBC.window_weight(pos);
+  dvx *= w;
+  dvy *= w;
+  dvz *= w;
 }
 
 //==========================================================

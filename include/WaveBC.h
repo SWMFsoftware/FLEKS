@@ -57,6 +57,20 @@ struct WaveComponent {
   bool isCodeUnits = false; // set once convert_units() has processed it
 };
 
+// Smooth spatial window (#WAVEBCWINDOW) multiplying every wave value and
+// velocity kick: 1 inside [lo, hi] along one axis, a cos^2 taper of width
+// 'taper' just inside each end, 0 outside.
+struct WaveWindow {
+  bool active = false;
+  int direction = 0; // 0,1,2 = x,y,z
+  amrex::Real lo = 0.0;
+  amrex::Real hi = 0.0;
+  amrex::Real taper = 0.0;
+  bool isCodeUnits = false;
+
+  amrex::Real weight(const amrex::Real* pos) const;
+};
+
 // Per-face emitter stack.
 struct WaveFace {
   int direction = 0; // 0,1,2 = x,y,z
@@ -104,8 +118,15 @@ public:
   // Parse a #WAVEBC block. Values stay in input units until convert_units(),
   // because the normalization is only final after all commands are read.
   void read_param(ReadParam& param);
-  // Convert newly read components to code units and precompute k_vec.
+  // Parse a #WAVEBCWINDOW block.
+  void read_window(ReadParam& param);
+  // Convert newly read components (and the window) to code units and
+  // precompute k_vec.
   void convert_units(const FluidInterface* fi);
+  // Window weight at pos (code units); 1 when no window is set.
+  amrex::Real window_weight(const amrex::Real* pos) const {
+    return window.active ? window.weight(pos) : 1.0;
+  }
   amrex::Real value(const WaveComponent& c, amrex::Real t,
                     const amrex::Real* pos) const;
 
@@ -117,6 +138,8 @@ public:
 
   bool siInput = true;
   amrex::Real maxAmplitude = 0.0; // 0 => amplitude guard disabled
+
+  WaveWindow window;
 };
 
 #endif // FLEKS_WAVEBC_H
