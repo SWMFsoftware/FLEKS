@@ -495,10 +495,6 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
-  // Charge current q_s n_s u_s of this species on the nodes (3 components);
-  // a cheaper deposit than sum_moments() for the explicit field solver.
-  void sum_current(amrex::Vector<amrex::MultiFab>& currentMF);
-
   // Fold the first ghost-node layer of a node-centered deposit back into the
   // edge node at non-periodic uncoupled walls (mirror condition). isVector:
   // mf holds a 3-component vector instead of the moment layout.
@@ -594,23 +590,32 @@ public:
 
   // pushStage of mover(): kPushLeapfrog kicks the velocity and drifts the
   // position by the new velocity; kPushPredictor / kPushCorrector are the two
-  // stages of the predictor-corrector scheme; kPushKickOnly only updates the
-  // velocity, and drift() then moves the particles (explicit leapfrog, which
-  // deposits the current at both ends of the drift).
+  // stages of the predictor-corrector scheme (drift by the average of the old
+  // and new velocities).
   static constexpr int kPushLeapfrog = 0;
   static constexpr int kPushPredictor = 1;
   static constexpr int kPushCorrector = 2;
-  static constexpr int kPushKickOnly = 3;
 
   // nodeB0 is the frozen intrinsic magnetic field (see #DIPOLE /
   // #CRUSTALFIELD). It is the static part of the total field the particles are
   // pushed with and may be empty when no intrinsic field is configured.
+  //
+  // currentMF (optional, 3 components on the nodes): overwritten with the
+  // charge-conserving (Esirkepov) current of this species over the push,
+  // J = sum q dx/dt, deposited as the particles move. It satisfies
+  // rho^{new} - rho^{old} = -dt div_node_to_center(J) exactly, with rho the
+  // node charge averaged to the cell centers (see sum_to_center). A particle
+  // may not cross more than one cell per push.
+  // trialOnly: deposit the current of the push without changing the
+  // particles (the predictor of the explicit predictor-corrector scheme).
   void mover(const amrex::Vector<amrex::MultiFab>& nodeE,
              const amrex::Vector<amrex::MultiFab>& nodeB,
              const amrex::Vector<amrex::MultiFab>& nodeB0,
              const amrex::Vector<amrex::MultiFab>& eBg,
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
-             amrex::Real dtNext, int pushStage = 0);
+             amrex::Real dtNext, int pushStage = 0,
+             amrex::Vector<amrex::MultiFab>* currentMF = nullptr,
+             bool trialOnly = false);
 
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
@@ -618,7 +623,9 @@ public:
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext,
-                              int pushStage = 0);
+                              int pushStage = 0,
+                              amrex::Vector<amrex::MultiFab>* currentMF = nullptr,
+                              bool trialOnly = false);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);
@@ -632,11 +639,6 @@ public:
                               amrex::Real vth, CrossSection cs);
 
   void neutral_mover(amrex::Real dt);
-
-  // Move the particles by x += v * dtLoc (dtLoc = (dt + dtNext)/2, as in the
-  // charged mover) and apply the particle boundary conditions. Used after a
-  // kPushKickOnly push.
-  void drift(amrex::Real dt, amrex::Real dtNext);
 
   // Per-level geometry, hoisted so the particle loop does not go through the
   // plo/phi/invDx vectors or Geom() per particle per dimension.

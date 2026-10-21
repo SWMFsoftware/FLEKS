@@ -343,11 +343,9 @@ private:
                                              // (nodal)
   amrex::Vector<amrex::MultiFab> nodeCurlB;  // scratch for curl(B) in explicit
                                              // PIC
-  // Explicit PIC: charge current sum_s q_s n_s u_s (nodal, 3 components) of
-  // the latest deposit and of the one before it. Leapfrog: deposits at x^n and
-  // x^{n+1} with v^{n+1/2}; predictor-corrector: deposits at t^n and t^{n+1}.
+  // Explicit PIC: charge-conserving current of the particle push (nodal, 3
+  // components), time-centered at t^{n+1/2}.
   amrex::Vector<amrex::MultiFab> nodeJexpl;
-  amrex::Vector<amrex::MultiFab> nodeJexplPrev;
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
   // Per-step scratch reused across stages: the advected Pe, then div(q), then
@@ -568,6 +566,9 @@ public:
     if (fieldSolverMode == PicSolverMode::Explicit) {
       useExplicitPIC = true;
       solveEM = false;
+      // The charge-conserving current keeps Gauss's law without the
+      // particle-position correction (#DIVE turns it back on).
+      doCorrectDivE = false;
     } else if (fieldSolverMode == PicSolverMode::Hybrid) {
       useExplicitPIC = false;
       solveEM = false;
@@ -601,7 +602,6 @@ public:
     nodeEstage.resize(n_lev_max());
     nodeJ.resize(n_lev_max());
     nodeJexpl.resize(n_lev_max());
-    nodeJexplPrev.resize(n_lev_max());
     nodeBstage.resize(n_lev_max());
     centerPe.resize(n_lev_max());
     nodeEambi.resize(n_lev_max());
@@ -786,8 +786,6 @@ public:
   void update_part_loc_to_half_stage();
 
   void particle_mover(int pushStage = 0);
-  // Drift the particles after a kPushKickOnly push and redistribute them.
-  void particle_drift();
   // Particle bookkeeping after the push: resampling, charge exchange, sources
   // and boundary injection.
   void finish_particle_push();
@@ -902,17 +900,15 @@ public:
 
   //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
   void advance_explicit_full_pic();
-  // Subcycled Maxwell advance over dt. Sub-step m uses the current
-  // interpolated between J0 and J1 at its mid time if interpolateInTime (J0,
-  // J1 at t^n and t^{n+1}), or the plain average (J0 + J1)/2 otherwise (both
-  // at t^{n+1/2}).
+  // Subcycled Maxwell advance over dt with the current J in every sub-step.
   void update_EB_explicit_leapfrog(amrex::Real dt, int nSub,
-                                   const amrex::Vector<amrex::MultiFab> &J0,
-                                   const amrex::Vector<amrex::MultiFab> &J1,
-                                   bool interpolateInTime);
-  // Deposit the moments of the current particle state and set J to the
-  // charge current sum_s (q_s/m_s) (rho u)_s, smoothed with #SMOOTHJ.
-  void deposit_explicit_current(amrex::Vector<amrex::MultiFab> &J);
+                                   const amrex::Vector<amrex::MultiFab> &J);
+  // Push the kinetic species (pushStage as in Particles::mover) and set J to
+  // their charge-conserving current, smoothed with #SMOOTHJ. trialOnly: the
+  // particles are not changed.
+  void push_and_deposit_explicit_current(int pushStage,
+                                         amrex::Vector<amrex::MultiFab> &J,
+                                         bool trialOnly = false);
   void smooth_explicit_current(amrex::Vector<amrex::MultiFab> &J);
   void advance_B_half_step(amrex::Real dtSub, amrex::Real tSub = -1.0);
   void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,

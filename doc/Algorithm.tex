@@ -478,6 +478,28 @@ c\,\Delta t_{\text{sub}} \sqrt{\sum_{d=1}^D \frac{1}{\Delta x_d^2}} < 1,
 \end{equation}
 the Maxwell equations can be subcycled within one particle coarse time step $\Delta t$. For $N_{\text{sub}}$ subcycles (\texttt{\#FIELDSUBCYCLE}), the subcycle time step is $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$. During each subcycle $m = 1, \dots, N_{\text{sub}}$, the field updates advance $\mathbf{B}$ and $\mathbf{E}$ while holding or interpolating the macroparticle current $\mathbf{J}$.
 
+\subsection{Charge-conserving current}
+
+The current is deposited as the particles move (Esirkepov's method, adapted to the FLEKS layout), so that the continuity equation, and with it Gauss's law, holds exactly on the grid. Gauss's law is evaluated at cell centers,
+\begin{equation}
+\operatorname{div}_{\text{node}\to\text{center}}(\mathbf{E}) = 4\pi \bar\rho_c, \qquad
+\bar\rho_c = A_x A_y A_z\, \rho_{\text{node}},
+\end{equation}
+where $\rho_{\text{node}}$ is the node (CIC) charge and $A_d$ averages the two nodes of a cell along $d$, so a particle contributes to the cell centers with a trapezoidal shape three cells wide. A particle moving from $\mathbf{x}^0$ to $\mathbf{x}^1$ (at most one cell per dimension) with node shapes $S^0$, $S^1$ and $\Delta S = S^1 - S^0$ adds, along each dimension $d$ with transverse dimensions $e, f$, the current through the faces between the nodes
+\begin{equation}
+W_d = \Delta S_d \left( S^0_e S^0_f + \tfrac12 \Delta S_e S^0_f + \tfrac12 S^0_e \Delta S_f + \tfrac13 \Delta S_e \Delta S_f \right), \qquad
+F_{d,i+1/2} = -\frac{q\,\Delta x_d}{\Delta t\, V} \sum_{i' \le i} W_{d,i'},
+\end{equation}
+and the node current is the average of the two adjacent faces, $J_{d,i} = (F_{d,i-1/2} + F_{d,i+1/2})/2$. Then
+\begin{equation}
+\bar\rho_c^{\,n+1} - \bar\rho_c^{\,n} = -\Delta t\,\operatorname{div}_{\text{node}\to\text{center}}(\mathbf{J})
+\end{equation}
+holds to round-off. Because $\operatorname{div}_{\text{node}\to\text{center}}(\operatorname{curl}_{\text{center}\to\text{node}}\mathbf{B}) \equiv 0$, the Amp\`ere update keeps $\operatorname{div}(\mathbf{E}) - 4\pi\bar\rho_c$ at its initial value, for any number of field subcycles. The cell-centered CIC charge cannot satisfy such a relation: its checkerboard modes lie in the null space of the node gradient. In 2D the out-of-plane component is $q\,v_z\,\bar S/V$ with the time-averaged shape $\bar S$.
+
+The particles gather $\mathbf{E}$ with the transpose of this deposit: along its own direction $d$, $E_d$ is the average of the two nodes of the cell that holds the particle; across $d$ (and for $E_z$ in 2D) it is linear. With the plain CIC gather instead, the mismatch between the work done on the particles and the field energy heats a thermal plasma (the Langmuir test: $+0.8\%$ in $4\,$s against $+0.1\%$ with the matched gather). $\mathbf{B}$ is gathered with the CIC shape.
+
+The div(E) correction of the semi-implicit solver is therefore off by default (\texttt{\#DIVE} turns it on). The conservation is exact for periodic domains; particle resampling (\texttt{\#RESAMPLING}), boundary injection and removal, current smoothing (\texttt{\#SMOOTHJ}), embedded bodies and AMR coarse--fine interfaces change the charge or the current outside the deposit and leave a residual there. The div(E) correction targets the cell CIC charge rather than $\bar\rho_c$, so it does not repair that residual consistently.
+
 \subsection{Time integrators}
 
 Two time-advancement algorithms are provided via \texttt{\#FIELDINTEGRATOR}:
@@ -485,12 +507,7 @@ Two time-advancement algorithms are provided via \texttt{\#FIELDINTEGRATOR}:
   \item \textbf{Boris--Maxwell leapfrog} (\texttt{leapfrog}, default):
   Particle positions and the fields $\mathbf{E}$, $\mathbf{B}$ are stored at integer steps $t^n$ and particle velocities at half-integer steps $t^{n+1/2}$. One step proceeds as:
   \begin{enumerate}
-    \item Kick: $\mathbf{v}^{n-1/2} \to \mathbf{v}^{n+1/2}$ with the Boris pusher and $(\mathbf{E}^n, \mathbf{B}^n)$ interpolated to $\mathbf{x}^n$.
-    \item Current: deposit at $\mathbf{x}^n$, drift $\mathbf{x}^{n+1} = \mathbf{x}^n + \Delta t\,\mathbf{v}^{n+1/2}$, deposit again, and average,
-    \begin{equation}
-    \mathbf{J}^{n+1/2} = \frac{1}{2} \sum_p q_p \mathbf{v}_p^{n+1/2} \left[ S(\mathbf{x}_p^n) + S(\mathbf{x}_p^{n+1}) \right],
-    \end{equation}
-    where $S$ is the node shape function. This is the charge current $\sum_s q_s n_s \mathbf{u}_s$, centered in time with the velocities.
+    \item Push: kick $\mathbf{v}^{n-1/2} \to \mathbf{v}^{n+1/2}$ with the Boris pusher and $(\mathbf{E}^n, \mathbf{B}^n)$ at $\mathbf{x}^n$, drift $\mathbf{x}^{n+1} = \mathbf{x}^n + \Delta t\,\mathbf{v}^{n+1/2}$, and deposit the charge-conserving current $\mathbf{J}^{n+1/2}$ of the displacement, all in one pass over the particles.
     \item Fields, within each subcycle $m$ (Strang splitting with $\mathbf{J}^{n+1/2}$ held fixed):
     \begin{align}
     \mathbf{B}^{m+1/2} &= \mathbf{B}^{m} - \tfrac{1}{2} c\,\Delta t_{\text{sub}}\,\operatorname{curl}_{\text{node}\to\text{center}}(\mathbf{E}^m), \\
@@ -498,15 +515,15 @@ Two time-advancement algorithms are provided via \texttt{\#FIELDINTEGRATOR}:
     \mathbf{B}^{m+1} &= \mathbf{B}^{m+1/2} - \tfrac{1}{2} c\,\Delta t_{\text{sub}}\,\operatorname{curl}_{\text{node}\to\text{center}}(\mathbf{E}^{m+1}).
     \end{align}
   \end{enumerate}
-  For a cold plasma oscillation this scheme is neutrally stable for $\omega_{pe}\Delta t < 2$. A current averaged from the deposits at $(\mathbf{x}^n, \mathbf{v}^{n-1/2})$ and $(\mathbf{x}^{n+1}, \mathbf{v}^{n+1/2})$ would be centered at $t^n$ instead and grows at $\gamma \approx \omega_{pe}^2 \Delta t / 4$.
+  For a cold plasma oscillation this scheme is neutrally stable for $\omega_{pe}\Delta t < 2$. A current centered at $t^n$ instead (for example $q\mathbf{v}^{n-1/2}$ deposited at $\mathbf{x}^n$) grows at $\gamma \approx \omega_{pe}^2 \Delta t / 4$.
 
   \item \textbf{Predictor-Corrector / Runge--Kutta 2} (\texttt{pc} or \texttt{rk2}):
-  For scenarios where time-staggering is undesirable or when coupling with intermediate physics stages:
+  Velocities live at integer steps and particles drift with the average of the old and new velocities.
   \begin{itemize}
-    \item \emph{Predictor step}: Particles and fields at $t^n$ are used to predict intermediate states $\mathbf{x}^*, \mathbf{v}^*$ and $\mathbf{E}^*, \mathbf{B}^*$ at $t^{n+1/2}$.
-    \item \emph{Corrector step}: Predicted fields and deposited currents $\mathbf{J}^*$ evaluate the final Boris push and field update to $t^{n+1}$, achieving second-order temporal accuracy without permanent field time-staggering.
-    \item Here velocities live at integer steps, so the field subcycles interpolate the charge current in time between the deposits $\mathbf{J}^n$ and $\mathbf{J}^{n+1}$ (or the predicted $\mathbf{J}^*$).
+    \item \emph{Predictor}: a trial push with $(\mathbf{E}^n, \mathbf{B}^n)$ deposits the current $\mathbf{J}^*$ of the trial displacement without changing the particles; the fields advance to $(\mathbf{E}^*, \mathbf{B}^*)$ at $t^{n+1}$ with $\mathbf{J}^*$.
+    \item \emph{Corrector}: the particles are pushed from $t^n$ with the time-centered fields $(\mathbf{E}^n + \mathbf{E}^*)/2$, $(\mathbf{B}^n + \mathbf{B}^*)/2$, depositing $\mathbf{J}^{n+1/2}$; the fields advance from $(\mathbf{E}^n, \mathbf{B}^n)$ to $t^{n+1}$ with it.
   \end{itemize}
+  Since the predictor leaves the particles in place, no particle copy is made.
 \end{enumerate}
 
 \subsection{Memory footprint and computational efficiency}
