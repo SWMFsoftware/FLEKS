@@ -495,6 +495,15 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
+  // Charge current q_s n_s u_s of this species on the nodes (3 components);
+  // a cheaper deposit than sum_moments() for the explicit field solver.
+  void sum_current(amrex::Vector<amrex::MultiFab>& currentMF);
+
+  // Fold the first ghost-node layer of a node-centered deposit back into the
+  // edge node at non-periodic uncoupled walls (mirror condition). isVector:
+  // mf holds a 3-component vector instead of the moment layout.
+  void fold_wall_ghost_nodes(amrex::MultiFab& mf, int iLev, bool isVector);
+
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   // nodeB0MF is the optional frozen intrinsic magnetic field; it may be

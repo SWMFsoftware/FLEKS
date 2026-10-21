@@ -11,22 +11,28 @@
 using namespace amrex;
 
 //==========================================================
-// The moments deposit q_p v in the momentum slots, and
-// convert_to_fluid_moments() turns them into the mass flux (rho u)_s. Maxwell's
-// equations need the charge current, so each species enters with q_s/m_s.
+// Deposit the charge current J = sum_s q_s n_s u_s of the current particle
+// state. Each species deposits only its current (Particles::sum_current, with
+// its own wall folding) into the nodeJ scratch, which is then summed; the full
+// moments are refreshed once per step by sum_moments() in Pic::update().
 void Pic::deposit_explicit_current(Vector<MultiFab>& J) {
   std::string nameFunc = "Pic::deposit_explicit_current";
   timing_func(nameFunc);
 
-  sum_moments(false);
+  for (int iLev = 0; iLev < n_lev(); ++iLev)
+    J[iLev].setVal(0.0);
+
+  for (int i : kineticSpecies_) {
+    parts[i]->sum_current(nodeJ);
+    for (int iLev = 0; iLev < n_lev(); ++iLev)
+      MultiFab::Add(J[iLev], nodeJ[iLev], 0, 0, nDim3, get_n_ghost());
+  }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    J[iLev].setVal(0.0);
-    for (int i : kineticSpecies_) {
-      const Real qom = parts[i]->get_charge() / parts[i]->get_mass();
-      MultiFab::Saxpy(J[iLev], qom, nodePlasma[i][iLev], iMx_, 0, nDim3,
-                      get_n_ghost());
-    }
+    // Same correction of the diluted surface nodes as for the moments.
+    if (use_body())
+      rescale_body_surface_nodes(J[iLev], cell_status(iLev), node_status(iLev),
+                                 Geom(iLev).Domain(), nDim);
     J[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 
@@ -340,12 +346,6 @@ void Pic::advance_explicit_full_pic() {
     update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexplPrev, nodeJexpl, false);
   }
 
-  // Div(E) correction (Gauss's law cleaning) if configured
-  if (doCorrectDivE) {
-    if (finestLevel() == 0) {
-      divE_correction();
-    } else {
-      amr_divE_correction();
-    }
-  }
+  // The div(E) correction follows in Pic::update(), as for the semi-implicit
+  // solver.
 }
