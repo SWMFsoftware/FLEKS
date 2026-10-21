@@ -134,8 +134,6 @@ public:
 
   void update();
 
-  void calc_refine_region();
-
   //--------------Initialization begin-------------------------------
   void init(const double time = 0, const int iDomain = 1,
             const std::string &paramString = std::string(),

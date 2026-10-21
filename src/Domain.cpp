@@ -201,13 +201,12 @@ void Domain::init(double time, const int iDomain,
     return;
   }
 
-  if (initFromSWMF && !receiveICOnly) {
+  if (initFromSWMF) {
     fi = std::make_unique<FluidInterface>(
         *grid, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
         useHybridPIC);
   } else {
-    // if (NOT initFromSWMF) or receiveIConly
     fi = std::make_unique<FluidInterface>(*grid, "fi", useHybridPIC);
   }
 
@@ -249,9 +248,8 @@ void Domain::init(double time, const int iDomain,
     source.reset();
   } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
-  }
-  if (source)
     pic->set_fluid_source(source.get());
+  }
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -276,53 +274,11 @@ void Domain::init(double time, const int iDomain,
 };
 
 //========================================================
-void Domain::calc_refine_region() {
-  bool doAMR = false;
-
-  if (!doAMR)
-    return;
-
-  int n = tc->get_cycle();
-  if (n % 10 != 0) {
-    return;
-  }
-  Print() << printPrefix << "Domain::calc_refine_region() is called"
-          << std::endl;
-
-  std::string name = "lev0new";
-  Real lo[nDim], hi[nDim];
-
-  Real t = tc->get_time_si();
-  Real u = 0.1;
-
-  lo[ix_] = -16 + u * t;
-  hi[ix_] = 16 + u * t;
-  lo[iy_] = -16;
-  hi[iy_] = 16;
-
-  if (SpaceDim > 2 && isFake2D) {
-    lo[iz_] = -10 * fabs(hi[ix_] - lo[ix_]);
-    hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
-  }
-
-  Vector<std::shared_ptr<Shape> > Shapes;
-  Shapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
-
-  if (grid) {
-    grid->replace_refine_region(0, Regions(Shapes, "+" + name));
-    grid->is_new_grid(true);
-  }
-  initialRegridPending = true;
-}
-
-//========================================================
 void Domain::update() {
   std::string funcName = "Domain::update";
   timing_func(funcName);
 
   bool doReport = tc->monitor.is_time_to();
-
-  calc_refine_region();
 
   regrid();
 
@@ -367,11 +323,10 @@ void Domain::update() {
 
   pic->write_log();
 
-  if (pt)
+  if (pt) {
     pt->update(*pic, doReport);
-
-  if (pt)
     pt->write_log();
+  }
 };
 
 //========================================================
@@ -469,11 +424,9 @@ void Domain::load_balance() {
 
   fi->post_regrid();
 
-  if (pic) {
-    pic->post_regrid(MeshChangeReason::LoadBalance);
-    pic->report_load_balance(true, true);
-    pic->inject_particles_for_boundary_cells();
-  }
+  pic->post_regrid(MeshChangeReason::LoadBalance);
+  pic->report_load_balance(true, true);
+  pic->inject_particles_for_boundary_cells();
 
   if (source)
     source->post_regrid();
@@ -615,12 +568,9 @@ void Domain::set_ic() {
     pic->write_log(true, true);
   }
 
-  if (!doRestartPT) {
-    if (pt)
-      pt->set_ic(*pic);
-
-    if (pt)
-      pt->write_log(true, true);
+  if (!doRestartPT && pt) {
+    pt->set_ic(*pic);
+    pt->write_log(true, true);
   }
 }
 
@@ -761,13 +711,11 @@ void Domain::read_restart() {
   if (sourcePT2OH)
     sourcePT2OH->post_regrid();
 
-  if (pic) {
-    pic->post_regrid(MeshChangeReason::Restart);
-    if (!doRestartFIOnly) {
-      pic->read_restart();
-      write_plots(true);
-      pic->write_log(true, true);
-    }
+  pic->post_regrid(MeshChangeReason::Restart);
+  if (!doRestartFIOnly) {
+    pic->read_restart();
+    write_plots(true);
+    pic->write_log(true, true);
   }
 
   if (pt) {
@@ -1442,8 +1390,7 @@ void Domain::read_param() {
     pic->report_bc_warnings("read_param");
   }
 
-  if (fi)
-    fi->post_process_param(receiveICOnly);
+  fi->post_process_param(receiveICOnly);
 
   if (pic) {
     pic->finalize_units_conversion();
@@ -1454,11 +1401,10 @@ void Domain::read_param() {
   // fi->post_process_param() has finalized the derived arrays (MoMi_S,
   // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...), so source->post_process_param()
   // and base FluidInterface methods use correct, locally-owned data.
-  if (source)
+  if (source) {
     source->sync_fluid_interface_params(*fi);
-
-  if (source)
     source->post_process_param();
+  }
 
   if (pt) {
     // Resolve species-dependent sizes (dnSave / launchThreshold) now that
