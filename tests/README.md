@@ -15,7 +15,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Electron impact       | `electronimpact/`     | Voronov 1997 electron-impact ionization of hot electrons      | [README](electronimpact/README.md) |
 | Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |
 | Whistler & Ohm's law  | `whistler/`           | 1D whistler–Alfvén wave, full generalized Ohm's law, and 4 hybrid timestepping schemes (rk4, rk4-pc, ssprk3, ssprk3-pc) | [README](whistler/README.md) |
-| Hybrid upwind         | `hybrid_upwind/`      | `#HYBRIDUPWIND` Rusanov dissipation of the Ohm's-law E: analytic first-order decay rate, MC-limited rate bounds, div(B) preserved in a noisy 2D plasma, damping of a resolved whistler | [README](hybrid_upwind/README.md) |
+| Hybrid upwind         | `hybrid_upwind/`      | `#HYBRIDUPWIND` Rusanov dissipation of the Ohm's-law E: analytic first-order decay rate, MC-limited rate bounds, div(B) preserved in a noisy 2D plasma, damping of a resolved whistler, exact rates of the grid-scale sensor | [README](hybrid_upwind/README.md) |
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
 | Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
@@ -71,6 +71,30 @@ back into metres.
 ## Architecture
 
 Ionization parameters are stored in `SourceInterface` and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain routes specific commands to the source object rather than to `FluidInterface`. This keeps the MHD coupling layer uncluttered by ionization-specific data.
+
+## Hybrid Dissipation Coverage
+
+The hybrid solver damps grid-scale noise with the upwind dissipation of
+`#HYBRIDUPWIND`, on by default (MC limiter with the grid-scale sensor
+`upwindSensorFloor = 0.1`). Two alternatives remain: plain MC upwind
+(`upwindSensorFloor = 1`) and grid-mode `#HYPERRESISTIVITY` (with
+`#HYBRIDUPWIND F`). Rather than repeating every hybrid deck three times, each
+scheme has exact operator tests plus a few stability guards chosen for the
+failure they catch, and every other hybrid deck runs the default:
+
+| Role | Default (MC + sensor) | Plain MC | Hyper-resistivity |
+|---|---|---|---|
+| Operator, exact | `hybrid_upwind.sensor_long`, `.sensor_grid`, `.whistler_sensor` | `hybrid_upwind` (upwind1), `.mc`, `.divb`, `.whistler` | `hyper_resistivity`, `.region` |
+| Grid-scale instability (24 s) | `whistler.rk4` | `whistler.rk4_mc` | `whistler.rk4_hyper` |
+| Discontinuity | `shock.hybrid`, `shock.hybrid_2d` | | `shock.hybrid_2d_hyper` |
+| Obstacle | `body.hybrid_conducting` (`_insulating`, `_reflect`) | `body.hybrid_linetied_mc` | `body.hybrid_linetied` (expensive) |
+| Reconnection, AMR | Fadeev, GEM, force-free, `reconnection_amr` GEM / lobe / force-free, `wave_amr_3d` | | `reconnection_amr.hybrid` |
+
+Decks that isolate other physics may turn the default off; only
+`bc_reflecting.hybrid.particles` does (on 8 cells the dissipation drains the
+streaming ions' energy through the field noise). Frozen-plasma decks without
+particles are unaffected, since the term acts only where the density is
+positive.
 
 ## Building the Test Executable
 

@@ -79,6 +79,9 @@ get a stable, consistent diffusion coefficient.
 grid                    etaHyperMode
 0.001                   etaHyperCh
 
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
 #MINIMUMDENSITY
 0.0                     rhoMinOhm
 

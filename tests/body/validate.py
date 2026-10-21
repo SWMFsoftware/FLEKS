@@ -18,8 +18,8 @@ Variants are discovered from this directory:
   - PARAM.in.hybrid_linetied   -> "body_hybrid_linetied"   (hybrid PIC, absorb + linetied)
   - PARAM.in.hybrid_insulating -> "body_hybrid_insulating" (hybrid PIC, absorb + insulating)
   - PARAM.in.hybrid_reflect    -> "body_hybrid_reflect"    (hybrid PIC, reflect + linetied)
-  - PARAM.in.hybrid_linetied_upwind -> "body_hybrid_linetied_upwind" (hybrid_linetied
-                                   with #HYBRIDUPWIND instead of hyper-resistivity)
+  - PARAM.in.hybrid_linetied_mc -> "body_hybrid_linetied_mc" (hybrid_linetied with
+                                   plain MC upwind instead of hyper-resistivity)
 
 All of them use the same setup: a uniform plasma streams in +x through a
 2D box (inflow at -x, outflow at +x) past an absorbing sphere of radius R_BODY

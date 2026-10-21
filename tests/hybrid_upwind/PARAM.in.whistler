@@ -1,7 +1,7 @@
 #DESCRIPTION
 Damping of a resolved whistler by the upwind (Rusanov) dissipation of the
 Ohm's-law E: the n = 4 mode (k d_i = 3.9, 16 cells per wavelength) of the
-whistler/rk4 deck, with HYBRIDUPWIND at the default signal speed in place of
+whistler/rk4 deck, with the plain MC upwind term (no sensor) in place of
 hyper-resistivity, a plot every step and 4 s of evolution.
 
 #INITFROMSWMF
@@ -45,6 +45,7 @@ T                       useHybridPIC
 #HYBRIDUPWIND
 T                       useHybridUpwind
 mc                      upwindLimiter
+1.0                     upwindSensorFloor
 
 #ELECTRONTEMPERATURE
 0.0                     electronTemperature  [eV]

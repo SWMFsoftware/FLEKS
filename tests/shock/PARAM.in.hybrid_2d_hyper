@@ -67,6 +67,9 @@ F                       isAutoSubcycle
 grid                    etaHyperMode
 0.01                    etaHyperCh
 
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
 #ELECTRONTEMPERATURE
 141.0                   electronTemperature
 1.6667                  electronGamma

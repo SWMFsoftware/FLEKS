@@ -64,11 +64,6 @@ hybrid
 1.0                     electronGamma        [isothermal electrons]
 65.15939                electronDensity0     [amu/cc; n_e0 = 1.0 in code units]
 
-#HYPERRESISTIVITY
-0.0                     etaHyperSI      [m^4/s; unused in grid mode]
-grid                    etaHyperMode
-0.0                     etaHyperCh      [without hyper-resistivity]
-
 #SMOOTHMOMENTS
 T                       doSmoothMoments
 2                       nSmoothMoments

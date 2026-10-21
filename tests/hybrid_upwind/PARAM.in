@@ -40,6 +40,7 @@ T                       useHybridUpwind
 upwind1                 upwindLimiter
 1.0                     upwindCoefWhistler
 0.5                     upwindFixedSpeed  [code units]
+1.0                     upwindSensorFloor
 
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s]

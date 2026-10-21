@@ -45,6 +45,7 @@ T                       useHybridPIC
 T                       useHybridUpwind
 mc                      upwindLimiter
 1.0                     upwindCoefWhistler
+1.0                     upwindSensorFloor
 
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s]

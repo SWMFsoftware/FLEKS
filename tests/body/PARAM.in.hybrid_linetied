@@ -75,6 +75,9 @@ rk4                     fieldIntegrator
 grid                    etaHyperMode
 0.02                    etaHyperCh
 
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
 #SMOOTHMOMENTS
 T                       doSmoothMoments
 2                       nSmoothMoments

@@ -10,7 +10,7 @@ This directory contains standalone magnetic reconnection test suites in FLEKS ac
 6. **`PARAM.in.forcefree_hybrid`** — **Force-Free Sheet hybrid-PIC**: Force-free current sheet reconnection (Le et al. 2016, WarpX benchmark) with uniform plasma density, uniform total magnetic pressure, and fixed 40 subcycles.
 7. **`PARAM.in.forcefree_hybrid_adaptive`** — **Force-Free Sheet hybrid-PIC (Adaptive)**: Same force-free setup with CFL-driven adaptive macro time-stepping (`#TIMESTEPPING F 0.25`) and automatic magnetic subcycling (`#BSUBCYCLE 1 T 40`). Fast CI benchmark.
 8. **`PARAM.in.forcefree_pic`** — **Force-Free Sheet full-PIC**: Force-free current sheet reconnection with kinetic ions and electrons ($m_i/m_e = 25$, Maxwell/GMRES solver).
-9. **`PARAM.in.fadeev_hybrid_upwind_long`** — **Fadeev hybrid-PIC through coalescence**: `fadeev_hybrid` run to $t = 120$ with the upwind dissipation `#HYBRIDUPWIND` in place of hyper-resistivity (see [Fadeev](#1-fadeev-equilibrium-paraminfadeev_pic-paraminfadeev_hybrid)).
+9. **`PARAM.in.fadeev_hybrid_long`** — **Fadeev hybrid-PIC through coalescence**: `fadeev_hybrid` run to $t = 120$ (see [Fadeev](#1-fadeev-equilibrium-paraminfadeev_pic-paraminfadeev_hybrid)).
 
 ## Coordinate Mapping
 
@@ -33,15 +33,19 @@ it must change by more than 0.02 (0.04–0.06 in the hybrid runs by $t = 20$,
 0.16 in the full-PIC run by $t = 3$). By $t = 20$ the islands have hardly
 started to coalesce, so `fadeev_hybrid` cannot tell dissipation schemes apart.
 
-`fadeev_hybrid_upwind_long` runs through the coalescence to $t = 120$ (10–15
-minutes on 2 ranks) and must lose more than 0.2 of $\psi$ (0.49 measured).
-Without dissipation the run fails at $t = 73$, and with the `fadeev_hybrid`
-hyper-resistivity (`etaHyperCh = 0.001`) at $t = 116$: plasma drains through
+The hybrid decks use the default upwind dissipation (MC with the grid-scale
+sensor); they used hyper-resistivity before it existed.
+
+`fadeev_hybrid_long` runs through the coalescence to $t = 120$ (10–15
+minutes on 2 ranks) and must lose more than 0.2 of $\psi$ (0.31–0.37
+measured with the default in the 3D and 2D builds, 0.49 with plain MC upwind). Without dissipation the run
+fails at $t = 73$, and with the hyper-resistivity `fadeev_hybrid` used before
+(`etaHyperCh = 0.001`) at $t = 116$: plasma drains through
 the open $y$ boundaries (the ion energy falls by 95 %), density holes form
 (6×6 ions per cell) and $|B|/\rho$ runs away. Grid-mode hyper-resistivity
 with `etaHyperCh = 0.0035`, which damps resolved modes about as much as the
 upwind term at this resolution, also survives, with the island flux within
-7 % of the upwind run; the deck's 0.001 is simply too weak for this length.
+7 % of the upwind run; 0.001 is simply too weak for this length.
 
 ### 2. Classic GEM Challenge (`PARAM.in.gem_pic`, `PARAM.in.gem_hybrid`)
 Uses `#TESTCASE gem` with `useStandardGem = T`: Harris current sheet with periodic boundaries in $x$ and conducting/reflecting walls in $y$, following the Birn et al. 2001 benchmark specifications.
@@ -73,7 +77,7 @@ python3 tests/validate_tests.py --test=reconnection.asym_pic          # Asymmetr
 python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid  # Force-free sheet hybrid-PIC (fixed 40 subcycles)
 python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid_adaptive # Force-free sheet hybrid-PIC (adaptive)
 python3 tests/validate_tests.py --test=reconnection.forcefree_pic     # Force-free sheet full-PIC
-python3 tests/validate_tests.py --test=reconnection.fadeev_hybrid_upwind_long -n 2  # Fadeev hybrid-PIC to t = 120
+python3 tests/validate_tests.py --test=reconnection.fadeev_hybrid_long -n 2  # Fadeev hybrid-PIC to t = 120
 ```
 *(Note: only the two force-free variants (`forcefree_hybrid`, `forcefree_pic`) run in the
 default full suite. The Fadeev, GEM and asymmetric variants are marked expensive and skipped;

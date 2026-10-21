@@ -42,11 +42,6 @@ T                       useHybridPIC
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 
-#HYPERRESISTIVITY
-0.0                     etaHyperSI
-grid                    etaHyperMode
-1.0e-2                  etaHyperCh
-
 #ELECTRONTEMPERATURE
 0.0                     electronTemperature  [eV]
 1.0                     electronGamma

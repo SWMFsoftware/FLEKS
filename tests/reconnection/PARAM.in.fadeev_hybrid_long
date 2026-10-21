@@ -2,7 +2,7 @@
 Magnetic reconnection (Fadeev current-sheet equilibrium) with the HYBRID
 solver (solveEM = F, generalized Ohm's law): kinetic ions / fluid electrons.
 Reconnection plane x-y; details in README. Run through the island coalescence
-to t = 120 with the upwind (Rusanov) dissipation of HYBRIDUPWIND in place of
+to t = 120 with the default upwind (Rusanov) dissipation in place of
 hyper-resistivity: without dissipation the run fails at t = 73, and with the
 fadeev_hybrid hyper-resistivity (etaHyperCh = 0.001) at t = 116.
 
@@ -68,11 +68,6 @@ Electron pressure-gradient term ON (isothermal).
 1.0                     electronDensity0
 
 Fourth-order hyper-resistivity.
-#HYBRIDUPWIND
-T                       useHybridUpwind
-mc                      upwindLimiter
-0.0                     upwindCoefWhistler
-
 #MINIMUMDENSITY
 0.0                     rhoMinOhm
 

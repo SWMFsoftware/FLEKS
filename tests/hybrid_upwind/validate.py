@@ -15,6 +15,10 @@ Variants (selected by base_name):
                            damping per radian stays in a narrow band.
   * hybrid_upwind_whistler_sensor -- the same with upwindSensorFloor = 0.1: the
                            damping drops by an order of magnitude.
+  * hybrid_upwind_sensor_long / _sensor_grid -- the grid-scale sensor with
+                           first-order upwind and a fixed speed in a frozen
+                           plasma: a 16-cell mode decays at exactly floor times
+                           the first-order rate, the 2-cell mode at the full rate.
 """
 import cmath
 import logging
@@ -72,6 +76,10 @@ def _variant(test_name):
         return "whistler"
     if name.endswith("_whistler_sensor"):
         return "whistler_sensor"
+    if name.endswith("_sensor_long"):
+        return "sensor_long"
+    if name.endswith("_sensor_grid"):
+        return "sensor_grid"
     if name.endswith("_mc"):
         return "mc"
     return "upwind1"
@@ -93,7 +101,7 @@ def _rk4_rate(lam, dt):
     return -math.log(amp) / dt if 0.0 < amp < 1.0 else -lam.real
 
 
-def _analytic_rates(text):
+def _analytic_rates(text, scale=1.0):
     """Return (gamma_first_order, gamma_unlimited_second_order) of the mode.
 
     The upwind term adds (a/2) * jump to the nodal E, and the node-to-center
@@ -121,7 +129,7 @@ def _analytic_rates(text):
     s_jm1 = (1.0 - e * e) / 2.0
     jump2 = (1.0 - 0.5 * s_j) - (e + 0.5 * s_jm1)
 
-    pref = speed / (2.0 * dx) * (cmath.exp(1j * theta) - 1.0)
+    pref = scale * speed / (2.0 * dx) * (cmath.exp(1j * theta) - 1.0)
     return _rk4_rate(pref * jump1, dt), _rk4_rate(pref * jump2, dt)
 
 
@@ -144,7 +152,15 @@ def validate_log(pic_diags=None, test_name=None):
     if any(eb[i + 1] > eb[i] for i in range(len(eb) - 1)):
         return False, "Eb is not monotonically decreasing"
 
-    g1, g2 = _analytic_rates(_param_text())
+    text = _param_text()
+    # The sensor scales the jump by phi: the floor on the 16-cell mode
+    # (s <= 0.054 there), 1 on the 2-cell mode (s = 4/3).
+    scale = 1.0
+    if variant == "sensor_long":
+        scale = _named_number(text, "#HYBRIDUPWIND", "upwindSensorFloor")
+        if scale is None:
+            return False, "upwindSensorFloor missing from PARAM.in"
+    g1, g2 = _analytic_rates(text, scale)
     if g1 is None:
         return False, "Could not derive the analytic rates from PARAM.in"
 
@@ -156,7 +172,7 @@ def validate_log(pic_diags=None, test_name=None):
                  variant, gamma, g1, g2,
                  "n/a" if resid is None else "%.2e" % resid)
 
-    if variant == "upwind1":
+    if variant in ("upwind1", "sensor_long", "sensor_grid"):
         if abs(gamma / g1 - 1.0) > TOL:
             return False, ("measured decay rate %.6g differs from the analytic "
                            "first-order rate %.6g by %.2f%% (tolerance %.1f%%)"

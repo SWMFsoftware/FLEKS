@@ -3,8 +3,8 @@
 2D oblique shock with the hybrid solver at dx = 0.5 d_i over about three ion
 gyroperiods: flow along x into a reflecting left wall, open inflow right
 boundary, upstream field at 45 deg to the shock normal. Grid-scale noise is
-damped by the upwind (Rusanov) dissipation of the Ohm's-law E with the MC
-limiter and the flow plus fast-wave signal speed; without any dissipation the
+damped by the default upwind (Rusanov) dissipation of the Ohm's-law E (MC
+limiter with the grid-scale sensor); without any dissipation the
 |B| overshoot grows to about 3 and grid-scale noise to about 18 % of the field
 power.
 
@@ -62,11 +62,6 @@ T                       useHallTerm
 #FIELDSUBCYCLE
 4                       nSubcycle
 F                       isAutoSubcycle
-
-#HYBRIDUPWIND
-T                       useHybridUpwind
-mc                      upwindLimiter
-0.0                     upwindCoefWhistler
 
 #ELECTRONTEMPERATURE
 141.0                   electronTemperature

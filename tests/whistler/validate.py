@@ -46,10 +46,11 @@ from _shared import hybrid as hybrid_helpers
 
 RUN_DIR = "run_test"
 MAX_GROWTH = 1.9
-# rk4_upwind (24 s, #HYBRIDUPWIND instead of hyper-resistivity): the seeded mode
-# grows 1.3x with upwind or hyper-resistivity; without either the ~3-cell grid
-# mode grows unstably and the ion energy rises 95x.
-MAX_GROWTH_UPWIND = 1.5
+# rk4, rk4_mc, rk4_hyper (24 s; default upwind with sensor, plain MC upwind,
+# hyper-resistivity alone): the seeded mode grows 1.3x with any of them; without
+# dissipation the ~3-cell grid mode grows unstably and the ion energy rises 95x.
+MAX_GROWTH_DAMPED = 1.5
+STABILITY_VARIANTS = ("_rk4", "_rk4_mc", "_rk4_hyper")
 
 
 def set_run_dir(run_dir):
@@ -83,19 +84,19 @@ def _bperp_growth():
     return a0, a1
 
 
-def _check_upwind_stability():
-    """Upwind dissipation alone keeps the 24 s rk4 run stable."""
+def _check_stability():
+    """The dissipation keeps the 24 s rk4 run stable."""
     amp = _bperp_growth()
     if amp is None:
         return False, "Could not measure the transverse amplitude"
     a0, a1 = amp
     growth = a1 / a0
-    logger.debug("    [WHISTLER] Upwind: max|B_perp| %.4e -> %.4e (growth %.2fx, "
-                 "bound %.2fx)", a0, a1, growth, MAX_GROWTH_UPWIND)
-    if not growth <= MAX_GROWTH_UPWIND:
-        return False, ("transverse amplitude grew %.2fx (bound %.2fx) -- upwind "
+    logger.debug("    [WHISTLER] 24 s stability: max|B_perp| %.4e -> %.4e "
+                 "(growth %.2fx, bound %.2fx)", a0, a1, growth, MAX_GROWTH_DAMPED)
+    if not growth <= MAX_GROWTH_DAMPED:
+        return False, ("transverse amplitude grew %.2fx (bound %.2fx) -- the "
                        "dissipation does not damp the grid-scale mode"
-                       % (growth, MAX_GROWTH_UPWIND))
+                       % (growth, MAX_GROWTH_DAMPED))
     return True, "Passed"
 
 
@@ -140,8 +141,8 @@ def validate_plot(test_name):
         return ok, reason
     if test_name and "resistive" in test_name:
         return _check_resistive_damping()
-    if test_name and "upwind" in test_name:
-        return _check_upwind_stability()
+    if test_name and test_name.endswith(STABILITY_VARIANTS):
+        return _check_stability()
     return True, reason
 
 

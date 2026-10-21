@@ -1,8 +1,8 @@
 # Hybrid PIC Upwind (Rusanov) Dissipation Test
 
 Tests the upwind dissipation `#HYBRIDUPWIND` of the hybrid generalized Ohm's
-law, which adds a Rusanov (local Lax-Friedrichs) term to the nodal electric
-field:
+law (on by default in hybrid runs: MC limiter with the grid-scale sensor),
+which adds a Rusanov (local Lax-Friedrichs) term to the nodal electric field:
 
 $$
 \mathbf{E} \mathrel{+}= \sum_d \frac{a_d}{2}\, \hat{\mathbf{e}}_d \times
@@ -21,6 +21,8 @@ two sides of the node along $d$ and $a_d$ the signal speed.
 | `PARAM.in.divb` | 2D $32\times32$ periodic plasma with 400 ions/cell, Hall term, MC limiter, full whistler speed, no hyper-resistivity, no cleaning | $\max|\nabla\cdot\mathbf{B}(t_{\rm end}) - \nabla\cdot\mathbf{B}(0)| \le 10^{-10}\,\max|\mathbf{B}|/\Delta x$ |
 | `PARAM.in.whistler` | The `whistler/PARAM.in.rk4` plasma (2000 ions/cell, Hall term) seeded with the $n = 4$ whistler ($k d_i = 3.9$, 16 cells per wavelength), MC limiter, default signal speed, no hyper-resistivity | Frequency within 4 % of the Hall branch; damping per radian $\gamma/\omega \in [0.0005, 0.005]$ |
 | `PARAM.in.whistler_sensor` | Same with `upwindSensorFloor = 0.1` | Damping per radian $\gamma/\omega \in [0.00005, 0.0005]$ (measured 0.00015) |
+| `PARAM.in.sensor_long` | Frozen plasma, `upwind1`, fixed speed $a = 0.5$, `upwindSensorFloor = 0.1`, mode with 16 cells per wavelength (sensor $\le 0.054$ everywhere) | Decay rate equals 0.1 times the analytic first-order rate within 0.5 % (measured exactly, residual $10^{-11}$) |
+| `PARAM.in.sensor_grid` | Same with the 2-cell mode (sensor $= 4/3$ everywhere) | Decay rate equals the full first-order rate within 0.5 % (measured exactly) |
 
 ## Analytic rates
 
@@ -100,4 +102,5 @@ python3 tests/validate_tests.py --test=hybrid_upwind
 python3 tests/validate_tests.py --test=hybrid_upwind.divb -v
 python3 tests/validate_tests.py --test=hybrid_upwind.whistler -v
 python3 tests/validate_tests.py --test=hybrid_upwind.whistler_sensor -v
+python3 tests/validate_tests.py --test=hybrid_upwind.sensor_long -v
 ```

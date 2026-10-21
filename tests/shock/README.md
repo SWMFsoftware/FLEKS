@@ -8,7 +8,7 @@ inflow boundary in the same deck.  Four variants are provided:
   reduced mass ratio `m_i/m_e = 25`, `#FIELDSOLVER implicit`).
 * **`PARAM.in.hybrid`** — the **HYBRID** solver (kinetic ions, massless
   electron fluid at `Te ≈ 140 eV`, `#FIELDSOLVER hybrid`).
-* **`PARAM.in.hybrid_2d_hyper`**, **`PARAM.in.hybrid_2d_upwind`** — the hybrid
+* **`PARAM.in.hybrid_2d`**, **`PARAM.in.hybrid_2d_hyper`** — the hybrid
   solver in 2D at twice the resolution and four times the run length, where
   grid-scale noise must be damped (see [2D variants](#2d-variants)).
 
@@ -86,9 +86,13 @@ inflow region):
 4 field sub-cycles, to `t = 20` (about three ion gyroperiods).  They differ only
 in how the grid-scale noise of the centered Ohm's law is damped:
 
-* **`_hyper`**: grid-mode `#HYPERRESISTIVITY` with `C_h = 0.01`;
-* **`_upwind`**: `#HYBRIDUPWIND` with the MC limiter and the default signal
-  speed, flow plus fast wave (`upwindCoefWhistler = 0`).
+* **`hybrid_2d`**: the default upwind dissipation of `#HYBRIDUPWIND` (MC limiter
+  with the grid-scale sensor, flow plus fast-wave speed);
+* **`hybrid_2d_hyper`**: grid-mode `#HYPERRESISTIVITY` with `C_h = 0.01`, upwind
+  off.
+
+The table below predates the sensor (plain MC upwind); with the sensor the 2D
+deck gives overshoot 1.63 and high-k fraction 0.059 on 2 ranks.
 
 Without either term the deck does not survive: the shock grows a `|B|`
 overshoot of about 3, grid-scale noise rises to 18 % of the y-varying field
@@ -123,6 +127,6 @@ The 2D variants run the same checks as the 1D ones, with two changes:
 python3 tests/validate_tests.py --test=shock                    # all variants
 python3 tests/validate_tests.py --test=shock.implicit           # full PIC only
 python3 tests/validate_tests.py --test=shock.hybrid             # 1D hybrid only
-python3 tests/validate_tests.py --test=shock.hybrid_2d_upwind   # 2D, upwind
+python3 tests/validate_tests.py --test=shock.hybrid_2d          # 2D, default upwind
 python3 tests/validate_tests.py --test=shock.hybrid_2d_hyper    # 2D, hyper-resistivity
 ```

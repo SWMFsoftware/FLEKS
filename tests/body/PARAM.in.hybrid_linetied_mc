@@ -1,8 +1,8 @@
 #DESCRIPTION
 Inner-body (absorbing sphere) test using the hybrid PIC solver: a uniform
 plasma streams in +x past an absorbing sphere of radius 1.2 at the origin,
-declared with BODY. Grid-scale noise is damped by the upwind (Rusanov)
-dissipation of HYBRIDUPWIND instead of hyper-resistivity.
+declared with BODY. Grid-scale noise is damped by the plain MC upwind
+dissipation of HYBRIDUPWIND (no sensor) instead of hyper-resistivity.
 
 Variant: BODYBOUNDARY absorb + linetied.
 Dirichlet E = 0 on body nodes, interior B frozen at initial state.
@@ -75,6 +75,7 @@ rk4                     fieldIntegrator
 T                       useHybridUpwind
 mc                      upwindLimiter
 0.0                     upwindCoefWhistler
+1.0                     upwindSensorFloor
 
 #SMOOTHMOMENTS
 T                       doSmoothMoments
