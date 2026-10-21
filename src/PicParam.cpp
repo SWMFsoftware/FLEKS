@@ -500,13 +500,12 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
 // Validate boundary condition consistency across field, particles, and
 // geometry. Field vs particle checks are skipped if field BC was not explicitly
 // set.
-void Pic::validate_bc_pairing(const Geometry& gm) {
+void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
   static const char* const dimNames[3] = { "x", "y", "z" };
   static const char* const faceNames[3][2] = { { "x-lo", "x-hi" },
                                                { "y-lo", "y-hi" },
                                                { "z-lo", "z-hi" } };
 
-  const bool isStandalone = domainParameters.isStandalone;
   const bool hasNonPeriodic = !gm.isAllPeriodic();
 
   if (isStandalone && hasNonPeriodic) {

@@ -12,7 +12,7 @@
 class ParticleTracker : public GridAccess {
 public:
   ParticleTracker(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-                  ParticleTrackerInfo &info, const DomainParameters & /*dp*/)
+                  ParticleTrackerInfo &info)
       : GridAccess(gridIn), tc(tcIn), fi(fluidIn), gridID(id), pInfo(&info) {
     gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = gridName + " pt: ";

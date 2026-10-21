@@ -2415,7 +2415,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     maxCFL = dtNext / dtMacroMin;
   }
 
-  if (doReport && !domainParameters.doCompact) {
+  if (doReport && !doCompact) {
     amrex::Print() << printPrefix << "[Hybrid Adaptive Step] dt = " << dtNext
                    << ", nSub = " << nSubNext
                    << " (limited by: " << dtLimitingReason << ")\n";

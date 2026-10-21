@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstring>
 #include <iomanip>
@@ -151,9 +152,9 @@ bool Domain::find_parameter_owner(const std::string &command,
 void Domain::init(double time, const int iDomain,
                   const std::string &paramString, const Vector<int> &paramInt,
                   const Vector<double> &paramRegion,
-                  const Vector<double> &paramComm, const bool isStandalone) {
+                  const Vector<double> &paramComm, const bool isStandaloneIn) {
 
-  domainParameters.isStandalone = isStandalone;
+  isStandalone = isStandaloneIn;
 
   tc->set_time_si(time);
 
@@ -162,15 +163,15 @@ void Domain::init(double time, const int iDomain,
   printPrefix = gridName + ": ";
 
 #ifdef _PT_COMPONENT_
-  domainParameters.useSource = true;
+  useSource = true;
 #endif
 
   { // It looks like the file saving may crash if the size of a single file is
     // too large. The numbers 64 and 2048 are chosen empirically.
     const int nFileBase = 64;
     int np = floor(ParallelDescriptor::NProcs() / 2048.0) + 1;
-    domainParameters.nFileField = np * nFileBase;
-    domainParameters.nFileParticle = np * nFileBase * 4;
+    nFileField = np * nFileBase;
+    nFileParticle = np * nFileBase * 4;
   }
 
   readParam = paramString;
@@ -191,9 +192,8 @@ void Domain::init(double time, const int iDomain,
 
   grid = std::make_unique<Grid>(geometry, amrInfo, nGst, gridID);
 
-  if (domainParameters.receiveICOnly) {
-    fi = std::make_unique<FluidInterface>(*grid, "fi",
-                                          domainParameters.useHybridPIC);
+  if (receiveICOnly) {
+    fi = std::make_unique<FluidInterface>(*grid, "fi", useHybridPIC);
     ptInfo.set_fluid_interface(fi.get());
     read_param();
 
@@ -202,30 +202,29 @@ void Domain::init(double time, const int iDomain,
     return;
   }
 
-  if (domainParameters.initFromSWMF && !domainParameters.receiveICOnly) {
+  if (initFromSWMF && !receiveICOnly) {
     fi = std::make_unique<FluidInterface>(
         *grid, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
-        domainParameters.useHybridPIC);
+        useHybridPIC);
   } else {
     // if (NOT initFromSWMF) or receiveIConly
-    fi = std::make_unique<FluidInterface>(*grid, "fi",
-                                          domainParameters.useHybridPIC);
+    fi = std::make_unique<FluidInterface>(*grid, "fi", useHybridPIC);
   }
 
   ptInfo.set_fluid_interface(fi.get());
-  pic = std::make_unique<Pic>(*grid, fi.get(), tc.get(), gridID,
-                              domainParameters);
+  pic =
+      std::make_unique<Pic>(*grid, fi.get(), tc.get(), gridID, fieldSolverMode);
 
-  if (domainParameters.usePT)
+  if (usePT)
     pt = std::make_unique<ParticleTracker>(*grid, fi.get(), tc.get(), gridID,
-                                           ptInfo, domainParameters);
+                                           ptInfo);
 
   // Create the source object before read_param so that ionization
   // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
   // can be dispatched to source->read_param().
   source = std::make_unique<UserSource>(*grid, *fi, gridID, "picSource",
-                                        SourceFluid, domainParameters);
+                                        SourceFluid);
   source->register_parameter_commands(sourceParameterCommands);
 
   read_param();
@@ -247,7 +246,7 @@ void Domain::init(double time, const int iDomain,
 
   // #SOURCE command sets useSource during read_param; discard the
   // source object if user did not request a source.
-  if (!domainParameters.useSource) {
+  if (!useSource) {
     source.reset();
   } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
@@ -270,7 +269,7 @@ void Domain::init(double time, const int iDomain,
 
   pic->init_source(*fi);
 
-  if (domainParameters.doRestart) {
+  if (doRestart) {
     // Restoring the restart data before coupling with GM, because the PIC grid
     // may change again during coupling.
     read_restart();
@@ -342,7 +341,7 @@ void Domain::update() {
   // update time, step number.
   tc->update();
 
-  if (doReport && !domainParameters.doCompact) {
+  if (doReport && !doCompact) {
     const Real t1 = tc->get_time_si();
     Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
             << " from t = " << std::setprecision(6) << t0
@@ -356,7 +355,7 @@ void Domain::update() {
   // - GM-PC: called from set_state_var() at coupling intervals; fi is
   //   unchanged between couplings, so skip here.
   // - OH-PT: not applicable; charge_exchange() handles source terms.
-  if (source && !domainParameters.initFromSWMF) {
+  if (source && !initFromSWMF) {
     source->set_source(*fi);
     source->convert_moment_to_velocity(true, false);
     source->fill_boundary();
@@ -394,9 +393,7 @@ void Domain::prepare_grid_info(const Vector<double> &info, Geometry &geometry,
   if (isFake2D)
     set_periodicity(iz_, true);
 
-  bool setGridFromSWMF = !domainParameters.doRestart &&
-                         domainParameters.initFromSWMF &&
-                         !domainParameters.receiveICOnly;
+  bool setGridFromSWMF = !doRestart && initFromSWMF && !receiveICOnly;
 
   if (setGridFromSWMF) {
     // If restart, the grid info will be read from restart.H
@@ -467,7 +464,7 @@ void Domain::prepare_grid_info(const Vector<double> &info, Geometry &geometry,
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell();
+  pic->calc_cost_per_cell(balanceStrategy, cellWeight);
 
   grid->load_balance(nullptr, doSplitLevs);
 
@@ -604,12 +601,12 @@ void Domain::receive_grid_info(int *status) { gridInfo.set_status(status); }
 //========================================================
 void Domain::set_ic() {
 
-  if (domainParameters.receiveICOnly)
+  if (receiveICOnly)
     return;
 
   // If it is restart, the values should have been restored before coupling
   // with GM. See Domain::init().
-  if (!(domainParameters.doRestart && !domainParameters.doRestartFIOnly)) {
+  if (!(doRestart && !doRestartFIOnly)) {
 
     fi->set_node_fluid();
 
@@ -619,7 +616,7 @@ void Domain::set_ic() {
     pic->write_log(true, true);
   }
 
-  if (!domainParameters.doRestartPT) {
+  if (!doRestartPT) {
     if (pt)
       pt->set_ic(*pic);
 
@@ -642,7 +639,7 @@ void Domain::set_state_var(double *data, int *index,
   Print() << printPrefix << " " << sourceComp << " -> " << component
           << " coupling at t =" << tc->get_time_si() << " (s)" << std::endl;
 
-  if (domainParameters.receiveICOnly) {
+  if (receiveICOnly) {
     fi->set_node_fluid(data, index, names);
     // For some cases, the variables information is not unknown until the first
     // couping is called.
@@ -767,7 +764,7 @@ void Domain::read_restart() {
 
   if (pic) {
     pic->post_regrid(MeshChangeReason::Restart);
-    if (!domainParameters.doRestartFIOnly) {
+    if (!doRestartFIOnly) {
       pic->read_restart();
       write_plots(true);
       pic->write_log(true, true);
@@ -776,13 +773,13 @@ void Domain::read_restart() {
 
   if (pt) {
     pt->post_regrid();
-    if (!domainParameters.doRestartFIOnly && domainParameters.doRestartPT) {
+    if (!doRestartFIOnly && doRestartPT) {
       pt->read_restart();
       pt->write_log(true, true);
     }
   }
 
-  if (domainParameters.doRegridOnRestart) {
+  if (doRegridOnRestart) {
     grid->mark_refinement_modified();
   }
 }
@@ -847,13 +844,12 @@ void Domain::save_restart_header() {
 
     std::string command_suffix = "_" + gridName + "\n";
 
-    domainParameters.doRestart = !fi->is_grid_empty();
+    doRestart = !fi->is_grid_empty();
     headerFile << "#RESTART" + command_suffix;
-    headerFile << (domainParameters.doRestart ? "T" : "F")
-               << "\t\t\tdoRestart\n";
+    headerFile << (doRestart ? "T" : "F") << "\t\t\tdoRestart\n";
     headerFile << "\n";
 
-    if (domainParameters.receiveICOnly) {
+    if (receiveICOnly) {
       headerFile << "#RESTARTFIONLY" + command_suffix;
       headerFile << "T"
                  << "\t\t\tdoRestartFIOnly\n";
@@ -1046,19 +1042,19 @@ void Domain::read_construction_parameters(ReadParam &rp) {
             << component << ": " << command << " " << gridName << std::endl;
 
     if (command == "#RESTART") {
-      rp.read_var("doRestart", domainParameters.doRestart);
-      domainParameters.doRestartPT = domainParameters.doRestart;
+      rp.read_var("doRestart", doRestart);
+      doRestartPT = doRestart;
     } else if (command == "#INITFROMSWMF") {
-      rp.read_var("initFromSWMF", domainParameters.initFromSWMF);
+      rp.read_var("initFromSWMF", initFromSWMF);
     } else if (command == "#RECEIVEICONLY") {
-      rp.read_var("receiveICOnly", domainParameters.receiveICOnly);
+      rp.read_var("receiveICOnly", receiveICOnly);
     } else if (command == "#PARTICLETRACKER") {
-      rp.read_var("usePT", domainParameters.usePT);
+      rp.read_var("usePT", usePT);
     } else if (command == "#FIELDSOLVER") {
       hasFieldSolver = true;
       std::string mode;
       rp.read_var("fieldSolverMode", mode);
-      domainParameters.set_field_solver_mode(mode);
+      set_field_solver_mode(mode);
     } else if (command == "#HYBRIDPIC") {
       // Deprecated; #FIELDSOLVER takes priority.
       Print()
@@ -1066,7 +1062,7 @@ void Domain::read_construction_parameters(ReadParam &rp) {
       bool useHyb = false;
       rp.read_var("useHybridPIC", useHyb);
       if (!hasFieldSolver && useHyb)
-        domainParameters.set_field_solver_mode("hybrid");
+        set_field_solver_mode("hybrid");
     } else if (command == "#SOLVEEM") {
       // Deprecated; #FIELDSOLVER takes priority.
       Print()
@@ -1075,9 +1071,9 @@ void Domain::read_construction_parameters(ReadParam &rp) {
       rp.read_var("solveEM", sEM);
       if (!hasFieldSolver) {
         if (sEM)
-          domainParameters.set_field_solver_mode("implicit");
-        else if (domainParameters.fieldSolverMode != PicSolverMode::Hybrid)
-          domainParameters.set_field_solver_mode("none");
+          set_field_solver_mode("implicit");
+        else if (fieldSolverMode != PicSolverMode::Hybrid)
+          set_field_solver_mode("none");
       }
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
@@ -1175,17 +1171,16 @@ void Domain::read_param() {
           break;
       }
     } else if (command == "#TPRESTART") {
-      readParam.read_var("doTPRestart", domainParameters.doRestartPT);
+      readParam.read_var("doTPRestart", doRestartPT);
     } else if (command == "#RESTARTFIONLY") {
-      readParam.read_var("doRestartFIOnly", domainParameters.doRestartFIOnly);
+      readParam.read_var("doRestartFIOnly", doRestartFIOnly);
     } else if (command == "#REGRIDONRESTART") {
-      readParam.read_var("doRegridOnRestart",
-                         domainParameters.doRegridOnRestart);
+      readParam.read_var("doRegridOnRestart", doRegridOnRestart);
     } else if (command == "#NOUTFILE") {
-      readParam.read_var("nFileField", domainParameters.nFileField);
-      readParam.read_var("nFileParticle", domainParameters.nFileParticle);
+      readParam.read_var("nFileField", nFileField);
+      readParam.read_var("nFileParticle", nFileParticle);
     } else if (command == "#SOURCE") {
-      readParam.read_var("useSource", domainParameters.useSource);
+      readParam.read_var("useSource", useSource);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       readParam.read_var("loadBalanceStrategy", strategy);
@@ -1196,10 +1191,10 @@ void Domain::read_param() {
       if (strategyIt == stringToBalanceStrategy.end())
         Abort("Invalid #LOADBALANCE strategy '" + strategy +
               "'. Check the supported load-balance strategies.");
-      domainParameters.balanceStrategy = strategyIt->second;
+      balanceStrategy = strategyIt->second;
 
-      if (domainParameters.balanceStrategy == BalanceStrategy::Hybrid) {
-        readParam.read_var("cellWeight", domainParameters.cellWeight);
+      if (balanceStrategy == BalanceStrategy::Hybrid) {
+        readParam.read_var("cellWeight", cellWeight);
       }
     } else if (command == "#GRIDEFFICIENCY") {
       const Real oldEfficiency = grid->gridEff();
@@ -1312,8 +1307,8 @@ void Domain::read_param() {
       int dn;
       readParam.read_var("dnReport", dn);
       tc->monitor.init(-1, dn);
-      readParam.read_optional("dnReportLB", domainParameters.dnReportLB);
-      readParam.read_optional("doCompact", domainParameters.doCompact);
+      readParam.read_optional("dnReportLB", dnReportLB);
+      readParam.read_optional("doCompact", doCompact);
     } else if (command == "#SAVEPLOT" || command == "#SAVEIDL") {
 
       /*
@@ -1434,15 +1429,16 @@ void Domain::read_param() {
     grid->mark_refinement_modified();
 
   if (pic) {
+    pic->set_report_options(dnReportLB, doCompact);
     pic->post_process_param();
     // Autofill and validate periodic boundaries using gm.
     pic->apply_periodicity_autofill(grid->Geom(0));
-    pic->validate_bc_pairing(grid->Geom(0));
+    pic->validate_bc_pairing(grid->Geom(0), isStandalone);
     pic->report_bc_warnings("read_param");
   }
 
   if (fi)
-    fi->post_process_param(domainParameters);
+    fi->post_process_param(receiveICOnly);
 
   if (pic) {
     pic->finalize_units_conversion();
@@ -1467,16 +1463,44 @@ void Domain::read_param() {
     pt->set_tp_init_shapes(shapeList);
   }
 
-  VisMF::SetNOutFiles(domainParameters.nFileField);
+  VisMF::SetNOutFiles(nFileField);
 
   ParmParse pp("particles");
-  pp.add("particles_nfiles", domainParameters.nFileParticle);
+  pp.add("particles_nfiles", nFileParticle);
 }
 
+void Domain::set_field_solver_mode(const std::string &modeStr) {
+  std::string s = modeStr;
+  for (char &c : s)
+    c = std::tolower(c);
+  if (s == "implicit" || s == "semi-implicit") {
+    fieldSolverMode = PicSolverMode::Implicit;
+    useHybridPIC = false;
+  } else if (s == "explicit" || s == "explicit-pic") {
+    fieldSolverMode = PicSolverMode::Explicit;
+    useHybridPIC = false;
+  } else if (s == "hybrid" || s == "hybrid-pic") {
+    fieldSolverMode = PicSolverMode::Hybrid;
+    useHybridPIC = true;
+  } else if (s == "none" || s == "off" || s == "false") {
+    fieldSolverMode = PicSolverMode::None;
+    useHybridPIC = false;
+  } else {
+    Abort("Invalid #FIELDSOLVER mode '" + modeStr +
+          "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
+  }
+}
+
+//========================================================
 void Domain::validate_configuration() const {
-  const std::string error = domainParameters.validation_error();
-  if (!error.empty())
-    Abort("Invalid domain configuration: " + error);
+  if (nFileField < 1 || nFileParticle < 1)
+    Abort("Invalid domain configuration: nFileField and nFileParticle must be "
+          "positive.");
+  if (cellWeight < 1)
+    Abort("Invalid domain configuration: cellWeight must be positive.");
+  if (doRestart && receiveICOnly)
+    Abort("Invalid domain configuration: #RESTART and #RECEIVEICONLY cannot "
+          "both be enabled.");
 }
 
 //========================================================

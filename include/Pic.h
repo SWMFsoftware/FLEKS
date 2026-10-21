@@ -9,7 +9,6 @@
 #include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
-#include "DomainParameters.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "GridAccess.h"
@@ -28,6 +27,13 @@
 
 class ParticleTracker;
 class Pic;
+
+enum class PicSolverMode {
+  Implicit, // Semi-implicit full PIC (default)
+  Explicit, // Explicit full PIC
+  Hybrid,   // Hybrid PIC (fluid electrons + kinetic ions)
+  None      // No field solve (particle tracer / test particles)
+};
 
 class FieldSolver {
 public:
@@ -93,8 +99,7 @@ class Pic : public GridAccess {
   friend ParticleTracker;
   // private variables
 private:
-  const DomainParameters &domainParameters;
-  const bool &useHybridPIC;
+  bool useHybridPIC = false;
 
   PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
   bool usePIC = true;
@@ -521,6 +526,9 @@ private:
   std::string selectParticleInputFile;
 
   bool doReport = false;
+  // Report options from #MONITOR, set by Domain.
+  bool doCompact = true;
+  int dnReportLB = 100;
   amrex::Real maxCFL = 0.0;
   int dnMemory = -1;
 
@@ -552,11 +560,10 @@ public:
   ParticleBC::Type body_particle_bc() const { return grid.bodyParticleBC; }
 
   Pic(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-      const DomainParameters &parameters)
+      PicSolverMode solverMode)
       : GridAccess(gridIn),
-        domainParameters(parameters),
-        useHybridPIC(parameters.useHybridPIC),
-        fieldSolverMode(parameters.fieldSolverMode),
+        useHybridPIC(solverMode == PicSolverMode::Hybrid),
+        fieldSolverMode(solverMode),
         fi(fluidIn),
         tc(tcIn),
         gridID(id) {
@@ -681,6 +688,10 @@ public:
   bool get_useHybridPIC() const { return useHybridPIC; }
 
   PicSolverMode get_field_solver_mode() const { return fieldSolverMode; }
+  void set_report_options(int dnReportLBIn, bool doCompactIn) {
+    dnReportLB = dnReportLBIn;
+    doCompact = doCompactIn;
+  }
   bool is_implicit_pic() const {
     return fieldSolverMode == PicSolverMode::Implicit;
   }
@@ -821,7 +832,7 @@ public:
 
   void report_bc_warnings(const std::string &context);
   void apply_periodicity_autofill(const amrex::Geometry &gm);
-  void validate_bc_pairing(const amrex::Geometry &gm);
+  void validate_bc_pairing(const amrex::Geometry &gm, bool isStandalone);
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
@@ -977,7 +988,7 @@ public:
   void report_load_balance(bool doReportSummary = true,
                            bool doReportDetail = false);
 
-  void calc_cost_per_cell();
+  void calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,

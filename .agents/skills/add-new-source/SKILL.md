@@ -144,9 +144,9 @@ selection name is the prefix before `Source.h` (`New` in this example).
 
 class UserSource : public SourceInterface {
 public:
-  UserSource(const FluidInterface& other, int id, std::string tag,
-             FluidType typeIn, const DomainParameters& dp)
-      : SourceInterface(other, id, tag, typeIn, dp) {
+  UserSource(Grid& gridIn, const FluidInterface& other, int id,
+             std::string tag, FluidType typeIn)
+      : SourceInterface(gridIn, other, id, tag, typeIn) {
     info = "New Source";
   }
 

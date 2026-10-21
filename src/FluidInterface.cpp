@@ -4,7 +4,6 @@
 #include <AMReX_PlotFileUtil.H>
 
 #include "Bit.h"
-#include "DomainParameters.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
 
@@ -101,7 +100,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   nodeFluid.clear();
 }
 
-void FluidInterface::post_process_param(const DomainParameters& parameters) {
+void FluidInterface::post_process_param(bool receiveICOnly) {
   if (initFromSWMF)
     return;
 
@@ -119,7 +118,7 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
   // This is just a guess. To be improved.
   MhdNo2SiL = rPlanetSi;
 
-  if (parameters.receiveICOnly) {
+  if (receiveICOnly) {
     finalize_normalization(true); // publish scalars only (vectors not yet set)
     return;
   }

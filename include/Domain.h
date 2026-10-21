@@ -13,7 +13,7 @@
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
 
-#include "DomainParameters.h"
+#include "FleksDistributionMap.h"
 #include "GridInfo.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
@@ -57,7 +57,37 @@ private:
       amrex::Abort("Duplicate #REGION name: " + name);
     shapeList.push_back(shape);
   }
-  DomainParameters domainParameters;
+  // Read first by read_construction_parameters(): they decide whether and
+  // how grid, fi, pic and pt are constructed.
+  bool doRestart = false;
+  bool initFromSWMF = true;
+  bool receiveICOnly = false;
+  bool useHybridPIC = false;
+  PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
+  bool usePT = false;
+
+  // Read by read_param() together with the other commands.
+  bool doRestartPT = false;
+  bool doRestartFIOnly = false;
+  bool doRegridOnRestart = false;
+  bool useSource = false;
+
+  // Number of files per AMReX output.
+  int nFileField = 64;
+  int nFileParticle = 256;
+
+  // Load-balancing strategy.
+  BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
+  int cellWeight = 10;
+
+  // Reporting options.
+  int dnReportLB = 100;
+  bool doCompact = true;
+
+  // Set from init()'s argument, not from a command.
+  bool isStandalone = false;
+
+  void set_field_solver_mode(const std::string &modeStr);
 
   ReadParam readParam;
   std::vector<std::string> sourceParameterCommands;
@@ -112,7 +142,7 @@ public:
             const amrex::Vector<int> &paramInt = amrex::Vector<int>(),
             const amrex::Vector<double> &paramRegion = amrex::Vector<double>(),
             const amrex::Vector<double> &paramComm = amrex::Vector<double>(),
-            const bool isStandalone = false);
+            const bool isStandaloneIn = false);
   void update_param(const std::string &paramString);
   void set_ic();
   //----------------Initialization end-------------------------------
@@ -160,7 +190,7 @@ public:
   // void make_data();
   void init_time_ctr();
 
-  bool receive_ic_only() { return domainParameters.receiveICOnly; };
+  bool receive_ic_only() const { return receiveICOnly; };
 
   int get_iGrid() const { return iGrid; }
   int get_iDecomp() const { return iDecomp; }
