@@ -114,6 +114,19 @@ FLEKS provides three simulation field solver modes selected via `#FIELDSOLVER` (
   * `pc` / `rk2`: 2nd-order predictor-corrector with intermediate particle push.
 - **Subcycling**: `#FIELDSUBCYCLE` sets the number of explicit Maxwell subcycles
   per particle time step dt.
+- **Current**: Ampere's law takes the charge-conserving (Esirkepov) current
+  `nodeJexpl`, deposited inside the particle push
+  (`Particles::mover(..., currentMF, trialOnly)`,
+  `Pic::push_and_deposit_explicit_current`). It keeps
+  div_node_to_center(E) - 4 pi rho_c constant to round-off, with rho_c the
+  node charge averaged to the cell centers; E is gathered with the transpose
+  of the deposit. The div(E) correction is therefore off by default
+  (`#DIVE` turns it on). Leapfrog: one pass kicks v^{n+1/2}, drifts to
+  x^{n+1} and deposits J^{n+1/2}. Predictor-corrector: a trial push deposits
+  J* without moving the particles (no particle backup), then the corrector
+  push deposits J^{n+1/2}; each field advance holds its J fixed.
+  `tests/langmuir` checks energy, the Langmuir branch and the Gauss residual;
+  `tests/whistler/PARAM.in.explicit` checks the full cold-plasma R-mode.
 - **Zero regression / minimal footprint**: bypasses allocation of GMRES scratch
   MultiFabs and mass matrices when active, leaving semi-implicit and hybrid
   allocations and performance untouched.
@@ -124,7 +137,8 @@ FLEKS provides three simulation field solver modes selected via `#FIELDSOLVER` (
 
 - **Time stepping:** CFL-based or fixed Δt (`#TIMESTEPPING`, typical CFL 0.1–0.4).
 - **Divergence cleaning:** accurate div(E) correction via particle position
-  adjustment; optional hyperbolic div(B) cleaning.
+  adjustment (semi-implicit; the explicit solver conserves charge instead);
+  optional hyperbolic div(B) cleaning.
 - **Particle management:** splitting, merging, fast merge with Lagrange
   multipliers (`#RESAMPLING`, `#FASTMERGE`).
 - **AMR:** block-structured AMR via AMReX, configurable levels and regions

@@ -234,6 +234,134 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
 
 //==========================================================
 
+//==========================================================
+// Mirror boundary condition for a node-centered deposit at non-periodic
+// uncoupled walls (see the comment in sum_moments): double the edge node (or
+// clear it for an odd component at a reflecting wall) and clear the first
+// ghost-node layer. At a reflecting wall the ghost layer is first folded onto
+// the first interior node with the same parity: it holds the part of the
+// charge-conserving current of a particle that crossed the wall before it was
+// mirrored, and the folded current is that of the reflected path (image
+// method). isVector selects the parity rule: components (x, y, z) of a vector
+// (odd: the normal one) instead of the moment layout (odd: normal momentum
+// and normal-shear stresses).
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
+                                                               int iLev,
+                                                               bool isVector) {
+  if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
+    return;
+
+  const Box& dom = Geom(iLev).Domain();
+  const int nCompMF = mf.nComp();
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.validbox();
+    Array4<Real> const& arr = mf[mfi].array();
+
+    for (int iDim = 0; iDim < nDim; ++iDim) {
+      if (Geom(iLev).isPeriodic(iDim))
+        continue;
+
+      for (int side = 0; side < 2; ++side) {
+        const bool isLo = (side == 0);
+        const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
+        // A particle face can no longer be `conducting`: that is a
+        // field-only type, and on the particle side it is mapped to
+        // `reflect` at parse time. The fold set covers all uncoupled,
+        // non-periodic faces (reflect, inflow, outflow, vacuum, absorb)
+        // where no exterior ghost particles exist to deposit into the
+        // boundary node.
+        const bool doFold =
+            (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow ||
+             faceBc == ParticleBC::outflow || faceBc == ParticleBC::vacuum ||
+             faceBc == ParticleBC::absorb);
+        if (!doFold)
+          continue;
+
+        // NOTE: momentsMF is NODE-centered (nGrids = convert(cGrids,
+        // nodeVector)), whose domain box extends one node beyond the
+        // cell-centered Geometry box on the hi side.  The edge NODE is
+        // dom.smallEnd (lo) or dom.bigEnd+1 (hi); using dom.bigEnd would
+        // hit the second-last node and skip the real edge tile.
+        const int domEdge = isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim) + 1;
+        const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
+        if (tileEdge != domEdge)
+          continue;
+
+        // Strip of the first ghost-node layer just outside the domain,
+        // spanning the full transverse extent of this FAB (valid +
+        // transverse ghosts).  Mirror the edge node into it, fold it into
+        // the edge node (doubling), then clear the ghost.
+        const Box& fbx = mfi.fabbox();
+        IntVect gs = fbx.smallEnd();
+        IntVect ge = fbx.bigEnd();
+        gs[iDim] = domEdge + (isLo ? -1 : 1);
+        ge[iDim] = gs[iDim];
+        const Box strip(gs, ge);
+
+        const bool isReflect = (faceBc == ParticleBC::reflect);
+
+        ParallelFor(
+            strip, nCompMF, [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+              // Odd parity components relative to iDim under
+              // specular reflection: normal momentum and
+              // off-diagonal normal-shear stresses.
+              bool isOdd = false;
+              if (isVector) {
+                isOdd = (c == iDim);
+              } else if (iDim == 0) {
+                isOdd = (c == iMx_ || c == iPxy_ || c == iPxz_);
+              } else if (iDim == 1) {
+                isOdd = (c == iMy_ || c == iPxy_ || c == iPyz_);
+              } else if (iDim == 2) {
+                isOdd = (c == iMz_ || c == iPxz_ || c == iPyz_);
+              }
+
+#if (AMREX_SPACEDIM == 2)
+              int ei = i, ej = j;
+              if (iDim == 0)
+                ei = domEdge;
+              if (iDim == 1)
+                ej = domEdge;
+              const Real val = arr(ei, ej, 0, c);
+              if (isReflect && isOdd) {
+                arr(ei, ej, 0, c) = 0.0;
+              } else {
+                arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
+              }
+              if (isReflect) {
+                const int ii = iDim == 0 ? 2 * domEdge - i : i;
+                const int jj = iDim == 1 ? 2 * domEdge - j : j;
+                arr(ii, jj, 0, c) += isOdd ? -arr(i, j, 0, c) : arr(i, j, 0, c);
+              }
+              arr(i, j, 0, c) = 0.0; // zero the ghost layer
+#elif (AMREX_SPACEDIM == 3)
+                int ei = i, ej = j, ek = k;
+                if (iDim == 0) ei = domEdge;
+                if (iDim == 1) ej = domEdge;
+                if (iDim == 2) ek = domEdge;
+                const Real val = arr(ei, ej, ek, c);
+                if (isReflect && isOdd) {
+                  arr(ei, ej, ek, c) = 0.0;
+                } else {
+                  arr(ei, ej, ek, c) += val; // fold mirror back -> 2x
+                }
+                if (isReflect) {
+                  const int ii = iDim == 0 ? 2 * domEdge - i : i;
+                  const int jj = iDim == 1 ? 2 * domEdge - j : j;
+                  const int kk = iDim == 2 ? 2 * domEdge - k : k;
+                  arr(ii, jj, kk, c) +=
+                      isOdd ? -arr(i, j, k, c) : arr(i, j, k, c);
+                }
+                arr(i, j, k, c) = 0.0; // zero the ghost layer
+#endif
+            });
+      }
+    }
+  }
+}
+
+//==========================================================
 template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::sum_moments(
     Vector<MultiFab>& momentsMF, Vector<MultiFab>& nodeBMF, Real dt) {
@@ -337,103 +465,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     // NOTE: the fold runs BEFORE SumBoundary on purpose so a transverse ghost
     // target that lies in a tile-neighbour's valid region is combined exactly
     // once.
-    if (!Geom(iLev).isAllPeriodic() && momentsMF[iLev].nGrow() > 0) {
-      const Box& dom = Geom(iLev).Domain();
-      const int nCompMF = momentsMF[iLev].nComp();
-      for (MFIter mfi(momentsMF[iLev]); mfi.isValid(); ++mfi) {
-        const Box& bx = mfi.validbox();
-        Array4<Real> const& arr = momentsMF[iLev][mfi].array();
-
-        for (int iDim = 0; iDim < nDim; ++iDim) {
-          if (Geom(iLev).isPeriodic(iDim))
-            continue;
-
-          for (int side = 0; side < 2; ++side) {
-            const bool isLo = (side == 0);
-            const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
-            // A particle face can no longer be `conducting`: that is a
-            // field-only type, and on the particle side it is mapped to
-            // `reflect` at parse time. The fold set covers all uncoupled,
-            // non-periodic faces (reflect, inflow, outflow, vacuum, absorb)
-            // where no exterior ghost particles exist to deposit into the
-            // boundary node.
-            const bool doFold =
-                (faceBc == ParticleBC::reflect ||
-                 faceBc == ParticleBC::inflow ||
-                 faceBc == ParticleBC::outflow ||
-                 faceBc == ParticleBC::vacuum || faceBc == ParticleBC::absorb);
-            if (!doFold)
-              continue;
-
-            // NOTE: momentsMF is NODE-centered (nGrids = convert(cGrids,
-            // nodeVector)), whose domain box extends one node beyond the
-            // cell-centered Geometry box on the hi side.  The edge NODE is
-            // dom.smallEnd (lo) or dom.bigEnd+1 (hi); using dom.bigEnd would
-            // hit the second-last node and skip the real edge tile.
-            const int domEdge =
-                isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim) + 1;
-            const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
-            if (tileEdge != domEdge)
-              continue;
-
-            // Strip of the first ghost-node layer just outside the domain,
-            // spanning the full transverse extent of this FAB (valid +
-            // transverse ghosts).  Mirror the edge node into it, fold it into
-            // the edge node (doubling), then clear the ghost.
-            const Box& fbx = mfi.fabbox();
-            IntVect gs = fbx.smallEnd();
-            IntVect ge = fbx.bigEnd();
-            gs[iDim] = domEdge + (isLo ? -1 : 1);
-            ge[iDim] = gs[iDim];
-            const Box strip(gs, ge);
-
-            const bool isReflect = (faceBc == ParticleBC::reflect);
-
-            ParallelFor(strip, nCompMF,
-                        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-                          // Odd parity components relative to iDim under
-                          // specular reflection: normal momentum and
-                          // off-diagonal normal-shear stresses.
-                          bool isOdd = false;
-                          if (iDim == 0) {
-                            isOdd = (c == iMx_ || c == iPxy_ || c == iPxz_);
-                          } else if (iDim == 1) {
-                            isOdd = (c == iMy_ || c == iPxy_ || c == iPyz_);
-                          } else if (iDim == 2) {
-                            isOdd = (c == iMz_ || c == iPxz_ || c == iPyz_);
-                          }
-
-#if (AMREX_SPACEDIM == 2)
-                          int ei = i, ej = j;
-                          if (iDim == 0)
-                            ei = domEdge;
-                          if (iDim == 1)
-                            ej = domEdge;
-                          const Real val = arr(ei, ej, 0, c);
-                          if (isReflect && isOdd) {
-                            arr(ei, ej, 0, c) = 0.0;
-                          } else {
-                            arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
-                          }
-                          arr(i, j, 0, c) = 0.0; // zero the ghost layer
-#elif (AMREX_SPACEDIM == 3)
-                  int ei = i, ej = j, ek = k;
-                  if (iDim == 0) ei = domEdge;
-                  if (iDim == 1) ej = domEdge;
-                  if (iDim == 2) ek = domEdge;
-                  const Real val = arr(ei, ej, ek, c);
-                  if (isReflect && isOdd) {
-                    arr(ei, ej, ek, c) = 0.0;
-                  } else {
-                    arr(ei, ej, ek, c) += val; // fold mirror back -> 2x
-                  }
-                  arr(i, j, k, c) = 0.0; // zero the ghost layer
-#endif
-                        });
-          }
-        }
-      }
-    }
+    fold_wall_ghost_nodes(momentsMF[iLev], iLev, false);
 
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
@@ -537,6 +569,8 @@ template std::array<Real, 5> PicParticles::total_moments(bool);
 template std::array<Real, 5> PTParticles::total_moments(bool);
 template Real PicParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
                                         Real);
+template void PicParticles::fold_wall_ghost_nodes(MultiFab&, int, bool);
+template void PTParticles::fold_wall_ghost_nodes(MultiFab&, int, bool);
 template Real PTParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
                                        Real);
 template Real PicParticles::calc_max_thermal_velocity(MultiFab&);

@@ -11,15 +11,121 @@
 using namespace amrex;
 
 //==========================================================
-// Seed nodePlasmaPrev on the first explicit step, where there is no previous
-// deposit: initialize it from the current deposit so the time interpolation
-// evaluates to the initial state for that single step.
-void Pic::seed_first_explicit_step() {
-  std::string nameFunc = "Pic::seed_first_explicit_step";
+// Push the kinetic species and deposit the charge-conserving (Esirkepov)
+// current of the push, J = sum_s q_s dx/dt, into J. trialOnly: deposit the
+// current of the push without moving the particles.
+void Pic::push_and_deposit_explicit_current(int pushStage, Vector<MultiFab>& J,
+                                            bool trialOnly) {
+  std::string nameFunc = "Pic::push_and_deposit_explicit_current";
   timing_func(nameFunc);
 
-  save_current_moments_to_prev();
-  isFirstExplicitStep = false;
+  const Real dt = tc->get_dt();
+  const Real dtNext = tc->get_next_dt();
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev)
+    J[iLev].setVal(0.0);
+
+  for (int i : kineticSpecies_) {
+    parts[i]->mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext, pushStage,
+                    &nodeJ, trialOnly);
+    for (int iLev = 0; iLev < n_lev(); ++iLev)
+      MultiFab::Add(J[iLev], nodeJ[iLev], 0, 0, nDim3, get_n_ghost());
+  }
+
+  if (!trialOnly) {
+    for (int i : kineticSpecies_)
+      parts[i]->redistribute_particles();
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    // Same correction of the diluted surface nodes as for the moments.
+    if (use_body())
+      rescale_body_surface_nodes(J[iLev], cell_status(iLev), node_status(iLev),
+                                 Geom(iLev).Domain(), nDim);
+    J[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    fill_fine_lev_bny_from_coarse(
+        J[iLev - 1], J[iLev], 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
+        Geom(iLev), node_status(iLev), node_bilinear_interp);
+  }
+
+  smooth_explicit_current(J);
+}
+
+//==========================================================
+// #SMOOTHJ smoothing of the explicit current, with the same passes, walls
+// and body treatment that smooth_moments() applies to the moments.
+void Pic::smooth_explicit_current(Vector<MultiFab>& J) {
+  const bool shouldSmooth =
+      (doSmoothJ && nSmoothJ > 0) || (doSmoothMoments && nSmoothMoments > 0);
+  if (!shouldSmooth)
+    return;
+
+  std::string nameFunc = "Pic::smooth_explicit_current";
+  timing_func(nameFunc);
+
+  const int nSmooth = doSmoothJ ? nSmoothJ : nSmoothMoments;
+  const Real coefSmooth = doSmoothJ ? coefSmoothJ : coefSmoothMoments;
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    for (int icount = 0; icount < nSmooth; ++icount) {
+      smooth_multifab(J[iLev], iLev, 1, coefSmooth);
+      if (iLev > 0) {
+        fill_fine_lev_bny_from_coarse(
+            J[iLev - 1], J[iLev], 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
+            Geom(iLev), node_status(iLev), node_bilinear_interp);
+      }
+    }
+    J[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    // No normal current through a conducting wall.
+    if (!Geom(iLev).isAllPeriodic()) {
+      const BoundaryBounds bnd(Geom(iLev), J[iLev].boxArray().ixType(),
+                               &bcField);
+      for (MFIter mfi(J[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bxValid = mfi.validbox();
+        Array4<Real> const& arr = J[iLev][mfi].array();
+        const Dim3 vLo = bxValid.smallEnd().dim3();
+        const Dim3 vHi = bxValid.bigEnd().dim3();
+        ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const int ijk[3] = { i, j, k };
+          const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+          const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
+          for (int d = 0; d < nDim; ++d) {
+            if (!bnd.isNode[d])
+              continue;
+            const bool onWall = ((bnd.bcLo[d] == FieldBC::conducting) &&
+                                 (ijk[d] == bnd.loBnd[d])) ||
+                                ((bnd.bcHi[d] == FieldBC::conducting) &&
+                                 (ijk[d] == bnd.hiBnd[d]));
+            if (!onWall)
+              continue;
+            bool inValid = true;
+            for (int od = 0; od < nDim; ++od) {
+              if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+                inValid = false;
+                break;
+              }
+            }
+            if (inValid)
+              arr(i, j, k, d) = 0.0;
+          }
+        });
+      }
+    }
+
+    if (use_body()) {
+      mask_body(J[iLev], node_status(iLev));
+    }
+  }
+
+  for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    fill_fine_lev_bny_from_coarse(
+        J[iLev - 1], J[iLev], 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
+        Geom(iLev), node_status(iLev), node_bilinear_interp);
+  }
 }
 
 //==========================================================
@@ -111,8 +217,10 @@ void Pic::advance_E_step(Real dtSub, const MultiFab& currentMF, int iLev,
 }
 
 //==========================================================
-// Subcycled explicit Maxwell advance for B and E.
-void Pic::update_EB_explicit_leapfrog(Real dt, int nSub) {
+// Subcycled explicit Maxwell advance for B and E with the current J of the
+// step (time-centered at t^{n+1/2}) in every sub-step.
+void Pic::update_EB_explicit_leapfrog(Real dt, int nSub,
+                                      const Vector<MultiFab>& J) {
   std::string nameFunc = "Pic::update_EB_explicit_leapfrog";
   timing_func(nameFunc);
 
@@ -124,24 +232,10 @@ void Pic::update_EB_explicit_leapfrog(Real dt, int nSub) {
     const Real tB_half = t0 + (iSub + 0.5) * subDt;
     advance_B_half_step(subDt, tB_half);
 
-    // 2. Advance E full-step: E^m -> E^{m+1} using B^{m+1/2} and interpolated
-    // current
+    // 2. Advance E full-step: E^m -> E^{m+1} using B^{m+1/2} and J.
     const Real tE_full = t0 + (iSub + 1.0) * subDt;
-    const Real hstep = (nSub == 1) ? 0.5 : (iSub + 0.5) / nSub;
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      if (nSub == 1) {
-        MultiFab::LinComb(nodeJ[iLev], 0.5, nodePlasmaPrev[nSpecies][iLev],
-                          iMx_, 0.5, nodePlasma[nSpecies][iLev], iMx_, 0, nDim3,
-                          get_n_ghost());
-      } else {
-        const Real wPrev = 1.0 - hstep;
-        const Real wCurr = hstep;
-        MultiFab::LinComb(nodeJ[iLev], wPrev, nodePlasmaPrev[nSpecies][iLev],
-                          iMx_, wCurr, nodePlasma[nSpecies][iLev], iMx_, 0,
-                          nDim3, get_n_ghost());
-      }
-      advance_E_step(subDt, nodeJ[iLev], iLev, tE_full);
-    }
+    for (int iLev = 0; iLev < n_lev(); ++iLev)
+      advance_E_step(subDt, J[iLev], iLev, tE_full);
 
     if (projectDownEmFields && finestLevel() > 0) {
       project_down_E();
@@ -159,34 +253,22 @@ void Pic::advance_explicit_pc(Real dt) {
   std::string nameFunc = "Pic::advance_explicit_pc";
   timing_func(nameFunc);
 
-  if (isFirstExplicitStep) {
-    seed_first_explicit_step();
-  }
-
-  // 1. Backup base particle state at t^n
-  for (int i : kineticSpecies_) {
-    parts[i]->backup_particle_state();
-  }
-
-  // 2. Backup base fields B^n and E^n
+  // 1. Backup base fields B^n and E^n
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3,
                    get_n_ghost());
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
   }
 
-  // 3. Predictor push using (E^n, B^n) [pushStage = 1]
-  advance_particles_and_sources(1);
+  // 2. Predictor: trial push with (E^n, B^n) that only deposits its current
+  // J* = q (x* - x^n)/dt; the particles stay at t^n.
+  push_and_deposit_explicit_current(PicParticles::kPushPredictor, nodeJexpl,
+                                    true);
 
-  // 4. Deposit trial moments & advance trial fields to t^(n+1)
-  save_current_moments_to_prev();
-  sum_moments(false);
-  if (doSmoothJ || doSmoothMoments) {
-    smooth_moments();
-  }
-  update_EB_explicit_leapfrog(dt, nEMSubcycle);
+  // 3. Advance trial fields to t^(n+1) with J*.
+  update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexpl);
 
-  // 5. Construct time-centered fields at t^(n+1/2)
+  // 4. Construct time-centered fields at t^(n+1/2)
   const Real t0 = tc ? tc->get_time() : 0.0;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev], 0,
@@ -205,26 +287,18 @@ void Pic::advance_explicit_pc(Real dt) {
     }
   }
 
-  // 6. Restore base particle state at t^n
-  for (int i : kineticSpecies_) {
-    parts[i]->restore_particle_state();
-  }
+  // 5. Corrector push from t^n with the time-centered fields, depositing the
+  // current J^(n+1/2) of the accepted displacement.
+  push_and_deposit_explicit_current(PicParticles::kPushCorrector, nodeJexpl);
+  finish_particle_push();
 
-  // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage = 2]
-  advance_particles_and_sources(2);
-
-  // 8. Restore B^n and advance to final (B^{n+1}, E^{n+1}) using accepted
-  // moments
+  // 6. Restore B^n, E^n and advance to (B^{n+1}, E^{n+1}) with J^(n+1/2).
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3,
                    get_n_ghost());
     MultiFab::Copy(nodeE[iLev], nodeEth[iLev], 0, 0, nDim3, get_n_ghost());
   }
-  sum_moments(false);
-  if (doSmoothJ || doSmoothMoments) {
-    smooth_moments();
-  }
-  update_EB_explicit_leapfrog(dt, nSubcycle);
+  update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexpl);
 }
 
 //==========================================================
@@ -234,7 +308,6 @@ void Pic::advance_explicit_full_pic() {
   timing_func(nameFunc);
 
   const Real dt = tc->get_dt();
-  const Real t0 = tc ? tc->get_time() : 0.0;
 
   const bool usePC =
       (fieldIntegrator == "rk4-pc" || fieldIntegrator == "pc-rk4" ||
@@ -244,60 +317,17 @@ void Pic::advance_explicit_full_pic() {
   if (usePC) {
     advance_explicit_pc(dt);
   } else {
-    // Standard leapfrog / Strang splitting
-    if (isFirstExplicitStep) {
-      seed_first_explicit_step();
-    }
+    // Leapfrog: x^n, v^{n-1/2}, E^n, B^n -> x^{n+1}, v^{n+1/2}, E^{n+1},
+    // B^{n+1}.
+    // 1. Kick v^{n-1/2} -> v^{n+1/2} with (E^n, B^n) and drift to x^{n+1},
+    // depositing J^{n+1/2} = q (x^{n+1} - x^n)/dt in the same pass.
+    push_and_deposit_explicit_current(PicParticles::kPushLeapfrog, nodeJexpl);
+    finish_particle_push();
 
-    if (nSubcycle == 1) {
-      // 1. Advance B half-step: B^n -> B^{n+1/2}
-      advance_B_half_step(dt, t0 + 0.5 * dt);
-
-      // 2. Boris push particles using (E^n, B^{n+1/2})
-      advance_particles_and_sources(0);
-
-      // 3. Deposit moments at t^{n+1}
-      save_current_moments_to_prev();
-      sum_moments(false);
-      if (doSmoothJ || doSmoothMoments) {
-        smooth_moments();
-      }
-
-      // 4. Advance E full-step using time-centered current J^{n+1/2} = 0.5 *
-      // (J^n + J^{n+1})
-      for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        MultiFab::LinComb(nodeJ[iLev], 0.5, nodePlasmaPrev[nSpecies][iLev],
-                          iMx_, 0.5, nodePlasma[nSpecies][iLev], iMx_, 0, nDim3,
-                          get_n_ghost());
-        advance_E_step(dt, nodeJ[iLev], iLev, t0 + dt);
-      }
-
-      if (projectDownEmFields && finestLevel() > 0) {
-        project_down_E();
-      }
-
-      // 5. Advance B second half-step: B^{n+1/2} -> B^{n+1} using E^{n+1}
-      advance_B_half_step(dt, t0 + dt);
-    } else {
-      // Subcycled leapfrog: push particles first with (E^n, B^n)
-      advance_particles_and_sources(0);
-
-      save_current_moments_to_prev();
-      sum_moments(false);
-      if (doSmoothJ || doSmoothMoments) {
-        smooth_moments();
-      }
-
-      update_EB_explicit_leapfrog(dt, nSubcycle);
-    }
+    // 2. B half-step, E full step with J^{n+1/2}, B half-step (subcycled).
+    update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexpl);
   }
 
-  // Div(E) correction (Gauss's law cleaning) if configured
-  if (doCorrectDivE) {
-    if (finestLevel() == 0) {
-      divE_correction();
-    } else {
-      amr_divE_correction();
-    }
-  }
+  // A div(E) correction, when on, follows in Pic::update(), as for the
+  // semi-implicit solver.
 }

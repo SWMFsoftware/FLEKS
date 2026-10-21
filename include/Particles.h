@@ -495,6 +495,11 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
+  // Fold the first ghost-node layer of a node-centered deposit back into the
+  // edge node at non-periodic uncoupled walls (mirror condition). isVector:
+  // mf holds a 3-component vector instead of the moment layout.
+  void fold_wall_ghost_nodes(amrex::MultiFab& mf, int iLev, bool isVector);
+
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   // nodeB0MF is the optional frozen intrinsic magnetic field; it may be
@@ -583,23 +588,44 @@ public:
   void add_source_particles(std::unique_ptr<PicParticles>& sourcePart,
                             amrex::IntVect ppc, const bool adaptivePPC);
 
+  // pushStage of mover(): kPushLeapfrog kicks the velocity and drifts the
+  // position by the new velocity; kPushPredictor / kPushCorrector are the two
+  // stages of the predictor-corrector scheme (drift by the average of the old
+  // and new velocities).
+  static constexpr int kPushLeapfrog = 0;
+  static constexpr int kPushPredictor = 1;
+  static constexpr int kPushCorrector = 2;
+
   // nodeB0 is the frozen intrinsic magnetic field (see #DIPOLE /
   // #CRUSTALFIELD). It is the static part of the total field the particles are
   // pushed with and may be empty when no intrinsic field is configured.
+  //
+  // currentMF (optional, 3 components on the nodes): overwritten with the
+  // charge-conserving (Esirkepov) current of this species over the push,
+  // J = sum q dx/dt, deposited as the particles move. It satisfies
+  // rho^{new} - rho^{old} = -dt div_node_to_center(J) exactly, with rho the
+  // node charge averaged to the cell centers (see sum_to_center). A particle
+  // may not cross more than one cell per push.
+  // trialOnly: deposit the current of the push without changing the
+  // particles (the predictor of the explicit predictor-corrector scheme).
   void mover(const amrex::Vector<amrex::MultiFab>& nodeE,
              const amrex::Vector<amrex::MultiFab>& nodeB,
              const amrex::Vector<amrex::MultiFab>& nodeB0,
              const amrex::Vector<amrex::MultiFab>& eBg,
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
-             amrex::Real dtNext, int pushStage = 0);
+             amrex::Real dtNext, int pushStage = 0,
+             amrex::Vector<amrex::MultiFab>* currentMF = nullptr,
+             bool trialOnly = false);
 
-  void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
-                              const amrex::Vector<amrex::MultiFab>& nodeB,
-                              const amrex::Vector<amrex::MultiFab>& nodeB0,
-                              const amrex::Vector<amrex::MultiFab>& eBg,
-                              const amrex::Vector<amrex::MultiFab>& uBg,
-                              amrex::Real dt, amrex::Real dtNext,
-                              int pushStage = 0);
+  void charged_particle_mover(
+      const amrex::Vector<amrex::MultiFab>& nodeE,
+      const amrex::Vector<amrex::MultiFab>& nodeB,
+      const amrex::Vector<amrex::MultiFab>& nodeB0,
+      const amrex::Vector<amrex::MultiFab>& eBg,
+      const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
+      amrex::Real dtNext, int pushStage = 0,
+      amrex::Vector<amrex::MultiFab>* currentMF = nullptr,
+      bool trialOnly = false);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);

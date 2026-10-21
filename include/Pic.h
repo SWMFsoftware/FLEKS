@@ -211,7 +211,6 @@ private:
   bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
-  bool isFirstExplicitStep = true;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
   bool reportParticleQuality = false;
@@ -344,6 +343,9 @@ private:
                                              // (nodal)
   amrex::Vector<amrex::MultiFab> nodeCurlB;  // scratch for curl(B) in explicit
                                              // PIC
+  // Explicit PIC: charge-conserving current of the particle push (nodal, 3
+  // components), time-centered at t^{n+1/2}.
+  amrex::Vector<amrex::MultiFab> nodeJexpl;
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
   // Per-step scratch reused across stages: the advected Pe, then div(q), then
@@ -564,6 +566,9 @@ public:
     if (fieldSolverMode == PicSolverMode::Explicit) {
       useExplicitPIC = true;
       solveEM = false;
+      // The charge-conserving current keeps Gauss's law without the
+      // particle-position correction (#DIVE turns it back on).
+      doCorrectDivE = false;
     } else if (fieldSolverMode == PicSolverMode::Hybrid) {
       useExplicitPIC = false;
       solveEM = false;
@@ -596,6 +601,7 @@ public:
     centerBstage.resize(n_lev_max());
     nodeEstage.resize(n_lev_max());
     nodeJ.resize(n_lev_max());
+    nodeJexpl.resize(n_lev_max());
     nodeBstage.resize(n_lev_max());
     centerPe.resize(n_lev_max());
     nodeEambi.resize(n_lev_max());
@@ -780,6 +786,9 @@ public:
   void update_part_loc_to_half_stage();
 
   void particle_mover(int pushStage = 0);
+  // Particle bookkeeping after the push: resampling, charge exchange, sources
+  // and boundary injection.
+  void finish_particle_push();
   void advance_particles_and_sources(int pushStage = 0);
 
   void re_sampling();
@@ -891,12 +900,20 @@ public:
 
   //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
   void advance_explicit_full_pic();
-  void update_EB_explicit_leapfrog(amrex::Real dt, int nSub);
+  // Subcycled Maxwell advance over dt with the current J in every sub-step.
+  void update_EB_explicit_leapfrog(amrex::Real dt, int nSub,
+                                   const amrex::Vector<amrex::MultiFab> &J);
+  // Push the kinetic species (pushStage as in Particles::mover) and set J to
+  // their charge-conserving current, smoothed with #SMOOTHJ. trialOnly: the
+  // particles are not changed.
+  void push_and_deposit_explicit_current(int pushStage,
+                                         amrex::Vector<amrex::MultiFab> &J,
+                                         bool trialOnly = false);
+  void smooth_explicit_current(amrex::Vector<amrex::MultiFab> &J);
   void advance_B_half_step(amrex::Real dtSub, amrex::Real tSub = -1.0);
   void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,
                       int iLev, amrex::Real tSub = -1.0);
   void advance_explicit_pc(amrex::Real dt);
-  void seed_first_explicit_step();
 
   //-------------Evolved electron pressure (#ELECTRONPRESSURE)-----------------
   // Advance the scalar electron pressure by one PIC step, operator split:

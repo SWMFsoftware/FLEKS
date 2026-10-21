@@ -224,6 +224,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(nodeJ[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
+        distribute_FabArray(nodeJexpl[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
         distribute_FabArray(centerBstar[iLev], boxArray(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
@@ -232,8 +235,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             doMoveData);
       }
     }
-    if (useHybridPIC || useExplicitPIC) {
-      // Previous-step moments for the Ohm's-law / explicit interpolation.
+    if (useHybridPIC) {
+      // Previous-step moments for the Ohm's-law interpolation.
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
@@ -321,7 +324,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 1, get_n_ghost(), false);
       }
     }
-    if (useHybridPIC || useExplicitPIC) {
+    if (useHybridPIC) {
       // Node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
         if (pl.empty())
@@ -1385,7 +1388,7 @@ void Pic::sum_moments(bool updateDt) {
             Geom(iLev - 1), Geom(iLev), node_status(iLev),
             node_bilinear_interp);
 
-        if (useHybridPIC || useExplicitPIC) {
+        if (useHybridPIC) {
           fill_fine_lev_bny_from_coarse(nodePlasmaPrev[nSpecies][iLev - 1],
                                         nodePlasmaPrev[nSpecies][iLev], 0,
                                         nodePlasmaPrev[nSpecies][iLev].nComp(),
@@ -1584,7 +1587,11 @@ void Pic::calc_cost_per_cell() {
 
 void Pic::advance_particles_and_sources(int pushStage) {
   particle_mover(pushStage);
+  finish_particle_push();
+}
 
+//==========================================================
+void Pic::finish_particle_push() {
   // Calling re_sampling after particle mover so that all the particles
   // outside the domain have been deleted.
   re_sampling();

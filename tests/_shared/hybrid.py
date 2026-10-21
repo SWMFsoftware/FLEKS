@@ -274,17 +274,37 @@ def _full_em_branches(kappa, mu, ne_over_ni):
     )
 
 
+def _field_solver_mode(param_path):
+    """Lower-case value of #FIELDSOLVER, or None when the deck has none."""
+    try:
+        with open(param_path, "r", encoding="latin-1") as f:
+            lines = [l.strip() for l in f]
+    except OSError:
+        return None
+    for i, line in enumerate(lines):
+        if line.split()[:1] == ["#FIELDSOLVER"]:
+            for nxt in lines[i + 1:]:
+                if nxt:
+                    return nxt.split()[0].lower()
+    return None
+
+
 def _solver_and_species(param_path):
     """Return (is_full_em, mu, ne_over_ni) read from the deck.
 
-    is_full_em is True when the deck runs the Maxwell solver (#SOLVEEM T), for
-    which the expectation is the full cold-plasma dispersion rather than the
-    Hall (massless-electron, no displacement current) one.  mu = m_i/m_e;
-    mu is None when the deck has a single species.
+    is_full_em is True when the deck runs a Maxwell solver (#SOLVEEM T, or
+    #FIELDSOLVER implicit / explicit), for which the expectation is the full
+    cold-plasma dispersion rather than the Hall (massless-electron, no
+    displacement current) one.  mu = m_i/m_e; mu is None when the deck has a
+    single species.
     """
     blocks = _parse_named(param_path, ["#SOLVEEM", "#PLASMA", "#UNIFORMSTATE"])
     solveem = blocks.get("#SOLVEEM", [])
     is_full_em = bool(solveem) and solveem[0][0] != 0.0
+    solver = _field_solver_mode(param_path)
+    if solver is not None:
+        is_full_em = solver in ("implicit", "semi-implicit", "explicit",
+                                "explicit-pic")
 
     plasma = blocks.get("#PLASMA", [])
     masses = [v for v, n in plasma if n.lower().startswith("mass")]
@@ -481,7 +501,11 @@ def _hyb_whistler_dispersion(out_files, test_name=None):
     measured = abs(omega_code)
     branch, omega_theory = min(
         branches, key=lambda b: abs(measured - b[1]))
-    tol = 0.20 * max(omega_theory, 1e-9)
+    # The full-PIC solvers (semi-implicit and explicit) land within 1% of the
+    # cold-plasma root here, so they get a tight window; the Hall comparison
+    # keeps the original 20%.
+    tol_frac = 0.05 if model.startswith("full cold plasma") else 0.20
+    tol = tol_frac * max(omega_theory, 1e-9)
 
     msg = (
         f"whistler dispersion n={kdom}: measured |omega|/Omega_i = {measured:.3f} "
