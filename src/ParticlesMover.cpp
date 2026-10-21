@@ -437,7 +437,6 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   const Real sign = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
-  long nNonFiniteDivE = 0;
 
   const Real* const ploLoc = plo[iLev].begin();
   const Real* const invDxLoc = invDx[iLev].begin();
@@ -569,17 +568,6 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         for (int iDim = 0; iDim < nDim; iDim++)
           eps_D[iDim] *= sign * fourPI;
 
-        // A non-finite potential (e.g. an unfilled ghost cell next to the
-        // inner body on a refined level) would turn the position into NaN,
-        // which the cap below cannot catch: skip such a correction.
-        bool isFinite = true;
-        for (int iDim = 0; iDim < nDim; iDim++)
-          isFinite = isFinite && std::isfinite(eps_D[iDim]);
-        if (!isFinite) {
-          nNonFiniteDivE++;
-          continue;
-        }
-
         Real eps_D_dot_invDx_Max = 0.0;
         for (int iDim = 0; iDim < nDim; iDim++) {
           if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > eps_D_dot_invDx_Max) {
@@ -616,12 +604,6 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       }
     } // for p
   }
-
-  ParallelDescriptor::ReduceLongSum(nNonFiniteDivE);
-  if (nNonFiniteDivE > 0)
-    Print() << "Warning: div(E) correction skipped for " << nNonFiniteDivE
-            << " particles of species " << speciesID << " on level " << iLev
-            << " (non-finite potential)." << std::endl;
 }
 
 //==========================================================

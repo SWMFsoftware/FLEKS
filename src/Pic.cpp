@@ -2276,11 +2276,8 @@ void Pic::update_U0_E0() {
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 0) {
           const Real invRho = 1. / rho;
-          for (int iu = iUx_; iu <= iUz_; iu++) {
-            // A (near-)denormal density overflows 1/rho.
-            const Real u = arrMoments(i, j, k, iu) * invRho;
-            arrU(i, j, k, iu - iUx_) = std::isfinite(u) ? u : 0.0;
-          }
+          for (int iu = iUx_; iu <= iUz_; iu++)
+            arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
         }
       });
 
