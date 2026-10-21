@@ -47,10 +47,6 @@ private:
     periodicity[iDir] = isPeriodic ? 1 : 0;
   }
 
-  struct PreparedGrid {
-    amrex::Geometry geometry;
-    amrex::AmrInfo amrInfo;
-  };
   GridInfo gridInfo;
   int iGrid = 1;
   int iDecomp = 1;
@@ -82,7 +78,8 @@ private:
 
   bool find_parameter_owner(const std::string &command,
                             ParameterOwner &owner) const;
-  PreparedGrid prepare_grid_info(const amrex::Vector<double> &info);
+  void prepare_grid_info(const amrex::Vector<double> &info,
+                         amrex::Geometry &geometry, amrex::AmrInfo &amrInfo);
 
 public:
   std::unique_ptr<TimeCtr> tc;

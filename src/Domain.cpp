@@ -261,7 +261,9 @@ void Domain::init(double time, const int iDomain,
     if (paramInt[0] == 2 && nDim == 3)
       isFake2D = true;
 
-  const PreparedGrid prepared = prepare_grid_info(paramRegion);
+  Geometry geometry;
+  AmrInfo amrInfo;
+  prepare_grid_info(paramRegion, geometry, amrInfo);
 
   // Read Domain-level switches, then rewind so read_param re-reads the file.
   {
@@ -270,8 +272,7 @@ void Domain::init(double time, const int iDomain,
     validate_configuration();
   }
 
-  grid =
-      std::make_unique<Grid>(prepared.geometry, prepared.amrInfo, nGst, gridID);
+  grid = std::make_unique<Grid>(geometry, amrInfo, nGst, gridID);
 
   if (domainParameters.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(*grid, "fi",
@@ -472,9 +473,8 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-Domain::PreparedGrid Domain::prepare_grid_info(const Vector<double> &info) {
-
-  PreparedGrid prepared;
+void Domain::prepare_grid_info(const Vector<double> &info, Geometry &geometry,
+                               AmrInfo &amrInfo) {
 
   read_param(true);
   readParam.roll_back();
@@ -515,9 +515,9 @@ Domain::PreparedGrid Domain::prepare_grid_info(const Vector<double> &info) {
     centerBoxHi[i] = nCell[i] - 1;
   const Box centerBox(centerBoxLo, centerBoxHi);
 
-  prepared.geometry.define(centerBox, &domainBox, coord, periodicity.getVect());
+  geometry.define(centerBox, &domainBox, coord, periodicity.getVect());
 
-  prepared.amrInfo.max_level = config::nLevMax - 1;
+  amrInfo.max_level = config::nLevMax - 1;
 
   // The value of blocking_factor constrains grid creation in that in that
   // each grid must be divisible by blocking_factor. Note that both the domain
@@ -526,31 +526,30 @@ Domain::PreparedGrid Domain::prepare_grid_info(const Vector<double> &info) {
   // gridding algorithm would not in fact create grids divisible by
   // blocking_factor because of how blocking_factor is used in the gridding
   // algorithm).
-  prepared.amrInfo.blocking_factor.clear();
+  amrInfo.blocking_factor.clear();
   // Fake 2D has one z cell at every level, so neither blocking nor refinement
   // may require an additional z cell on a fine level.
-  for (int iLev = 0; iLev <= prepared.amrInfo.max_level; iLev++) {
-    prepared.amrInfo.blocking_factor.push_back(
-        isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1)) : IntVect(2));
+  for (int iLev = 0; iLev <= amrInfo.max_level; iLev++) {
+    amrInfo.blocking_factor.push_back(isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1))
+                                               : IntVect(2));
   }
 
-  prepared.amrInfo.ref_ratio.clear();
-  for (int iLev = 0; iLev < prepared.amrInfo.max_level; iLev++) {
-    prepared.amrInfo.ref_ratio.push_back(
+  amrInfo.ref_ratio.clear();
+  for (int iLev = 0; iLev < amrInfo.max_level; iLev++) {
+    amrInfo.ref_ratio.push_back(
         isFake2D ? IntVect(AMREX_D_DECL(refinementRatio, refinementRatio, 1))
                  : IntVect(refinementRatio));
   }
 
-  prepared.amrInfo.max_grid_size.clear();
-  prepared.amrInfo.max_grid_size.push_back(maxBlockSize);
+  amrInfo.max_grid_size.clear();
+  amrInfo.max_grid_size.push_back(maxBlockSize);
 
   // Buffer cells around each tagged cell. AMREX default is 1.
-  prepared.amrInfo.n_error_buf.clear();
-  prepared.amrInfo.n_error_buf.push_back(IntVect(0));
+  amrInfo.n_error_buf.clear();
+  amrInfo.n_error_buf.push_back(IntVect(0));
 
   Print() << printPrefix << "Domain range = " << domainBox << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;
-  return prepared;
 }
 
 //========================================================
