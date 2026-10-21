@@ -119,62 +119,6 @@ const ParameterCommand *find_parameter_command(const std::string &command) {
   return nullptr;
 }
 
-std::string canonical_command(const std::string &command) {
-  if (command == "#DISCRETIZATION")
-    return "#DISCRETIZE";
-  if (command == "#BFIELDBOXBOUNDARY")
-    return "#FIELDBOXBOUNDARY";
-  return command;
-}
-
-ParameterCommandLocation locate_command(const std::string &text,
-                                        const std::string &command,
-                                        std::size_t &searchPosition) {
-  std::size_t line = 1;
-  std::size_t lineStart = 0;
-  while (lineStart < text.size()) {
-    const std::size_t lineEnd = text.find('\n', lineStart);
-    const std::size_t end =
-        lineEnd == std::string::npos ? text.size() : lineEnd;
-    std::size_t first = lineStart;
-    while (first < end && (text[first] == ' ' || text[first] == '\t'))
-      ++first;
-    const std::size_t nextChar = first + command.size();
-    const bool isDelimiter = (nextChar >= end || text[nextChar] == ' ' ||
-                              text[nextChar] == '\t' || text[nextChar] == '\r');
-    if (text.compare(first, command.size(), command) == 0 && isDelimiter &&
-        first >= searchPosition) {
-      searchPosition = end;
-      return { line, first - lineStart + 1 };
-    }
-    if (lineEnd == std::string::npos)
-      break;
-    lineStart = lineEnd + 1;
-    ++line;
-  }
-  return {};
-}
-
-std::string format_location(const ParameterCommandLocation &location) {
-  if (location.line == 0)
-    return "unknown location";
-  return "line " + std::to_string(location.line) + ", column " +
-         std::to_string(location.column);
-}
-
-void reject_conflicting_commands(
-    const std::map<std::string, ParameterCommandLocation> &locations,
-    const DomainParameters &parameters) {
-  const auto restart = locations.find("#RESTART");
-  const auto receiveICOnly = locations.find("#RECEIVEICONLY");
-  if (parameters.doRestart && parameters.receiveICOnly &&
-      restart != locations.end() && receiveICOnly != locations.end())
-    Abort("Conflicting commands: #RESTART at " +
-          format_location(restart->second) + " and #RECEIVEICONLY at " +
-          format_location(receiveICOnly->second) +
-          " cannot be enabled together.");
-}
-
 } // namespace
 
 bool Domain::find_parameter_owner(const std::string &command,
@@ -219,7 +163,6 @@ void Domain::init(double time, const int iDomain,
   }
 
   readParam = paramString;
-  parameterText = paramString;
 
   if (!paramInt.empty())
     if (paramInt[0] == 2 && nDim == 3)
@@ -426,8 +369,6 @@ void Domain::update() {
 //========================================================
 void Domain::update_param(const std::string &paramString) {
   readParam = paramString;
-  parameterText = paramString;
-  parameterCommandLocations.clear();
   // Initial parsing builds the first mesh; only later sessions can dirty an
   // existing refinement hierarchy.
   readingSessionUpdate = true;
@@ -1146,12 +1087,8 @@ void Domain::read_param(const bool readGridInfo) {
   // The default values shoudl be set in the constructor.
 
   std::string command;
-  std::size_t commandSearchPosition = 0;
   bool refineSelectorsChanged = false;
   bool gridEfficiencyChanged = false;
-  if (readGridInfo)
-    parameterCommandLocations.clear();
-
   readParam.set_verbose(false);
   bool sourceParamsSynced = false;
   readParam.set_command_suffix(gridName);
@@ -1178,13 +1115,6 @@ void Domain::read_param(const bool readGridInfo) {
     readParam.set_verbose(ParallelDescriptor::IOProcessor());
     Print() << "\n"
             << component << ": " << command << " " << gridName << std::endl;
-
-    {
-      const std::string key = canonical_command(command);
-      const ParameterCommandLocation location =
-          locate_command(parameterText, command, commandSearchPosition);
-      parameterCommandLocations.emplace(key, location);
-    }
 
     ParameterOwner owner;
     if (find_parameter_owner(command, owner)) {
@@ -1533,8 +1463,6 @@ void Domain::read_param(const bool readGridInfo) {
 }
 
 void Domain::validate_configuration() const {
-  reject_conflicting_commands(parameterCommandLocations, domainParameters);
-
   const std::string error = domainParameters.validation_error();
   if (!error.empty())
     Abort("Invalid domain configuration: " + error);

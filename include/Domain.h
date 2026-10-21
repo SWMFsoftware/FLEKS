@@ -1,8 +1,6 @@
 #ifndef _DOMAIN_H_
 #define _DOMAIN_H_
 
-#include <cstddef>
-#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -23,11 +21,6 @@
 #include "ReadParam.h"
 #include "RefineRegions.h"
 #include "SourceInterface.h"
-
-struct ParameterCommandLocation {
-  std::size_t line = 0;
-  std::size_t column = 0;
-};
 
 enum class ParameterOwner { Pic, ParticleTracker, Source, FluidInterface };
 
@@ -67,8 +60,6 @@ private:
   DomainParameters domainParameters;
 
   ReadParam readParam;
-  std::string parameterText;
-  std::map<std::string, ParameterCommandLocation> parameterCommandLocations;
   std::vector<std::string> sourceParameterCommands;
 
   ParticleTrackerInfo ptInfo;
