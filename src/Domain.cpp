@@ -50,14 +50,12 @@ static const ParameterCommand parameter_registry[] = {
   { "#FASTMERGE", ParameterOwner::Pic },
   { "#FIELDBOXBOUNDARY", ParameterOwner::Pic },
   { "#FIELDINTEGRATOR", ParameterOwner::Pic },
-  { "#FIELDSOLVER", ParameterOwner::Pic },
   { "#FIELDSUBCYCLE", ParameterOwner::Pic },
   { "#FIXEDUMAX", ParameterOwner::Pic },
   { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
   { "#FORCEFREEIC", ParameterOwner::Pic },
   { "#GEMIC", ParameterOwner::Pic },
   { "#HALLTERM", ParameterOwner::Pic },
-  { "#HYBRIDPIC", ParameterOwner::Pic },
   { "#HYPERRESISTIVITY", ParameterOwner::Pic },
   { "#INFLOW", ParameterOwner::Pic },
   { "#KINETICSOURCE", ParameterOwner::Pic },
@@ -68,6 +66,7 @@ static const ParameterCommand parameter_registry[] = {
   { "#MINIMUMDENSITY", ParameterOwner::Pic },
   { "#NORMALIZATION", ParameterOwner::FluidInterface },
   { "#OHION", ParameterOwner::Pic },
+  { "#OHMSLAW", ParameterOwner::FluidInterface },
   { "#PARTICLEBOXBOUNDARY", ParameterOwner::Pic },
   { "#PARTICLELEVRATIO", ParameterOwner::Pic },
   { "#PARTICLES", ParameterOwner::Pic },
@@ -86,7 +85,6 @@ static const ParameterCommand parameter_registry[] = {
   { "#SMOOTHE", ParameterOwner::Pic },
   { "#SMOOTHJ", ParameterOwner::Pic },
   { "#SMOOTHMOMENTS", ParameterOwner::Pic },
-  { "#SOLVEEM", ParameterOwner::Pic },
   { "#SOURCEPARTICLES", ParameterOwner::Pic },
   { "#SUPID", ParameterOwner::Pic },
   { "#TESTCASE", ParameterOwner::Pic },
@@ -103,7 +101,6 @@ static const ParameterCommand parameter_registry[] = {
   { "#UPWINDB", ParameterOwner::Pic },
   { "#UPWINDE", ParameterOwner::Pic },
   { "#VACUUM", ParameterOwner::Pic },
-  { "#WAVE", ParameterOwner::FluidInterface },
   { "#WAVEBC", ParameterOwner::Pic },
   { "#WAVEIC", ParameterOwner::Pic }
 };
@@ -117,6 +114,17 @@ const ParameterCommand *find_parameter_command(const std::string &command) {
   if (it != std::end(parameter_registry) && command == it->name)
     return it;
   return nullptr;
+}
+
+// Commands read by Domain::read_domain_parameters() before the children exist.
+bool is_domain_parameter_command(const std::string &command) {
+  static const std::set<std::string> commands = {
+    "#RESTART",      "#TPRESTART",     "#RESTARTFIONLY", "#REGRIDONRESTART",
+    "#INITFROMSWMF", "#RECEIVEICONLY", "#NOUTFILE",      "#PARTICLETRACKER",
+    "#SOURCE",       "#FIELDSOLVER",   "#HYBRIDPIC",     "#SOLVEEM",
+    "#LOADBALANCE"
+  };
+  return commands.count(command) > 0;
 }
 
 } // namespace
@@ -1027,6 +1035,7 @@ void Domain::read_domain_parameters(ReadParam &rp) {
   // Only Domain-level switches are parsed here; the caller rolls back the
   // stream, so read_param re-reads the whole file afterward.
   std::string command;
+  bool hasFieldSolver = false;
   while (rp.get_next_command(command)) {
     if (command == "#RESTART") {
       rp.read_var("doRestart", domainParameters.doRestart);
@@ -1049,19 +1058,30 @@ void Domain::read_domain_parameters(ReadParam &rp) {
     } else if (command == "#SOURCE") {
       rp.read_var("useSource", domainParameters.useSource);
     } else if (command == "#FIELDSOLVER") {
+      hasFieldSolver = true;
       std::string mode;
       rp.read_var("fieldSolverMode", mode);
       domainParameters.set_field_solver_mode(mode);
     } else if (command == "#HYBRIDPIC") {
+      // Deprecated; #FIELDSOLVER takes priority.
+      Print()
+          << "  Warning: #HYBRIDPIC is deprecated; use #FIELDSOLVER instead.\n";
       bool useHyb = false;
       rp.read_var("useHybridPIC", useHyb);
-      if (useHyb)
+      if (!hasFieldSolver && useHyb)
         domainParameters.set_field_solver_mode("hybrid");
     } else if (command == "#SOLVEEM") {
+      // Deprecated; #FIELDSOLVER takes priority.
+      Print()
+          << "  Warning: #SOLVEEM is deprecated; use #FIELDSOLVER instead.\n";
       bool sEM = true;
       rp.read_var("solveEM", sEM);
-      if (!sEM && domainParameters.fieldSolverMode != PicSolverMode::Hybrid)
-        domainParameters.set_field_solver_mode("none");
+      if (!hasFieldSolver) {
+        if (sEM)
+          domainParameters.set_field_solver_mode("implicit");
+        else if (domainParameters.fieldSolverMode != PicSolverMode::Hybrid)
+          domainParameters.set_field_solver_mode("none");
+      }
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       rp.read_var("loadBalanceStrategy", strategy);
@@ -1095,15 +1115,16 @@ void Domain::read_param(const bool readGridInfo) {
   readParam.set_component(component);
   while (readParam.get_next_command(command)) {
 
-    bool isGridCommand =
-        command == "#MAXBLOCKSIZE" || command == "#PERIODICITY" ||
-        command == "#GEOMETRY" || command == "#NCELL" ||
-        command == "#RESTART" || command == "#INITFROMSWMF" ||
-        command == "#RECEIVEICONLY" || command == "#PARTICLETRACKER" ||
-        command == "#REFINEMENTRATIO";
+    bool isGridCommand = command == "#MAXBLOCKSIZE" ||
+                         command == "#PERIODICITY" || command == "#GEOMETRY" ||
+                         command == "#NCELL" || command == "#REFINEMENTRATIO";
 
     // Skip this command
     if (readGridInfo != isGridCommand)
+      continue;
+
+    // Already read by read_domain_parameters().
+    if (is_domain_parameter_command(command))
       continue;
 
     if (command == "#DESCRIPTION" || command == "#STOP" || command == "#RUN") {
@@ -1378,14 +1399,6 @@ void Domain::read_param(const bool readGridInfo) {
                       plotMax_D);
         tc->plots.push_back(pcTmp);
       }
-    } else if (command == "#OHMSLAW") {
-      std::string sOhmU;
-      Real eta;
-      readParam.read_var("OhmU", sOhmU);
-      readParam.read_var("resistivity", eta);
-
-      fi->set_resistivity(eta);
-      fi->set_ohm_u(sOhmU);
       //--------- The commands below exist in restart.H only --------
     } else if (command == "#NSTEP") {
       int nStep;

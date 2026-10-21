@@ -528,6 +528,14 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     // (rho, vx, vy, vz, p)*nFluid + B + E
     nVarFluid = 5 * nFluid + 3 + 3;
     useCurrent = true;
+  } else if (command == "#OHMSLAW") {
+    std::string sOhmU;
+    double eta;
+    param.read_var("OhmU", sOhmU);
+    param.read_var("resistivity", eta);
+
+    set_resistivity(eta);
+    set_ohm_u(sOhmU);
   }
 }
 

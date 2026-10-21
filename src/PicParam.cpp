@@ -15,64 +15,10 @@
 using namespace amrex;
 
 //==========================================================
-void Pic::set_field_solver_mode(const std::string& modeStr) {
-  std::string s = modeStr;
-  for (char& c : s)
-    c = std::tolower(c);
-  if (s == "implicit" || s == "semi-implicit") {
-    fieldSolverMode = PicSolverMode::Implicit;
-    solveEM = true;
-    useExplicitPIC = false;
-  } else if (s == "explicit" || s == "explicit-pic") {
-    fieldSolverMode = PicSolverMode::Explicit;
-    solveEM = false;
-    useExplicitPIC = true;
-  } else if (s == "hybrid" || s == "hybrid-pic") {
-    fieldSolverMode = PicSolverMode::Hybrid;
-    solveEM = false;
-    useExplicitPIC = false;
-  } else if (s == "none" || s == "off" || s == "false") {
-    fieldSolverMode = PicSolverMode::None;
-    solveEM = false;
-    useExplicitPIC = false;
-  } else {
-    Abort("Invalid #FIELDSOLVER mode '" + modeStr +
-          "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
-  }
-}
-
-//==========================================================
 void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
-  } else if (command == "#FIELDSOLVER") {
-    hasFieldSolver_ = true;
-    std::string s;
-    param.read_var("fieldSolverMode", s);
-    set_field_solver_mode(s);
-  } else if (command == "#SOLVEEM") {
-    Print() << "  Warning: #SOLVEEM is deprecated; use #FIELDSOLVER instead.\n";
-    param.read_var("solveEM", solveEM);
-    if (!hasFieldSolver_) {
-      if (solveEM) {
-        fieldSolverMode = PicSolverMode::Implicit;
-        useExplicitPIC = false;
-      } else if (fieldSolverMode != PicSolverMode::Hybrid) {
-        fieldSolverMode = PicSolverMode::None;
-        useExplicitPIC = false;
-      }
-    }
-  } else if (command == "#HYBRIDPIC") {
-    Print()
-        << "  Warning: #HYBRIDPIC is deprecated; use #FIELDSOLVER instead.\n";
-    bool useHyb = false;
-    param.read_var("useHybridPIC", useHyb);
-    if (!hasFieldSolver_ && useHyb) {
-      fieldSolverMode = PicSolverMode::Hybrid;
-      useExplicitPIC = false;
-      solveEM = false;
-    }
   } else if (command == "#PARTMODE") {
     std::string s;
     param.read_var("partMode", s);

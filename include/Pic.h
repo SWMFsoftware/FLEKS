@@ -216,7 +216,6 @@ private:
   bool reportParticleQuality = false;
 
   // Command presence tracking flags for cross-solver validation.
-  bool hasFieldSolver_ = false;
   bool hasFieldIntegrator_ = false;
   bool hasFieldSubcycle_ = false;
   bool hasDiscretization_ = false;
@@ -694,7 +693,6 @@ public:
   bool is_field_solver_active() const {
     return fieldSolverMode != PicSolverMode::None;
   }
-  void set_field_solver_mode(const std::string &modeStr);
 
   // Returns the cell-centered coarse-to-fine interpolater to use.  For the
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
