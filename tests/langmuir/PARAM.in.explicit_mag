@@ -70,6 +70,11 @@ F                       isAutoSubcycle
 T                       useFixedDt
 0.01                    dt
 
+Resampling (split/merge) moves particles outside the push and would break
+the exact charge conservation that the Gauss's law check tests.
+#RESAMPLING
+F                       doReSampling
+
 #PARTICLES
 64                      nParticle
 1                       nParticle
@@ -80,14 +85,15 @@ T                       useFixedDt
 10                      dnSavePT
 
 E_x every 0.04 (4 steps; omega_pe = 35.4 needs < 0.089) for the
-omega-k spectrum of the thermal Langmuir noise.
+omega-k spectrum of the thermal Langmuir noise, and the species densities for
+the Gauss's law check.
 #SAVEPLOT
 1                       nPlot
 z=0 var ascii pic       plotString
 -1                      dn
 0.04                    dt
 1                       dx
-Ex                      varName
+Ex rhoS0 rhoS1          varName
 
 #STOP
 -1                      MaxIter

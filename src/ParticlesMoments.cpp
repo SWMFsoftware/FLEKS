@@ -236,10 +236,15 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
 
 //==========================================================
 // Mirror boundary condition for a node-centered deposit at non-periodic
-// uncoupled walls (see the comment in sum_moments): fold the first ghost-node
-// layer back into the edge node and clear it. isVector selects the parity
-// rule: components (x, y, z) of a vector (odd: the normal one) instead of the
-// moment layout (odd: normal momentum and normal-shear stresses).
+// uncoupled walls (see the comment in sum_moments): double the edge node (or
+// clear it for an odd component at a reflecting wall) and clear the first
+// ghost-node layer. At a reflecting wall the ghost layer is first folded onto
+// the first interior node with the same parity: it holds the part of the
+// charge-conserving current of a particle that crossed the wall before it was
+// mirrored, and the folded current is that of the reflected path (image
+// method). isVector selects the parity rule: components (x, y, z) of a vector
+// (odd: the normal one) instead of the moment layout (odd: normal momentum
+// and normal-shear stresses).
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
                                                                int iLev,
@@ -324,6 +329,12 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
                       } else {
                         arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
                       }
+                      if (isReflect) {
+                        const int ii = iDim == 0 ? 2 * domEdge - i : i;
+                        const int jj = iDim == 1 ? 2 * domEdge - j : j;
+                        arr(ii, jj, 0, c) +=
+                            isOdd ? -arr(i, j, 0, c) : arr(i, j, 0, c);
+                      }
                       arr(i, j, 0, c) = 0.0; // zero the ghost layer
 #elif (AMREX_SPACEDIM == 3)
                 int ei = i, ej = j, ek = k;
@@ -336,6 +347,13 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
                 } else {
                   arr(ei, ej, ek, c) += val; // fold mirror back -> 2x
                 }
+                if (isReflect) {
+                  const int ii = iDim == 0 ? 2 * domEdge - i : i;
+                  const int jj = iDim == 1 ? 2 * domEdge - j : j;
+                  const int kk = iDim == 2 ? 2 * domEdge - k : k;
+                  arr(ii, jj, kk, c) +=
+                      isOdd ? -arr(i, j, k, c) : arr(i, j, k, c);
+                }
                 arr(i, j, k, c) = 0.0; // zero the ghost layer
 #endif
                     });
@@ -345,58 +363,6 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
 }
 
 //==========================================================
-// Deposit only the charge current J_s = q_s n_s u_s of this species onto the
-// nodes (3 components), with the same shape, volume and wall treatment as
-// sum_moments(). The weight q_p of a macroparticle is q_s-signed, so q_p *
-// qomSign counts physical particles and |q_s| q_p v is their current.
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::sum_current(
-    Vector<MultiFab>& currentMF) {
-  timing_func("Pts::sum_current");
-
-  const Real qFactor = charge * qomSign;
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    currentMF[iLev].setVal(0.0);
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      Array4<Real> const& jArr = currentMF[iLev][pti].array();
-      const AoS& particles = pti.GetArrayOfStructs();
-
-      const Dim3 lo = init_dim3(0);
-      const Dim3 hi = init_dim3(1);
-
-      for (const auto& p : particles) {
-        if (p.id() < 0)
-          continue;
-
-        const Real qp = qFactor * p.rdata(iqp_);
-        const Real jp[3] = { qp * p.rdata(iup_), qp * p.rdata(ivp_),
-                             qp * p.rdata(iwp_) };
-
-        IntVect loIdx;
-        RealVect dShift;
-        Real coef[2][2][2];
-        find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                Geom(iLev).InvCellSize(), loIdx, dShift, coef);
-
-        for (int kk = lo.z; kk <= hi.z; ++kk)
-          for (int jj = lo.y; jj <= hi.y; ++jj)
-            for (int ii = lo.x; ii <= hi.x; ++ii) {
-              const IntVect ijk = { AMREX_D_DECL(
-                  loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-              const Real c = coef[ii][jj][kk];
-              jArr(ijk, 0) += c * jp[0];
-              jArr(ijk, 1) += c * jp[1];
-              jArr(ijk, 2) += c * jp[2];
-            }
-      }
-    }
-
-    currentMF[iLev].mult(invVol[iLev], 0, 3, currentMF[iLev].nGrow());
-    fold_wall_ghost_nodes(currentMF[iLev], iLev, true);
-    currentMF[iLev].SumBoundary(Geom(iLev).periodicity());
-  }
-}
-
 template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::sum_moments(
     Vector<MultiFab>& momentsMF, Vector<MultiFab>& nodeBMF, Real dt) {
@@ -604,8 +570,6 @@ template std::array<Real, 5> PicParticles::total_moments(bool);
 template std::array<Real, 5> PTParticles::total_moments(bool);
 template Real PicParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
                                         Real);
-template void PicParticles::sum_current(Vector<MultiFab>&);
-template void PTParticles::sum_current(Vector<MultiFab>&);
 template void PicParticles::fold_wall_ghost_nodes(MultiFab&, int, bool);
 template void PTParticles::fold_wall_ghost_nodes(MultiFab&, int, bool);
 template Real PTParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
