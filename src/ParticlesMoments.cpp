@@ -301,41 +301,40 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
 
         const bool isReflect = (faceBc == ParticleBC::reflect);
 
-        ParallelFor(strip, nCompMF,
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-                      // Odd parity components relative to iDim under
-                      // specular reflection: normal momentum and
-                      // off-diagonal normal-shear stresses.
-                      bool isOdd = false;
-                      if (isVector) {
-                        isOdd = (c == iDim);
-                      } else if (iDim == 0) {
-                        isOdd = (c == iMx_ || c == iPxy_ || c == iPxz_);
-                      } else if (iDim == 1) {
-                        isOdd = (c == iMy_ || c == iPxy_ || c == iPyz_);
-                      } else if (iDim == 2) {
-                        isOdd = (c == iMz_ || c == iPxz_ || c == iPyz_);
-                      }
+        ParallelFor(
+            strip, nCompMF, [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+              // Odd parity components relative to iDim under
+              // specular reflection: normal momentum and
+              // off-diagonal normal-shear stresses.
+              bool isOdd = false;
+              if (isVector) {
+                isOdd = (c == iDim);
+              } else if (iDim == 0) {
+                isOdd = (c == iMx_ || c == iPxy_ || c == iPxz_);
+              } else if (iDim == 1) {
+                isOdd = (c == iMy_ || c == iPxy_ || c == iPyz_);
+              } else if (iDim == 2) {
+                isOdd = (c == iMz_ || c == iPxz_ || c == iPyz_);
+              }
 
 #if (AMREX_SPACEDIM == 2)
-                      int ei = i, ej = j;
-                      if (iDim == 0)
-                        ei = domEdge;
-                      if (iDim == 1)
-                        ej = domEdge;
-                      const Real val = arr(ei, ej, 0, c);
-                      if (isReflect && isOdd) {
-                        arr(ei, ej, 0, c) = 0.0;
-                      } else {
-                        arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
-                      }
-                      if (isReflect) {
-                        const int ii = iDim == 0 ? 2 * domEdge - i : i;
-                        const int jj = iDim == 1 ? 2 * domEdge - j : j;
-                        arr(ii, jj, 0, c) +=
-                            isOdd ? -arr(i, j, 0, c) : arr(i, j, 0, c);
-                      }
-                      arr(i, j, 0, c) = 0.0; // zero the ghost layer
+              int ei = i, ej = j;
+              if (iDim == 0)
+                ei = domEdge;
+              if (iDim == 1)
+                ej = domEdge;
+              const Real val = arr(ei, ej, 0, c);
+              if (isReflect && isOdd) {
+                arr(ei, ej, 0, c) = 0.0;
+              } else {
+                arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
+              }
+              if (isReflect) {
+                const int ii = iDim == 0 ? 2 * domEdge - i : i;
+                const int jj = iDim == 1 ? 2 * domEdge - j : j;
+                arr(ii, jj, 0, c) += isOdd ? -arr(i, j, 0, c) : arr(i, j, 0, c);
+              }
+              arr(i, j, 0, c) = 0.0; // zero the ghost layer
 #elif (AMREX_SPACEDIM == 3)
                 int ei = i, ej = j, ek = k;
                 if (iDim == 0) ei = domEdge;
@@ -356,7 +355,7 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
                 }
                 arr(i, j, k, c) = 0.0; // zero the ghost layer
 #endif
-                    });
+            });
       }
     }
   }

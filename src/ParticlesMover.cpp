@@ -21,9 +21,10 @@ namespace {
 //   face current  F_d = -q dx_d / (dt V) cumsum_d W_d   (faces between nodes)
 //   node current  J_d = (F_d(i - 1/2) + F_d(i + 1/2)) / 2 along d.
 // With the cell-centered charge rho_c = (node-CIC charge averaged over the
-// 2^D nodes of each cell), rho_c^{new} - rho_c^{old} = -dt div_node_to_center(J)
-// holds to round-off. In 2D the out-of-plane component is q vOut / V times the
-// time-averaged shape. Returns false if the particle moved more than one cell.
+// 2^D nodes of each cell), rho_c^{new} - rho_c^{old} = -dt
+// div_node_to_center(J) holds to round-off. In 2D the out-of-plane component is
+// q vOut / V times the time-averaged shape. Returns false if the particle moved
+// more than one cell.
 inline bool deposit_esirkepov(const Array4<Real>& jArr, const Real* x0,
                               const Real* x1, Real q, Real vOut,
                               const Real* plo, const Real* invDx,
@@ -339,8 +340,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         // wDrift * dtLoc (dtLoc != dt when the time step changes).
         if (currentMF &&
             !deposit_esirkepov(jArr, xOld, xNew, qFactor * p.rdata(iqp_),
-                               wDrift * dtLoc * invDt, ploLoc, invDxLoc,
-                               dxLoc, invDt, invVol[iLev]))
+                               wDrift * dtLoc * invDt, ploLoc, invDxLoc, dxLoc,
+                               invDt, invVol[iLev]))
           movedTooFar = true;
 
         // A trial push only deposits the current of the trial state.
