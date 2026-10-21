@@ -36,9 +36,12 @@ started to coalesce, so `fadeev_hybrid` cannot tell dissipation schemes apart.
 `fadeev_hybrid_upwind_long` runs through the coalescence to $t = 120$ (10–15
 minutes on 2 ranks) and must lose more than 0.2 of $\psi$ (0.49 measured).
 Without dissipation the run fails at $t = 73$, and with the `fadeev_hybrid`
-hyper-resistivity (`etaHyperCh = 0.001`) at $t = 116$: density holes form
-(6×6 ions per cell) and $|B|/\rho$ runs away, which the fixed hyper-resistive
-coefficient does not follow but the upwind signal speed does.
+hyper-resistivity (`etaHyperCh = 0.001`) at $t = 116$: plasma drains through
+the open $y$ boundaries (the ion energy falls by 95 %), density holes form
+(6×6 ions per cell) and $|B|/\rho$ runs away. Grid-mode hyper-resistivity
+with `etaHyperCh = 0.0035`, which damps resolved modes about as much as the
+upwind term at this resolution, also survives, with the island flux within
+7 % of the upwind run; the deck's 0.001 is simply too weak for this length.
 
 ### 2. Classic GEM Challenge (`PARAM.in.gem_pic`, `PARAM.in.gem_hybrid`)
 Uses `#TESTCASE gem` with `useStandardGem = T`: Harris current sheet with periodic boundaries in $x$ and conducting/reflecting walls in $y$, following the Birn et al. 2001 benchmark specifications.
