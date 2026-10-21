@@ -164,6 +164,10 @@ private:
   amrex::Real upwindCoefWhistler = 0.0;
   // > 0 replaces a_d by this constant (code units); for verification.
   amrex::Real upwindFixedSpeed = -1.0;
+  // < 1 scales the jump by max(floor, min(1, s)), with the grid-scale sensor
+  // s = |third difference of B| / sum|first differences| of the same 4 cells:
+  // ~(k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps. 1 = off.
+  amrex::Real upwindSensorFloor = 1.0;
 
   // Regional resistivity and hyper-resistivity
   struct RegionalResistivityConfig {

@@ -474,8 +474,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("useHybridUpwind", useHybridUpwind);
     if (useHybridUpwind) {
       param.read_var("upwindLimiter", upwindLimiter);
-      param.read_optional("upwindCoefWhistler", upwindCoefWhistler);
-      param.read_optional("upwindFixedSpeed", upwindFixedSpeed);
+      // The rest is optional and may come in any order: read_optional() only
+      // consumes the next line when its name matches, so loop until a pass
+      // consumes nothing.
+      bool progress = true;
+      while (progress) {
+        progress =
+            param.read_optional("upwindCoefWhistler", upwindCoefWhistler);
+        progress |= param.read_optional("upwindFixedSpeed", upwindFixedSpeed);
+        progress |= param.read_optional("upwindSensorFloor", upwindSensorFloor);
+      }
     }
   } else if (command == "#MINIMUMDENSITY") {
     hasMinimumDensity_ = true;
@@ -728,6 +736,8 @@ void Pic::post_process_param() {
     if (upwindCoefWhistler < 0)
       Abort("Invalid #HYBRIDUPWIND: upwindCoefWhistler must be "
             "non-negative.");
+    if (!(upwindSensorFloor > 0 && upwindSensorFloor <= 1))
+      Abort("Invalid #HYBRIDUPWIND: upwindSensorFloor must be in (0, 1].");
   }
 
   if (useElectronPressureEq) {

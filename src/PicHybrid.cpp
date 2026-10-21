@@ -125,7 +125,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
 template <int DIR>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_B_jump(
     const Array4<Real const>& arrB, const int i, const int j, const int k,
-    const int limType, Real jump[nDim3]) noexcept {
+    const int limType, const Real sensorFloor, Real jump[nDim3]) noexcept {
   constexpr int t1 = (DIR == ix_) ? iy_ : ix_;
   constexpr int t2 = (DIR == iz_) ? iy_ : iz_;
   const int o2Min = (nDim > 2 || t2 != iz_) ? -1 : 0;
@@ -151,7 +151,16 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_B_jump(
             arrB(c[ix_] + d[ix_], c[iy_] + d[iy_], c[iz_] + d[iz_], iVar);
         const Real bL = bM1 + 0.5 * pe_slope(limType, bM1 - bM2, b0 - bM1);
         const Real bR = b0 - 0.5 * pe_slope(limType, b0 - bM1, bP1 - b0);
-        jump[iVar] += bR - bL;
+        Real phi = 1.0;
+        if (sensorFloor < 1.0) {
+          // Grid-scale sensor s = |third difference| / sum|first differences|:
+          // ~ (k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps.
+          const Real dM = bM1 - bM2, d0 = b0 - bM1, dP = bP1 - b0;
+          const Real den = std::abs(dM) + std::abs(d0) + std::abs(dP);
+          const Real s = (den > 0.0) ? std::abs(dP - 2.0 * d0 + dM) / den : 0.0;
+          phi = amrex::min(1.0, amrex::max(sensorFloor, s));
+        }
+        jump[iVar] += phi * (bR - bL);
       }
       ++nCell;
     }
@@ -220,6 +229,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     invDxUp[iDim] = Geom(iLev).InvCellSize(iDim);
   }
   const int limTypeUp = upwindLimiterType;
+  const Real sensorFloorUp = upwindSensorFloor;
   const Real coefWhistlerUp = useHallTerm ? upwindCoefWhistler : 0.0;
   const Real fixedSpeedUp = upwindFixedSpeed;
   const Real cs2Up =
@@ -335,11 +345,11 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           if (!upwindDir[iDir])
             continue;
           if (iDir == ix_) {
-            upwind_B_jump<ix_>(arrBin, i, j, k, limTypeUp, jump);
+            upwind_B_jump<ix_>(arrBin, i, j, k, limTypeUp, sensorFloorUp, jump);
           } else if (iDir == iy_) {
-            upwind_B_jump<iy_>(arrBin, i, j, k, limTypeUp, jump);
+            upwind_B_jump<iy_>(arrBin, i, j, k, limTypeUp, sensorFloorUp, jump);
           } else {
-            upwind_B_jump<iz_>(arrBin, i, j, k, limTypeUp, jump);
+            upwind_B_jump<iz_>(arrBin, i, j, k, limTypeUp, sensorFloorUp, jump);
           }
 
           // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).

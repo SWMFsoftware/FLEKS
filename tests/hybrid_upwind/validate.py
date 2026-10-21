@@ -13,6 +13,8 @@ Variants (selected by base_name):
                            wavelength) with kinetic ions and the default signal
                            speed: the frequency stays on the Hall branch and the
                            damping per radian stays in a narrow band.
+  * hybrid_upwind_whistler_sensor -- the same with upwindSensorFloor = 0.1: the
+                           damping drops by an order of magnitude.
 """
 import cmath
 import logging
@@ -53,6 +55,10 @@ DIVB_TOL = 1e-10
 # the term acts; the upper one catches a much more diffusive scheme.
 WHISTLER_DAMP_MIN = 0.0005
 WHISTLER_DAMP_MAX = 0.005
+# whistler_sensor: measured 0.00015 with upwindSensorFloor = 0.1 (0.00007 at
+# 0.05, 0.00036 at 0.2); the band ends where the unscaled one starts.
+SENSOR_DAMP_MIN = 0.00005
+SENSOR_DAMP_MAX = 0.0005
 # Frequency vs the Hall whistler branch at k d_i = k (the decks set d_i ~ 1);
 # every whistler deck measures +2.4 % from that normalization.
 WHISTLER_OMEGA_TOL = 0.04
@@ -64,6 +70,8 @@ def _variant(test_name):
         return "divb"
     if name.endswith("_whistler"):
         return "whistler"
+    if name.endswith("_whistler_sensor"):
+        return "whistler_sensor"
     if name.endswith("_mc"):
         return "mc"
     return "upwind1"
@@ -122,7 +130,7 @@ def validate_log(pic_diags=None, test_name=None):
     variant = _variant(test_name)
     if not pic_diags:
         return False, "No energy log"
-    if variant in ("divb", "whistler"):
+    if variant in ("divb", "whistler", "whistler_sensor"):
         return validate_hybrid_energy_bounded(
             pic_diags, growth_max=10.0, test_label=f"Upwind {variant}",
             logger=logger)
@@ -204,7 +212,7 @@ def _whistler_fit(text):
     return abs(omega), gamma, len(t)
 
 
-def _validate_whistler(text):
+def _validate_whistler(text, damp_min, damp_max):
     fit = _whistler_fit(text)
     if fit is None:
         return False, "Could not fit the seeded whistler from the plot frames"
@@ -223,9 +231,9 @@ def _validate_whistler(text):
                        "%.1f%% (tolerance %.0f%%)"
                        % (omega, omega_hall, 100.0 * (omega / omega_hall - 1.0),
                           100.0 * WHISTLER_OMEGA_TOL))
-    if not WHISTLER_DAMP_MIN <= damp <= WHISTLER_DAMP_MAX:
+    if not damp_min <= damp <= damp_max:
         return False, ("whistler damping per radian %.4g outside [%g, %g]"
-                       % (damp, WHISTLER_DAMP_MIN, WHISTLER_DAMP_MAX))
+                       % (damp, damp_min, damp_max))
     return True, "Passed"
 
 
@@ -233,7 +241,11 @@ def validate_plot(test_name):
     """divb: div(B) of the last plot equals that of the first.
     whistler: frequency and damping of the seeded whistler."""
     if _variant(test_name) == "whistler":
-        return _validate_whistler(_param_text())
+        return _validate_whistler(_param_text(), WHISTLER_DAMP_MIN,
+                                  WHISTLER_DAMP_MAX)
+    if _variant(test_name) == "whistler_sensor":
+        return _validate_whistler(_param_text(), SENSOR_DAMP_MIN,
+                                  SENSOR_DAMP_MAX)
     if _variant(test_name) != "divb":
         return True, "Passed (no plot-file check)"
 

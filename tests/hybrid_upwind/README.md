@@ -20,6 +20,7 @@ two sides of the node along $d$ and $a_d$ the signal speed.
 | `PARAM.in.mc` | Same with the MC limiter, `waveMode = 4` | Monotone decay, rate between the unlimited second-order and the first-order rate |
 | `PARAM.in.divb` | 2D $32\times32$ periodic plasma with 400 ions/cell, Hall term, MC limiter, full whistler speed, no hyper-resistivity, no cleaning | $\max|\nabla\cdot\mathbf{B}(t_{\rm end}) - \nabla\cdot\mathbf{B}(0)| \le 10^{-10}\,\max|\mathbf{B}|/\Delta x$ |
 | `PARAM.in.whistler` | The `whistler/PARAM.in.rk4` plasma (2000 ions/cell, Hall term) seeded with the $n = 4$ whistler ($k d_i = 3.9$, 16 cells per wavelength), MC limiter, default signal speed, no hyper-resistivity | Frequency within 4 % of the Hall branch; damping per radian $\gamma/\omega \in [0.0005, 0.005]$ |
+| `PARAM.in.whistler_sensor` | Same with `upwindSensorFloor = 0.1` | Damping per radian $\gamma/\omega \in [0.00005, 0.0005]$ (measured 0.00015) |
 
 ## Analytic rates
 
@@ -66,6 +67,23 @@ plus fast wave) the upwind term acts like grid-mode hyper-resistivity with
 `etaHyperCh` $\approx 0.03$; the whistler term raises that by 10–30 times,
 which is why the default is 0. Neither term shifts the frequency.
 
+`upwindSensorFloor` multiplies each component's jump by
+$\phi = \min(1, \max(\text{floor}, s))$ with
+$s = |\Delta^3 B| / \sum|\Delta B|$ over the same 4 cells. Any linear
+correction on this stencil damps as $k^4$, so the sensor is what lets the
+damping fall off faster toward resolved scales without a third ghost layer:
+
+| $k d_i$ (cells per wavelength) | sensor floor 0.2 | 0.1 | 0.05 |
+|---|---|---|---|
+| 2.0 (32) | 0.00009 | 0.00005 | 0.00003 |
+| 3.9 (16) | 0.0004 | 0.0002 | 0.00014 |
+| 7.9 (8) | 0.002 | 0.002 | 0.002 |
+
+At $k d_i \ge 8$ the sensor opens and the damping rises above
+hyper-resistivity's. Grid noise much smaller than a large resolved wave sees
+only the floor; a whistler with $B_1 = 0.1 B_0$ and 50 ions per cell stays as
+quiet as with the unscaled term.
+
 ## div(B)
 
 The term only modifies the nodal $\mathbf{E}$, and
@@ -81,4 +99,5 @@ hyperbolic cleaning.
 python3 tests/validate_tests.py --test=hybrid_upwind
 python3 tests/validate_tests.py --test=hybrid_upwind.divb -v
 python3 tests/validate_tests.py --test=hybrid_upwind.whistler -v
+python3 tests/validate_tests.py --test=hybrid_upwind.whistler_sensor -v
 ```
