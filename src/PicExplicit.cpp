@@ -11,21 +11,30 @@
 using namespace amrex;
 
 //==========================================================
-// Deposit the charge current J = sum_s q_s n_s u_s of the current particle
-// state. Each species deposits only its current (Particles::sum_current, with
-// its own wall folding) into the nodeJ scratch, which is then summed; the full
-// moments are refreshed once per step by sum_moments() in Pic::update().
-void Pic::deposit_explicit_current(Vector<MultiFab>& J) {
-  std::string nameFunc = "Pic::deposit_explicit_current";
+// Push the kinetic species and deposit the charge-conserving (Esirkepov)
+// current of the push, J = sum_s q_s dx/dt, into J. trialOnly: deposit the
+// current of the push without moving the particles.
+void Pic::push_and_deposit_explicit_current(int pushStage, Vector<MultiFab>& J,
+                                            bool trialOnly) {
+  std::string nameFunc = "Pic::push_and_deposit_explicit_current";
   timing_func(nameFunc);
+
+  const Real dt = tc->get_dt();
+  const Real dtNext = tc->get_next_dt();
 
   for (int iLev = 0; iLev < n_lev(); ++iLev)
     J[iLev].setVal(0.0);
 
   for (int i : kineticSpecies_) {
-    parts[i]->sum_current(nodeJ);
+    parts[i]->mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext, pushStage,
+                    &nodeJ, trialOnly);
     for (int iLev = 0; iLev < n_lev(); ++iLev)
       MultiFab::Add(J[iLev], nodeJ[iLev], 0, 0, nDim3, get_n_ghost());
+  }
+
+  if (!trialOnly) {
+    for (int i : kineticSpecies_)
+      parts[i]->redistribute_particles();
   }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -208,11 +217,10 @@ void Pic::advance_E_step(Real dtSub, const MultiFab& currentMF, int iLev,
 }
 
 //==========================================================
-// Subcycled explicit Maxwell advance for B and E.
+// Subcycled explicit Maxwell advance for B and E with the current J of the
+// step (time-centered at t^{n+1/2}) in every sub-step.
 void Pic::update_EB_explicit_leapfrog(Real dt, int nSub,
-                                      const Vector<MultiFab>& J0,
-                                      const Vector<MultiFab>& J1,
-                                      bool interpolateInTime) {
+                                      const Vector<MultiFab>& J) {
   std::string nameFunc = "Pic::update_EB_explicit_leapfrog";
   timing_func(nameFunc);
 
@@ -224,15 +232,10 @@ void Pic::update_EB_explicit_leapfrog(Real dt, int nSub,
     const Real tB_half = t0 + (iSub + 0.5) * subDt;
     advance_B_half_step(subDt, tB_half);
 
-    // 2. Advance E full-step: E^m -> E^{m+1} using B^{m+1/2} and the current
-    // at the sub-step mid time.
+    // 2. Advance E full-step: E^m -> E^{m+1} using B^{m+1/2} and J.
     const Real tE_full = t0 + (iSub + 1.0) * subDt;
-    const Real w1 = interpolateInTime ? (iSub + 0.5) / nSub : 0.5;
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      MultiFab::LinComb(nodeJ[iLev], 1.0 - w1, J0[iLev], 0, w1, J1[iLev], 0, 0,
-                        nDim3, get_n_ghost());
-      advance_E_step(subDt, nodeJ[iLev], iLev, tE_full);
-    }
+    for (int iLev = 0; iLev < n_lev(); ++iLev)
+      advance_E_step(subDt, J[iLev], iLev, tE_full);
 
     if (projectDownEmFields && finestLevel() > 0) {
       project_down_E();
@@ -250,34 +253,22 @@ void Pic::advance_explicit_pc(Real dt) {
   std::string nameFunc = "Pic::advance_explicit_pc";
   timing_func(nameFunc);
 
-  // 0. Deposit J^n from the accepted particle state. A current cached from the
-  // previous step would be stale: the div(E) correction at the end of that
-  // step moves or deletes particles, and a regrid zeroes the cache.
-  deposit_explicit_current(nodeJexplPrev);
-
-  // 1. Backup base particle state at t^n
-  for (int i : kineticSpecies_) {
-    parts[i]->backup_particle_state();
-  }
-  backup_floating_body();
-
-  // 2. Backup base fields B^n and E^n
+  // 1. Backup base fields B^n and E^n
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3,
                    get_n_ghost());
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
   }
 
-  // 3. Predictor push using (E^n, B^n) [pushStage = 1]
-  advance_particles_and_sources(1);
+  // 2. Predictor: trial push with (E^n, B^n) that only deposits its current
+  // J* = q (x* - x^n)/dt; the particles stay at t^n.
+  push_and_deposit_explicit_current(PicParticles::kPushPredictor, nodeJexpl,
+                                    true);
 
-  // 4. Deposit the trial current J^(n+1) & advance trial fields to t^(n+1).
-  // Velocities live at whole steps here, so J^n and J^(n+1) are interpolated
-  // in time.
-  deposit_explicit_current(nodeJexpl);
-  update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexplPrev, nodeJexpl, true);
+  // 3. Advance trial fields to t^(n+1) with J*.
+  update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexpl);
 
-  // 5. Construct time-centered fields at t^(n+1/2)
+  // 4. Construct time-centered fields at t^(n+1/2)
   const Real t0 = tc ? tc->get_time() : 0.0;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev], 0,
@@ -296,24 +287,18 @@ void Pic::advance_explicit_pc(Real dt) {
     }
   }
 
-  // 6. Restore base particle state at t^n
-  for (int i : kineticSpecies_) {
-    parts[i]->restore_particle_state();
-  }
-  restore_floating_body();
+  // 5. Corrector push from t^n with the time-centered fields, depositing the
+  // current J^(n+1/2) of the accepted displacement.
+  push_and_deposit_explicit_current(PicParticles::kPushCorrector, nodeJexpl);
+  finish_particle_push();
 
-  // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage = 2]
-  advance_particles_and_sources(2);
-
-  // 8. Restore B^n and advance to final (B^{n+1}, E^{n+1}) using accepted
-  // moments
+  // 6. Restore B^n, E^n and advance to (B^{n+1}, E^{n+1}) with J^(n+1/2).
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3,
                    get_n_ghost());
     MultiFab::Copy(nodeE[iLev], nodeEth[iLev], 0, 0, nDim3, get_n_ghost());
   }
-  deposit_explicit_current(nodeJexpl);
-  update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexplPrev, nodeJexpl, true);
+  update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexpl);
 }
 
 //==========================================================
@@ -334,20 +319,15 @@ void Pic::advance_explicit_full_pic() {
   } else {
     // Leapfrog: x^n, v^{n-1/2}, E^n, B^n -> x^{n+1}, v^{n+1/2}, E^{n+1},
     // B^{n+1}.
-    // 1. Kick v^{n-1/2} -> v^{n+1/2} with (E^n, B^n); positions stay at x^n.
-    particle_mover(PicParticles::kPushKickOnly);
-
-    // 2. Deposit q v^{n+1/2} at x^n, drift to x^{n+1}, deposit again. Their
-    // average is the time-centered current J^{n+1/2}.
-    deposit_explicit_current(nodeJexplPrev);
-    particle_drift();
+    // 1. Kick v^{n-1/2} -> v^{n+1/2} with (E^n, B^n) and drift to x^{n+1},
+    // depositing J^{n+1/2} = q (x^{n+1} - x^n)/dt in the same pass.
+    push_and_deposit_explicit_current(PicParticles::kPushLeapfrog, nodeJexpl);
     finish_particle_push();
-    deposit_explicit_current(nodeJexpl);
 
-    // 3. B half-step, E full step with J^{n+1/2}, B half-step (subcycled).
-    update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexplPrev, nodeJexpl, false);
+    // 2. B half-step, E full step with J^{n+1/2}, B half-step (subcycled).
+    update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexpl);
   }
 
-  // The div(E) correction follows in Pic::update(), as for the semi-implicit
-  // solver.
+  // A div(E) correction, when on, follows in Pic::update(), as for the
+  // semi-implicit solver.
 }

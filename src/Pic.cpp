@@ -227,9 +227,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(nodeJexpl[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
-        distribute_FabArray(nodeJexplPrev[iLev], node_box_array(iLev),
-                            DistributionMap(iLev), 3, get_n_ghost(),
-                            doMoveData);
         distribute_FabArray(centerBstar[iLev], boxArray(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
@@ -1364,25 +1361,6 @@ void Pic::particle_mover(int pushStage) {
 
   for (int i : kineticSpecies_) {
     parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext, pushStage);
-  }
-
-  // A kick-only push does not move the particles.
-  if (pushStage == PicParticles::kPushKickOnly)
-    return;
-
-  for (int i : kineticSpecies_) {
-    parts[i]->redistribute_particles();
-  }
-}
-
-//==========================================================
-void Pic::particle_drift() {
-  std::string nameFunc = "Pic::particle_drift";
-
-  timing_func(nameFunc);
-
-  for (int i : kineticSpecies_) {
-    parts[i]->drift(tc->get_dt(), tc->get_next_dt());
   }
 
   for (int i : kineticSpecies_) {
