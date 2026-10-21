@@ -8,15 +8,18 @@ test checks the particle-field coupling of the full-PIC solvers in two ways:
 1. Energy (log): nothing drives the plasma, so the total energy stays
    constant. Bound on max |Etot/Etot0 - 1| over all logged steps:
      explicit, explicit_sub, explicit_mag   1%
-     explicit_pc                            2% (slightly dissipative)
-     implicit                               no heating (< +1%), cooling < 10%
-                                            (the theta = 0.51 scheme damps)
+     explicit_pc                            3% (dissipative: -1.5% in 16 s)
+     implicit                               no heating (< +1%), cooling < 20%
+                                            (theta = 0.51 damps: -11% in 16 s)
 2. Langmuir branch (plot): the omega-k spectrum of E_x(x, t) must peak at the
    Bohm-Gross frequency omega^2 = omega_pe^2 (1 + 3 k^2 lambda_De^2) for the
    12 lowest modes (k lambda_De <= 0.11, so the thermal term reaches 1.7%),
-   with each peak at least 100 times the median of its spectrum. Leapfrog
-   variants: each mode within 4%, the mean within 1% (their scatter of about
-   2% is the frequency resolution of the 8 s record). The predictor-corrector
+   with each peak at least 100 times the median of its spectrum. The
+   frequency of a mode is the power-weighted centroid of its spectrum within
+   8% of omega_pe around the peak, over the 16 s record (one noise
+   realization scatters single modes by about 1%; an 8 s record or the bare
+   peak bin scatter by up to 4%). Leapfrog variants: each mode within 4%, the
+   mean within 1%. The predictor-corrector
    and implicit schemes run 1-2% low, more at high k (numerical dispersion):
    each mode within 6%, the mean within 3%. Skipped for explicit_mag, where
    the oblique field splits the electrostatic branch.
@@ -43,6 +46,7 @@ LAMBDA_DE = math.sqrt(1.25e-3 / 0.01) / OMEGA_PE
 BOX_LENGTH = 2.0 * 3.544908
 MODES = range(1, 13)  # k lambda_De <= 0.11
 MIN_PEAK_RATIO = 100.0
+CENTROID_WIDTH = 0.08  # half-width of the centroid window / omega_pe
 # (per-mode, mean) tolerance on omega / omega_Bohm-Gross - 1.
 FREQ_TOL = {"explicit": (0.04, 0.01), "explicit_sub": (0.04, 0.01),
             "explicit_pc": (0.06, 0.03), "implicit": (0.06, 0.03)}
@@ -77,12 +81,12 @@ def validate_log(pic_diags=None, test_name=None):
                  rmax, rmin)
 
     if variant == "implicit":
-        if rmax > 1.01 or rmin < 0.90:
-            return False, (f"Etot/Etot0 left [0.90, 1.01]: max {rmax:.4f}, "
+        if rmax > 1.01 or rmin < 0.80:
+            return False, (f"Etot/Etot0 left [0.80, 1.01]: max {rmax:.4f}, "
                            f"min {rmin:.4f}")
         return True, f"Passed (Etot/Etot0 in [{rmin:.4f}, {rmax:.4f}])"
 
-    tol = 0.02 if variant == "explicit_pc" else 0.01
+    tol = 0.03 if variant == "explicit_pc" else 0.01
     worst = max(rmax - 1.0, 1.0 - rmin)
     if worst > tol:
         return False, (f"Energy not conserved: max |Etot/Etot0 - 1| = "
@@ -114,23 +118,21 @@ def _read_ex_frames():
 
 
 def _langmuir_frequencies(t, ex):
-    """Peak |omega| of each mode in the band [0.5, 2] omega_pe (refined by a
-    parabola through the log spectrum), Bohm-Gross, and peak/median."""
+    """Centroid |omega| of each mode's spectrum within CENTROID_WIDTH *
+    omega_pe of its peak in the band [0.5, 2] omega_pe, the Bohm-Gross
+    frequency, and the peak-to-median ratio."""
     amp = np.fft.rfft(ex, axis=1)  # a_m(t)
     window = np.hanning(len(t))[:, None]
     power = np.abs(np.fft.fft(amp * window, axis=0)) ** 2
     omega = 2.0 * np.pi * np.fft.fftfreq(len(t), t[1] - t[0])
     band = (np.abs(omega) > 0.5 * OMEGA_PE) & (np.abs(omega) < 2.0 * OMEGA_PE)
     results = []
+    absOmega = np.abs(omega)
     for m in MODES:
         p = power[:, m]
         i = int(np.argmax(np.where(band, p, 0.0)))
-        shift = 0.0
-        if 0 < i < len(p) - 1:
-            y0, y1, y2 = (math.log(max(v, 1e-300)) for v in p[i - 1:i + 2])
-            if y0 - 2.0 * y1 + y2 != 0.0:
-                shift = 0.5 * (y0 - y2) / (y0 - 2.0 * y1 + y2)
-        measured = abs(omega[i] + shift * (omega[1] - omega[0]))
+        near = band & (np.abs(absOmega - absOmega[i]) < CENTROID_WIDTH * OMEGA_PE)
+        measured = float(np.sum(absOmega[near] * p[near]) / np.sum(p[near]))
         k = 2.0 * math.pi * m / BOX_LENGTH
         theory = OMEGA_PE * math.sqrt(1.0 + 3.0 * (k * LAMBDA_DE) ** 2)
         results.append((m, measured, theory, p[i] / np.median(p[band])))

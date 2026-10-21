@@ -1,5 +1,5 @@
 #DESCRIPTION
-Langmuir test, explicit full PIC (leapfrog): a 1D uniform thermal plasma (m_i/m_e = 100) whose E_x noise carries the Langmuir branch; checks energy conservation and the omega-k spectrum against Bohm-Gross. Code units c = 1, n = 1: omega_pe = 35.4, v_te = 0.354, lambda_De = 0.010, dx = 2.8 lambda_De, c dt/dx = 0.36, omega_pe dt = 0.35; 800 steps (FLEKS issue 170).
+Langmuir test, explicit full PIC (leapfrog): a 1D uniform thermal plasma (m_i/m_e = 100) whose E_x noise carries the Langmuir branch; checks energy conservation and the omega-k spectrum against Bohm-Gross. Code units c = 1, n = 1: omega_pe = 35.4, v_te = 0.354, lambda_De = 0.010, dx = 2.8 lambda_De, c dt/dx = 0.36, omega_pe dt = 0.35; 1600 steps (FLEKS issue 170).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -91,4 +91,4 @@ Ex                      varName
 
 #STOP
 -1                      MaxIter
-8.0                     TimeMax  (800 steps)
+16.0                    TimeMax  (1600 steps)
