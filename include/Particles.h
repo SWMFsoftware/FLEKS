@@ -495,6 +495,15 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
+  // Charge current q_s n_s u_s of this species on the nodes (3 components);
+  // a cheaper deposit than sum_moments() for the explicit field solver.
+  void sum_current(amrex::Vector<amrex::MultiFab>& currentMF);
+
+  // Fold the first ghost-node layer of a node-centered deposit back into the
+  // edge node at non-periodic uncoupled walls (mirror condition). isVector:
+  // mf holds a 3-component vector instead of the moment layout.
+  void fold_wall_ghost_nodes(amrex::MultiFab& mf, int iLev, bool isVector);
+
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   // nodeB0MF is the optional frozen intrinsic magnetic field; it may be
@@ -583,6 +592,16 @@ public:
   void add_source_particles(std::unique_ptr<PicParticles>& sourcePart,
                             amrex::IntVect ppc, const bool adaptivePPC);
 
+  // pushStage of mover(): kPushLeapfrog kicks the velocity and drifts the
+  // position by the new velocity; kPushPredictor / kPushCorrector are the two
+  // stages of the predictor-corrector scheme; kPushKickOnly only updates the
+  // velocity, and drift() then moves the particles (explicit leapfrog, which
+  // deposits the current at both ends of the drift).
+  static constexpr int kPushLeapfrog = 0;
+  static constexpr int kPushPredictor = 1;
+  static constexpr int kPushCorrector = 2;
+  static constexpr int kPushKickOnly = 3;
+
   // nodeB0 is the frozen intrinsic magnetic field (see #DIPOLE /
   // #CRUSTALFIELD). It is the static part of the total field the particles are
   // pushed with and may be empty when no intrinsic field is configured.
@@ -613,6 +632,11 @@ public:
                               amrex::Real vth, CrossSection cs);
 
   void neutral_mover(amrex::Real dt);
+
+  // Move the particles by x += v * dtLoc (dtLoc = (dt + dtNext)/2, as in the
+  // charged mover) and apply the particle boundary conditions. Used after a
+  // kPushKickOnly push.
+  void drift(amrex::Real dt, amrex::Real dtNext);
 
   // Per-level geometry, hoisted so the particle loop does not go through the
   // plo/phi/invDx vectors or Geom() per particle per dimension.

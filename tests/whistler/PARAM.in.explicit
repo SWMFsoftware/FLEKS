@@ -1,0 +1,110 @@
+#DESCRIPTION
+Explicit full PIC (kinetic ions AND kinetic electrons, leapfrog) parallel
+whistler wave test. Same geometry, normalization and seed as the semi-implicit
+full-PIC variant (PARAM.in), but with m_i/m_e = 25 and warmer electrons so the
+explicit solver is stable and resolves the Debye length: in code units
+c = 1, d_i ~ v_A ~ Omega_i ~ 1, omega_pe = 5, v_te = 0.3 (T_e = 4361 K),
+lambda_De = 0.06 = 0.6 dx, omega_pe dt = 0.1, c dt/dx = 0.2. The n = 1 mode
+(k d_i = 0.982) must follow the full cold-plasma R-mode for m_i/m_e = 25.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+explicit
+
+#FIELDINTEGRATOR
+leapfrog                fieldIntegrator
+
+#FIELDSUBCYCLE
+1                       nSubcycle
+F                       isAutoSubcycle
+
+Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25).
+#PLASMA
+2                       nS
+1.0                     mass        Species 0: ions
+1.0                     charge
+1.0/25.0                mass        Species 1: electrons
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]       ions, v_ti = 0.09 c
+5.0                     rho [/cc]   Species 1: electrons (n_e = n_i = 5 /cc)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+4361.0                  T [K]       electrons, v_te = 0.3 c
+1.0439e-8               bx [T]      uniform guide field Bx0 (B_code ~ 1)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+Same transverse circularly-polarized right-hand seed (frac = 0.02) and Alfven
+velocity kick as the hybrid variant, applied to both species.
+#TESTCASE
+HybridWave
+
+#WAVEIC
+T                       rightHand      right-hand (whistler) helicity
+1                       waveMode       box-fundamental (n=1) mode
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+250                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+10                      dn
+-1                      dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+24.0                    TimeMax   ~3 full-EM whistler periods (T = 8.0 s here)

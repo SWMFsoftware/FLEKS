@@ -7,6 +7,10 @@ the test runner (tests/validate_tests.py):
   * FULL PIC  (PARAM.in,           base_name = whistler)
       kinetic ions AND kinetic electrons, standard Maxwell/GMRES solver
       (solveEM = T).
+  * EXPLICIT  (PARAM.in.explicit,   base_name = whistler_explicit)
+      kinetic ions AND kinetic electrons, explicit leapfrog Maxwell solver
+      (#FIELDSOLVER explicit), m_i/m_e = 25; checked against the full
+      cold-plasma R-mode within 5%, like the semi-implicit full-PIC variant.
   * HYBRID    (PARAM.in.hybrid,     base_name = whistler_hybrid)
       kinetic ions + fluid electrons, generalized Ohm's-law solver
       (useHybridPIC = T, Hall-only).

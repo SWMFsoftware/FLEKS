@@ -103,6 +103,13 @@ FLEKS provides three simulation field solver modes selected via `#FIELDSOLVER` (
   * `pc` / `rk2`: 2nd-order predictor-corrector with intermediate particle push.
 - **Subcycling**: `#FIELDSUBCYCLE` sets the number of explicit Maxwell subcycles
   per particle time step dt.
+- **Current**: Ampere's law takes the charge current sum_s q_s n_s u_s
+  (`nodeJexpl`, `deposit_explicit_current`), not the mass-flux moments in
+  `nodePlasma`. Leapfrog: kick v^{n+1/2} with (E^n, B^n), deposit at x^n,
+  drift, deposit at x^{n+1}; J^{n+1/2} is the average. Predictor-corrector:
+  deposits at t^n and t^{n+1}, interpolated in time across subcycles.
+  `tests/langmuir` checks energy conservation and the Langmuir branch;
+  `tests/whistler/PARAM.in.explicit` checks the full cold-plasma R-mode.
 - **Zero regression / minimal footprint**: bypasses allocation of GMRES scratch
   MultiFabs and mass matrices when active, leaving semi-implicit and hybrid
   allocations and performance untouched.
