@@ -5,14 +5,16 @@ A magnetized plasma flows into a reflecting left wall with a clean INFLOW right
 boundary (45 deg oblique upstream field, Hall term on).  It guards against a
 boundary-condition regression where the field energy Eb diverges.
 
-This test exists in two solver variants that share the same physics:
+The variants share the same physics:
 
-* ``PARAM.in``        -> full PIC (solveEM) solver
-* ``PARAM.in.hybrid`` -> hybrid (Hall OHM's law) solver (original test)
+* ``PARAM.in.implicit``      -> semi-implicit full PIC solver
+* ``PARAM.in.hybrid``        -> hybrid (Hall Ohm's law) solver (original test)
+* ``PARAM.in.hybrid_2d_*``   -> 2D hybrid at dx = 0.5 d_i, with grid-scale noise
+  damped by ``#HYPERRESISTIVITY`` (``_hyper``) or ``#HYBRIDUPWIND`` (``_upwind``)
 
-Run the harness as ``--test=shock`` (full PIC) or ``--test=shock_hybrid``
-(hybrid).  Both use the same ``apply_inflow_wall`` / ``fixed`` field BC, so the
-energy-divergence guard below applies to both.
+All use the same ``outflow``/``reflect`` wall and ``fixed``/``inflow`` right
+boundary, so the energy-divergence guard below applies to all.  The 2D variants
+add a narrower upstream window and the grid-noise checks of `_grid_noise`.
 
 Validation is split into `validate_log` (energy-log) and `validate_plot`
 (final #SAVEPLOT snapshot).  See README.md "Validation" for the full physics
@@ -40,6 +42,12 @@ STABILITY_RELSTD = 0.15        # allowed rel. std of a quantity in the upstream
 COMPRESS_RHO_MIN = 1.2         # downstream mean density > 1.2 x upstream mean
 COMPRESS_B_MIN = 1.1           # downstream mean |B| > 1.1 x upstream mean
 JUMP_MIN = 1.5                 # max(density) / upstream mean > 1.5 (shock jump)
+# 2D variants only (hybrid_2d_*): grid-scale noise damped by #HYPERRESISTIVITY
+# or #HYBRIDUPWIND.  At t = 20 without dissipation the overshoot is 2.9 and the
+# high-k fraction 0.18; the damped runs give <= 1.7 and <= 0.035.
+UPSTREAM_FRAC_2D = 0.15        # the shock foot reaches x ~ 0.75 x_max by t = 20
+OVERSHOOT_MAX = 2.2            # max(y-averaged |B|) / downstream mean |B|
+HIGHK_MAX = 0.08               # B power at |k| > k_Nyquist/2 / total, y-varying part
 
 
 def set_run_dir(run_dir):
@@ -152,6 +160,36 @@ def _mean_relstd(values):
     return mean, math.sqrt(var) / abs(mean)
 
 
+def _grid_noise(xs, data):
+    """Return (overshoot, high_k) of a 2D snapshot.
+
+    overshoot: max of the y-averaged |B| over its mean in the downstream half.
+    high_k: fraction of the power of the y-varying part of B (the field minus its
+    y average, i.e. without the planar shock profile) at |k| above half the
+    Nyquist wavenumber in either direction.
+    """
+    import numpy as np
+    x, y = np.array(xs), np.array(data["y"])
+    ux, uy = np.unique(x), np.unique(y)
+    order = np.lexsort((x, y))
+
+    def field(name):
+        return np.array(data[name])[order].reshape(len(uy), len(ux))
+
+    b = {c: field(c) for c in ("Bx", "By", "Bz")}
+    bmag = np.sqrt(b["Bx"] ** 2 + b["By"] ** 2 + b["Bz"] ** 2).mean(axis=0)
+    b_dn = bmag[ux <= ux.max() * DOWNSTREAM_FRAC].mean()
+    kx = np.abs(np.fft.fftfreq(len(ux)))[None, :]
+    ky = np.abs(np.fft.fftfreq(len(uy)))[:, None]
+    high = (kx > 0.25) | (ky > 0.25)
+    tot = hi = 0.0
+    for f in b.values():
+        p = np.abs(np.fft.fft2(f - f.mean(axis=0))) ** 2
+        tot += p.sum()
+        hi += p[high].sum()
+    return bmag.max() / b_dn, (hi / tot if tot > 0 else 0.0)
+
+
 def validate_log(pic_diags=None, test_name=None):
     """Energy-log checks: all energies finite; Eb / Epart bounded (no blow-up)."""
     if not pic_diags or len(pic_diags) < 2:
@@ -236,10 +274,11 @@ def validate_plot(test_name):
 
     n = len(xs)
     x_max = max(xs)
+    is_2d = "2d" in (test_name or "")
     # Upstream = rightmost UPSTREAM_FRAC of the domain (inflow face at +x, since
     # ux < 0 the plasma flows toward -x).  Downstream = leftmost DOWNSTREAM_FRAC
     # (the reflecting wall at -x).
-    up_lo = x_max * (1.0 - UPSTREAM_FRAC)
+    up_lo = x_max * (1.0 - (UPSTREAM_FRAC_2D if is_2d else UPSTREAM_FRAC))
     dn_hi = x_max * DOWNSTREAM_FRAC
 
     def region(name):
@@ -312,6 +351,20 @@ def validate_plot(test_name):
         reasons.append(
             f"no clear shock jump: max density {max_rho:.4e} < {JUMP_MIN} x "
             f"upstream {up_rho_mean:.4e}")
+
+    # --- (3) 2D: grid-scale noise damped ---------------------------------------
+    if is_2d:
+        overshoot, high_k = _grid_noise(xs, data)
+        logger.debug("    [SHOCK] 2D: |B| overshoot %.3f, high-k fraction %.4f",
+                     overshoot, high_k)
+        if not overshoot <= OVERSHOOT_MAX:
+            reasons.append(
+                f"|B| overshoot {overshoot:.3f} > {OVERSHOOT_MAX} -- "
+                f"grid-scale noise not damped")
+        if not high_k <= HIGHK_MAX:
+            reasons.append(
+                f"high-k fraction of B {high_k:.4f} > {HIGHK_MAX} -- "
+                f"grid-scale noise not damped")
 
     if reasons:
         return False, "; ".join(reasons)

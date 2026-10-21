@@ -1,15 +1,18 @@
 # tests/shock
 
-1D magnetized collisionless shock test for FLEKS: a super-magnetosonic plasma
+Magnetized collisionless shock test for FLEKS: a super-magnetosonic plasma
 streams into a reflecting wall, exercising a reflecting wall and an upstream
-inflow boundary in the same deck.  Two solver variants are provided:
+inflow boundary in the same deck.  Four variants are provided:
 
 * **`PARAM.in.implicit`** — the **SEMI-IMPLICIT FULL PIC** solver (kinetic ions + kinetic electrons,
   reduced mass ratio `m_i/m_e = 25`, `#FIELDSOLVER implicit`).
 * **`PARAM.in.hybrid`** — the **HYBRID** solver (kinetic ions, massless
   electron fluid at `Te ≈ 140 eV`, `#FIELDSOLVER hybrid`).
+* **`PARAM.in.hybrid_2d_hyper`**, **`PARAM.in.hybrid_2d_upwind`** — the hybrid
+  solver in 2D at twice the resolution and four times the run length, where
+  grid-scale noise must be damped (see [2D variants](#2d-variants)).
 
-Both variants share the same physics; only the field solver mode differs.
+All variants share the same upstream physics.
 
 ## Setup
 
@@ -76,10 +79,50 @@ inflow region):
   the upstream means, and peak density reaches at least `1.5×` the upstream mean
   (a clear jump, not uniform flow).  Any NaN/Inf in the wall region also fails.
 
+## 2D variants
+
+`PARAM.in.hybrid_2d_*` run the same upstream on a 64 × 8 `d_i` domain with
+128 × 16 cells (`dx = 0.5 d_i`, periodic in y), 100 ions per cell and
+4 field sub-cycles, to `t = 20` (about three ion gyroperiods).  They differ only
+in how the grid-scale noise of the centered Ohm's law is damped:
+
+* **`_hyper`**: grid-mode `#HYPERRESISTIVITY` with `C_h = 0.01`;
+* **`_upwind`**: `#HYBRIDUPWIND` with the MC limiter and the full whistler
+  signal speed (`upwindCoefWhistler = 1`).
+
+Without either term the deck does not survive: the shock grows a `|B|`
+overshoot of about 3, grid-scale noise rises to 18 % of the y-varying field
+power, the field energy grows 11× (8× when damped), and the noise erodes the
+upstream.  At `t = 20` (overshoot = max of the y-averaged `|B|` over its
+downstream mean; high-k = fraction of the y-varying B power above half the
+Nyquist wavenumber):
+
+| damping | shock x | overshoot | high-k | `Eb` growth |
+| --- | --- | --- | --- | --- |
+| none | 49.0 | 2.87 | 0.175 | 11.1× |
+| hyper-resistivity `C_h = 0.003` | 46.0 | 1.63 | 0.025 | 8.0× |
+| hyper-resistivity `C_h = 0.01` | 43.0 | 1.49 | 0.014 | 7.9× |
+| upwind, `upwindCoefWhistler = 0` | 44.5 | 1.66 | 0.033 | 7.2× |
+| upwind, `upwindCoefWhistler = 0.25` | 43.5 | 1.53 | 0.025 | 7.6× |
+| upwind, `upwindCoefWhistler = 1` | 41.5 | 1.53 | 0.028 | 7.2× |
+
+So the upwind term damps the shock as well as hyper-resistivity, without the
+deck-dependent `C_h`.  In the 1D deck (`PARAM.in.hybrid`, `t = 5`), both
+terms lower the field-energy growth from 5.0× to 3.0–3.3× and pass;
+hyper-resistivity there gives the smaller overshoot (1.14 vs 1.30–1.36).
+
+The 2D variants run the same checks as the 1D ones, with two changes:
+
+* The upstream window is the rightmost **15 %** (x > 54), because the shock
+  foot reaches x ≈ 50 by `t = 20`.
+* **Grid noise damped:** overshoot ≤ **2.2** and high-k fraction ≤ **0.08**.
+
 ## Running
 
 ```
-python3 tests/validate_tests.py --test=shock          # both (PARAM.in + hybrid)
-python3 tests/validate_tests.py --test=shock.full     # full PIC only (PARAM.in)
-python3 tests/validate_tests.py --test=shock.hybrid   # hybrid only (PARAM.in.hybrid)
+python3 tests/validate_tests.py --test=shock                    # all variants
+python3 tests/validate_tests.py --test=shock.implicit           # full PIC only
+python3 tests/validate_tests.py --test=shock.hybrid             # 1D hybrid only
+python3 tests/validate_tests.py --test=shock.hybrid_2d_upwind   # 2D, upwind
+python3 tests/validate_tests.py --test=shock.hybrid_2d_hyper    # 2D, hyper-resistivity
 ```
