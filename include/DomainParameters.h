@@ -15,18 +15,35 @@ enum class PicSolverMode {
 // Configuration for a FLEKS Domain, owned by Domain and shared
 // with its child components.
 struct DomainParameters {
-  // Restart control.
+  // Read first by Domain::read_construction_parameters(): they decide whether
+  // and how grid, fi, pic and pt are constructed.
   bool doRestart = false;
-  bool doRestartPT = false;
-  bool doRestartFIOnly = false;
-  bool doRegridOnRestart = false;
-
-  // Coupling / initialization mode.
-  bool isStandalone = false;
   bool initFromSWMF = true;
   bool receiveICOnly = false;
   bool useHybridPIC = false;
   PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
+  bool usePT = false;
+
+  // Read by Domain::read_param() together with the other commands.
+  bool doRestartPT = false;
+  bool doRestartFIOnly = false;
+  bool doRegridOnRestart = false;
+  bool useSource = false;
+
+  // Number of files per AMReX output.
+  int nFileField = 64;
+  int nFileParticle = 256;
+
+  // Load-balancing strategy.
+  BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
+  int cellWeight = 10;
+
+  // Reporting options.
+  int dnReportLB = 100;
+  bool doCompact = true;
+
+  // Set from Domain::init()'s argument, not from a command.
+  bool isStandalone = false;
 
   void set_field_solver_mode(const std::string &modeStr) {
     std::string s = modeStr;
@@ -49,22 +66,6 @@ struct DomainParameters {
                    "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
     }
   }
-
-  // Component toggles; gate child construction in Domain::init().
-  bool usePT = false;
-  bool useSource = false;
-
-  // Number of files per AMReX output.
-  int nFileField = 64;
-  int nFileParticle = 256;
-
-  // Load-balancing strategy.
-  BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
-  int cellWeight = 10;
-
-  // Reporting options.
-  int dnReportLB = 100;
-  bool doCompact = true;
 
   // Return the first invalid domain-level combination, or an empty string.
   // Parsing and application remain separate from semantic validation.

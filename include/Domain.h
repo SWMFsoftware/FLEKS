@@ -136,10 +136,11 @@ public:
   //------------Coupler related end--------------
 
   //--------------- IO begin--------------------------------
-  void read_param(const bool readGridInfo);
+  void read_param();
 
-  // Parse Domain-level switches before constructing children, then roll back.
-  void read_domain_parameters(ReadParam &param);
+  // Read the commands that decide whether and how grid, fi, pic and pt are
+  // constructed; the caller rolls back so read_param() reads the rest.
+  void read_construction_parameters(ReadParam &param);
   void validate_configuration() const;
   void save_restart(std::string restartOutDir);
   void save_restart_header();
