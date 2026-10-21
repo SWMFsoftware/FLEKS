@@ -14,24 +14,6 @@
 
 using namespace amrex;
 
-namespace {
-
-// Commands read by Domain::read_construction_parameters(): they decide whether
-// and how grid, fi, pic and pt are constructed, so they are read first.
-bool is_construction_command(const std::string &command) {
-  static const std::set<std::string> commands = {
-    // Grid geometry.
-    "#GEOMETRY", "#NCELL", "#MAXBLOCKSIZE", "#PERIODICITY", "#REFINEMENTRATIO",
-    // Where grid and fi come from.
-    "#RESTART", "#INITFROMSWMF", "#RECEIVEICONLY",
-    // Which objects are constructed, and how.
-    "#FIELDSOLVER", "#HYBRIDPIC", "#SOLVEEM", "#PARTICLETRACKER"
-  };
-  return commands.count(command) > 0;
-}
-
-} // namespace
-
 bool Domain::find_parameter_owner(const std::string &command,
                                   ParameterOwner &owner) const {
   // clang-format off
@@ -78,6 +60,21 @@ bool Domain::find_parameter_owner(const std::string &command,
   else
     return false;
   return true;
+}
+
+//========================================================
+// Commands read by read_construction_parameters(): they decide whether
+// and how grid, fi, pic and pt are constructed, so they are read first.
+bool Domain::is_construction_command(const std::string &command) {
+  static const std::set<std::string> commands = {
+    // Grid geometry.
+    "#GEOMETRY", "#NCELL", "#MAXBLOCKSIZE", "#PERIODICITY", "#REFINEMENTRATIO",
+    // Where grid and fi come from.
+    "#RESTART", "#INITFROMSWMF", "#RECEIVEICONLY",
+    // Which objects are constructed, and how.
+    "#FIELDSOLVER", "#HYBRIDPIC", "#SOLVEEM", "#PARTICLETRACKER"
+  };
+  return commands.count(command) > 0;
 }
 
 //========================================================

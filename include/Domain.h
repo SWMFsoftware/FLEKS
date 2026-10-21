@@ -99,6 +99,7 @@ private:
 
   bool find_parameter_owner(const std::string &command,
                             ParameterOwner &owner) const;
+  static bool is_construction_command(const std::string &command);
   void prepare_grid_info(const amrex::Vector<double> &info,
                          amrex::Geometry &geometry, amrex::AmrInfo &amrInfo);
 
