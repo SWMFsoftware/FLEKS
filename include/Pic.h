@@ -161,7 +161,7 @@ private:
   bool useHybridUpwind = false;
   std::string upwindLimiter = "mc";
   int upwindLimiterType = 3; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
-  amrex::Real upwindCoefWhistler = 1.0;
+  amrex::Real upwindCoefWhistler = 0.0;
   // > 0 replaces a_d by this constant (code units); for verification.
   amrex::Real upwindFixedSpeed = -1.0;
 

@@ -474,7 +474,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("useHybridUpwind", useHybridUpwind);
     if (useHybridUpwind) {
       param.read_var("upwindLimiter", upwindLimiter);
-      param.read_var("upwindCoefWhistler", upwindCoefWhistler);
+      param.read_optional("upwindCoefWhistler", upwindCoefWhistler);
       param.read_optional("upwindFixedSpeed", upwindFixedSpeed);
     }
   } else if (command == "#MINIMUMDENSITY") {

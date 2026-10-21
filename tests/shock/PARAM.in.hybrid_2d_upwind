@@ -4,8 +4,8 @@
 gyroperiods: flow along x into a reflecting left wall, open inflow right
 boundary, upstream field at 45 deg to the shock normal. Grid-scale noise is
 damped by the upwind (Rusanov) dissipation of the Ohm's-law E with the MC
-limiter and the full whistler signal speed; without any dissipation the |B|
-overshoot grows to about 3 and grid-scale noise to about 18 % of the field
+limiter and the flow plus fast-wave signal speed; without any dissipation the
+|B| overshoot grows to about 3 and grid-scale noise to about 18 % of the field
 power.
 
 #INITFROMSWMF
@@ -66,7 +66,7 @@ F                       isAutoSubcycle
 #HYBRIDUPWIND
 T                       useHybridUpwind
 mc                      upwindLimiter
-1.0                     upwindCoefWhistler
+0.0                     upwindCoefWhistler
 
 #ELECTRONTEMPERATURE
 141.0                   electronTemperature

@@ -699,14 +699,14 @@ is T.
   <parameter name="useHybridUpwind" type="logical" default="F"/>
   <if expr="$useHybridUpwind">
     <parameter name="upwindLimiter" type="string" default="mc"/>
-    <parameter name="upwindCoefWhistler" type="real" min="0" default="1.0"/>
+    <parameter name="upwindCoefWhistler" type="real" min="0" default="0.0"/>
     <parameter name="upwindFixedSpeed" type="real" default="-1.0"/>
   </if>
 
 #HYBRIDUPWIND
 T                 useHybridUpwind (rest is read if true)
 mc                upwindLimiter      (upwind1, minmod, vanleer, mc)
-1.0               upwindCoefWhistler
+0.0               upwindCoefWhistler (optional)
 -1.0              upwindFixedSpeed   (optional)
 
 [Ohm's-law term: upwind dissipation] Adds a Rusanov (local Lax-Friedrichs)
@@ -725,8 +725,12 @@ The signal speed is
    a_d = |u_e,d| + c_fast + upwindCoefWhistler * |B| / (4 rho dx_d),
 with the electron velocity u_e = u_i - J/rho (u_i without the Hall term),
 c_fast = sqrt(v_A^2 + gamma_e T_e), and the last term the whistler phase speed
-at k = pi/dx_d (only with the Hall term). upwindCoefWhistler = 0 upwinds with
-the flow and fast-wave speed only; 1 is the Hall-MHD Rusanov speed. With the
+at k = pi/dx_d (only with the Hall term). upwindCoefWhistler = 0 (the default)
+upwinds with the flow and fast-wave speed only; 1 is the Hall-MHD Rusanov
+speed. On a whistler at k d_i = 4 resolved by 16 cells, 0 adds a damping of
+0.2 % per radian (3 times grid-mode hyper-resistivity with etaHyperCh = 0.01),
+0.25 adds 2 % and 1 adds 7 %; 0 was stable in every hybrid test that needs
+dissipation. With the
 first-order reconstruction the grid-scale mode is damped at 2 a_d / dx_d, so a
 whistler coefficient of order one damps it at a rate comparable to its own
 frequency; limited reconstructions leave well-resolved modes damped at a rate

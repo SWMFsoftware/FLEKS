@@ -87,8 +87,8 @@ inflow region):
 in how the grid-scale noise of the centered Ohm's law is damped:
 
 * **`_hyper`**: grid-mode `#HYPERRESISTIVITY` with `C_h = 0.01`;
-* **`_upwind`**: `#HYBRIDUPWIND` with the MC limiter and the full whistler
-  signal speed (`upwindCoefWhistler = 1`).
+* **`_upwind`**: `#HYBRIDUPWIND` with the MC limiter and the default signal
+  speed, flow plus fast wave (`upwindCoefWhistler = 0`).
 
 Without either term the deck does not survive: the shock grows a `|B|`
 overshoot of about 3, grid-scale noise rises to 18 % of the y-varying field
