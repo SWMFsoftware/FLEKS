@@ -344,36 +344,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#ADAPTIVESOURCEPPC") {
     param.read_var("adaptiveSourcePPC", adaptiveSourcePPC);
-  } else if (command == "#BODYIONOSPHERE") {
-    auto& bi = bodyIono;
-    bi.use = true;
-    param.read_var("solarDirX", bi.solarDir[0]);
-    param.read_var("solarDirY", bi.solarDir[1]);
-    param.read_var("solarDirZ", bi.solarDir[2]);
-    param.read_var("cosSzaFloor", bi.cosSzaFloor);
-    const Real norm = std::sqrt(bi.solarDir[0] * bi.solarDir[0] +
-                                bi.solarDir[1] * bi.solarDir[1] +
-                                bi.solarDir[2] * bi.solarDir[2]);
-    if (norm <= 0)
-      Abort("Invalid #BODYIONOSPHERE: the solar direction must not be zero.");
-    for (auto& d : bi.solarDir)
-      d /= norm;
-    if (bi.cosSzaFloor <= 0 || bi.cosSzaFloor > 1)
-      Abort("Invalid #BODYIONOSPHERE: cosSzaFloor must be in (0, 1].");
-    const int nS = fi->get_nS();
-    if (nS <= 0)
-      Abort("Error: #BODYIONOSPHERE has one block per species and must come "
-            "after #PLASMA.");
-    bi.n0SI.assign(nS, 0.0);
-    bi.tempSI.assign(nS, 0.0);
-    bi.szaExponent.assign(nS, 0.0);
-    for (int iS = 0; iS < nS; iS++) {
-      param.read_var("n0", bi.n0SI[iS]);
-      param.read_var("T", bi.tempSI[iS]);
-      param.read_var("szaExponent", bi.szaExponent[iS]);
-      if (bi.n0SI[iS] < 0 || bi.tempSI[iS] < 0)
-        Abort("Invalid #BODYIONOSPHERE: n0 and T must be >= 0.");
-    }
   } else if (command == "#IONOSPHEREEMISSION") {
     auto& ie = ionoEmission;
     ie.use = true;
@@ -1088,7 +1058,6 @@ void Pic::finalize_units_conversion() {
   convert_electron_heat_conduction();
   convert_electron_collision();
   convert_inflow_state();
-  convert_body_ionosphere();
   convert_ionosphere_emission();
   convert_floating_body();
   check_light_speed();
@@ -1192,39 +1161,6 @@ void Pic::check_light_speed() {
             << " times the speed of light c = uNormSI = " << cSI / 1e3
             << " km/s (#NORMALIZATION). Full PIC needs c well above the flow"
             << " and Alfven speeds (~10x): raise uNormSI.\n";
-}
-
-//==========================================================
-void Pic::convert_body_ionosphere() {
-  auto& bi = bodyIono;
-  if (!bi.use)
-    return;
-  if (!use_body())
-    Abort("Error: #BODYIONOSPHERE needs an inner body (#BODY).");
-
-  // Same conversions as convert_inflow_state(): n [/cc], T [K] -> code units.
-  const double rhoFactor = 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
-  const double unormSI = fi->get_unorm_si();
-  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
-
-  const int nS = fi->get_nS();
-  if (static_cast<int>(bi.n0SI.size()) != nS)
-    Abort("Error: #BODYIONOSPHERE needs one block per #PLASMA species.");
-  bi.n0.assign(nS, 0.0);
-  bi.vth.assign(nS, 0.0);
-  Print() << "  #BODYIONOSPHERE (code units), n = n0 * max(cos SZA, "
-          << bi.cosSzaFloor << ")^p:\n";
-  for (int iS = 0; iS < nS; iS++) {
-    const double mass = fi->get_species_mass(iS);
-    bi.n0[iS] = bi.n0SI[iS] * rhoFactor;
-    bi.vth[iS] = (mass > 0) ? std::sqrt(bi.tempSI[iS] * tFactor / mass) : 0.0;
-    const bool isElectron = fi->get_species_charge(iS) < 0;
-    Print() << "    species " << iS << ": "
-            << (isElectron ? std::string("n = quasi-neutral sum of the ions")
-                           : "n0 = " + std::to_string(bi.n0[iS]) +
-                                 ", p = " + std::to_string(bi.szaExponent[iS]))
-            << ", vth = " << bi.vth[iS] << "\n";
-  }
 }
 
 //==========================================================

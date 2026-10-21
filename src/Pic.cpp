@@ -847,7 +847,6 @@ void Pic::fill_particles() {
   inject_particles_for_new_cells();
   particlesInitialized = true;
   inject_particles_for_boundary_cells();
-  inject_body_ionosphere();
 }
 
 void Pic::fill_source_particles() {
@@ -865,45 +864,6 @@ void Pic::fill_source_particles() {
                                      doSelectRegion, adaptiveSourcePPC,
                                      sourceMinWeightRatio);
     }
-  }
-}
-
-//==========================================================
-void Pic::inject_body_ionosphere() {
-  const auto& bi = bodyIono;
-  if (!bi.use || !use_body())
-    return;
-
-  const Real s0 = bi.solarDir[0], s1 = bi.solarDir[1], s2 = bi.solarDir[2];
-  const Real floor = bi.cosSzaFloor;
-  auto sza_factor = [=](const Real* xyz, Real p) {
-    const Real r =
-        std::sqrt(xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2]);
-    const Real cosSza =
-        (r > 0) ? (xyz[0] * s0 + xyz[1] * s1 + xyz[2] * s2) / r : 1.0;
-    return std::pow(std::max(cosSza, floor), p);
-  };
-
-  for (int i : kineticSpecies_) {
-    const bool isElectron = parts[i]->get_charge() < 0;
-    std::function<Real(const Real*)> nDensAt;
-    if (isElectron) {
-      // Quasi-neutral: n_e = sum(Z_i n_i) of the injected ions.
-      nDensAt = [&, sza_factor](const Real* xyz) {
-        Real n = 0;
-        for (int iS = 0; iS < nSpecies; iS++)
-          if (fi->get_species_charge(iS) > 0 && bi.n0[iS] > 0)
-            n += fi->get_species_charge(iS) * bi.n0[iS] *
-                 sza_factor(xyz, bi.szaExponent[iS]);
-        return n;
-      };
-    } else {
-      if (bi.n0[i] <= 0)
-        continue;
-      const Real n0 = bi.n0[i], p = bi.szaExponent[i];
-      nDensAt = [=](const Real* xyz) { return n0 * sza_factor(xyz, p); };
-    }
-    parts[i]->inject_particles_at_body(nDensAt, bi.vth[i]);
   }
 }
 
@@ -1258,24 +1218,18 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
 
     stateMF.FillBoundary(Geom(iLev).periodicity());
 
-    // The body nodes are not plasma: with #BODYIONOSPHERE they carry the
-    // ghost layer, whose ions are re-injected every step and must not react.
-    // Otherwise their moments are diluted by the empty body cells (the other
-    // surface nodes were rescaled in sum_moments()): rescale them as well, so
-    // that the state is the density of the plasma next to the surface.
+    // The moments of the body nodes are diluted by the empty body cells (the
+    // other surface nodes were rescaled in sum_moments()): rescale them as
+    // well, so that the state is the density of the plasma next to the
+    // surface. Only the densities and the pressures: the velocities are not
+    // diluted.
     if (use_body()) {
-      if (bodyIono.use)
-        mask_body(stateMF, node_status(iLev));
-      else {
-        // Only the densities and the pressures: the velocities are not
-        // diluted by the empty body cells.
-        for (int s = 0; s < dst.get_nS() && s < nSpecies; s++) {
-          for (const int iVar : { dst.get_iRho(s), dst.get_iP(s) }) {
-            MultiFab alias(stateMF, amrex::make_alias, iVar, 1);
-            scale_by_body_outside_fraction(alias, cell_status(iLev),
-                                           node_status(iLev),
-                                           Geom(iLev).Domain(), nDim, true);
-          }
+      for (int s = 0; s < dst.get_nS() && s < nSpecies; s++) {
+        for (const int iVar : { dst.get_iRho(s), dst.get_iP(s) }) {
+          MultiFab alias(stateMF, amrex::make_alias, iVar, 1);
+          scale_by_body_outside_fraction(alias, cell_status(iLev),
+                                         node_status(iLev), Geom(iLev).Domain(),
+                                         nDim, true);
         }
       }
     }
@@ -1287,20 +1241,13 @@ void Pic::mask_body_source(SourceInterface& src) {
   if (!use_body() || is_grid_empty())
     return;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    if (bodyIono.use) {
-      // The body nodes carry the re-injected ghost layer: no reaction there.
-      mask_body(src.get_node_fluid(iLev), node_status(iLev));
-      if (src.has_loss_array(iLev))
-        mask_body(src.get_node_loss_fluid(iLev), node_status(iLev));
-    } else {
-      // The production of a node is the average over its dual cell outside
-      // the body (UserSource), but only the plasma cells around the node
-      // receive particles: scale it up by the inverse outside fraction. The
-      // loss frequencies are intensive and stay as they are.
-      scale_by_body_outside_fraction(src.get_node_fluid(iLev), cell_status(iLev),
-                                     node_status(iLev), Geom(iLev).Domain(),
-                                     nDim, false);
-    }
+    // The production of a node is the average over its dual cell outside the
+    // body (UserSource), but only the plasma cells around the node receive
+    // particles: scale it up by the inverse outside fraction. The loss
+    // frequencies are intensive and stay as they are.
+    scale_by_body_outside_fraction(src.get_node_fluid(iLev), cell_status(iLev),
+                                   node_status(iLev), Geom(iLev).Domain(), nDim,
+                                   false);
   }
 }
 
@@ -1641,7 +1588,7 @@ void Pic::calc_mass_matrix() {
     // Undo the geometric dilution of the current at the staircase surface of
     // the inner body: the cells inside the body are empty, so a CIC node on
     // the surface only collects part of the current of the plasma there.
-    if (use_body() && !bodyIono.use)
+    if (use_body())
       rescale_body_surface_nodes(jHat[iLev], cell_status(iLev),
                                  node_status(iLev), Geom(iLev).Domain(), nDim);
 
@@ -1656,7 +1603,7 @@ void Pic::calc_mass_matrix() {
 
       // Same correction as jHat above: the mass matrix of the plasma next to
       // the body surface is diluted by the empty body cells.
-      if (use_body() && !bodyIono.use)
+      if (use_body())
         rescale_body_surface_nodes(nodeMM[iLev], cell_status(iLev),
                                    node_status(iLev), Geom(iLev).Domain(),
                                    nDim);
@@ -1792,7 +1739,7 @@ void Pic::sum_moments(bool updateDt) {
     // the raw moments are linear in the particle weight, so rescaling them
     // leaves the bulk velocity and the pressure unchanged while the density
     // becomes the density of the plasma that is really there.
-    if (use_body() && !bodyIono.use) {
+    if (use_body()) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         rescale_body_surface_nodes(nodePlasma[i][iLev], cell_status(iLev),
                                    node_status(iLev), Geom(iLev).Domain(),
@@ -2059,13 +2006,6 @@ void Pic::finish_particle_push() {
   }
 
   inject_particles_for_boundary_cells();
-
-  // Ghost layer of the ionospheric body boundary (#BODYIONOSPHERE). The push
-  // emptied it (the particles left in the body are absorbed); refilling it
-  // here, like the ghost cells of the domain boundary, keeps the ionospheric
-  // plasma of the boundary in the moments, the current and the mass matrix,
-  // so that the field solver sees its charge (the ambipolar field).
-  inject_body_ionosphere();
 
   // Ionospheric emission shell (#IONOSPHEREEMISSION).
   inject_ionosphere_emission();

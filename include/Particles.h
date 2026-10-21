@@ -428,7 +428,7 @@ protected:
   amrex::Real bodySheathPhi = 0;
   amrex::Real bodyHitWeight = 0, bodyHitEnergy = 0, bodyReflectCount = 0;
   // Cumulative number / mass of the particles injected at the body
-  // (#BODYIONOSPHERE, #IONOSPHEREEMISSION, #FLOATINGBODY reemit).
+  // (#IONOSPHEREEMISSION, #FLOATINGBODY reemit).
   amrex::Real bodyInjectCount = 0;
   amrex::Real bodyInjectMass = 0;
 
@@ -535,8 +535,7 @@ public:
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel& tpVel = Vel(), amrex::Real dt = -1,
-                          amrex::Real weightScale = 1.0,
-                          bool allowBody = false);
+                          amrex::Real weightScale = 1.0);
 
   // Ionospheric emission shell (#IONOSPHEREEMISSION): add nPPC particles of
   // this species to every cell where nAdd (cell-centered, code-unit number
@@ -547,16 +546,6 @@ public:
                              amrex::Real vth, int nPPC,
                              const amrex::Real* center);
 
-  // Ionospheric boundary of the inner body (#BODYIONOSPHERE): refill the
-  // one-cell-thick surface layer of the body with a Maxwellian of number
-  // density nDensAt(xyz) [code units, xyz relative to the body center], thermal
-  // speed vth and zero bulk velocity. Called after every push, like the ghost
-  // cells of a domain boundary: the layer is part of the moments and of the
-  // field solve, the particles that leave the body in the next push enter the
-  // plasma and the others are absorbed by the body.
-  void inject_particles_at_body(
-      const std::function<amrex::Real(const amrex::Real*)>& nDensAt,
-      amrex::Real vth);
   void inject_particles_at_boundary();
 
   // Inflow (ParticleBC::inflow) particle boundary

@@ -391,19 +391,6 @@ private:
   // (#SOURCEWEIGHTFLOOR); 0 switches it off.
   amrex::Real sourceMinWeightRatio = 0.0;
 
-  // Ionospheric boundary of the inner body (#BODYIONOSPHERE). The input is
-  // per species n0 [/cc], T [K] and the solar-zenith-angle exponent p of
-  //   n = n0 * max(cos(SZA), cosSzaFloor)^p;
-  // a kinetic electron species gets the quasi-neutral sum of the ions.
-  struct BodyIonosphere {
-    bool use = false;
-    amrex::Real solarDir[3] = { 1.0, 0.0, 0.0 };
-    amrex::Real cosSzaFloor = 1.0e-3;
-    amrex::Vector<amrex::Real> n0SI, tempSI, szaExponent;
-    // Code units, set by convert_body_ionosphere().
-    amrex::Vector<amrex::Real> n0, vth;
-  } bodyIono;
-
   // Ionospheric emission shell (#IONOSPHEREEMISSION), after the
   // IonosphereInjector of rhybrid: every step each species is injected into
   // the plasma cells crossed by the sphere r = radius, with the total rate
@@ -885,7 +872,6 @@ public:
   void convert_electron_heat_conduction();
   void convert_electron_collision();
   void convert_inflow_state();
-  void convert_body_ionosphere();
   void convert_ionosphere_emission();
   void convert_floating_body();
   void check_light_speed();
@@ -927,8 +913,6 @@ public:
 
   void fill_source_particles();
 
-  // Refill the ghost layer of the body with the #BODYIONOSPHERE plasma.
-  void inject_body_ionosphere();
 
   // #IONOSPHEREEMISSION: (re)build the shell weights for the current grid,
   // and inject the particles of one step.
@@ -943,9 +927,8 @@ public:
   // stand-alone source terms, whose rates depend on the local plasma.
   void fill_plasma_state(FluidInterface &dst);
 
-  // Adapt the source terms to the inner body: zero them at the body nodes
-  // with #BODYIONOSPHERE, otherwise deliver the production of the surface
-  // nodes to the plasma cells.
+  // Adapt the source terms to the inner body: deliver the production of the
+  // surface nodes to the plasma cells.
   void mask_body_source(SourceInterface &src);
 
   // Radius of the inner body [m], 0 without one.
