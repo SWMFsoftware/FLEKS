@@ -45,7 +45,8 @@ ue_at(const Array4<Real const>& arrUe, const int i, const int j, const int k,
   }
 }
 
-// MUSCL slope limiter for the Pe advection.
+// MUSCL slope limiter for the Pe advection and the #HYBRIDUPWIND B
+// reconstruction.
 // limType: 0 = upwind1, 1 = minmod, 2 = van leer, 3 = monotonized central (mc).
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real pe_slope(const int limType,
                                                        const Real dL,
@@ -116,6 +117,51 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
   divUe += (uHi - uLo) * invDx;
 }
 
+// Jump B^R - B^L of the MUSCL-reconstructed cell-centered B across the node
+// (i,j,k) along DIR. The node is the low corner of cell (i,j,k), so along DIR
+// it separates the cells at offsets -1 and 0; the jump is averaged over the
+// 2 (2D) or 4 (3D) cells around the node in the transverse directions, the
+// same cells curl_center_to_node averages over.
+template <int DIR>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_B_jump(
+    const Array4<Real const>& arrB, const int i, const int j, const int k,
+    const int limType, Real jump[nDim3]) noexcept {
+  constexpr int t1 = (DIR == ix_) ? iy_ : ix_;
+  constexpr int t2 = (DIR == iz_) ? iy_ : iz_;
+  const int o2Min = (nDim > 2 || t2 != iz_) ? -1 : 0;
+
+  for (int iVar = 0; iVar < nDim3; ++iVar)
+    jump[iVar] = 0.0;
+
+  int nCell = 0;
+  for (int o1 = -1; o1 <= 0; ++o1) {
+    for (int o2 = o2Min; o2 <= 0; ++o2) {
+      int c[nDim3] = { i, j, k };
+      c[t1] += o1;
+      c[t2] += o2;
+      int d[nDim3] = { 0, 0, 0 };
+      d[DIR] = 1;
+      for (int iVar = 0; iVar < nDim3; ++iVar) {
+        const Real bM2 = arrB(c[ix_] - 2 * d[ix_], c[iy_] - 2 * d[iy_],
+                              c[iz_] - 2 * d[iz_], iVar);
+        const Real bM1 =
+            arrB(c[ix_] - d[ix_], c[iy_] - d[iy_], c[iz_] - d[iz_], iVar);
+        const Real b0 = arrB(c[ix_], c[iy_], c[iz_], iVar);
+        const Real bP1 =
+            arrB(c[ix_] + d[ix_], c[iy_] + d[iy_], c[iz_] + d[iz_], iVar);
+        const Real bL = bM1 + 0.5 * pe_slope(limType, bM1 - bM2, b0 - bM1);
+        const Real bR = b0 - 0.5 * pe_slope(limType, b0 - bM1, bP1 - b0);
+        jump[iVar] += bR - bL;
+      }
+      ++nCell;
+    }
+  }
+
+  const Real invN = 1.0 / nCell;
+  for (int iVar = 0; iVar < nDim3; ++iVar)
+    jump[iVar] *= invN;
+}
+
 // Algebraic polytropic electron closure the evolved equation starts from:
 //   Pe = P0 * (rho/rho0)^gamma,  or Pe = Te*rho when gamma == 1.
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
@@ -165,6 +211,23 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   const Real wCur = usePredictorCorrector ? hstep : (0.5 + hstep);
   const Real invFourPI = 1.0 / fourPI;
 
+  // #HYBRIDUPWIND: directions with a single cell carry no jump.
+  const bool doUpwind = useHybridUpwind;
+  GpuArray<int, nDim3> upwindDir = { 0, 0, 0 };
+  GpuArray<Real, nDim3> invDxUp = { 0.0, 0.0, 0.0 };
+  for (int iDim = 0; iDim < nDim; ++iDim) {
+    upwindDir[iDim] = (Geom(iLev).Domain().length(iDim) > 1) ? 1 : 0;
+    invDxUp[iDim] = Geom(iLev).InvCellSize(iDim);
+  }
+  const int limTypeUp = upwindLimiterType;
+  const Real coefWhistlerUp = useHallTerm ? upwindCoefWhistler : 0.0;
+  const Real fixedSpeedUp = upwindFixedSpeed;
+  const Real cs2Up =
+      (electronTemperature > 0)
+          ? ((electronGamma > 0) ? electronGamma : 1.0) * electronTemperature
+          : 0.0;
+  const bool useHall = useHallTerm;
+
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
@@ -180,6 +243,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrEtaReg =
         hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
                                 : Array4<Real const>();
+    const Array4<Real const> arrBin =
+        doUpwind ? centerBin[mfi].const_array() : Array4<Real const>();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rhoPrev = momentsPrev(i, j, k, iRho_);
@@ -246,6 +311,56 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         ex += hall_x;
         ey += hall_y;
         ez += hall_z;
+      }
+
+      // Upwind (Rusanov) dissipation: E += sum_d (a_d/2) e_d x (B^R - B^L).
+      // The jumps use the evolved B only (no intrinsic B0), the speeds the
+      // total B and the electron velocity u_e = u_i - J/rho.
+      if (doUpwind && (rho > 0 || fixedSpeedUp > 0)) {
+        Real cFast = 0.0, bAbs = 0.0;
+        Real ue[nDim3] = { ui, vi, wi };
+        if (fixedSpeedUp <= 0) {
+          const Real b2 = bx * bx + by * by + bz * bz;
+          bAbs = std::sqrt(b2);
+          cFast = std::sqrt(b2 * invRhoEff * invFourPI + cs2Up);
+          if (useHall) {
+            ue[ix_] -= jx * invRhoEff;
+            ue[iy_] -= jy * invRhoEff;
+            ue[iz_] -= jz * invRhoEff;
+          }
+        }
+
+        Real jump[nDim3];
+        for (int iDir = 0; iDir < nDim; ++iDir) {
+          if (!upwindDir[iDir])
+            continue;
+          if (iDir == ix_) {
+            upwind_B_jump<ix_>(arrBin, i, j, k, limTypeUp, jump);
+          } else if (iDir == iy_) {
+            upwind_B_jump<iy_>(arrBin, i, j, k, limTypeUp, jump);
+          } else {
+            upwind_B_jump<iz_>(arrBin, i, j, k, limTypeUp, jump);
+          }
+
+          // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).
+          const Real a = (fixedSpeedUp > 0) ? fixedSpeedUp
+                                            : std::abs(ue[iDir]) + cFast +
+                                                  coefWhistlerUp * 0.25 * bAbs *
+                                                      invRhoEff * invDxUp[iDir];
+          const Real halfA = 0.5 * a;
+
+          // e_d x jump
+          if (iDir == ix_) {
+            ey -= halfA * jump[iz_];
+            ez += halfA * jump[iy_];
+          } else if (iDir == iy_) {
+            ex += halfA * jump[iz_];
+            ez -= halfA * jump[ix_];
+          } else {
+            ex -= halfA * jump[iy_];
+            ey += halfA * jump[ix_];
+          }
+        }
       }
 
       arrE(i, j, k, ix_) = ex;
@@ -1828,7 +1943,7 @@ void Pic::update_B_hybrid() {
     }
     const Real maxEta = amrex::max(etaResistivity, maxRegionalEta);
     const Real maxHyper = amrex::max(etaHyperLev[iLev], maxRegionalHyperLev);
-    if (maxEta <= 0 && maxHyper <= 0 && !useHallTerm)
+    if (maxEta <= 0 && maxHyper <= 0 && !useHallTerm && !useHybridUpwind)
       continue;
 
     const auto dx = Geom(iLev).CellSizeArray();
@@ -1855,14 +1970,29 @@ void Pic::update_B_hybrid() {
           << cflHyper << " (> " << cflLimit
           << ", explicit 4th-order diffusion may be unstable)\n";
 
+    if (!useHallTerm && !useHybridUpwind)
+      continue;
+
+    Real bMaxLev = 0.0;
+    const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
+    for (int d = 0; d < 3; ++d) {
+      bMaxLev = amrex::max(bMaxLev, bForCfl.norm0(d, 0, false));
+    }
+    const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
+    const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
+
+    if (useHybridUpwind) {
+      // Wave speeds only: the bulk-flow part of a_d is not known here.
+      const Real cflUpwind =
+          upwind_max_rate(iLev, 0.0, bMaxLev, rhoEff) * subDt;
+      if (cflUpwind > cflLimit)
+        amrex::Print() << "  [CFL warning] upwind dissipation: "
+                          "sum_d 2*a_d/dx_d*dt_sub = "
+                       << cflUpwind << " (> " << cflLimit
+                       << ", explicit upwind term may be unstable)\n";
+    }
+
     if (useHallTerm) {
-      Real bMaxLev = 0.0;
-      const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
-      for (int d = 0; d < 3; ++d) {
-        bMaxLev = amrex::max(bMaxLev, bForCfl.norm0(d, 0, false));
-      }
-      const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
-      const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
       const Real cflWhistler = (sMax * bMaxLev / (fourPI * rhoEff)) * subDt;
       if (cflWhistler > cflLimit) {
         const int nSubReq =
@@ -2126,6 +2256,38 @@ void Pic::update_B_hybrid() {
 }
 
 //==========================================================
+// The first-order upwind term damps the grid-scale mode of direction d at
+// 2 a_d / dx_d (a real eigenvalue), so the explicit field advance needs
+// dt_sub * sum_d 2 a_d / dx_d below the real-axis stability limit of the RK
+// scheme. Limited reconstructions only damp less.
+Real Pic::upwind_max_rate(int iLev, Real uMax, Real bMax, Real rhoEff) const {
+  if (!useHybridUpwind)
+    return 0.0;
+
+  Real cFast = 0.0, cWhistlerDx = 0.0;
+  if (rhoEff > 0.0) {
+    Real cs2 = 0.0;
+    if (electronTemperature > 0.0)
+      cs2 = ((electronGamma > 0.0) ? electronGamma : 1.0) * electronTemperature;
+    cFast = std::sqrt(bMax * bMax / (fourPI * rhoEff) + cs2);
+    if (useHallTerm)
+      cWhistlerDx = upwindCoefWhistler * 0.25 * bMax / rhoEff;
+  }
+
+  Real rate = 0.0;
+  for (int iDim = 0; iDim < nDim; ++iDim) {
+    if (Geom(iLev).Domain().length(iDim) < 2)
+      continue;
+    const Real invDx = Geom(iLev).InvCellSize(iDim);
+    const Real a = (upwindFixedSpeed > 0.0)
+                       ? upwindFixedSpeed
+                       : uMax + cFast + cWhistlerDx * invDx;
+    rate += 2.0 * a * invDx;
+  }
+  return rate;
+}
+
+//==========================================================
 void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                                       bool doReport) {
   std::string nameFunc = "Pic::calc_hybrid_dt_and_subcycle";
@@ -2295,6 +2457,18 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
           if (dtHyper < dtSubMin) {
             dtSubMin = dtHyper;
             localSubReason = "hyper-resistivity";
+          }
+        }
+      }
+
+      if (useHybridUpwind) {
+        const Real omegaUpwind =
+            upwind_max_rate(iLev, uMaxLev, bMaxLev, rhoEff);
+        if (omegaUpwind > 0.0) {
+          Real dtUpwind = (cflLimit * fieldSafety) / omegaUpwind;
+          if (dtUpwind < dtSubMin) {
+            dtSubMin = dtUpwind;
+            localSubReason = "upwind dissipation";
           }
         }
       }

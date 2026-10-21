@@ -695,6 +695,47 @@ production runs. 0 (either mode) disables the term. Only used when HYBRIDPIC
 is T.
 </command>
 
+<command name="HYBRIDUPWIND" alias="HYBRIDUPWIND_FLEKS0,HYBRIDUPWIND_FLEKS1,HYBRIDUPWIND_FLEKS2" multiple="T">
+  <parameter name="useHybridUpwind" type="logical" default="F"/>
+  <if expr="$useHybridUpwind">
+    <parameter name="upwindLimiter" type="string" default="mc"/>
+    <parameter name="upwindCoefWhistler" type="real" min="0" default="1.0"/>
+    <parameter name="upwindFixedSpeed" type="real" default="-1.0"/>
+  </if>
+
+#HYBRIDUPWIND
+T                 useHybridUpwind (rest is read if true)
+mc                upwindLimiter      (upwind1, minmod, vanleer, mc)
+1.0               upwindCoefWhistler
+-1.0              upwindFixedSpeed   (optional)
+
+[Ohm's-law term: upwind dissipation] Adds a Rusanov (local Lax-Friedrichs)
+dissipation to the nodal electric field of the generalized Ohm's law, the
+upwind alternative to #HYPERRESISTIVITY:
+   E += sum_d (a_d/2) e_d x (B^R_d - B^L_d),
+where B^L_d and B^R_d are the cell-centered B reconstructed to the two sides of
+the node along direction d with the MUSCL limiter upwindLimiter (upwind1 is
+first order), averaged over the cells around the node in the other directions.
+Because the correction is part of the nodal E, the Faraday update keeps the
+discrete div(B) at round-off and the coarse-fine E synchronization of AMR
+applies to it unchanged; no div(B) cleaning is needed for it. The intrinsic
+field B0 is not reconstructed, so it is not diffused.
+
+The signal speed is
+   a_d = |u_e,d| + c_fast + upwindCoefWhistler * |B| / (4 rho dx_d),
+with the electron velocity u_e = u_i - J/rho (u_i without the Hall term),
+c_fast = sqrt(v_A^2 + gamma_e T_e), and the last term the whistler phase speed
+at k = pi/dx_d (only with the Hall term). upwindCoefWhistler = 0 upwinds with
+the flow and fast-wave speed only; 1 is the Hall-MHD Rusanov speed. With the
+first-order reconstruction the grid-scale mode is damped at 2 a_d / dx_d, so a
+whistler coefficient of order one damps it at a rate comparable to its own
+frequency; limited reconstructions leave well-resolved modes damped at a rate
+proportional to dx^3 k^4 instead. The term enters the automatic sub-cycling
+(#FIELDSUBCYCLE) and the CFL warnings. upwindFixedSpeed > 0 replaces a_d by
+this constant (code units), which is meant for verification. Only used when
+HYBRIDPIC is T.
+</command>
+
 <command name="MINIMUMDENSITY" alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2" multiple="T">
   <parameter name="rhoMinOhm" type="real" default="0.0"/>
 
