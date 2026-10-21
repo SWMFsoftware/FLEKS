@@ -2,7 +2,6 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
-#include <cstring>
 #include <iomanip>
 #include <map>
 #include <set>
@@ -16,106 +15,6 @@
 using namespace amrex;
 
 namespace {
-
-struct ParameterCommand {
-  const char *name;
-  ParameterOwner owner;
-};
-
-static const ParameterCommand parameter_registry[] = {
-  { "#ABSORB", ParameterOwner::Pic },
-  { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
-  { "#AUTOSUBCYCLE", ParameterOwner::Pic },
-  { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
-  { "#BODY", ParameterOwner::Pic },
-  { "#BODYBOUNDARY", ParameterOwner::Pic },
-  { "#BSUBCYCLE", ParameterOwner::Pic },
-  { "#CMAXE", ParameterOwner::Pic },
-  { "#COMOVING", ParameterOwner::Pic },
-  { "#CONSTANTPPV", ParameterOwner::Pic },
-  { "#CRUSTALFIELD", ParameterOwner::Pic },
-  { "#DIPOLE", ParameterOwner::Pic },
-  { "#DISCRETIZATION", ParameterOwner::Pic },
-  { "#DISCRETIZE", ParameterOwner::Pic },
-  { "#DIVB", ParameterOwner::Pic },
-  { "#DIVE", ParameterOwner::Pic },
-  { "#EFIELDSOLVER", ParameterOwner::Pic },
-  { "#ELECTRON", ParameterOwner::Pic },
-  { "#ELECTRONADVECTION", ParameterOwner::Pic },
-  { "#ELECTRONCOLLISION", ParameterOwner::Pic },
-  { "#ELECTRONCONDUCTION", ParameterOwner::Pic },
-  { "#ELECTRONPRESSURE", ParameterOwner::Pic },
-  { "#ELECTRONTEMPERATURE", ParameterOwner::Pic },
-  { "#EXOSPHERE", ParameterOwner::FluidInterface },
-  { "#FADEEVIC", ParameterOwner::Pic },
-  { "#FASTMERGE", ParameterOwner::Pic },
-  { "#FIELDBOXBOUNDARY", ParameterOwner::Pic },
-  { "#FIELDINTEGRATOR", ParameterOwner::Pic },
-  { "#FIELDSUBCYCLE", ParameterOwner::Pic },
-  { "#FIXEDUMAX", ParameterOwner::Pic },
-  { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
-  { "#FORCEFREEIC", ParameterOwner::Pic },
-  { "#GEMIC", ParameterOwner::Pic },
-  { "#HALLTERM", ParameterOwner::Pic },
-  { "#HYPERRESISTIVITY", ParameterOwner::Pic },
-  { "#INFLOW", ParameterOwner::Pic },
-  { "#KINETICSOURCE", ParameterOwner::Pic },
-  { "#LAGGEDLIMITER", ParameterOwner::Pic },
-  { "#MAXCHARGEEXCHANGERATE", ParameterOwner::Pic },
-  { "#MEMORY", ParameterOwner::Pic },
-  { "#MERGELIGHT", ParameterOwner::Pic },
-  { "#MINIMUMDENSITY", ParameterOwner::Pic },
-  { "#NORMALIZATION", ParameterOwner::FluidInterface },
-  { "#OHION", ParameterOwner::Pic },
-  { "#OHMSLAW", ParameterOwner::FluidInterface },
-  { "#PARTICLEBOXBOUNDARY", ParameterOwner::Pic },
-  { "#PARTICLELEVRATIO", ParameterOwner::Pic },
-  { "#PARTICLES", ParameterOwner::Pic },
-  { "#PARTMODE", ParameterOwner::Pic },
-  { "#PIC", ParameterOwner::Pic },
-  { "#PLANETRADIUS", ParameterOwner::FluidInterface },
-  { "#PLASMA", ParameterOwner::FluidInterface },
-  { "#PRESPLITTING", ParameterOwner::Pic },
-  { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
-  { "#REGIONHYPERRESISTIVITY", ParameterOwner::Pic },
-  { "#REGIONRESISTIVITY", ParameterOwner::Pic },
-  { "#RESAMPLING", ParameterOwner::Pic },
-  { "#RESISTIVITY", ParameterOwner::Pic },
-  { "#SCALINGFACTOR", ParameterOwner::FluidInterface },
-  { "#SELECTPARTICLE", ParameterOwner::Pic },
-  { "#SMOOTHE", ParameterOwner::Pic },
-  { "#SMOOTHJ", ParameterOwner::Pic },
-  { "#SMOOTHMOMENTS", ParameterOwner::Pic },
-  { "#SOURCEPARTICLES", ParameterOwner::Pic },
-  { "#SUPID", ParameterOwner::Pic },
-  { "#TESTCASE", ParameterOwner::Pic },
-  { "#TESTPARTICLENUMBER", ParameterOwner::ParticleTracker },
-  { "#TPCELLINTERVAL", ParameterOwner::ParticleTracker },
-  { "#TPINITFROMPIC", ParameterOwner::ParticleTracker },
-  { "#TPPARTICLES", ParameterOwner::ParticleTracker },
-  { "#TPREGION", ParameterOwner::ParticleTracker },
-  { "#TPRELATIVISTIC", ParameterOwner::ParticleTracker },
-  { "#TPSAVE", ParameterOwner::ParticleTracker },
-  { "#TPSAVEAT", ParameterOwner::ParticleTracker },
-  { "#TPSTATESI", ParameterOwner::ParticleTracker },
-  { "#UNIFORMSTATE", ParameterOwner::FluidInterface },
-  { "#UPWINDB", ParameterOwner::Pic },
-  { "#UPWINDE", ParameterOwner::Pic },
-  { "#VACUUM", ParameterOwner::Pic },
-  { "#WAVEBC", ParameterOwner::Pic },
-  { "#WAVEIC", ParameterOwner::Pic }
-};
-
-const ParameterCommand *find_parameter_command(const std::string &command) {
-  const auto it = std::lower_bound(
-      std::begin(parameter_registry), std::end(parameter_registry), command,
-      [](const ParameterCommand &entry, const std::string &value) {
-        return std::strcmp(entry.name, value.c_str()) < 0;
-      });
-  if (it != std::end(parameter_registry) && command == it->name)
-    return it;
-  return nullptr;
-}
 
 // Commands read by Domain::read_construction_parameters(): they decide whether
 // and how grid, fi, pic and pt are constructed, so they are read first.
@@ -135,17 +34,50 @@ bool is_construction_command(const std::string &command) {
 
 bool Domain::find_parameter_owner(const std::string &command,
                                   ParameterOwner &owner) const {
-  if (const auto *core = find_parameter_command(command)) {
-    owner = core->owner;
-    return true;
-  }
-  for (const auto &registered : sourceParameterCommands) {
-    if (registered == command) {
-      owner = ParameterOwner::Source;
-      return true;
-    }
-  }
-  return false;
+  // clang-format off
+  static const std::set<std::string> picCommands = {
+    // Handled by Pic::read_param().
+    "#ABSORB", "#ADAPTIVESOURCEPPC", "#AUTOSUBCYCLE", "#BFIELDBOXBOUNDARY",
+    "#BODY", "#BODYBOUNDARY", "#BSUBCYCLE", "#CMAXE", "#COMOVING",
+    "#CONSTANTPPV", "#CRUSTALFIELD", "#DIPOLE", "#DISCRETIZATION",
+    "#DISCRETIZE", "#DIVB", "#DIVE", "#EFIELDSOLVER", "#ELECTRON",
+    "#ELECTRONADVECTION", "#ELECTRONCOLLISION", "#ELECTRONCONDUCTION",
+    "#ELECTRONPRESSURE", "#ELECTRONTEMPERATURE", "#FADEEVIC", "#FASTMERGE",
+    "#FIELDBOXBOUNDARY", "#FIELDINTEGRATOR", "#FIELDSUBCYCLE", "#FIXEDUMAX",
+    "#FORCEFREEIC", "#GEMIC", "#HALLTERM", "#HYPERRESISTIVITY", "#INFLOW",
+    "#KINETICSOURCE", "#LAGGEDLIMITER", "#MAXCHARGEEXCHANGERATE", "#MEMORY",
+    "#MERGELIGHT", "#MINIMUMDENSITY", "#OHION", "#PARTICLEBOXBOUNDARY",
+    "#PARTICLELEVRATIO", "#PARTICLES", "#PARTMODE", "#PIC", "#PRESPLITTING",
+    "#RANDOMPARTICLESLOCATION", "#REGIONHYPERRESISTIVITY", "#REGIONRESISTIVITY",
+    "#RESAMPLING", "#RESISTIVITY", "#SELECTPARTICLE", "#SMOOTHE", "#SMOOTHJ",
+    "#SMOOTHMOMENTS", "#SOURCEPARTICLES", "#SUPID", "#TESTCASE", "#UPWINDB",
+    "#UPWINDE", "#VACUUM", "#WAVEBC", "#WAVEIC"
+  };
+  // clang-format on
+  static const std::set<std::string> fiCommands = {
+    // Handled by FluidInterface::read_param().
+    "#EXOSPHERE",    "#FLUIDVARNAMES", "#NORMALIZATION", "#OHMSLAW",
+    "#PLANETRADIUS", "#PLASMA",        "#SCALINGFACTOR", "#UNIFORMSTATE"
+  };
+  static const std::set<std::string> ptCommands = {
+    // Handled by ParticleTrackerInfo::read_param().
+    "#TESTPARTICLENUMBER", "#TPCELLINTERVAL", "#TPINITFROMPIC", "#TPPARTICLES",
+    "#TPREGION",           "#TPRELATIVISTIC", "#TPSAVE",        "#TPSAVEAT",
+    "#TPSTATESI"
+  };
+
+  if (picCommands.count(command))
+    owner = ParameterOwner::Pic;
+  else if (fiCommands.count(command))
+    owner = ParameterOwner::FluidInterface;
+  else if (ptCommands.count(command))
+    owner = ParameterOwner::ParticleTracker;
+  else if (std::count(sourceParameterCommands.begin(),
+                      sourceParameterCommands.end(), command))
+    owner = ParameterOwner::Source;
+  else
+    return false;
+  return true;
 }
 
 //========================================================
