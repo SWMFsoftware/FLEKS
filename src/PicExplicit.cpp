@@ -11,17 +11,6 @@
 using namespace amrex;
 
 //==========================================================
-// Deposit the charge current of the initial particle state (J^0) on the
-// first predictor-corrector step, where there is no previous deposit.
-void Pic::seed_first_explicit_step() {
-  std::string nameFunc = "Pic::seed_first_explicit_step";
-  timing_func(nameFunc);
-
-  deposit_explicit_current(nodeJexpl);
-  isFirstExplicitStep = false;
-}
-
-//==========================================================
 // The moments deposit q_p v in the momentum slots, and
 // convert_to_fluid_moments() turns them into the mass flux (rho u)_s. Maxwell's
 // equations need the charge current, so each species enters with q_s/m_s.
@@ -255,9 +244,10 @@ void Pic::advance_explicit_pc(Real dt) {
   std::string nameFunc = "Pic::advance_explicit_pc";
   timing_func(nameFunc);
 
-  if (isFirstExplicitStep) {
-    seed_first_explicit_step();
-  }
+  // 0. Deposit J^n from the accepted particle state. A current cached from the
+  // previous step would be stale: the div(E) correction at the end of that
+  // step moves or deletes particles, and a regrid zeroes the cache.
+  deposit_explicit_current(nodeJexplPrev);
 
   // 1. Backup base particle state at t^n
   for (int i : kineticSpecies_) {
@@ -277,10 +267,6 @@ void Pic::advance_explicit_pc(Real dt) {
   // 4. Deposit the trial current J^(n+1) & advance trial fields to t^(n+1).
   // Velocities live at whole steps here, so J^n and J^(n+1) are interpolated
   // in time.
-  for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab::Copy(nodeJexplPrev[iLev], nodeJexpl[iLev], 0, 0, nDim3,
-                   get_n_ghost());
-  }
   deposit_explicit_current(nodeJexpl);
   update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexplPrev, nodeJexpl, true);
 
@@ -352,7 +338,6 @@ void Pic::advance_explicit_full_pic() {
 
     // 3. B half-step, E full step with J^{n+1/2}, B half-step (subcycled).
     update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexplPrev, nodeJexpl, false);
-    isFirstExplicitStep = false;
   }
 
   // Div(E) correction (Gauss's law cleaning) if configured

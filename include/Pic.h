@@ -211,7 +211,6 @@ private:
   bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
-  bool isFirstExplicitStep = true;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
   bool reportParticleQuality = false;
@@ -919,7 +918,6 @@ public:
   void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,
                       int iLev, amrex::Real tSub = -1.0);
   void advance_explicit_pc(amrex::Real dt);
-  void seed_first_explicit_step();
 
   //-------------Evolved electron pressure (#ELECTRONPRESSURE)-----------------
   // Advance the scalar electron pressure by one PIC step, operator split:

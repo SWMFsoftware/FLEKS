@@ -33,7 +33,7 @@ lambda_De = 0.010, dx = 2.8 lambda_De, c dt/dx = 0.36, omega_pe dt = 0.35.
 Each variant takes about 15 s on one core.
 
 Reference results (2D build): explicit +0.15% mean / 2.6% max, energy within
-3e-4; explicit_sub -0.07% / 1.3%; explicit_pc -1.5% / 4.4%, energy -0.9%;
+3e-4; explicit_sub -0.07% / 1.3%; explicit_pc -1.8% / 4.7%, energy -0.9%;
 implicit -1.3% / 3.9%, energy -6.3%.
 
 ```bash
