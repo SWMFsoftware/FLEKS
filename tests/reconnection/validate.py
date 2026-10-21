@@ -21,8 +21,9 @@ Validation checks performed for every test variant
 
 3. **Reconnection dynamics**:
    - Seeded in-plane field perturbation grows nonlinearly (δBy increases).
-   - Out-of-plane flux function Ay at the X-point changes, confirming active
-     magnetic-flux reconnection.
+   - The flux reconnected at the X-point changes: the island flux
+     |A_z(X) - A_z(O)| (Fadeev) or A_z at the X-point (GEM), with
+     A_z = -int By dx on the midplane.
 
 4. **Quasi-neutrality** (full-PIC only):
    - |ρS0 − ρS1·mass_ratio| / ρ₀_max < 0.5, verifying macroparticle charge
@@ -56,6 +57,12 @@ logger = logging.getLogger(__name__)
 L = 5.0                               # sheet half-thickness / d_i
 EPS = 0.4                             # island size ratio
 ISLAND_X = math.pi * L                # O-point location / d_i ~ 15.7
+# Island flux |A_z(X) - A_z(O)| ~ 3 at t = 0. It changes by 0.04-0.06 in the
+# hybrid runs by t = 20 (no damping, hyper-resistivity, upwind) and by 0.16 in
+# the full-PIC run by t = 3; by t = 120 (the _long variant) coalescence
+# removes 0.4-0.9 of it.
+PSI_CHANGE_MIN = 0.02
+PSI_DROP_MIN_LONG = 0.2
 
 # m_i/m_e from full-PIC #PLASMA (m_i=1, m_e=0.04); quasi-neutral => rhoS0 ~ rhoS1*ratio
 MASS_RATIO = 25.0
@@ -111,16 +118,30 @@ def _load_efield(path):
     return ex, ey, ez
 
 
-def _flux_function(bx, bz, dx):
-    """Out-of-plane flux function Ay(x,y) from B = curl(A).
+def _island_flux(frame):
+    """Flux between the central X-point and the island O-points (Fadeev).
 
-    For the 2D x-y reconnection plane (invariant out-of-plane),
-    Bx = dAy/dy, By = -dAy/dx.  We integrate Bz on the node B via
-    Bz = -dAy/dx -> Ay(x,y) = -int Bz dx  (relative values suffice)."""
-    ay = np.zeros_like(bz)
-    for j in range(bz.shape[0]):
-        ay[j] = -np.cumsum(bz[j]) * dx
-    return ay
+    The in-plane field is B = curl(A_z z), so By = -dA_z/dx and, on the
+    midplane, A_z(x) = -int By dx.  The X- and O-points are the midplane By
+    nulls nearest x = 0 and x = +-ISLAND_X; the island flux is
+    |A_z(X) - mean A_z(O)|.  It grows while the X-point reconnects outer flux
+    into the islands and falls when they coalesce.  Returns None if the nulls
+    are not found or the field is not finite.
+    """
+    ux, uy, bx, by, bz, rho, rhoS1 = frame
+    if not np.all(np.isfinite(by)):
+        return None
+    j = int(np.argmin(np.abs(uy)))
+    b = np.convolve(by[j], np.ones(3) / 3, mode="same")  # 3-node smoothing
+    a = -np.concatenate([[0.0], np.cumsum(0.5 * (b[1:] + b[:-1]) * np.diff(ux))])
+    k = np.where(np.sign(b[1:]) != np.sign(b[:-1]))[0]
+    if len(k) < 3:
+        return None
+    nulls = ux[k] - b[k] * (ux[k + 1] - ux[k]) / (b[k + 1] - b[k])
+    a_null = np.interp(nulls, ux, a)
+    a_x = a_null[np.argmin(np.abs(nulls))]
+    a_o = [a_null[np.argmin(np.abs(nulls - c))] for c in (ISLAND_X, -ISLAND_X)]
+    return float(abs(a_x - np.mean(a_o)))
 
 
 def _midplane_field(frames0):
@@ -283,17 +304,15 @@ def _validate_fadeev_plot(test_name, frames):
             f"t=0: background density {rho_bg:.3f} too high (expected ~0.2)")
 
     # ---- (2) Perturbation growth (instability active) ----
-    # Reconnection rate proxy: Ay at the central X-point (x ~ 0, y ~ 0).
-    ix = int(np.argmin(np.abs(ux)))
-    ay_series = []
+    psi_series = []
     max_dby_series = []
     for _, fr in frames:
-        ux2, uy2, bx, by, bz, rho, rhoS1 = fr
-        j = int(np.argmin(np.abs(uy2)))
-        dby = float(np.abs(by - by0).max())
-        max_dby_series.append(dby)
-        ay = _flux_function(bx, bz, dx)
-        ay_series.append(float(ay[j, ix]))
+        max_dby_series.append(float(np.abs(fr[3] - by0).max()))
+        psi_series.append(_island_flux(fr))
+    if any(p is None for p in psi_series):
+        bad = next(f for (f, _), p in zip(frames, psi_series) if p is None)
+        return False, (f"X-/O-point By nulls not found or non-finite field in "
+                       f"{os.path.basename(bad)}")
 
     seed = 0.02 * 0.05 * 2.0  # perturb*b0-ish scale; use measured early value
     early_amp = max(max_dby_series[:2])
@@ -302,19 +321,30 @@ def _validate_fadeev_plot(test_name, frames):
     logger.debug("    perturbation growth: %.4f -> %.4f (%.1fx)",
                  early_amp, late_amp, growth)
     # Looser floor for full-PIC (coarser/short); Ay flux change confirms reconnection.
-    late_thresh = 0.1 if test_name.endswith("hybrid") else 0.03
+    late_thresh = 0.1 if "hybrid" in test_name else 0.03
     if late_amp < late_thresh:
         return False, (
             f"late |delta By| = {late_amp:.3f} too small (no instability)")
 
-    # ---- (3) Flux change at the X-point (reconnection) ----
-    ay_first = ay_series[0]
-    ay_span = max(ay_series) - min(ay_series)
-    logger.debug("    Ay at X-point: span %.4f over %d frames",
-                 ay_span, len(ay_series))
-    if ay_span < 0.05:
+    # ---- (3) Reconnected flux: the island flux changes ----
+    psi0 = psi_series[0]
+    dpsi = max(abs(p - psi0) for p in psi_series)
+    logger.debug("    island flux: %.4f, max change %.4f over %d frames",
+                 psi0, dpsi, len(psi_series))
+    if dpsi < PSI_CHANGE_MIN:
         return False, (
-            f"Ay at X-point only changes by {ay_span:.4f} (no reconnection)")
+            f"island flux changes by only {dpsi:.4f} < {PSI_CHANGE_MIN} "
+            f"(no reconnection)")
+    if "long" in test_name:
+        # Run through coalescence: the islands must lose flux and the run
+        # must not have blown up (NaN frames fail the null search above).
+        drop = psi0 - psi_series[-1]
+        logger.debug("    coalescence: island flux %.4f -> %.4f (drop %.4f)",
+                     psi0, psi_series[-1], drop)
+        if drop < PSI_DROP_MIN_LONG:
+            return False, (
+                f"island flux dropped by only {drop:.4f} < "
+                f"{PSI_DROP_MIN_LONG} by t_end (no coalescence)")
 
     # ---- (4) O-point motion ----
     xf, jf, by_mid_f, _ = _midplane_field(frames[-1][1])
@@ -335,7 +365,8 @@ def _validate_fadeev_plot(test_name, frames):
         return False, err_neutral
 
     msg = (f"reconnection: By perturbation {early_amp:.3f}->{late_amp:.3f}, "
-           f"Ay span {ay_span:.3f}, O-points at "
+           f"island flux {psi0:.3f} (max change {dpsi:.3f}, final "
+           f"{psi_series[-1]:.3f}), O-points at "
            f"{[round(o,2) for o in outer]} d_i")
     logger.debug("    %s", msg)
     return True, msg
