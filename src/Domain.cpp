@@ -184,7 +184,6 @@ void Domain::init(double time, const int iDomain,
   // read_param() can read the rest once they exist.
   read_construction_parameters();
   readParam.roll_back();
-  validate_configuration();
 
   Geometry geometry;
   AmrInfo amrInfo;
@@ -1117,6 +1116,9 @@ void Domain::read_construction_parameters() {
     }
     readParam.set_verbose(false);
   }
+
+  if (doRestart && receiveICOnly)
+    Abort("#RESTART and #RECEIVEICONLY cannot both be enabled.");
 }
 
 //========================================================
@@ -1179,6 +1181,9 @@ void Domain::read_param() {
     } else if (command == "#NOUTFILE") {
       readParam.read_var("nFileField", nFileField);
       readParam.read_var("nFileParticle", nFileParticle);
+      if (nFileField < 1 || nFileParticle < 1)
+        Abort("Invalid #NOUTFILE: nFileField and nFileParticle must be "
+              "positive.");
     } else if (command == "#SOURCE") {
       readParam.read_var("useSource", useSource);
     } else if (command == "#LOADBALANCE") {
@@ -1195,6 +1200,8 @@ void Domain::read_param() {
 
       if (balanceStrategy == BalanceStrategy::Hybrid) {
         readParam.read_var("cellWeight", cellWeight);
+        if (cellWeight < 1)
+          Abort("Invalid #LOADBALANCE: cellWeight must be positive.");
       }
     } else if (command == "#GRIDEFFICIENCY") {
       const Real oldEfficiency = grid->gridEff();
@@ -1420,8 +1427,6 @@ void Domain::read_param() {
   } // While
 
   // Post processing
-  validate_configuration();
-
   // New #REGION definitions become available to selectors, but defining a
   // shape alone must not change the current AMR mesh.
   grid->rebuild_refine_regions(shapeList, shapeNames);
@@ -1489,18 +1494,6 @@ void Domain::set_field_solver_mode(const std::string &modeStr) {
     Abort("Invalid #FIELDSOLVER mode '" + modeStr +
           "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
   }
-}
-
-//========================================================
-void Domain::validate_configuration() const {
-  if (nFileField < 1 || nFileParticle < 1)
-    Abort("Invalid domain configuration: nFileField and nFileParticle must be "
-          "positive.");
-  if (cellWeight < 1)
-    Abort("Invalid domain configuration: cellWeight must be positive.");
-  if (doRestart && receiveICOnly)
-    Abort("Invalid domain configuration: #RESTART and #RECEIVEICONLY cannot "
-          "both be enabled.");
 }
 
 //========================================================
