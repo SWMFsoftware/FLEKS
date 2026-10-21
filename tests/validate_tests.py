@@ -878,6 +878,7 @@ EXPENSIVE_VARIANTS = {
     # Fadeev, GEM and asymmetric ones are research benchmarks: keep them
     # runnable explicitly (or with --all) so CI stays fast.
     "reconnection.fadeev_hybrid",
+    "reconnection.fadeev_hybrid_upwind_long",
     "reconnection.fadeev_pic",
     "reconnection.gem_hybrid",
     "reconnection.gem_pic",

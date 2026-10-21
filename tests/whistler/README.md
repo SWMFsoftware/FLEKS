@@ -13,6 +13,7 @@ hybrid timestepping schemes, and the full resistive generalized Ohm's law:
 | **SSPRK3** | `PARAM.in.ssprk3` | Hybrid PIC (`ssprk3`) | Hall whistler eigenmode (3-stage SSPRK3) |
 | **SSPRK3-PC** | `PARAM.in.ssprk3_pc` | Hybrid PIC (`ssprk3-pc`) | Hall whistler eigenmode (predictor–corrector SSPRK3) |
 | **Resistive** | `PARAM.in.resistive` | Hybrid PIC (`rk4`) | Full Ohm's law with finite resistivity $\eta$ and $T_e$ |
+| **RK4-upwind** | `PARAM.in.rk4_upwind` | Hybrid PIC (`rk4`) | RK4 with `#HYBRIDUPWIND` instead of hyper-resistivity, run to 24 s |
 
 All variants are seeded with the same x-aligned, transverse, circularly
 polarized **right-hand (whistler)** wave (`#TESTCASE HybridWave`,
@@ -102,6 +103,7 @@ python3 tests/validate_tests.py --test=whistler.rk4_pc       # Hybrid RK4-PC
 python3 tests/validate_tests.py --test=whistler.ssprk3       # Hybrid SSPRK3
 python3 tests/validate_tests.py --test=whistler.ssprk3_pc    # Hybrid SSPRK3-PC
 python3 tests/validate_tests.py --test=whistler.resistive    # Full generalized Ohm's law
+python3 tests/validate_tests.py --test=whistler.rk4_upwind   # RK4 with upwind dissipation, 24 s
 ```
 
 ### Dispersion-relation scan

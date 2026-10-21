@@ -9,11 +9,17 @@ Variants (selected by base_name):
                            the unlimited second-order and the first-order rate.
   * hybrid_upwind_divb  -- noisy 2D plasma, Hall term, whistler signal speed:
                            the discrete div(B) does not change.
+  * hybrid_upwind_whistler -- seeded n = 4 whistler (k d_i = 3.9, 16 cells per
+                           wavelength) with kinetic ions and the default signal
+                           speed: the frequency stays on the Hall branch and the
+                           damping per radian stays in a narrow band.
 """
 import cmath
 import logging
 import math
 import os
+
+import numpy as np
 
 from tests._shared import run_dir as _run_dir
 from tests._shared.validators import validate_hybrid_energy_bounded
@@ -41,12 +47,23 @@ MIN_SAMPLES = 20      # Minimum log samples required
 # |div(B)_last - div(B)_first| relative to max|B|/dx. The update changes B by
 # a curl of the nodal E, whose discrete divergence is zero up to round-off.
 DIVB_TOL = 1e-10
+# whistler variant: damping per radian gamma/omega of the seeded whistler.
+# Measured 0.0022 (no dissipation: 0; hyper-resistivity with etaHyperCh = 0.01:
+# 0.0007; upwindCoefWhistler = 0.25: 0.020, = 1: 0.070). The lower bound shows
+# the term acts; the upper one catches a much more diffusive scheme.
+WHISTLER_DAMP_MIN = 0.0005
+WHISTLER_DAMP_MAX = 0.005
+# Frequency vs the Hall whistler branch at k d_i = k (the decks set d_i ~ 1);
+# every whistler deck measures +2.4 % from that normalization.
+WHISTLER_OMEGA_TOL = 0.04
 
 
 def _variant(test_name):
     name = test_name or ""
     if name.endswith("_divb"):
         return "divb"
+    if name.endswith("_whistler"):
+        return "whistler"
     if name.endswith("_mc"):
         return "mc"
     return "upwind1"
@@ -105,9 +122,9 @@ def validate_log(pic_diags=None, test_name=None):
     variant = _variant(test_name)
     if not pic_diags:
         return False, "No energy log"
-    if variant == "divb":
+    if variant in ("divb", "whistler"):
         return validate_hybrid_energy_bounded(
-            pic_diags, growth_max=10.0, test_label="Upwind div(B)",
+            pic_diags, growth_max=10.0, test_label=f"Upwind {variant}",
             logger=logger)
 
     if len(pic_diags) < MIN_SAMPLES:
@@ -148,8 +165,75 @@ def validate_log(pic_diags=None, test_name=None):
     return True, "Passed"
 
 
+def _whistler_fit(text):
+    """Frequency and decay rate of the seeded whistler from the plot frames.
+
+    c(t) = <(By + i hand Bz) exp(-i k x)> holds the seeded whistler and, more
+    weakly, the slow branch of the same helicity. The frequency is the phase
+    slope of c; the decay rate is fitted to the envelope of c demodulated by
+    that frequency and averaged over one period, which removes the slow branch.
+    Returns (omega, gamma, n_frames) in code units, or None.
+    """
+    x_lo, x_hi = _block_numbers(text, "#GEOMETRY", 2)
+    mode = _named_number(text, "#WAVEIC", "waveMode")
+    dt = _named_number(text, "#TIMESTEPPING", "dt")
+    if None in (mode, dt):
+        return None
+    lx = abs(x_hi - x_lo)
+    k = 2.0 * math.pi * mode / lx
+    ts, cp, cm = [], [], []
+    for f in _run_dir.plot_files():
+        vidx, rows = _run_dir._read_out_file(f)
+        a = np.array(rows)
+        x = a[:, vidx["X"]]
+        keep = x < x_lo + lx - 1e-6        # drop a periodic end node
+        e = np.exp(-1j * k * x[keep])
+        by, bz = a[keep, vidx["BY"]], a[keep, vidx["BZ"]]
+        cp.append(np.mean((by + 1j * bz) * e))
+        cm.append(np.mean((by - 1j * bz) * e))
+        ts.append(int(os.path.basename(f).split("_n")[-1][:8]) * dt)
+    if len(ts) < MIN_SAMPLES:
+        return None
+    t = np.array(ts)
+    c = np.array(cp if abs(cp[0]) > abs(cm[0]) else cm)   # seeded helicity
+    omega = np.polyfit(t, np.unwrap(np.angle(c)), 1)[0]
+    m = max(1, int(round(2.0 * math.pi / abs(omega) / dt)))
+    env = np.abs(np.convolve(c * np.exp(-1j * omega * t), np.ones(m) / m,
+                             mode="valid"))
+    gamma = -np.polyfit(t[m // 2:m // 2 + len(env)], np.log(env), 1)[0]
+    return abs(omega), gamma, len(t)
+
+
+def _validate_whistler(text):
+    fit = _whistler_fit(text)
+    if fit is None:
+        return False, "Could not fit the seeded whistler from the plot frames"
+    omega, gamma, n = fit
+    x_lo, x_hi = _block_numbers(text, "#GEOMETRY", 2)
+    kappa = 2.0 * math.pi * _named_number(text, "#WAVEIC", "waveMode") / abs(
+        x_hi - x_lo)
+    omega_hall = 0.5 * (kappa ** 2 + math.sqrt(kappa ** 4 + 4.0 * kappa ** 2))
+    damp = gamma / omega
+    logger.debug("    [UPWIND] whistler k d_i = %.3f: omega = %.4f (Hall %.4f, "
+                 "%+.2f%%), gamma = %.4g, gamma/omega = %.4g over %d frames",
+                 kappa, omega, omega_hall, 100.0 * (omega / omega_hall - 1.0),
+                 gamma, damp, n)
+    if abs(omega / omega_hall - 1.0) > WHISTLER_OMEGA_TOL:
+        return False, ("whistler frequency %.4f is off the Hall branch %.4f by "
+                       "%.1f%% (tolerance %.0f%%)"
+                       % (omega, omega_hall, 100.0 * (omega / omega_hall - 1.0),
+                          100.0 * WHISTLER_OMEGA_TOL))
+    if not WHISTLER_DAMP_MIN <= damp <= WHISTLER_DAMP_MAX:
+        return False, ("whistler damping per radian %.4g outside [%g, %g]"
+                       % (damp, WHISTLER_DAMP_MIN, WHISTLER_DAMP_MAX))
+    return True, "Passed"
+
+
 def validate_plot(test_name):
-    """divb variant: div(B) of the last plot equals that of the first."""
+    """divb: div(B) of the last plot equals that of the first.
+    whistler: frequency and damping of the seeded whistler."""
+    if _variant(test_name) == "whistler":
+        return _validate_whistler(_param_text())
     if _variant(test_name) != "divb":
         return True, "Passed (no plot-file check)"
 

@@ -10,6 +10,7 @@ This directory contains standalone magnetic reconnection test suites in FLEKS ac
 6. **`PARAM.in.forcefree_hybrid`** — **Force-Free Sheet hybrid-PIC**: Force-free current sheet reconnection (Le et al. 2016, WarpX benchmark) with uniform plasma density, uniform total magnetic pressure, and fixed 40 subcycles.
 7. **`PARAM.in.forcefree_hybrid_adaptive`** — **Force-Free Sheet hybrid-PIC (Adaptive)**: Same force-free setup with CFL-driven adaptive macro time-stepping (`#TIMESTEPPING F 0.25`) and automatic magnetic subcycling (`#BSUBCYCLE 1 T 40`). Fast CI benchmark.
 8. **`PARAM.in.forcefree_pic`** — **Force-Free Sheet full-PIC**: Force-free current sheet reconnection with kinetic ions and electrons ($m_i/m_e = 25$, Maxwell/GMRES solver).
+9. **`PARAM.in.fadeev_hybrid_upwind_long`** — **Fadeev hybrid-PIC through coalescence**: `fadeev_hybrid` run to $t = 120$ with the upwind dissipation `#HYBRIDUPWIND` in place of hyper-resistivity (see [Fadeev](#1-fadeev-equilibrium-paraminfadeev_pic-paraminfadeev_hybrid)).
 
 ## Coordinate Mapping
 
@@ -24,6 +25,20 @@ Physical parameters, grid dimensions, boundary conditions, and timestepping deta
 
 ### 1. Fadeev Equilibrium (`PARAM.in.fadeev_pic`, `PARAM.in.fadeev_hybrid`)
 Uses `#TESTCASE fadeev` (`FadeevIC`): two-island equilibrium with magnetic field nulls and density concentrated in the current sheet. The sheet is bounded by outflow field boundaries in $y$.
+
+Reconnection is measured by the island flux $\psi = |A_z(X) - A_z(O)|$, with
+$A_z = -\int B_y\,dx$ on the midplane and the X- and O-points at the midplane
+$B_y$ nulls nearest $x = 0$ and $x = \pm\pi L$. $\psi \approx 3$ at $t = 0$;
+it must change by more than 0.02 (0.04–0.06 in the hybrid runs by $t = 20$,
+0.16 in the full-PIC run by $t = 3$). By $t = 20$ the islands have hardly
+started to coalesce, so `fadeev_hybrid` cannot tell dissipation schemes apart.
+
+`fadeev_hybrid_upwind_long` runs through the coalescence to $t = 120$ (10–15
+minutes on 2 ranks) and must lose more than 0.2 of $\psi$ (0.49 measured).
+Without dissipation the run fails at $t = 73$, and with the `fadeev_hybrid`
+hyper-resistivity (`etaHyperCh = 0.001`) at $t = 116$: density holes form
+(6×6 ions per cell) and $|B|/\rho$ runs away, which the fixed hyper-resistive
+coefficient does not follow but the upwind signal speed does.
 
 ### 2. Classic GEM Challenge (`PARAM.in.gem_pic`, `PARAM.in.gem_hybrid`)
 Uses `#TESTCASE gem` with `useStandardGem = T`: Harris current sheet with periodic boundaries in $x$ and conducting/reflecting walls in $y$, following the Birn et al. 2001 benchmark specifications.
@@ -55,6 +70,7 @@ python3 tests/validate_tests.py --test=reconnection.asym_pic          # Asymmetr
 python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid  # Force-free sheet hybrid-PIC (fixed 40 subcycles)
 python3 tests/validate_tests.py --test=reconnection.forcefree_hybrid_adaptive # Force-free sheet hybrid-PIC (adaptive)
 python3 tests/validate_tests.py --test=reconnection.forcefree_pic     # Force-free sheet full-PIC
+python3 tests/validate_tests.py --test=reconnection.fadeev_hybrid_upwind_long -n 2  # Fadeev hybrid-PIC to t = 120
 ```
 *(Note: only the two force-free variants (`forcefree_hybrid`, `forcefree_pic`) run in the
 default full suite. The Fadeev, GEM and asymmetric variants are marked expensive and skipped;

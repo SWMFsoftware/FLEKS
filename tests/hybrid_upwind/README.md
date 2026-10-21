@@ -19,6 +19,7 @@ two sides of the node along $d$ and $a_d$ the signal speed.
 | `PARAM.in` | Frozen plasma (no particles), 32 cells, circularly polarized mode `waveMode = 8` on a guide field, `upwind1`, fixed speed $a = 0.5$ | Decay rate equals the analytic rate within 0.5 %, single exponential |
 | `PARAM.in.mc` | Same with the MC limiter, `waveMode = 4` | Monotone decay, rate between the unlimited second-order and the first-order rate |
 | `PARAM.in.divb` | 2D $32\times32$ periodic plasma with 400 ions/cell, Hall term, MC limiter, full whistler speed, no hyper-resistivity, no cleaning | $\max|\nabla\cdot\mathbf{B}(t_{\rm end}) - \nabla\cdot\mathbf{B}(0)| \le 10^{-10}\,\max|\mathbf{B}|/\Delta x$ |
+| `PARAM.in.whistler` | The `whistler/PARAM.in.rk4` plasma (2000 ions/cell, Hall term) seeded with the $n = 4$ whistler ($k d_i = 3.9$, 16 cells per wavelength), MC limiter, default signal speed, no hyper-resistivity | Frequency within 4 % of the Hall branch; damping per radian $\gamma/\omega \in [0.0005, 0.005]$ |
 
 ## Analytic rates
 
@@ -46,6 +47,25 @@ Measured: `upwind1` $\gamma = 2.5000$ (analytic 2.5000, residual
 $7\times10^{-13}$); MC $\gamma = 0.187$ (bounds 0.107 and 0.732); div(B)
 changes by $5\times10^{-15}\,\max|\mathbf{B}|/\Delta x$.
 
+## Damping of a resolved whistler
+
+`PARAM.in.whistler` guards the cost of the term at resolved scales. The seeded
+whistler's complex amplitude $c(t)$ also carries the slow branch of the same
+helicity; demodulating $c$ by the whistler frequency and averaging over one
+period removes it, and the decay rate is fitted to that envelope. Added
+damping per radian, measured at several modes of this deck ($dx = 0.1\,d_i$):
+
+| $k d_i$ (cells per wavelength) | hyper-resistivity, `etaHyperCh` 0.01 | upwind, `upwindCoefWhistler` 0 | 0.25 | 1 |
+|---|---|---|---|---|
+| 2.0 (32) | 0.0002 | 0.0005 | 0.004 | 0.015 |
+| 3.9 (16) | 0.0007 | 0.0022 | 0.020 | 0.070 |
+| 7.9 (8) | 0.0026 | 0.0092 | 0.082 | 0.30 |
+
+Both terms damp smooth modes as $k^4$. With the default signal speed (flow
+plus fast wave) the upwind term acts like grid-mode hyper-resistivity with
+`etaHyperCh` $\approx 0.03$; the whistler term raises that by 10–30 times,
+which is why the default is 0. Neither term shifts the frequency.
+
 ## div(B)
 
 The term only modifies the nodal $\mathbf{E}$, and
@@ -60,4 +80,5 @@ hyperbolic cleaning.
 ```bash
 python3 tests/validate_tests.py --test=hybrid_upwind
 python3 tests/validate_tests.py --test=hybrid_upwind.divb -v
+python3 tests/validate_tests.py --test=hybrid_upwind.whistler -v
 ```

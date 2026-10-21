@@ -150,17 +150,22 @@ faster than the bulk flow, so `nBodyAbsorb` is not simply `n u 2R t`.
 | `PARAM.in.hybrid_linetied` | absorb | linetied | Hybrid PIC solver: `E = 0` inside, interior `B` frozen, absorbing wake forms |
 | `PARAM.in.hybrid_insulating` | absorb | insulating | Hybrid PIC solver: fields pass through unconstrained, absorbing wake forms |
 | `PARAM.in.hybrid_reflect` | reflect | linetied | Hybrid PIC solver: specular reflection excludes particles (`rho = 0` inside, `nBodyAbsorb = 0`, particle energy kept) |
+| `PARAM.in.hybrid_linetied_upwind` | absorb | linetied | `hybrid_linetied` with the upwind dissipation `#HYBRIDUPWIND` in place of hyper-resistivity |
 
 All variants share the checks "no NaN" and "`Etot` grows by less than 10x".
+The hybrid variants also require the magnetic energy `Eb` to grow by less than
+10x: damped by hyper-resistivity or `#HYBRIDUPWIND` it ends at 1.3x-6.8x
+(`hybrid_linetied_upwind`: 4.0x, against 6.8x with hyper-resistivity), while
+`hybrid_linetied` without either reaches 45x.
 
-In CI, only the conducting variants (`body.conducting` and `body.hybrid_conducting`) are executed by default. The non-conducting variants are marked in `.expensive` to keep the test suite fast.
+In CI, only the conducting variants (`body.conducting` and `body.hybrid_conducting`) and `body.hybrid_linetied_upwind` are executed by default. The other variants are marked in `.expensive` to keep the test suite fast.
 
 ## Running
 
 From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
 
 ```bash
-python3 tests/validate_tests.py --test=body                      # runs conducting variants (default)
-python3 tests/validate_tests.py --test=body --all                # runs all 8 full-PIC and hybrid variants
+python3 tests/validate_tests.py --test=body                      # runs the default variants (conducting, hybrid_linetied_upwind)
+python3 tests/validate_tests.py --test=body --all                # runs all 9 full-PIC and hybrid variants
 python3 tests/validate_tests.py --test=body.hybrid_conducting   # runs specific variant
 ```
