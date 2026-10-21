@@ -1254,60 +1254,6 @@ void Domain::read_param(const bool readGridInfo) {
           fi->read_param(command, readParam);
           break;
       }
-    } else if (command == "#LOADBALANCE") {
-      std::string strategy;
-      readParam.read_var("loadBalanceStrategy", strategy);
-      if (strategy.empty())
-        Abort("Invalid #LOADBALANCE: loadBalanceStrategy must not be empty.");
-      strategy[0] = toupper(strategy[0]);
-      const auto strategyIt = stringToBalanceStrategy.find(strategy);
-      if (strategyIt == stringToBalanceStrategy.end())
-        Abort("Invalid #LOADBALANCE strategy '" + strategy +
-              "'. Check the supported load-balance strategies.");
-      domainParameters.balanceStrategy = strategyIt->second;
-
-      if (domainParameters.balanceStrategy == BalanceStrategy::Hybrid) {
-        readParam.read_var("cellWeight", domainParameters.cellWeight);
-      }
-
-      int dn;
-      readParam.read_var("dn", dn);
-      Real dt;
-      readParam.read_var("dt", dt);
-      tc->loadBalance.init(dt, dn);
-
-    } else if (command == "#PARTICLETRACKER") {
-      readParam.read_var("usePT", domainParameters.usePT);
-    } else if (command == "#SOURCE") {
-      readParam.read_var("useSource", domainParameters.useSource);
-    } else if (command == "#FIELDSOLVER") {
-      std::string mode;
-      readParam.read_var("fieldSolverMode", mode);
-      domainParameters.set_field_solver_mode(mode);
-    } else if (command == "#HYBRIDPIC") {
-      bool useHyb = false;
-      readParam.read_var("useHybridPIC", useHyb);
-      if (useHyb)
-        domainParameters.set_field_solver_mode("hybrid");
-    } else if (command == "#SOLVEEM") {
-      bool sEM = true;
-      readParam.read_var("solveEM", sEM);
-      if (!sEM)
-        domainParameters.set_field_solver_mode("none");
-    } else if (command == "#RESTART") {
-      readParam.read_var("doRestart", domainParameters.doRestart);
-      domainParameters.doRestartPT = domainParameters.doRestart;
-    } else if (command == "#TPRESTART") {
-      readParam.read_var("doTPRestart", domainParameters.doRestartPT);
-    } else if (command == "#RESTARTFIONLY") {
-      readParam.read_var("doRestartFIOnly", domainParameters.doRestartFIOnly);
-    } else if (command == "#REGRIDONRESTART") {
-      readParam.read_var("doRegridOnRestart",
-                         domainParameters.doRegridOnRestart);
-    } else if (command == "#INITFROMSWMF") {
-      readParam.read_var("initFromSWMF", domainParameters.initFromSWMF);
-    } else if (command == "#RECEIVEICONLY") {
-      readParam.read_var("receiveICOnly", domainParameters.receiveICOnly);
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
@@ -1416,9 +1362,6 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("refineRatio", refinementRatio);
       if (refinementRatio <= 1)
         Abort("Error: #REFINEMENTRATIO must be > 1");
-    } else if (command == "#NOUTFILE") {
-      readParam.read_var("nFileField", domainParameters.nFileField);
-      readParam.read_var("nFileParticle", domainParameters.nFileParticle);
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;
