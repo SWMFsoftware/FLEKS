@@ -261,7 +261,7 @@ void Domain::init(double time, const int iDomain,
     if (paramInt[0] == 2 && nDim == 3)
       isFake2D = true;
 
-  prepare_grid_info(paramRegion);
+  const PreparedGrid prepared = prepare_grid_info(paramRegion);
 
   // Read Domain-level switches, then rewind so read_param re-reads the file.
   {
@@ -270,10 +270,8 @@ void Domain::init(double time, const int iDomain,
     validate_configuration();
   }
 
-  refineRegionsStr.resize(amrInfo.max_level + 1);
-  refineRegions.resize(amrInfo.max_level + 1);
-
-  grid = std::make_unique<Grid>(gm, amrInfo, nGst, gridID);
+  grid =
+      std::make_unique<Grid>(prepared.geometry, prepared.amrInfo, nGst, gridID);
 
   if (domainParameters.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(*grid, "fi",
@@ -394,14 +392,11 @@ void Domain::calc_refine_region() {
   Vector<std::shared_ptr<Shape> > Shapes;
   Shapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
 
-  refineRegions[0].define(Shapes, "+" + name);
-
-  isNewGrid = true;
-  refineRegions.mark_modified();
-
   if (grid) {
-    grid->is_new_grid(isNewGrid);
+    grid->replace_refine_region(0, Regions(Shapes, "+" + name));
+    grid->is_new_grid(true);
   }
+  initialRegridPending = true;
 }
 
 //========================================================
@@ -477,7 +472,9 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-void Domain::prepare_grid_info(const Vector<double> &info) {
+Domain::PreparedGrid Domain::prepare_grid_info(const Vector<double> &info) {
+
+  PreparedGrid prepared;
 
   read_param(true);
   readParam.roll_back();
@@ -507,22 +504,20 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
         phyMax = dx;
       }
 
-      domainRange.setLo(i, phyMin);
-      domainRange.setHi(i, phyMax);
+      domainBox.setLo(i, phyMin);
+      domainBox.setHi(i, phyMax);
     }
   }
 
-  for (int i = 0; i < nDim; ++i) {
-    centerBoxLo[i] = 0;
+  const IntVect centerBoxLo(0);
+  IntVect centerBoxHi;
+  for (int i = 0; i < nDim; ++i)
     centerBoxHi[i] = nCell[i] - 1;
-  }
+  const Box centerBox(centerBoxLo, centerBoxHi);
 
-  centerBox.setSmall(centerBoxLo);
-  centerBox.setBig(centerBoxHi);
+  prepared.geometry.define(centerBox, &domainBox, coord, periodicity.getVect());
 
-  gm.define(centerBox, &domainRange, coord, periodicity.getVect());
-
-  amrInfo.max_level = config::nLevMax - 1;
+  prepared.amrInfo.max_level = config::nLevMax - 1;
 
   // The value of blocking_factor constrains grid creation in that in that
   // each grid must be divisible by blocking_factor. Note that both the domain
@@ -531,30 +526,31 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
   // gridding algorithm would not in fact create grids divisible by
   // blocking_factor because of how blocking_factor is used in the gridding
   // algorithm).
-  amrInfo.blocking_factor.clear();
+  prepared.amrInfo.blocking_factor.clear();
   // Fake 2D has one z cell at every level, so neither blocking nor refinement
   // may require an additional z cell on a fine level.
-  for (int iLev = 0; iLev <= amrInfo.max_level; iLev++) {
-    amrInfo.blocking_factor.push_back(isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1))
-                                               : IntVect(2));
+  for (int iLev = 0; iLev <= prepared.amrInfo.max_level; iLev++) {
+    prepared.amrInfo.blocking_factor.push_back(
+        isFake2D ? IntVect(AMREX_D_DECL(2, 2, 1)) : IntVect(2));
   }
 
-  amrInfo.ref_ratio.clear();
-  for (int iLev = 0; iLev < amrInfo.max_level; iLev++) {
-    amrInfo.ref_ratio.push_back(
+  prepared.amrInfo.ref_ratio.clear();
+  for (int iLev = 0; iLev < prepared.amrInfo.max_level; iLev++) {
+    prepared.amrInfo.ref_ratio.push_back(
         isFake2D ? IntVect(AMREX_D_DECL(refinementRatio, refinementRatio, 1))
                  : IntVect(refinementRatio));
   }
 
-  amrInfo.max_grid_size.clear();
-  amrInfo.max_grid_size.push_back(maxBlockSize);
+  prepared.amrInfo.max_grid_size.clear();
+  prepared.amrInfo.max_grid_size.push_back(maxBlockSize);
 
   // Buffer cells around each tagged cell. AMREX default is 1.
-  amrInfo.n_error_buf.clear();
-  amrInfo.n_error_buf.push_back(IntVect(0));
+  prepared.amrInfo.n_error_buf.clear();
+  prepared.amrInfo.n_error_buf.push_back(IntVect(0));
 
-  Print() << printPrefix << "Domain range = " << domainRange << std::endl;
+  Print() << printPrefix << "Domain range = " << domainBox << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;
+  return prepared;
 }
 
 //========================================================
@@ -598,16 +594,19 @@ void Domain::regrid() {
   // unchanged.
   // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is
   // false, but it is still required to run the rest of the function to
-  // initialize variables. That's why we need isNewGrid here.
-  if (!gridInfo.is_grid_new() && !isNewGrid && !refineRegions.is_modified())
+  // initialize variables. That's why we need initialRegridPending here.
+  if (!gridInfo.is_grid_new() && !initialRegridPending &&
+      !grid->refinement_modified())
     return;
 
   Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   timing_func(nameFunc);
 
+  const Box &centerBox = grid->Geom(0).Domain();
   BoxList bl;
-  get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
+  get_boxlist_from_region(bl, gridInfo, centerBox.smallEnd(),
+                          centerBox.bigEnd());
   BoxArray activeRegion(bl);
 
   long nCellPic = 0;
@@ -629,9 +628,9 @@ void Domain::regrid() {
   // A restored hierarchy may already match the received region. Re-running
   // consumer hooks would request initialization of already restored fields.
   if (!grid->is_new_grid() && activeRegion == grid->get_base_grid() &&
-      !refineRegions.is_modified()) {
+      !grid->refinement_modified()) {
     gridInfo.is_grid_new(false);
-    isNewGrid = false;
+    initialRegridPending = false;
     return;
   }
 
@@ -642,7 +641,7 @@ void Domain::regrid() {
     pt->pre_regrid();
   }
 
-  grid->regrid(activeRegion, refineRegions, gridEfficiency);
+  grid->regrid(activeRegion);
 
   fi->post_regrid();
 
@@ -661,8 +660,9 @@ void Domain::regrid() {
     pic->post_regrid();
 
     // Do not fill cells before initial particle setup (e.g. #REGRIDONRESTART
-    // on a fluid-only restart marks refineRegions modified before set_ic()).
-    if (refineRegions.is_modified() && pic->are_particles_initialized()) {
+    // on a fluid-only restart marks the refinement policy modified before
+    // set_ic()).
+    if (grid->refinement_modified() && pic->are_particles_initialized()) {
       pic->fill_new_cells();
       // Add functions to fill in EM fields for new cells.
       // Some thoughts:
@@ -684,8 +684,8 @@ void Domain::regrid() {
   // Set gridInfo, which contains active PIC region information, to false,
   // otherwise, Domain::regrid() will be executed every step.
   gridInfo.is_grid_new(false);
-  isNewGrid = false;
-  refineRegions.clear_modified();
+  initialRegridPending = false;
+  grid->clear_refinement_modified();
 }
 
 //========================================================
@@ -841,8 +841,6 @@ void Domain::read_restart() {
     is.ignore(100000, '\n');
   }
 
-  grid->SetGridEff(gridEfficiency);
-  grid->set_refine_regions(refineRegions);
   grid->restore_grid(bas);
 
   //----------------------------------------------------------------
@@ -875,7 +873,7 @@ void Domain::read_restart() {
   }
 
   if (domainParameters.doRegridOnRestart) {
-    refineRegions.mark_modified();
+    grid->mark_refinement_modified();
   }
 }
 
@@ -989,17 +987,19 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     // Geometry
+    const auto &geometry = grid->Geom(0);
+    const auto &problemDomain = geometry.ProbDomain();
     headerFile << "#GEOMETRY" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
-      headerFile << domainRange.lo(i) << "\t\tmin\n";
-      headerFile << domainRange.hi(i) << "\t\tmax\n";
+      headerFile << problemDomain.lo(i) << "\t\tmin\n";
+      headerFile << problemDomain.hi(i) << "\t\tmax\n";
     }
     headerFile << "\n";
 
     // Cell
     headerFile << "#NCELL" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
-      headerFile << nCell[i] << "\t\tnCell\n";
+      headerFile << geometry.Domain().length(i) << "\t\tnCell\n";
     }
     headerFile << "\n";
 
@@ -1086,13 +1086,17 @@ void Domain::init_time_ctr() {
       // Pass information to writers.
       writer.set_nDim(fi->get_fluid_dimension());
       writer.set_iRegion(gridID);
-      writer.set_domainMin_D({ AMREX_D_DECL(
-          domainRange.lo(ix_), domainRange.lo(iy_), domainRange.lo(iz_)) });
+      const auto &geometry = grid->Geom(0);
+      const auto &problemDomain = geometry.ProbDomain();
+      writer.set_domainMin_D(
+          { AMREX_D_DECL(problemDomain.lo(ix_), problemDomain.lo(iy_),
+                         problemDomain.lo(iz_)) });
 
-      writer.set_domainMax_D({ AMREX_D_DECL(
-          domainRange.hi(ix_), domainRange.hi(iy_), domainRange.hi(iz_)) });
+      writer.set_domainMax_D(
+          { AMREX_D_DECL(problemDomain.hi(ix_), problemDomain.hi(iy_),
+                         problemDomain.hi(iz_)) });
 
-      const Real *dx = gm.CellSize();
+      const Real *dx = geometry.CellSize();
       writer.set_dx_D({ AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]) });
       writer.set_nSpecies(nS);
       // TODO: no longer needed if we fix the PIC output variable ordering
@@ -1310,10 +1314,10 @@ void Domain::read_param(const bool readGridInfo) {
         Real lo, hi;
         readParam.read_var("min", lo);
         readParam.read_var("max", hi);
-        domainRange.setLo(i, lo);
-        domainRange.setHi(i, hi);
+        domainBox.setLo(i, lo);
+        domainBox.setHi(i, hi);
       }
-      if (!domainRange.ok())
+      if (!domainBox.ok())
         Abort("Error: invalid input!");
     } else if (command == "#NCELL") {
       for (int i = 0; i < nDim; ++i) {
@@ -1324,8 +1328,10 @@ void Domain::read_param(const bool readGridInfo) {
       isFake2D = (nDim == 3) && (nCell[iz_] == 1);
 
     } else if (command == "#GRIDEFFICIENCY") {
-      const Real oldEfficiency = gridEfficiency;
+      const Real oldEfficiency = grid->gridEff();
+      Real gridEfficiency = oldEfficiency;
       readParam.read_var("gridEfficiency", gridEfficiency);
+      grid->SetGridEff(gridEfficiency);
       gridEfficiencyChanged |= gridEfficiency != oldEfficiency;
     } else if (command == "#REGION") {
       std::string name, type;
@@ -1405,7 +1411,7 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("iLev", iLev);
 
       readParam.read_var("regions", s);
-      refineSelectorsChanged |= set_refine_region(iLev, s);
+      refineSelectorsChanged |= grid->set_refine_region(iLev, s);
 
     } else if (command == "#REFINEMENTRATIO") {
       readParam.read_var("refineRatio", refinementRatio);
@@ -1582,16 +1588,16 @@ void Domain::read_param(const bool readGridInfo) {
 
     // New #REGION definitions become available to selectors, but defining a
     // shape alone must not change the current AMR mesh.
-    rebuild_refine_regions();
+    grid->rebuild_refine_regions(shapeList, shapeNames);
     if (readingSessionUpdate &&
         (refineSelectorsChanged || gridEfficiencyChanged))
-      refineRegions.mark_modified();
+      grid->mark_refinement_modified();
 
     if (pic) {
       pic->post_process_param();
       // Autofill and validate periodic boundaries using gm.
-      pic->apply_periodicity_autofill(gm);
-      pic->validate_bc_pairing(gm);
+      pic->apply_periodicity_autofill(grid->Geom(0));
+      pic->validate_bc_pairing(grid->Geom(0));
       pic->report_bc_warnings("read_param");
     }
 

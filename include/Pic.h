@@ -87,7 +87,7 @@ struct NodeMMCommData {
 #endif
 };
 
-// The grid is defined in DomainGrid. This class contains the data on the grid.
+// The grid is defined in Grid. This class contains the data on the grid.
 class Pic : public GridAccess {
   friend PlotWriter;
   friend ParticleTracker;

@@ -3,15 +3,25 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
-#include "DomainGrid.h"
+#include <AMReX_AmrMesh.H>
+#include <AMReX_Box.H>
+#include <AMReX_Geometry.H>
+#include <AMReX_IntVect.H>
+#include <AMReX_RealBox.H>
+#include <AMReX_Vector.H>
+
 #include "DomainParameters.h"
+#include "GridInfo.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
 #include "ReadParam.h"
+#include "RefineRegions.h"
 #include "SourceInterface.h"
 
 struct ParameterCommandLocation {
@@ -21,8 +31,43 @@ struct ParameterCommandLocation {
 
 enum class ParameterOwner { Pic, ParticleTracker, Source, FluidInterface };
 
-class Domain : public DomainGrid {
+class Domain {
 private:
+  // Inputs used to construct Grid; runtime geometry belongs to Grid.
+  static constexpr int nGst = 2;
+  static constexpr int coord = 0;
+  amrex::Vector<int> nCell = { 1, 1, 1 };
+  amrex::IntVect maxBlockSize = amrex::IntVect(8);
+  amrex::IntVect periodicity = amrex::IntVect(0);
+  amrex::RealBox domainBox;
+  int refinementRatio = 2;
+  bool isFake2D = false;
+
+  void set_periodicity(int iDir, bool isPeriodic) {
+    periodicity[iDir] = isPeriodic ? 1 : 0;
+  }
+
+  struct PreparedGrid {
+    amrex::Geometry geometry;
+    amrex::AmrInfo amrInfo;
+  };
+  GridInfo gridInfo;
+  int iGrid = 1;
+  int iDecomp = 1;
+  int gridID = 1;
+  std::string printPrefix;
+  std::string gridName;
+  bool initialRegridPending = true;
+  bool doSplitLevs = false;
+  amrex::Vector<std::shared_ptr<Shape> > shapeList;
+  std::set<std::string> shapeNames;
+
+  void add_shape(const std::shared_ptr<Shape> &shape) {
+    const std::string name = shape->get_name();
+    if (!shapeNames.insert(name).second)
+      amrex::Abort("Duplicate #REGION name: " + name);
+    shapeList.push_back(shape);
+  }
   DomainParameters domainParameters;
 
   ReadParam readParam;
@@ -37,6 +82,7 @@ private:
 
   bool find_parameter_owner(const std::string &command,
                             ParameterOwner &owner) const;
+  PreparedGrid prepare_grid_info(const amrex::Vector<double> &info);
 
 public:
   std::unique_ptr<TimeCtr> tc;
@@ -116,7 +162,6 @@ public:
 
   //-------------- grid begin-------------------------------
   // Preparing grid information for Grid/AmrCore initialization.
-  void prepare_grid_info(const amrex::Vector<double> &info);
   void regrid();
   void receive_grid_info(int *status = nullptr);
   //-------------- grid end---------------------------------
@@ -127,6 +172,12 @@ public:
   void init_time_ctr();
 
   bool receive_ic_only() { return domainParameters.receiveICOnly; };
+
+  int get_iGrid() const { return iGrid; }
+  int get_iDecomp() const { return iDecomp; }
+  int get_dim() const {
+    return grid ? grid->get_dim() : ((isFake2D || nDim == 2) ? 2 : nDim);
+  }
 };
 
 #endif

@@ -7,10 +7,12 @@
 ## Class hierarchy
 
 ```
-Domain : DomainGrid           — Top-level simulation manager
+Domain                         — Top-level simulation manager; owns grid construction settings,
+ │                              coupling state, counters, and named shapes
  ├── Grid                     — The one simulation AMR hierarchy (AmrCore);
- │                              owned by Domain via std::unique_ptr and shared
- │                              by reference with every component
+ │                              owned by Domain via std::unique_ptr, with
+ │                              compiled refinement policy owned by Grid and
+ │                              shared by reference with every component
  ├── Pic : GridAccess         — PIC solver (fields + particle push on AMR grid)
  ├── ParticleTracker : GridAccess — Test particle tracker
  ├── FluidInterface : GridAccess, FluidInterfaceParameters
@@ -35,6 +37,15 @@ also live in GridAccess. Consumer implementations query `grid` directly
 instead of storing persistent aliases to mesh state. PIC keeps its own
 physics state and accesses mutable Grid-owned costs only when calculating
 load-balancing weights.
+
+`Domain` stores the inputs needed before constructing the AMReX
+hierarchy. After construction, Domain queries Grid's geometry for active-region
+bounds, restart headers, and plot extents. Domain's `initialRegridPending` forces
+the first orchestration pass, including an initially empty region; Grid's
+`isNewGrid` tracks hierarchy initialization. Grid also retains refinement
+modifications through consumer updates and particle filling before Domain
+clears them. A transient compiled refinement replacement does not modify the
+persistent parameter selectors or Domain's immutable named-shape registry.
 
 Design rule: ionization parameters live in **SourceInterface** (physics in
 `UserSource`), never in `FluidInterface`, so the MHD coupling layer stays
