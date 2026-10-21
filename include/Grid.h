@@ -58,21 +58,16 @@ protected:
   // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
-  amrex::Vector<amrex::iMultiFab> targetPPC;
 
   amrex::Vector<amrex::MultiFab> cellCost;
 
   const RefineRegions* refineRegions = nullptr;
-
-  bool doNeedFillNewCell = true;
 
   bool isNewGrid = true;
 
   bool isGridEmpty = false;
 
   bool isFake2D = false;
-
-  bool isTargetPPCDefined = false;
 
   std::string tag;
 
@@ -91,6 +86,8 @@ private:
   // order to simplify the copy operation, the following variable is used to
   // install the initial AmrInfo.
   amrex::AmrInfo gridAmrInfo;
+
+  void finish_regrid();
 
 public:
   Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
@@ -129,13 +126,9 @@ public:
 
   const amrex::AmrInfo& get_amr_info() const { return gridAmrInfo; }
 
-  void set_base_grid(const amrex::BoxArray& ba) { activeRegion = ba; }
-
   amrex::BoxArray get_base_grid() const { return activeRegion; }
 
   bool is_grid_empty() const { return isGridEmpty; }
-
-  virtual void pre_regrid() {};
 
   // Tells the compiler to consider the base class version of the function
   using amrex::AmrCore::regrid;
@@ -162,13 +155,6 @@ public:
 
   const amrex::Vector<amrex::MultiFab>& get_cost() const { return cellCost; }
 
-  void set_cost(const amrex::Vector<amrex::MultiFab>& in) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      amrex::MultiFab::Copy(cellCost[iLev], in[iLev], 0, 0,
-                            cellCost[iLev].nComp(), cellCost[iLev].nGrow());
-    }
-  }
-
   amrex::Vector<amrex::DistributionMapping> calc_balanced_maps(
       bool doSplitLevs = false);
 
@@ -191,6 +177,10 @@ public:
   void regrid(const amrex::BoxArray& region, const Grid* const grid,
               bool doLoadBalance = false);
 
+  // Restore a saved hierarchy while retaining the pre-restore layout for
+  // new-cell classification. No second simulation Grid is constructed.
+  void restore_grid(const amrex::Vector<amrex::BoxArray>& boxes);
+
   virtual void post_regrid() { distribute_grid_arrays(); };
 
   virtual void load_balance(const Grid* other = nullptr,
@@ -211,6 +201,20 @@ public:
     }
     return false;
   }
+
+  //---- Grid query accessors for composition ----
+  const amrex::BoxArray& node_box_array(int iLev) const { return nGrids[iLev]; }
+  const amrex::Vector<amrex::BoxArray>& node_box_arrays() const {
+    return nGrids;
+  }
+  const amrex::BoxArray& active_region_ref() const { return activeRegion; }
+  amrex::Vector<amrex::MultiFab>& cell_cost() { return cellCost; }
+  bool is_fake_2d() const { return isFake2D; }
+  const amrex::Vector<amrex::iMultiFab>& cell_status() const {
+    return cellStatus;
+  }
+  int get_id() const { return gridID; }
+  const std::string& get_name() const { return gridName; }
 
   //---- Inner body (see the #BODY command) ----
 
@@ -279,9 +283,7 @@ public:
     return nodeStatus[iLev];
   }
 
-  const amrex::iMultiFab& target_PPC(int iLev) const { return targetPPC[iLev]; }
-
-  std::string lev_string(int iLev) {
+  std::string lev_string(int iLev) const {
     std::string sLev = "_lev_" + std::to_string(iLev);
     if (n_lev_max() == 1) {
       // Keep backward compatibility.
@@ -319,20 +321,6 @@ public:
   }
 
   //===========================================================================
-  inline int find_mpi_rank_from_cell_index(int const iLev,
-                                           const amrex::IntVect& ijk) const {
-    for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
-      const amrex::Box& bx = cGrids[iLev][ii];
-      if (bx.contains(ijk))
-        return DistributionMap(iLev)[ii];
-    }
-
-    amrex::AllPrint() << "iLev = " << iLev << " idx = " << ijk << std::endl;
-    amrex::Abort("Error: can not find this cell!");
-    return -1; // To suppress compiler warnings.
-  }
-
-  //===========================================================================
   void calc_node_grids() {
     nGrids.clear();
 
@@ -351,6 +339,13 @@ public:
 
   // Make a new level using provided BoxArray and DistributionMapping and
   // fill with interpolated coarse level data.
+  //
+  // The six virtual hooks below (MakeNewLevelFromCoarse, RemakeLevel,
+  // ClearLevel, MakeNewLevelFromScratch, ErrorEst, PostProcessBaseGrids) keep
+  // their AMReX names and signatures on purpose: amrex::AmrCore declares them
+  // as pure virtual / virtual, so renaming them would silently drop the
+  // override and break the regrid path. See the "AMReX API exception" note in
+  // doc/Coding_standards.md.
   // overrides the pure virtual function in AmrCore
   virtual void MakeNewLevelFromCoarse(
       int iLev, amrex::Real time, const amrex::BoxArray& ba,
@@ -446,39 +441,8 @@ public:
     ba.maxSize(max_grid_size[iLev]);
   };
 
-  void WriteMFseries(amrex::Vector<amrex::MultiFab>& MF, TimeCtr tc, int nstep,
-                     int nlev = 0, std::string st = "WriteMF",
-                     amrex::Vector<std::string> var = {});
-
-  void WriteMF(NodeMMFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
-
-  void WriteMF(CenterMMFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
-
-  void WriteMF(amrex::iMultiFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
-
-  void WriteMF(amrex::MultiFab& MF, std::string st = "WriteMF",
-               amrex::Vector<std::string> var = {});
-
-  void WriteMF(amrex::Vector<amrex::iMultiFab>& MF, int nlev = -1,
-               std::string st = "WriteMF", amrex::Vector<std::string> var = {});
-
-  void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = -1,
-               std::string st = "WriteMF", amrex::Vector<std::string> var = {});
-
-  amrex::MultiFab centerMMtoMF(CenterMMFab& MFin);
-
-  CenterMMFab MFtocenterMM(amrex::MultiFab& MFin);
-
-  amrex::MultiFab nodeMMtoMF(NodeMMFab& MFin);
-
-  NodeMMFab MFtonodeMM(amrex::MultiFab& MFin);
-
-  void WriteMFtoTXT(amrex::Vector<amrex::MultiFab>& MF, int nLev = 0,
-                    int WriteGhost = 0);
-
-  void WriteMFtoTXT(amrex::MultiFab& MF, int WriteGhost = 0);
+  void write_mf(amrex::Vector<amrex::MultiFab>& mf, int nlev = -1,
+                std::string st = "WriteMF",
+                amrex::Vector<std::string> var = {});
 };
 #endif

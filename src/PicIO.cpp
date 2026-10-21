@@ -114,7 +114,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                            VectorPointList& pointList_II, RealVect& xMin_D,
                            RealVect& xMax_D) {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   if (n_lev() > 1 && writerIn.get_plotDx() >= 0) {
@@ -149,7 +149,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      const auto& typeArr = nodeStatus[iLev][mfi].array();
+      const auto& typeArr = node_status(iLev)[mfi].array();
 
       auto lo = box.loVect3d();
       auto hi = box.hiVect3d();
@@ -212,7 +212,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     Box gbx = convert(geom.Domain(), { AMREX_D_DECL(1, 1, 1) });
 
     if (writerIn.is_compact())
-      gbx = convert(nGrids[iLev].minimalBox(), { AMREX_D_DECL(1, 1, 1) });
+      gbx =
+          convert(node_box_array(iLev).minimalBox(), { AMREX_D_DECL(1, 1, 1) });
 
     const auto lo = lbound(gbx);
     const auto hi = ubound(gbx);
@@ -245,7 +246,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
           const double xp = singleCell[ix_] ? geom.CellCenter(lo.x, ix_)
                                             : geom.LoEdge(i, ix_);
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
-              !nGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
+              !node_box_array(iLev).contains(
+                  IntVect{ AMREX_D_DECL(i, j, k) })) {
             const int iBlock = -1;
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
                                      zp, (double)iBlock, (double)iLev });
@@ -377,7 +379,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   // frozen cavity and the static intrinsic field B0 (see #DIPOLE /
   // #CRUSTALFIELD) exists inside the body just like outside it.
   bool isInsideBody = false;
-  if (useBody) {
+  if (use_body()) {
     Real xyz[3] = { 0.0, 0.0, 0.0 };
     for (int d = 0; d < nDim; d++)
       xyz[d] = Geom(iLev).LoEdge(ijk, d);
@@ -402,7 +404,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   if (varLower == "bodysurf" || varLower == "bodyint" ||
       varLower == "bodysurfn" || varLower == "bodyintn") {
     const bool useNode = (varLower == "bodysurfn" || varLower == "bodyintn");
-    if (!useBody || !isValidMFI)
+    if (!use_body() || !isValidMFI)
       return 0.0;
     const auto& stat = useNode ? node_status(iLev) : cell_status(iLev);
     const auto& statusArr = stat[mfi].array();
@@ -631,7 +633,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
 
 //==========================================================
 void Pic::save_restart_data() {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
 
   std::string restartDir = fi->get_restart_out_dir();
@@ -730,6 +732,7 @@ void Pic::read_restart() {
     parts[iPart]->Restart(restartDir,
                           gridName + "_particles" + std::to_string(iPart));
   }
+  particlesInitialized = true;
   inject_particles_for_boundary_cells();
 
   sum_moments();
@@ -789,7 +792,7 @@ Vector<std::array<int, 3> > Pic::read_select_particle_input() {
 //==========================================================
 void Pic::write_log(bool doForce, bool doCreateFile) {
 #ifdef _PC_COMPONENT_
-  if (isGridEmpty || !usePIC)
+  if (is_grid_empty() || !usePIC)
     return;
 
   const int wCol = 24;
@@ -801,7 +804,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   const bool logMass = standaloneLog && log_species_mass();
   const bool logCount = standaloneLog && log_particle_count();
   const bool logFaces = standaloneLog && log_face_budget();
-  const bool logBodyQ = standaloneLog && useBody;
+  const bool logBodyQ = standaloneLog && use_body();
   const bool logSheath =
       standaloneLog && floatingBody.use && floatingBody.type == "sheath";
   const bool logReemit =
@@ -828,7 +831,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     // Cumulative tallies of the particles absorbed by the inner body
     // (#BODY). Appended at the end so that the existing columns keep their
     // positions.
-    if (useBody) {
+    if (use_body()) {
       picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
@@ -890,7 +893,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     // Cumulative number / charge / mass of the particles absorbed by the
     // inner body (#BODY), summed over all species and all MPI ranks.
     Vector<Real> bodyAbsorb(5, 0.0);
-    if (useBody) {
+    if (use_body()) {
       for (auto& part : parts) {
         bodyAbsorb[0] += part->get_body_absorb_count();
         bodyAbsorb[1] += part->get_body_absorb_charge();
@@ -949,7 +952,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                    << bEnergy << "\t" << std::setw(wCol) << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
         picLogStream << "\t" << std::setw(wCol) << plasmaEnergy[i];
-      if (useBody) {
+      if (use_body()) {
         picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
@@ -991,7 +994,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
 //==========================================================
 void Pic::write_plots(bool doForce) {
-  if (isGridEmpty)
+  if (is_grid_empty())
     return;
   for (auto& plot : tc->plots) {
     if (plot.is_time_to(doForce)) {
@@ -1090,7 +1093,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
         cellHi[i] = ghi[i];
     }
 
-    if (isFake2D) {
+    if (is_fake_2d()) {
       cellLo[iz_] = 0;
       cellHi[iz_] = 0;
     }
@@ -1098,8 +1101,8 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     Box bxOut(cellLo, cellHi);
     BoxList bl;
     int iLev = 0;
-    for (long i = 0; i < cGrids[iLev].size(); ++i) {
-      Box ba = cGrids[iLev][i];
+    for (long i = 0; i < boxArray(iLev).size(); ++i) {
+      Box ba = boxArray(iLev)[i];
       if (ba.intersects(bxOut)) {
         bl.push_back(ba);
       }
@@ -1107,21 +1110,21 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     baIO.define(bl);
 
   } else {
-    baIO = cGrids[0];
+    baIO = boxArray(0);
   }
 
   // Create a new grid for saving data in IO units
   Vector<Geometry> geomOut(n_lev());
   set_IO_geom(geomOut, pw);
 
-  Grid gridIO(geomOut[0], get_amr_info(), nGst, -gridID);
+  Grid gridIO(geomOut[0], get_amr_info(), get_n_ghost(), -gridID);
 
   if (isCut && n_lev() == 1) {
     // TODO: This is a temporary solution. The current implementation is
     // 'correct' but occupies too much disk space for AMR grids.
     gridIO.regrid(baIO);
   } else {
-    gridIO.set_ba_and_dm(this);
+    gridIO.set_ba_and_dm(&grid);
   }
 
   IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
@@ -1185,7 +1188,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // The body mask is only saved when a body exists, so that the plotfile
   // variable list stays the same for every other run. (plotVars only selects
   // the groups above -- X, E, B, plasma -- it does not list single variables.)
-  const bool saveBody = useBody;
+  const bool saveBody = use_body();
   if (saveBody)
     nVarOut += 1;
 
@@ -1207,9 +1210,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 #endif
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (saveNode) {
-      out[iLev].define(nGrids[iLev], DistributionMap(iLev), nVarOut, 0);
+      out[iLev].define(node_box_array(iLev), DistributionMap(iLev), nVarOut, 0);
     } else {
-      out[iLev].define(cGrids[iLev], DistributionMap(iLev), nVarOut, 0);
+      out[iLev].define(boxArray(iLev), DistributionMap(iLev), nVarOut, 0);
     }
 
     int iStart = 0;
@@ -1324,12 +1327,12 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
           // There is no plasma inside the inner body (see #BODY), so the
           // zero-density diagnostic below must not fire there.
-          const Array4<int const>& statusArr = nodeStatus[iLev][mfi].array();
+          const Array4<int const>& statusArr = node_status(iLev)[mfi].array();
 
           for (int k = lo.z; k <= hi.z; ++k)
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
-                if (useBody && bit::is_body(statusArr(i, j, k)))
+                if (use_body() && bit::is_body(statusArr(i, j, k)))
                   continue;
 
                 const Real rho = plasmaArr(i, j, k, iRho_);
@@ -1375,7 +1378,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (saveBody) {
       //-------------body mask---------------------
-      const auto& status = saveNode ? nodeStatus[iLev] : cellStatus[iLev];
+      const auto& status = saveNode ? node_status(iLev) : cell_status(iLev);
 
       for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
@@ -1427,8 +1430,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     // No plasma lives inside the body: report the particle-derived variables
     // as zero there, like Pic::get_var does for the .out files.
-    if (useBody)
-      mask_body_vars(out[iLev], saveNode ? nodeStatus[iLev] : cellStatus[iLev],
+    if (use_body())
+      mask_body_vars(out[iLev],
+                     saveNode ? node_status(iLev) : cell_status(iLev),
                      varNames);
   }
 
@@ -1463,12 +1467,12 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (pw.is_amrex_format()) {
 
     WriteMultiLevelPlotfile(filename, n_lev(), mf, varNames, geomOut, timeNow,
-                            steps, ref_ratio);
+                            steps, refRatio());
 
   } else if (pw.is_hdf5_format()) {
 #ifdef _USE_HDF5_
     WriteMultiLevelPlotfileHDF5(filename, n_lev(), mf, varNames, geomOut,
-                                timeNow, steps, ref_ratio);
+                                timeNow, steps, refRatio());
 #else
     Abort("Error: HDF5 is not enabled. Please recompile AMREX+FLEKS with HDF5 "
           "or save with other formats.");
@@ -1505,7 +1509,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     // An absorbing inner body (#BODY) leaves regions without plasma behind it,
     // so an empty node is expected there and must not stop the run.
-    if (useBody) {
+    if (use_body()) {
       AllPrint() << printPrefix
                  << "Continuing: an empty region is expected downstream of an "
                  << "absorbing body (#BODY).\n"

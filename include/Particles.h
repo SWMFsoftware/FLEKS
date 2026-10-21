@@ -327,15 +327,8 @@ public:
                                     NStructInt>::NumberOfParticlesAtLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Checkpoint;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
-  using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
-  using amrex::AmrParticleContainer<NStructReal,
-                                    NStructInt>::CreateGhostParticles;
-  using amrex::AmrParticleContainer<NStructReal,
-                                    NStructInt>::CreateVirtualParticles;
-  using amrex::AmrParticleContainer<NStructReal,
-                                    NStructInt>::AddParticlesAtLevel;
 
   using AoS = amrex::ArrayOfStructs<ParticleType>;
 
@@ -535,7 +528,7 @@ public:
 
   int n_lev_max() const { return maxLevel() + 1; }
 
-  void add_particles_domain();
+  void add_particles_domain(bool fillAll = false);
   // Returns the number of particles added.
   int add_particles_cell(const int iLev, const amrex::MFIter& mfi,
                           const amrex::IntVect ijk,
@@ -608,6 +601,15 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
+  // Charge current q_s n_s u_s of this species on the nodes (3 components);
+  // a cheaper deposit than sum_moments() for the explicit field solver.
+  void sum_current(amrex::Vector<amrex::MultiFab>& currentMF);
+
+  // Fold the first ghost-node layer of a node-centered deposit back into the
+  // edge node at non-periodic uncoupled walls (mirror condition). isVector:
+  // mf holds a 3-component vector instead of the moment layout.
+  void fold_wall_ghost_nodes(amrex::MultiFab& mf, int iLev, bool isVector);
+
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   // nodeB0MF is the optional frozen intrinsic magnetic field; it may be
@@ -623,7 +625,8 @@ public:
       amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
       amrex::Vector<amrex::MultiFab>& jhf, amrex::MultiFab& nodeBMF,
       const amrex::MultiFab* nodeB0MF, amrex::MultiFab& u0MF, amrex::Real dt,
-      int iLev, bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& cellstatus);
+      int iLev, bool solveInCoMov,
+      const amrex::Vector<amrex::iMultiFab>& cellstatus);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  const amrex::MultiFab* nodeB0MF, amrex::Real dt);
@@ -697,6 +700,16 @@ public:
   void add_source_particles(std::unique_ptr<PicParticles>& sourcePart,
                             amrex::IntVect ppc, const bool adaptivePPC);
 
+  // pushStage of mover(): kPushLeapfrog kicks the velocity and drifts the
+  // position by the new velocity; kPushPredictor / kPushCorrector are the two
+  // stages of the predictor-corrector scheme; kPushKickOnly only updates the
+  // velocity, and drift() then moves the particles (explicit leapfrog, which
+  // deposits the current at both ends of the drift).
+  static constexpr int kPushLeapfrog = 0;
+  static constexpr int kPushPredictor = 1;
+  static constexpr int kPushCorrector = 2;
+  static constexpr int kPushKickOnly = 3;
+
   // nodeB0 is the frozen intrinsic magnetic field (see #DIPOLE /
   // #CRUSTALFIELD). It is the static part of the total field the particles are
   // pushed with and may be empty when no intrinsic field is configured.
@@ -727,6 +740,11 @@ public:
                               amrex::Real vth, CrossSection cs);
 
   void neutral_mover(amrex::Real dt);
+
+  // Move the particles by x += v * dtLoc (dtLoc = (dt + dtNext)/2, as in the
+  // charged mover) and apply the particle boundary conditions. Used after a
+  // kPushKickOnly push.
+  void drift(amrex::Real dt, amrex::Real dtNext);
 
   // Per-level geometry, hoisted so the particle loop does not go through the
   // plo/phi/invDx vectors or Geom() per particle per dimension.
@@ -1137,7 +1155,6 @@ public:
   }
 
   int sup_id() const { return supID; }
-  void set_sup_id(int in) { supID = in; }
 
   amrex::IntVect get_ref_ratio(const int iLev) const {
     const amrex::ParGDBBase* gdb = GetParGDB();
@@ -1196,8 +1213,18 @@ public:
     return grid->node_status(iLev);
   }
 
+  const amrex::Vector<amrex::iMultiFab>* targetPPCSource = nullptr;
+
+  void set_target_ppc_source(const amrex::Vector<amrex::iMultiFab>& src) {
+    targetPPCSource = &src;
+  }
+
   const amrex::iMultiFab& target_PPC(int iLev) const {
-    return grid->target_PPC(iLev);
+    if (targetPPCSource != nullptr) {
+      return (*targetPPCSource)[iLev];
+    }
+    static const amrex::iMultiFab emptyMF;
+    return emptyMF;
   }
 
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,
@@ -1214,8 +1241,6 @@ public:
   }
 
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
-
-  void set_bc(const BoxBC<ParticleBC::Type>& bcIn) { bc = bcIn; }
 
   // Mark face `side` (0 = lo, 1 = hi) of dimension `d` as carrying a
   // FieldBC::wave field boundary; drives the wave velocity kick.
@@ -1364,14 +1389,7 @@ public:
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
 
-  // Absorbing-BC diagnostics (per face, 2*d + {0=lo,1=hi}).
-  amrex::Real get_absorb_count(int face) const {
-    return absorbTallyCount[face];
-  }
-  amrex::Real get_absorb_charge(int face) const {
-    return absorbTallyCharge[face];
-  }
-  amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
+  // Particle budget per face (2*d + {0=lo,1=hi}).
   amrex::Real get_face_in_mass(int face) const { return faceInMass[face]; }
   amrex::Real get_face_out_mass(int face) const { return faceOutMass[face]; }
 
@@ -1424,63 +1442,6 @@ public:
     }
   }
 
-  void Write_Binary(std::string folder = "Particles",
-                    std::string particletype = "1") {
-    Checkpoint(folder, particletype);
-  }
-
-  void Generate_GhostParticles(int iLev, int nGhost) {
-    ParticleTileType ptile;
-    CreateGhostParticles(iLev - 1, nGhost, ptile);
-    AddParticlesAtLevel(ptile, iLev, nGhost);
-  }
-
-  void Generate_VirtualParticles(int iLev) {
-    ParticleTileType ptile;
-    CreateVirtualParticles(iLev + 1, ptile);
-    AddParticlesAtLevel(ptile, iLev);
-  }
-
-  void Exchange_VirtualParticles(int iLev) {
-    ParticleTileType ptile;
-    ParticleTileType ptile2;
-    CreateVirtualParticles(iLev + 1, ptile);
-    CreateGhostParticles(iLev, 1, ptile2);
-    AddParticlesAtLevel(ptile, iLev);
-    AddParticlesAtLevel(ptile2, iLev + 1, 1);
-  }
-
-  void delete_particles_from_refined_region(int iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      AoS& particles = pti.GetArrayOfStructs();
-      const auto& status = cell_status(iLev)[pti].array();
-      for (auto& p : particles) {
-        amrex::IntVect loIdx;
-        amrex::RealVect dShift;
-        find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), loIdx, dShift);
-        if (bit::is_refined(status(loIdx))) {
-          p.id() = -1;
-        }
-      }
-    }
-  }
-
-  void delete_particles_from_ghost_cells(int iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      AoS& particles = pti.GetArrayOfStructs();
-      const auto& status = cell_status(iLev)[pti].array();
-      for (auto& p : particles) {
-        amrex::IntVect loIdx;
-        amrex::RealVect dShift;
-        find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), loIdx, dShift);
-        if (bit::is_lev_boundary(status(loIdx))) {
-          p.id() = -1;
-        }
-      }
-    }
-  }
   void calculate_particle_quality(amrex::Vector<amrex::MultiFab>& quality);
 };
 

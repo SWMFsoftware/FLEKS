@@ -1,0 +1,94 @@
+#DESCRIPTION
+Langmuir test, explicit full PIC (predictor-corrector): a 1D uniform thermal plasma (m_i/m_e = 100) whose E_x noise carries the Langmuir branch; checks energy conservation and the omega-k spectrum against Bohm-Gross. Code units c = 1, n = 1: omega_pe = 35.4, v_te = 0.354, lambda_De = 0.010, dx = 2.8 lambda_De, c dt/dx = 0.36, omega_pe dt = 0.35; 1600 steps (FLEKS issue 170).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#GEOMETRY
+-3.544908               xMin
+ 3.544908               xMax
+-0.0138473              yMin
+ 0.0138473              yMax
+-0.0138473              zMin
+ 0.0138473              zMax
+
+#NCELL
+256                     nCellX   (dx = 0.0277 = 2.8 lambda_De)
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+explicit
+
+#FIELDINTEGRATOR
+pc                      fieldIntegrator
+
+#FIELDSUBCYCLE
+1                       nSubcycle
+F                       isAutoSubcycle
+
+#PLASMA
+2                       nSpecies
+1.0                     mass
+1.0                     charge
+0.01                    mass     (m_i/m_e = 100)
+-1.0                    charge
+
+#UNIFORMSTATE
+65.15939                rho      (n = 1 code)
+0.0                     ux
+0.0                     uy
+0.0                     uz
+378.58                  T        (Ti = 3.125e-4 code)
+65.15939                rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1514.3                  T        (Te = 1.25e-3 code)
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#PARTICLES
+64                      nParticle
+1                       nParticle
+1                       nParticle
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+E_x every 0.04 (4 steps; omega_pe = 35.4 needs < 0.089) for the
+omega-k spectrum of the thermal Langmuir noise.
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+-1                      dn
+0.04                    dt
+1                       dx
+Ex                      varName
+
+#STOP
+-1                      MaxIter
+16.0                    TimeMax  (1600 steps)

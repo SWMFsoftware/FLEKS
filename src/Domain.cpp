@@ -289,8 +289,10 @@ void Domain::init(double time, const int iDomain,
   refineRegionsStr.resize(amrInfo.max_level + 1);
   refineRegions.resize(amrInfo.max_level + 1);
 
+  grid = std::make_unique<Grid>(gm, amrInfo, nGst, gridID);
+
   if (domainParameters.receiveICOnly) {
-    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
+    fi = std::make_unique<FluidInterface>(*grid, "fi",
                                           domainParameters.useHybridPIC);
     ptInfo.set_fluid_interface(fi.get());
     read_param(false);
@@ -302,29 +304,28 @@ void Domain::init(double time, const int iDomain,
 
   if (domainParameters.initFromSWMF && !domainParameters.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(
-        gm, amrInfo, nGst, gridID, "fi", paramInt,
+        *grid, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
         domainParameters.useHybridPIC);
   } else {
     // if (NOT initFromSWMF) or receiveIConly
-    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi",
+    fi = std::make_unique<FluidInterface>(*grid, "fi",
                                           domainParameters.useHybridPIC);
   }
 
   ptInfo.set_fluid_interface(fi.get());
-  pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID,
+  pic = std::make_unique<Pic>(*grid, fi.get(), tc.get(), gridID,
                               domainParameters);
 
   if (domainParameters.usePT)
-    pt =
-        std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(), tc.get(),
-                                          gridID, ptInfo, domainParameters);
+    pt = std::make_unique<ParticleTracker>(*grid, fi.get(), tc.get(), gridID,
+                                           ptInfo, domainParameters);
 
   // Create the source object before read_param so that ionization
   // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
   // can be dispatched to source->read_param().
-  source = std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid,
-                                        domainParameters);
+  source = std::make_unique<UserSource>(*grid, *fi, gridID, "picSource",
+                                        SourceFluid, domainParameters);
   source->register_parameter_commands(sourceParameterCommands);
 
   read_param(false);
@@ -332,11 +333,11 @@ void Domain::init(double time, const int iDomain,
   init_time_ctr();
 
 #ifdef _PT_COMPONENT_
-  stateOH =
-      std::make_unique<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
+  stateOH = std::make_unique<OHInterface>(*grid, *fi, gridID, "stateOH",
+                                          InteractionFluid);
 
-  sourcePT2OH =
-      std::make_unique<OHInterface>(*fi, gridID, "sourcePT2OH", SourceFluid);
+  sourcePT2OH = std::make_unique<OHInterface>(*grid, *fi, gridID, "sourcePT2OH",
+                                              SourceFluid);
 
   sourcePT2OH->set_period_start_si(tc->get_time_si());
 
@@ -358,8 +359,8 @@ void Domain::init(double time, const int iDomain,
 
   // Copy-constructed after read_param so that it carries fi's final layout.
   if (source && !domainParameters.initFromSWMF)
-    plasmaState = std::make_unique<FluidInterface>(*fi, gridID,
-                                                   "picPlasmaState", PICFluid);
+    plasmaState = std::make_unique<FluidInterface>(
+        *grid, *fi, gridID, "picPlasmaState", PICFluid);
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -421,29 +422,8 @@ void Domain::calc_refine_region() {
   isNewGrid = true;
   refineRegions.mark_modified();
 
-  fi->is_new_grid(isNewGrid);
-
-  if (source) {
-    source->is_new_grid(isNewGrid);
-  }
-
-  if (plasmaState) {
-    plasmaState->is_new_grid(isNewGrid);
-  }
-
-  if (stateOH) {
-    stateOH->is_new_grid(isNewGrid);
-  }
-  if (sourcePT2OH) {
-    sourcePT2OH->is_new_grid(isNewGrid);
-  }
-
-  if (pic) {
-    pic->is_new_grid(isNewGrid);
-  }
-
-  if (pt) {
-    pt->is_new_grid(isNewGrid);
+  if (grid) {
+    grid->is_new_grid(isNewGrid);
   }
 }
 
@@ -612,30 +592,30 @@ void Domain::load_balance() {
 
   pic->calc_cost_per_cell();
 
-  fi->set_cost(pic->get_cost());
+  grid->load_balance(nullptr, doSplitLevs);
 
-  fi->load_balance(nullptr, doSplitLevs);
+  fi->post_regrid();
 
   if (pic) {
-    pic->load_balance(fi.get());
+    pic->post_regrid(MeshChangeReason::LoadBalance);
     pic->report_load_balance(true, true);
     pic->inject_particles_for_boundary_cells();
   }
 
   if (source)
-    source->load_balance(fi.get());
+    source->post_regrid();
 
   if (plasmaState)
-    plasmaState->load_balance(fi.get());
+    plasmaState->post_regrid();
 
   if (stateOH)
-    stateOH->load_balance(fi.get());
+    stateOH->post_regrid();
 
   if (sourcePT2OH)
-    sourcePT2OH->load_balance(fi.get());
+    sourcePT2OH->post_regrid();
 
   if (pt)
-    pt->load_balance(fi.get());
+    pt->post_regrid();
 
   iGrid++;
   iDecomp++;
@@ -678,27 +658,47 @@ void Domain::regrid() {
           << "\n===================================================="
           << std::endl;
 
-  fi->regrid(activeRegion, refineRegions, gridEfficiency);
-
-  if (source) {
-    source->regrid(activeRegion, fi.get());
-  }
-
-  if (plasmaState) {
-    plasmaState->regrid(activeRegion, fi.get());
-  }
-
-  if (stateOH) {
-    stateOH->regrid(activeRegion, fi.get());
-  }
-  if (sourcePT2OH) {
-    sourcePT2OH->regrid(activeRegion, fi.get());
+  // A restored hierarchy may already match the received region. Re-running
+  // consumer hooks would request initialization of already restored fields.
+  if (!grid->is_new_grid() && activeRegion == grid->get_base_grid() &&
+      !refineRegions.is_modified()) {
+    gridInfo.is_grid_new(false);
+    isNewGrid = false;
+    return;
   }
 
   if (pic) {
-    pic->regrid(activeRegion, fi.get());
+    pic->pre_regrid();
+  }
+  if (pt) {
+    pt->pre_regrid();
+  }
 
-    if (refineRegions.is_modified()) {
+  grid->regrid(activeRegion, refineRegions, gridEfficiency);
+
+  fi->post_regrid();
+
+  if (source) {
+    source->post_regrid();
+  }
+
+  if (plasmaState) {
+    plasmaState->post_regrid();
+  }
+
+  if (stateOH) {
+    stateOH->post_regrid();
+  }
+  if (sourcePT2OH) {
+    sourcePT2OH->post_regrid();
+  }
+
+  if (pic) {
+    pic->post_regrid();
+
+    // Do not fill cells before initial particle setup (e.g. #REGRIDONRESTART
+    // on a fluid-only restart marks refineRegions modified before set_ic()).
+    if (refineRegions.is_modified() && pic->are_particles_initialized()) {
       pic->fill_new_cells();
       // Add functions to fill in EM fields for new cells.
       // Some thoughts:
@@ -711,7 +711,7 @@ void Domain::regrid() {
   }
 
   if (pt) {
-    pt->regrid(activeRegion, fi.get());
+    pt->post_regrid();
   }
 
   iGrid++;
@@ -879,33 +879,37 @@ void Domain::read_restart() {
     is.ignore(100000, '\n');
   }
 
-  Grid grid(gm, amrInfo, nGst, gridID);
-
-  grid.SetFinestLevel(nLev - 1);
-  for (int iLev = 0; iLev < nLev; iLev++) {
-    grid.SetBoxArray(iLev, bas[iLev]);
-    grid.SetDistributionMap(iLev, DistributionMapping(bas[iLev]));
-  }
-
-  grid.SetGridEff(gridEfficiency);
-  grid.set_refine_regions(refineRegions);
+  grid->SetGridEff(gridEfficiency);
+  grid->set_refine_regions(refineRegions);
+  grid->restore_grid(bas);
 
   //----------------------------------------------------------------
 
-  fi->regrid(grid.boxArray(0), &grid);
+  fi->post_regrid();
   fi->read_restart();
 
-  if (!domainParameters.doRestartFIOnly) {
-    pic->regrid(grid.boxArray(0), fi.get());
+  if (source)
+    source->post_regrid();
 
-    if (pt)
-      pt->regrid(grid.boxArray(0), fi.get());
+  if (plasmaState)
+    plasmaState->post_regrid();
+  if (stateOH)
+    stateOH->post_regrid();
+  if (sourcePT2OH)
+    sourcePT2OH->post_regrid();
 
-    pic->read_restart();
-    write_plots(true);
-    pic->write_log(true, true);
+  if (pic) {
+    pic->post_regrid(MeshChangeReason::Restart);
+    if (!domainParameters.doRestartFIOnly) {
+      pic->read_restart();
+      write_plots(true);
+      pic->write_log(true, true);
+    }
+  }
 
-    if (pt && domainParameters.doRestartPT) {
+  if (pt) {
+    pt->post_regrid();
+    if (!domainParameters.doRestartFIOnly && domainParameters.doRestartPT) {
       pt->read_restart();
       pt->write_log(true, true);
     }
@@ -1076,9 +1080,9 @@ void Domain::save_restart_header() {
 
     // Grid box array
     headerFile << "#GRIDBOXARRAY \n";
-    headerFile << fi->n_lev() << "\n";
-    for (int iLev = 0; iLev < fi->n_lev(); iLev++) {
-      fi->boxArray(iLev).writeOn(headerFile);
+    headerFile << grid->n_lev() << "\n";
+    for (int iLev = 0; iLev < grid->n_lev(); iLev++) {
+      grid->boxArray(iLev).writeOn(headerFile);
       headerFile << "\n";
     }
     headerFile << "\n";

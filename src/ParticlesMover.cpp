@@ -60,7 +60,9 @@ void Particles<NStructReal, NStructInt>::mover(
     const Vector<MultiFab>& nodeB0, const Vector<MultiFab>& eBg,
     const Vector<MultiFab>& uBg, Real dt, Real dtNext, int pushStage) {
   if (is_neutral()) {
-    neutral_mover(dt);
+    // Neutrals have no velocity kick; drift() moves them.
+    if (pushStage != kPushKickOnly)
+      neutral_mover(dt);
   } else {
     charged_particle_mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext,
                            pushStage);
@@ -189,6 +191,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.rdata(imu_) = cosine(p, bp);
         }
 
+        if (pushStage == kPushKickOnly)
+          continue;
+
         if (pushStage > 0) {
           p.pos(ix_) = xp + 0.5 * (u_start + unp1) * dtLoc;
           p.pos(iy_) = yp + 0.5 * (v_start + vnp1) * dtLoc;
@@ -246,6 +251,53 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         p.pos(ix_) = xp + up * dt;
         p.pos(iy_) = yp + vp * dt;
         p.pos(iz_) = zp + wp * dt;
+
+        // Apply boundary condition (absorb: delete; reflect: mirror).
+        if (reflect_or_delete_particle(p, status, ab)) {
+          p.id() = -1;
+        }
+      } // for p
+    } // for pti
+  }
+}
+
+//==========================================================
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::drift(Real dt, Real dtNext) {
+  if (is_neutral()) {
+    neutral_mover(dt);
+    return;
+  }
+
+  timing_func("Pts::drift");
+
+  const Real dtLoc = 0.5 * (dt + dtNext);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const LevelGeomBox lb = make_level_geom_box(iLev);
+    int lastFab = -1;
+    ActiveRegionBox ab;
+
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+
+      if (pti.index() != lastFab) {
+        lastFab = pti.index();
+        const Box& bx = cell_status(iLev)[pti].box();
+        ab = make_active_region_box(lb, pti.validbox(), bx);
+      }
+
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
+
+      for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
+        p.pos(ix_) += p.rdata(iup_) * dtLoc;
+        p.pos(iy_) += p.rdata(ivp_) * dtLoc;
+        if (nDim > 2)
+          p.pos(iz_) += p.rdata(iwp_) * dtLoc;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
         if (reflect_or_delete_particle(p, status, ab)) {
@@ -466,6 +518,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
       const Vector<MultiFab>&, Real, Real, int);                               \
   template void T::neutral_mover(Real);                                        \
+  template void T::drift(Real, Real);                                          \
   template void T::divE_correct_position(const Vector<MultiFab>&, int);
 
 INSTANTIATE_PARTICLES_MOVER(PicParticles)

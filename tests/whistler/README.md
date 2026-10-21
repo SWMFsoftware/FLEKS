@@ -1,12 +1,13 @@
 # HYBRID_WHISTLER
 
-Parallel whistler–Alfvén wave test in FLEKS.  This directory runs **six
-variants of the same Helicon-type transverse wave**, comparing Full PIC, all four
+Parallel whistler–Alfvén wave test in FLEKS.  This directory runs **seven
+variants of the same Helicon-type transverse wave**, comparing semi-implicit and explicit Full PIC, all four
 hybrid timestepping schemes, and the full resistive generalized Ohm's law:
 
 | Variant | Config file | Field solver / Integrator | Physics |
 | --- | --- | --- | --- |
 | **Full PIC** | `PARAM.in` | Maxwell / θ-scheme (`solveEM=T`) | Kinetic ions & electrons (displacement current) |
+| **Explicit Full PIC** | `PARAM.in.explicit` | Maxwell / explicit leapfrog (`#FIELDSOLVER explicit`) | Kinetic ions & electrons, m_i/m_e = 25, v_te = 0.3 c; full cold-plasma R-mode within 5% (measured 0.781 vs 0.775) |
 | **RK4** | `PARAM.in.rk4` | Hybrid PIC (`rk4`) | Hall whistler eigenmode (classical RK4) |
 | **RK4-PC** | `PARAM.in.rk4_pc` | Hybrid PIC (`rk4-pc`) | Hall whistler eigenmode (predictor–corrector RK4) |
 | **SSPRK3** | `PARAM.in.ssprk3` | Hybrid PIC (`ssprk3`) | Hall whistler eigenmode (3-stage SSPRK3) |

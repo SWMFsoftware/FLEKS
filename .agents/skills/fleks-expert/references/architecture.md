@@ -7,18 +7,34 @@
 ## Class hierarchy
 
 ```
-Domain                        — Top-level simulation manager
- ├── DomainGrid               — Grid information container
- ├── Pic : Grid : AmrCore     — PIC solver (fields + particle push on AMR grid)
- ├── ParticleTracker : Grid   — Test particle tracker
- ├── FluidInterface : Grid    — MHD/fluid state on grid (coupling data)
- ├── SourceInterface          — Source terms for coupling
- │    └── UserSource          — User-defined source (selected from userfiles/)
- ├── OHInterface              — Outer-heliosphere coupling data
+Domain : DomainGrid           — Top-level simulation manager
+ ├── Grid                     — The one simulation AMR hierarchy (AmrCore);
+ │                              owned by Domain via std::unique_ptr and shared
+ │                              by reference with every component
+ ├── Pic : GridAccess         — PIC solver (fields + particle push on AMR grid)
+ ├── ParticleTracker : GridAccess — Test particle tracker
+ ├── FluidInterface : GridAccess, FluidInterfaceParameters
+ │                            — MHD/fluid state on grid (coupling data)
+ │    ├── SourceInterface     — Source terms for coupling
+ │    │    └── UserSource     — User-defined source (selected from userfiles/)
+ │    └── OHInterface         — Outer-heliosphere coupling data
  └── TimeCtr                  — Time stepping, event control, plot scheduling
       ├── EventCtr            — Periodic event trigger (dn or dt based)
       └── PlotCtr             — Plot scheduling (combines EventCtr + PlotWriter)
 ```
+
+`GridAccess` (`include/GridAccess.h`) is a header-only, **non-owning query
+facade**: it stores the single `Grid&` once and exposes the const mesh queries
+(`n_lev`, `Geom(iLev)`, `DistributionMap`, `cell_status`, `node_status`,
+`get_base_grid`, `lev_string`, `get_finest_lev`, ...) that Pic, FluidInterface
+and ParticleTracker all need. It deliberately carries no mesh mutation, no
+ownership, no virtual hooks and no default constructor, so the AMR hierarchy is
+still changed only through Domain's orchestration path. Body/domain/cost
+queries, both `Geom` overloads, `refRatio()`, and coordinate-to-rank lookups
+also live in GridAccess. Consumer implementations query `grid` directly
+instead of storing persistent aliases to mesh state. PIC keeps its own
+physics state and accesses mutable Grid-owned costs only when calculating
+load-balancing weights.
 
 Design rule: ionization parameters live in **SourceInterface** (physics in
 `UserSource`), never in `FluidInterface`, so the MHD coupling layer stays
@@ -28,7 +44,8 @@ uncluttered.
 
 | Class | Header | Purpose |
 |---|---|---|
-| `Domain` | `Domain.h` | Top-level orchestrator: owns `Pic`, `FluidInterface`, `TimeCtr` |
+| `Domain` | `Domain.h` | Top-level orchestrator: owns the simulation `Grid`, `Pic`, `FluidInterface`, `TimeCtr` |
+| `GridAccess` | `GridAccess.h` | Non-owning shared mesh-query facade for Pic/FluidInterface/ParticleTracker |
 | `Pic` | `Pic.h` | PIC solver: field solve, particle push, moments, I/O |
 | `Grid` | `Grid.h` | AMR grid management (inherits `AmrCore`) |
 | `Particles` | `Particles.h` | Templated particle container (`PicParticles`, `PTParticles`) |
@@ -86,6 +103,13 @@ FLEKS provides three simulation field solver modes selected via `#FIELDSOLVER` (
   * `pc` / `rk2`: 2nd-order predictor-corrector with intermediate particle push.
 - **Subcycling**: `#FIELDSUBCYCLE` sets the number of explicit Maxwell subcycles
   per particle time step dt.
+- **Current**: Ampere's law takes the charge current sum_s q_s n_s u_s
+  (`nodeJexpl`, `deposit_explicit_current`), not the mass-flux moments in
+  `nodePlasma`. Leapfrog: kick v^{n+1/2} with (E^n, B^n), deposit at x^n,
+  drift, deposit at x^{n+1}; J^{n+1/2} is the average. Predictor-corrector:
+  deposits at t^n and t^{n+1}, interpolated in time across subcycles.
+  `tests/langmuir` checks energy conservation and the Langmuir branch;
+  `tests/whistler/PARAM.in.explicit` checks the full cold-plasma R-mode.
 - **Zero regression / minimal footprint**: bypasses allocation of GMRES scratch
   MultiFabs and mass matrices when active, leaving semi-implicit and hybrid
   allocations and performance untouched.

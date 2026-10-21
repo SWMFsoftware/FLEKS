@@ -200,19 +200,19 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // like #REGION, and unlike #PLANETRADIUS which is in SI.
     set_body(center, radius);
 
-    Print() << "  inner body: sphere, radius = " << bodyRadius
+    Print() << "  inner body: sphere, radius = " << get_body_radius()
             << ", center = (";
     for (int i = 0; i < nDim; i++)
-      Print() << (i > 0 ? ", " : "") << bodyCenter[i];
+      Print() << (i > 0 ? ", " : "") << get_body_center()[i];
     Print() << ") [code units]\n";
   } else if (command == "#BODYBOUNDARY") {
     std::string particle, field;
     param.read_var("particleBoundary", particle);
     param.read_var("fieldBoundary", field);
 
-    bodyParticleBC = ParticleBC::parse(particle);
-    if (bodyParticleBC != ParticleBC::absorb &&
-        bodyParticleBC != ParticleBC::reflect)
+    body_particle_bc() = ParticleBC::parse(particle);
+    if (body_particle_bc() != ParticleBC::absorb &&
+        body_particle_bc() != ParticleBC::reflect)
       Abort("Error: #BODYBOUNDARY particleBoundary '" + particle +
             "' is not supported for the inner body. Accepted values: "
             "absorb, reflect.");
@@ -221,7 +221,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     bodyBoundarySet_ = true;
 
     Print() << "  inner body BC: particles = "
-            << ParticleBC::to_string(bodyParticleBC)
+            << ParticleBC::to_string(body_particle_bc())
             << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
   } else if (command == "#REGIONRESISTIVITY") {
     RegionalResistivityConfig cfg;
@@ -867,11 +867,12 @@ void Pic::post_process_param() {
     nodePeAux.resize(n_lev_max());
   }
 
-  if (useBody) {
-    if (bodyRadius <= 0)
+  if (use_body()) {
+    if (get_body_radius() <= 0)
       Abort("Invalid #BODY: radius must be positive.");
 
-    if (n_lev_max() > 1 && refineRegions && !refineRegions->empty())
+    if (n_lev_max() > 1 && get_refine_regions() &&
+        !get_refine_regions()->empty())
       Print() << "  Warning: #BODY has not been verified with AMR "
               << "(refinement regions are defined).\n";
 
@@ -886,8 +887,8 @@ void Pic::post_process_param() {
     for (int i = 0; i < nDim; i++) {
       if (dom.length(i) <= 1)
         continue;
-      if (bodyCenter[i] - bodyRadius <= plo[i] ||
-          bodyCenter[i] + bodyRadius >= phi[i])
+      if (get_body_center()[i] - get_body_radius() <= plo[i] ||
+          get_body_center()[i] + get_body_radius() >= phi[i])
         Abort("Invalid #BODY: the body must be strictly inside the "
               "simulation domain.");
     }
@@ -895,7 +896,7 @@ void Pic::post_process_param() {
     // #BODYBOUNDARY only has a meaning together with #BODY.
     Print() << "  Warning: #BODYBOUNDARY is ignored because no #BODY is "
             << "defined.\n";
-    bodyParticleBC = ParticleBC::absorb;
+    body_particle_bc() = ParticleBC::absorb;
     bodyFieldBC = BodyFieldBC::linetied;
     bodyBoundarySet_ = false;
   }
@@ -1127,7 +1128,7 @@ void Pic::convert_floating_body() {
   auto& fb = floatingBody;
   if (!fb.use)
     return;
-  if (!useBody || bodyParticleBC != ParticleBC::absorb)
+  if (!use_body() || body_particle_bc() != ParticleBC::absorb)
     Abort("Error: #FLOATINGBODY needs an absorbing body (#BODY, "
           "#BODYBOUNDARY particleBoundary absorb).");
   if (useHybridPIC) {
@@ -1198,7 +1199,7 @@ void Pic::convert_body_ionosphere() {
   auto& bi = bodyIono;
   if (!bi.use)
     return;
-  if (!useBody)
+  if (!use_body())
     Abort("Error: #BODYIONOSPHERE needs an inner body (#BODY).");
 
   // Same conversions as convert_inflow_state(): n [/cc], T [K] -> code units.
@@ -1238,12 +1239,13 @@ void Pic::convert_intrinsic_B() {
     return;
   }
 
-  const double bodyCenterTmp[3] = { bodyCenter[ix_], bodyCenter[iy_],
-                                    bodyCenter[iz_] };
+  const double bodyCenterTmp[3] = { get_body_center()[ix_],
+                                    get_body_center()[iy_],
+                                    get_body_center()[iz_] };
 
   intrinsicB_->convert_units(fi->get_Si2NoB(), fi->get_Si2NoL(),
-                             fi->get_rPlanet_SI(), bodyCenterTmp, bodyRadius,
-                             useBody, nDim);
+                             fi->get_rPlanet_SI(), bodyCenterTmp,
+                             get_body_radius(), use_body(), nDim);
 
   Print() << intrinsicB_->describe() << "\n";
 }

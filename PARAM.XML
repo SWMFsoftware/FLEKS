@@ -697,12 +697,13 @@ value [m\^4/s] (used when etaHyperMode = "si"; converted to code units as
 etaCode = 4*pi*etaSI*Si2NoV*Si2NoL\^3). When etaHyperMode = "grid", eta_h is
 instead scaled to the grid and the (full) time step:
    eta_h = 4*pi * C_h * dx_min\^4 / dt,
-where dx_min is the finest cell size and C_h the dimensionless etaHyperCh
-(typical 1e-3 .. 1e-2). Because E scales as (eta_h/4*pi) k\^4 B, this is a
-mode-dependent damping
+where dx_min is the smallest cell size of each AMR level and C_h the
+dimensionless etaHyperCh (typical 1e-3 .. 1e-2). Because E scales as
+(eta_h/4*pi) k\^4 B, this is a mode-dependent damping
    gamma_h = (eta_h/4*pi) k\^4 = C_h * (k dx)\^4 / dt
-per unit code time, identical on every AMR level, so it only reaches the
-badly-resolved harmonics: on the 64-cell whistler deck (dx = 0.1) with
+per unit code time. Each level damps its own grid-scale modes at the same
+rate (a coarse level gets the larger eta_h of its larger cells), and it only
+reaches the badly-resolved harmonics: on the 64-cell whistler deck (dx = 0.1) with
 C_h = 1e-2, gamma_h = 4.6e-5 at k d_i = 1 and 0.06 at k d_i = 6 (against
 omega = 36 there), while the few-cell band that the explicit Hall advance
 makes unstable at lambda ~ 3 cells receives 6.0 and is completely damped.

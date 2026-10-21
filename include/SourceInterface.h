@@ -72,9 +72,9 @@ protected:
   const DomainParameters& domainParameters;
 
 public:
-  SourceInterface(const FluidInterface& other, int id, std::string tag,
-                  FluidType typeIn, const DomainParameters& dp)
-      : FluidInterface(other, id, tag, typeIn), domainParameters(dp) {
+  SourceInterface(Grid& gridIn, const FluidInterface& other, int id,
+                  std::string tag, FluidType typeIn, const DomainParameters& dp)
+      : FluidInterface(gridIn, other, id, tag, typeIn), domainParameters(dp) {
     initFromSWMF = false;
   }
 
@@ -156,8 +156,9 @@ public:
       return;
     const bool doCopy = true;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      distribute_FabArray(nodeLossFluid[iLev], nGrids[iLev],
-                          DistributionMap(iLev), nS, nGst, doCopy);
+      distribute_FabArray(nodeLossFluid[iLev], grid.node_box_array(iLev),
+                          DistributionMap(iLev), nS, grid.get_n_ghost(),
+                          doCopy);
     }
   }
 
