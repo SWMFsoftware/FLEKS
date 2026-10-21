@@ -236,10 +236,15 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
 
 //==========================================================
 // Mirror boundary condition for a node-centered deposit at non-periodic
-// uncoupled walls (see the comment in sum_moments): fold the first ghost-node
-// layer back into the edge node and clear it. isVector selects the parity
-// rule: components (x, y, z) of a vector (odd: the normal one) instead of the
-// moment layout (odd: normal momentum and normal-shear stresses).
+// uncoupled walls (see the comment in sum_moments): double the edge node (or
+// clear it for an odd component at a reflecting wall) and clear the first
+// ghost-node layer. At a reflecting wall the ghost layer is first folded onto
+// the first interior node with the same parity: it holds the part of the
+// charge-conserving current of a particle that crossed the wall before it was
+// mirrored, and the folded current is that of the reflected path (image
+// method). isVector selects the parity rule: components (x, y, z) of a vector
+// (odd: the normal one) instead of the moment layout (odd: normal momentum
+// and normal-shear stresses).
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
                                                                int iLev,
@@ -324,6 +329,12 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
                       } else {
                         arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
                       }
+                      if (isReflect) {
+                        const int ii = iDim == 0 ? 2 * domEdge - i : i;
+                        const int jj = iDim == 1 ? 2 * domEdge - j : j;
+                        arr(ii, jj, 0, c) +=
+                            isOdd ? -arr(i, j, 0, c) : arr(i, j, 0, c);
+                      }
                       arr(i, j, 0, c) = 0.0; // zero the ghost layer
 #elif (AMREX_SPACEDIM == 3)
                 int ei = i, ej = j, ek = k;
@@ -335,6 +346,13 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
                   arr(ei, ej, ek, c) = 0.0;
                 } else {
                   arr(ei, ej, ek, c) += val; // fold mirror back -> 2x
+                }
+                if (isReflect) {
+                  const int ii = iDim == 0 ? 2 * domEdge - i : i;
+                  const int jj = iDim == 1 ? 2 * domEdge - j : j;
+                  const int kk = iDim == 2 ? 2 * domEdge - k : k;
+                  arr(ii, jj, kk, c) +=
+                      isOdd ? -arr(i, j, k, c) : arr(i, j, k, c);
                 }
                 arr(i, j, k, c) = 0.0; // zero the ghost layer
 #endif

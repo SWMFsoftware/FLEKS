@@ -16,6 +16,10 @@ makes this a direct check of how the particles' current drives E:
    initial value: max |r(t) - r(0)| < 1e-5 max |div E|. The 8-digit ascii
    output sets a floor near 1e-6. Particle resampling would break the
    conservation (2e-5 within 1 s), so these decks turn it off.
+   `explicit_wall` checks it between reflecting walls, wall cells included:
+   the current of a particle that crossed a wall before it was mirrored must
+   be folded back with mirror parity (without that, the wall cells drift by
+   more than max |div E| within 2 s).
 
 A current with the wrong sign or size shifts the branch; one centered at the
 wrong time makes it grow. FLEKS issue 170 (the explicit solver used the mass
@@ -27,6 +31,7 @@ flux, centered at t^n) heated this plasma by a factor of ~560 in 500 steps.
 | `langmuir_explicit_sub` | `PARAM.in.explicit_sub` | explicit, leapfrog, 2 field subcycles | < 1% | each < 4%, mean < 1% | yes |
 | `langmuir_explicit_pc` | `PARAM.in.explicit_pc` | explicit, predictor-corrector | < 3% | each < 6%, mean < 3% | yes |
 | `langmuir_explicit_mag` | `PARAM.in.explicit_mag` | explicit, leapfrog, uniform B at 45 deg (electron w_ce = 0.3 w_pe) | < 1% | not checked (the oblique field splits the branch) | yes |
+| `langmuir_explicit_wall` | `PARAM.in.explicit_wall` | explicit, leapfrog, reflecting particle / conducting field walls in x, 400 steps | < 1% | not checked (non-periodic modes) | yes, wall cells included |
 | `langmuir_implicit` | `PARAM.in.implicit` | semi-implicit (reference) | Etot/Etot0 in [0.80, 1.01] | each < 6%, mean < 3% | no (div(E) correction) |
 
 Each spectral peak must also exceed 100 times the median of its spectrum. A
@@ -47,10 +52,11 @@ Bohm-Gross, energy at the end, Gauss residual drift relative to max |div E|):
 
 | Variant | Langmuir branch | Etot/Etot0 | Gauss residual drift |
 |---------|-----------------|------------|----------------------|
-| explicit | +0.53% / 1.58% | 1.0034 | 8.8e-7 |
-| explicit_sub | +0.46% / 1.40% | 1.0046 | 8.3e-7 |
-| explicit_pc | -1.31% / 2.67% | 0.988 | 9.3e-7 |
-| explicit_mag | - | 1.0028 | 8.4e-7 |
+| explicit | +0.53% / 1.58% | 1.0039 | 8.2e-7 |
+| explicit_sub | +0.46% / 1.40% | 1.0046 | 8.4e-7 |
+| explicit_pc | -1.31% / 2.67% | 0.988 | 9.2e-7 |
+| explicit_mag | - | 1.0026 | 8.6e-7 |
+| explicit_wall | - | 1.0008 (4 s) | 8.6e-7 |
 | implicit | -1.31% / 2.04% | 0.887 | - |
 
 ```bash

@@ -7,7 +7,8 @@ test checks the particle-field coupling of the full-PIC solvers in two ways:
 
 1. Energy (log): nothing drives the plasma, so the total energy stays
    constant. Bound on max |Etot/Etot0 - 1| over all logged steps:
-     explicit, explicit_sub, explicit_mag   1%
+     explicit, explicit_sub, explicit_mag,
+     explicit_wall                          1%
      explicit_pc                            3% (dissipative: -1.2% in 16 s)
      implicit                               no heating (< +1%), cooling < 20%
                                             (theta = 0.51 damps: -11% in 16 s)
@@ -22,14 +23,17 @@ test checks the particle-field coupling of the full-PIC solvers in two ways:
    mean within 1%. The predictor-corrector
    and implicit schemes run 1-2% low, more at high k (numerical dispersion):
    each mode within 6%, the mean within 3%. Skipped for explicit_mag, where
-   the oblique field splits the electrostatic branch.
+   the oblique field splits the electrostatic branch, and for explicit_wall,
+   whose walls make the modes non-periodic.
 3. Gauss's law (plot, explicit variants): the explicit solver deposits a
    charge-conserving (Esirkepov) current and runs no div(E) correction, so
    the residual r = div_node_to_center(E) - 4 pi rho_c, with rho_c the node
    charge sum_s (q_s/m_s) rhoS_s averaged to the cell centers, must keep its
    initial value: max |r(t) - r(t_0)| < 1e-5 max |div E| over the record.
    The ascii output (8 digits) sets a floor near 1e-6; particle resampling,
-   which would break the conservation, is off in these decks.
+   which would break the conservation, is off in these decks. explicit_wall
+   checks it at reflecting walls, including the wall cells, where the current
+   of a particle that crossed the wall is folded back with mirror parity.
 
 A current with the wrong sign or magnitude moves the branch, and one that is
 centered at the wrong time makes it grow; FLEKS issue 170 (explicit solver
@@ -62,7 +66,8 @@ FREQ_TOL = {"explicit": (0.04, 0.01), "explicit_sub": (0.04, 0.01),
 
 def _variant(test_name):
     name = (test_name or "").lower()
-    for v in ("explicit_sub", "explicit_mag", "explicit_pc", "implicit"):
+    for v in ("explicit_sub", "explicit_mag", "explicit_pc", "explicit_wall",
+              "implicit"):
         if name.endswith(v):
             return v
     return "explicit"
@@ -126,8 +131,9 @@ def _read_frames():
     return frames
 
 
-def _check_gauss(frames):
-    """Drift of the Gauss's law residual (see check 3 in the module doc)."""
+def _check_gauss(frames, periodic=True):
+    """Drift of the Gauss's law residual (see check 3 in the module doc).
+    periodic=False: the frames hold all nodes from wall to wall."""
     if "rhoS1" not in frames[0][2]:
         return False, "Expected rhoS0 and rhoS1 in the plots (Gauss check)"
     r0, worst, scale = None, 0.0, 0.0
@@ -137,8 +143,11 @@ def _check_gauss(frames):
                   for s in (0, 1))
         # 1 cell along y (periodic): the y terms of div_node_to_center vanish
         # and the node charge averages over the two x nodes of each cell.
-        divE = (np.roll(ex, -1) - ex) / dx
-        r = divE - 4.0 * math.pi * 0.5 * (rho + np.roll(rho, -1))
+        if periodic:
+            ex = np.append(ex, ex[0])
+            rho = np.append(rho, rho[0])
+        divE = np.diff(ex) / dx
+        r = divE - 4.0 * math.pi * 0.5 * (rho[1:] + rho[:-1])
         if r0 is None:
             r0 = r
         worst = max(worst, float(np.max(np.abs(r - r0))))
@@ -180,19 +189,22 @@ def validate_plot(test_name):
     if len(frames) < 50:
         return False, "Expected >= 50 E_x frames (z=0 var ascii plots)"
     # Periodic output may repeat the x = xMax node; the deck has 256 cells.
-    if len(frames[0][2]["x"]) == 257:
+    # explicit_wall keeps both wall nodes.
+    if variant != "explicit_wall" and len(frames[0][2]["x"]) == 257:
         frames = [(t, dx, {k: v[:-1] for k, v in d.items()}, p)
                   for t, dx, d, p in frames]
 
     gauss = ""
     if variant != "implicit":
-        ok, gauss = _check_gauss(frames)
+        ok, gauss = _check_gauss(frames, periodic=variant != "explicit_wall")
         if not ok:
             return False, gauss
         gauss = "; " + gauss
 
     if variant == "explicit_mag":
         return True, ("No Langmuir-branch check in an oblique field" + gauss)
+    if variant == "explicit_wall":
+        return True, ("No Langmuir-branch check between walls" + gauss)
     mode_tol, mean_tol = FREQ_TOL[variant]
 
     t = np.array([fr[0] for fr in frames])

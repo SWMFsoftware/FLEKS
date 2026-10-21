@@ -335,10 +335,12 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const Real xNew[3] = { xp + uDrift * dtLoc, yp + vDrift * dtLoc,
                                zp + wDrift * dtLoc };
 
+        // J = q dx/dt for every component; in 2D the out-of-plane dx is
+        // wDrift * dtLoc (dtLoc != dt when the time step changes).
         if (currentMF &&
             !deposit_esirkepov(jArr, xOld, xNew, qFactor * p.rdata(iqp_),
-                               wDrift, ploLoc, invDxLoc, dxLoc, invDt,
-                               invVol[iLev]))
+                               wDrift * dtLoc * invDt, ploLoc, invDxLoc,
+                               dxLoc, invDt, invVol[iLev]))
           movedTooFar = true;
 
         // A trial push only deposits the current of the trial state.
