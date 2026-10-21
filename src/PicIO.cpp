@@ -805,10 +805,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   const bool logCount = standaloneLog && log_particle_count();
   const bool logFaces = standaloneLog && log_face_budget();
   const bool logBodyQ = standaloneLog && use_body();
-  const bool logSheath =
-      standaloneLog && floatingBody.use && floatingBody.type == "sheath";
-  const bool logReemit =
-      standaloneLog && floatingBody.use && floatingBody.type == "reemit";
+  const bool logReemit = standaloneLog && floatingBody.use;
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     if (picLogStream.is_open()) {
@@ -835,8 +832,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
-      if (ionoEmission.use ||
-          (floatingBody.use && floatingBody.type == "reemit"))
+      if (ionoEmission.use || floatingBody.use)
         picLogStream << "\t" << std::setw(wCol) << "nBodyInject" << "\t"
                      << std::setw(wCol) << "mBodyInject";
     }
@@ -866,14 +862,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                        << std::string("mOut_") + fName[f] + "_S" +
                               std::to_string(i);
     }
-    // #FLOATINGBODY sheath: the body potential [V], the reflected electrons,
-    // the weight and normal energy [V] of the electrons that reach the body;
-    // reemit: the re-emitted charge.
-    if (logSheath)
-      picLogStream << "\t" << std::setw(wCol) << "phiBody" << "\t"
-                   << std::setw(wCol) << "nBodyReflect" << "\t"
-                   << std::setw(wCol) << "wBodyHit" << "\t"
-                   << std::setw(wCol) << "eBodyHit";
+    // #FLOATINGBODY: the re-emitted charge.
     if (logReemit)
       picLogStream << "\t" << std::setw(wCol) << "qBodyReemit";
     picLogStream << std::endl;
@@ -956,8 +945,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
-        if (ionoEmission.use ||
-            (floatingBody.use && floatingBody.type == "reemit"))
+        if (ionoEmission.use || floatingBody.use)
           picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[3] << "\t"
                        << std::setw(wCol) << bodyAbsorb[4];
       }
@@ -976,14 +964,6 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
             picLogStream << "\t" << std::setw(wCol)
                          << faceBudget[i * 12 + 2 * f] << "\t"
                          << std::setw(wCol) << faceBudget[i * 12 + 2 * f + 1];
-      // Energy per charge in code units -> volts.
-      const Real toVolt = cProtonMassSI * fi->get_unorm_si() *
-                          fi->get_unorm_si() / cUnitChargeSI;
-      if (logSheath)
-        picLogStream << "\t" << std::setw(wCol) << floatingBody.phi * toVolt
-                     << "\t" << std::setw(wCol) << floatingBody.nReflect
-                     << "\t" << std::setw(wCol) << floatingBody.hitW << "\t"
-                     << std::setw(wCol) << floatingBody.hitE * toVolt;
       if (logReemit)
         picLogStream << "\t" << std::setw(wCol) << floatingBody.qReemit;
       picLogStream << std::endl;

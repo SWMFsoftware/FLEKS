@@ -5,7 +5,7 @@ Same deck as run_mars/final_coarse (stable to 200 s), shortened.
 Physics & Features:
 - c = uNormSI = 3000 km/s (10x the solar wind).
 - Absorbing, conducting body at 3590 km (200 km altitude, rhybrid particle obstacle),
-  made floating (FLOATINGBODY reemit): the net electron charge it absorbs is re-emitted.
+  made floating (FLOATINGBODY): the net electron charge it absorbs is re-emitted.
 - Ionospheric emission shell at 3790 km (IONOSPHEREEMISSION, rhybrid): O2+ 2e25/s,
   O+ 1.4e25/s, 20000 K; the photochemical boundary is at the shell.
 - Mixed exosphere: hot H (Chamberlain) and hot O coronae (rhybrid), cold O and CO2.
@@ -309,7 +309,6 @@ F                       chapmanFunction      matches UseChapman = F
 T                       useSource
 
 #FLOATINGBODY
-reemit                  type
 3790000.0               radius [m]  the emission shell
 20000.0                 T [K]       ionospheric electrons
 8                       particlesPerCell

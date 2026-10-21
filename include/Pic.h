@@ -431,45 +431,32 @@ private:
   } ionoEmission;
 
   // #FLOATINGBODY: the absorbing body floats, i.e. it takes no net current.
-  // sheath: a body potential phi (code units of energy per charge), relaxed
-  // with the time tau toward zero net absorbed current, reflects the
-  // electrons whose normal energy is below it (subgrid sheath).
-  // reemit: the net electron charge absorbed in a step is re-emitted as an
-  // outward half-Maxwellian of temperature T over the sphere of the given
-  // radius (current closure through the conducting body).
+  // The net electron charge absorbed in a step is re-emitted as an outward
+  // half-Maxwellian of temperature T over the sphere of the given radius
+  // (current closure through the conducting body).
   struct FloatingBody {
     bool use = false;
-    std::string type = "sheath";
-    amrex::Real tauSI = 1.0;
     amrex::Real radiusSI = 0, tempSI = 0, vth = 0;
     int nPPC = 8;
-    amrex::Real phi = 0;
     // Cumulative global tallies at the last update.
-    amrex::Real qIon = 0, qEle = 0, hitW = 0, hitE = 0, nReflect = 0;
-    amrex::Real qReemit = 0;
+    amrex::Real qIon = 0, qEle = 0, qReemit = 0;
     ShellWeights shell; // area only
   } floatingBody;
 
   // The floating-body state of the last accepted push, kept across the
   // trial push of a predictor-corrector step (see backup_particle_state()).
-  amrex::Real floatingBodyBackup[7] = { 0, 0, 0, 0, 0, 0, 0 };
+  amrex::Real floatingBodyBackup[3] = { 0, 0, 0 };
   void backup_floating_body() {
     const auto& fb = floatingBody;
-    const amrex::Real v[7] = { fb.phi,  fb.qIon,     fb.qEle,   fb.hitW,
-                               fb.hitE, fb.nReflect, fb.qReemit };
-    for (int i = 0; i < 7; ++i)
-      floatingBodyBackup[i] = v[i];
+    floatingBodyBackup[0] = fb.qIon;
+    floatingBodyBackup[1] = fb.qEle;
+    floatingBodyBackup[2] = fb.qReemit;
   }
   void restore_floating_body() {
     auto& fb = floatingBody;
-    amrex::Real* v[7] = { &fb.phi,  &fb.qIon,     &fb.qEle,   &fb.hitW,
-                          &fb.hitE, &fb.nReflect, &fb.qReemit };
-    for (int i = 0; i < 7; ++i)
-      *v[i] = floatingBodyBackup[i];
-    if (fb.use && fb.type == "sheath")
-      for (int i : kineticSpecies_)
-        if (parts[i]->get_charge() < 0)
-          parts[i]->set_body_sheath(true, fb.phi);
+    fb.qIon = floatingBodyBackup[0];
+    fb.qEle = floatingBodyBackup[1];
+    fb.qReemit = floatingBodyBackup[2];
   }
 
   void update_floating_body();

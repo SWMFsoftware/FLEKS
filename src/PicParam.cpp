@@ -377,21 +377,12 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#FLOATINGBODY") {
     auto& fb = floatingBody;
     fb.use = true;
-    param.read_var("type", fb.type);
-    if (fb.type == "sheath") {
-      param.read_var("relaxationTime", fb.tauSI);
-      if (fb.tauSI <= 0)
-        Abort("Error: #FLOATINGBODY relaxationTime must be positive.");
-    } else if (fb.type == "reemit") {
-      param.read_var("radius", fb.radiusSI);
-      param.read_var("T", fb.tempSI);
-      param.read_var("particlesPerCell", fb.nPPC);
-      if (fb.radiusSI <= 0 || fb.tempSI < 0 || fb.nPPC < 1)
-        Abort("Error: #FLOATINGBODY reemit needs radius > 0, T >= 0 and "
-              "particlesPerCell >= 1.");
-    } else {
-      Abort("Error: #FLOATINGBODY type must be sheath or reemit.");
-    }
+    param.read_var("radius", fb.radiusSI);
+    param.read_var("T", fb.tempSI);
+    param.read_var("particlesPerCell", fb.nPPC);
+    if (fb.radiusSI <= 0 || fb.tempSI < 0 || fb.nPPC < 1)
+      Abort("Error: #FLOATINGBODY needs radius > 0, T >= 0 and "
+            "particlesPerCell >= 1.");
   } else if (command == "#IONOSPHEREEMISSIONPROFILE") {
     param.read_var("type", ionoEmission.profile);
     if (ionoEmission.profile == "photochemistry")
@@ -1115,13 +1106,9 @@ void Pic::convert_floating_body() {
   const double unormSI = fi->get_unorm_si();
   const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
   fb.vth = std::sqrt(fb.tempSI * tFactor / fi->get_species_mass(iE));
-  if (fb.type == "sheath")
-    Print() << "  #FLOATINGBODY sheath: relaxation time " << fb.tauSI
-            << " s\n";
-  else
-    Print() << "  #FLOATINGBODY reemit: r = " << fb.radiusSI / 1e3
-            << " km, T = " << fb.tempSI << " K, " << fb.nPPC
-            << " particles per cell\n";
+  Print() << "  #FLOATINGBODY: r = " << fb.radiusSI / 1e3
+          << " km, T = " << fb.tempSI << " K, " << fb.nPPC
+          << " particles per cell\n";
 }
 
 //==========================================================

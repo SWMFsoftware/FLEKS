@@ -89,7 +89,6 @@ reflect                 z-
 reflect                 z+
 
 #FLOATINGBODY
-reemit                  type
 1.8e5                   radius [m]  re-emission sphere (body 1.5e5 m, cells 3.3e4 m)
 100000.0                T [K]
 8                       particlesPerCell

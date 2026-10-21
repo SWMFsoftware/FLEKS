@@ -1056,51 +1056,24 @@ void Pic::update_floating_body() {
     return;
   timing_func("Pic::update_floating_body");
 
-  // Global cumulative tallies: absorbed ion charge (> 0), absorbed electron
-  // charge (< 0), electrons that reached the sphere, reflected electrons.
-  Vector<Real> t(5, 0.0);
-  for (int i : kineticSpecies_) {
-    const Real q = parts[i]->get_body_absorb_charge();
-    if (parts[i]->get_charge() > 0)
-      t[0] += q;
-    else
-      t[1] += q;
-    t[2] += parts[i]->get_body_hit_weight();
-    t[3] += parts[i]->get_body_hit_energy();
-    t[4] += parts[i]->get_body_reflect_count();
-  }
+  // Global cumulative absorbed ion (> 0) and electron (< 0) charge.
+  Vector<Real> t(2, 0.0);
+  for (int i : kineticSpecies_)
+    t[parts[i]->get_charge() > 0 ? 0 : 1] +=
+        parts[i]->get_body_absorb_charge();
   ParallelDescriptor::ReduceRealSum(t.data(), t.size());
   const Real dQi = t[0] - fb.qIon, dQe = -(t[1] - fb.qEle);
-  const Real dHitW = t[2] - fb.hitW, dHitE = t[3] - fb.hitE;
   fb.qIon = t[0];
   fb.qEle = t[1];
-  fb.hitW = t[2];
-  fb.hitE = t[3];
-  fb.nReflect = t[4];
 
-  if (fb.type == "sheath") {
-    // Integral control toward zero net absorbed current, in units of the
-    // mean normal energy per charge of the electrons reaching the sphere
-    // (~kTe/e), with the relaxation time tau.
-    if (dQi + dQe > 0 && dHitW > 0) {
-      const Real f = (dQe - dQi) / (dQe + dQi);
-      fb.phi = std::max(0.0, fb.phi + tc->get_dt_si() / fb.tauSI *
-                                          (dHitE / dHitW) * f);
-    }
-    for (int i : kineticSpecies_)
-      if (parts[i]->get_charge() < 0)
-        parts[i]->set_body_sheath(true, fb.phi);
-    return;
-  }
-
-  // reemit: return the net electron charge absorbed in this step.
+  // Return the net electron charge absorbed in this step.
   const Real deficit = dQe - dQi;
   if (deficit <= 0)
     return;
   if (!shell_weights_up_to_date(fb.shell))
     build_shell_weights(
         fb.shell, fb.radiusSI, [](const Real*, Real) { return 1.0; },
-        "#FLOATINGBODY reemit");
+        "#FLOATINGBODY");
   if ((int)fb.shell.weight.size() != n_lev())
     return;
   for (int i : kineticSpecies_) {
@@ -1982,8 +1955,8 @@ void Pic::advance_particles_and_sources(int pushStage) {
 
 //==========================================================
 void Pic::finish_particle_push() {
-  // Floating body (#FLOATINGBODY): update the sheath potential from the
-  // currents of this push, or re-emit the net absorbed electron charge.
+  // Floating body (#FLOATINGBODY): re-emit the net electron charge absorbed
+  // in this push.
   update_floating_body();
 
   // Calling re_sampling after particle mover so that all the particles

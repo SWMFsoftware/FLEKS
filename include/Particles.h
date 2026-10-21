@@ -419,16 +419,8 @@ protected:
   amrex::Real bodyAbsorbCount = 0;
   amrex::Real bodyAbsorbCharge = 0;
   amrex::Real bodyAbsorbMass = 0;
-  // #FLOATINGBODY sheath: an electron that enters the sphere is absorbed only
-  // if its normal kinetic energy per charge exceeds bodySheathPhi (code units
-  // of energy per charge), otherwise it is reflected specularly. Cumulative
-  // tallies of the electrons that reach the sphere (weight |q|, and |q| times
-  // the normal energy per charge) and of the reflected ones.
-  bool bodySheath = false;
-  amrex::Real bodySheathPhi = 0;
-  amrex::Real bodyHitWeight = 0, bodyHitEnergy = 0, bodyReflectCount = 0;
   // Cumulative number / mass of the particles injected at the body
-  // (#IONOSPHEREEMISSION, #FLOATINGBODY reemit).
+  // (#IONOSPHEREEMISSION, #FLOATINGBODY).
   amrex::Real bodyInjectCount = 0;
   amrex::Real bodyInjectMass = 0;
 
@@ -439,7 +431,7 @@ protected:
   struct TallyState {
     amrex::Real absorbCount[6], absorbCharge[6], absorbMass[6];
     amrex::Real faceIn[6], faceOut[6];
-    amrex::Real bodyAbsorb[3], bodyHit[3], bodyInject[2];
+    amrex::Real bodyAbsorb[3], bodyInject[2];
     std::map<int64_t, amrex::Real> fluxAcc, openDrift;
   } tallyBackup;
 
@@ -454,9 +446,6 @@ protected:
     t.bodyAbsorb[0] = bodyAbsorbCount;
     t.bodyAbsorb[1] = bodyAbsorbCharge;
     t.bodyAbsorb[2] = bodyAbsorbMass;
-    t.bodyHit[0] = bodyHitWeight;
-    t.bodyHit[1] = bodyHitEnergy;
-    t.bodyHit[2] = bodyReflectCount;
     t.bodyInject[0] = bodyInjectCount;
     t.bodyInject[1] = bodyInjectMass;
     t.fluxAcc = injectFluxAcc;
@@ -474,9 +463,6 @@ protected:
     bodyAbsorbCount = t.bodyAbsorb[0];
     bodyAbsorbCharge = t.bodyAbsorb[1];
     bodyAbsorbMass = t.bodyAbsorb[2];
-    bodyHitWeight = t.bodyHit[0];
-    bodyHitEnergy = t.bodyHit[1];
-    bodyReflectCount = t.bodyHit[2];
     bodyInjectCount = t.bodyInject[0];
     bodyInjectMass = t.bodyInject[1];
     injectFluxAcc = t.fluxAcc;
@@ -896,40 +882,6 @@ public:
         // The reflection moves the particle, so nothing may be cached here.
         if (grid->is_inside_body(xyz))
           reflect_particle_at_body(p);
-      } else if (bodySheath && qomSign < 0) {
-        // #FLOATINGBODY sheath: the subgrid sheath of the floating body
-        // reflects the electrons whose normal energy is below its potential
-        // and lets the others through. The test uses the exact sphere, like
-        // the reflecting body; the staircase cells outside it do not absorb.
-        amrex::Real xyz[3] = { 0.0, 0.0, 0.0 };
-        for (int d = 0; d < nDim; ++d)
-          xyz[d] = p.pos(d);
-        if (grid->is_inside_body(xyz)) {
-          const amrex::Real* c = grid->get_body_center();
-          amrex::Real r2 = 0, vr = 0;
-          for (int d = 0; d < nDim; ++d) {
-            const amrex::Real dr = p.pos(d) - c[d];
-            r2 += dr * dr;
-            vr += dr * p.rdata(iup_ + d);
-          }
-          const amrex::Real vn = r2 > 0 ? vr / std::sqrt(r2) : 0.0;
-          // Only an electron moving inward meets the sheath. One moving
-          // outward inside the sphere (e.g. emitted in a plasma cell that
-          // reaches into it) leaves, as an ion there does.
-          if (vn < 0) {
-            const amrex::Real w = std::abs(p.rdata(iqp_));
-            const amrex::Real en = 0.5 * mass * vn * vn / std::abs(charge);
-            bodyHitWeight += w;
-            bodyHitEnergy += w * en;
-            if (en <= bodySheathPhi) {
-              reflect_particle_at_body(p);
-              bodyReflectCount += 1.0;
-            } else {
-              body_absorb_tally(p.rdata(iqp_));
-              return true;
-            }
-          }
-        }
       } else {
         locate_particle_cell(p, ab, status, isInsideBox, cellMask);
         isLocateValid = true;
@@ -1389,13 +1341,6 @@ public:
   amrex::Real get_body_absorb_charge() const { return bodyAbsorbCharge; }
   amrex::Real get_body_absorb_mass() const { return bodyAbsorbMass; }
   amrex::Real get_body_inject_count() const { return bodyInjectCount; }
-  void set_body_sheath(bool on, amrex::Real phi) {
-    bodySheath = on;
-    bodySheathPhi = phi;
-  }
-  amrex::Real get_body_hit_weight() const { return bodyHitWeight; }
-  amrex::Real get_body_hit_energy() const { return bodyHitEnergy; }
-  amrex::Real get_body_reflect_count() const { return bodyReflectCount; }
   amrex::Real get_body_inject_mass() const { return bodyInjectMass; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
