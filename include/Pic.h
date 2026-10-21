@@ -419,11 +419,6 @@ private:
     amrex::Real solarDir[3] = { 1.0, 0.0, 0.0 };
     amrex::Real noon = 1.0, night = 0.1;
     int nPPC = 8;
-    // #IONOSPHEREEMISSIONPROFILE: "cosSza" (rhybrid) or "photochemistry",
-    // a = night + (noon - night) (Phi / Phi_subsolar)^exponent with Phi the
-    // photoionization column below the sphere.
-    std::string profile = "cosSza";
-    amrex::Real exponent = 1.0;
     amrex::Vector<amrex::Real> rateSI, tempSI;
     // Code units / caches.
     amrex::Vector<amrex::Real> vth;

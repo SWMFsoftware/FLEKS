@@ -24,10 +24,4 @@ code mass of a proton `e^2 / (1e7 lNormSI m_p)`:
   validator recomputes as `Pic::build_emission_weights` does (measured within
   0.5%).
 
-The `photochem` variant uses `#IONOSPHEREEMISSIONPROFILE photochemistry` with
-exponent 0.5 over an optically thick layer (tau = 100) whose photoionization
-column is proportional to cos(SZA); the validator recomputes the column with
-the attenuation of the source terms. A photochemical boundary at the shell
-keeps the layer's ions out of the box, so the log checks are unchanged.
-
 Needs a 3D AMReX build.

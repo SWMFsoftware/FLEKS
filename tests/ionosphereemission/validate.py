@@ -15,10 +15,8 @@ ratio of the ion mass on the nodes with x > 0 to those with x < 0 is the ratio
 of the shell weights, sum(area * a) per hemisphere, less half of the cells
 next to the plane x = 0 (deposited onto it). The weights are computed
 here as in Pic::build_emission_weights (deterministic stratified sampling):
-a = night + (noon - night) cos(SZA) for the default cosSza profile (5.5 for a
-smooth sphere), and a = night + (noon - night) (Phi/Phi_subsolar)^0.5 with the
-photoionization column Phi of the photochem variant, an optically thick layer
-for which Phi ~ cos(SZA) (7.0 for a smooth sphere). Tolerance 3%.
+a = night + (noon - night) cos(SZA) on the dayside and night on the nightside
+(5.5 for a smooth sphere). Tolerance 3%.
 """
 import glob
 import logging
@@ -36,10 +34,6 @@ def set_run_dir(run_dir):
     global RUN_DIR
     RUN_DIR = run_dir
 
-
-def _ions(test_name):
-    """Index of the first ion species (photochem has the electron slot)."""
-    return 1 if test_name and test_name.endswith("photochem") else 0
 
 E_SI = 1.602176634e-19
 MP_SI = 1.67262192369e-27
@@ -86,9 +80,8 @@ def validate_log(pic_diags=None, test_name=None):
           f"absorbed / injected mass = {absorbed:.2e} (outward emission, "
           f"tol 1e-3)")
 
-    i0 = _ions(test_name)
     for i, (r, m) in enumerate(zip(RATES, MASSES)):
-        grow = (b[f"Mpart{i + i0}"] - a[f"Mpart{i + i0}"]) / dt / (r * m * M1)
+        grow = (b[f"Mpart{i}"] - a[f"Mpart{i}"]) / dt / (r * m * M1)
         check(abs(grow - 1) < 1e-3,
               f"species {i}: box mass grows at {grow:.6f} x its emission rate "
               f"(tol 1e-3)")
@@ -103,50 +96,15 @@ def validate_log(pic_diags=None, test_name=None):
 # ---------------------------------------------------------------------------
 NCELL, LO, RSHELL, RBODY = 24, -4.0, 2.0, 1.5   # code units (lNorm = 1e5 m)
 NOON, NIGHT = 1.0, 0.1
-# photochem layer (SI)
-N0, H0, SIGMA, NU = 1.0e12, 1.0e3, 1.0e-13, 1.0e-3
-RP, R1 = 1.5e5, 2.0e5
-MINPROD, TAUFLOOR, TAUCUT, MUFLOOR = 1.0e-10, 6.0e-3, 11.5, 5.0e-4
 
 
-def _attenuation(x, r):
-    """ExoSource::photo_attenuation (non-Chapman) for the solar dir +x."""
-    proj = x
-    if proj <= 0:
-        p = math.sqrt(max(r * r - proj * proj, 0.0))
-        if p <= RP:
-            return MINPROD
-        n = N0 * math.exp(-(p - RP) / H0)
-        tau = max(SIGMA * n * H0 * math.sqrt(2 * math.pi * p / H0), TAUFLOOR)
-    else:
-        n = N0 * math.exp(-(r - RP) / H0)
-        tau = max(SIGMA * n * H0, TAUFLOOR) / max(proj / r, MUFLOOR)
-    if tau >= TAUCUT:
-        return MINPROD
-    return max(math.exp(-tau), MINPROD)
-
-
-def _column(d):
-    """ExoSource::column_photoproduction_si along the unit direction d."""
-    col, r = 0.0, RP
-    dr0 = min((R1 - RP) / 200, H0 / 8)
-    while r < R1:
-        dr = min(dr0, R1 - r)
-        rm = r + 0.5 * dr
-        col += NU * N0 * math.exp(-(rm - RP) / H0) * \
-            _attenuation(rm * d[0], rm) * dr
-        r += dr
-    return col
-
-
-def _hemisphere_weights(photochem):
+def _hemisphere_weights():
     dx = 8.0 / NCELL
     c = LO + (np.arange(NCELL) + 0.5) * dx
     nSub, h = 24, 0.2 * dx
     sub = ((np.arange(nSub) + 0.5) / nSub - 0.5) * dx
     sx, sy, sz = np.meshgrid(sub, sub, sub, indexing="ij")
     dV = dx**3 / nSub**3
-    phiSS = _column((1.0, 0.0, 0.0)) if photochem else 1.0
     # Node sums off the plane x = 0: the linear deposit of particles placed
     # uniformly in a cell gives half the mass of the cells next to the plane
     # to the nodes on it.
@@ -162,11 +120,7 @@ def _hemisphere_weights(photochem):
                 if nHit == 0:
                     continue
                 cosSza = xc / rc
-                if photochem:
-                    phi = _column((xc / rc, yc / rc, zc / rc)) / phiSS
-                    a = NIGHT + (NOON - NIGHT) * math.sqrt(max(phi, 0.0))
-                else:
-                    a = NIGHT + (NOON - NIGHT) * cosSza if cosSza > 0 else NIGHT
+                a = NIGHT + (NOON - NIGHT) * cosSza if cosSza > 0 else NIGHT
                 w = nHit * dV / h * a
                 if abs(xc) < dx:
                     w *= 0.5
@@ -193,17 +147,15 @@ def validate_plot(test_name=None):
         return False, "no 3d plot of step 1"
     names, d = _read_out(plots[0])
     x = d[:, 0]
-    photochem = bool(test_name and test_name.endswith("photochem"))
-    i0 = _ions(test_name)
     ratios = []
-    for iS in (i0, i0 + 1):
+    for iS in (0, 1):
         rho = d[:, names.index(f"rhoS{iS}")]
         eps = 1e-9 * (x.max() - x.min())
         ratios.append(rho[x > eps].sum() / rho[x < -eps].sum())
-    wDay, wNight = _hemisphere_weights(photochem)
+    wDay, wNight = _hemisphere_weights()
     expected = wDay / wNight
     reasons = []
-    for iS, ratio in zip((i0, i0 + 1), ratios):
+    for iS, ratio in zip((0, 1), ratios):
         logger.debug("    species %d: day/night emission %.4f, expected %.4f",
                      iS, ratio, expected)
         if not math.isfinite(ratio) or abs(ratio / expected - 1) > 0.03:

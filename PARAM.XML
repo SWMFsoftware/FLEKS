@@ -1536,37 +1536,6 @@ photochemical boundary (#PHOTOCHEMICALBOUNDARY) at the same radius, so that the
 ionosphere below is represented only by the emission.
 </command>
 
-<command name="IONOSPHEREEMISSIONPROFILE" alias="IONOSPHEREEMISSIONPROFILE_FLEKS0,IONOSPHEREEMISSIONPROFILE_FLEKS1,IONOSPHEREEMISSIONPROFILE_FLEKS2" multiple="F">
-  <parameter name="type" type="string" input="select">
-    <option name="cosSza" default="T"/>
-    <option name="photochemistry"/>
-  </parameter>
-  <if expr="$type eq 'photochemistry'">
-    <parameter name="exponent" type="real" min="0" default="1.0"/>
-  </if>
-
-#IONOSPHEREEMISSIONPROFILE
-photochemistry     type
-0.5                exponent
-
-Shape of the #IONOSPHEREEMISSION emission over the sphere. cosSza (default) is
-the rhybrid profile a = noon + (night - noon)(1 - cos SZA) on the dayside and
-a = night on the nightside. photochemistry uses
-a = night + (noon - night) (Phi / Phi_subsolar)\^exponent, where Phi is the
-photoionization column below the emission sphere along each direction: the
-integral from #PLANETRADIUS to the sphere of sum_c nu_c n_c A over the
-radius, with the #PHOTOIONIZATION and photo #CHEMISTRY frequencies, the
-#EXOSPHERE profiles and the attenuation A of the production (#OPTICALDEPTH,
-#SHADOWCYLINDER). The profile then follows the solar zenith angle dependence
-of the ionospheric production computed by the source terms; for an optically
-thick atmosphere Phi is proportional to cos SZA, so exponent 1 recovers the
-cosSza profile.
-Exponent 0.5 follows the peak density of a Chapman layer in photochemical
-equilibrium, n proportional to sqrt(production). The solar direction of Phi_subsolar is the
-one of #IONOSPHEREEMISSION; keep it equal to that of #OPTICALDEPTH. Needs
-#SOURCE.
-</command>
-
 <command name="PHOTOCHEMICALBOUNDARY" alias="PHOTOCHEMICALBOUNDARY_FLEKS0,PHOTOCHEMICALBOUNDARY_FLEKS1,PHOTOCHEMICALBOUNDARY_FLEKS2" multiple="F">
   <parameter name="radius" type="real" min="0" default="0"/>
 

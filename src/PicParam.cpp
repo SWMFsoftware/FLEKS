@@ -383,13 +383,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (fb.radiusSI <= 0 || fb.tempSI < 0 || fb.nPPC < 1)
       Abort("Error: #FLOATINGBODY needs radius > 0, T >= 0 and "
             "particlesPerCell >= 1.");
-  } else if (command == "#IONOSPHEREEMISSIONPROFILE") {
-    param.read_var("type", ionoEmission.profile);
-    if (ionoEmission.profile == "photochemistry")
-      param.read_var("exponent", ionoEmission.exponent);
-    else if (ionoEmission.profile != "cosSza")
-      Abort("Error: #IONOSPHEREEMISSIONPROFILE type must be cosSza or "
-            "photochemistry.");
   } else if (command == "#SOURCEWEIGHTFLOOR") {
     param.read_var("minWeightRatio", sourceMinWeightRatio);
     if (sourceMinWeightRatio < 0)
@@ -1066,12 +1059,7 @@ void Pic::convert_ionosphere_emission() {
   ie.vth.assign(nS, 0.0);
   Print() << "  #IONOSPHEREEMISSION: r = " << ie.radiusSI / 1e3
           << " km, profile noon/night = " << ie.noon << "/" << ie.night
-          << ", " << ie.nPPC << " particles per cell and step, profile "
-          << ie.profile
-          << (ie.profile == "photochemistry"
-                  ? " (exponent " + std::to_string(ie.exponent) + ")"
-                  : std::string())
-          << "\n";
+          << ", " << ie.nPPC << " particles per cell and step\n";
   for (int iS = 0; iS < nS; iS++) {
     const double mass = fi->get_species_mass(iS);
     ie.vth[iS] = mass > 0 ? std::sqrt(ie.tempSI[iS] * tFactor / mass) : 0.0;

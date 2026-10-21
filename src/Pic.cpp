@@ -978,31 +978,13 @@ void Pic::build_emission_weights() {
     return;
 
   const Real* sd = ie.solarDir;
-  // Emission profile a(direction from the center).
-  const bool photochem = ie.profile == "photochemistry";
-  Real phiSubsolar = 0;
-  if (photochem) {
-    if (source == nullptr)
-      Abort("Error: #IONOSPHEREEMISSIONPROFILE photochemistry needs the "
-            "source terms (#SOURCE).");
-    phiSubsolar = source->column_photoproduction_si(sd, 0.0, ie.radiusSI);
-    if (phiSubsolar <= 0)
-      Abort("Error: #IONOSPHEREEMISSIONPROFILE photochemistry: no "
-            "photoionization below the emission sphere at the subsolar "
-            "point.");
-  }
+  // Emission profile a(direction from the center): rhybrid
+  // ionoCosSzaDayConstantNight.
   auto profile_factor = [&](const Real* x, Real rc) {
     const Real cosSza =
         rc > 0 ? (x[0] * sd[0] + x[1] * sd[1] + x[2] * sd[2]) / rc : 1.0;
-    if (!photochem)
-      // rhybrid ionoCosSzaDayConstantNight profile.
-      return cosSza > 0 ? ie.noon + (ie.night - ie.noon) * (1 - cosSza)
-                        : ie.night;
-    const Real dir[3] = { x[0] / rc, x[1] / rc, x[2] / rc };
-    const Real phi =
-        source->column_photoproduction_si(dir, 0.0, ie.radiusSI) / phiSubsolar;
-    return ie.night +
-           (ie.noon - ie.night) * std::pow(std::max(phi, 0.0), ie.exponent);
+    return cosSza > 0 ? ie.noon + (ie.night - ie.noon) * (1 - cosSza)
+                      : ie.night;
   };
   build_shell_weights(ie.shell, ie.radiusSI, profile_factor,
                       "#IONOSPHEREEMISSION");
