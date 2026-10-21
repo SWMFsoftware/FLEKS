@@ -170,7 +170,7 @@ public:
 
   // Read the commands that decide whether and how grid, fi, pic and pt are
   // constructed; the caller rolls back so read_param() reads the rest.
-  void read_construction_parameters(ReadParam &param);
+  void read_construction_parameters();
   void validate_configuration() const;
   void save_restart(std::string restartOutDir);
   void save_restart_header();

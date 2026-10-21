@@ -182,7 +182,7 @@ void Domain::init(double time, const int iDomain,
 
   // Read the commands needed to construct grid, fi, pic and pt, then rewind so
   // read_param() can read the rest once they exist.
-  read_construction_parameters(readParam);
+  read_construction_parameters();
   readParam.roll_back();
   validate_configuration();
 
@@ -1025,42 +1025,42 @@ void Domain::init_time_ctr() {
 }
 
 //========================================================
-void Domain::read_construction_parameters(ReadParam &rp) {
+void Domain::read_construction_parameters() {
   // Only the commands needed to construct grid, fi, pic and pt are read here;
   // the caller rolls back the stream and read_param() reads the rest.
   std::string command;
   bool hasFieldSolver = false;
-  rp.set_verbose(false);
-  rp.set_command_suffix(gridName);
-  rp.set_component(component);
-  while (rp.get_next_command(command)) {
+  readParam.set_verbose(false);
+  readParam.set_command_suffix(gridName);
+  readParam.set_component(component);
+  while (readParam.get_next_command(command)) {
     if (!is_construction_command(command))
       continue;
 
-    rp.set_verbose(ParallelDescriptor::IOProcessor());
+    readParam.set_verbose(ParallelDescriptor::IOProcessor());
     Print() << "\n"
             << component << ": " << command << " " << gridName << std::endl;
 
     if (command == "#RESTART") {
-      rp.read_var("doRestart", doRestart);
+      readParam.read_var("doRestart", doRestart);
       doRestartPT = doRestart;
     } else if (command == "#INITFROMSWMF") {
-      rp.read_var("initFromSWMF", initFromSWMF);
+      readParam.read_var("initFromSWMF", initFromSWMF);
     } else if (command == "#RECEIVEICONLY") {
-      rp.read_var("receiveICOnly", receiveICOnly);
+      readParam.read_var("receiveICOnly", receiveICOnly);
     } else if (command == "#PARTICLETRACKER") {
-      rp.read_var("usePT", usePT);
+      readParam.read_var("usePT", usePT);
     } else if (command == "#FIELDSOLVER") {
       hasFieldSolver = true;
       std::string mode;
-      rp.read_var("fieldSolverMode", mode);
+      readParam.read_var("fieldSolverMode", mode);
       set_field_solver_mode(mode);
     } else if (command == "#HYBRIDPIC") {
       // Deprecated; #FIELDSOLVER takes priority.
       Print()
           << "  Warning: #HYBRIDPIC is deprecated; use #FIELDSOLVER instead.\n";
       bool useHyb = false;
-      rp.read_var("useHybridPIC", useHyb);
+      readParam.read_var("useHybridPIC", useHyb);
       if (!hasFieldSolver && useHyb)
         set_field_solver_mode("hybrid");
     } else if (command == "#SOLVEEM") {
@@ -1068,7 +1068,7 @@ void Domain::read_construction_parameters(ReadParam &rp) {
       Print()
           << "  Warning: #SOLVEEM is deprecated; use #FIELDSOLVER instead.\n";
       bool sEM = true;
-      rp.read_var("solveEM", sEM);
+      readParam.read_var("solveEM", sEM);
       if (!hasFieldSolver) {
         if (sEM)
           set_field_solver_mode("implicit");
@@ -1078,8 +1078,8 @@ void Domain::read_construction_parameters(ReadParam &rp) {
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
-        rp.read_var("min", lo);
-        rp.read_var("max", hi);
+        readParam.read_var("min", lo);
+        readParam.read_var("max", hi);
         domainBox.setLo(i, lo);
         domainBox.setHi(i, hi);
       }
@@ -1087,21 +1087,21 @@ void Domain::read_construction_parameters(ReadParam &rp) {
         Abort("Error: invalid input!");
     } else if (command == "#NCELL") {
       for (int i = 0; i < nDim; ++i) {
-        rp.read_var("nCell", nCell[i]);
+        readParam.read_var("nCell", nCell[i]);
         if (nCell[i] <= 0)
           Abort("Error: invalid input!");
       }
       isFake2D = (nDim == 3) && (nCell[iz_] == 1);
 
     } else if (command == "#REFINEMENTRATIO") {
-      rp.read_var("refineRatio", refinementRatio);
+      readParam.read_var("refineRatio", refinementRatio);
       if (refinementRatio <= 1)
         Abort("Error: #REFINEMENTRATIO must be > 1");
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;
       for (int i = 0; i < nDim; ++i) {
-        rp.read_var("maxBlockSize", tmp);
+        readParam.read_var("maxBlockSize", tmp);
         maxBlockSize[i] = tmp;
       }
     } else if (command == "#PERIODICITY") {
@@ -1111,11 +1111,11 @@ void Domain::read_construction_parameters(ReadParam &rp) {
                                                "isPeriodicZ" };
       for (int i = 0; i < nDim; ++i) {
         bool isPeriodic;
-        rp.read_var(isPeriodicName[i], isPeriodic);
+        readParam.read_var(isPeriodicName[i], isPeriodic);
         set_periodicity(i, isPeriodic);
       }
     }
-    rp.set_verbose(false);
+    readParam.set_verbose(false);
   }
 }
 
