@@ -119,42 +119,6 @@ const ParameterCommand *find_parameter_command(const std::string &command) {
   return nullptr;
 }
 
-bool is_singleton_command(const std::string &command) {
-  static const char *const singletonCommands[] = { "#AUTOSUBCYCLE",
-                                                   "#BSUBCYCLE",
-                                                   "#DISCRETIZE",
-                                                   "#ELECTRONADVECTION",
-                                                   "#ELECTRONCOLLISION",
-                                                   "#ELECTRONCONDUCTION",
-                                                   "#ELECTRONPRESSURE",
-                                                   "#ELECTRONTEMPERATURE",
-                                                   "#FIELDBOXBOUNDARY",
-                                                   "#FIELDINTEGRATOR",
-                                                   "#FIELDSOLVER",
-                                                   "#FIELDSUBCYCLE",
-                                                   "#GEOMETRY",
-                                                   "#HYBRIDPIC",
-                                                   "#HYPERRESISTIVITY",
-                                                   "#INITFROMSWMF",
-                                                   "#LOADBALANCE",
-                                                   "#MINIMUMDENSITY",
-                                                   "#NCELL",
-                                                   "#NOUTFILE",
-                                                   "#PARTICLETRACKER",
-                                                   "#PERIODICITY",
-                                                   "#RECEIVEICONLY",
-                                                   "#RESTART",
-                                                   "#SOURCE",
-                                                   "#TIMESTEP",
-                                                   "#TIMESTEPPING" };
-
-  for (const char *singleton : singletonCommands) {
-    if (command == singleton)
-      return true;
-  }
-  return false;
-}
-
 std::string canonical_command(const std::string &command) {
   if (command == "#DISCRETIZATION")
     return "#DISCRETIZE";
@@ -1219,15 +1183,7 @@ void Domain::read_param(const bool readGridInfo) {
       const std::string key = canonical_command(command);
       const ParameterCommandLocation location =
           locate_command(parameterText, command, commandSearchPosition);
-      const auto previous = parameterCommandLocations.find(key);
-      if (previous != parameterCommandLocations.end() &&
-          is_singleton_command(key)) {
-        Abort("Duplicate command " + command + " at " +
-              format_location(location) + "; first occurrence was at " +
-              format_location(previous->second) + ".");
-      }
-      if (previous == parameterCommandLocations.end())
-        parameterCommandLocations.emplace(key, location);
+      parameterCommandLocations.emplace(key, location);
     }
 
     ParameterOwner owner;
