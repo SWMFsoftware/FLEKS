@@ -158,7 +158,9 @@ private:
   // signal speed a_d = |u_e,d| + c_fast + upwindCoefWhistler * c_w,d, where
   // c_w,d = |B| / (4 rho dx_d) is the whistler phase speed at k = pi/dx_d.
   // E stays nodal, so the discrete div(B) is preserved.
-  bool useHybridUpwind = false;
+  // On by default for the hybrid solver (MC + sensor floor 0.1); a deck turns
+  // it off with #HYBRIDUPWIND F.
+  bool useHybridUpwind = true;
   std::string upwindLimiter = "mc";
   int upwindLimiterType = 3; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
   amrex::Real upwindCoefWhistler = 0.0;
@@ -166,8 +168,9 @@ private:
   amrex::Real upwindFixedSpeed = -1.0;
   // < 1 scales the jump by max(floor, min(1, s)), with the grid-scale sensor
   // s = |third difference of B| / sum|first differences| of the same 4 cells:
-  // ~(k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps. 1 = off.
-  amrex::Real upwindSensorFloor = 1.0;
+  // ~(k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps. 1 = off
+  // (plain limited upwind).
+  amrex::Real upwindSensorFloor = 0.1;
 
   // Regional resistivity and hyper-resistivity
   struct RegionalResistivityConfig {

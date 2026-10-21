@@ -696,12 +696,12 @@ is T.
 </command>
 
 <command name="HYBRIDUPWIND" alias="HYBRIDUPWIND_FLEKS0,HYBRIDUPWIND_FLEKS1,HYBRIDUPWIND_FLEKS2" multiple="T">
-  <parameter name="useHybridUpwind" type="logical" default="F"/>
+  <parameter name="useHybridUpwind" type="logical" default="T"/>
   <if expr="$useHybridUpwind">
     <parameter name="upwindLimiter" type="string" default="mc"/>
     <parameter name="upwindCoefWhistler" type="real" min="0" default="0.0"/>
     <parameter name="upwindFixedSpeed" type="real" default="-1.0"/>
-    <parameter name="upwindSensorFloor" type="real" min="0" max="1" default="1.0"/>
+    <parameter name="upwindSensorFloor" type="real" min="0" max="1" default="0.1"/>
   </if>
 
 #HYBRIDUPWIND
@@ -709,11 +709,14 @@ T                 useHybridUpwind (rest is read if true)
 mc                upwindLimiter      (upwind1, minmod, vanleer, mc)
 0.0               upwindCoefWhistler (optional)
 -1.0              upwindFixedSpeed   (optional)
-1.0               upwindSensorFloor  (optional)
+0.1               upwindSensorFloor  (optional)
 
 [Ohm's-law term: upwind dissipation] Adds a Rusanov (local Lax-Friedrichs)
 dissipation to the nodal electric field of the generalized Ohm's law, the
-upwind alternative to #HYPERRESISTIVITY:
+upwind alternative to #HYPERRESISTIVITY. It is ON by default in hybrid runs,
+with the MC limiter, upwindCoefWhistler = 0 and upwindSensorFloor = 0.1; use
+"F useHybridUpwind" to turn it off (for example to isolate other Ohm's-law
+terms, or to use #HYPERRESISTIVITY alone). The correction is
    E += sum_d (a_d/2) e_d x (B\^R_d - B\^L_d),
 where B\^L_d and B\^R_d are the cell-centered B reconstructed to the two sides of
 the node along direction d with the MUSCL limiter upwindLimiter (upwind1 is
@@ -751,8 +754,9 @@ and is of order one for 2-3 cell noise and for jumps, so resolved modes are
 damped at about upwindSensorFloor times the unscaled rate while grid-scale
 noise and discontinuities keep it. A small grid-scale ripple on a large smooth
 structure (below ~1 % of it) looks smooth to the sensor and gets only the floor.
-On a whistler at k d_i = 4 resolved by 16 cells, 0.1 lowers the added damping
-from 0.2 % to 0.02 % per radian. 1 (the default) is off. The optional parameters
+On a whistler at k d_i = 4 resolved by 16 cells, the default 0.1 lowers the
+added damping from 0.2 % to 0.02 % per radian; 1 gives the plain limited
+upwind term. The optional parameters
 may be listed in any order. Only used when HYBRIDPIC is T.
 </command>
 
