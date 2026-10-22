@@ -921,41 +921,31 @@ void Pic::particle_mover(int pushStage) {
 
 namespace {
 
+// Copy the nodes of `box` of src into buf, x fastest.
 template <typename Array4Type>
 inline void pack_node_mm_box(const Array4Type& src, const amrex::Box& box,
-                             RealMM* __restrict__ buf) {
+                             RealMM* buf) {
   const auto lo = amrex::lbound(box);
-  const auto hi = amrex::ubound(box);
-  const int len_x = hi.x - lo.x + 1;
-  const std::size_t row_bytes =
-      static_cast<std::size_t>(len_x) * sizeof(RealMM);
-  std::size_t p = 0;
-  for (int k = lo.z; k <= hi.z; ++k) {
-    for (int j = lo.y; j <= hi.y; ++j) {
-      std::memcpy(&buf[p], &src(lo.x, j, k), row_bytes);
-      p += len_x;
-    }
-  }
+  const auto len = amrex::length(box);
+  amrex::ParallelFor(
+      box, nMMComponents, [=] AMREX_GPU_DEVICE(int i, int j, int k, int d) {
+        const int p = ((k - lo.z) * len.y + (j - lo.y)) * len.x + i - lo.x;
+        buf[p][d] = src(i, j, k)[d];
+      });
 }
 
-inline void accumulate_node_mm_box(const RealMM* __restrict__ buf,
-                                   const amrex::Box& box,
+// Add buf (see pack_node_mm_box) to the nodes of `box` of dst. Different
+// calls may add to the same node, so they run one after the other (each is
+// one kernel on the GPU), which keeps the order of the additions.
+inline void accumulate_node_mm_box(const RealMM* buf, const amrex::Box& box,
                                    const amrex::Array4<RealMM>& dst) {
   const auto lo = amrex::lbound(box);
-  const auto hi = amrex::ubound(box);
-  const int len_x = hi.x - lo.x + 1;
-  const std::size_t n_doubles = static_cast<std::size_t>(len_x) * nMMComponents;
-  std::size_t p = 0;
-  for (int k = lo.z; k <= hi.z; ++k) {
-    for (int j = lo.y; j <= hi.y; ++j) {
-      amrex::Real* __restrict__ dst_ptr = dst(lo.x, j, k).data;
-      const amrex::Real* __restrict__ src_ptr = buf[p].data;
-      for (std::size_t d = 0; d < n_doubles; ++d) {
-        dst_ptr[d] += src_ptr[d];
-      }
-      p += len_x;
-    }
-  }
+  const auto len = amrex::length(box);
+  amrex::ParallelFor(
+      box, nMMComponents, [=] AMREX_GPU_DEVICE(int i, int j, int k, int d) {
+        const int p = ((k - lo.z) * len.y + (j - lo.y)) * len.x + i - lo.x;
+        dst(i, j, k)[d] += buf[p][d];
+      });
 }
 
 } // anonymous namespace
@@ -1090,6 +1080,8 @@ void Pic::sum_boundary_node_mm(int iLev) {
       pack_node_mm_box(src_arr, rt.box, &peer.buf[rt.bufOffset]);
     }
     if (peer.totalPts > 0) {
+      // The packing kernels must be done before MPI reads the buffer.
+      amrex::Gpu::streamSynchronize();
       MPI_Isend(reinterpret_cast<const void*>(peer.buf.data()),
                 peer.totalPts * sizeof(RealMM), MPI_BYTE, peer.rank, seq_num,
                 comm, &cd.send_reqs[s]);
@@ -1099,9 +1091,6 @@ void Pic::sum_boundary_node_mm(int iLev) {
 
   // 3. Snapshot local tags into local_buf (Phase 1)
   const int n_loc = static_cast<int>(cd.loc_tags.size());
-#ifdef AMREX_USE_OMP
-#pragma omp parallel for schedule(static)
-#endif
   for (int i = 0; i < n_loc; ++i) {
     const auto& tag = cd.loc_tags[i];
     const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
@@ -1110,9 +1099,6 @@ void Pic::sum_boundary_node_mm(int iLev) {
 
   // 4. Accumulate local tags into destination boxes (Phase 2)
   const int nLocalBoxes = nodeMM[iLev].size();
-#ifdef AMREX_USE_OMP
-#pragma omp parallel for schedule(dynamic)
-#endif
   for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
     const auto& tag_indices = cd.box_to_loc_tags[localDst];
     if (tag_indices.empty())

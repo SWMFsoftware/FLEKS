@@ -1637,18 +1637,24 @@ void Pic::measure_covered_B_drift(int iLev) {
   average_down(centerB[iLev + 1], target, 0, nDim3, refRatio(iLev));
   MultiFab::Subtract(target, centerB[iLev], 0, 0, nDim3, 0);
 
-  Real drift = 0;
+  ReduceOps<ReduceOpMax> reduceOp;
+  ReduceData<Real> reduceData(reduceOp);
   for (MFIter mfi(target); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const auto& d = target[mfi].const_array();
-    const auto& st = cell_status(iLev)[mfi].const_array();
-    amrex::Loop(box, [&](int i, int j, int k) {
-      if (!bit::is_refined(st(i, j, k)))
-        return;
-      for (int iVar = 0; iVar < nDim3; ++iVar)
-        drift = amrex::max(drift, std::abs(d(i, j, k, iVar)));
-    });
+    const auto d = target[mfi].const_array();
+    const auto st = cell_status(iLev)[mfi].const_array();
+    reduceOp.eval(box, reduceData,
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<Real> {
+                    Real m = 0;
+                    if (bit::is_refined(st(i, j, k))) {
+                      for (int iVar = 0; iVar < nDim3; ++iVar)
+                        m = amrex::max(m, std::abs(d(i, j, k, iVar)));
+                    }
+                    return { m };
+                  });
   }
+  // The values are non-negative, so 0 is a safe floor for an empty rank.
+  Real drift = amrex::max(Real(0), get<0>(reduceData.value(reduceOp)));
   ParallelDescriptor::ReduceRealMax(drift);
   coveredBDrift[iLev] = drift;
 }
@@ -1884,33 +1890,44 @@ void Pic::report_divB_amr() {
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     if (divB[iLev].empty())
       continue;
-    Real maxIface = 0, maxCovered = 0, maxInterior = 0, maxDomain = 0;
     const bool hasFiner = iLev < finestLevel();
+    const bool isFineLev = iLev > 0;
+    ReduceOps<ReduceOpMax, ReduceOpMax, ReduceOpMax, ReduceOpMax> reduceOp;
+    ReduceData<Real, Real, Real, Real> reduceData(reduceOp);
     for (MFIter mfi(divB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const auto& arr = divB[iLev][mfi].array();
-      const auto& status = cell_status(iLev)[mfi].array();
-      amrex::Loop(box, [&](int i, int j, int k) {
-        const int st = status(i, j, k);
-        const Real raw = arr(i, j, k, 0);
-        const Real v = std::isfinite(raw) ? std::abs(raw)
-                                          : std::numeric_limits<Real>::max();
-        // Cells on the physical domain boundary are set by the field BC, not
-        // by the update, so they are reported separately: leaving them in the
-        // interior bucket makes the solver's div(B) unreadable on decks with
-        // outflow faces.
-        if (bit::is_domain_edge(st)) {
-          maxDomain = amrex::max(maxDomain, v);
-        } else if (hasFiner && bit::is_refined(st)) {
-          maxCovered = amrex::max(maxCovered, v);
-        } else if ((iLev > 0 && bit::is_lev_edge(st)) ||
-                   (hasFiner && bit::is_refined_neighbour(st))) {
-          maxIface = amrex::max(maxIface, v);
-        } else {
-          maxInterior = amrex::max(maxInterior, v);
-        }
-      });
+      const auto arr = divB[iLev][mfi].const_array();
+      const auto status = cell_status(iLev)[mfi].const_array();
+      reduceOp.eval(box, reduceData,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k)
+                        -> GpuTuple<Real, Real, Real, Real> {
+                      const int st = status(i, j, k);
+                      const Real raw = arr(i, j, k, 0);
+                      const Real v = amrex::Math::isfinite(raw)
+                                         ? std::abs(raw)
+                                         : std::numeric_limits<Real>::max();
+                      // Cells on the physical domain boundary are set by the
+                      // field BC, not by the update, so they are reported
+                      // separately: leaving them in the interior bucket makes
+                      // the solver's div(B) unreadable on decks with outflow
+                      // faces. Order: interface, covered, interior, domain.
+                      if (bit::is_domain_edge(st)) {
+                        return { 0, 0, 0, v };
+                      } else if (hasFiner && bit::is_refined(st)) {
+                        return { 0, v, 0, 0 };
+                      } else if ((isFineLev && bit::is_lev_edge(st)) ||
+                                 (hasFiner && bit::is_refined_neighbour(st))) {
+                        return { v, 0, 0, 0 };
+                      }
+                      return { 0, 0, v, 0 };
+                    });
     }
+    // The values are non-negative, so 0 is a safe floor for an empty rank.
+    const auto maxima = reduceData.value(reduceOp);
+    Real maxIface = amrex::max(Real(0), get<0>(maxima));
+    Real maxCovered = amrex::max(Real(0), get<1>(maxima));
+    Real maxInterior = amrex::max(Real(0), get<2>(maxima));
+    Real maxDomain = amrex::max(Real(0), get<3>(maxima));
     ParallelDescriptor::ReduceRealMax(maxIface);
     ParallelDescriptor::ReduceRealMax(maxCovered);
     ParallelDescriptor::ReduceRealMax(maxInterior);
@@ -1931,20 +1948,27 @@ void Pic::report_divB_amr() {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], tmp, 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
           Geom(iLev), cell_status(iLev), *get_cell_interp());
+      ReduceOps<ReduceOpMax> reduceOpG;
+      ReduceData<Real> reduceDataG(reduceOpG);
       for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
         const Box box = amrex::grow(mfi.validbox(), 1);
-        const auto& a = tmp[mfi].array();
-        const auto& b = centerB[iLev][mfi].array();
-        const auto& status = cell_status(iLev)[mfi].array();
-        amrex::Loop(box, [&](int i, int j, int k) {
-          const int st = status(i, j, k);
-          if (!bit::is_lev_boundary(st) || bit::is_domain_boundary(st))
-            return;
-          for (int iVar = 0; iVar < nDim3; ++iVar)
-            ghostDrift = amrex::max(
-                ghostDrift, std::abs(a(i, j, k, iVar) - b(i, j, k, iVar)));
-        });
+        const auto a = tmp[mfi].const_array();
+        const auto b = centerB[iLev][mfi].const_array();
+        const auto status = cell_status(iLev)[mfi].const_array();
+        reduceOpG.eval(
+            box, reduceDataG,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<Real> {
+              const int st = status(i, j, k);
+              Real m = 0;
+              if (bit::is_lev_boundary(st) && !bit::is_domain_boundary(st)) {
+                for (int iVar = 0; iVar < nDim3; ++iVar)
+                  m = amrex::max(m,
+                                 std::abs(a(i, j, k, iVar) - b(i, j, k, iVar)));
+              }
+              return { m };
+            });
       }
+      ghostDrift = amrex::max(Real(0), get<0>(reduceDataG.value(reduceOpG)));
       ParallelDescriptor::ReduceRealMax(ghostDrift);
     }
 
