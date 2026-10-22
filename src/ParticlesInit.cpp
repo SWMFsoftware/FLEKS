@@ -366,7 +366,9 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(bool fillAll) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
 
       const auto& status = cell_status(iLev)[mfi].array();
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) noexcept {
+      // Particles are created on the host, one cell after the other.
+      // TODO(GPU): create them on the device (count, scan, fill).
+      LoopOnCpu(mfi.validbox(), [&](int i, int j, int k) noexcept {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         // A fluid-only restart can retain mesh cells without restoring any
         // particles. The first particle fill must seed every leaf cell.

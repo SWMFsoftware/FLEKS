@@ -12,112 +12,6 @@
 using namespace amrex;
 
 //==========================================================
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
-    int iLev, const IntVect& loIdx, const RealVect& dShift, Real qp,
-    Array4<RealCMM> const& mmArr) {
-
-  Real weights_IIID[2][2][2][nDim3];
-  //----- Mass matrix calculation begin--------------
-  const Real xi0 = dShift[ix_] * dx[iLev][ix_];
-  const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-  const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
-  const Real xi1 = dx[iLev][ix_] - xi0;
-  const Real eta1 = dx[iLev][iy_] - eta0;
-  const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
-
-  weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
-  weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
-  weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol[iLev];
-
-  // xi0*eta0*zeta1*invVol[iLev];
-  weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol[iLev];
-  weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol[iLev];
-  weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol[iLev];
-
-  // xi0*eta1*zeta0*invVol[iLev];
-  weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol[iLev];
-  weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol[iLev];
-  weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol[iLev];
-
-  // xi0*eta1*zeta1*invVol[iLev];
-  weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol[iLev];
-  weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol[iLev];
-  weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol[iLev];
-
-  // xi1*eta0*zeta0*invVol[iLev];
-  weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol[iLev];
-  weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol[iLev];
-  weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol[iLev];
-
-  // xi1*eta0*zeta1*invVol[iLev];
-  weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol[iLev];
-  weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol[iLev];
-  weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol[iLev];
-
-  // xi1*eta1*zeta0*invVol[iLev];
-  weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol[iLev];
-  weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol[iLev];
-  weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol[iLev];
-
-  // xi1*eta1*zeta1*invVol[iLev];
-  weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol[iLev];
-  weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol[iLev];
-  weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol[iLev];
-
-  const int iMin = loIdx[ix_];
-  const int jMin = loIdx[iy_];
-  const int kMin = nDim > 2 ? loIdx[iz_] : 0;
-  const int iMax = iMin + 1;
-  const int jMax = jMin + 1;
-  const int kMax = nDim > 2 ? kMin + 1 : 0;
-
-  const Real coef = fabs(qp) * invVol[iLev];
-  Real wg_D[nDim3];
-  for (int k1 = kMin; k1 <= kMax; k1++)
-    for (int j1 = jMin; j1 <= jMax; j1++)
-      for (int i1 = iMin; i1 <= iMax; i1++) {
-
-        for (int iDim = 0; iDim < nDim; iDim++) {
-          wg_D[iDim] =
-              coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
-        }
-
-        auto& data = mmArr(i1, j1, k1);
-        // Real weights[27] = { 0 };
-        for (int i2 = iMin; i2 <= iMax; i2++) {
-          int ip = i2 - i1 + 1;
-#if (AMREX_SPACEDIM == 2)
-          for (int j2 = jMin; j2 <= jMax; j2++) {
-            int jp = j2 - j1 + 1;
-            const int gp = ip * 3 + jp;
-            const Real(&wg1_D)[nDim3] = weights_IIID[i2 - iMin][j2 - jMin][0];
-            for (int iDim = 0; iDim < nDim; iDim++) {
-              data[gp] += wg_D[iDim] * wg1_D[iDim];
-            }
-          }
-#else
-          const int gp0 = ip * 9;
-          for (int j2 = jMin; j2 <= jMax; j2++) {
-            int jp = j2 - j1 + 1;
-            const int gp1 = gp0 + jp * nDim3;
-            for (int k2 = kMin; k2 <= kMax; k2++) {
-              const Real(&wg1_D)[nDim3] =
-                  weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
-
-              // const int kp = k2 - k1 + 1;
-              const int gp = gp1 + k2 - k1 + 1;
-              for (int iDim = 0; iDim < nDim; iDim++) {
-                data[gp] += wg_D[iDim] * wg1_D[iDim];
-              }
-            }
-          }
-#endif
-        }
-      }
-}
-
-//==========================================================
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
@@ -126,26 +20,30 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     bool solveInCoMov) {
   timing_func("Pts::calc_mass_matrix");
 
-  Real qdto2mc = charge / mass * 0.5 * dt;
+  const Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
+  const auto ploLev = Geom(iLev).ProbLoArray();
+  const auto invDxLev = Geom(iLev).InvCellSizeArray();
+  const Real invVolLev = invVol[iLev];
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
     const Array4<Real const> nodeB0Arr =
-        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
-    Array4<Real> const& jArr = jHat[pti].array();
-    Array4<RealMM> const& mmArr = nodeMM[pti].array();
+        useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
+    Array4<Real> const jArr = jHat[pti].array();
+    Array4<RealMM> const mmArr = nodeMM[pti].array();
 
-    Array4<Real const> const& u0Arr = u0MF[pti].array();
+    Array4<Real const> const u0Arr = u0MF[pti].const_array();
 
-    const AoS& particles = pti.GetArrayOfStructs();
+    const ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
 
-    for (const auto& p : particles) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      const ParticleType& p = pData[ip];
       if (p.id() < 0)
-        continue;
+        return;
 
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -157,8 +55,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       RealVect dShift;
 
       Real coef[2][2][2];
-      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
+      find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), loIdx,
+                              dShift, coef);
       //-----calculate interpolate coef end-------------
 
       //----- Mass matrix calculation begin--------------
@@ -205,7 +103,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const Real omsq = omx2 + omy2 + omz2;
       const Real denom = 1.0 / (1.0 + omsq);
 
-      const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
+      const Real c0 = denom * invVolLev * qp * qdto2mc;
 
       Real alpha[9];
       alpha[0] = (1 + omx2) * c0;
@@ -269,7 +167,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
                     Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
-                      data[idx] += alpha[idx] * weight;
+                      deposit_add(&data[idx], alpha[idx] * weight);
                     }
                   } // k2
 
@@ -279,55 +177,56 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           } // k1
 
       //----- Mass matrix calculation end--------------
-
-    } // for p
+    });
   }
 
 #if (AMREX_SPACEDIM != 2)
   for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
-    // Finalize the mass matrix calculation.
+    // Finalize the mass matrix calculation: copy the kp = 2 half that the
+    // particles deposited into the mirrored kp = 0 entries of the receiving
+    // nodes. Every receiving entry has exactly one sender, so the nodes can
+    // be processed in parallel.
     const Box box = mfi.validbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    Array4<RealMM> const& mmArr = nodeMM[mfi].array();
+    Array4<RealMM> const mmArr = nodeMM[mfi].array();
 
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
     // node constributes as a sender). So, we need the '-1' and '+1' staff.
     const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
     const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
+    const Box senders(IntVect(AMREX_D_DECL(iMin, jMin, kMin)),
+                      IntVect(AMREX_D_DECL(iMax, jMax, kMax)));
 
-    int gps, gpr; // gp_send, gp_receive
-    for (int k1 = kMin; k1 <= kMax; k1++)
-      for (int j1 = jMin; j1 <= jMax; j1++)
-        for (int i1 = iMin; i1 <= iMax; i1++) {
-          const int kp = 2;
-          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
-          if (kr > kMax || kr < kMin)
+    ParallelFor(senders, [=] AMREX_GPU_DEVICE(int i1, int j1, int k1) {
+      const int kp = 2;
+      const int kr = nDim > 2 ? k1 + kp - 1 : 0;
+      if (kr > kMax || kr < kMin)
+        return;
+      const auto& datas0 = mmArr(i1, j1, k1);
+      for (int jp = 0; jp < 3; jp++) {
+        const int jr = j1 + jp - 1;
+        if (jr > jMax || jr < jMin)
+          continue;
+        const int jpr = 2 - jp;
+        for (int ip = 0; ip < 3; ip++) {
+          const int ir = i1 + ip - 1;
+          if (ir > iMax || ir < iMin)
             continue;
-          auto& datas0 = mmArr(i1, j1, k1);
-          for (int jp = 0; jp < 3; jp++) {
-            const int jr = j1 + jp - 1;
-            if (jr > jMax || jr < jMin)
-              continue;
-            const int jpr = 2 - jp;
-            for (int ip = 0; ip < 3; ip++) {
-              const int ir = i1 + ip - 1;
-              if (ir > iMax || ir < iMin)
-                continue;
-              const int ipr = 2 - ip;
-              gpr = jpr * 3 + ipr;
-              gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
+          const int ipr = 2 - ip;
+          const int gpr = jpr * 3 + ipr;    // gp_receive
+          const int gps = 18 + jp * 3 + ip; // gp_send = kp*9+jp*3+ip
 
-              Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
-              const Real* const datas = &(datas0[gps * 9]);
-              for (int idx = 0; idx < 9; idx++) {
-                datar[idx] = datas[idx];
-              } // idx
-            } // kp
-          } // jp
-        } // k1
+          Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
+          const Real* const datas = &(datas0[gps * 9]);
+          for (int idx = 0; idx < 9; idx++) {
+            datar[idx] = datas[idx];
+          } // idx
+        } // ip
+      } // jp
+    });
   }
 #endif
 }
@@ -347,13 +246,15 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
   const bool useB0 = (nodeB0MF != nullptr);
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
     const Array4<Real const> nodeB0Arr =
-        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
-    Array4<Real> const& jArr = jHat[pti].array();
-    Array4<RealMM> const& mmArr = nodeMM[pti].array();
-    Array4<Real const> const& u0Arr = u0MF[pti].array();
-    const Array4<int const>& status = cellstatus[iLev][pti].array();
+        useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
+    Array4<Real> const jArr = jHat[pti].array();
+    Array4<RealMM> const mmArr = nodeMM[pti].array();
+    Array4<Real const> const u0Arr = u0MF[pti].const_array();
+    // Read on the host: the status of the first cell of the tile.
+    // TODO(GPU): one tile per box on the GPU makes this a per-box test.
+    const Array4<int const>& status = cellstatus[iLev][pti].const_array();
     Box bx = pti.tilebox();
     IntVect ibx = bx.smallEnd();
     bool refinedneighbour = false;
@@ -384,18 +285,29 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       count++;
     }
 
-    IntVect loIdx[maxCoef];
-    RealVect dShift[maxCoef];
-    Real coef[maxCoef][2][2][2];
+    // Copies, so that the kernels capture values, not host pointers.
+    Real ploAll[maxCoef][AMREX_SPACEDIM], invDxAll[maxCoef][AMREX_SPACEDIM];
+    for (int i = 0; i < nCoef; i++) {
+      for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        ploAll[i][d] = Geom(i).ProbLo(d);
+        invDxAll[i][d] = Geom(i).InvCellSize(d);
+      }
+    }
+    const Real invVolLev = invVol[iLev];
 
-    const AoS& particles = pti.GetArrayOfStructs();
+    const ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
 
-    for (const auto& p : particles) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      const ParticleType& p = pData[ip];
       if (p.id() < 0)
-        continue;
+        return;
+
+      IntVect loIdx[maxCoef];
+      RealVect dShift[maxCoef];
+      Real coef[maxCoef][2][2][2];
 
       // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
@@ -405,9 +317,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
       //-----calculate interpolate coef begin-------------
       for (int i = 0; i < nCoef; i++) {
-        find_node_interpolation(p.pos(), Geom(i).ProbLo(),
-                                Geom(i).InvCellSize(), loIdx[i], dShift[i],
-                                coef[i]);
+        find_node_interpolation(p.pos(), ploAll[i], invDxAll[i], loIdx[i],
+                                dShift[i], coef[i]);
       }
 
       //-----calculate interpolate coef end-------------
@@ -457,7 +368,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       const Real omsq = omx2 + omy2 + omz2;
       const Real denom = 1.0 / (1.0 + omsq);
 
-      const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
+      const Real c0 = denom * invVolLev * qp * qdto2mc;
 
       Real alpha[9];
       alpha[0] = (1 + omx2) * c0;
@@ -519,7 +430,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
-                        data[idx] += alpha[idx] * weight;
+                        deposit_add(&data[idx], alpha[idx] * weight);
                       }
                     } // k2
 
@@ -528,7 +439,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
               } // i2
             } // k1
       }
-    } // for p
+    });
   }
 }
 //==========================================================
@@ -544,17 +455,20 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   const bool useB0 = (nodeB0MF != nullptr);
 
   const int iLev = 0;
+  const auto ploLev = Geom(iLev).ProbLoArray();
+  const auto invDxLev = Geom(iLev).InvCellSizeArray();
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
     const Array4<Real const> nodeB0Arr =
-        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
-    Array4<Real> const& jArr = jHat[pti].array();
+        useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
+    Array4<Real> const jArr = jHat[pti].array();
 
-    const AoS& particles = pti.GetArrayOfStructs();
+    const ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
-    for (const auto& p : particles) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      const ParticleType& p = pData[ip];
       if (p.id() < 0)
-        continue;
+        return;
 
       // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
@@ -567,8 +481,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       RealVect dShift;
 
       Real coef[2][2][2];
-      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
+      find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), loIdx,
+                              dShift, coef);
       //-----calculate interpolate coef end-------------
 
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
@@ -627,8 +541,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
         deposit_vector_field(jArr, loIdx, coef, init_dim3(0), init_dim3(1),
                              currents, nDim);
       }
-
-    } // for p
+    });
   }
 }
 
@@ -694,8 +607,6 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
 //==========================================================
 
 #define INSTANTIATE_PARTICLES_MASS_MATRIX(T)                                   \
-  template void T::accumulate_mass_matrix_contribution(                        \
-      int, const IntVect&, const RealVect&, Real, Array4<RealCMM> const&);     \
   template void T::calc_mass_matrix(NodeMMFab&, MultiFab&, MultiFab&,          \
                                     MultiFab const*, MultiFab&, Real, int,     \
                                     bool);                                     \

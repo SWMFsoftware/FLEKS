@@ -101,7 +101,9 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
       bxGst.grow(iDim, nGstInject);
     }
 
-    ParallelFor(bxGst, [&](int i, int j, int k) noexcept {
+    // Particles are created on the host, one cell after the other.
+    // TODO(GPU): create them on the device (count, scan, fill).
+    LoopOnCpu(bxGst, [&](int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       IntVect ijksrc;
       if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {

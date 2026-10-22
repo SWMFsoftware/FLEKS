@@ -6,6 +6,7 @@
 
 #include "Constants.h"
 #include "GemIC.h"
+#include "GpuBackend.h"
 #include "Particles.h"
 #include "ReadParam.h"
 
@@ -333,55 +334,40 @@ void GemIC::set_fields(PicICFields& fields) const {
     const amrex::Real b0Eff = b0Eff_;
     const bool useUniformPressure = useUniformPressure_;
 
+    // B = Bx0(y) + perturbation, with Bz balancing the pressure if required.
+    // The profile functions are host members, and this runs once.
+    auto set_B = [&](amrex::Real x, amrex::Real y, Array4<Real> const& arrB,
+                     int i, int j, int k) {
+      const amrex::Real bx0 = eval_Bx0(y);
+      amrex::Real dbx = 0.0, dby = 0.0;
+      eval_perturbation(x, y, dbx, dby);
+
+      amrex::Real bz = b0Eff * bg;
+      if (useUniformPressure) {
+        const amrex::Real bz2 =
+            b0Eff * b0Eff - bx0 * bx0 + (b0Eff * bg) * (b0Eff * bg);
+        bz = (bz2 > 0.0) ? std::sqrt(bz2) : 0.0;
+      }
+
+      arrB(i, j, k, ix_) = bx0 + dbx;
+      arrB(i, j, k, iy_) = dby;
+      arrB(i, j, k, iz_) = bz;
+    };
+
     // Node-centered B
-    for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeB[mfi];
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrB = fab.array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        const amrex::Real x = prob_lo[0] + dx[0] * i;
-        const amrex::Real y = prob_lo[1] + dx[1] * j;
-        const amrex::Real bx0 = eval_Bx0(y);
-        amrex::Real dbx = 0.0, dby = 0.0;
-        eval_perturbation(x, y, dbx, dby);
-
-        amrex::Real bz = b0Eff * bg;
-        if (useUniformPressure) {
-          const amrex::Real bz2 =
-              b0Eff * b0Eff - bx0 * bx0 + (b0Eff * bg) * (b0Eff * bg);
-          bz = (bz2 > 0.0) ? std::sqrt(bz2) : 0.0;
-        }
-
-        arrB(i, j, k, ix_) = bx0 + dbx;
-        arrB(i, j, k, iy_) = dby;
-        arrB(i, j, k, iz_) = bz;
-      });
-    }
+    host_fill(
+        nodeB, true,
+        [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrB) {
+          set_B(prob_lo[0] + dx[0] * i, prob_lo[1] + dx[1] * j, arrB, i, j, k);
+        });
 
     // Cell-centered B
-    for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = centerB[mfi];
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrB = fab.array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-        const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
-        const amrex::Real bx0 = eval_Bx0(y);
-        amrex::Real dbx = 0.0, dby = 0.0;
-        eval_perturbation(x, y, dbx, dby);
-
-        amrex::Real bz = b0Eff * bg;
-        if (useUniformPressure) {
-          const amrex::Real bz2 =
-              b0Eff * b0Eff - bx0 * bx0 + (b0Eff * bg) * (b0Eff * bg);
-          bz = (bz2 > 0.0) ? std::sqrt(bz2) : 0.0;
-        }
-
-        arrB(i, j, k, ix_) = bx0 + dbx;
-        arrB(i, j, k, iy_) = dby;
-        arrB(i, j, k, iz_) = bz;
-      });
-    }
+    host_fill(
+        centerB, true,
+        [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrB) {
+          set_B(prob_lo[0] + dx[0] * (i + 0.5), prob_lo[1] + dx[1] * (j + 0.5),
+                arrB, i, j, k);
+        });
   }
 
   fields.fill_boundary_E_B();

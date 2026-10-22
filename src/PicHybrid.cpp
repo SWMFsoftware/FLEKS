@@ -261,6 +261,11 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           ? ((electronGamma > 0) ? electronGamma : 1.0) * electronTemperature
           : 0.0;
   const bool useHall = useHallTerm;
+  // Kernels must not read members (that would capture 'this').
+  const Real rhoMin = rhoMinOhm;
+  const Real etaGlobal = etaResistivity;
+  const bool hasEtaRegional = hasRegionalResistivity_;
+  const bool addAmbi = includeAmbi && electronTemperature > 0;
 
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -355,8 +360,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       const Real mz =
           wPrev * momentsPrev(i, j, k, iMz_) + wCur * moments(i, j, k, iMz_);
       Real ui = 0, vi = 0, wi = 0;
-      const Real invRhoEff =
-          (rho > 0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
+      const Real invRhoEff = (rho > 0) ? (1.0 / amrex::max(rho, rhoMin)) : 0.0;
 
       if (rho > 0) {
         ui = mx * invRhoEff;
@@ -382,8 +386,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       }
 
       // eta * J (global + regional resistivity)
-      Real etaTotal = etaResistivity;
-      if (hasRegionalResistivity_) {
+      Real etaTotal = etaGlobal;
+      if (hasEtaRegional) {
         etaTotal += arrEtaReg(i, j, k);
       }
       if (etaTotal > 0.0) {
@@ -394,14 +398,14 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
       // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
       // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
-      if (includeAmbi && electronTemperature > 0) {
+      if (addAmbi) {
         ex += arrEambi(i, j, k, ix_);
         ey += arrEambi(i, j, k, iy_);
         ez += arrEambi(i, j, k, iz_);
       }
 
       // Hall term: (J x B) / rho_q
-      if (rho > 0 && useHallTerm) {
+      if (rho > 0 && useHall) {
         Real hall_x = (jy * bz - jz * by) * invRhoEff;
         Real hall_y = (jz * bx - jx * bz) * invRhoEff;
         Real hall_z = (jx * by - jy * bx) * invRhoEff;
@@ -619,6 +623,7 @@ void Pic::compute_ambipolar_E(int iLev) {
                       Geom(iLev).InvCellSize());
 
   // Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
+  const Real rhoMin = rhoMinOhm;
   for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
@@ -627,7 +632,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = moments(i, j, k, iRho_);
       if (rho > 0) {
-        const Real invRhoEff = -1.0 / amrex::max(rho, rhoMinOhm);
+        const Real invRhoEff = -1.0 / amrex::max(rho, rhoMin);
         arrEambi(i, j, k, ix_) *= invRhoEff;
         arrEambi(i, j, k, iy_) *= invRhoEff;
         arrEambi(i, j, k, iz_) *= invRhoEff;
@@ -1172,8 +1177,10 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
         pe_dir_flux<iy_>(arrPe, arrUe, i, j, k, invDxY, limType, peMinLocal,
                          divFlux, divUe);
       }
-      if constexpr (nDim > 2) {
-        if (invDxZ > 0.0) {
+      // nvcc does not allow a device lambda to first capture a variable
+      // inside 'if constexpr', so invDxZ is tested outside of it.
+      if (invDxZ > 0.0) {
+        if constexpr (nDim > 2) {
           pe_dir_flux<iz_>(arrPe, arrUe, i, j, k, invDxZ, limType, peMinLocal,
                            divFlux, divUe);
         }
@@ -1217,6 +1224,13 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
   // |q/m| in units of e/m_p, so for the electron it is exactly m_p/m_e.
   const Real massRatioPe = std::abs(qomEl);
 
+  // Kernels must not read members (that would capture 'this').
+  const Real rhoMin = rhoMinOhm;
+  const Real peFloor = peMin;
+  const Real kappa0 = heatCondKappa0;
+  const Real fluxLimiter = heatFluxLimiter;
+  const Real bMin = fieldAlignedBMin;
+
   if (heatCondKappa0 > 0.0) {
     const bool isExplicit = (heatCondMethod == "subcycle");
     const int nPasses = isExplicit ? 1 : nCondIter;
@@ -1233,8 +1247,8 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
           const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
           const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
-            arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMin) / ne;
+            const Real ne = amrex::max(arrRho(i, j, k), rhoMin);
+            arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peFloor) / ne;
           });
         }
         apply_pe_zero_gradient_bc(iLev, centerPeTe[iLev]);
@@ -1255,7 +1269,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
-          Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
+          Real kappa = (teN > 0.0) ? kappa0 * std::pow(teN, 2.5) : 0.0;
 
           // Unit vector along B, and a smooth weak-field weight: a field at
           // round-off level still has bmag > 0, but its direction is arbitrary,
@@ -1273,7 +1287,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
               bhat[ix_] = bx / bmag;
               bhat[iy_] = by / bmag;
               bhat[iz_] = bz / bmag;
-              fEff = fAlign * b2 / (b2 + fieldAlignedBMin * fieldAlignedBMin);
+              fEff = fAlign * b2 / (b2 + bMin * bMin);
             }
           }
 
@@ -1294,13 +1308,13 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 
           // Free-streaming saturation: |q| <= f * n_e * Te * v_th,e with
           // v_th,e = sqrt(Te * m_p/m_e) in code units.
-          if (heatFluxLimiter > 0.0) {
+          if (fluxLimiter > 0.0) {
             const Real qmag =
                 std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
             if (qmag > 0.0) {
-              const Real ne = amrex::max(arrRhoN(i, j, k), rhoMinOhm);
+              const Real ne = amrex::max(arrRhoN(i, j, k), rhoMin);
               const Real qsat =
-                  heatFluxLimiter * ne * teN * std::sqrt(teN * massRatioPe);
+                  fluxLimiter * ne * teN * std::sqrt(teN * massRatioPe);
               if (qmag > qsat) {
                 const Real scale = qsat / qmag;
                 for (int d = 0; d < 3; ++d)
@@ -1327,24 +1341,30 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
       bool useExplicitThisStep = isExplicit;
 
       if (isExplicit) {
-        Real maxDiffRate = 0.0;
+        ReduceOps<ReduceOpMax> reduceOp;
+        ReduceData<Real> reduceData(reduceOp);
         for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
           const Box& box = mfi.validbox();
-          const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-          const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
-          Real localMaxRate = 0.0;
-          amrex::Loop(box, [&](int i, int j, int k) {
-            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
-            Real lam =
-                (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
-            lam += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
-            if (nDim > 2)
-              lam +=
-                  (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
-            localMaxRate = amrex::max(localMaxRate, gammaM1 * lam / ne);
-          });
-          maxDiffRate = amrex::max(maxDiffRate, localMaxRate);
+          const Array4<Real const> arrRho =
+              centerPeRho[iLev][mfi].const_array();
+          const Array4<Real const> arrK = nodePeAux[iLev][mfi].const_array();
+          reduceOp.eval(
+              box, reduceData,
+              [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<Real> {
+                const Real ne = amrex::max(arrRho(i, j, k), rhoMin);
+                Real lam =
+                    (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+                lam +=
+                    (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
+                if (nDim > 2)
+                  lam += (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ *
+                         invDxZ;
+                return { gammaM1 * lam / ne };
+              });
         }
+        // The rates are non-negative, so 0 is a safe floor for an empty rank.
+        Real maxDiffRate =
+            amrex::max(Real(0), get<0>(reduceData.value(reduceOp)));
         amrex::ParallelDescriptor::ReduceRealMax(maxDiffRate);
 
         if (maxDiffRate > 0.0) {
@@ -1368,7 +1388,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
         const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
 
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-          const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+          const Real ne = amrex::max(arrRho(i, j, k), rhoMin);
 
           Real lambda =
               (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
@@ -1381,8 +1401,8 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
           const Real denom =
               useExplicitThisStep ? 1.0 : (1.0 + subDt * gammaM1 * lambda / ne);
 
-          arrPe(i, j, k) =
-              amrex::max(arrPe(i, j, k) + subDt * gammaM1 * src / denom, peMin);
+          arrPe(i, j, k) = amrex::max(
+              arrPe(i, j, k) + subDt * gammaM1 * src / denom, peFloor);
         });
       }
 

@@ -42,7 +42,7 @@ public:
         });
   }
 
-  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void node_bilinear_interp(
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE static void node_bilinear_interp(
       int i, int j, int k, int n, Array4<T> const& fine, int fcomp,
       Array4<T const> const& crse, int ccomp, IntVect const& ratio) noexcept {
     if (SpaceDim == 2) {

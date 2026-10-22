@@ -13,6 +13,7 @@
 #include <malloc.h>
 #endif
 
+#include "GpuBackend.h"
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"
@@ -487,17 +488,18 @@ void Pic::fill_new_node_E(bool fillAll) {
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
 
+    // Setup and regrid only: the fluid accessors run on the host (see
+    // host_fill).
     int iLev = 0;
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeE[iLev][mfi];
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrE = fab.array();
-      const auto& status = node_status(iLev)[mfi].array();
-
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (fillAll || bit::is_new(status(ijk))) {
-          if (ic_ && ic_->is_tophat()) {
+    const bool isTopHat = ic_ && ic_->is_tophat();
+    host_fill(
+        nodeE[iLev], false,
+        [&](const MFIter& mfi, int i, int j, int k, Array4<Real> const& arrE) {
+          IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          const auto& status = node_status(iLev)[mfi].const_array();
+          if (!(fillAll || bit::is_new(status(ijk))))
+            return;
+          if (isTopHat) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
             if (x > xL && x < xR) {
@@ -508,9 +510,7 @@ void Pic::fill_new_node_E(bool fillAll) {
             arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
             arrE(ijk, iz_) = fi->get_ez(mfi, ijk, iLev);
           }
-        }
-      });
-    }
+        });
   }
   if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
@@ -540,16 +540,18 @@ void Pic::fill_new_node_B(bool fillAll) {
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
 
+    // Setup and regrid only: the fluid accessors run on the host (see
+    // host_fill).
     int iLev = 0;
-    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
-      const auto& status = node_status(iLev)[mfi].array();
-
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (fillAll || bit::is_new(status(ijk))) {
-          if (ic_ && ic_->is_tophat()) {
+    const bool isTopHat = ic_ && ic_->is_tophat();
+    host_fill(
+        nodeB[iLev], false,
+        [&](const MFIter& mfi, int i, int j, int k, Array4<Real> const& arrB) {
+          IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          const auto& status = node_status(iLev)[mfi].const_array();
+          if (!(fillAll || bit::is_new(status(ijk))))
+            return;
+          if (isTopHat) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
             if (x > xL && x < xR) {
@@ -560,9 +562,7 @@ void Pic::fill_new_node_B(bool fillAll) {
             arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
             arrB(ijk, iz_) = fi->get_bz(mfi, ijk, iLev);
           }
-        }
-      });
-    }
+        });
   }
 
   if (finestLevel() > 0) {
@@ -581,24 +581,27 @@ void Pic::fill_new_center_B(bool fillAll) {
     int iLev = 0;
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const Array4<Real>& centerArr = centerB[iLev][mfi].array();
-      const auto& nodeArr = nodeB[iLev][mfi].array();
-      const auto& status = cell_status(iLev)[mfi].array();
+      const Array4<Real> centerArr = centerB[iLev][mfi].array();
+      const Array4<Real const> nodeArr = nodeB[iLev][mfi].const_array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
-      ParallelFor(
-          box, centerB[iLev].nComp(), [&](int i, int j, int k, int iVar) {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      ParallelFor(box, centerB[iLev].nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                    IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-            if (fillAll || bit::is_new(status(ijk))) {
-              centerArr(ijk, iVar) = 0;
-
-              Box subBox(ijk, ijk + 1);
-              ParallelFor(subBox, [&](int ii, int jj, int kk) {
-                const Real coef = (nDim == 2 ? 0.25 : 0.125);
-                centerArr(ijk, iVar) += coef * nodeArr(ii, jj, kk, iVar);
-              });
-            }
-          });
+                    if (fillAll || bit::is_new(status(ijk))) {
+                      // Average of the nodes of the cell, in the order of a
+                      // ParallelFor over the box (ijk, ijk + 1).
+                      const Real coef = (nDim == 2 ? 0.25 : 0.125);
+                      Real sum = 0;
+                      for (int kk = k; kk <= (AMREX_SPACEDIM > 2 ? k + 1 : k);
+                           ++kk)
+                        for (int jj = j; jj <= j + 1; ++jj)
+                          for (int ii = i; ii <= i + 1; ++ii)
+                            sum += coef * nodeArr(ii, jj, kk, iVar);
+                      centerArr(ijk, iVar) = sum;
+                    }
+                  });
     }
   }
   if (finestLevel() > 0) {
@@ -711,8 +714,8 @@ void Pic::fill_intrinsic_B() {
       distribute_FabArray(centerB0[iLev], boxArray(iLev), DistributionMap(iLev),
                           3, get_n_ghost(), false);
 
-    const auto plo = Geom(iLev).ProbLo();
-    const auto dx = Geom(iLev).CellSize();
+    const auto plo = Geom(iLev).ProbLoArray();
+    const auto dx = Geom(iLev).CellSizeArray();
 
     if (onlyDipole) {
       // Dipole evaluation is scratch-free and device-callable: run in
@@ -758,69 +761,46 @@ void Pic::fill_intrinsic_B() {
         });
       }
     } else {
-      // Crustal evaluation uses host scratch workspace.
-      for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = nodeB0[iLev][mfi].array();
-        // Under a 2D build index 2 of a Box is out of range, so the z loop
-        // collapses to a single pass and z comes from the model center.
+      // Crustal evaluation uses host scratch workspace, so it runs on the
+      // host (see host_fill). B0 is computed once.
+      // Under a 2D build index 2 of a Box is out of range, so z comes from the
+      // model center.
+      host_fill(
+          nodeB0[iLev], true,
+          [&](const MFIter&, int i, int j, int k, Array4<Real> const& arr) {
 #if (AMREX_SPACEDIM > 2)
-        const int kLo = box.smallEnd(2);
-        const int kHi = box.bigEnd(2);
+            const Real z =
+                (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : p.center[2];
 #else
-        const int kLo = 0;
-        const int kHi = 0;
+            amrex::ignore_unused(k);
+            const Real z = p.center[2];
 #endif
-        for (int k = kLo; k <= kHi; ++k) {
-#if (AMREX_SPACEDIM > 2)
-          const Real z =
-              (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : p.center[2];
-#else
-          const Real z = p.center[2];
-#endif
-          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
             const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
-            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-              Real b[3] = { 0.0, 0.0, 0.0 };
-              field.eval(plo[ix_] + i * dx[ix_], y, z, b);
-              arr(i, j, k, ix_) = b[0];
-              arr(i, j, k, iy_) = b[1];
-              arr(i, j, k, iz_) = b[2];
-            }
-          }
-        }
-      }
+            Real b[3] = { 0.0, 0.0, 0.0 };
+            field.eval(plo[ix_] + i * dx[ix_], y, z, b);
+            arr(i, j, k, ix_) = b[0];
+            arr(i, j, k, iy_) = b[1];
+            arr(i, j, k, iz_) = b[2];
+          });
 
-      for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = centerB0[iLev][mfi].array();
+      host_fill(
+          centerB0[iLev], true,
+          [&](const MFIter&, int i, int j, int k, Array4<Real> const& arr) {
 #if (AMREX_SPACEDIM > 2)
-        const int kLo = box.smallEnd(2);
-        const int kHi = box.bigEnd(2);
+            const Real z = (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_])
+                                           : p.center[2];
 #else
-        const int kLo = 0;
-        const int kHi = 0;
+            amrex::ignore_unused(k);
+            const Real z = p.center[2];
 #endif
-        for (int k = kLo; k <= kHi; ++k) {
-#if (AMREX_SPACEDIM > 2)
-          const Real z =
-              (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : p.center[2];
-#else
-          const Real z = p.center[2];
-#endif
-          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
             const Real y =
                 (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
-            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-              Real b[3] = { 0.0, 0.0, 0.0 };
-              field.eval(plo[ix_] + (i + 0.5) * dx[ix_], y, z, b);
-              arr(i, j, k, ix_) = b[0];
-              arr(i, j, k, iy_) = b[1];
-              arr(i, j, k, iz_) = b[2];
-            }
-          }
-        }
-      }
+            Real b[3] = { 0.0, 0.0, 0.0 };
+            field.eval(plo[ix_] + (i + 0.5) * dx[ix_], y, z, b);
+            arr(i, j, k, ix_) = b[0];
+            arr(i, j, k, iy_) = b[1];
+            arr(i, j, k, iz_) = b[2];
+          });
     }
   }
 }
@@ -1511,10 +1491,11 @@ void Pic::calc_mach_number() {
     const auto& momentsMF = nodePlasma[nSpecies][iLev];
     for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<const Real>& moments = momentsMF[mfi].array();
-      const Array4<Real>& mach = mMach[iLev][mfi].array();
+      const Array4<const Real> moments = momentsMF[mfi].const_array();
+      const Array4<Real> mach = mMach[iLev][mfi].array();
+      const Real gamma = gamma0;
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         Real rho = moments(i, j, k, iRho_);
         if (rho <= 0) {
           mach(i, j, k) = 0;
@@ -1529,7 +1510,7 @@ void Pic::calc_mach_number() {
         Real p = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
                   moments(i, j, k, iPzz_)) /
                  3.0;
-        Real vth = sqrt(gamma0 * p / rho);
+        Real vth = sqrt(gamma * p / rho);
 
         mach(i, j, k) = uBulk / max(vth, 1e-99);
       });
@@ -1554,10 +1535,10 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
     for (MFIter mfi(grid.cell_cost()[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      const Array4<Real>& cost = grid.cell_cost()[iLev][mfi].array();
-      const Array4<int const> status = cell_status(iLev)[mfi].array();
+      const Array4<Real> cost = grid.cell_cost()[iLev][mfi].array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         if (bit::is_refined(status(i, j, k))) {
           cost(i, j, k) = 0;
         } else if (bit::is_domain_edge(status(i, j, k))) {
@@ -1906,14 +1887,12 @@ void Pic::update_U0_E0() {
     uBg[iLev].setVal(0.0);
     eBg[iLev].setVal(0.0);
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<const Real>& arrMoments =
-          nodePlasma[nSpecies][iLev][mfi].array();
-
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
+      const Array4<Real> arrU = uBg[iLev][mfi].array();
+      const Array4<const Real> arrMoments =
+          nodePlasma[nSpecies][iLev][mfi].const_array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 0) {
           const Real invRho = 1. / rho;
@@ -1921,19 +1900,22 @@ void Pic::update_U0_E0() {
             arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
         }
       });
-
-      // Fill in ghost nodes
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_domain_boundary(status(ijk))) {
-          const int iFluid = 0;
-          for (int iDir = 0; iDir < nDim3; iDir++) {
-            arrU(i, j, k, iDir) =
-                get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
-          }
-        }
-      });
     }
+
+    // Fill in ghost nodes from the fluid state.
+    // TODO(GPU): host accessors; move to a device fluid view.
+    host_fill(uBg[iLev], true,
+              [&](MFIter& mfi, int i, int j, int k, Array4<Real> const& arrU) {
+                IntVect ijk = { AMREX_D_DECL(i, j, k) };
+                const auto& status = node_status(iLev)[mfi].const_array();
+                if (bit::is_domain_boundary(status(ijk))) {
+                  const int iFluid = 0;
+                  for (int iDir = 0; iDir < nDim3; iDir++) {
+                    arrU(i, j, k, iDir) =
+                        get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
+                  }
+                }
+              });
 
     uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
@@ -1941,14 +1923,12 @@ void Pic::update_U0_E0() {
       smooth_multifab(uBg[iLev], iLev, i % 2 + 1);
 
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<Real>& arrE = eBg[iLev][mfi].array();
-      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
-
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
+      const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
+      const Array4<Real> arrE = eBg[iLev][mfi].array();
+      const Array4<Real const> arrB = nodeB[iLev][mfi].const_array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         const Real& bx = arrB(i, j, k, ix_);
         const Real& by = arrB(i, j, k, iy_);
         const Real& bz = arrB(i, j, k, iz_);
@@ -1961,17 +1941,20 @@ void Pic::update_U0_E0() {
         arrE(i, j, k, iy_) = -uz * bx + ux * bz;
         arrE(i, j, k, iz_) = -ux * by + uy * bx;
       });
-
-      // Fill in boundary nodes
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_domain_boundary(status(ijk))) {
-          arrE(i, j, k, ix_) = get_node_E(mfi, ijk, ix_, iLev);
-          arrE(i, j, k, iy_) = get_node_E(mfi, ijk, iy_, iLev);
-          arrE(i, j, k, iz_) = get_node_E(mfi, ijk, iz_, iLev);
-        }
-      });
     }
+
+    // Fill in boundary nodes from the fluid state.
+    // TODO(GPU): host accessors; move to a device fluid view.
+    host_fill(eBg[iLev], true,
+              [&](MFIter& mfi, int i, int j, int k, Array4<Real> const& arrE) {
+                IntVect ijk = { AMREX_D_DECL(i, j, k) };
+                const auto& status = node_status(iLev)[mfi].const_array();
+                if (bit::is_domain_boundary(status(ijk))) {
+                  arrE(i, j, k, ix_) = get_node_E(mfi, ijk, ix_, iLev);
+                  arrE(i, j, k, iy_) = get_node_E(mfi, ijk, iy_, iLev);
+                  arrE(i, j, k, iz_) = get_node_E(mfi, ijk, iz_, iLev);
+                }
+              });
 
     eBg[iLev].FillBoundary(Geom(iLev).periodicity());
 

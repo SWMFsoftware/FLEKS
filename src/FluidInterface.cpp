@@ -5,6 +5,7 @@
 
 #include "Bit.h"
 #include "FluidInterface.h"
+#include "GpuBackend.h"
 #include "GridUtility.h"
 
 using namespace amrex;
@@ -878,60 +879,98 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
     }
   }
 
-  for (int iLev = 0; iLev < n_lev(); iLev++)
+  const bool multiSpecies = useMultiSpecies;
+  const int nIonLoc = nIon;
+  const int nFluidLoc = nFluid;
+  const auto massFactor = make_kernel_array<Real>(speciesMassFactor);
+  const auto iRho = make_kernel_array<int>(iRho_I);
+  const auto iUx = make_kernel_array<int>(iUx_I);
+  const auto iUy = make_kernel_array<int>(iUy_I);
+  const auto iUz = make_kernel_array<int>(iUz_I);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    // Count the nodes with a zero density of a fluid.
+    ReduceOps<ReduceOpSum> reduceOp;
+    ReduceData<int> reduceData(reduceOp);
+
     for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.fabbox();
       if (phyNodeOnly)
         box = mfi.validbox();
 
-      const Array4<Real>& arr = nodeFluid[iLev][mfi].array();
-      const Real* pMassFactor =
-          useMultiSpecies ? speciesMassFactor.data() : nullptr;
+      const Array4<Real> arr = nodeFluid[iLev][mfi].array();
 
-      ParallelFor(box, [=](int i, int j, int k) noexcept {
-        if (useMultiSpecies) {
-          double Rhot = 0;
-          for (int iIon = 0; iIon < nIon; ++iIon) {
-            // Rho = sum(Rhoi) + Rhoe;
-            Rhot += arr(i, j, k, iRho_I[iIon]) * pMassFactor[iIon];
-          } // iIon
+      reduceOp.eval(
+          box, reduceData,
+          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept -> GpuTuple<int> {
+            int nZero = 0;
+            if (multiSpecies) {
+              double Rhot = 0;
+              for (int iIon = 0; iIon < nIonLoc; ++iIon) {
+                // Rho = sum(Rhoi) + Rhoe;
+                Rhot += arr(i, j, k, iRho[iIon]) * massFactor[iIon];
+              } // iIon
 
-          // Nodes that were not filled by the coupler keep a zero density.
-          // (e.g. nodes inside the body of the source component)
-          if (Rhot > 0) {
-            const double invRhot = 1.0 / Rhot;
-            arr(i, j, k, iUx_I[0]) *= invRhot;
-            arr(i, j, k, iUy_I[0]) *= invRhot;
-            arr(i, j, k, iUz_I[0]) *= invRhot;
-          }
-        } else {
-          for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-            const double& rho = arr(i, j, k, iRho_I[iFluid]);
-            if (rho > 0) {
-              const double invRho = 1.0 / rho;
-              arr(i, j, k, iUx_I[iFluid]) *= invRho;
-              arr(i, j, k, iUy_I[iFluid]) *= invRho;
-              arr(i, j, k, iUz_I[iFluid]) *= invRho;
-            } else {
-              const Real* dx = Geom(iLev).CellSize();
-              const auto plo = Geom(iLev).ProbLo();
-              const Real x =
-                  (i * dx[ix_] + plo[ix_]) * normParams->No2SiL / rPlanetSi;
-              const Real y =
-                  (j * dx[iy_] + plo[iy_]) * normParams->No2SiL / rPlanetSi;
-              const Real z = nDimFluid > 2 ? (k * dx[iz_] + plo[iz_]) *
-                                                 normParams->No2SiL / rPlanetSi
-                                           : 0.0;
-              if (doWarn) {
-                printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
-                       y, z);
-                Abort("Error: ZERO density!");
+              // Nodes that were not filled by the coupler keep a
+              // zero density. (e.g. nodes inside the body of the
+              // source component)
+              if (Rhot > 0) {
+                const double invRhot = 1.0 / Rhot;
+                arr(i, j, k, iUx[0]) *= invRhot;
+                arr(i, j, k, iUy[0]) *= invRhot;
+                arr(i, j, k, iUz[0]) *= invRhot;
               }
-            }
-          } // iFluid
-        } // else
-      });
+            } else {
+              for (int iFluid = 0; iFluid < nFluidLoc; ++iFluid) {
+                const double rho = arr(i, j, k, iRho[iFluid]);
+                if (rho > 0) {
+                  const double invRho = 1.0 / rho;
+                  arr(i, j, k, iUx[iFluid]) *= invRho;
+                  arr(i, j, k, iUy[iFluid]) *= invRho;
+                  arr(i, j, k, iUz[iFluid]) *= invRho;
+                } else {
+                  nZero++;
+                }
+              } // iFluid
+            } // else
+            return { nZero };
+          });
     }
+
+    if (doWarn && get<0>(reduceData.value(reduceOp)) > 0) {
+      report_zero_density(iLev, phyNodeOnly);
+      Abort("Error: ZERO density!");
+    }
+  }
+}
+
+void FluidInterface::report_zero_density(int iLev, bool phyNodeOnly) const {
+  // Print the locations of the nodes with a zero fluid density. This runs on
+  // the host before an abort, so it reads a host copy of the fluid.
+  const Real* dx = Geom(iLev).CellSize();
+  const auto plo = Geom(iLev).ProbLo();
+  for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+    Box box = phyNodeOnly ? mfi.validbox() : mfi.fabbox();
+    FArrayBox fab(nodeFluid[iLev][mfi].box(), nodeFluid[iLev].nComp(),
+                  The_Pinned_Arena());
+    fab.copy<RunOn::Device>(nodeFluid[iLev][mfi]);
+    Gpu::streamSynchronize();
+    const auto arr = fab.const_array();
+    LoopOnCpu(box, [&](int i, int j, int k) {
+      for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+        if (arr(i, j, k, iRho_I[iFluid]) > 0)
+          continue;
+        const Real x =
+            (i * dx[ix_] + plo[ix_]) * normParams->No2SiL / rPlanetSi;
+        const Real y =
+            (j * dx[iy_] + plo[iy_]) * normParams->No2SiL / rPlanetSi;
+        const Real z = nDimFluid > 2 ? (k * dx[iz_] + plo[iz_]) *
+                                           normParams->No2SiL / rPlanetSi
+                                     : 0.0;
+        printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x, y, z);
+      }
+    });
+  }
 }
 
 void FluidInterface::set_plasma_charge_and_mass(Real qomEl) {

@@ -61,9 +61,11 @@ void ForceFreeIC::set_fields(PicICFields& fields) const {
 
   for (int iLev = 0; iLev < nLev; ++iLev) {
     const auto& geom = fields.geom(iLev);
-    const auto& prob_lo = geom.ProbLo();
-    const auto& prob_hi = geom.ProbHi();
-    const auto& dx = geom.CellSize();
+    // GpuArray (not the Real* that ProbLo() returns) so that the kernels
+    // below capture the values, not a pointer to host memory.
+    const auto prob_lo = geom.ProbLoArray();
+    const auto prob_hi = geom.ProbHiArray();
+    const auto dx = geom.CellSizeArray();
     const amrex::Real Lx = prob_hi[0] - prob_lo[0];
     const amrex::Real Ly = prob_hi[1] - prob_lo[1];
     const amrex::Real invLx = (Lx > 0.0) ? 1.0 / Lx : 0.0;

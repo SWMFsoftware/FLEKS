@@ -10,6 +10,7 @@
 #include <AMReX_BoxArray.H>
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_GpuContainers.H>
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
@@ -28,6 +29,39 @@
 #include "RefineRegions.h"
 #include "TimeCtr.h"
 
+// Device-copyable view of the active-domain ranges and the inner body. A
+// kernel captures it by value instead of calling Grid members, because the
+// Grid object lives in host memory.
+struct DomainView {
+  const amrex::RealBox* ranges = nullptr;
+  int nRanges = 0;
+  int activeDim = nDim;
+  bool useBody = false;
+  amrex::Real bodyCenter[3] = { 0.0, 0.0, 0.0 };
+  amrex::Real bodyRadius2 = 0.0;
+
+  AMREX_GPU_HOST_DEVICE bool is_inside_domain(const amrex::Real* loc) const {
+    for (int i = 0; i < nRanges; ++i) {
+      if (ranges[i].contains(loc))
+        return true;
+    }
+    return false;
+  }
+
+  // See Grid::is_inside_body().
+  AMREX_GPU_HOST_DEVICE bool is_inside_body(const amrex::Real* loc) const {
+    if (!useBody)
+      return false;
+
+    amrex::Real r2 = 0;
+    for (int i = 0; i < activeDim; i++) {
+      const amrex::Real delta = loc[i] - bodyCenter[i];
+      r2 += delta * delta;
+    }
+    return r2 < bodyRadius2;
+  }
+};
+
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {
 protected:
@@ -44,8 +78,9 @@ protected:
   // usually contains less boxes.
   amrex::BoxArray activeRegion;
 
-  // The range of activeRegion.
+  // The range of activeRegion, and its copy in device memory for DomainView.
   amrex::Vector<amrex::RealBox> activeDomainRanges;
+  amrex::Gpu::DeviceVector<amrex::RealBox> activeDomainRangesDevice;
 
   // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
@@ -201,6 +236,18 @@ public:
       SetBoxArray(iLev, grid->boxArray(iLev));
       SetDistributionMap(iLev, grid->DistributionMap(iLev));
     }
+  }
+
+  DomainView domain_view() const {
+    DomainView view;
+    view.ranges = activeDomainRangesDevice.data();
+    view.nRanges = static_cast<int>(activeDomainRangesDevice.size());
+    view.activeDim = get_dim();
+    view.useBody = useBody;
+    for (int i = 0; i < 3; ++i)
+      view.bodyCenter[i] = bodyCenter[i];
+    view.bodyRadius2 = bodyRadius2;
+    return view;
   }
 
   bool is_inside_domain(const amrex::Real* loc) const {

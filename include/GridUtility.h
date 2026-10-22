@@ -15,6 +15,7 @@
 
 #include "Bit.h"
 #include "Constants.h"
+#include "GpuBackend.h"
 #include "GridInfo.h"
 #include "UInterp.h"
 #include "Utility.h"
@@ -218,6 +219,27 @@ struct CellLinear : public Base<CellLinear, amrex::Real> {
 
 } // namespace amrex::ParticleInterpolator
 
+// Location of the center of cell (i,j,k) and of the low node of cell (i,j,k).
+// These reproduce amrex::Geometry::CellCenter() and LoNode() (plo is
+// Geometry::ProbLoArray(), dx is CellSizeArray()), but can be used in kernels.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void cell_center_loc(
+    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>& plo,
+    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>& dx,
+    AMREX_D_DECL(int i, int j, int k), amrex::Real* loc) {
+  const int ijk[AMREX_SPACEDIM] = { AMREX_D_DECL(i, j, k) };
+  for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    loc[d] = plo[d] + dx[d] * (amrex::Real(0.5) + (amrex::Real)ijk[d]);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void lo_node_loc(
+    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>& plo,
+    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>& dx,
+    AMREX_D_DECL(int i, int j, int k), amrex::Real* loc) {
+  const int ijk[AMREX_SPACEDIM] = { AMREX_D_DECL(i, j, k) };
+  for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    loc[d] = plo[d] + dx[d] * static_cast<amrex::Real>(ijk[d]);
+}
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_node_index(
     const amrex::RealVect& xyz, const amrex::Real* const plo,
     const amrex::Real* const invDx, amrex::IntVect& loIdx,
@@ -248,12 +270,10 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
   find_node_index(xyz, plo, invDx, loIdx, dShift);
 }
 
-inline void find_node_interpolation(const amrex::RealVect& xyz,
-                                    const amrex::Real* const plo,
-                                    const amrex::Real* const invDx,
-                                    amrex::IntVect& loIdx,
-                                    amrex::RealVect& dShift,
-                                    amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_node_interpolation(
+    const amrex::RealVect& xyz, const amrex::Real* const plo,
+    const amrex::Real* const invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
   amrex::ParticleInterpolator::NodeLinear interp(xyz, plo, invDx);
   loIdx = amrex::IntVect(
       AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
@@ -261,12 +281,10 @@ inline void find_node_interpolation(const amrex::RealVect& xyz,
   linear_interpolation_coef(dShift, coef);
 }
 
-inline void find_cell_interpolation(const amrex::RealVect& xyz,
-                                    const amrex::Real* const plo,
-                                    const amrex::Real* const invDx,
-                                    amrex::IntVect& loIdx,
-                                    amrex::RealVect& dShift,
-                                    amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_interpolation(
+    const amrex::RealVect& xyz, const amrex::Real* const plo,
+    const amrex::Real* const invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift, amrex::Real (&coef)[2][2][2]) {
   amrex::ParticleInterpolator::CellLinear interp(xyz, plo, invDx);
   loIdx = amrex::IntVect(
       AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
@@ -341,7 +359,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
         const amrex::IntVect ijk = { AMREX_D_DECL(
             loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
         for (int iDim = 0; iDim < nComp; ++iDim)
-          field(ijk, iDim) += coef[i][j][k] * value[iDim];
+          deposit_add(field.ptr(ijk, iDim), coef[i][j][k] * value[iDim]);
       }
 }
 
@@ -382,14 +400,16 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
   }
 }
 
-inline bool skip_particle_for_dive_cleaning(
-    const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
+// plo and invDx are Geometry::ProbLo() and InvCellSize() of the level.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool skip_particle_for_dive_cleaning(
+    const amrex::RealVect& xyz, const amrex::Real* const plo,
+    const amrex::Real* const invDx, int iLev,
     const amrex::Array4<int const>& status) {
 
   bool skip = false;
   amrex::IntVect iv;
   amrex::RealVect rv;
-  find_cell_index_exp(xyz, Geom.ProbLo(), Geom.InvCellSize(), iv, rv);
+  find_cell_index_exp(xyz, plo, invDx, iv, rv);
 
   if (bit::is_refined(status(iv)) || bit::is_lev_boundary(status(iv))) {
     skip = true;
@@ -648,7 +668,7 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
 
 // Scale all elements in FabArray by scalar
 template <class FAB, typename U,
-          std::enable_if_t<std::is_arithmetic_v<U>, int> = 0>
+          std::enable_if_t<std::is_arithmetic_v<U>, int> IsArithmetic = 0>
 inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
   for (amrex::MFIter mfi(fa); mfi.isValid(); ++mfi) {
     const auto arr = fa[mfi].array();

@@ -297,6 +297,10 @@ public:
 
   void normalize_fluid_variables();
 
+  // Print the nodes where a fluid density is zero (see
+  // convert_moment_to_velocity).
+  void report_zero_density(int iLev, bool phyNodeOnly) const;
+
   void convert_moment_to_velocity(bool phyNodeOnly = false, bool doWarn = true);
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);

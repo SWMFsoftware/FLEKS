@@ -4,6 +4,7 @@
 #include <AMReX_ParticleInterpolators.H>
 #include <AMReX_ParticleReduce.H>
 
+#include "GpuBackend.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -23,7 +24,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_charge(
       for (int ii = lo.x; ii <= hi.x; ++ii) {
         const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
                                            loIdx[iz_] + kk) };
-        chargeArr(ijk) += coef[ii][jj][kk] * charge;
+        deposit_add(chargeArr.ptr(ijk, 0), coef[ii][jj][kk] * charge);
       }
 }
 
@@ -40,13 +41,17 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
   const auto dxi = Geom(iLev).InvCellSizeArray();
   const Real invV = invVol[iLev];
   const int iqp = iqp_;
+  Real dxLoc[3] = { 0, 0, 0 };
+  for (int d = 0; d < nDim; ++d)
+    dxLoc[d] = dx[iLev][d];
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real> const& chargeArr = netChargeMF[pti].array();
-    Array4<RealCMM> const& mmArr = centerMM[pti].array();
-    const AoS& particles = pti.GetArrayOfStructs();
+    Array4<Real> const chargeArr = netChargeMF[pti].array();
+    Array4<RealCMM> const mmArr = centerMM[pti].array();
+    const ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
-    for (const auto& p : particles) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      const ParticleType& p = pData[ip];
       /*
       Q: Why do not check p.id() < 0?
       A: IDs of ghost cell particles are set to -1 inside
@@ -54,22 +59,20 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
       here.
       */
       ParticleInterpolator::Linear interp(p, plo, dxi);
-      interp.ParticleToMesh(
-          p, chargeArr, 0, 0, 1,
-          [=] AMREX_GPU_DEVICE(const ParticleType& part, int /*comp*/) {
-            return part.rdata(iqp) * invV;
-          });
+      interp.ParticleToMesh(p, chargeArr, 0, 0, 1,
+                            [=](const ParticleType& part, int /*comp*/) {
+                              return part.rdata(iqp) * invV;
+                            });
 
       if (!doNetChargeOnly) {
         const IntVect loIdx(
             AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
         const RealVect dShift(
             AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
-        accumulate_mass_matrix_contribution(iLev, loIdx, dShift, p.rdata(iqp),
-                                            mmArr);
+        accumulate_mass_matrix_contribution(dxLoc, invV, loIdx, dShift,
+                                            p.rdata(iqp), mmArr);
       } // if doChargeOnly
-
-    } // for p
+    });
   }
 }
 
@@ -89,97 +92,93 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
   if (iLev == (n_lev() - 1)) {
     finer_level = iLev;
   }
+
+  // Copies, so that the kernels capture values, not host pointers.
+  Real ploLev[3] = { 0, 0, 0 }, invDxLev[3] = { 0, 0, 0 };
+  Real dxLev[3] = { 0, 0, 0 };
+  for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+    ploLev[d] = Geom(iLev).ProbLo(d);
+    invDxLev[d] = Geom(iLev).InvCellSize(d);
+  }
+  for (int d = 0; d < nDim; ++d)
+    dxLev[d] = dx[iLev][d];
+  const Real invVolLev = invVol[iLev];
+  const bool multiLevel = n_lev() > 1;
+  const int iqp = iqp_;
+
   for (int nLev = finer_level; nLev >= coarser_level; nLev--) {
+    Real ploN[3] = { 0, 0, 0 }, invDxN[3] = { 0, 0, 0 };
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+      ploN[d] = Geom(nLev).ProbLo(d);
+      invDxN[d] = Geom(nLev).InvCellSize(d);
+    }
+
     if (iLev == nLev) {
       for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
-        Array4<Real> const& chargeArr = netChargeMF[pti].array();
+        Array4<Real> const chargeArr = netChargeMF[pti].array();
 
-        Array4<RealCMM> const& mmArr = centerMM[pti].array();
-        const Array4<int const>& status = cell_status(nLev)[pti].array();
-        const AoS& particles = pti.GetArrayOfStructs();
+        Array4<RealCMM> const mmArr = centerMM[pti].array();
+        const Array4<int const> status = cell_status(nLev)[pti].const_array();
+        const ParticleType* const pData = pti.GetArrayOfStructs()().data();
         const Dim3 lo = init_dim3(0);
         const Dim3 hi = init_dim3(1);
-        for (const auto& p : particles) {
-          const Real qp = p.rdata(iqp_);
+        ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+          const ParticleType& p = pData[ip];
+          const Real qp = p.rdata(iqp);
           IntVect loIdx;
           RealVect dShift;
           IntVect realIdx;
           RealVect tmprv;
-          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
-                              Geom(nLev).InvCellSize(), realIdx, tmprv);
+          find_cell_index_exp(p.pos(), ploN, invDxN, realIdx, tmprv);
           if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
                                bit::is_lev_edge(status(realIdx)))) {
             Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                    Geom(iLev).InvCellSize(), loIdx, dShift,
+            find_cell_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift,
                                     coef);
-            const Real cTmp = qp * invVol[iLev];
+            const Real cTmp = qp * invVolLev;
             deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
           }
 
           bool skipParticle = false;
-          if (n_lev() > 1) {
-            skipParticle = skip_particle_for_dive_cleaning(p.pos(), Geom(iLev),
-                                                           iLev, status);
+          if (multiLevel) {
+            skipParticle = skip_particle_for_dive_cleaning(
+                p.pos(), ploLev, invDxLev, iLev, status);
           }
           if (!doNetChargeOnly && !skipParticle) {
-            accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp, mmArr);
+            accumulate_mass_matrix_contribution(dxLev, invVolLev, loIdx, dShift,
+                                                qp, mmArr);
           }
-        }
+        });
       }
     }
-    if (nLev > iLev) {
+
+    // A particle of level nLev deposits onto the charge of level iLev in jf
+    // (finer level) or jc (coarser level).
+    if (nLev != iLev) {
+      MultiFab& depositMF = (nLev > iLev) ? jf : jc;
       for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
-        Array4<Real> const& chargeArr = jf[pti].array();
-        const Array4<int const>& status = cell_status(nLev)[pti].array();
-        const AoS& particles = pti.GetArrayOfStructs();
+        Array4<Real> const chargeArr = depositMF[pti].array();
+        const Array4<int const> status = cell_status(nLev)[pti].const_array();
+        const ParticleType* const pData = pti.GetArrayOfStructs()().data();
         const Dim3 lo = init_dim3(0);
         const Dim3 hi = init_dim3(1);
-        for (const auto& p : particles) {
-          const Real qp = p.rdata(iqp_);
+        ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+          const ParticleType& p = pData[ip];
+          const Real qp = p.rdata(iqp);
           IntVect loIdx;
           RealVect dShift;
           IntVect realIdx;
           RealVect tmprv;
-          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
-                              Geom(nLev).InvCellSize(), realIdx, tmprv);
+          find_cell_index_exp(p.pos(), ploN, invDxN, realIdx, tmprv);
           if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
                                bit::is_lev_edge(status(realIdx)))) {
             Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                    Geom(iLev).InvCellSize(), loIdx, dShift,
+            find_cell_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift,
                                     coef);
-            const Real cTmp = qp * invVol[iLev];
+            const Real cTmp = qp * invVolLev;
             deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
           }
-        }
-      }
-    }
-    if (nLev < iLev) {
-      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
-        Array4<Real> const& chargeArr = jc[pti].array();
-        const Array4<int const>& status = cell_status(nLev)[pti].array();
-        const AoS& particles = pti.GetArrayOfStructs();
-        const Dim3 lo = init_dim3(0);
-        const Dim3 hi = init_dim3(1);
-        for (const auto& p : particles) {
-          const Real qp = p.rdata(iqp_);
-          IntVect loIdx;
-          RealVect dShift;
-          IntVect realIdx;
-          RealVect tmprv;
-          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
-                              Geom(nLev).InvCellSize(), realIdx, tmprv);
-          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
-                               bit::is_lev_edge(status(realIdx)))) {
-            Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                    Geom(iLev).InvCellSize(), loIdx, dShift,
-                                    coef);
-            const Real cTmp = qp * invVol[iLev];
-            deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
-          }
-        }
+        });
       }
     }
   }
@@ -367,73 +366,77 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     Vector<MultiFab>& momentsMF, Vector<MultiFab>& nodeBMF, Real dt) {
   timing_func("Pts::sum_moments");
 
-  Real energy = 0;
+  // The kinetic energy is summed on the fly (see KernelSum).
+  KernelSum energySum;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     timing_func("Pts::sum_moments_node_deposit");
     momentsMF[iLev].setVal(0.0);
+    const auto ploLev = Geom(iLev).ProbLoArray();
+    const auto invDxLev = Geom(iLev).InvCellSizeArray();
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
+      Array4<Real> const momentsArr = momentsMF[iLev][pti].array();
 
-      const AoS& particles = pti.GetArrayOfStructs();
+      const ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
       const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
 
-      // Print() << "iLev = " << iLev << std::endl;
-      for (const auto& p : particles) {
-        if (p.id() < 0)
-          continue;
+      energySum.add(
+          pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) -> GpuTuple<Real> {
+            const ParticleType& p = pData[ip];
+            if (p.id() < 0)
+              return { 0.0 };
 
-        // Print() << "p = " << p << std::endl;
-        const Real up = p.rdata(iup_);
-        const Real vp = p.rdata(ivp_);
-        const Real wp = p.rdata(iwp_);
-        const Real qp = p.rdata(iqp_);
+            const Real up = p.rdata(iup_);
+            const Real vp = p.rdata(ivp_);
+            const Real wp = p.rdata(iwp_);
+            const Real qp = p.rdata(iqp_);
 
-        //-----calculate interpolate coef begin-------------
-        IntVect loIdx;
-        RealVect dShift;
-        Real coef[2][2][2];
-        find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                Geom(iLev).InvCellSize(), loIdx, dShift, coef);
-        //-----calculate interpolate coef end-------------
+            //-----calculate interpolate coef begin-------------
+            IntVect loIdx;
+            RealVect dShift;
+            Real coef[2][2][2];
+            find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(),
+                                    loIdx, dShift, coef);
+            //-----calculate interpolate coef end-------------
 
-        //-------nodePlasma begin---------
-        Real pMoments[nMoments];
+            //-------nodePlasma begin---------
+            Real pMoments[nMoments];
 
-        pMoments[iNum_] = 1;
-        pMoments[iRho_] = qp;
+            pMoments[iNum_] = 1;
+            pMoments[iRho_] = qp;
 
-        {
-          const Real mx = qp * up;
-          const Real my = qp * vp;
-          const Real mz = qp * wp;
-          pMoments[iMx_] = mx;
-          pMoments[iMy_] = my;
-          pMoments[iMz_] = mz;
+            {
+              const Real mx = qp * up;
+              const Real my = qp * vp;
+              const Real mz = qp * wp;
+              pMoments[iMx_] = mx;
+              pMoments[iMy_] = my;
+              pMoments[iMz_] = mz;
 
-          pMoments[iPxx_] = mx * up;
-          pMoments[iPyy_] = my * vp;
-          pMoments[iPzz_] = mz * wp;
+              pMoments[iPxx_] = mx * up;
+              pMoments[iPyy_] = my * vp;
+              pMoments[iPzz_] = mz * wp;
 
-          pMoments[iPxy_] = mx * vp;
-          pMoments[iPxz_] = mx * wp;
-          pMoments[iPyz_] = my * wp;
-        }
+              pMoments[iPxy_] = mx * vp;
+              pMoments[iPxz_] = mx * wp;
+              pMoments[iPyz_] = my * wp;
+            }
 
-        for (int iVar = 0; iVar < nMoments; iVar++)
-          for (int kk = lo.z; kk <= hi.z; ++kk)
-            for (int jj = lo.y; jj <= hi.y; ++jj)
-              for (int ii = lo.x; ii <= hi.x; ++ii) {
-                const IntVect ijk = { AMREX_D_DECL(
-                    loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-                momentsArr(ijk, iVar) += coef[ii][jj][kk] * pMoments[iVar];
-              }
+            for (int iVar = 0; iVar < nMoments; iVar++)
+              for (int kk = lo.z; kk <= hi.z; ++kk)
+                for (int jj = lo.y; jj <= hi.y; ++jj)
+                  for (int ii = lo.x; ii <= hi.x; ++ii) {
+                    const IntVect ijk = { AMREX_D_DECL(
+                        loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
+                    deposit_add(momentsArr.ptr(ijk, iVar),
+                                coef[ii][jj][kk] * pMoments[iVar]);
+                  }
 
-        //-------nodePlasma end---------
+            //-------nodePlasma end---------
 
-        energy += qp * (up * up + vp * vp + wp * wp);
-      } // for p
+            return { qp * (up * up + vp * vp + wp * wp) };
+          });
     }
 
     // Exclude the number density.
@@ -485,6 +488,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
   }
 
+  Real energy = energySum.value();
   energy *= 0.5 * qomSign * get_mass();
 
   return energy;
@@ -529,30 +533,23 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
     tmpMF.mult(qomSign * get_mass(), tmpMF.nGrow());
 
     for (MFIter mfi(momentsMF[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = momentsMF[iLev][mfi];
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arr = fab.array();
+      const Array4<Real> arr = momentsMF[iLev][mfi].array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+      ParallelFor(mfi.fabbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        const Real rho = arr(i, j, k, iRho_);
+        if (rho > 0) {
+          const Real ux = arr(i, j, k, iUx_) / rho;
+          const Real uy = arr(i, j, k, iUy_) / rho;
+          const Real uz = arr(i, j, k, iUz_) / rho;
+          arr(i, j, k, iPxx_) = arr(i, j, k, iPxx_) - rho * ux * ux;
+          arr(i, j, k, iPyy_) = arr(i, j, k, iPyy_) - rho * uy * uy;
+          arr(i, j, k, iPzz_) = arr(i, j, k, iPzz_) - rho * uz * uz;
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            const Real rho = arr(i, j, k, iRho_);
-            if (rho > 0) {
-              const Real ux = arr(i, j, k, iUx_) / rho;
-              const Real uy = arr(i, j, k, iUy_) / rho;
-              const Real uz = arr(i, j, k, iUz_) / rho;
-              arr(i, j, k, iPxx_) = arr(i, j, k, iPxx_) - rho * ux * ux;
-              arr(i, j, k, iPyy_) = arr(i, j, k, iPyy_) - rho * uy * uy;
-              arr(i, j, k, iPzz_) = arr(i, j, k, iPzz_) - rho * uz * uz;
-
-              arr(i, j, k, iPxy_) = arr(i, j, k, iPxy_) - rho * ux * uy;
-              arr(i, j, k, iPxz_) = arr(i, j, k, iPxz_) - rho * ux * uz;
-              arr(i, j, k, iPyz_) = arr(i, j, k, iPyz_) - rho * uy * uz;
-            }
-          }
+          arr(i, j, k, iPxy_) = arr(i, j, k, iPxy_) - rho * ux * uy;
+          arr(i, j, k, iPxz_) = arr(i, j, k, iPxz_) - rho * ux * uz;
+          arr(i, j, k, iPyz_) = arr(i, j, k, iPyz_) - rho * uy * uz;
+        }
+      });
     }
   }
 }

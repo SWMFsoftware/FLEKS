@@ -25,10 +25,10 @@ namespace {
 // div_node_to_center(J) holds to round-off. In 2D the out-of-plane component is
 // q vOut / V times the time-averaged shape. Returns false if the particle moved
 // more than one cell.
-inline bool deposit_esirkepov(const Array4<Real>& jArr, const Real* x0,
-                              const Real* x1, Real q, Real vOut,
-                              const Real* plo, const Real* invDx,
-                              const Real* dx, Real invDt, Real invVol) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool deposit_esirkepov(
+    const Array4<Real>& jArr, const Real* x0, const Real* x1, Real q, Real vOut,
+    const Real* plo, const Real* invDx, const Real* dx, Real invDt,
+    Real invVol) {
   // A particle that stays in its cell touches 2 nodes per dimension, one that
   // crosses a cell face 3.
   constexpr int nS = 3;
@@ -44,10 +44,10 @@ inline bool deposit_esirkepov(const Array4<Real>& jArr, const Real* x0,
     const Real s1 = (x1[d] - plo[d]) * invDx[d];
     const int i0 = static_cast<int>(std::floor(s0));
     const int i1 = static_cast<int>(std::floor(s1));
-    if (std::abs(i1 - i0) > 1)
+    if (amrex::Math::abs(i1 - i0) > 1)
       return false;
-    base[d] = std::min(i0, i1);
-    n[d] = 2 + std::abs(i1 - i0);
+    base[d] = amrex::min(i0, i1);
+    n[d] = 2 + amrex::Math::abs(i1 - i0);
     const Real f0 = s0 - i0, f1 = s1 - i1;
     Real S1[nS] = {};
     S0[d][i0 - base[d]] += 1.0 - f0;
@@ -82,7 +82,7 @@ inline bool deposit_esirkepov(const Array4<Real>& jArr, const Real* x0,
           idx[d] = base[d] + a;
           idx[e] = base[e] + ie;
           idx[f] = base[f] + jf;
-          jArr(IntVect(AMREX_D_DECL(idx[0], idx[1], idx[2])), d) += jNode;
+          deposit_add(jArr.ptr(AMREX_D_DECL(idx[0], idx[1], idx[2]), d), jNode);
         }
       }
   }
@@ -93,8 +93,8 @@ inline bool deposit_esirkepov(const Array4<Real>& jArr, const Real* x0,
       for (int b = 0; b < n[1]; ++b) {
         const Real w = transverse(0, 1, a, b);
         if (w != 0.0)
-          jArr(IntVect(AMREX_D_DECL(base[0] + a, base[1] + b, 0)), iz_) +=
-              coef * w;
+          deposit_add(jArr.ptr(AMREX_D_DECL(base[0] + a, base[1] + b, 0), iz_),
+                      coef * w);
       }
   }
   return true;
@@ -104,9 +104,9 @@ inline bool deposit_esirkepov(const Array4<Real>& jArr, const Real* x0,
 // component d, the average of the two nodes of the particle's cell; across d
 // (and for the out-of-plane component in 2D), linear. loIdx and dShift come
 // from find_node_interpolation (dShift = weight of the upper node).
-inline void gather_E_matched_to_current(const Array4<Real const>& EArr,
-                                        const IntVect& loIdx,
-                                        const RealVect& dShift, Real* ep) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void gather_E_matched_to_current(
+    const Array4<Real const>& EArr, const IntVect& loIdx,
+    const RealVect& dShift, Real* ep) {
   for (int c = 0; c < 3; ++c) {
     Real w[3][2];
     for (int d = 0; d < 3; ++d) {
@@ -139,15 +139,16 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
     const MultiFab& nodeEMF, const MultiFab& nodeBMF, Real dt) {
   timing_func("Pts::update_position_to_half_stage");
 
-  Real dtLoc = 0.5 * dt;
+  const Real dtLoc = 0.5 * dt;
 
   const int iLev = 0;
   const LevelGeomBox lb = make_level_geom_box(iLev);
+  const ParticleBoundary pb = particle_boundary();
   int lastFab = -1;
   ActiveRegionBox ab;
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    AoS& particles = pti.GetArrayOfStructs();
+    ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     if (pti.index() != lastFab) {
       lastFab = pti.index();
@@ -155,21 +156,22 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       ab = make_active_region_box(lb, pti.validbox(), bx);
     }
 
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Array4<int const> status = cell_status(iLev)[pti].const_array();
 
-    for (auto& p : particles) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      ParticleType& p = pData[ip];
       if (p.id() < 0)
-        continue;
+        return;
 
       for (int iDim = 0; iDim < nDim; iDim++) {
         p.pos(iDim) += p.rdata(iup_ + iDim) * dtLoc;
       }
 
       // Mark for deletion
-      if (reflect_or_delete_particle(p, status, ab)) {
+      if (pb.reflect_or_delete_particle(p, status, ab)) {
         p.id() = -1;
       }
-    } // for p
+    });
   } // for pti
 
   redistribute_particles();
@@ -215,15 +217,27 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
   // Current of the step (Esirkepov), deposited as the particles move.
   const Real qFactor = charge * qomSign;
   const Real invDt = 1.0 / dt;
+  const bool depositCurrent = (currentMF != nullptr);
+  const bool savePitchAngle = (pMode == PartMode::PIC && imu_ < NStructReal);
+  const ParticleBoundary pb = particle_boundary();
+
+  // Set by a kernel if a particle moved more than one cell.
+  Gpu::DeviceVector<int> movedTooFarFlag(1, 0);
+  int* const movedTooFar = movedTooFarFlag.data();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const Real* const ploLoc = plo[iLev].begin();
-    const Real* const invDxLoc = invDx[iLev].begin();
-    const Real* const dxLoc = Geom(iLev).CellSize();
+    // Copies, so that the kernels capture values, not host pointers.
+    Real ploLoc[3] = { 0, 0, 0 }, invDxLoc[3] = { 0, 0, 0 };
+    Real dxLoc[3] = { 0, 0, 0 };
+    for (int d = 0; d < nDim; ++d) {
+      ploLoc[d] = plo[iLev][d];
+      invDxLoc[d] = invDx[iLev][d];
+      dxLoc[d] = Geom(iLev).CellSize(d);
+    }
+    const Real invVolLev = invVol[iLev];
     const LevelGeomBox lb = make_level_geom_box(iLev);
     int lastFab = -1;
     ActiveRegionBox ab;
-    bool movedTooFar = false;
 
     if (currentMF)
       (*currentMF)[iLev].setVal(0.0);
@@ -231,10 +245,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real> jArr =
           currentMF ? (*currentMF)[iLev][pti].array() : Array4<Real>();
-      const Array4<Real const>& EArr = nodeE[iLev][pti].array();
-      const Array4<Real const>& BArr = nodeB[iLev][pti].array();
-      const Array4<Real const>& B0Arr =
-          useB0 ? nodeB0[iLev][pti].array() : Array4<Real const>();
+      const Array4<Real const> EArr = nodeE[iLev][pti].const_array();
+      const Array4<Real const> BArr = nodeB[iLev][pti].const_array();
+      const Array4<Real const> B0Arr =
+          useB0 ? nodeB0[iLev][pti].const_array() : Array4<Real const>();
 
       if (pti.index() != lastFab) {
         lastFab = pti.index();
@@ -242,16 +256,17 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         ab = make_active_region_box(lb, pti.validbox(), bx);
       }
 
-      const Array4<int const>& status = cell_status(iLev)[pti].array();
+      const Array4<int const> status = cell_status(iLev)[pti].const_array();
 
-      AoS& particles = pti.GetArrayOfStructs();
+      ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
       const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
 
-      for (auto& p : particles) {
+      ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+        ParticleType& p = pData[ip];
         if (p.id() < 0)
-          continue;
+          return;
 
         const Real u_start = p.rdata(iup_);
         const Real v_start = p.rdata(ivp_);
@@ -301,7 +316,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         // d (the average of the two nodes of the cell the particle is in).
         // Gather E with the same shape, the transpose of the deposit, so the
         // work of the field on the particles matches the field energy loss.
-        if (currentMF)
+        if (depositCurrent)
           gather_E_matched_to_current(EArr, loIdx, dShift, ep);
 
         up = up - u0p[ix_];
@@ -338,21 +353,21 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
         // J = q dx/dt for every component; in 2D the out-of-plane dx is
         // wDrift * dtLoc (dtLoc != dt when the time step changes).
-        if (currentMF &&
+        if (depositCurrent &&
             !deposit_esirkepov(jArr, xOld, xNew, qFactor * p.rdata(iqp_),
                                wDrift * dtLoc * invDt, ploLoc, invDxLoc, dxLoc,
-                               invDt, invVol[iLev]))
-          movedTooFar = true;
+                               invDt, invVolLev))
+          *movedTooFar = 1;
 
         // A trial push only deposits the current of the trial state.
         if (trialOnly)
-          continue;
+          return;
 
         p.rdata(iup_) = unp1;
         p.rdata(ivp_) = vnp1;
         p.rdata(iwp_) = wnp1;
 
-        if (pMode == PartMode::PIC && imu_ < NStructReal) {
+        if (savePitchAngle) {
           // Note: bp should be calculated at the new position. Now, bp at the
           // old position is used to save the calculation.
           p.rdata(imu_) = cosine(p, bp);
@@ -364,13 +379,16 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.pos(iz_) = xNew[iz_];
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, ab)) {
+        if (pb.reflect_or_delete_particle(p, status, ab)) {
           p.id() = -1;
         }
-      } // for p
+      });
     } // for pti
 
-    if (movedTooFar)
+    int movedTooFarHost = 0;
+    Gpu::copy(Gpu::deviceToHost, movedTooFarFlag.begin(), movedTooFarFlag.end(),
+              &movedTooFarHost);
+    if (movedTooFarHost)
       Abort("charged_particle_mover: a particle moved more than one cell in a "
             "step; the charge-conserving current needs a smaller time step.");
 
@@ -387,13 +405,14 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
   timing_func("Pts::neutral_mover");
 
+  const ParticleBoundary pb = particle_boundary();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const LevelGeomBox lb = make_level_geom_box(iLev);
     int lastFab = -1;
     ActiveRegionBox ab;
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      AoS& particles = pti.GetArrayOfStructs();
+      ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
       if (pti.index() != lastFab) {
         lastFab = pti.index();
@@ -401,11 +420,12 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         ab = make_active_region_box(lb, pti.validbox(), bx);
       }
 
-      const Array4<int const>& status = cell_status(iLev)[pti].array();
+      const Array4<int const> status = cell_status(iLev)[pti].const_array();
 
-      for (auto& p : particles) {
+      ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+        ParticleType& p = pData[ip];
         if (p.id() < 0)
-          continue;
+          return;
 
         const Real up = p.rdata(iup_);
         const Real vp = p.rdata(ivp_);
@@ -419,10 +439,10 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         p.pos(iz_) = zp + wp * dt;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, ab)) {
+        if (pb.reflect_or_delete_particle(p, status, ab)) {
           p.id() = -1;
         }
-      } // for p
+      });
     } // for pti
   }
 }
@@ -436,19 +456,29 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
   const Real sign = charge / fabs(charge);
   const Real epsLimit = 0.1;
-  Real epsMax = 0;
 
-  const Real* const ploLoc = plo[iLev].begin();
-  const Real* const invDxLoc = invDx[iLev].begin();
+  // Copies, so that the kernels capture values, not host pointers.
+  Real ploLoc[3] = { 0, 0, 0 }, invDxLoc[3] = { 0, 0, 0 };
+  Real dxLoc[3] = { 0, 0, 0 };
+  for (int d = 0; d < nDim; ++d) {
+    ploLoc[d] = plo[iLev][d];
+    invDxLoc[d] = invDx[iLev][d];
+    dxLoc[d] = dx[iLev][d];
+  }
+  const Real invVolLev = invVol[iLev];
+  const bool useBody = (grid != nullptr && grid->use_body());
+  const bool multiLevel = n_lev() > 1;
+  const int nD = get_dim();
+  const ParticleBoundary pb = particle_boundary();
   const LevelGeomBox lb = make_level_geom_box(iLev);
   int lastFab = -1;
   ActiveRegionBox ab;
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    Array4<Real const> const phiArr = phiMF[iLev][pti].const_array();
+    const Array4<int const> status = cell_status(iLev)[pti].const_array();
 
-    AoS& particles = pti.GetArrayOfStructs();
+    ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     if (pti.index() != lastFab) {
       lastFab = pti.index();
@@ -456,17 +486,18 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       ab = make_active_region_box(lb, pti.validbox(), bx);
     }
 
-    for (auto& p : particles) {
-      if (p.id() == -1 || is_outside_active_region(p, status, ab)) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      ParticleType& p = pData[ip];
+      if (p.id() == -1 || pb.is_outside_active_region(p, status, ab)) {
         p.id() = -1;
-        continue;
+        return;
       }
 
-      if (skip_particle_for_dive_cleaning(p.pos(), Geom(iLev), iLev, status) &&
-          n_lev() > 1) {
-        continue;
+      if (skip_particle_for_dive_cleaning(p.pos(), ploLoc, invDxLoc, iLev,
+                                          status) &&
+          multiLevel) {
+        return;
       }
-
       IntVect loIdx;
       RealVect dShift;
       find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
@@ -482,71 +513,69 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
             IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy,
                                          loIdx[iz_] + iz) };
             if (bit::is_lev_boundary(status(ijk)) ||
-                (grid != nullptr && grid->use_body() &&
-                 bit::is_body(status(ijk))))
+                (useBody && bit::is_body(status(ijk))))
               isBoundaryPhysicalCell = true;
           }
       if (isBoundaryPhysicalCell && iLev == 0)
-        continue;
+        return;
 
       {
         Real weights_IIID[2][2][2][nDim3];
         //----- Mass matrix calculation begin--------------
-        const Real xi0 = dShift[ix_] * dx[iLev][ix_];
-        const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
-        const Real xi1 = dx[iLev][ix_] - xi0;
-        const Real eta1 = dx[iLev][iy_] - eta0;
-        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
+        const Real xi0 = dShift[ix_] * dxLoc[ix_];
+        const Real eta0 = dShift[iy_] * dxLoc[iy_];
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dxLoc[iz_] : 0;
+        const Real xi1 = dxLoc[ix_] - xi0;
+        const Real eta1 = dxLoc[iy_] - eta0;
+        const Real zeta1 = nDim > 2 ? dxLoc[iz_] - zeta0 : 1;
 
-        const Real zeta02Vol = zeta0 * invVol[iLev];
-        const Real zeta12Vol = zeta1 * invVol[iLev];
-        const Real eta02Vol = eta0 * invVol[iLev];
-        const Real eta12Vol = eta1 * invVol[iLev];
+        const Real zeta02Vol = zeta0 * invVolLev;
+        const Real zeta12Vol = zeta1 * invVolLev;
+        const Real eta02Vol = eta0 * invVolLev;
+        const Real eta12Vol = eta1 * invVolLev;
 
         weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
         weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
         weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
 
-        // xi0*eta0*zeta1*invVol[iLev];
+        // xi0*eta0*zeta1*invVolLev;
         weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
         weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
         weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
 
-        // xi0*eta1*zeta0*invVol[iLev];
+        // xi0*eta1*zeta0*invVolLev;
         weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
         weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
         weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
 
-        // xi0*eta1*zeta1*invVol[iLev];
+        // xi0*eta1*zeta1*invVolLev;
         weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
         weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
         weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
 
-        // xi1*eta0*zeta0*invVol[iLev];
+        // xi1*eta0*zeta0*invVolLev;
         weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
         weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
         weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
 
-        // xi1*eta0*zeta1*invVol[iLev];
+        // xi1*eta0*zeta1*invVolLev;
         weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
         weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
         weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
 
-        // xi1*eta1*zeta0*invVol[iLev];
+        // xi1*eta1*zeta0*invVolLev;
         weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
         weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
         weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
 
-        // xi1*eta1*zeta1*invVol[iLev];
+        // xi1*eta1*zeta1*invVolLev;
         weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
         weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
         weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
 
         RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
 
-        // Do not shift along z direction for both 2D and fake 2D cases.
-        int nD = get_dim();
+        // Do not shift along z direction for both 2D and fake 2D cases (nD).
 
 #if AMREX_SPACEDIM > 2
         constexpr int kEnd = 1;
@@ -570,8 +599,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
         Real eps_D_dot_invDx_Max = 0.0;
         for (int iDim = 0; iDim < nDim; iDim++) {
-          if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > eps_D_dot_invDx_Max) {
-            eps_D_dot_invDx_Max = fabs(eps_D[iDim] * invDx[iLev][iDim]);
+          if (fabs(eps_D[iDim] * invDxLoc[iDim]) > eps_D_dot_invDx_Max) {
+            eps_D_dot_invDx_Max = fabs(eps_D[iDim] * invDxLoc[iDim]);
           }
         }
 
@@ -580,19 +609,16 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           // correction method will be not valid. Comparing each exp_D
           // component instead of the length dl saves the computational time.
           const Real dl = eps_D.vectorLength();
-          const Real ratio = epsLimit * dx[iLev][ix_] / dl;
+          const Real ratio = epsLimit * dxLoc[ix_] / dl;
           for (int iDim = 0; iDim < nDim; iDim++)
             eps_D[iDim] *= ratio;
         }
 
         for (int iDim = 0; iDim < nDim; iDim++) {
-          if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > epsMax)
-            epsMax = fabs(eps_D[iDim] * invDx[iLev][iDim]);
-
           p.pos(iDim) += eps_D[iDim];
         }
 
-        if (is_outside_active_region(p, status, ab)) {
+        if (pb.is_outside_active_region(p, status, ab)) {
           // Do not allow moving particles from physical cells to ghost cells
           // during divE correction.
           for (int iDim = 0; iDim < nDim; iDim++) {
@@ -602,7 +628,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           // p.id() = -1;
         }
       }
-    } // for p
+    });
   }
 }
 
