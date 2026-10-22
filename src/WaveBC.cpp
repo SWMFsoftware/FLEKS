@@ -92,16 +92,6 @@ std::unique_ptr<WaveProfile> WaveRegistry::create(const WaveComponent& c) {
   return std::make_unique<MonoWave>();
 }
 
-amrex::Real WaveWindow::weight(const amrex::Real* pos) const {
-  const amrex::Real x = pos[direction];
-  if (x < lo || x > hi)
-    return 0.0;
-  const amrex::Real d = std::min(x - lo, hi - x);
-  if (taper > 0.0 && d < taper)
-    return 0.5 * (1.0 - std::cos(dPI * d / taper));
-  return 1.0;
-}
-
 void WaveBoundaryManager::read_window(ReadParam& param) {
   param.read_var("direction", window.direction);
   if (window.direction < 0 || window.direction >= 3)

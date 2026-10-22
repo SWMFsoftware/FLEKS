@@ -13,6 +13,7 @@
 #include <AMReX_Geometry.H>
 #include <AMReX_MultiFab.H>
 
+#include "Constants.h"
 #include "ReadParam.h"
 
 class FluidInterface;
@@ -68,7 +69,17 @@ struct WaveWindow {
   amrex::Real taper = 0.0;
   bool isCodeUnits = false;
 
-  amrex::Real weight(const amrex::Real* pos) const;
+  AMREX_GPU_HOST_DEVICE amrex::Real weight(const amrex::Real* pos) const {
+    if (!active)
+      return 1.0;
+    const amrex::Real x = pos[direction];
+    if (x < lo || x > hi)
+      return 0.0;
+    const amrex::Real d = amrex::min(x - lo, hi - x);
+    if (taper > 0.0 && d < taper)
+      return 0.5 * (1.0 - std::cos(dPI * d / taper));
+    return 1.0;
+  }
 };
 
 // Per-face emitter stack.
