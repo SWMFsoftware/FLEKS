@@ -117,15 +117,60 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
   divUe += (uHi - uLo) * invDx;
 }
 
-// Jump B^R - B^L of the MUSCL-reconstructed cell-centered B across the node
-// (i,j,k) along DIR. The node is the low corner of cell (i,j,k), so along DIR
-// it separates the cells at offsets -1 and 0; the jump is averaged over the
-// 2 (2D) or 4 (3D) cells around the node in the transverse directions, the
-// same cells curl_center_to_node averages over.
+// Limited jump phi * (B^R - B^L) of component iVar of the MUSCL-reconstructed
+// cell-centered B across the low face of cell (i,j,k) along DIR, i.e. between
+// the cells at offsets -1 and 0, from the cached cell slopes (below). The
+// upwind term at a node averages this over the 2 (2D) or 4 (3D) faces around
+// the node in the transverse directions, the same cells curl_center_to_node
+// averages over; computing each face once and averaging avoids reconstructing
+// it again for every node that shares it.
 template <int DIR>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_B_jump(
-    const Array4<Real const>& arrB, const int i, const int j, const int k,
-    const int limType, const Real sensorFloor, Real jump[nDim3]) noexcept {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
+upwind_face_jump(const Array4<Real const>& arrB,
+                 const Array4<Real const>& slope, const int i, const int j,
+                 const int k, const int iVar, const Real sensorFloor) noexcept {
+  constexpr int di = (DIR == ix_) ? 1 : 0;
+  constexpr int dj = (DIR == iy_) ? 1 : 0;
+  constexpr int dk = (DIR == iz_) ? 1 : 0;
+  const Real bM1 = arrB(i - di, j - dj, k - dk, iVar);
+  const Real b0 = arrB(i, j, k, iVar);
+  const Real bL = bM1 + 0.5 * slope(i - di, j - dj, k - dk, iVar);
+  const Real bR = b0 - 0.5 * slope(i, j, k, iVar);
+  Real phi = 1.0;
+  if (sensorFloor < 1.0) {
+    // Grid-scale sensor s = |third difference| / sum|first differences|:
+    // ~ (k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps.
+    const Real bM2 = arrB(i - 2 * di, j - 2 * dj, k - 2 * dk, iVar);
+    const Real bP1 = arrB(i + di, j + dj, k + dk, iVar);
+    const Real dM = bM1 - bM2, d0 = b0 - bM1, dP = bP1 - b0;
+    const Real den = std::abs(dM) + std::abs(d0) + std::abs(dP);
+    const Real s = (den > 0.0) ? std::abs(dP - 2.0 * d0 + dM) / den : 0.0;
+    phi = amrex::min(1.0, amrex::max(sensorFloor, s));
+  }
+  return phi * (bR - bL);
+}
+
+// Limited MUSCL slope of component iVar of the cell-centered B in cell (i,j,k)
+// along DIR. Each cell's slope serves the faces on both of its sides, so it is
+// computed once per direction instead of once per face.
+template <int DIR>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
+upwind_cell_slope(const Array4<Real const>& arrB, const int i, const int j,
+                  const int k, const int iVar, const int limType) noexcept {
+  constexpr int di = (DIR == ix_) ? 1 : 0;
+  constexpr int dj = (DIR == iy_) ? 1 : 0;
+  constexpr int dk = (DIR == iz_) ? 1 : 0;
+  const Real bM1 = arrB(i - di, j - dj, k - dk, iVar);
+  const Real b0 = arrB(i, j, k, iVar);
+  const Real bP1 = arrB(i + di, j + dj, k + dk, iVar);
+  return pe_slope(limType, b0 - bM1, bP1 - b0);
+}
+
+// Average of the face jumps around node (i,j,k) along DIR (see above).
+template <int DIR>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_node_jump(
+    const Array4<Real const>& faceJump, const int i, const int j, const int k,
+    Real jump[nDim3]) noexcept {
   constexpr int t1 = (DIR == ix_) ? iy_ : ix_;
   constexpr int t2 = (DIR == iz_) ? iy_ : iz_;
   const int o2Min = (nDim > 2 || t2 != iz_) ? -1 : 0;
@@ -139,29 +184,8 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_B_jump(
       int c[nDim3] = { i, j, k };
       c[t1] += o1;
       c[t2] += o2;
-      int d[nDim3] = { 0, 0, 0 };
-      d[DIR] = 1;
-      for (int iVar = 0; iVar < nDim3; ++iVar) {
-        const Real bM2 = arrB(c[ix_] - 2 * d[ix_], c[iy_] - 2 * d[iy_],
-                              c[iz_] - 2 * d[iz_], iVar);
-        const Real bM1 =
-            arrB(c[ix_] - d[ix_], c[iy_] - d[iy_], c[iz_] - d[iz_], iVar);
-        const Real b0 = arrB(c[ix_], c[iy_], c[iz_], iVar);
-        const Real bP1 =
-            arrB(c[ix_] + d[ix_], c[iy_] + d[iy_], c[iz_] + d[iz_], iVar);
-        const Real bL = bM1 + 0.5 * pe_slope(limType, bM1 - bM2, b0 - bM1);
-        const Real bR = b0 - 0.5 * pe_slope(limType, b0 - bM1, bP1 - b0);
-        Real phi = 1.0;
-        if (sensorFloor < 1.0) {
-          // Grid-scale sensor s = |third difference| / sum|first differences|:
-          // ~ (k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps.
-          const Real dM = bM1 - bM2, d0 = b0 - bM1, dP = bP1 - b0;
-          const Real den = std::abs(dM) + std::abs(d0) + std::abs(dP);
-          const Real s = (den > 0.0) ? std::abs(dP - 2.0 * d0 + dM) / den : 0.0;
-          phi = amrex::min(1.0, amrex::max(sensorFloor, s));
-        }
-        jump[iVar] += phi * (bR - bL);
-      }
+      for (int iVar = 0; iVar < nDim3; ++iVar)
+        jump[iVar] += faceJump(c[ix_], c[iy_], c[iz_], iVar);
       ++nCell;
     }
   }
@@ -253,8 +277,72 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrEtaReg =
         hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
                                 : Array4<Real const>();
-    const Array4<Real const> arrBin =
-        doUpwind ? centerBin[mfi].const_array() : Array4<Real const>();
+    // Upwind face jumps, one array per direction over the faces the nodes of
+    // this box use: the node range along the direction, and one more cell on
+    // the low side of each transverse direction (the cells c-1 and c around a
+    // node). They read the cells i-2..i+1 along the direction, within the two
+    // ghost layers of centerBin.
+    FArrayBox faceJump[nDim3];
+    Array4<Real const> arrFace[nDim3];
+    if (doUpwind) {
+      const Array4<Real const>& arrBin = centerBin[mfi].const_array();
+      FArrayBox slopeFab;
+      for (int iDir = 0; iDir < nDim; ++iDir) {
+        if (!upwindDir[iDir])
+          continue;
+        Box faceBox(box.smallEnd(), box.bigEnd());
+        for (int t = 0; t < nDim; ++t) {
+          if (t != iDir)
+            faceBox.growLo(t, 1);
+        }
+        // A face uses the slopes of the cells on both of its sides.
+        Box slopeBox = faceBox;
+        slopeBox.growLo(iDir, 1);
+        slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
+        faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
+        const Array4<Real>& arrS = slopeFab.array();
+        const Array4<Real const>& arrSc = slopeFab.const_array();
+        const Array4<Real>& arrF = faceJump[iDir].array();
+        if (iDir == ix_) {
+          ParallelFor(slopeBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
+                            arrBin, i, j, k, iVar, limTypeUp);
+                      });
+          ParallelFor(faceBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                      });
+        } else if (iDir == iy_) {
+          ParallelFor(slopeBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
+                            arrBin, i, j, k, iVar, limTypeUp);
+                      });
+          ParallelFor(faceBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                      });
+        } else {
+          ParallelFor(slopeBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
+                            arrBin, i, j, k, iVar, limTypeUp);
+                      });
+          ParallelFor(faceBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                      });
+        }
+        arrFace[iDir] = faceJump[iDir].const_array();
+      }
+    }
+    const Array4<Real const> arrFaceX = arrFace[ix_];
+    const Array4<Real const> arrFaceY = arrFace[iy_];
+    const Array4<Real const> arrFaceZ = arrFace[iz_];
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rhoPrev = momentsPrev(i, j, k, iRho_);
@@ -345,11 +433,11 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           if (!upwindDir[iDir])
             continue;
           if (iDir == ix_) {
-            upwind_B_jump<ix_>(arrBin, i, j, k, limTypeUp, sensorFloorUp, jump);
+            upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
           } else if (iDir == iy_) {
-            upwind_B_jump<iy_>(arrBin, i, j, k, limTypeUp, sensorFloorUp, jump);
+            upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
           } else {
-            upwind_B_jump<iz_>(arrBin, i, j, k, limTypeUp, sensorFloorUp, jump);
+            upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
           }
 
           // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).
