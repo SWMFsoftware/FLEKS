@@ -252,19 +252,17 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     Array4<Real> const jArr = jHat[pti].array();
     Array4<RealMM> const mmArr = nodeMM[pti].array();
     Array4<Real const> const u0Arr = u0MF[pti].const_array();
-    // Read on the host: the status of the first cell of the tile.
-    // TODO(GPU): one tile per box on the GPU makes this a per-box test.
-    const Array4<int const>& status = cellstatus[iLev][pti].const_array();
-    Box bx = pti.tilebox();
-    IntVect ibx = bx.smallEnd();
-    bool refinedneighbour = false;
-    if (bit::is_refined_neighbour(status(ibx))) {
-      refinedneighbour = true;
-    }
-    const int nCoef = iLev + 1 + refinedneighbour;
+    // The particles also deposit onto the finer level if the first cell of
+    // the tile is next to a refined cell. The status is read in the kernel.
+    const Array4<int const> status = cellstatus[iLev][pti].const_array();
+    const Box tileBox = pti.tilebox();
+    const IntVect ibx = tileBox.smallEnd();
+    // jhf/nmmf exist below the finest level.
+    const bool hasFiner = iLev < n_lev() - 1;
     constexpr int maxCoef = 8;
-    AMREX_ALWAYS_ASSERT(nCoef <= maxCoef);
+    AMREX_ALWAYS_ASSERT(iLev + 2 <= maxCoef);
 
+    // Coarser levels, this level, and (possibly) the finer level.
     Array4<Real> jArrt[maxCoef];
     Array4<RealMM> mmArrt[maxCoef];
     int count = 0;
@@ -279,15 +277,15 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     mmArrt[count] = mmArr;
     count++;
 
-    if (refinedneighbour) {
+    if (hasFiner) {
       jArrt[count] = jhf[iLev][pti].array();
       mmArrt[count] = nmmf[iLev][pti].array();
-      count++;
     }
 
     // Copies, so that the kernels capture values, not host pointers.
+    const int nCoefMax = hasFiner ? iLev + 2 : iLev + 1;
     Real ploAll[maxCoef][AMREX_SPACEDIM], invDxAll[maxCoef][AMREX_SPACEDIM];
-    for (int i = 0; i < nCoef; i++) {
+    for (int i = 0; i < nCoefMax; i++) {
       for (int d = 0; d < AMREX_SPACEDIM; ++d) {
         ploAll[i][d] = Geom(i).ProbLo(d);
         invDxAll[i][d] = Geom(i).InvCellSize(d);
@@ -304,6 +302,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       const ParticleType& p = pData[ip];
       if (p.id() < 0)
         return;
+
+      const bool refinedneighbour =
+          hasFiner && bit::is_refined_neighbour(status(ibx));
+      const int nCoef = iLev + 1 + refinedneighbour;
 
       IntVect loIdx[maxCoef];
       RealVect dShift[maxCoef];
