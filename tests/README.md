@@ -158,13 +158,27 @@ python3 tests/validate_tests.py --include-expensive
 ### Performance Benchmark
 
 ```bash
+# Absolute targets (a quick local check):
 python3 tests/validate_performance.py
+
+# Against a reference build on the same machine (what the CI does):
+python3 tests/validate_performance.py --exe bin/FLEKS.exe \
+    --base-exe /path/to/FLEKS_master.exe --base-decks /path/to/master/tests/performance
 ```
 
-The script benchmarks the full-PIC beam test (`performance/PARAM.in`),
-the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and the
-particle tracker test (`performance/PARAM.in.pt`), and writes the results to
-`tests/performance_summary.md`.
+The script benchmarks the full-PIC beam test (`performance/PARAM.in`), the
+hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), the particle tracker
+test (`performance/PARAM.in.pt`) and the 2D reconnection test
+(`performance/PARAM.in.reconnection2d`) on 1 and 2 processes, and writes the
+results to `tests/performance_summary.md`.
+
+Absolute timings are not comparable across GitHub runners, whose hardware
+differs by up to a factor of two between jobs. The CI therefore builds the
+merge base as well, runs both executables in the same job, alternating run by
+run, each on the decks of its own commit (`--base-decks`), and fails a metric
+only if the PR is more than `--tolerance` (default 15 %) slower than the base.
+Without `--base-exe` the script compares with the absolute targets in
+`BASELINES`, which describe the slowest runner class.
 
 ### Memory Regression (master vs PR)
 
