@@ -56,7 +56,7 @@ my $AmrexDir = "util/AMREX";
 # (InstallDir<N>D_cuda, built on demand), -nocuda with the CPU build. Without
 # either flag the current choice is kept: it is the library InstallDir points to.
 my $NewCuda;
-my $CudaArch = "89";
+my $CudaArch = "80,120"; # A100 and RTX 50xx (Blackwell)
 my $UseCuda = &amrex_uses_cuda("$AmrexDir/InstallDir");
 foreach (@Arguments){
     if(/^-cuda(?:=(\S+))?$/i){ $NewCuda = 1; $CudaArch = $1 if defined $1; }
@@ -341,7 +341,9 @@ sub link_cuda_amrex{
     my $InstallDir = "InstallDir${nDim}D_cuda";
     if(not -e "$AmrexDir/$InstallDir/lib/libamrex.a"){
         my $ccbin = $ENV{NVCC_CCBIN} || "g++";
-        my $flags = "USE_CUDA=TRUE CUDA_ARCH=$CudaArch USE_CUDA_FAST_MATH=FALSE ".
+        # CUDA_ARCH is a space-separated list for AMReX.
+        (my $archList = $CudaArch) =~ s/,/ /g;
+        my $flags = "USE_CUDA=TRUE CUDA_ARCH=\"$archList\" USE_CUDA_FAST_MATH=FALSE ".
             "NVCC_CCBIN=$ccbin DIM=$nDim AMREX_INSTALL_DIR=$InstallDir";
         print "Building the CUDA AMReX library in $AmrexDir/$InstallDir\n";
         system("cd $AmrexDir && make -j 8 $flags && make install $flags") == 0
@@ -372,7 +374,8 @@ sub print_help{
 
 -cuda[=ARCH]  Build for NVIDIA GPUs: link with a CUDA build of AMReX in
               util/AMREX/InstallDir<N>D_cuda, which is compiled on first use
-              for compute capability ARCH (default 89; A100 is 80). The CUDA
+              for the compute capabilities ARCH, a comma-separated list
+              (default 80,120: A100 and RTX 50xx; H100 is 90). The CUDA
               compiler's host compiler can be set with the NVCC_CCBIN
               environment variable (default g++). The choice is kept by later
               Config.pl calls until -nocuda is given.

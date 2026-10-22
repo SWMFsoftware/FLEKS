@@ -19,7 +19,8 @@ ifeq (${USE_CUDA},TRUE)
   NVCC_ARCH_FLAGS := $(shell grep -o -- '--generate-code [^ ]*' ${AMREX_PC})
   NVCC_CCBIN := $(patsubst -ccbin=%,%, \
                   $(firstword $(shell grep -o -- '-ccbin=[^ ]*' ${AMREX_PC})))
-  CUDA_LIBS := -lcudart $(sort $(filter -lcu%, \
+  CUDA_HOME ?= $(patsubst %/bin/nvcc,%,$(shell which nvcc))
+  CUDA_LIBS := -L${CUDA_HOME}/lib64 -lcudart $(sort $(filter -lcu%, \
                  $(shell grep '^Libs:' ${AMREX_PC})))
   NVCC = nvcc -ccbin=${NVCC_CCBIN}
   COMPILE.mpicxx = ${NVCC} $(shell mpicxx --showme:compile)
