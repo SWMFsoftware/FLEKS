@@ -62,7 +62,12 @@ protected:
   amrex::Vector<ChemistryReaction> chemReactions;
 
   // ---- Loss term storage ----
+  // Loss frequency [code units of 1/time] of every species at the nodes.
   amrex::Vector<amrex::MultiFab> nodeLossFluid;
+
+  // Time step [s] the next set_source() is applied over. The stiff
+  // reactions use it to keep the products consistent with the loss.
+  amrex::Real dtSI = 0.0;
 
 public:
   SourceInterface(Grid& gridIn, const FluidInterface& other, int id,
@@ -89,6 +94,11 @@ public:
            "implemented."
         << std::endl;
   };
+
+  void set_dt_si(amrex::Real dt) { dtSI = dt; }
+
+  /// Radius [m] of the inner body (#BODY): no neutral reacts inside it.
+  virtual void set_inner_radius_si(amrex::Real r) { amrex::ignore_unused(r); }
 
   virtual void set_source(const FluidInterface& other) {
     if (!useFluidSource)
@@ -126,7 +136,7 @@ public:
   }
 
   void distribute_loss_arrays() {
-    if (!(useRecombination || useChemistry))
+    if (!use_loss_source())
       return;
     if (nodeLossFluid.empty())
       nodeLossFluid.resize(n_lev_max());
@@ -141,7 +151,7 @@ public:
   }
 
   void set_node_loss_fluid_to_zero() {
-    if (!(useRecombination || useChemistry))
+    if (!use_loss_source())
       return;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       if (!nodeLossFluid[iLev].empty())
@@ -150,7 +160,7 @@ public:
   }
 
   void fill_loss_boundary() {
-    if (!(useRecombination || useChemistry))
+    if (!use_loss_source())
       return;
     // Use FillBoundary (copy) instead of SumBoundary (sum) for loss rates.
     // Each node's loss rate is computed independently and should NOT be
@@ -164,20 +174,24 @@ public:
 
   void sum_loss_boundary() { fill_loss_boundary(); }
 
-  /// Read loss rate for species iSp at cell ijk.
-  /// Returns the normalized mass-density loss rate (positive = loss).
-  amrex::Real get_loss_value(const amrex::MFIter& mfi, const amrex::IntVect ijk,
-                             const int iSp, const int iLev = 0) const {
-    const auto& arr = nodeLossFluid[iLev][mfi].const_array();
-    return arr(ijk, iSp);
+  /// Loss frequency [code units of 1/time] of species iSp at the position
+  /// xyz, interpolated from the nodes. A particle of this species keeps the
+  /// fraction exp(-nu*dt) of its weight over a step dt.
+  amrex::Real get_loss_frequency(const amrex::MFIter& mfi,
+                                 const amrex::RealVect& xyz, const int iSp,
+                                 const int iLev = 0) const {
+    return get_value_at_loc(nodeLossFluid[iLev], mfi, Geom(iLev), xyz, iSp);
   }
 
-  bool use_loss_source() const { return useRecombination || useChemistry; }
+  amrex::MultiFab& get_node_loss_fluid(int iLev) { return nodeLossFluid[iLev]; }
+
+  bool use_loss_source() const {
+    return useRecombination || useChemistry || useChargeExchange;
+  }
 
   /// Check whether nodeLossFluid is allocated and non-empty at iLev.
   bool has_loss_array(int iLev) const {
-    return (useRecombination || useChemistry) &&
-           iLev < static_cast<int>(nodeLossFluid.size()) &&
+    return use_loss_source() && iLev < static_cast<int>(nodeLossFluid.size()) &&
            !nodeLossFluid[iLev].empty();
   }
 };

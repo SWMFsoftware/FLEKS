@@ -861,8 +861,348 @@ void Pic::fill_source_particles() {
   if (source) {
     for (int i : kineticSpecies_) {
       parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
-                                     doSelectRegion, adaptiveSourcePPC);
+                                     doSelectRegion, adaptiveSourcePPC,
+                                     sourceMinWeightRatio);
     }
+  }
+}
+
+//==========================================================
+bool Pic::shell_weights_up_to_date(const ShellWeights& sw) {
+  bool upToDate = (int)sw.weight.size() == n_lev();
+  for (int iLev = 0; upToDate && iLev < n_lev(); iLev++)
+    upToDate = sw.grids[iLev] == cell_status(iLev).boxArray() &&
+               sw.dms[iLev] == cell_status(iLev).DistributionMap();
+  return upToDate;
+}
+
+//==========================================================
+void Pic::build_shell_weights(
+    ShellWeights& sw, Real radiusSI,
+    const std::function<Real(const Real*, Real)>& profile,
+    const std::string& name) {
+  timing_func("Pic::build_shell_weights");
+
+  sw.weight.clear();
+  sw.weight.resize(n_lev());
+  sw.grids.resize(n_lev());
+  sw.dms.resize(n_lev());
+
+  const Real R = radiusSI * fi->get_Si2NoL();
+  const Real* c = get_body_center();
+  // Area of the sphere in a cell: the volume of a thin shell |r - R| < h/2
+  // inside the cell, divided by h, sampled on a stratified nSub^3 grid.
+  constexpr int nSub = 24;
+  constexpr Real hRel = 0.2;
+
+  Real total = 0;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto& cs = cell_status(iLev);
+    sw.grids[iLev] = cs.boxArray();
+    sw.dms[iLev] = cs.DistributionMap();
+    sw.weight[iLev].define(cs.boxArray(), cs.DistributionMap(), 1, 0);
+    sw.weight[iLev].setVal(0.0);
+
+    const auto& dxl = Geom(iLev).CellSize();
+    const auto& plol = Geom(iLev).ProbLo();
+    const Real dxMax = std::max({ AMREX_D_DECL(dxl[0], dxl[1], dxl[2]) });
+    const Real h = hRel * dxMax;
+    const Real dV = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) /
+                    (nSub * nSub * (nDim > 2 ? nSub : 1));
+
+    for (MFIter mfi(sw.weight[iLev]); mfi.isValid(); ++mfi) {
+      const auto& status = cs[mfi].const_array();
+      const auto& w = sw.weight[iLev][mfi].array();
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const int st = status(i, j, k);
+            if (bit::is_body(st) || bit::is_refined(st))
+              continue;
+            const int ijk[3] = { i, j, k };
+            Real xc[3] = { 0, 0, 0 };
+            for (int iDim = 0; iDim < nDim; iDim++)
+              xc[iDim] = (ijk[iDim] + 0.5) * dxl[iDim] + plol[iDim] - c[iDim];
+            const Real rc =
+                std::sqrt(xc[0] * xc[0] + xc[1] * xc[1] + xc[2] * xc[2]);
+            if (std::abs(rc - R) > 0.9 * dxMax + h)
+              continue;
+
+            int nHit = 0;
+            const int nk = nDim > 2 ? nSub : 1;
+            for (int kk = 0; kk < nk; kk++)
+              for (int jj = 0; jj < nSub; jj++)
+                for (int ii = 0; ii < nSub; ii++) {
+                  const int sub[3] = { ii, jj, kk };
+                  Real x[3] = { 0, 0, 0 };
+                  for (int iDim = 0; iDim < nDim; iDim++)
+                    x[iDim] = xc[iDim] +
+                              ((sub[iDim] + 0.5) / nSub - 0.5) * dxl[iDim];
+                  const Real r =
+                      std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+                  if (std::abs(r - R) < 0.5 * h)
+                    nHit++;
+                }
+            if (nHit == 0)
+              continue;
+            const Real area = nHit * dV / h;
+
+            w(i, j, k) = area * profile(xc, rc);
+            total += w(i, j, k);
+          }
+    }
+  }
+
+  ParallelDescriptor::ReduceRealSum(total);
+  if (total <= 0) {
+    Print() << "Warning: " << name
+            << ": the sphere crosses no plasma cell; nothing is injected.\n";
+    sw.weight.clear();
+    return;
+  }
+  for (int iLev = 0; iLev < n_lev(); iLev++)
+    sw.weight[iLev].mult(1.0 / total);
+  Print() << "  " << name
+          << " weights rebuilt, sphere area in plasma cells / 4 pi R^2 "
+             "(profile-weighted) = "
+          << total / (4 * M_PI * R * R) << "\n";
+}
+
+//==========================================================
+void Pic::build_emission_weights() {
+  auto& ie = ionoEmission;
+  if (shell_weights_up_to_date(ie.shell))
+    return;
+
+  const Real* sd = ie.solarDir;
+  // Emission profile a(direction from the center): rhybrid
+  // ionoCosSzaDayConstantNight.
+  auto profile_factor = [&](const Real* x, Real rc) {
+    const Real cosSza =
+        rc > 0 ? (x[0] * sd[0] + x[1] * sd[1] + x[2] * sd[2]) / rc : 1.0;
+    return cosSza > 0 ? ie.noon + (ie.night - ie.noon) * (1 - cosSza)
+                      : ie.night;
+  };
+  build_shell_weights(ie.shell, ie.radiusSI, profile_factor,
+                      "#IONOSPHEREEMISSION");
+}
+
+//==========================================================
+void Pic::inject_ionosphere_emission() {
+  const auto& ie = ionoEmission;
+  if (!ie.use || !usePIC || is_grid_empty())
+    return;
+  timing_func("Pic::inject_ionosphere_emission");
+
+  build_emission_weights();
+  if ((int)ie.shell.weight.size() != n_lev())
+    return;
+
+  // rate [#/s] * dt [s] * weight / V [m^3] -> n [/m^3] -> code units.
+  const Real dtSI = tc->get_dt_si();
+  const Real l3 = std::pow(fi->get_No2SiL(), 3);
+  const Real nFactor = cProtonMassSI * fi->get_Si2NoRho();
+
+  // Charge of all the ions injected in one step [#/s].
+  Real ionCharge = 0;
+  for (int iS = 0; iS < nSpecies; iS++)
+    if (fi->get_species_charge(iS) > 0)
+      ionCharge += fi->get_species_charge(iS) * ie.rateSI[iS];
+
+  for (int i : kineticSpecies_) {
+    const bool isElectron = parts[i]->get_charge() < 0;
+    const Real rate = isElectron ? ionCharge : ie.rateSI[i];
+    if (rate <= 0)
+      continue;
+
+    Vector<MultiFab> nAdd(n_lev());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const Real* dxl = Geom(iLev).CellSize();
+      const Real volSI = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) * l3;
+      const auto& w = ie.shell.weight[iLev];
+      nAdd[iLev].define(w.boxArray(), w.DistributionMap(), 1, 0);
+      MultiFab::Copy(nAdd[iLev], w, 0, 0, 1, 0);
+      nAdd[iLev].mult(rate * dtSI / volSI * nFactor);
+    }
+    parts[i]->inject_emission_shell(nAdd, ie.vth[i], ie.nPPC, get_body_center());
+  }
+}
+
+//==========================================================
+void Pic::update_floating_body() {
+  auto& fb = floatingBody;
+  if (!fb.use || !usePIC || is_grid_empty())
+    return;
+  timing_func("Pic::update_floating_body");
+
+  // Global cumulative absorbed ion (> 0) and electron (< 0) charge.
+  Vector<Real> t(2, 0.0);
+  for (int i : kineticSpecies_)
+    t[parts[i]->get_charge() > 0 ? 0 : 1] +=
+        parts[i]->get_body_absorb_charge();
+  ParallelDescriptor::ReduceRealSum(t.data(), t.size());
+  const Real dQi = t[0] - fb.qIon, dQe = -(t[1] - fb.qEle);
+  fb.qIon = t[0];
+  fb.qEle = t[1];
+
+  // Return the net electron charge absorbed in this step.
+  const Real deficit = dQe - dQi;
+  if (deficit <= 0)
+    return;
+  if (!shell_weights_up_to_date(fb.shell))
+    build_shell_weights(
+        fb.shell, fb.radiusSI, [](const Real*, Real) { return 1.0; },
+        "#FLOATINGBODY");
+  if ((int)fb.shell.weight.size() != n_lev())
+    return;
+  for (int i : kineticSpecies_) {
+    if (parts[i]->get_charge() >= 0)
+      continue;
+    Vector<MultiFab> nAdd(n_lev());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const auto& w = fb.shell.weight[iLev];
+      nAdd[iLev].define(w.boxArray(), w.DistributionMap(), 1, 0);
+      MultiFab::Copy(nAdd[iLev], w, 0, 0, 1, 0);
+      // Charge deficit * weight / volume -> number density of electrons.
+      nAdd[iLev].mult(deficit / get_cell_volume(iLev) /
+                      std::abs(parts[i]->get_charge()));
+    }
+    parts[i]->inject_emission_shell(nAdd, fb.vth, fb.nPPC, get_body_center());
+    fb.qReemit += deficit;
+    break; // The first electron species carries the current.
+  }
+}
+
+//==========================================================
+void Pic::fill_plasma_state(FluidInterface& dst) {
+  timing_func("Pic::fill_plasma_state");
+
+  if (is_grid_empty() || !usePIC)
+    return;
+
+  const int nS = dst.get_nS();
+  const int iE = useHybridPIC ? iElectron_ : -1;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab& stateMF = dst.get_node_fluid(iLev);
+    AMREX_ALWAYS_ASSERT(stateMF.boxArray() == nodePlasma[0][iLev].boxArray() &&
+                        stateMF.DistributionMap() ==
+                            nodePlasma[0][iLev].DistributionMap());
+
+    // Hybrid fluid electron: n_e = sum(Z_i n_i) from the ion moments.
+    MultiFab nodeNe, nodePe;
+    if (iE >= 0) {
+      nodeNe.define(nodePlasma[nSpecies][iLev].boxArray(),
+                    nodePlasma[nSpecies][iLev].DistributionMap(), 1, 0);
+      nodePe.define(nodeNe.boxArray(), nodeNe.DistributionMap(), 1, 0);
+      nodeNe.setVal(0.0);
+      for (int s : kineticSpecies_) {
+        const Real zom = fi->get_QoQi(s) / fi->get_MoMi(s);
+        MultiFab::Saxpy(nodeNe, zom, nodePlasma[s][iLev], iRho_, 0, 1, 0);
+      }
+      compute_node_electron_pressure(iLev, nodeNe, nodePe);
+    }
+
+    for (MFIter mfi(stateMF); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& state = stateMF[mfi].array();
+
+      for (int s = 0; s < nS && s < nSpecies; s++) {
+        const int iRho = dst.get_iRho(s), iUx = dst.get_iUx(s),
+                  iUy = dst.get_iUy(s), iUz = dst.get_iUz(s),
+                  iP = dst.get_iP(s);
+
+        if (s == iE) {
+          const Real massE = fi->get_MoMi(s);
+          const Array4<Real const>& ne = nodeNe[mfi].const_array();
+          const Array4<Real const>& pe = nodePe[mfi].const_array();
+          // Charge-weighted ion velocity, the electron velocity without the
+          // Hall current. Accumulated below from the per-species momenta.
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            state(i, j, k, iRho) = massE * ne(i, j, k);
+            state(i, j, k, iUx) = 0.0;
+            state(i, j, k, iUy) = 0.0;
+            state(i, j, k, iUz) = 0.0;
+            state(i, j, k, iP) = (ne(i, j, k) > 0.0) ? pe(i, j, k) : 0.0;
+          });
+          for (int si : kineticSpecies_) {
+            const Real zom = fi->get_QoQi(si) / fi->get_MoMi(si);
+            const Array4<Real const>& mom = nodePlasma[si][iLev][mfi].array();
+            ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+              const Real n = ne(i, j, k);
+              if (n > 0.0) {
+                state(i, j, k, iUx) += zom * mom(i, j, k, iMx_) / n;
+                state(i, j, k, iUy) += zom * mom(i, j, k, iMy_) / n;
+                state(i, j, k, iUz) += zom * mom(i, j, k, iMz_) / n;
+              }
+            });
+          }
+          continue;
+        }
+
+        const Array4<Real const>& mom = nodePlasma[s][iLev][mfi].array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real rho = mom(i, j, k, iRho_);
+          if (rho > 0.0) {
+            const Real invRho = 1.0 / rho;
+            state(i, j, k, iRho) = rho;
+            state(i, j, k, iUx) = mom(i, j, k, iMx_) * invRho;
+            state(i, j, k, iUy) = mom(i, j, k, iMy_) * invRho;
+            state(i, j, k, iUz) = mom(i, j, k, iMz_) * invRho;
+            // nodePlasma holds the thermal pressure tensor (see
+            // convert_to_fluid_moments); the scalar pressure is its trace/3.
+            // With few particles at a node, the second moment minus rho*u^2
+            // can come out negative: clamp it.
+            state(i, j, k, iP) =
+                amrex::max(0.0, (mom(i, j, k, iPxx_) + mom(i, j, k, iPyy_) +
+                                 mom(i, j, k, iPzz_)) /
+                                    3.0);
+          } else {
+            state(i, j, k, iRho) = 0.0;
+            state(i, j, k, iUx) = 0.0;
+            state(i, j, k, iUy) = 0.0;
+            state(i, j, k, iUz) = 0.0;
+            state(i, j, k, iP) = 0.0;
+          }
+        });
+      }
+    }
+
+    stateMF.FillBoundary(Geom(iLev).periodicity());
+
+    // The moments of the body nodes are diluted by the empty body cells (the
+    // other surface nodes were rescaled in sum_moments()): rescale them as
+    // well, so that the state is the density of the plasma next to the
+    // surface. Only the densities and the pressures: the velocities are not
+    // diluted.
+    if (use_body()) {
+      for (int s = 0; s < dst.get_nS() && s < nSpecies; s++) {
+        for (const int iVar : { dst.get_iRho(s), dst.get_iP(s) }) {
+          MultiFab alias(stateMF, amrex::make_alias, iVar, 1);
+          scale_by_body_outside_fraction(alias, cell_status(iLev),
+                                         node_status(iLev), Geom(iLev).Domain(),
+                                         nDim, true);
+        }
+      }
+    }
+  }
+}
+
+//==========================================================
+void Pic::mask_body_source(SourceInterface& src) {
+  if (!use_body() || is_grid_empty())
+    return;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    // The production of a node is the average over its dual cell outside the
+    // body (UserSource), but only the plasma cells around the node receive
+    // particles: scale it up by the inverse outside fraction. The loss
+    // frequencies are intensive and stay as they are.
+    scale_by_body_outside_fraction(src.get_node_fluid(iLev), cell_status(iLev),
+                                   node_status(iLev), Geom(iLev).Domain(), nDim,
+                                   false);
   }
 }
 
@@ -893,12 +1233,18 @@ void Pic::re_sampling() {
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
       if (maxWeightRatio > 1) {
+        // With #CONSTANTPPV (or pre-splitting) the reference weight is that
+        // of the level target. The cell average would not do: the light
+        // source particles of a cell next to the body lower it, and the
+        // ordinary particles are then split again and again.
         parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral(),
-                               pInfo.doPreSplitting);
+                               pInfo.doPreSplitting || pInfo.isPPVconstant);
       }
       parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral(),
                       pInfo.doPreSplitting);
-      parts[i]->merge(reSamplingHighLimit, pInfo.doPreSplitting);
+      // With #CONSTANTPPV the merging goal is the target of every level.
+      parts[i]->merge(reSamplingHighLimit,
+                      pInfo.doPreSplitting || pInfo.isPPVconstant);
     }
   }
 }
@@ -1368,9 +1714,8 @@ void Pic::sum_moments(bool updateDt) {
 
     for (int i : kineticSpecies_) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        // nodePlasma[nSpecies] holds the sum of all kinetic species.
-        // In semi-implicit full PIC, kineticSpecies_ excludes the (implicit
-        // fluid) electron.
+        // nodePlasma[nSpecies] holds the sum of all kinetic species, i.e.
+        // all species in full PIC and the ions in hybrid PIC.
         MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                       nMoments, get_n_ghost());
       }
@@ -1589,6 +1934,10 @@ void Pic::advance_particles_and_sources(int pushStage) {
 
 //==========================================================
 void Pic::finish_particle_push() {
+  // Floating body (#FLOATINGBODY): re-emit the net electron charge absorbed
+  // in this push.
+  update_floating_body();
+
   // Calling re_sampling after particle mover so that all the particles
   // outside the domain have been deleted.
   re_sampling();
@@ -1610,13 +1959,17 @@ void Pic::finish_particle_push() {
 
   inject_particles_for_boundary_cells();
 
+  // Ionospheric emission shell (#IONOSPHEREEMISSION).
+  inject_ionosphere_emission();
+
   // Inject incoming flux at physical inflow faces before the moment deposit.
   // Kept outside inject_particles_for_boundary_cells to avoid t=0
   // pre-injection.
   if (usePIC) {
     const Real dt = tc->get_dt();
-    for (int i = 0; i < nSpecies; ++i) {
+    for (int i : kineticSpecies_) {
       parts[i]->inject_flux_at_inflow_faces(dt);
+      parts[i]->inject_flux_at_open_faces(dt, nodePlasma[i][0]);
     }
   }
 }
@@ -1696,6 +2049,7 @@ void Pic::update(bool doReportIn) {
       for (int i : kineticSpecies_) {
         parts[i]->backup_particle_state();
       }
+      backup_floating_body();
 
       // 2. Backup base fields B^n and E^n
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -1734,6 +2088,7 @@ void Pic::update(bool doReportIn) {
       for (int i : kineticSpecies_) {
         parts[i]->restore_particle_state();
       }
+      restore_floating_body();
 
       // 7. Corrector push using time-centered fields (nodeE, nodeB) [pushStage
       // = 2]

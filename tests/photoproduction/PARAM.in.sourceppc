@@ -1,0 +1,145 @@
+#DESCRIPTION
+Source particles with a level target (CONSTANTPPV): a uniform photoionization
+source with SOURCEPARTICLES 1 x 1 x 1 must add one particle per cell and step,
+not the 8 particles per cell of the target.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-4.0                    xMin
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-4.0                    zMin
+ 4.0                    zMax
+
+#NCELL
+24                      nCellX
+24                      nCellY
+24                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+F                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#PLANETRADIUS
+1.0                     radius [m]  reference radius of the profile
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+2                       nSpecies
+0.0625                  mass        Species 0: fluid electron slot
+-1.0                    charge
+44.0                    mass        Species 1: CO2+ (photoion)
+1.0                     charge
+
+#UNIFORMSTATE
+1.0e-3                  rho [/cc]   Species 0
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0                     T [K]
+1.0e-3                  rho [/cc]   Species 1: seed (sets the mass unit)
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0                     T [K]
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#FIELDBOXBOUNDARY
+outflow                 x-
+outflow                 x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#PARTICLEBOXBOUNDARY
+outflow                 x-
+outflow                 x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#EXOSPHERE
+Exponential             typeProfile
+1                       nComponent
+1.0e12                  n0 [m^-3]
+1.0e9                   H0 [m]  uniform across the box
+100.0                   T0 [K]
+0.0                     k0
+
+#PHOTOIONIZATION
+1.0e-3                  nuPhoto0 [1/s]
+
+#SOURCE
+T                       useSource
+
+#CONSTANTPPV
+T                       isPPVconstant   single level: target = 2 x 2 x 2
+
+#MINPARTICLESPERCELL
+1                       minPPCPerDim
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#PARTICLES
+2                       npcelx
+2                       npcely
+2                       npcelz
+
+#SOURCEPARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+4                       MaxIter
+-1.0                    TimeMax

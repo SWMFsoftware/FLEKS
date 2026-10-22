@@ -1,0 +1,118 @@
+#DESCRIPTION
+Open particle boundary (outflowthermal on all faces): a uniform plasma of H+
+and O+ at T = 1e5 K at rest, periodic in x (a wrap through x is not a loss). Each face re-injects the inward half-flux of the
+local Maxwellian of each species, so both keep their mass although their
+thermal speeds differ by 4. Hybrid PIC with B = 0 and Te = 0, so E = 0.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-4.0                    xMin
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-4.0                    zMin
+ 4.0                    zMax
+
+#NCELL
+24                      nCellX
+24                      nCellY
+24                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+F                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature [eV]
+1.0                     electronGamma
+1.0                     electronDensity0 [/cc] (prints the code unit of 1 /cc)
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+2                       nSpecies
+1.0                     mass        Species 0: H+
+1.0                     charge
+16.0                    mass        Species 1: O+
+1.0                     charge
+
+#UNIFORMSTATE
+1.0                     rho [/cc]  Species 0: H+
+0.0                     ux [km/s]
+0.0                     uy
+0.0                     uz
+100000.0                T [K]      sigma = 28.7 km/s
+1.0                     rho [/cc]  Species 1: O+
+0.0                     ux [km/s]
+0.0                     uy
+0.0                     uz
+100000.0                T [K]      sigma = 7.2 km/s
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#FIELDBOXBOUNDARY
+periodic                x-
+periodic                x+
+outflow                 y-
+outflow                 y+
+outflow                 z-
+outflow                 z+
+
+#PARTICLEBOXBOUNDARY
+periodic                x-
+periodic                x+
+outflowthermal          y-
+outflowthermal          y+
+outflowthermal          z-
+outflowthermal          z+
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#PARTICLES
+3                       npcelx
+3                       npcely
+3                       npcelz
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+-1                      MaxIter
+6.0                     TimeMax

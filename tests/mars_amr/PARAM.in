@@ -1,0 +1,350 @@
+#DESCRIPTION
+3D Standalone Martian Magnetosphere with AMR near the body: semi-implicit full PIC,
+base dx = 0.25 R_M refined to 0.125 R_M inside 2 R_M and to 0.0625 R_M (212 km) in
+the shell 0.95-1.3 R_M; constant particles per volume (64/8/8), photochemical
+boundary at 200 km, 20 s. Absorbing body at 100 km, no emission shell.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.5                    xMin   [code units: 1 unit = lNormSI = 3396 km = 1 R_M]
+ 2.5                    xMax   upstream solar wind enters at +x
+-4.0                    yMin
+ 4.0                    yMax
+-4.0                    zMin
+ 4.0                    zMax
+
+#NCELL
+24                      nCellX   dx = 6/24 = 0.25 R_M = 849 km (coarse)
+32                      nCellY   dy = 8/32 = 0.25 R_M
+32                      nCellZ   dz = 8/32 = 0.25 R_M
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX   3x4x4 = 48 blocks
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+F                       isPeriodicZ
+
+#NORMALIZATION
+3396000.0               lNormSI   [m]   1 Mars radius (R_M)
+3000000.0               uNormSI   [m/s] = the speed of light in a stand-alone run: c = 3000 km/s = 10 u_sw
+
+#BODY
+sphere                  type
+1.0294464               radius [code units: R_M, matching 3496 km]
+0.0                     center [code units] x
+0.0                     center [code units] y
+0.0                     center [code units] z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+conducting              fieldBoundary
+
+#PLANETRADIUS
+3496000.0               radius [m]   reference radius of exosphere profiles (rBody)
+
+#PLASMA
+5                       nSpecies
+0.0625                  mass        Species 0: electron (m_i/m_e = 16 for H+)
+-1.0                    charge
+1.0                     mass        Species 1: H+ (solar wind + corona)
+1.0                     charge
+32.0                    mass        Species 2: O2+ (heavy ionosphere)
+1.0                     charge
+16.0                    mass        Species 3: O+ (oxygen corona)
+1.0                     charge
+44.0                    mass        Species 4: CO2+ (ionosphere)
+1.0                     charge
+
+#UNIFORMSTATE
+3.0003                  rho [/cc]      Species 0: electron, quasi-neutral: n_e = 3 + 3 x 1e-4 /cc = sum n_i
+-300.0                  ux [km/s]      upstream solar wind bulk flow
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]          solar wind electron temperature
+3.0                     rho [/cc]      Species 1: solar wind H+
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+1.0e-4                  rho [/cc]      Species 2: O2+ trace background seed
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+1.0e-4                  rho [/cc]      Species 3: O+ trace background seed
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+1.0e-4                  rho [/cc]      Species 4: CO2+ trace background seed
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+-1.1184e-9              bx [T]         Parker spiral IMF (2 nT nominal at 1.52 AU)
+1.6581e-9               by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+4.9743e-4               ez [V/m]       motional electric field E = -u x B
+
+#INFLOW
+3.0                     rho [/cc]      Species 0: solar-wind electron, n = 3 /cc
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+3.0                     rho [/cc]      Species 1: solar-wind H+, n = 3 /cc
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+0.0                     rho [/cc]      Species 2: O2+ - no upstream influx
+0.0                     rho [/cc]      Species 3: O+  - no upstream influx
+0.0                     rho [/cc]      Species 4: CO2+ - no upstream influx
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo   x- (downstream / tailward)
+fixed                   fieldBoxBoundaryHi   x+ (upstream / sunward, Dirichlet)
+outflow                 fieldBoxBoundaryLo   y- (flank)
+outflow                 fieldBoxBoundaryHi   y+ (flank)
+outflow                 fieldBoxBoundaryLo   z- (polar)
+outflow                 fieldBoxBoundaryHi   z+ (polar)
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo   x-
+inflow                  particleBoxBoundaryHi   x+   flux injection (#INFLOW)
+outflow                 particleBoxBoundaryLo   y-
+outflow                 particleBoxBoundaryHi   y+
+outflow                 particleBoxBoundaryLo   z-
+outflow                 particleBoxBoundaryHi   z+
+
+#EXOSPHERE
+Exponential             typeProfile
+3                       nComponent
+1.911e12                n0 [m^-3]        Component 0: neutral H
+13133                   H0 [m]           H scale height
+134.0                   T0 [K]           H neutral temperature
+0.0                     k0
+8.546e15                n0 [m^-3]        Component 1: neutral O
+13340                   H0 [m]           O scale height
+134.0                   T0 [K]           O neutral temperature
+0.0                     k0
+4.516e18                n0 [m^-3]        Component 2: neutral CO2
+6563                    H0 [m]           CO2 scale height
+134.0                   T0 [K]           CO2 neutral temperature
+0.0                     k0
+
+#OPTICALDEPTH
+0.0                     crossSection [m^2]   H component
+1.5e-21                 crossSection [m^2]   O component
+2.6e-21                 crossSection [m^2]   CO2 component
+-1                      scaleHeight [m]      H (-1: use exosphere profile)
+-1                      scaleHeight [m]      O
+-1                      scaleHeight [m]      CO2
+1.0                     solarDirX            Sun toward +x
+0.0                     solarDirY
+0.0                     solarDirZ
+F                       chapmanFunction      matches UseChapman = F
+1.0e-5                  minProduction
+6.0e-3                  tauFloor
+11.5                    tauCutoff
+5.0e-4                  cosSzaFloor
+
+#PHOTOCHEMICALBOUNDARY
+3596000.0               radius [m]  200 km altitude: below it the ions recombine locally
+
+#CHEMISTRY
+10                      nReactions
+0                       reactantIon   R1: H + hv -> H+ + e-
+1                       productIon
+0                       neutralComp
+1                       rateType       photoionization
+8.59e-8                 rateCoef       nu0 [s^-1]
+0.0                     tempExp
+0.0                     refTemp
+0                       reactantIon   R2: O + hv -> O+ + e-
+3                       productIon
+1                       neutralComp
+1                       rateType
+2.734e-7                rateCoef       nu0 [s^-1]
+0.0                     tempExp
+0.0                     refTemp
+0                       reactantIon   R3: CO2 + hv -> CO2+ + e-
+4                       productIon
+2                       neutralComp
+1                       rateType
+7.3e-7                  rateCoef       nu0 [s^-1]
+0.0                     tempExp
+0.0                     refTemp
+4                       reactantIon   R4: CO2+ + O -> O2+ + CO
+2                       productIon
+1                       neutralComp
+0                       rateType       thermal
+1.64e-10                rateCoef       k0 [cm^3/s]
+0.0                     tempExp
+0.0                     refTemp
+3                       reactantIon   R5: O+ + CO2 -> O2+ + CO
+2                       productIon
+2                       neutralComp
+0                       rateType
+1.1e-9                  rateCoef       k0 [cm^3/s]
+0.0                     tempExp
+0.0                     refTemp
+4                       reactantIon   R6: CO2+ + O -> O+ + CO2
+3                       productIon
+1                       neutralComp
+0                       rateType
+9.60e-11                rateCoef       k0 [cm^3/s]
+0.0                     tempExp
+0.0                     refTemp
+1                       reactantIon   R7: H+ + O -> O+ + H
+3                       productIon
+1                       neutralComp
+0                       rateType
+5.084e-10               rateCoef       k0 [cm^3/s]
+0.0                     tempExp
+0.0                     refTemp
+3                       reactantIon   R8: O+ + H -> H+ + O
+1                       productIon
+0                       neutralComp
+0                       rateType
+6.4e-10                 rateCoef       k0 [cm^3/s]
+0.0                     tempExp
+0.0                     refTemp
+2                       reactantIon   R9: O2+ + e -> O + O
+0                       productIon
+-1                      neutralComp
+0                       rateType       recombination
+7.38e-8                 rateCoef       k0 [cm^3/s]
+0.56                    tempExp
+1200.0                  refTemp        [K]
+4                       reactantIon   R10: CO2+ + e -> CO + O
+0                       productIon
+-1                      neutralComp
+0                       rateType
+3.1e-7                  rateCoef       k0 [cm^3/s]
+0.5                     tempExp
+300.0                   refTemp        [K]
+
+#SOURCE
+T                       useSource
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dtSI [s]
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterTheta
+
+#UPWINDB
+T                       doSmoothB
+1                       theta
+0.0                     fixedUpwindVel
+
+#SMOOTHJ
+T
+1
+0.5
+
+#PARTICLES
+4                       npcelx
+4                       npcely
+4                       npcelz
+
+#SOURCEPARTICLES
+1                       npcelx   1 source particle per cell and step
+1                       npcely
+1                       npcelz
+
+#SOURCEWEIGHTFLOOR
+1.0e-3                  minWeightRatio  source particles >= 1e-3 x (3 /cc / ppc): the
+                                        far exosphere no longer seeds a particle per cell and step
+
+
+#ADAPTIVESOURCEPPC
+T                       useAdaptiveSourcePPC
+
+#MONITOR
+10                      dnReport
+50                      dnReportLB
+T                       doCompact
+
+#DIVE
+T                       doCorrectDivE
+1                       nDivECorrection (read if doCorrectDivE=T)
+
+#SAVELOG
+1                       dnSavePic
+10                      dnSavePT
+
+#REGION
+near1                   name
+sphere                  shape
+0.0                     centerX
+0.0                     centerY
+0.0                     centerZ
+2.0                     radius [R_M]
+
+#REGION
+near2                   name
+shell                   shape
+0.0                     centerX
+0.0                     centerY
+0.0                     centerZ
+0.95                    radiusInner [R_M]  the body interior needs no refinement
+1.3                     radiusOuter [R_M]
+
+#REGION
+near3                   name
+shell                   shape
+0.0                     centerX
+0.0                     centerY
+0.0                     centerZ
+0.95                    radiusInner [R_M]  the body interior needs no refinement
+1.15                    radiusOuter [R_M]
+
+#REFINEREGION
+0                       iLev      dx 849 -> 424 km inside 2.0 R_M (bow shock, pileup)
++near1                  regions
+
+#REFINEREGION
+1                       iLev      -> 212 km in the shell 0.95-1.3 R_M (ionosphere, body surface)
++near2                  regions
+
+Level 3 (106 km) does not fit in 15 GB: the node mass matrix (243 reals per
+node) of the many small fine boxes needs ~9 GB alone.
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#CONSTANTPPV
+T                       isPPVconstant   64 ppc on level 0, 8 ppc on levels 1-2
+
+#MINPARTICLESPERCELL
+2                       minPPCPerDim
+
+#RESAMPLING
+T                       doReSampling
+0.8                     splittingLimit
+1.5                     mergingLimit
+4.0                     maxWeightRatio  split the heavy particles entering finer levels
+
+#STOP
+-1                      MaxIter
+20.0                    TimeMax [s]

@@ -63,6 +63,7 @@ static bool particle_bc_no_injection(const ParticleBC::Type type) {
   switch (type) {
     case ParticleBC::inflow:
     case ParticleBC::outflow:
+    case ParticleBC::outflowthermal:
     case ParticleBC::vacuum:
     case ParticleBC::reflect:
     case ParticleBC::absorb:
@@ -210,26 +211,32 @@ struct InflowSpeedSampler {
     const Real rIdx = r * LUT_SIZE;
     const int idx = std::min(std::max(static_cast<int>(rIdx), 0), LUT_SIZE - 1);
     const Real frac = rIdx - idx;
-    Real w = lut[idx] + frac * (lut[idx + 1] - lut[idx]);
-
-    // 2-3 Newton-Raphson polish iterations
-    for (int it = 0; it < 3; ++it) {
+    // The root lies in [lut[idx], lut[idx+1]] (F is monotone). Newton,
+    // safeguarded by bisection inside that bracket: in the last bin, which
+    // reaches up to wHi, an unguarded step from the far end (where dF ~
+    // exp(-wHi^2)) stays there and over-samples the tail.
+    Real lo = lut[idx], hi = lut[idx + 1];
+    Real w = (idx == LUT_SIZE - 1) ? lo : lo + frac * (hi - lo);
+    for (int it = 0; it < 40; ++it) {
       const Real diff = w - vd;
       const Real exp_term = std::exp(-diff * diff);
       const Real Fw =
           0.5 * ((e0 - exp_term) + vd * sqpi * (erfc_mvd - std::erfc(diff)));
+      if (Fw < target)
+        lo = w;
+      else
+        hi = w;
       const Real dF = w * exp_term;
-      if (std::abs(dF) < 1e-300)
-        break;
-      Real wNew = w - (Fw - target) / dF;
-      if (wNew < 0.0 || wNew > wHi)
-        wNew = 0.5 * (std::max(static_cast<Real>(0.0), w) + wHi);
+      Real wNew = (dF > 0) ? w - (Fw - target) / dF : 0.5 * (lo + hi);
+      if (!(wNew > lo && wNew < hi))
+        wNew = 0.5 * (lo + hi);
       if (std::abs(wNew - w) < 1e-13 * (1.0 + w))
-        break;
+        return wNew;
       w = wNew;
     }
     return w;
   }
+
 };
 } // namespace
 
@@ -415,7 +422,190 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           }
 
           particles.push_back(p);
+          faceInMass[2 * iDim + side] += qomSign * q * get_mass();
         }
+      }
+    }
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
+    Real dt, const MultiFab& nodeMom) {
+  timing_func("Pts::inject_flux_at_open_faces");
+
+  if (dt <= 0)
+    return;
+
+  bool hasOpen = false;
+  for (int iDim = 0; iDim < nDim && !hasOpen; ++iDim)
+    hasOpen = (bc.lo[iDim] == ParticleBC::outflowthermal) ||
+              (bc.hi[iDim] == ParticleBC::outflowthermal);
+  if (!hasOpen)
+    return;
+
+  // Flux-weighted speed samplers by drift quantized to 0.05 vtherm; the
+  // rate uses the exact drift. The sampler depends on vd only, so the cache
+  // is shared by all species.
+  static std::map<int, InflowSpeedSampler> samplers;
+  auto sampler = [&](Real vd) -> const InflowSpeedSampler& {
+    const int key = static_cast<int>(std::lround(vd * 20));
+    auto it = samplers.find(key);
+    if (it == samplers.end()) {
+      InflowSpeedSampler smp;
+      smp.init(key / 20.0);
+      it = samplers.emplace(key, smp).first;
+    }
+    return it->second;
+  };
+
+  const int nppc = product(nPartPerCell);
+  const Real m = get_mass();
+  const int iLev = 0;
+  const auto& geom = Geom(iLev);
+  const Box& domain = geom.Domain();
+  const Real* probLo = geom.ProbLo();
+  const Real* probHi = geom.ProbHi();
+  const Real* cellSize = geom.CellSize();
+  const Real vol = dx[iLev].product();
+  constexpr Real c1over3 = 1. / 3;
+
+  // The same holds across the face: at an edge of the box the transverse
+  // nodes lie on the neighbouring face, so they are moved one layer inside
+  // too.
+  auto interior_node = [&](int d, int iv) {
+    if (geom.isPeriodic(d))
+      return iv;
+    return std::min(std::max(iv, domain.smallEnd(d) + 1), domain.bigEnd(d));
+  };
+
+  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.validbox();
+    ParticleTileType& particles = get_particle_tile(iLev, mfi);
+    const auto mom = nodeMom[mfi].const_array();
+
+    for (int iDim = 0; iDim < nDim; ++iDim) {
+      const int t1 = (iDim + 1) % nDim;
+      const int t2 = (nDim > 2) ? (iDim + 2) % nDim : 0;
+      const int trans1 = (iDim + 1) % 3;
+      const int trans2 = (iDim + 2) % 3;
+
+      for (int side = 0; side < 2; ++side) {
+        const bool isHi = (side == 1);
+        if ((isHi ? bc.hi[iDim] : bc.lo[iDim]) != ParticleBC::outflowthermal)
+          continue;
+        const int domEdge = isHi ? domain.bigEnd(iDim) : domain.smallEnd(iDim);
+        if ((isHi ? bx.bigEnd(iDim) : bx.smallEnd(iDim)) != domEdge)
+          continue;
+
+        const Real dxn = cellSize[iDim];
+        const Real inward = isHi ? -1.0 : 1.0;
+        const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
+        // State of the first node layer inside the face (zero-gradient
+        // extrapolation). The face nodes themselves are folded (doubled) and
+        // collect nearly all the weight of the freshly injected particles,
+        // which sit within w dt of the face: their density would overestimate
+        // the re-entry and run away.
+        const int iNode = isHi ? domEdge : domEdge + 1;
+
+        const int lo2 = (nDim > 2) ? bx.smallEnd(t2) : 0;
+        const int hi2 = (nDim > 2) ? bx.bigEnd(t2) : 0;
+        for (int c2 = lo2; c2 <= hi2; ++c2)
+          for (int c1 = bx.smallEnd(t1); c1 <= bx.bigEnd(t1); ++c1) {
+            // Species state averaged over the nodes of the cell face one
+            // node layer inside.
+            Real rho = 0, mv[3] = { 0, 0, 0 }, p = 0;
+            int nNode = 0;
+            for (int d2 = 0; d2 <= (nDim > 2 ? 1 : 0); ++d2)
+              for (int d1 = 0; d1 <= 1; ++d1) {
+                IntVect iv;
+                iv[iDim] = iNode;
+                iv[t1] = interior_node(t1, c1 + d1);
+                if (nDim > 2)
+                  iv[t2] = interior_node(t2, c2 + d2);
+                rho += mom(iv, iRho_);
+                mv[0] += mom(iv, iUx_);
+                mv[1] += mom(iv, iUy_);
+                mv[2] += mom(iv, iUz_);
+                p += (mom(iv, iPxx_) + mom(iv, iPyy_) + mom(iv, iPzz_)) *
+                     c1over3;
+                nNode++;
+              }
+            if (rho <= 0 || p <= 0)
+              continue;
+            const Real u[3] = { mv[0] / rho, mv[1] / rho, mv[2] / rho };
+            const Real sigma = std::sqrt(p / rho);
+            const Real nDens = rho / nNode / m;
+            const Real vtherm = std::sqrt(2.0) * sigma;
+            // Normal drift, averaged in time per face cell (about 10 steps):
+            // a single-step estimate is noisy (~0.1 vtherm), and the clamp
+            // below would turn zero-mean noise into a deficit of re-entry.
+            const int64_t key =
+                ((((int64_t)iDim * 2 + side) << 40) |
+                 ((int64_t)(c1 - domain.smallEnd(t1)) << 20) |
+                 (int64_t)(nDim > 2 ? c2 - domain.smallEnd(t2) : 0));
+            const Real vdNow = u[iDim] * inward / vtherm;
+            auto it = openFaceDrift.find(key);
+            if (it == openFaceDrift.end())
+              it = openFaceDrift.emplace(key, vdNow).first;
+            else
+              it->second += 0.1 * (vdNow - it->second);
+            // Only the outward part of the normal drift, beyond a deadband of
+            // 0.05 vtherm: the re-entered particles all move inward, so they
+            // bias the measured drift inward, which would raise the re-entry
+            // and bias it further (unstable). Inflow belongs to inflow faces
+            // (#INFLOW).
+            constexpr Real deadband = 0.05;
+            const Real vd = std::min(it->second + deadband, 0.0);
+
+            // Expected macroparticles: n vtherm g(vd) dt dA / (n vol/nppc).
+            const Real expected =
+                nppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn;
+            const int nInject = static_cast<int>(expected + randNum());
+            if (nInject <= 0)
+              continue;
+
+            const Real q = qomSign * vol * nDens / nppc;
+            const auto& smp = sampler(vd);
+            const Real base1 = probLo[t1] + (c1 - domain.smallEnd(t1)) *
+                                                cellSize[t1];
+            const Real base2 =
+                (nDim > 2)
+                    ? probLo[t2] + (c2 - domain.smallEnd(t2)) * cellSize[t2]
+                    : 0.0;
+
+            for (int ip = 0; ip < nInject; ++ip) {
+              const Real wIn = vtherm * smp.draw(randNum());
+              Real vel[3];
+              vel[iDim] = inward * wIn;
+              const Real g1 = inj_gaussian(randNum(), randNum());
+              const Real g2 = inj_gaussian(randNum(), randNum());
+              vel[trans1] = u[trans1] + sigma * g1;
+              vel[trans2] = u[trans2] + sigma * g2;
+
+              const Real pDist =
+                  std::min(1.0e-3 * dxn + wIn * dt * randNum(), 0.999 * dxn);
+              RealVect pos;
+              pos[iDim] = xFace + inward * pDist;
+              pos[t1] = base1 + randNum() * cellSize[t1];
+              if (nDim > 2)
+                pos[t2] = base2 + randNum() * cellSize[t2];
+
+              auto pt = make_particle();
+              set_ids(pt);
+              for (int d = 0; d < nDim; ++d)
+                pt.pos(d) = pos[d];
+              pt.rdata(iup_) = vel[ix_];
+              pt.rdata(ivp_) = vel[iy_];
+              pt.rdata(iwp_) = vel[iz_];
+              pt.rdata(iqp_) = q;
+              if (NStructInt > iRecordCount_)
+                pt.idata(iRecordCount_) = 0;
+              particles.push_back(pt);
+              faceInMass[2 * iDim + side] += qomSign * q * m;
+            }
+          }
       }
     }
   }
@@ -461,6 +651,7 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
   template void T::inject_particles_at_boundary();                             \
   template void T::inject_flux_at_inflow_faces(Real);                          \
   template void T::outflow_bc(const MFIter&, const IntVect, const IntVect);    \
+  template void T::inject_flux_at_open_faces(Real, const MultiFab&);           \
   template bool T::do_inject_particles_for_this_cell(                          \
       const Box&, const Array4<const int>&, const IntVect, IntVect&);
 

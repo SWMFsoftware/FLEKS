@@ -374,24 +374,32 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
 # no ionization source term is applied, so the physics checks fail.
 EXO_SOURCE_TESTS = {
     "chargeexchange", "photoionization", "electronimpact",
-    "recombination", "chemistry",
+    "recombination", "chemistry", "reactions", "mars", "photoproduction",
+    "mars_amr",
 }
 
 # Tests that require AMR (nLevMax >= 2).
 AMR_TESTS = {
     "amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr",
-    "wave_amr_3d",
+    "wave_amr_3d", "constantppv", "mars_amr",
 }
 
+# Tests that need three AMR levels (nLevMax >= 3); skipped on the default
+# two-level build.
+AMR3_TESTS = {"constantppv", "mars_amr"}
+
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
-AMREX3D_TESTS = {"lightwave", "wave_amr_3d"}
+AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "mars",
+                 "openboundary", "floatingbody",
+                 "ionosphereemission",
+                 "photoproduction", "constantppv", "mars_amr"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
 AMREX2D_TESTS = {"photoionization", "body"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
-    "chemistry",
+    "chemistry", "reactions",
 }
 
 
@@ -497,6 +505,11 @@ def preflight_check(test_name):
                 f"binary is configured with nLevMax = {nlev}.\n"
                 "  Rebuild with:  ./Config.pl -lev=2 -u=Exo && make"
             ), False
+
+    if test_name in AMR3_TESTS:
+        nlev = configured_nlevmax()
+        if nlev is not None and nlev < 3:
+            return False, f"needs nLevMax >= 3 (binary has {nlev})", True
 
     dim = configured_amrex_dim()
     required = None

@@ -192,37 +192,44 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
     bool localOnly) {
   timing_func("Pts::total_moments");
 
-  const int iLev = 0;
   const int iup = iup_;
   const int ivp = ivp_;
   const int iwp = iwp_;
   const int iqp = iqp_;
 
-  amrex::ReduceOps<ReduceOpSum, ReduceOpSum, ReduceOpSum, ReduceOpSum,
-                   ReduceOpSum>
-      reduce_ops;
-  auto r = amrex::ParticleReduce<ReduceData<Real, Real, Real, Real, Real> >(
-      *this, iLev,
-      [=] AMREX_GPU_DEVICE(const ParticleType& p)
-          noexcept -> amrex::GpuTuple<Real, Real, Real, Real, Real> {
-            if (p.id() < 0) {
-              return { 0.0, 0.0, 0.0, 0.0, 0.0 };
-            }
-            const Real up = p.rdata(iup);
-            const Real vp = p.rdata(ivp);
-            const Real wp = p.rdata(iwp);
-            const Real qp = p.rdata(iqp);
-            return { qp, qp * up, qp * vp, qp * wp,
-                     0.5 * qp * (up * up + vp * vp + wp * wp) };
-          },
-      reduce_ops);
+  // Every particle lives on exactly one level, so the totals are the sum
+  // over all levels.
+  std::array<Real, 5> sum = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    amrex::ReduceOps<ReduceOpSum, ReduceOpSum, ReduceOpSum, ReduceOpSum,
+                     ReduceOpSum>
+        reduce_ops;
+    auto r = amrex::ParticleReduce<ReduceData<Real, Real, Real, Real, Real> >(
+        *this, iLev,
+        [=] AMREX_GPU_DEVICE(const ParticleType& p)
+            noexcept -> amrex::GpuTuple<Real, Real, Real, Real, Real> {
+              if (p.id() < 0) {
+                return { 0.0, 0.0, 0.0, 0.0, 0.0 };
+              }
+              const Real up = p.rdata(iup);
+              const Real vp = p.rdata(ivp);
+              const Real wp = p.rdata(iwp);
+              const Real qp = p.rdata(iqp);
+              return { qp, qp * up, qp * vp, qp * wp,
+                       0.5 * qp * (up * up + vp * vp + wp * wp) };
+            },
+        reduce_ops);
+
+    sum[0] += amrex::get<0>(r);
+    sum[1] += amrex::get<1>(r);
+    sum[2] += amrex::get<2>(r);
+    sum[3] += amrex::get<3>(r);
+    sum[4] += amrex::get<4>(r);
+  }
 
   const Real factor = qomSign * get_mass();
-  std::array<Real, 5> sum = { amrex::get<0>(r) * factor,
-                              amrex::get<1>(r) * factor,
-                              amrex::get<2>(r) * factor,
-                              amrex::get<3>(r) * factor,
-                              amrex::get<4>(r) * factor };
+  for (auto& v : sum)
+    v *= factor;
 
   if (!localOnly) {
     ParallelDescriptor::ReduceRealSum(sum.data(), sum.size(),
@@ -273,8 +280,8 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
         // boundary node.
         const bool doFold =
             (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow ||
-             faceBc == ParticleBC::outflow || faceBc == ParticleBC::vacuum ||
-             faceBc == ParticleBC::absorb);
+             ParticleBC::is_outflow(static_cast<ParticleBC::Type>(faceBc)) ||
+             faceBc == ParticleBC::vacuum || faceBc == ParticleBC::absorb);
         if (!doFold)
           continue;
 

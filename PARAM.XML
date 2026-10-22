@@ -213,6 +213,23 @@ This command controls the frequency and format of printing simulation progress t
 The frequencies of saving log information for the PIC and 
 particle tracker components, respectively. 
 
+In standalone runs the PIC log also carries diagnostic columns, each only when
+the commands it diagnoses are used (coupled runs keep the basic columns):
+
+  Mpart0, Mpart1, ...   mass of each species (code units): with #SOURCE,
+                        #BODY, or an inflow or outflowthermal particle face
+  nParticles            number of macroparticles of all species and levels:
+                        with #SOURCE, #CONSTANTPPV or #PRESPLITTING
+  qBodyS0, qBodyS1, ... signed charge absorbed by the body per species: #BODY
+  nBodyInject, mBodyInject  particles injected at the body:
+                        #IONOSPHEREEMISSION, #FLOATINGBODY
+  mIn_FACE_Sn, mOut_FACE_Sn  mass injected through / removed across each face
+                        (FACE = xm, xp, ym, yp, zm, zp; n = species): with an
+                        outflowthermal particle face
+  qBodyReemit           #FLOATINGBODY
+
+All counts and masses are cumulative from the start of the run.
+
 </command>
 
 <command name="TPSAVE" alias="TPSAVE_FLEKS0,TPSAVE_FLEKS1,TPSAVE_FLEKS2" multiple="T">
@@ -461,8 +478,9 @@ the electron pressure gradient term -grad(Pe)/rho in the Ohm's law. Converted to
 code units internally
 (TeCode = TeEV * e / (mp * uNormSI\^2)).
 0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
-otherwise adiabatic Pe = P0 (rho/rho0)\^gamma. electronDensity0 is in code
-units (default 1.0 = reference charge density).
+otherwise adiabatic Pe = P0 (rho/rho0)\^gamma. electronDensity0 is the
+reference electron number density rho0 [/cc] (the same unit as the rho of
+#UNIFORMSTATE), converted to code units internally.
 </command>
 
 <command name="ELECTRONPRESSURE" alias="ELECTRONPRESSURE_FLEKS0,ELECTRONPRESSURE_FLEKS1,ELECTRONPRESSURE_FLEKS2" multiple="T">
@@ -846,7 +864,22 @@ Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 F                   isPPVconstant 
 
 If isPPVconstant is true then particles per volume is constant across all refinement levels,
-otherwise particles per cell is constant.
+otherwise particles per cell is constant. With a constant particles per volume the
+particles per cell and dimension are divided by the refinement ratio on every level
+(integer division), down to the lower limit of #MINPARTICLESPERCELL. The particles that
+move into a finer cell are then heavier than its target weight: use #RESAMPLING with
+maxWeightRatio > 1 to split them.
+</command>
+
+<command name="MINPARTICLESPERCELL" alias="MINPARTICLESPERCELL_FLEKS0,MINPARTICLESPERCELL_FLEKS1,MINPARTICLESPERCELL_FLEKS2" multiple="T">
+  <parameter name="minPPCPerDim" type="integer" min="1" default="1"/>
+
+#MINPARTICLESPERCELL
+2                   minPPCPerDim
+
+Lower limit of the particles per cell and dimension on the refined levels with
+#CONSTANTPPV (default 1, which also keeps the deep levels from getting no particles at
+all), so that they keep a few particles per cell.
 </command>
 
 <command name="PRESPLITTING" alias="PRESPLITTING_FLEKS0,PRESPLITTING_FLEKS1,PRESPLITTING_FLEKS2" multiple="T">
@@ -1492,6 +1525,110 @@ If it is true, the particle number per cell per step for the sources will
 be reduced to as low as 1 if the source density is low.
 </command>
 
+<command name="FLOATINGBODY" alias="FLOATINGBODY_FLEKS0,FLOATINGBODY_FLEKS1,FLOATINGBODY_FLEKS2" multiple="F">
+  <parameter name="radius" type="real" min="0"/>
+  <parameter name="T" type="real" min="0"/>
+  <parameter name="particlesPerCell" type="integer" min="1" default="8"/>
+
+#FLOATINGBODY
+3.79e6             radius [m]
+20000.0            T [K]
+8                  particlesPerCell
+
+Full PIC only (ignored in hybrid PIC, whose fluid electrons are
+quasi-neutral). Makes the absorbing body (#BODYBOUNDARY particleBoundary
+absorb) float: an object in a plasma charges up until it takes no net
+current, but the absorbing body has no surface charge and would take the
+electrons, which reach it faster than the ions, without limit, so the
+plasma charges positive. The body is one conductor (the ionosphere): the
+condition is on its total current.
+
+The net electron charge absorbed in a step (if the electrons dominate) is
+re-emitted in the next one as an outward half-Maxwellian of temperature T
+[K], spread over the plasma cells crossed by the sphere of the given radius
+[m] by their area, with particlesPerCell particles per cell; the current
+closes through the body. It is counted in nBodyInject/mBodyInject.
+
+The PIC log gains (standalone runs, see #SAVELOG) the re-emitted charge
+qBodyReemit. The charge absorbed per species is in qBodyS0, qBodyS1, ...
+</command>
+
+<command name="IONOSPHEREEMISSION" alias="IONOSPHEREEMISSION_FLEKS0,IONOSPHEREEMISSION_FLEKS1,IONOSPHEREEMISSION_FLEKS2" multiple="F">
+  <parameter name="radius" type="real" min="0" default="0"/>
+  <parameter name="solarDirX" type="real" default="1.0"/>
+  <parameter name="solarDirY" type="real" default="0.0"/>
+  <parameter name="solarDirZ" type="real" default="0.0"/>
+  <parameter name="noon" type="real" min="0" default="1.0"/>
+  <parameter name="night" type="real" min="0" default="0.1"/>
+  <parameter name="particlesPerCell" type="integer" min="1" default="8"/>
+  <for from="1" to="$nS">
+    <parameter name="totalRate" type="real" min="0" default="0"/>
+    <parameter name="T" type="real" min="0" default="0"/>
+  </for>
+
+#IONOSPHEREEMISSION
+3790000.0          radius [m]   emission sphere around the body center
+1.0                solarDirX    unit vector toward the Sun
+0.0                solarDirY
+0.0                solarDirZ
+1.0                noon
+0.1                night
+8                  particlesPerCell
+0.0                totalRate [1/s]  Species 0: electron (charge of the ions, ignored)
+20000.0            T [K]
+2.0e25             totalRate [1/s]  Species 1: O2+
+20000.0            T [K]
+
+Ionospheric emission shell, after the IonosphereInjector of the hybrid code
+rhybrid. Every step each species is injected into the plasma cells (not body,
+not refined) crossed by the sphere of the given radius [m], with the total
+rate [1/s] of the species distributed over those cells in proportion to the
+area of the sphere inside each cell times the profile
+a = noon + (night - noon)(1 - cos SZA) on the dayside and a = night on the
+nightside. The particles are placed uniformly in the cell, particlesPerCell per
+cell and step, with an outward half-Maxwellian velocity of temperature T. One
+block per species in #PLASMA order. A kinetic electron species always gets the
+charge of the injected ions (its totalRate is ignored), at its own T. The
+injection is counted in the nBodyInject and mBodyInject log columns. Requires
+#PLASMA first. Use it with an absorbing body just below the sphere and a
+photochemical boundary (#PHOTOCHEMICALBOUNDARY) at the same radius, so that the
+ionosphere below is represented only by the emission.
+</command>
+
+<command name="PHOTOCHEMICALBOUNDARY" alias="PHOTOCHEMICALBOUNDARY_FLEKS0,PHOTOCHEMICALBOUNDARY_FLEKS1,PHOTOCHEMICALBOUNDARY_FLEKS2" multiple="F">
+  <parameter name="radius" type="real" min="0" default="0"/>
+
+#PHOTOCHEMICALBOUNDARY
+3596000.0          radius [m]   200 km altitude at Mars
+
+Exosphere source (-u=Exo). Below this radius the ions are produced and
+lost in local photochemical equilibrium: the ionization there (photo and
+electron impact, #PHOTOIONIZATION, #ELECTRONIMPACT and the ionization
+reactions of #CHEMISTRY) is not injected into the plasma. The neutral
+densities that set the frequencies of the ion-neutral reactions and of the
+charge exchange keep the whole atmosphere. Use it when the grid cannot
+resolve the ionospheric layer: diluted over a cell, the ions recombine far
+too slowly (the loss scales with n\^2), so the full column production would
+pile up next to the body. The default 0 injects all the ionization.
+</command>
+
+<command name="SOURCEWEIGHTFLOOR" alias="SOURCEWEIGHTFLOOR_FLEKS0,SOURCEWEIGHTFLOOR_FLEKS1,SOURCEWEIGHTFLOOR_FLEKS2" multiple="T">
+  <parameter name="minWeightRatio" type="real" min="0" default="0"/>
+
+#SOURCEWEIGHTFLOOR
+1.0e-3             minWeightRatio
+
+Lower limit of the weight of the source particles (#SOURCE), relative to the
+weight of a particle of the reference plasma: the number density of all ions
+of the fluid state (#UNIFORMSTATE in a stand-alone run, the MHD state in a
+coupled run) divided by the particles per cell of #PARTICLES. A cell whose
+source of one step is smaller than one particle of the floor weight gets a
+single particle of the floor weight with the probability source/floor, so the
+injected mass is conserved on average. Without the floor, an extended
+exosphere creates a particle in every cell and every step, most of them with
+negligible weight. The default 0 switches the floor off.
+</command>
+
 <command name="SUPID" alias="SUPID_FLEKS0,SUPID_FLEKS1,SUPID_FLEKS2" multiple="T">
    <parameter name="nSpecies" type="integer" min="0" max="15" default="0" />
     <for from="1" to="$nSpecies">
@@ -1779,6 +1916,11 @@ normalization should be set here. Both lNorm and uNorm are in SI units.
 
 Code units map from SI as code_length = SI_length/lNorm and
 code_time = SI_time * uNorm/lNorm (so tNorm = lNorm/uNorm s per code-time unit).
+
+uNorm is also the speed of light of the stand-alone run (c = 1 in code units).
+In full PIC it must be well above the bulk speeds of the plasma and the Alfven
+speed (by ~10): FLEKS warns when a #UNIFORMSTATE or #INFLOW speed exceeds
+0.3 c. Hybrid PIC (Ohm's law, no displacement current) does not depend on it.
 </command>
 
 <command name="SCALINGFACTOR" alias="SCALINGFACTOR_FLEKS0,SCALINGFACTOR_FLEKS1,SCALINGFACTOR_FLEKS2" multiple="T">
@@ -1927,7 +2069,9 @@ warning) if no #BODY is given. The defaults are 'absorb' and 'linetied'.
 particleBoundary:
 
   absorb  - a particle pushed into a body cell is removed and tallied
-            (nBodyAbsorb, qBodyAbsorb, mBodyAbsorb in the log).
+            (nBodyAbsorb, qBodyAbsorb, mBodyAbsorb in the log: the number
+            of macroparticles, the signed charge and the mass, summed over
+            the species in the units of the Mpart columns).
   reflect - specular reflection on the sphere: with n the radial direction
             from the body center to the particle, the position is mirrored to
             r -> 2R - r and the velocity to v -> v - 2(v.n)n. The particle and
@@ -2040,6 +2184,7 @@ accepted: rename it to #PLANETRADIUS in existing input decks.
 <command name="EXOSPHERE" alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2" multiple="T">
   <parameter name="typeProfile" type="string"/>
   <parameter name="nComponent" type="integer"/>
+  <parameter name="typeComponent" type="string" if="$typeProfile eq 'Mixed'"/>
   <parameter name="n0" type="real"/>
   <parameter name="H0" type="real"/>
   <parameter name="T0" type="real"/>
@@ -2054,7 +2199,26 @@ Exponential      typeProfile
 0.0              k0
 
 This command configures the static exospheric neutral density profile.
-The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
+The typeProfile can be "Exponential", "Power-Law", "Chamberlain" or "Mixed".
+With "Mixed" each component starts with its own typeComponent (one of the
+other three), e.g. a cold exponential thermosphere next to a hot Chamberlain
+hydrogen corona:
+
+\begin{verbatim}
+Mixed            typeProfile
+2                nComponent
+Exponential      typeComponent
+8.5e15           n0
+13340            H0
+134.0            T0
+0.0              k0
+Chamberlain      typeComponent
+1.0e11           n0
+25965e3          H0
+6500.0           T0
+0.0              k0
+\end{verbatim}
+
 The coefficients n0, H0, T0, k0 are specified as multi-component arrays
 for each neutral species. The total neutral density at radius $r$ (measured
 from the planet center, with $r \geq r_{planet}$) is the sum over all
@@ -2196,7 +2360,15 @@ while the point is on the dayside and $\tau/\mu$ stays below tauCutoff, and
 $$
   A = A_{min}
 $$
-otherwise, with $\tau$ floored at tauFloor.
+otherwise, with $\tau$ floored at tauFloor. Behind the terminator plane the
+point is dark ($A = A_{min}$) only in the geometric shadow of the planet, a
+cylinder of the #SHADOWCYLINDER radius (otherwise #PLANETRADIUS) around the
+anti-solar axis. Elsewhere the solar ray grazes the planet at the tangent
+radius $p$ (the distance from that axis) and crosses the column
+$\tau = \sum_c \sigma_c n_c(p) H_c(p) \sqrt{2\pi p/H_c(p)}$, so a corona
+that extends to several planetary radii stays sunlit on the nightside while the
+thermosphere there is dark. With #SHADOWCYLINDER, a point in the cylinder is
+dark in every branch.
 
 With chapmanFunction = T only the component named by chapmanComponent
 contributes to $\tau$, which is then multiplied by the Chapman function
@@ -2584,6 +2756,7 @@ accordingly for the next step. This is only used for OH-PT coupling.
       <option value="coupled"/>
       <option value="outflow"/>
       <option value="open"/>
+      <option value="outflowthermal"/>
       <option value="vacuum"/>
       <option value="reflect"/>
       <option value="absorb"/>
@@ -2594,6 +2767,7 @@ accordingly for the next step. This is only used for OH-PT coupling.
       <option value="coupled"/>
       <option value="outflow"/>
       <option value="open"/>
+      <option value="outflowthermal"/>
       <option value="vacuum"/>
       <option value="reflect"/>
       <option value="absorb"/>
@@ -2618,6 +2792,20 @@ This command defines the kinetic boundary conditions for all particle species.
   from the fluid / MHD state.
 * `outflow` (alias `open`) -- particles crossing the face are deleted; there
   is no tally and no ghost-cell population (Hybrid-VPIC "open").
+* `outflowthermal` -- like `outflow`, plus a thermal re-entry flux: every
+  face cell receives, per species, the inward half-flux n vtherm g(vd) of the
+  drifting Maxwellian of that species one node layer inside the face (a
+  zero-gradient open boundary). The normal drift, averaged in time per face
+  cell over about 10 steps, enters only with its outward part beyond 0.05
+  vtherm, which reduces the re-entry of a sub- or supersonic outflow; inflow
+  belongs to `inflow` faces. With `outflow`, a plasma at rest drains through
+  the face at its one-sided thermal flux n sigma/sqrt(2 pi), so the light
+  species (the kinetic electrons of full PIC) leave first and the boundary
+  layer charges up; with `outflowthermal` each species keeps its density.
+  With an `outflowthermal` face, the PIC log of a standalone run carries the
+  cumulative mass of each species injected through and removed across each
+  face, in the columns mIn_FACE_Sn and mOut_FACE_Sn (FACE = xm, xp, ym, yp,
+  zm, zp; n = species index), for the particle budget (see #SAVELOG).
 * `vacuum` -- like `outflow`, and additionally asserts that nothing exists
   beyond the face; no tally.
 * `reflect` -- specular reflection: position and normal velocity are

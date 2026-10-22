@@ -205,6 +205,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("isParticleLocationRandom", pInfo.isParticleLocationRandom);
   } else if (command == "#CONSTANTPPV") {
     param.read_var("isPPVconstant", pInfo.isPPVconstant);
+  } else if (command == "#MINPARTICLESPERCELL") {
+    param.read_var("minPPCPerDim", pInfo.minPPCPerDim);
+    if (pInfo.minPPCPerDim < 1)
+      Abort("Invalid #MINPARTICLESPERCELL: minPPCPerDim must be >= 1.");
   } else if (command == "#PRESPLITTING") {
     param.read_var("doPreSplitting", pInfo.doPreSplitting);
   } else if (command == "#DIVE") {
@@ -302,6 +306,49 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#ADAPTIVESOURCEPPC") {
     param.read_var("adaptiveSourcePPC", adaptiveSourcePPC);
+  } else if (command == "#IONOSPHEREEMISSION") {
+    auto& ie = ionoEmission;
+    ie.use = true;
+    param.read_var("radius", ie.radiusSI);
+    param.read_var("solarDirX", ie.solarDir[0]);
+    param.read_var("solarDirY", ie.solarDir[1]);
+    param.read_var("solarDirZ", ie.solarDir[2]);
+    param.read_var("noon", ie.noon);
+    param.read_var("night", ie.night);
+    param.read_var("particlesPerCell", ie.nPPC);
+    const Real norm = std::sqrt(ie.solarDir[0] * ie.solarDir[0] +
+                                ie.solarDir[1] * ie.solarDir[1] +
+                                ie.solarDir[2] * ie.solarDir[2]);
+    if (ie.radiusSI <= 0 || norm <= 0 || ie.nPPC < 1)
+      Abort("Invalid #IONOSPHEREEMISSION: radius, the solar direction and "
+            "particlesPerCell must be positive.");
+    for (auto& d : ie.solarDir)
+      d /= norm;
+    const int nS = fi->get_nS();
+    if (nS <= 0)
+      Abort("Error: #IONOSPHEREEMISSION has one block per species and must "
+            "come after #PLASMA.");
+    ie.rateSI.assign(nS, 0.0);
+    ie.tempSI.assign(nS, 0.0);
+    for (int iS = 0; iS < nS; iS++) {
+      param.read_var("totalRate", ie.rateSI[iS]);
+      param.read_var("T", ie.tempSI[iS]);
+      if (ie.rateSI[iS] < 0 || ie.tempSI[iS] < 0)
+        Abort("Invalid #IONOSPHEREEMISSION: totalRate and T must be >= 0.");
+    }
+  } else if (command == "#FLOATINGBODY") {
+    auto& fb = floatingBody;
+    fb.use = true;
+    param.read_var("radius", fb.radiusSI);
+    param.read_var("T", fb.tempSI);
+    param.read_var("particlesPerCell", fb.nPPC);
+    if (fb.radiusSI <= 0 || fb.tempSI < 0 || fb.nPPC < 1)
+      Abort("Error: #FLOATINGBODY needs radius > 0, T >= 0 and "
+            "particlesPerCell >= 1.");
+  } else if (command == "#SOURCEWEIGHTFLOOR") {
+    param.read_var("minWeightRatio", sourceMinWeightRatio);
+    if (sourceMinWeightRatio < 0)
+      Abort("Invalid #SOURCEWEIGHTFLOOR: minWeightRatio must be >= 0.");
   } else if (command == "#MERGELIGHT") {
     param.read_var("mergeLight", pInfo.mergeLight);
     if (pInfo.mergeLight) {
@@ -613,7 +660,7 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
                          "match.");
 
         if (fType == FieldBC::conducting &&
-            (pType == ParticleBC::outflow || pType == ParticleBC::vacuum ||
+            (ParticleBC::is_outflow(pType) || pType == ParticleBC::vacuum ||
              pType == ParticleBC::absorb))
           add_bc_warning(what() + " is '" + ParticleBC::to_string(pType) +
                          "' on a 'conducting' wall: particles leave through "
@@ -853,15 +900,17 @@ void Pic::post_process_param() {
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 
-  // Classify species: in semi-implicit full PIC, negative charge -> implicit
-  // electron. In explicit full PIC and hybrid PIC, all particle species are
-  // kinetic.
+  // Classify species. Every full-PIC species (implicit or explicit) is
+  // kinetic. In hybrid PIC the electrons are a massless fluid, so a
+  // negative-charge species is only a fluid-electron slot (e.g. the species 0
+  // that the #CHEMISTRY / #RECOMBINATION source terms require): it never gets
+  // particles, is never pushed and does not enter the ion charge density.
+  // The charge comes from fi because the particle containers do not exist yet
+  // when the parameters are post-processed.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
-    // Guard: parts may not be fully populated yet.
-    if (!useHybridPIC && !useExplicitPIC && i < (int)parts.size() && parts[i] &&
-        parts[i]->get_charge() < 0) {
+    if (useHybridPIC && fi->get_species_charge(i) < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
     } else {
@@ -976,7 +1025,100 @@ void Pic::finalize_units_conversion() {
   convert_electron_heat_conduction();
   convert_electron_collision();
   convert_inflow_state();
+  convert_ionosphere_emission();
+  convert_floating_body();
+  check_light_speed();
   convert_intrinsic_B();
+}
+
+//==========================================================
+void Pic::convert_ionosphere_emission() {
+  auto& ie = ionoEmission;
+  if (!ie.use)
+    return;
+  const double unormSI = fi->get_unorm_si();
+  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
+  const int nS = fi->get_nS();
+  ie.vth.assign(nS, 0.0);
+  Print() << "  #IONOSPHEREEMISSION: r = " << ie.radiusSI / 1e3
+          << " km, profile noon/night = " << ie.noon << "/" << ie.night
+          << ", " << ie.nPPC << " particles per cell and step\n";
+  for (int iS = 0; iS < nS; iS++) {
+    const double mass = fi->get_species_mass(iS);
+    ie.vth[iS] = mass > 0 ? std::sqrt(ie.tempSI[iS] * tFactor / mass) : 0.0;
+    const bool isElectron = fi->get_species_charge(iS) < 0;
+    Print() << "    species " << iS << ": "
+            << (isElectron ? std::string("the charge of the injected ions")
+                           : std::to_string(ie.rateSI[iS]) + " /s")
+            << ", T = " << ie.tempSI[iS] << " K\n";
+  }
+}
+
+//==========================================================
+void Pic::convert_floating_body() {
+  auto& fb = floatingBody;
+  if (!fb.use)
+    return;
+  if (!use_body() || body_particle_bc() != ParticleBC::absorb)
+    Abort("Error: #FLOATINGBODY needs an absorbing body (#BODY, "
+          "#BODYBOUNDARY particleBoundary absorb).");
+  if (useHybridPIC) {
+    Print() << "Warning: #FLOATINGBODY is ignored in hybrid PIC (the fluid "
+               "electrons are quasi-neutral).\n";
+    fb.use = false;
+    return;
+  }
+  int iE = -1;
+  for (int i : kineticSpecies_)
+    if (fi->get_species_charge(i) < 0 && iE < 0)
+      iE = i;
+  if (iE < 0)
+    Abort("Error: #FLOATINGBODY needs a kinetic electron species.");
+  const double unormSI = fi->get_unorm_si();
+  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
+  fb.vth = std::sqrt(fb.tempSI * tFactor / fi->get_species_mass(iE));
+  Print() << "  #FLOATINGBODY: r = " << fb.radiusSI / 1e3
+          << " km, T = " << fb.tempSI << " K, " << fb.nPPC
+          << " particles per cell\n";
+}
+
+//==========================================================
+void Pic::check_light_speed() {
+  // In a stand-alone full-PIC run the speed of light is uNormSI (c = 1 in code
+  // units, see #NORMALIZATION). A flow at or above c is unphysical and
+  // distorts the field response; ~10 times the flow is a safe margin.
+  if (useHybridPIC || !isStandalone)
+    return;
+
+  double uMaxSI = 0;
+  const auto& state = fi->get_uniform_state();
+  const int nS = fi->get_nS();
+  if (static_cast<int>(state.size()) >= 5 * nS) {
+    for (int iS = 0; iS < nS; iS++) {
+      const double rho = state[5 * iS];
+      if (rho <= 0)
+        continue;
+      const double u = std::sqrt(state[5 * iS + 1] * state[5 * iS + 1] +
+                                 state[5 * iS + 2] * state[5 * iS + 2] +
+                                 state[5 * iS + 3] * state[5 * iS + 3]) /
+                       rho;
+      uMaxSI = std::max(uMaxSI, u);
+    }
+  }
+  for (int iB = 0; iB < static_cast<int>(inflowUx_I.size()); iB++)
+    if (inflowRho_I[iB] > 0)
+      uMaxSI =
+          std::max(uMaxSI, 1e3 * std::sqrt(inflowUx_I[iB] * inflowUx_I[iB] +
+                                           inflowUy_I[iB] * inflowUy_I[iB] +
+                                           inflowUz_I[iB] * inflowUz_I[iB]));
+
+  const double cSI = fi->get_cLight_SI();
+  if (cSI > 0 && uMaxSI > 0.3 * cSI)
+    Print() << "  Warning: the bulk speed " << uMaxSI / 1e3
+            << " km/s of #UNIFORMSTATE/#INFLOW is " << uMaxSI / cSI
+            << " times the speed of light c = uNormSI = " << cSI / 1e3
+            << " km/s (#NORMALIZATION). Full PIC needs c well above the flow"
+            << " and Alfven speeds (~10x): raise uNormSI.\n";
 }
 
 //==========================================================
@@ -1089,7 +1231,7 @@ void Pic::convert_electron_density0() {
   if (rhoMinOhm <= 0)
     rhoMinOhm = 1.0e-6 * electronDensity0;
 
-  Print() << "  electronDensity0: " << electronDensity0In << " [amu/cc] -> "
+  Print() << "  electronDensity0: " << electronDensity0In << " [/cc] -> "
           << electronDensity0
           << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho() << ")\n";
 }
@@ -1200,7 +1342,8 @@ void Pic::convert_inflow_state() {
             << "#PLASMA only defines " << nSpecies
             << "; the extra blocks are ignored.\n";
 
-  // Conversion factors: rho [amu/cc], u [km/s], T [K] -> code units.
+  // Conversion factors: n [/cc] (the "rho" of #INFLOW is a number density, as
+  // in #UNIFORMSTATE), u [km/s], T [K] -> code units.
   const double Si2NoRho = fi->get_Si2NoRho();
   const double rhoFactor = 1.0e6 * cProtonMassSI * Si2NoRho;
   const double vFactor = 1.0e3 * fi->get_Si2NoV();
@@ -1213,6 +1356,13 @@ void Pic::convert_inflow_state() {
     // Species beyond the last declared block reuse that block, so a single
     // block still describes a uniform multi-species upstream plasma.
     const int iB = std::min(iS, nBlock - 1);
+    // An optional block is only recognized when its first line is named
+    // "rho", so a relabeled line silently falls back to the last block.
+    if (iB != iS && nBlock > 1 && inflowRho_I[iB] > 0)
+      Print() << "  Warning: #INFLOW has no block for species " << iS
+              << ", which reuses the block of species " << iB
+              << " (n = " << inflowRho_I[iB] << " /cc). Every optional "
+              << "block must start with a line named 'rho'.\n";
 
     const double rho = inflowRho_I[iB] * rhoFactor;
     const double T = inflowT_I[iB] * tFactor;

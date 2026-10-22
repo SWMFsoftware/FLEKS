@@ -14,6 +14,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Photoionization       | `photoionization/`    | Chamberlain neutral atmosphere with photoionization           | [README](photoionization/README.md) |
 | Electron impact       | `electronimpact/`     | Voronov 1997 electron-impact ionization of hot electrons      | [README](electronimpact/README.md) |
 | Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |
+| Reactions             | `reactions/`          | Analytic checks of the source/loss terms against the particle plasma state: ion-neutral chemistry (incl. stiff), recombination (full/hybrid), charge exchange, source weight floor | [README](reactions/README.md) |
 | Whistler & Ohm's law  | `whistler/`           | 1D whistler–Alfvén wave, full generalized Ohm's law, and 4 hybrid timestepping schemes (rk4, rk4-pc, ssprk3, ssprk3-pc) | [README](whistler/README.md) |
 | Hybrid upwind         | `hybrid_upwind/`      | `#HYBRIDUPWIND` Rusanov dissipation of the Ohm's-law E: analytic first-order decay rate, MC-limited rate bounds, div(B) preserved in a noisy 2D plasma, damping of a resolved whistler, exact rates of the grid-scale sensor | [README](hybrid_upwind/README.md) |
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
@@ -27,6 +28,10 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
 | Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |
 | Oblique shock         | `shock/`              | Oblique magnetized shock: 1D full PIC and hybrid; 2D hybrid with hyper-resistivity or upwind dissipation | [README](shock/README.md) |
+| Constant PPV on AMR   | `constantppv/`        | `#CONSTANTPPV` + `#RESAMPLING` on a 3-level 3D grid: particle number and energy conserved (needs nLevMax >= 3) | [README](constantppv/README.md) |
+| Unresolved production | `photoproduction/`    | Photoproduction of a 1 km-scale-height atmosphere on 33 km cells around a body vs the analytic column, aligned and shifted grids | [README](photoproduction/README.md) |
+| Mars with AMR         | `mars_amr/`           | The Mars smoke test with two refinement levels around the body (212 km), 20 s; expensive, needs nLevMax >= 3 | [README](mars_amr/README.md) |
+| Mars                  | `mars/`               | Coarse 3D standalone Martian magnetosphere (semi-implicit full PIC, floating body, ionospheric emission shell, open faces), 10 s; expensive | [README](mars/README.md) |
 | Inner body            | `body/`               | Absorbing spherical inner boundary (`#BODY`): particle absorption, empty interior, wake | [README](body/README.md) |
 | Intrinsic field       | `intrinsic_field/`    | Static planetary magnetic field (`#DIPOLE`, `#CRUSTALFIELD`): analytic dipole, spherical harmonic crustal field | [README](intrinsic_field/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |

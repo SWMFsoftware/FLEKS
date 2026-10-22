@@ -354,8 +354,9 @@ private:
   int nSpecies;
   int iTot;
 
-  // Hybrid species IDs
-  // iElectron_ (-1 if none); kineticSpecies_ = non-electron species.
+  // Species classification (see post_process_param): iElectron_ is the hybrid
+  // fluid-electron slot (-1 if none); kineticSpecies_ are the particle
+  // species, i.e. all species in full PIC and the ions in hybrid PIC.
   int iElectron_ = -1;
   std::vector<int> kineticSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
@@ -411,6 +412,102 @@ private:
   // Particle Per Cell (PPC) of source particles.
   amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
   bool adaptiveSourcePPC = false;
+  // Weight floor of the source particles relative to a reference particle
+  // (#SOURCEWEIGHTFLOOR); 0 switches it off.
+  amrex::Real sourceMinWeightRatio = 0.0;
+
+  // Ionospheric emission shell (#IONOSPHEREEMISSION), after the
+  // IonosphereInjector of rhybrid: every step each species is injected into
+  // the plasma cells crossed by the sphere r = radius, with the total rate
+  // [#/s] spread by the area of the sphere in each cell and the profile
+  // a = noon + (night - noon)(1 - cos SZA) on the dayside, a = night on the
+  // nightside, as an outward half-Maxwellian of temperature T. A kinetic
+  // electron species gets the charge of the injected ions.
+  // Weights of the plasma cells crossed by a sphere around the body center:
+  // area of the sphere in the cell times a profile, normalized to 1 over all
+  // levels and ranks. Cached per grid.
+  struct ShellWeights {
+    amrex::Vector<amrex::MultiFab> weight;
+    amrex::Vector<amrex::BoxArray> grids;
+    amrex::Vector<amrex::DistributionMapping> dms;
+  };
+  bool shell_weights_up_to_date(const ShellWeights &sw);
+  void build_shell_weights(
+      ShellWeights &sw, amrex::Real radiusSI,
+      const std::function<amrex::Real(const amrex::Real *, amrex::Real)>
+          &profile,
+      const std::string &name);
+
+  struct IonosphereEmission {
+    bool use = false;
+    amrex::Real radiusSI = 0;
+    amrex::Real solarDir[3] = { 1.0, 0.0, 0.0 };
+    amrex::Real noon = 1.0, night = 0.1;
+    int nPPC = 8;
+    amrex::Vector<amrex::Real> rateSI, tempSI;
+    // Code units / caches.
+    amrex::Vector<amrex::Real> vth;
+    ShellWeights shell; // area * profile
+  } ionoEmission;
+
+  // #FLOATINGBODY: the absorbing body floats, i.e. it takes no net current.
+  // The net electron charge absorbed in a step is re-emitted as an outward
+  // half-Maxwellian of temperature T over the sphere of the given radius
+  // (current closure through the conducting body).
+  struct FloatingBody {
+    bool use = false;
+    amrex::Real radiusSI = 0, tempSI = 0, vth = 0;
+    int nPPC = 8;
+    // Cumulative global tallies at the last update.
+    amrex::Real qIon = 0, qEle = 0, qReemit = 0;
+    ShellWeights shell; // area only
+  } floatingBody;
+
+  // The floating-body state of the last accepted push, kept across the
+  // trial push of a predictor-corrector step (see backup_particle_state()).
+  amrex::Real floatingBodyBackup[3] = { 0, 0, 0 };
+  void backup_floating_body() {
+    const auto& fb = floatingBody;
+    floatingBodyBackup[0] = fb.qIon;
+    floatingBodyBackup[1] = fb.qEle;
+    floatingBodyBackup[2] = fb.qReemit;
+  }
+  void restore_floating_body() {
+    auto& fb = floatingBody;
+    fb.qIon = floatingBodyBackup[0];
+    fb.qEle = floatingBodyBackup[1];
+    fb.qReemit = floatingBodyBackup[2];
+  }
+
+  void update_floating_body();
+
+  // Is any particle box face of any species of the given type?
+  bool has_particle_face(ParticleBC::Type type) const {
+    for (int i = 0; i < nSpecies; ++i)
+      for (int d = 0; d < nDim; ++d)
+        if (pInfo.pBCs[i].lo[d] == type || pInfo.pBCs[i].hi[d] == type)
+          return true;
+    return false;
+  }
+
+  // Standalone log diagnostics, each written only when the commands it
+  // diagnoses are used:
+  // - Mpart<i>: particles are created or removed (#SOURCE, #BODY, inflow or
+  //   outflowthermal faces);
+  bool log_species_mass() const {
+    return source != nullptr || use_body() ||
+           has_particle_face(ParticleBC::inflow) ||
+           has_particle_face(ParticleBC::outflowthermal);
+  }
+  // - nParticles: the macroparticle count is managed (#CONSTANTPPV,
+  //   #PRESPLITTING, source particles);
+  bool log_particle_count() const {
+    return pInfo.isPPVconstant || pInfo.doPreSplitting || source != nullptr;
+  }
+  // - mIn_/mOut_ per face: the thermal re-entry of outflowthermal faces.
+  bool log_face_budget() const {
+    return has_particle_face(ParticleBC::outflowthermal);
+  }
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;
@@ -550,6 +647,8 @@ private:
   // Report options from #MONITOR, set by Domain.
   bool doCompact = true;
   int dnReportLB = 100;
+  // Stand-alone run (not coupled through the SWMF), set by Domain.
+  bool isStandalone = false;
   amrex::Real maxCFL = 0.0;
   int dnMemory = -1;
 
@@ -713,6 +812,7 @@ public:
     dnReportLB = dnReportLBIn;
     doCompact = doCompactIn;
   }
+  void set_standalone(bool isStandaloneIn) { isStandalone = isStandaloneIn; }
   bool is_implicit_pic() const {
     return fieldSolverMode == PicSolverMode::Implicit;
   }
@@ -787,6 +887,9 @@ public:
   void convert_electron_heat_conduction();
   void convert_electron_collision();
   void convert_inflow_state();
+  void convert_ionosphere_emission();
+  void convert_floating_body();
+  void check_light_speed();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
   void convert_intrinsic_B();
@@ -825,12 +928,35 @@ public:
 
   void fill_source_particles();
 
+
+  // #IONOSPHEREEMISSION: (re)build the shell weights for the current grid,
+  // and inject the particles of one step.
+  void build_emission_weights();
+  void inject_ionosphere_emission();
+
+  // Write the plasma state of the particles (per-species density, bulk
+  // velocity and scalar pressure, from the moments of the last update) into
+  // the stand-alone state `dst`, which has fi's layout. In hybrid PIC the
+  // fluid-electron slot gets n_e = sum(Z_i n_i), the ion charge-averaged
+  // velocity and the electron pressure of the hybrid closure. Used by the
+  // stand-alone source terms, whose rates depend on the local plasma.
+  void fill_plasma_state(FluidInterface &dst);
+
+  // Adapt the source terms to the inner body: deliver the production of the
+  // surface nodes to the plasma cells.
+  void mask_body_source(SourceInterface &src);
+
+  // Radius of the inner body [m], 0 without one.
+  amrex::Real get_body_radius_si() const {
+    return use_body() ? get_body_radius() * fi->get_No2SiL() : 0.0;
+  }
+
   void inject_particles_for_new_cells() {
     if (!usePIC)
       return;
 
-    for (auto &pts : parts) {
-      pts->add_particles_domain(!particlesInitialized);
+    for (int i : kineticSpecies_) {
+      parts[i]->add_particles_domain(!particlesInitialized);
     }
   }
 
@@ -838,8 +964,8 @@ public:
     if (!usePIC)
       return;
 
-    for (auto &pts : parts) {
-      pts->inject_particles_at_boundary();
+    for (int i : kineticSpecies_) {
+      parts[i]->inject_particles_at_boundary();
     }
   }
 
@@ -904,6 +1030,11 @@ public:
                       bool includeAmbi = true);
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
+  // Nodal electron pressure of the hybrid closure for the nodal electron
+  // density `nodeNe`: the evolved Pe (#ELECTRONPRESSURE) averaged to the
+  // nodes, or the polytropic closure of #ELECTRONTEMPERATURE.
+  void compute_node_electron_pressure(int iLev, const amrex::MultiFab &nodeNe,
+                                      amrex::MultiFab &nodePe);
   // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
   // E assembled from Bin at moment fraction hstep, then synchronized
   // across levels.
@@ -1239,8 +1370,12 @@ public:
           amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
           if (pInfo.isPPVconstant) {
             int tmp = 1;
+            // The integer division would leave a deep level without
+            // particles; minPPCPerDim keeps a few per cell and dimension.
             for (int i = 0; i < nDim; i++) {
-              tmp *= (pInfo.nPartPerCell[i] / pow(refRatioMax, iLev));
+              const int n = static_cast<int>(pInfo.nPartPerCell[i] /
+                                             pow(refRatioMax, iLev));
+              tmp *= std::max(n, pInfo.minPPCPerDim);
             }
             ppcArr(ijk, 0) = tmp;
           } else {

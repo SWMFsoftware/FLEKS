@@ -30,12 +30,14 @@ using namespace amrex;
  * @param ppc Particles per cell.
  * @param tpVel User-defined velocity for initializing test particles.
  * @param dt Time step for density change rate.
+ * @param weightScale Factor applied to every particle weight (the weight
+ * floor of the source particles, see add_particles_source()).
  */
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::add_particles_cell(
+int Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
-    const Vel& tpVel, Real dt) {
+    const Vel& tpVel, Real dt, Real weightScale) {
 
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
@@ -52,7 +54,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   }
 
   if (nPPC == 0)
-    return;
+    return 0;
 
   // No particle is created inside the absorbing inner body (see #BODY). The
   // test uses the cell center, i.e., the same cell-based staircase as the
@@ -65,10 +67,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
       cellCenter[iDim] = (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
 
     if (grid->is_inside_body(cellCenter))
-      return;
+      return 0;
   }
 
-  if (isTargetPPCDefined && !isFake2D) {
+  // The level target (#CONSTANTPPV, pre-splitting) applies only when the
+  // caller does not ask for an explicit count (the source particles do).
+  if (ppc == 0 && isTargetPPCDefined && !isFake2D) {
     const auto tppc = target_PPC(iLev)[mfi].array();
     for (int i = 0; i < nDim; ++i) {
       if (nDim > 2) {
@@ -271,7 +275,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           p.rdata(ivp_) = v;
           p.rdata(iwp_) = w;
           // Convert 'density changing rate' to 'density' if necessary.
-          p.rdata(iqp_) = q * dt;
+          p.rdata(iqp_) = q * dt * weightScale;
 
           if (NStructInt > iRecordCount_) {
             // For test particle only.
@@ -283,14 +287,26 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           icount++;
         }
       }
+  return icount;
 }
 
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
     const FluidInterface* interface, const FluidInterface* const stateOH,
-    Real dt, IntVect ppc, const bool doSelectRegion, const bool adaptivePPC) {
+    Real dt, IntVect ppc, const bool doSelectRegion, const bool adaptivePPC,
+    const Real minWeightRatio) {
   timing_func("Pts::add_particles_source");
+
+  // Weight floor (#SOURCEWEIGHTFLOOR): a source particle is not lighter than
+  // minWeightRatio times the weight of a particle of the reference plasma
+  // (all ions of fi, i.e. #UNIFORMSTATE stand-alone). A cell whose whole
+  // source of the step is below the floor gets one particle of the floor
+  // weight with the probability source/floor ("Russian roulette"): the mass
+  // is conserved on average, and the weak sources that cover most of an
+  // extended exosphere no longer create a particle in every cell and step.
+  const bool useWeightFloor = minWeightRatio > 0.0;
+  const Real initPPCFloor = product(nPartPerCell);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
@@ -342,9 +358,111 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                 }
               }
 
+              Real weightScale = 1.0;
+              if (useWeightFloor) {
+                RealVect xyzC;
+                for (int iDim = 0; iDim < nDim; iDim++)
+                  xyzC[iDim] =
+                      (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
+
+                // Number density of the step's source and of the reference
+                // plasma, in code units.
+                Real nSource =
+                    interface->get_number_density(mfi, xyzC, speciesID, iLev);
+                if (dt > 0)
+                  nSource *= dt;
+                Real nRef = 0;
+                for (int iS = 0; iS < fi->get_nS(); iS++)
+                  if (fi->get_species_charge(iS) > 0)
+                    nRef += fi->get_number_density(mfi, xyzC, iS, iLev);
+                // The reference particle of the cell: with #CONSTANTPPV a
+                // refined cell has fewer particles per cell than the base.
+                const Real ppcRef =
+                    (isTargetPPCDefined && !isFake2D)
+                        ? static_cast<Real>(target_PPC(iLev)[mfi].array()(ijk))
+                        : initPPCFloor;
+                const Real wMin = minWeightRatio * nRef / ppcRef;
+
+                if (nSource <= 0.0)
+                  continue;
+                if (nSource / product(ppcCell) < wMin) {
+                  ppcCell = IntVect(1);
+                  if (nSource < wMin) {
+                    set_random_seed(iLev, ijk, IntVect(919));
+                    if (randNum() * wMin >= nSource)
+                      continue;
+                    weightScale = wMin / nSource;
+                  }
+                }
+              }
+
               add_particles_cell(iLev, mfi, ijk, interface, false, ppcCell,
-                                 Vel(), dt);
+                                 Vel(), dt, weightScale);
             }
+          }
+    }
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::inject_emission_shell(
+    const Vector<MultiFab>& nAdd, Real vth, int nPPC, const Real* center) {
+  timing_func("Pts::inject_emission_shell");
+
+  if (nPPC <= 0)
+    return;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const Real vol = dx[iLev].product();
+    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const auto add = nAdd[iLev][mfi].const_array();
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const Real n = add(i, j, k);
+            if (n <= 0)
+              continue;
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            set_random_seed(iLev, ijk, IntVect(271));
+            ParticleTileType& tile = get_particle_tile(iLev, mfi, ijk);
+            const Real q = qomSign * n * vol / nPPC;
+            for (int ip = 0; ip < nPPC; ip++) {
+              auto p = make_particle();
+              set_ids(p);
+              Real r[3] = { 0, 0, 0 };
+              for (int iDim = 0; iDim < nDim; iDim++) {
+                p.pos(iDim) = (ijk[iDim] + randNum()) * dx[iLev][iDim] +
+                              plo[iLev][iDim];
+                r[iDim] = p.pos(iDim) - center[iDim];
+              }
+              Real v[3];
+              for (int iDir = 0; iDir < 3; iDir += 2) {
+                const Real prob =
+                    std::sqrt(-2.0 * std::log(1.0 - .999999999 * randNum()));
+                const Real theta = 2.0 * M_PI * randNum();
+                v[iDir] = vth * prob * std::cos(theta);
+                if (iDir == 0)
+                  v[1] = vth * prob * std::sin(theta);
+              }
+              // Outward half-Maxwellian: the emitted ions move away from the
+              // planet (rhybrid IonosphereInjector).
+              if (v[0] * r[0] + v[1] * r[1] + v[2] * r[2] < 0)
+                for (auto& vi : v)
+                  vi = -vi;
+              p.rdata(iup_) = v[0];
+              p.rdata(ivp_) = v[1];
+              p.rdata(iwp_) = v[2];
+              p.rdata(iqp_) = q;
+              if (NStructInt > iRecordCount_)
+                p.idata(iRecordCount_) = 0;
+              tile.push_back(p);
+            }
+            bodyInjectCount += nPPC;
+            bodyInjectMass += n * vol * mass;
           }
     }
   }
@@ -464,12 +582,14 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
 
 #define INSTANTIATE_PARTICLES_INIT(T)                                          \
   template void T::add_particles_domain(bool);                                 \
-  template void T::add_particles_cell(const int, const MFIter&, const IntVect, \
-                                      const FluidInterface*, bool, IntVect,    \
-                                      const Vel&, Real);                       \
-  template void T::add_particles_source(const FluidInterface*,                 \
-                                        const FluidInterface* const, Real,     \
-                                        IntVect, const bool, const bool);      \
+  template int T::add_particles_cell(const int, const MFIter&, const IntVect,  \
+                                     const FluidInterface*, bool, IntVect,     \
+                                     const Vel&, Real, Real);                  \
+  template void T::inject_emission_shell(const Vector<MultiFab>&, Real, int,  \
+                                         const Real*);                         \
+  template void T::add_particles_source(                                       \
+      const FluidInterface*, const FluidInterface* const, Real, IntVect,       \
+      const bool, const bool, const Real);                                     \
   template void T::add_source_particles(std::unique_ptr<PicParticles>&,        \
                                         IntVect, const bool);
 

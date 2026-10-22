@@ -965,6 +965,47 @@ void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
 }
 
 //==========================================================
+void Pic::compute_node_electron_pressure(int iLev, const MultiFab& nodeNe,
+                                         MultiFab& nodePe) {
+  if (useElectronPressureEq && peStateInitialized_) {
+    // Evolved Pe: average the cell-centered state to the nodes. The ghost
+    // cells are filled as in compute_ambipolar_E: same level, coarse-fine
+    // boundary from the coarser level, zero gradient at the domain boundary.
+    MultiFab centerTmp(centerPeState[iLev].boxArray(),
+                       centerPeState[iLev].DistributionMap(), 1, 1);
+    MultiFab::Copy(centerTmp, centerPeState[iLev], 0, 0, 1, 1);
+    centerTmp.FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0)
+      fill_fine_lev_bny_from_coarse(
+          centerPeState[iLev - 1], centerTmp, 0, 1, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+    if (!Geom(iLev).isAllPeriodic())
+      apply_pe_zero_gradient_bc(iLev, centerTmp);
+    average_center_to_node(centerTmp, nodePe);
+    return;
+  }
+
+  if (electronTemperature <= 0) {
+    nodePe.setVal(0.0);
+    return;
+  }
+
+  const Real p0 = electronDensity0 * electronTemperature;
+  const Real invRho0 = (electronDensity0 > 0) ? (1.0 / electronDensity0) : 0.0;
+  const Real gamma = electronGamma;
+  const Real Te = electronTemperature;
+  for (MFIter mfi(nodePe); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPe = nodePe[mfi].array();
+    const Array4<Real const>& arrNe = nodeNe[mfi].const_array();
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      arrPe(i, j, k) =
+          polytropic_closure(arrNe(i, j, k), p0, invRho0, gamma, Te);
+    });
+  }
+}
+
+//==========================================================
 // Te = Pe/n_e at the cell centers, with fresh ghosts. Solver scratch for the
 // conductivity, not a diagnostic source; see the Te block in
 // write_amrex_field().
@@ -2468,7 +2509,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     Real dtGyro = std::numeric_limits<Real>::max();
     if (bMaxLev > 0.0) {
       Real maxQom = 0.0;
-      for (int i = 0; i < nSpecies; ++i) {
+      for (int i : kineticSpecies_) {
         Real qom = std::abs(parts[i]->get_charge() / parts[i]->get_mass());
         maxQom = amrex::max(maxQom, qom);
       }
