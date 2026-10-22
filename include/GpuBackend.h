@@ -20,6 +20,14 @@
 #include <AMReX_Reduce.H>
 #include <AMReX_Utility.H>
 
+// True in a GPU build. Use it for run-time decisions (e.g. rejecting a
+// feature that is not available on the GPU) instead of #ifdef.
+#ifdef AMREX_USE_GPU
+constexpr bool fleksUseGpu = true;
+#else
+constexpr bool fleksUseGpu = false;
+#endif
+
 // Capacity of a KernelArray. FLEKS runs use a handful of species or fluids.
 constexpr int nKernelArrayMax = 16;
 
@@ -38,6 +46,27 @@ template <class T> struct KernelArray {
     return data[i];
   }
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int size() const { return n; }
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool empty() const { return n == 0; }
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE T* begin() { return data; }
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE T* end() { return data + n; }
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE const T* begin() const {
+    return data;
+  }
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE const T* end() const {
+    return data + n;
+  }
+
+  // Host-side container operations, so a KernelArray can replace a short
+  // amrex::Vector member. New elements are zero.
+  void resize(int m) {
+    if (m > nKernelArrayMax) {
+      amrex::Abort("KernelArray: increase nKernelArrayMax in GpuBackend.h");
+    }
+    for (int i = n; i < m; ++i)
+      data[i] = T{};
+    n = m;
+  }
+  void clear() { n = 0; }
 };
 
 // Copy a host container (anything with size() and operator[]) into a

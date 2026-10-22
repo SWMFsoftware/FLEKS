@@ -8,6 +8,7 @@
 #include <AMReX_DistributionMapping.H>
 #include <AMReX_FabArray.H>
 #include <AMReX_FillPatchUtil.H>
+#include <AMReX_GpuAsyncArray.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_ParticleInterpolators.H>
@@ -218,6 +219,36 @@ struct CellLinear : public Base<CellLinear, amrex::Real> {
 };
 
 } // namespace amrex::ParticleInterpolator
+
+// A list of boxes that a kernel can query. The boxes are in device memory in
+// a GPU build (see BoxListStorage); contains() is a linear search, so use it
+// for short lists such as the (simplified) active region.
+struct BoxListView {
+  const amrex::Box* boxes = nullptr;
+  int n = 0;
+
+  AMREX_GPU_HOST_DEVICE bool contains(const amrex::IntVect& iv) const {
+    for (int i = 0; i < n; ++i) {
+      if (boxes[i].contains(iv))
+        return true;
+    }
+    return false;
+  }
+};
+
+// Device copy of the boxes of a BoxArray for BoxListView. The memory is
+// released only after the kernels that use it have finished.
+class BoxListStorage {
+public:
+  explicit BoxListStorage(const amrex::BoxArray& ba)
+      : boxes(ba.boxList().data().data(), ba.size()), n(ba.size()) {}
+
+  BoxListView view() const { return BoxListView{ boxes.data(), n }; }
+
+private:
+  amrex::Gpu::AsyncArray<amrex::Box> boxes;
+  int n;
+};
 
 // Location of the center of cell (i,j,k) and of the low node of cell (i,j,k).
 // These reproduce amrex::Geometry::CellCenter() and LoNode() (plo is
@@ -439,19 +470,18 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool skip_particle_for_dive_cleaning(
   return skip;
 }
 
-inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
-                                    const amrex::MFIter& mfi,
-                                    const amrex::Geometry& gm,
-                                    const amrex::RealVect xyz, const int iVar) {
+// Trilinear interpolation of component iVar of the node-centered arr at the
+// location xyz. plo and invDx are Geometry::ProbLo() and InvCellSize().
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real value_at_loc(
+    const amrex::Array4<amrex::Real const>& arr, const amrex::Real* plo,
+    const amrex::Real* invDx, const amrex::RealVect xyz, const int iVar) {
   amrex::IntVect loIdx;
   amrex::RealVect dx;
-  find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
+  find_node_index(xyz, plo, invDx, loIdx, dx);
 
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
-
-  const auto& arr = mf.array(mfi);
 
   amrex::Real c000 =
       arr(loIdx[ix_], loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
@@ -482,6 +512,14 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
   // Interpolate along z-axis
   return c0 * interpZ[1] + c1 * interpZ[0];
+}
+
+inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
+                                    const amrex::MFIter& mfi,
+                                    const amrex::Geometry& gm,
+                                    const amrex::RealVect xyz, const int iVar) {
+  return value_at_loc(mf.const_array(mfi), gm.ProbLo(), gm.InvCellSize(), xyz,
+                      iVar);
 }
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,

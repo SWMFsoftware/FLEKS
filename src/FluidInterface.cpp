@@ -883,10 +883,10 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
   const int nIonLoc = nIon;
   const int nFluidLoc = nFluid;
   const auto massFactor = make_kernel_array<Real>(speciesMassFactor);
-  const auto iRho = make_kernel_array<int>(iRho_I);
-  const auto iUx = make_kernel_array<int>(iUx_I);
-  const auto iUy = make_kernel_array<int>(iUy_I);
-  const auto iUz = make_kernel_array<int>(iUz_I);
+  const auto iRho = iRho_I;
+  const auto iUx = iUx_I;
+  const auto iUy = iUy_I;
+  const auto iUz = iUz_I;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     // Count the nodes with a zero density of a fluid.
@@ -1141,44 +1141,6 @@ void NormalizationParams::calc_normalization_units(double lNormSI,
 //-------------------------------------------------------------------------
 
 /** Get normal and perpendicular unit vectors relative to magnetic field */
-void FluidInterface::calc_mag_base_vector(const amrex::Real Bx,
-                                          const amrex::Real By,
-                                          const amrex::Real Bz,
-                                          Basis3x3& norm_DD) const {
-  enum { Norm_ = 0, Perp1_ = 1, Perp2_ = 2, X_ = 0, Y_ = 1, Z_ = 2 };
-
-  amrex::Real inv = 1.0 / sqrt(Bx * Bx + By * By + Bz * Bz);
-  norm_DD[Norm_][X_] = Bx * inv;
-  norm_DD[Norm_][Y_] = By * inv;
-  norm_DD[Norm_][Z_] = Bz * inv;
-
-  if (norm_DD[Norm_][Z_] < 0.5) {
-    norm_DD[Perp1_][X_] = norm_DD[Norm_][Y_];
-    norm_DD[Perp1_][Y_] = -norm_DD[Norm_][X_];
-    norm_DD[Perp1_][Z_] = 0.0;
-  } else {
-    norm_DD[Perp1_][X_] = 0.0;
-    norm_DD[Perp1_][Y_] = norm_DD[Norm_][Z_];
-    norm_DD[Perp1_][Z_] = -norm_DD[Norm_][Y_];
-  }
-
-  inv = 1.0 / sqrt(norm_DD[Perp1_][X_] * norm_DD[Perp1_][X_] +
-                   norm_DD[Perp1_][Y_] * norm_DD[Perp1_][Y_] +
-                   norm_DD[Perp1_][Z_] * norm_DD[Perp1_][Z_]);
-  norm_DD[Perp1_][X_] *= inv;
-  norm_DD[Perp1_][Y_] *= inv;
-  norm_DD[Perp1_][Z_] *= inv;
-
-  // Perp2 = Norm x Perp1 (cross product of orthonormal unit vectors is already
-  // unit length)
-  norm_DD[Perp2_][X_] = norm_DD[Norm_][Y_] * norm_DD[Perp1_][Z_] -
-                        norm_DD[Norm_][Z_] * norm_DD[Perp1_][Y_];
-  norm_DD[Perp2_][Y_] = norm_DD[Norm_][Z_] * norm_DD[Perp1_][X_] -
-                        norm_DD[Norm_][X_] * norm_DD[Perp1_][Z_];
-  norm_DD[Perp2_][Z_] = norm_DD[Norm_][X_] * norm_DD[Perp1_][Y_] -
-                        norm_DD[Norm_][Y_] * norm_DD[Perp1_][X_];
-}
-
 /** print info for coupling */
 void FluidInterface::print_info() const {
 

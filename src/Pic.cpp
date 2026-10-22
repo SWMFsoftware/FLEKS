@@ -488,29 +488,31 @@ void Pic::fill_new_node_E(bool fillAll) {
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
 
-    // Setup and regrid only: the fluid accessors run on the host (see
-    // host_fill).
     int iLev = 0;
     const bool isTopHat = ic_ && ic_->is_tophat();
-    host_fill(
-        nodeE[iLev], false,
-        [&](const MFIter& mfi, int i, int j, int k, Array4<Real> const& arrE) {
-          IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          const auto& status = node_status(iLev)[mfi].const_array();
-          if (!(fillAll || bit::is_new(status(ijk))))
-            return;
-          if (isTopHat) {
-            const Real x =
-                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
-            if (x > xL && x < xR) {
-              arrE(ijk, iy_) = 1;
-            }
-          } else {
-            arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
-            arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
-            arrE(ijk, iz_) = fi->get_ez(mfi, ijk, iLev);
+    const auto plo = Geom(iLev).ProbLoArray();
+    const auto dx = Geom(iLev).CellSizeArray();
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrE = nodeE[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (!(fillAll || bit::is_new(status(ijk))))
+          return;
+        if (isTopHat) {
+          // Geometry::CellCenter(i, ix_) - 0.5 * CellSize(ix_)
+          const Real x = (plo[ix_] + dx[ix_] * (0.5 + i)) - 0.5 * dx[ix_];
+          if (x > xL && x < xR) {
+            arrE(ijk, iy_) = 1;
           }
-        });
+        } else {
+          arrE(ijk, ix_) = fv.get_ex(fv.d, ijk);
+          arrE(ijk, iy_) = fv.get_ey(fv.d, ijk);
+          arrE(ijk, iz_) = fv.get_ez(fv.d, ijk);
+        }
+      });
+    }
   }
   if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
@@ -540,29 +542,31 @@ void Pic::fill_new_node_B(bool fillAll) {
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
 
-    // Setup and regrid only: the fluid accessors run on the host (see
-    // host_fill).
     int iLev = 0;
     const bool isTopHat = ic_ && ic_->is_tophat();
-    host_fill(
-        nodeB[iLev], false,
-        [&](const MFIter& mfi, int i, int j, int k, Array4<Real> const& arrB) {
-          IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          const auto& status = node_status(iLev)[mfi].const_array();
-          if (!(fillAll || bit::is_new(status(ijk))))
-            return;
-          if (isTopHat) {
-            const Real x =
-                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
-            if (x > xL && x < xR) {
-              arrB(ijk, iz_) = 1;
-            }
-          } else {
-            arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
-            arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
-            arrB(ijk, iz_) = fi->get_bz(mfi, ijk, iLev);
+    const auto plo = Geom(iLev).ProbLoArray();
+    const auto dx = Geom(iLev).CellSizeArray();
+    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrB = nodeB[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (!(fillAll || bit::is_new(status(ijk))))
+          return;
+        if (isTopHat) {
+          // Geometry::CellCenter(i, ix_) - 0.5 * CellSize(ix_)
+          const Real x = (plo[ix_] + dx[ix_] * (0.5 + i)) - 0.5 * dx[ix_];
+          if (x > xL && x < xR) {
+            arrB(ijk, iz_) = 1;
           }
-        });
+        } else {
+          arrB(ijk, ix_) = fv.get_bx(fv.d, ijk);
+          arrB(ijk, iy_) = fv.get_by(fv.d, ijk);
+          arrB(ijk, iz_) = fv.get_bz(fv.d, ijk);
+        }
+      });
+    }
   }
 
   if (finestLevel() > 0) {
@@ -1903,19 +1907,20 @@ void Pic::update_U0_E0() {
     }
 
     // Fill in ghost nodes from the fluid state.
-    // TODO(GPU): host accessors; move to a device fluid view.
-    host_fill(uBg[iLev], true,
-              [&](MFIter& mfi, int i, int j, int k, Array4<Real> const& arrU) {
-                IntVect ijk = { AMREX_D_DECL(i, j, k) };
-                const auto& status = node_status(iLev)[mfi].const_array();
-                if (bit::is_domain_boundary(status(ijk))) {
-                  const int iFluid = 0;
-                  for (int iDir = 0; iDir < nDim3; iDir++) {
-                    arrU(i, j, k, iDir) =
-                        get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
-                  }
-                }
-              });
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrU = uBg[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.fabbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
+          const int iFluid = 0;
+          arrU(i, j, k, ix_) = fv.get_fluid_ux(fv.d, ijk, iFluid);
+          arrU(i, j, k, iy_) = fv.get_fluid_uy(fv.d, ijk, iFluid);
+          arrU(i, j, k, iz_) = fv.get_fluid_uz(fv.d, ijk, iFluid);
+        }
+      });
+    }
 
     uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
@@ -1944,17 +1949,19 @@ void Pic::update_U0_E0() {
     }
 
     // Fill in boundary nodes from the fluid state.
-    // TODO(GPU): host accessors; move to a device fluid view.
-    host_fill(eBg[iLev], true,
-              [&](MFIter& mfi, int i, int j, int k, Array4<Real> const& arrE) {
-                IntVect ijk = { AMREX_D_DECL(i, j, k) };
-                const auto& status = node_status(iLev)[mfi].const_array();
-                if (bit::is_domain_boundary(status(ijk))) {
-                  arrE(i, j, k, ix_) = get_node_E(mfi, ijk, ix_, iLev);
-                  arrE(i, j, k, iy_) = get_node_E(mfi, ijk, iy_, iLev);
-                  arrE(i, j, k, iz_) = get_node_E(mfi, ijk, iz_, iLev);
-                }
-              });
+    for (MFIter mfi(eBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrE = eBg[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.fabbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
+          arrE(i, j, k, ix_) = fv.get_ex(fv.d, ijk);
+          arrE(i, j, k, iy_) = fv.get_ey(fv.d, ijk);
+          arrE(i, j, k, iz_) = fv.get_ez(fv.d, ijk);
+        }
+      });
+    }
 
     eBg[iLev].FillBoundary(Geom(iLev).periodicity());
 

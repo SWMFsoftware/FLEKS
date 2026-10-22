@@ -52,6 +52,36 @@ public:
 typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, amrex::IntVect ijk,
                                      int iVar, const int iLev);
 
+// The prescribed boundary state of a field, evaluated from the fluid state in
+// a kernel. Pic::boundary_value() maps a GETVALUE accessor (get_node_E,
+// get_node_B, ...) to it.
+struct BoundaryValue {
+  enum Kind { zero, E, B, centerB, Pe };
+  int kind = zero;
+  FluidView fv;
+  amrex::Array4<amrex::Real const> centerBArr;
+
+  AMREX_GPU_HOST_DEVICE amrex::Real operator()(const amrex::IntVect &ijk,
+                                               int iVar) const {
+    switch (kind) {
+      case E:
+        return iVar == ix_   ? fv.get_ex(fv.d, ijk)
+               : iVar == iy_ ? fv.get_ey(fv.d, ijk)
+                             : fv.get_ez(fv.d, ijk);
+      case B:
+        return iVar == ix_   ? fv.get_bx(fv.d, ijk)
+               : iVar == iy_ ? fv.get_by(fv.d, ijk)
+                             : fv.get_bz(fv.d, ijk);
+      case centerB:
+        return centerBArr(ijk, iVar);
+      case Pe:
+        return fv.get_pe(fv.d, ijk);
+      default:
+        return 0.0;
+    }
+  }
+};
+
 typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
                                    const std::string varName);
 
@@ -1131,6 +1161,31 @@ public:
   amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {
     return 0.0;
+  }
+
+  // The device-callable form of the accessor func on the FAB mfi.
+  BoundaryValue boundary_value(GETVALUE func, const amrex::MFIter &mfi,
+                               int iLev) const {
+    BoundaryValue bv;
+    if (func == static_cast<GETVALUE>(&Pic::get_node_E) ||
+        func == static_cast<GETVALUE>(&Pic::get_center_E)) {
+      bv.kind = BoundaryValue::E;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_node_B)) {
+      bv.kind = BoundaryValue::B;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_center_B)) {
+      bv.kind = BoundaryValue::centerB;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_center_Pe)) {
+      bv.kind = BoundaryValue::Pe;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_zero) || !func) {
+      bv.kind = BoundaryValue::zero;
+      return bv;
+    } else {
+      amrex::Abort("Pic::boundary_value: unknown boundary accessor");
+    }
+    bv.fv = fi->fluid_view(mfi, iLev);
+    if (bv.kind == BoundaryValue::centerB)
+      bv.centerBArr = fi->get_center_b(iLev).const_array(mfi);
+    return bv;
   }
 
   inline amrex::Real get_node_fluid_u(amrex::MFIter &mfi, amrex::IntVect ijk,
