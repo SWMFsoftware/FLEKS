@@ -7,8 +7,9 @@ test checks the particle-field coupling of the full-PIC solvers in two ways:
 
 1. Energy (log): nothing drives the plasma, so the total energy stays
    constant. Bound on max |Etot/Etot0 - 1| over all logged steps:
-     explicit, explicit_sub, explicit_mag   1%
-     explicit_pc                            3% (dissipative: -1.5% in 16 s)
+     explicit, explicit_sub, explicit_mag,
+     explicit_wall                          1%
+     explicit_pc                            3% (dissipative: -1.2% in 16 s)
      implicit                               no heating (< +1%), cooling < 20%
                                             (theta = 0.51 damps: -11% in 16 s)
 2. Langmuir branch (plot): the omega-k spectrum of E_x(x, t) must peak at the
@@ -22,7 +23,17 @@ test checks the particle-field coupling of the full-PIC solvers in two ways:
    mean within 1%. The predictor-corrector
    and implicit schemes run 1-2% low, more at high k (numerical dispersion):
    each mode within 6%, the mean within 3%. Skipped for explicit_mag, where
-   the oblique field splits the electrostatic branch.
+   the oblique field splits the electrostatic branch, and for explicit_wall,
+   whose walls make the modes non-periodic.
+3. Gauss's law (plot, explicit variants): the explicit solver deposits a
+   charge-conserving (Esirkepov) current and runs no div(E) correction, so
+   the residual r = div_node_to_center(E) - 4 pi rho_c, with rho_c the node
+   charge sum_s (q_s/m_s) rhoS_s averaged to the cell centers, must keep its
+   initial value: max |r(t) - r(t_0)| < 1e-5 max |div E| over the record.
+   The ascii output (8 digits) sets a floor near 1e-6; particle resampling,
+   which would break the conservation, is off in these decks. explicit_wall
+   checks it at reflecting walls, including the wall cells, where the current
+   of a particle that crossed the wall is folded back with mirror parity.
 
 A current with the wrong sign or magnitude moves the branch, and one that is
 centered at the wrong time makes it grow; FLEKS issue 170 (explicit solver
@@ -46,6 +57,7 @@ LAMBDA_DE = math.sqrt(1.25e-3 / 0.01) / OMEGA_PE
 BOX_LENGTH = 2.0 * 3.544908
 MODES = range(1, 13)  # k lambda_De <= 0.11
 MIN_PEAK_RATIO = 100.0
+GAUSS_TOL = 1e-5  # max |r(t) - r(t_0)| / max |div E|
 CENTROID_WIDTH = 0.08  # half-width of the centroid window / omega_pe
 # (per-mode, mean) tolerance on omega / omega_Bohm-Gross - 1.
 FREQ_TOL = {"explicit": (0.04, 0.01), "explicit_sub": (0.04, 0.01),
@@ -54,7 +66,8 @@ FREQ_TOL = {"explicit": (0.04, 0.01), "explicit_sub": (0.04, 0.01),
 
 def _variant(test_name):
     name = (test_name or "").lower()
-    for v in ("explicit_sub", "explicit_mag", "explicit_pc", "implicit"):
+    for v in ("explicit_sub", "explicit_mag", "explicit_pc", "explicit_wall",
+              "implicit"):
         if name.endswith(v):
             return v
     return "explicit"
@@ -94,27 +107,58 @@ def validate_log(pic_diags=None, test_name=None):
     return True, f"Passed (max |Etot/Etot0 - 1| = {worst:.4f} < {tol})"
 
 
-def _read_ex_frames():
-    """Return (t, Ex[t, x]) from the ascii z=0 'var' plot frames (x sorted)."""
-    times, frames = [], []
+def _read_frames():
+    """Return the ascii z=0 'var' plot frames sorted in time as a list of
+    (t, dx, {var: values on the x-sorted nodes}, {param: value})."""
+    frames = []
     for f in _run_dir.plot_files():
         with open(f, "r", encoding="latin-1") as fh:
             lines = fh.readlines()
         if len(lines) < 6:
             continue
-        names = [n.lower() for n in lines[4].split()]
-        if "x" not in names or "ex" not in names:
-            continue
-        ix, ie = names.index("x"), names.index("ex")
+        names = lines[4].split()
+        params = [float(v) for v in lines[3].split()]
         rows = np.array([[float(c) for c in l.split()] for l in lines[5:]
                          if l.strip()])
-        order = np.argsort(rows[:, ix])
-        times.append(float(lines[1].split()[1]))
-        frames.append(rows[order, ie])
-    if not frames:
-        return None, None
-    order = np.argsort(times)
-    return np.array(times)[order], np.array(frames)[order]
+        nVar = rows.shape[1]
+        if names[0] != "x" or "Ex" not in names[:nVar]:
+            continue
+        rows = rows[np.argsort(rows[:, 0])]
+        data = {n: rows[:, i] for i, n in enumerate(names[:nVar])}
+        frames.append((float(lines[1].split()[1]), rows[1, 0] - rows[0, 0],
+                       data, dict(zip(names[nVar:], params))))
+    frames.sort(key=lambda fr: fr[0])
+    return frames
+
+
+def _check_gauss(frames, periodic=True):
+    """Drift of the Gauss's law residual (see check 3 in the module doc).
+    periodic=False: the frames hold all nodes from wall to wall."""
+    if "rhoS1" not in frames[0][2]:
+        return False, "Expected rhoS0 and rhoS1 in the plots (Gauss check)"
+    r0, worst, scale = None, 0.0, 0.0
+    for t, dx, data, par in frames:
+        ex = data["Ex"]
+        rho = sum(data[f"rhoS{s}"] * par[f"qS{s}"] / par[f"mS{s}"]
+                  for s in (0, 1))
+        # 1 cell along y (periodic): the y terms of div_node_to_center vanish
+        # and the node charge averages over the two x nodes of each cell.
+        if periodic:
+            ex = np.append(ex, ex[0])
+            rho = np.append(rho, rho[0])
+        divE = np.diff(ex) / dx
+        r = divE - 4.0 * math.pi * 0.5 * (rho[1:] + rho[:-1])
+        if r0 is None:
+            r0 = r
+        worst = max(worst, float(np.max(np.abs(r - r0))))
+        scale = max(scale, float(np.max(np.abs(divE))))
+    rel = worst / scale
+    logger.debug("    Gauss residual drift: max |r - r0| = %.3e (%.2e of "
+                 "max |div E|)", worst, rel)
+    if rel > GAUSS_TOL:
+        return False, (f"Gauss's law residual drifted by {rel:.2e} of max "
+                       f"|div E| (> {GAUSS_TOL:.0e})")
+    return True, f"Gauss residual drift {rel:.1e} of max |div E|"
 
 
 def _langmuir_frequencies(t, ex):
@@ -141,16 +185,30 @@ def _langmuir_frequencies(t, ex):
 
 def validate_plot(test_name):
     variant = _variant(test_name)
-    if variant == "explicit_mag":
-        return True, "No Langmuir-branch check in an oblique field (energy only)"
-    mode_tol, mean_tol = FREQ_TOL[variant]
-
-    t, ex = _read_ex_frames()
-    if t is None or len(t) < 50:
+    frames = _read_frames()
+    if len(frames) < 50:
         return False, "Expected >= 50 E_x frames (z=0 var ascii plots)"
     # Periodic output may repeat the x = xMax node; the deck has 256 cells.
-    if ex.shape[1] == 257:
-        ex = ex[:, :-1]
+    # explicit_wall keeps both wall nodes.
+    if variant != "explicit_wall" and len(frames[0][2]["x"]) == 257:
+        frames = [(t, dx, {k: v[:-1] for k, v in d.items()}, p)
+                  for t, dx, d, p in frames]
+
+    gauss = ""
+    if variant != "implicit":
+        ok, gauss = _check_gauss(frames, periodic=variant != "explicit_wall")
+        if not ok:
+            return False, gauss
+        gauss = "; " + gauss
+
+    if variant == "explicit_mag":
+        return True, ("No Langmuir-branch check in an oblique field" + gauss)
+    if variant == "explicit_wall":
+        return True, ("No Langmuir-branch check between walls" + gauss)
+    mode_tol, mean_tol = FREQ_TOL[variant]
+
+    t = np.array([fr[0] for fr in frames])
+    ex = np.array([fr[2]["Ex"] for fr in frames])
 
     devs = []
     for m, measured, theory, peak in _langmuir_frequencies(t, ex):
@@ -170,4 +228,5 @@ def validate_plot(test_name):
         return False, (f"Mean Langmuir frequency off by {100 * mean_dev:+.2f}% "
                        f"(> {100 * mean_tol:.0f}%)")
     return True, (f"Passed (Langmuir branch: mean {100 * mean_dev:+.2f}%, "
-                  f"max {100 * max(abs(d) for d in devs):.2f}% from Bohm-Gross)")
+                  f"max {100 * max(abs(d) for d in devs):.2f}% from Bohm-Gross"
+                  f"{gauss})")

@@ -306,12 +306,6 @@ implementation. Optional sub-parameters include:
   pertType                Perturbation mode ("standard" or "gaussian")
 </command>
 
-<command name="WAVE">
-#WAVE
-
-Defines a wave/fluid state block consumed by the fluid interface.
-</command>
-
 <command name="TESTPARTICLENUMBER">
 #TESTPARTICLENUMBER
 
@@ -1080,9 +1074,17 @@ T                         doCorrectDivE
 
 Turning on/off the accurate div(E) cleaning, which corrects the particle
 locations to satisfy Gauss's law: div(E) = net_charge. 
-Default is true as it is required for accuracy of long simulations. The
-correction repeats nDivECorrection (default is 3) times. If the divE 
-cleaning is time consuming, reducing nDivECorrection to 1 may also work.
+Default is true for the semi-implicit solver, as it is required for accuracy
+of long simulations. The correction repeats nDivECorrection (default is 3)
+times. If the divE cleaning is time consuming, reducing nDivECorrection to 1
+may also work.
+
+The explicit solver (#FIELDSOLVER explicit) deposits a charge-conserving
+current that keeps Gauss's law exactly, so its default is false. Resampling,
+boundary injection, current smoothing, bodies and AMR interfaces still change
+the charge outside the deposit; the correction can be turned on for them, but
+it targets the cell-centered CIC charge rather than the node charge the
+explicit current conserves.
 </command>
 
 <command name="DIVB" alias="DIVB_FLEKS0,DIVB_FLEKS1,DIVB_FLEKS2" multiple="T">

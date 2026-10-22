@@ -7,10 +7,12 @@
 ## Class hierarchy
 
 ```
-Domain : DomainGrid           — Top-level simulation manager
+Domain                         — Top-level simulation manager; owns grid construction settings,
+ │                              coupling state, counters, and named shapes
  ├── Grid                     — The one simulation AMR hierarchy (AmrCore);
- │                              owned by Domain via std::unique_ptr and shared
- │                              by reference with every component
+ │                              owned by Domain via std::unique_ptr, with
+ │                              compiled refinement policy owned by Grid and
+ │                              shared by reference with every component
  ├── Pic : GridAccess         — PIC solver (fields + particle push on AMR grid)
  ├── ParticleTracker : GridAccess — Test particle tracker
  ├── FluidInterface : GridAccess, FluidInterfaceParameters
@@ -35,6 +37,15 @@ also live in GridAccess. Consumer implementations query `grid` directly
 instead of storing persistent aliases to mesh state. PIC keeps its own
 physics state and accesses mutable Grid-owned costs only when calculating
 load-balancing weights.
+
+`Domain` stores the inputs needed before constructing the AMReX
+hierarchy. After construction, Domain queries Grid's geometry for active-region
+bounds, restart headers, and plot extents. Domain's `initialRegridPending` forces
+the first orchestration pass, including an initially empty region; Grid's
+`isNewGrid` tracks hierarchy initialization. Grid also retains refinement
+modifications through consumer updates and particle filling before Domain
+clears them. A transient compiled refinement replacement does not modify the
+persistent parameter selectors or Domain's immutable named-shape registry.
 
 Design rule: ionization parameters live in **SourceInterface** (physics in
 `UserSource`), never in `FluidInterface`, so the MHD coupling layer stays
@@ -103,12 +114,18 @@ FLEKS provides three simulation field solver modes selected via `#FIELDSOLVER` (
   * `pc` / `rk2`: 2nd-order predictor-corrector with intermediate particle push.
 - **Subcycling**: `#FIELDSUBCYCLE` sets the number of explicit Maxwell subcycles
   per particle time step dt.
-- **Current**: Ampere's law takes the charge current sum_s q_s n_s u_s
-  (`nodeJexpl`, `deposit_explicit_current`), not the mass-flux moments in
-  `nodePlasma`. Leapfrog: kick v^{n+1/2} with (E^n, B^n), deposit at x^n,
-  drift, deposit at x^{n+1}; J^{n+1/2} is the average. Predictor-corrector:
-  deposits at t^n and t^{n+1}, interpolated in time across subcycles.
-  `tests/langmuir` checks energy conservation and the Langmuir branch;
+- **Current**: Ampere's law takes the charge-conserving (Esirkepov) current
+  `nodeJexpl`, deposited inside the particle push
+  (`Particles::mover(..., currentMF, trialOnly)`,
+  `Pic::push_and_deposit_explicit_current`). It keeps
+  div_node_to_center(E) - 4 pi rho_c constant to round-off, with rho_c the
+  node charge averaged to the cell centers; E is gathered with the transpose
+  of the deposit. The div(E) correction is therefore off by default
+  (`#DIVE` turns it on). Leapfrog: one pass kicks v^{n+1/2}, drifts to
+  x^{n+1} and deposits J^{n+1/2}. Predictor-corrector: a trial push deposits
+  J* without moving the particles (no particle backup), then the corrector
+  push deposits J^{n+1/2}; each field advance holds its J fixed.
+  `tests/langmuir` checks energy, the Langmuir branch and the Gauss residual;
   `tests/whistler/PARAM.in.explicit` checks the full cold-plasma R-mode.
 - **Zero regression / minimal footprint**: bypasses allocation of GMRES scratch
   MultiFabs and mass matrices when active, leaving semi-implicit and hybrid
@@ -120,7 +137,8 @@ FLEKS provides three simulation field solver modes selected via `#FIELDSOLVER` (
 
 - **Time stepping:** CFL-based or fixed Δt (`#TIMESTEPPING`, typical CFL 0.1–0.4).
 - **Divergence cleaning:** accurate div(E) correction via particle position
-  adjustment; optional hyperbolic div(B) cleaning.
+  adjustment (semi-implicit; the explicit solver conserves charge instead);
+  optional hyperbolic div(B) cleaning.
 - **Particle management:** splitting, merging, fast merge with Lagrange
   multipliers (`#RESAMPLING`, `#FASTMERGE`).
 - **AMR:** block-structured AMR via AMReX, configurable levels and regions

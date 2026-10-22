@@ -227,9 +227,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(nodeJexpl[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
-        distribute_FabArray(nodeJexplPrev[iLev], node_box_array(iLev),
-                            DistributionMap(iLev), 3, get_n_ghost(),
-                            doMoveData);
         distribute_FabArray(centerBstar[iLev], boxArray(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
@@ -922,25 +919,6 @@ void Pic::particle_mover(int pushStage) {
     parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext, pushStage);
   }
 
-  // A kick-only push does not move the particles.
-  if (pushStage == PicParticles::kPushKickOnly)
-    return;
-
-  for (int i : kineticSpecies_) {
-    parts[i]->redistribute_particles();
-  }
-}
-
-//==========================================================
-void Pic::particle_drift() {
-  std::string nameFunc = "Pic::particle_drift";
-
-  timing_func(nameFunc);
-
-  for (int i : kineticSpecies_) {
-    parts[i]->drift(tc->get_dt(), tc->get_next_dt());
-  }
-
   for (int i : kineticSpecies_) {
     parts[i]->redistribute_particles();
   }
@@ -1439,8 +1417,7 @@ void Pic::sum_moments(bool updateDt) {
       // Only compute thermal velocity if CFL is active or if detailed report is
       // enabled. Avoids expensive particle traversal and MPI reductions for
       // fixed-dt compact runs.
-      bool needThermalSpeed =
-          (tc->get_cfl() > 0) || (doReport && !domainParameters.doCompact);
+      bool needThermalSpeed = (tc->get_cfl() > 0) || (doReport && !doCompact);
 
       if (needThermalSpeed) {
         if (fixedUMax >= 0) {
@@ -1456,7 +1433,7 @@ void Pic::sum_moments(bool updateDt) {
           ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
 
           for (int i = 0; i < nSpecies; ++i) {
-            if (doReport && !domainParameters.doCompact) {
+            if (doReport && !doCompact) {
               Print() << printPrefix << std::setprecision(5) << "lev " << iLev
                       << " Species " << i << ": max(uth) = " << uMaxSpecies[i]
                       << std::endl;
@@ -1506,7 +1483,7 @@ void Pic::sum_moments(bool updateDt) {
       }
     }
 
-    if (doReport && !domainParameters.doCompact) {
+    if (doReport && !doCompact) {
       Print() << printPrefix << std::setprecision(5)
               << "dt = " << tc->get_dt_si()
               << " dtNext = " << tc->get_next_dt_si() << std::endl;
@@ -1561,9 +1538,7 @@ void Pic::calc_mach_number() {
 }
 
 //==========================================================
-void Pic::calc_cost_per_cell() {
-  const BalanceStrategy balanceStrategy = domainParameters.balanceStrategy;
-  const int cellWeight = domainParameters.cellWeight;
+void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
   if (!isMomentsUpdated && balanceStrategy == BalanceStrategy::Particle) {
     sum_moments(false);
   }
@@ -1852,7 +1827,7 @@ void Pic::update(bool doReportIn) {
     Real speedNorm = 1000;
     Real normSpeed = speed / speedNorm;
 
-    if (domainParameters.doCompact) {
+    if (doCompact) {
       Print() << "==== " << printPrefix << "Cycle " << tc->get_cycle()
               << " | t = " << std::setprecision(6) << tc->get_time_si()
               << " (s) | dt = " << std::setprecision(5) << tc->get_dt_si()
@@ -1872,8 +1847,7 @@ void Pic::update(bool doReportIn) {
   }
 
   // Periodic load balance report at dnReportLB interval (default: 100 steps)
-  bool doReportLB = (domainParameters.dnReportLB > 0 &&
-                     tc->get_cycle() % domainParameters.dnReportLB == 0);
+  bool doReportLB = (dnReportLB > 0 && tc->get_cycle() % dnReportLB == 0);
   if (doReportLB) {
     report_load_balance();
   }

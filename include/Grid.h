@@ -2,6 +2,7 @@
 #define _Grid_H_
 
 #include <algorithm>
+#include <set>
 
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
@@ -44,7 +45,7 @@ protected:
   amrex::BoxArray activeRegion;
 
   // The range of activeRegion.
-  amrex::Vector<amrex::RealBox> domainRange;
+  amrex::Vector<amrex::RealBox> activeDomainRanges;
 
   // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
@@ -61,7 +62,8 @@ protected:
 
   amrex::Vector<amrex::MultiFab> cellCost;
 
-  const RefineRegions* refineRegions = nullptr;
+  amrex::Vector<std::string> refineRegionsStr;
+  RefineRegions refineRegions;
 
   bool isNewGrid = true;
 
@@ -108,6 +110,9 @@ public:
     cellStatus.resize(n_lev_max());
     nodeStatus.resize(n_lev_max());
     cellCost.resize(n_lev_max());
+    refineRegionsStr.resize(n_lev_max());
+    refineRegions.resize(n_lev_max());
+    SetGridEff(0.7);
   };
 
   ~Grid() = default;
@@ -144,13 +149,30 @@ public:
     return vol;
   }
 
-  const RefineRegions* get_refine_regions() const { return refineRegions; }
+  const RefineRegions* get_refine_regions() const { return &refineRegions; }
 
-  void set_refine_regions(const RefineRegions& in) { refineRegions = &in; }
-  void set_refine_regions(const RefineRegions&&) = delete;
+  bool has_refinement_regions() const {
+    return std::any_of(
+        refineRegionsStr.begin(), refineRegionsStr.end(),
+        [](const std::string& selector) { return !selector.empty(); });
+  }
+
+  bool set_refine_region(int iLev, const std::string& selector);
+
+  // Transient geometry does not become a persistent #REFINEREGION selector.
+  void replace_refine_region(int iLev, const Regions& region);
+
+  void rebuild_refine_regions(
+      const amrex::Vector<std::shared_ptr<Shape> >& shapes,
+      const std::set<std::string>& shapeNames);
+
+  const RefineRegions& refinement_regions() const { return refineRegions; }
+  bool refinement_modified() const { return refineRegions.is_modified(); }
+  void mark_refinement_modified() { refineRegions.mark_modified(); }
+  void clear_refinement_modified() { refineRegions.clear_modified(); }
 
   const amrex::Vector<amrex::RealBox>& domain_range() const {
-    return domainRange;
+    return activeDomainRanges;
   }
 
   const amrex::Vector<amrex::MultiFab>& get_cost() const { return cellCost; }
@@ -158,20 +180,7 @@ public:
   amrex::Vector<amrex::DistributionMapping> calc_balanced_maps(
       bool doSplitLevs = false);
 
-  void regrid(const amrex::BoxArray& region, const RefineRegions& refine,
-              const amrex::Real eff = 0.7) {
-    refineRegions = &refine;
-    SetGridEff(eff);
-    regrid(region, nullptr);
-  }
-  void regrid(const amrex::BoxArray& region, const RefineRegions&&,
-              const amrex::Real = 0.7) = delete;
-
-  void regrid(const amrex::BoxArray& region, const amrex::Real eff = 0.7) {
-    refineRegions = nullptr;
-    SetGridEff(eff);
-    regrid(region, nullptr);
-  }
+  void regrid(const amrex::BoxArray& region) { regrid(region, nullptr); }
 
   // TODO: Maybe the first argument 'region' can be removed? --Yuxi
   void regrid(const amrex::BoxArray& region, const Grid* const grid,
@@ -195,7 +204,7 @@ public:
   }
 
   bool is_inside_domain(const amrex::Real* loc) const {
-    for (const auto& rb : domainRange) {
+    for (const auto& rb : activeDomainRanges) {
       if (rb.contains(loc))
         return true;
     }
@@ -404,11 +413,8 @@ public:
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
                    << std::endl;
-    if (refineRegions == nullptr)
-      return;
-
     const int maxRegionLevel =
-        std::min(n_lev_max() - 2, static_cast<int>(refineRegions->size()) - 1);
+        std::min(n_lev_max() - 2, static_cast<int>(refineRegions.size()) - 1);
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
       const auto tagArr = tags.array(mfi);
@@ -424,7 +430,7 @@ public:
             // If a cell is required to be refined at lev=n (n>=iLev), this
             // cell should be also refined at lev=iLev.
             for (int il = maxRegionLevel; il >= iLev; il--)
-              if ((*refineRegions)[il].is_inside(xyz)) {
+              if (refineRegions[il].is_inside(xyz)) {
                 tagArr(i, j, k) = amrex::TagBox::SET;
                 break;
               }

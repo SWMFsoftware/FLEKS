@@ -9,7 +9,6 @@
 #include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
-#include "DomainParameters.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "GridAccess.h"
@@ -28,6 +27,13 @@
 
 class ParticleTracker;
 class Pic;
+
+enum class PicSolverMode {
+  Implicit, // Semi-implicit full PIC (default)
+  Explicit, // Explicit full PIC
+  Hybrid,   // Hybrid PIC (fluid electrons + kinetic ions)
+  None      // No field solve (particle tracer / test particles)
+};
 
 class FieldSolver {
 public:
@@ -87,14 +93,13 @@ struct NodeMMCommData {
 #endif
 };
 
-// The grid is defined in DomainGrid. This class contains the data on the grid.
+// The grid is defined in Grid. This class contains the data on the grid.
 class Pic : public GridAccess {
   friend PlotWriter;
   friend ParticleTracker;
   // private variables
 private:
-  const DomainParameters &domainParameters;
-  const bool &useHybridPIC;
+  bool useHybridPIC = false;
 
   PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
   bool usePIC = true;
@@ -236,7 +241,6 @@ private:
   bool reportParticleQuality = false;
 
   // Command presence tracking flags for cross-solver validation.
-  bool hasFieldSolver_ = false;
   bool hasFieldIntegrator_ = false;
   bool hasFieldSubcycle_ = false;
   bool hasDiscretization_ = false;
@@ -364,11 +368,9 @@ private:
                                              // (nodal)
   amrex::Vector<amrex::MultiFab> nodeCurlB;  // scratch for curl(B) in explicit
                                              // PIC
-  // Explicit PIC: charge current sum_s q_s n_s u_s (nodal, 3 components) of
-  // the latest deposit and of the one before it. Leapfrog: deposits at x^n and
-  // x^{n+1} with v^{n+1/2}; predictor-corrector: deposits at t^n and t^{n+1}.
+  // Explicit PIC: charge-conserving current of the particle push (nodal, 3
+  // components), time-centered at t^{n+1/2}.
   amrex::Vector<amrex::MultiFab> nodeJexpl;
-  amrex::Vector<amrex::MultiFab> nodeJexplPrev;
   amrex::Vector<amrex::MultiFab> nodeBstage; // B interpolated to nodes at RK
                                              // stages
   // Per-step scratch reused across stages: the advected Pe, then div(q), then
@@ -545,6 +547,9 @@ private:
   std::string selectParticleInputFile;
 
   bool doReport = false;
+  // Report options from #MONITOR, set by Domain.
+  bool doCompact = true;
+  int dnReportLB = 100;
   amrex::Real maxCFL = 0.0;
   int dnMemory = -1;
 
@@ -576,11 +581,10 @@ public:
   ParticleBC::Type body_particle_bc() const { return grid.bodyParticleBC; }
 
   Pic(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-      const DomainParameters &parameters)
+      PicSolverMode solverMode)
       : GridAccess(gridIn),
-        domainParameters(parameters),
-        useHybridPIC(parameters.useHybridPIC),
-        fieldSolverMode(parameters.fieldSolverMode),
+        useHybridPIC(solverMode == PicSolverMode::Hybrid),
+        fieldSolverMode(solverMode),
         fi(fluidIn),
         tc(tcIn),
         gridID(id) {
@@ -589,6 +593,9 @@ public:
     if (fieldSolverMode == PicSolverMode::Explicit) {
       useExplicitPIC = true;
       solveEM = false;
+      // The charge-conserving current keeps Gauss's law without the
+      // particle-position correction (#DIVE turns it back on).
+      doCorrectDivE = false;
     } else if (fieldSolverMode == PicSolverMode::Hybrid) {
       useExplicitPIC = false;
       solveEM = false;
@@ -622,7 +629,6 @@ public:
     nodeEstage.resize(n_lev_max());
     nodeJ.resize(n_lev_max());
     nodeJexpl.resize(n_lev_max());
-    nodeJexplPrev.resize(n_lev_max());
     nodeBstage.resize(n_lev_max());
     centerPe.resize(n_lev_max());
     nodeEambi.resize(n_lev_max());
@@ -703,6 +709,10 @@ public:
   bool get_useHybridPIC() const { return useHybridPIC; }
 
   PicSolverMode get_field_solver_mode() const { return fieldSolverMode; }
+  void set_report_options(int dnReportLBIn, bool doCompactIn) {
+    dnReportLB = dnReportLBIn;
+    doCompact = doCompactIn;
+  }
   bool is_implicit_pic() const {
     return fieldSolverMode == PicSolverMode::Implicit;
   }
@@ -715,7 +725,6 @@ public:
   bool is_field_solver_active() const {
     return fieldSolverMode != PicSolverMode::None;
   }
-  void set_field_solver_mode(const std::string &modeStr);
 
   // Returns the cell-centered coarse-to-fine interpolater to use.  For the
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
@@ -807,8 +816,6 @@ public:
   void update_part_loc_to_half_stage();
 
   void particle_mover(int pushStage = 0);
-  // Drift the particles after a kPushKickOnly push and redistribute them.
-  void particle_drift();
   // Particle bookkeeping after the push: resampling, charge exchange, sources
   // and boundary injection.
   void finish_particle_push();
@@ -846,7 +853,7 @@ public:
 
   void report_bc_warnings(const std::string &context);
   void apply_periodicity_autofill(const amrex::Geometry &gm);
-  void validate_bc_pairing(const amrex::Geometry &gm);
+  void validate_bc_pairing(const amrex::Geometry &gm, bool isStandalone);
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
@@ -927,17 +934,15 @@ public:
 
   //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
   void advance_explicit_full_pic();
-  // Subcycled Maxwell advance over dt. Sub-step m uses the current
-  // interpolated between J0 and J1 at its mid time if interpolateInTime (J0,
-  // J1 at t^n and t^{n+1}), or the plain average (J0 + J1)/2 otherwise (both
-  // at t^{n+1/2}).
+  // Subcycled Maxwell advance over dt with the current J in every sub-step.
   void update_EB_explicit_leapfrog(amrex::Real dt, int nSub,
-                                   const amrex::Vector<amrex::MultiFab> &J0,
-                                   const amrex::Vector<amrex::MultiFab> &J1,
-                                   bool interpolateInTime);
-  // Deposit the moments of the current particle state and set J to the
-  // charge current sum_s (q_s/m_s) (rho u)_s, smoothed with #SMOOTHJ.
-  void deposit_explicit_current(amrex::Vector<amrex::MultiFab> &J);
+                                   const amrex::Vector<amrex::MultiFab> &J);
+  // Push the kinetic species (pushStage as in Particles::mover) and set J to
+  // their charge-conserving current, smoothed with #SMOOTHJ. trialOnly: the
+  // particles are not changed.
+  void push_and_deposit_explicit_current(int pushStage,
+                                         amrex::Vector<amrex::MultiFab> &J,
+                                         bool trialOnly = false);
   void smooth_explicit_current(amrex::Vector<amrex::MultiFab> &J);
   void advance_B_half_step(amrex::Real dtSub, amrex::Real tSub = -1.0);
   void advance_E_step(amrex::Real dtSub, const amrex::MultiFab &currentMF,
@@ -1008,7 +1013,7 @@ public:
   void report_load_balance(bool doReportSummary = true,
                            bool doReportDetail = false);
 
-  void calc_cost_per_cell();
+  void calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
