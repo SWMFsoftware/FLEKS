@@ -300,8 +300,12 @@ def check_canonical(errors: list[str]) -> None:
 def check_param_xml_tex(errors: list[str]) -> None:
     """PARAM.XML command text is typeset by share/Scripts/XmlToTex.pl.
 
-    That script escapes &, <, >, # and _, but not ^. A bare ^ outside math mode
-    makes pdflatex stop with 'Missing $ inserted', which fails the PDF job.
+    That script escapes &, <, >, # and a _ followed by a letter or digit, but
+    not ^, not a _ followed by {, and not %. The first two outside math mode
+    make pdflatex stop with 'Missing $ inserted', which fails the PDF job; a
+    bare % silently drops the rest of the line from the manual. A < that does not
+    start a tag (e.g. "x < 1") makes share/Scripts/XmlRead.pl reject the whole
+    file ("incorrect tag"), which fails every PARAM validity check.
     Reproduce its verbatim state machine: a line starting with #COMMAND opens a
     verbatim block that the first empty line closes, and \\begin{verbatim}
     forces one open until its matching \\end{verbatim}.
@@ -311,6 +315,12 @@ def check_param_xml_tex(errors: list[str]) -> None:
         return
 
     text = path.read_text(encoding="utf-8")
+    for n, line in enumerate(text.split("\n"), 1):
+        if re.search(r"<(?![A-Za-z/!?])", line):
+            errors.append(
+                f"PARAM.XML:{n}: '<' that does not start a tag; XmlRead.pl "
+                "reports 'incorrect tag' (write it out, e.g. 'below')"
+            )
     # Drop XML tags first: attribute values such as if="$plotform =~ /amrex/" are
     # never typeset and would put the math state out of step. Newlines inside a
     # tag are kept so the line numbers still match the file.
@@ -341,6 +351,21 @@ def check_param_xml_tex(errors: list[str]) -> None:
                         f"PARAM.XML:{n}: unescaped '^' in text typeset by "
                         "XmlToTex.pl (write it as \\^, as elsewhere in this "
                         "file, or wrap it in $...$)"
+                    )
+                    break
+                if char == "%" and line[i - 1:i] != "\\":
+                    errors.append(
+                        f"PARAM.XML:{n}: unescaped '%' in text typeset by "
+                        "XmlToTex.pl (TeX drops the rest of the line; write "
+                        "\\%)"
+                    )
+                    break
+                if (char == "_" and not math and line[i + 1:i + 2] == "{"
+                        and line[i - 1:i] != "\\"):
+                    errors.append(
+                        f"PARAM.XML:{n}: '_{{' in text typeset by XmlToTex.pl "
+                        "(it escapes _ only before a letter or digit; wrap the "
+                        "subscript in $...$ or avoid it)"
                     )
                     break
                 i += 1

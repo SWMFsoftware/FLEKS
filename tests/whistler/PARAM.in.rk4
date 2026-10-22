@@ -2,7 +2,9 @@
 Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
 Hall-only: validates the Hall term of the generalized Ohm's law in normalized
 CGS units (resistivity and electron-pressure-gradient terms disabled).
-Field integrator: 4-stage classical Runge-Kutta (RK4).
+Field integrator: 4-stage classical Runge-Kutta (RK4). Default dissipation
+(HYBRIDUPWIND: MC + grid-scale sensor), run to 24 s, past the time the
+undamped grid mode needs to grow.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -41,11 +43,6 @@ T                       useHybridPIC
 
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
-
-#HYPERRESISTIVITY
-0.0                     etaHyperSI
-grid                    etaHyperMode
-1.0e-2                  etaHyperCh
 
 #ELECTRONTEMPERATURE
 0.0                     electronTemperature  [eV]
@@ -109,4 +106,4 @@ z=0 fluid ascii pic     plotString
 
 #STOP
 -1                      MaxIter
-10.0                    TimeMax   ~2.5 whistler periods (n=1 mode, T = 3.9 s)
+24.0                    TimeMax   ~6 whistler periods (n=1 mode, T = 3.9 s)

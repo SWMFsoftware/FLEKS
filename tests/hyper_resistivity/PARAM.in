@@ -120,6 +120,9 @@ z=0 fluid ascii pic     plotString
 0.8                     dt
 1                       dx
 
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
 #STOP
 -1                      MaxIter
 0.8                     TimeMax

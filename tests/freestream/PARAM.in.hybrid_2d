@@ -10,7 +10,7 @@ numerical wiggles in Bx, By, and Ez.
 
 The hybrid Ohm-Faraday loop amplifies PIC shot noise in the ion moments into a
 grid-scale (3-6 cell) magnetic dynamo unless it is controlled, so this deck runs
-with 100 particles/cell plus #SMOOTHMOMENTS and grid-mode #HYPERRESISTIVITY.
+with 100 particles/cell plus SMOOTHMOMENTS and the default upwind dissipation.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -72,11 +72,6 @@ F                       useHallTerm
 
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
-
-#HYPERRESISTIVITY
-0.0                     etaHyperSI
-grid                    etaHyperMode
-0.02                    etaHyperCh
 
 #ELECTRONTEMPERATURE
 0.0                     electronTemperature  [eV]

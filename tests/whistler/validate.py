@@ -46,6 +46,11 @@ from _shared import hybrid as hybrid_helpers
 
 RUN_DIR = "run_test"
 MAX_GROWTH = 1.9
+# rk4, rk4_mc, rk4_hyper (24 s; default upwind with sensor, plain MC upwind,
+# hyper-resistivity alone): the seeded mode grows 1.3x with any of them; without
+# dissipation the ~3-cell grid mode grows unstably and the ion energy rises 95x.
+MAX_GROWTH_DAMPED = 1.5
+STABILITY_VARIANTS = ("_rk4", "_rk4_mc", "_rk4_hyper")
 
 
 def set_run_dir(run_dir):
@@ -66,18 +71,43 @@ def _max_bperp(out_file):
     return max(math.hypot(b, c) for b, c in zip(by, bz))
 
 
-def _check_resistive_damping():
-    """Verify that resistivity measurably limits transverse field growth."""
+def _bperp_growth():
+    """Return late/early max|B_perp| from the first and last .out frames, or
+    None if there are no frames or the amplitude cannot be measured."""
     plots = sorted(glob.glob(os.path.join(RUN_DIR, "PC", "plots", "*.out")))
     if not plots:
-        logger.debug("    [WHISTLER] No .out files (resistive-damping check skipped)")
-        return True, "No .out files (skipped)"
-
+        return None
     a0 = _max_bperp(plots[0])
     a1 = _max_bperp(plots[-1])
     if a0 is None or a0 <= 0.0 or a1 is None:
-        return True, "Could not measure transverse amplitude"
+        return None
+    return a0, a1
 
+
+def _check_stability():
+    """The dissipation keeps the 24 s rk4 run stable."""
+    amp = _bperp_growth()
+    if amp is None:
+        return False, "Could not measure the transverse amplitude"
+    a0, a1 = amp
+    growth = a1 / a0
+    logger.debug("    [WHISTLER] 24 s stability: max|B_perp| %.4e -> %.4e "
+                 "(growth %.2fx, bound %.2fx)", a0, a1, growth, MAX_GROWTH_DAMPED)
+    if not growth <= MAX_GROWTH_DAMPED:
+        return False, ("transverse amplitude grew %.2fx (bound %.2fx) -- the "
+                       "dissipation does not damp the grid-scale mode"
+                       % (growth, MAX_GROWTH_DAMPED))
+    return True, "Passed"
+
+
+def _check_resistive_damping():
+    """Verify that resistivity measurably limits transverse field growth."""
+    amp = _bperp_growth()
+    if amp is None:
+        logger.debug("    [WHISTLER] No transverse amplitude (resistive-damping "
+                     "check skipped)")
+        return True, "Could not measure transverse amplitude (skipped)"
+    a0, a1 = amp
     growth = a1 / a0
     logger.debug("    [WHISTLER] Resistive damping: max|B_perp| %.4e -> %.4e "
                  "(growth %.2fx, bound %.2fx)", a0, a1, growth, MAX_GROWTH)
@@ -111,6 +141,8 @@ def validate_plot(test_name):
         return ok, reason
     if test_name and "resistive" in test_name:
         return _check_resistive_damping()
+    if test_name and test_name.endswith(STABILITY_VARIANTS):
+        return _check_stability()
     return True, reason
 
 

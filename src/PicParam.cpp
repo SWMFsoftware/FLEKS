@@ -14,6 +14,22 @@
 
 using namespace amrex;
 
+namespace {
+// MUSCL limiter name -> the limType of the hybrid reconstructions; -1 if
+// unknown.
+int limiter_type(const std::string& name) {
+  if (name == "upwind1")
+    return 0;
+  if (name == "minmod")
+    return 1;
+  if (name == "vanleer")
+    return 2;
+  if (name == "mc")
+    return 3;
+  return -1;
+}
+} // namespace
+
 //==========================================================
 void Pic::read_param(const std::string& command, ReadParam& param) {
 
@@ -399,6 +415,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("etaHyperSI", etaHyperSI);
     param.read_var("etaHyperMode", etaHyperMode);
     param.read_var("etaHyperCh", etaHyperCh);
+  } else if (command == "#HYBRIDUPWIND") {
+    hasHybridUpwind_ = true;
+    param.read_var("useHybridUpwind", useHybridUpwind);
+    if (useHybridUpwind) {
+      param.read_var("upwindLimiter", upwindLimiter);
+      // The rest is optional and may come in any order: read_optional() only
+      // consumes the next line when its name matches, so loop until a pass
+      // consumes nothing.
+      bool progress = true;
+      while (progress) {
+        progress =
+            param.read_optional("upwindCoefWhistler", upwindCoefWhistler);
+        progress |= param.read_optional("upwindFixedSpeed", upwindFixedSpeed);
+        progress |= param.read_optional("upwindSensorFloor", upwindSensorFloor);
+      }
+    }
   } else if (command == "#MINIMUMDENSITY") {
     hasMinimumDensity_ = true;
     param.read_var("rhoMinOhm", rhoMinOhm);
@@ -641,6 +673,17 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
     Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+  if (useHybridUpwind) {
+    upwindLimiterType = limiter_type(upwindLimiter);
+    if (upwindLimiterType < 0)
+      Abort("Invalid #HYBRIDUPWIND: upwindLimiter must be 'upwind1', "
+            "'minmod', 'vanleer', or 'mc'.");
+    if (upwindCoefWhistler < 0)
+      Abort("Invalid #HYBRIDUPWIND: upwindCoefWhistler must be "
+            "non-negative.");
+    if (!(upwindSensorFloor > 0 && upwindSensorFloor <= 1))
+      Abort("Invalid #HYBRIDUPWIND: upwindSensorFloor must be in (0, 1].");
+  }
 
   if (useElectronPressureEq) {
     if (!useHybridPIC)
@@ -673,15 +716,8 @@ void Pic::post_process_param() {
     if (peMin < 0)
       Abort("Invalid #ELECTRONPRESSURE: peMin must be non-negative.");
 
-    if (peAdvectionLimiter == "upwind1") {
-      peLimiterType = 0;
-    } else if (peAdvectionLimiter == "minmod") {
-      peLimiterType = 1;
-    } else if (peAdvectionLimiter == "vanleer") {
-      peLimiterType = 2;
-    } else if (peAdvectionLimiter == "mc") {
-      peLimiterType = 3;
-    } else {
+    peLimiterType = limiter_type(peAdvectionLimiter);
+    if (peLimiterType < 0) {
       Abort("Invalid #ELECTRONADVECTION: peAdvectionLimiter must be "
             "'upwind1', 'minmod', 'vanleer', or 'mc'.");
     }
@@ -852,6 +888,9 @@ void Pic::post_process_param() {
             "(#FIELDSOLVER hybrid).");
     if (hasHyperResistivity_)
       Abort("Invalid command: #HYPERRESISTIVITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasHybridUpwind_)
+      Abort("Invalid command: #HYBRIDUPWIND is only valid for hybrid PIC "
             "(#FIELDSOLVER hybrid).");
     if (hasElectronPressure_)
       Abort("Invalid command: electron pressure commands (#ELECTRON*) are only "

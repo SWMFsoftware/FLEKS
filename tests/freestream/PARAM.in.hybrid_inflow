@@ -7,12 +7,13 @@ shock deck, without the reflecting wall: a uniform plasma flows along -x
 (n = 5 /cc, ux = -1163 km/s, T = 6.28e5 K) across B = (0, By, 0) with the
 motional field E = -u x B. The +x face injects the flow (fixed field +
 inflow particles, the shock-deck upstream boundary); the -x face is open.
-Hall term, warm adiabatic electrons (Te = 141 eV) and grid hyper-resistivity
-are on, as in the shock decks.
+Hall term, warm adiabatic electrons (Te = 141 eV) and the default upwind
+dissipation are on, as in the shock decks.
 
 A uniform flow must stay uniform, so Bx stays at the PIC noise level
 everywhere. Two boundary bugs made Bx grow in a layer next to the inflow
-face (to ~0.09 |B| by t = 10): the hyper-resistive E used the prescribed B
+face (to ~0.09 |B| by t = 10): the hyper-resistive E (which this deck used
+before the upwind term) took the prescribed B
 instead of its Laplacian at Dirichlet faces, and the last physical cell of
 cell-centered B was overwritten with the prescribed state every call.
 validate.py checks that Bx next to the inflow face stays at the interior
@@ -73,11 +74,6 @@ F                       isAutoSubcycle
 
 #RESISTIVITY
 1.0e7                   etaResistivity  [m^2/s]
-
-#HYPERRESISTIVITY
-0.0                     etaHyperSI
-grid                    etaHyperMode
-0.003                   etaHyperCh
 
 #ELECTRONTEMPERATURE
 141.0                   electronTemperature  [eV]

@@ -52,11 +52,6 @@ T                       useHybridPIC
 #RESISTIVITY
 0.0                     etaResistivity
 
-#HYPERRESISTIVITY
-0.0                     etaHyperSI
-grid                    etaHyperMode
-0.001                   etaHyperCh
-
 #ELECTRONTEMPERATURE
 0.1                     electronTemperature
 1.0                     electronGamma

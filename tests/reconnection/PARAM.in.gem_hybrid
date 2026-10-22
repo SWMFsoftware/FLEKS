@@ -90,11 +90,6 @@ T                       useHybridPIC
 1.0                     electronGamma        [isothermal fluid electrons]
 65.15939                electronDensity0     [amu/cc; n_e0 = 1.0 code units]
 
-#HYPERRESISTIVITY
-0.0                     etaHyperSI      [m^4/s; unused in grid mode]
-grid                    etaHyperMode
-0.003                   etaHyperCh      [damp grid-scale whistler modes]
-
 #SMOOTHMOMENTS
 T                       doSmoothMoments [smooth ion moments to suppress particle shot noise]
 1                       nSmoothMoments

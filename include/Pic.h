@@ -157,6 +157,26 @@ private:
   amrex::Real etaHyperCh = 0.01;
   amrex::Vector<amrex::Real> etaHyperLev;
 
+  // Upwind (Rusanov) dissipation of the nodal Ohm's-law E (#HYBRIDUPWIND):
+  //   E += sum_d (a_d/2) e_d x (B^R_d - B^L_d),
+  // with MUSCL-reconstructed B on the two sides of the node along d and the
+  // signal speed a_d = |u_e,d| + c_fast + upwindCoefWhistler * c_w,d, where
+  // c_w,d = |B| / (4 rho dx_d) is the whistler phase speed at k = pi/dx_d.
+  // E stays nodal, so the discrete div(B) is preserved.
+  // On by default for the hybrid solver (MC + sensor floor 0.1); a deck turns
+  // it off with #HYBRIDUPWIND F.
+  bool useHybridUpwind = true;
+  std::string upwindLimiter = "mc";
+  int upwindLimiterType = 3; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
+  amrex::Real upwindCoefWhistler = 0.0;
+  // > 0 replaces a_d by this constant (code units); for verification.
+  amrex::Real upwindFixedSpeed = -1.0;
+  // < 1 scales the jump by max(floor, min(1, s)), with the grid-scale sensor
+  // s = |third difference of B| / sum|first differences| of the same 4 cells:
+  // ~(k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps. 1 = off
+  // (plain limited upwind).
+  amrex::Real upwindSensorFloor = 0.1;
+
   // Regional resistivity and hyper-resistivity
   struct RegionalResistivityConfig {
     std::string regionStr;
@@ -228,6 +248,7 @@ private:
   bool hasHallTerm_ = false;
   bool hasResistivity_ = false;
   bool hasHyperResistivity_ = false;
+  bool hasHybridUpwind_ = false;
   bool hasElectronPressure_ = false;
   bool hasMinimumDensity_ = false;
 
@@ -862,6 +883,10 @@ public:
   void update_B_hybrid();
   void calc_hybrid_dt_and_subcycle(amrex::Real &dtNext, int &nSubNext,
                                    bool doReport);
+  // Largest damping rate sum_d 2 a_d / dx_d of the #HYBRIDUPWIND term on
+  // level iLev for the bulk speed uMax, field bMax and density rhoEff.
+  amrex::Real upwind_max_rate(int iLev, amrex::Real uMax, amrex::Real bMax,
+                              amrex::Real rhoEff) const;
   // Apply periodic and physical boundary conditions (and coarse-fine interface
   // ghosts on refined levels) to the cell-centered B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.
