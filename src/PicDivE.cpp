@@ -20,7 +20,7 @@ void Pic::divE_correction() {
 #ifdef GMRES_VERBOSE
   const bool useCompactDivELog = false;
 #else
-  const bool useCompactDivELog = domainParameters.doCompact;
+  const bool useCompactDivELog = doCompact;
 #endif
 
   struct DivELogEntry {
@@ -314,7 +314,7 @@ void Pic::amr_divE_correction() {
 #ifdef GMRES_VERBOSE
   const bool useCompactDivELog = false;
 #else
-  const bool useCompactDivELog = domainParameters.doCompact;
+  const bool useCompactDivELog = doCompact;
 #endif
 
   struct DivELogEntry {

@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
-#include <cstring>
 #include <iomanip>
 #include <map>
 #include <set>
@@ -14,227 +14,76 @@
 
 using namespace amrex;
 
-namespace {
-
-struct ParameterCommand {
-  const char *name;
-  ParameterOwner owner;
-};
-
-static const ParameterCommand parameter_registry[] = {
-  { "#ABSORB", ParameterOwner::Pic },
-  { "#ADAPTIVESOURCEPPC", ParameterOwner::Pic },
-  { "#AUTOSUBCYCLE", ParameterOwner::Pic },
-  { "#BFIELDBOXBOUNDARY", ParameterOwner::Pic },
-  { "#BODY", ParameterOwner::Pic },
-  { "#BODYBOUNDARY", ParameterOwner::Pic },
-  { "#BSUBCYCLE", ParameterOwner::Pic },
-  { "#CMAXE", ParameterOwner::Pic },
-  { "#COMOVING", ParameterOwner::Pic },
-  { "#CONSTANTPPV", ParameterOwner::Pic },
-  { "#CRUSTALFIELD", ParameterOwner::Pic },
-  { "#DIPOLE", ParameterOwner::Pic },
-  { "#DISCRETIZATION", ParameterOwner::Pic },
-  { "#DISCRETIZE", ParameterOwner::Pic },
-  { "#DIVB", ParameterOwner::Pic },
-  { "#DIVE", ParameterOwner::Pic },
-  { "#EFIELDSOLVER", ParameterOwner::Pic },
-  { "#ELECTRON", ParameterOwner::Pic },
-  { "#ELECTRONADVECTION", ParameterOwner::Pic },
-  { "#ELECTRONCOLLISION", ParameterOwner::Pic },
-  { "#ELECTRONCONDUCTION", ParameterOwner::Pic },
-  { "#ELECTRONPRESSURE", ParameterOwner::Pic },
-  { "#ELECTRONTEMPERATURE", ParameterOwner::Pic },
-  { "#EXOSPHERE", ParameterOwner::FluidInterface },
-  { "#FADEEVIC", ParameterOwner::Pic },
-  { "#FASTMERGE", ParameterOwner::Pic },
-  { "#FIELDBOXBOUNDARY", ParameterOwner::Pic },
-  { "#FIELDINTEGRATOR", ParameterOwner::Pic },
-  { "#FIELDSOLVER", ParameterOwner::Pic },
-  { "#FIELDSUBCYCLE", ParameterOwner::Pic },
-  { "#FIXEDUMAX", ParameterOwner::Pic },
-  { "#FLUIDVARNAMES", ParameterOwner::FluidInterface },
-  { "#FORCEFREEIC", ParameterOwner::Pic },
-  { "#GEMIC", ParameterOwner::Pic },
-  { "#HALLTERM", ParameterOwner::Pic },
-  { "#HYBRIDPIC", ParameterOwner::Pic },
-  { "#HYPERRESISTIVITY", ParameterOwner::Pic },
-  { "#INFLOW", ParameterOwner::Pic },
-  { "#KINETICSOURCE", ParameterOwner::Pic },
-  { "#LAGGEDLIMITER", ParameterOwner::Pic },
-  { "#MAXCHARGEEXCHANGERATE", ParameterOwner::Pic },
-  { "#MEMORY", ParameterOwner::Pic },
-  { "#MERGELIGHT", ParameterOwner::Pic },
-  { "#MINIMUMDENSITY", ParameterOwner::Pic },
-  { "#NORMALIZATION", ParameterOwner::FluidInterface },
-  { "#OHION", ParameterOwner::Pic },
-  { "#PARTICLEBOXBOUNDARY", ParameterOwner::Pic },
-  { "#PARTICLELEVRATIO", ParameterOwner::Pic },
-  { "#PARTICLES", ParameterOwner::Pic },
-  { "#PARTMODE", ParameterOwner::Pic },
-  { "#PIC", ParameterOwner::Pic },
-  { "#PLANETRADIUS", ParameterOwner::FluidInterface },
-  { "#PLASMA", ParameterOwner::FluidInterface },
-  { "#PRESPLITTING", ParameterOwner::Pic },
-  { "#RANDOMPARTICLESLOCATION", ParameterOwner::Pic },
-  { "#REGIONHYPERRESISTIVITY", ParameterOwner::Pic },
-  { "#REGIONRESISTIVITY", ParameterOwner::Pic },
-  { "#RESAMPLING", ParameterOwner::Pic },
-  { "#RESISTIVITY", ParameterOwner::Pic },
-  { "#SCALINGFACTOR", ParameterOwner::FluidInterface },
-  { "#SELECTPARTICLE", ParameterOwner::Pic },
-  { "#SMOOTHE", ParameterOwner::Pic },
-  { "#SMOOTHJ", ParameterOwner::Pic },
-  { "#SMOOTHMOMENTS", ParameterOwner::Pic },
-  { "#SOLVEEM", ParameterOwner::Pic },
-  { "#SOURCEPARTICLES", ParameterOwner::Pic },
-  { "#SUPID", ParameterOwner::Pic },
-  { "#TESTCASE", ParameterOwner::Pic },
-  { "#TESTPARTICLENUMBER", ParameterOwner::ParticleTracker },
-  { "#TPCELLINTERVAL", ParameterOwner::ParticleTracker },
-  { "#TPINITFROMPIC", ParameterOwner::ParticleTracker },
-  { "#TPPARTICLES", ParameterOwner::ParticleTracker },
-  { "#TPREGION", ParameterOwner::ParticleTracker },
-  { "#TPRELATIVISTIC", ParameterOwner::ParticleTracker },
-  { "#TPSAVE", ParameterOwner::ParticleTracker },
-  { "#TPSAVEAT", ParameterOwner::ParticleTracker },
-  { "#TPSTATESI", ParameterOwner::ParticleTracker },
-  { "#UNIFORMSTATE", ParameterOwner::FluidInterface },
-  { "#UPWINDB", ParameterOwner::Pic },
-  { "#UPWINDE", ParameterOwner::Pic },
-  { "#VACUUM", ParameterOwner::Pic },
-  { "#WAVE", ParameterOwner::FluidInterface },
-  { "#WAVEBC", ParameterOwner::Pic },
-  { "#WAVEIC", ParameterOwner::Pic }
-};
-
-const ParameterCommand *find_parameter_command(const std::string &command) {
-  const auto it = std::lower_bound(
-      std::begin(parameter_registry), std::end(parameter_registry), command,
-      [](const ParameterCommand &entry, const std::string &value) {
-        return std::strcmp(entry.name, value.c_str()) < 0;
-      });
-  if (it != std::end(parameter_registry) && command == it->name)
-    return it;
-  return nullptr;
-}
-
-bool is_singleton_command(const std::string &command) {
-  static const char *const singletonCommands[] = { "#AUTOSUBCYCLE",
-                                                   "#BSUBCYCLE",
-                                                   "#DISCRETIZE",
-                                                   "#ELECTRONADVECTION",
-                                                   "#ELECTRONCOLLISION",
-                                                   "#ELECTRONCONDUCTION",
-                                                   "#ELECTRONPRESSURE",
-                                                   "#ELECTRONTEMPERATURE",
-                                                   "#FIELDBOXBOUNDARY",
-                                                   "#FIELDINTEGRATOR",
-                                                   "#FIELDSOLVER",
-                                                   "#FIELDSUBCYCLE",
-                                                   "#GEOMETRY",
-                                                   "#HYBRIDPIC",
-                                                   "#HYPERRESISTIVITY",
-                                                   "#INITFROMSWMF",
-                                                   "#LOADBALANCE",
-                                                   "#MINIMUMDENSITY",
-                                                   "#NCELL",
-                                                   "#NOUTFILE",
-                                                   "#PARTICLETRACKER",
-                                                   "#PERIODICITY",
-                                                   "#RECEIVEICONLY",
-                                                   "#RESTART",
-                                                   "#SOURCE",
-                                                   "#TIMESTEP",
-                                                   "#TIMESTEPPING" };
-
-  for (const char *singleton : singletonCommands) {
-    if (command == singleton)
-      return true;
-  }
-  return false;
-}
-
-std::string canonical_command(const std::string &command) {
-  if (command == "#DISCRETIZATION")
-    return "#DISCRETIZE";
-  if (command == "#BFIELDBOXBOUNDARY")
-    return "#FIELDBOXBOUNDARY";
-  return command;
-}
-
-ParameterCommandLocation locate_command(const std::string &text,
-                                        const std::string &command,
-                                        std::size_t &searchPosition) {
-  std::size_t line = 1;
-  std::size_t lineStart = 0;
-  while (lineStart < text.size()) {
-    const std::size_t lineEnd = text.find('\n', lineStart);
-    const std::size_t end =
-        lineEnd == std::string::npos ? text.size() : lineEnd;
-    std::size_t first = lineStart;
-    while (first < end && (text[first] == ' ' || text[first] == '\t'))
-      ++first;
-    const std::size_t nextChar = first + command.size();
-    const bool isDelimiter = (nextChar >= end || text[nextChar] == ' ' ||
-                              text[nextChar] == '\t' || text[nextChar] == '\r');
-    if (text.compare(first, command.size(), command) == 0 && isDelimiter &&
-        first >= searchPosition) {
-      searchPosition = end;
-      return { line, first - lineStart + 1 };
-    }
-    if (lineEnd == std::string::npos)
-      break;
-    lineStart = lineEnd + 1;
-    ++line;
-  }
-  return {};
-}
-
-std::string format_location(const ParameterCommandLocation &location) {
-  if (location.line == 0)
-    return "unknown location";
-  return "line " + std::to_string(location.line) + ", column " +
-         std::to_string(location.column);
-}
-
-void reject_conflicting_commands(
-    const std::map<std::string, ParameterCommandLocation> &locations,
-    const DomainParameters &parameters) {
-  const auto restart = locations.find("#RESTART");
-  const auto receiveICOnly = locations.find("#RECEIVEICONLY");
-  if (parameters.doRestart && parameters.receiveICOnly &&
-      restart != locations.end() && receiveICOnly != locations.end())
-    Abort("Conflicting commands: #RESTART at " +
-          format_location(restart->second) + " and #RECEIVEICONLY at " +
-          format_location(receiveICOnly->second) +
-          " cannot be enabled together.");
-}
-
-} // namespace
-
 bool Domain::find_parameter_owner(const std::string &command,
                                   ParameterOwner &owner) const {
-  if (const auto *core = find_parameter_command(command)) {
-    owner = core->owner;
-    return true;
-  }
-  for (const auto &registered : sourceParameterCommands) {
-    if (registered == command) {
-      owner = ParameterOwner::Source;
-      return true;
-    }
-  }
-  return false;
+  // clang-format off
+  static const std::set<std::string> picCommands = {
+    // Handled by Pic::read_param().
+    "#ABSORB", "#ADAPTIVESOURCEPPC", "#AUTOSUBCYCLE", "#BFIELDBOXBOUNDARY",
+    "#BODY", "#BODYBOUNDARY", "#BSUBCYCLE", "#CMAXE", "#COMOVING",
+    "#CONSTANTPPV", "#CRUSTALFIELD", "#DIPOLE", "#DISCRETIZATION",
+    "#DISCRETIZE", "#DIVB", "#DIVE", "#EFIELDSOLVER", "#ELECTRON",
+    "#ELECTRONADVECTION", "#ELECTRONCOLLISION", "#ELECTRONCONDUCTION",
+    "#ELECTRONPRESSURE", "#ELECTRONTEMPERATURE", "#FADEEVIC", "#FASTMERGE",
+    "#FIELDBOXBOUNDARY", "#FIELDINTEGRATOR", "#FIELDSUBCYCLE", "#FIXEDUMAX",
+    "#FORCEFREEIC", "#GEMIC", "#HALLTERM", "#HYPERRESISTIVITY", "#INFLOW",
+    "#KINETICSOURCE", "#LAGGEDLIMITER", "#MAXCHARGEEXCHANGERATE", "#MEMORY",
+    "#MERGELIGHT", "#MINIMUMDENSITY", "#OHION", "#PARTICLEBOXBOUNDARY",
+    "#PARTICLELEVRATIO", "#PARTICLES", "#PARTMODE", "#PIC", "#PRESPLITTING",
+    "#RANDOMPARTICLESLOCATION", "#REGIONHYPERRESISTIVITY", "#REGIONRESISTIVITY",
+    "#RESAMPLING", "#RESISTIVITY", "#SELECTPARTICLE", "#SMOOTHE", "#SMOOTHJ",
+    "#SMOOTHMOMENTS", "#SOURCEPARTICLES", "#SUPID", "#TESTCASE", "#UPWINDB",
+    "#UPWINDE", "#VACUUM", "#WAVEBC", "#WAVEIC"
+  };
+  // clang-format on
+  static const std::set<std::string> fiCommands = {
+    // Handled by FluidInterface::read_param().
+    "#EXOSPHERE",    "#FLUIDVARNAMES", "#NORMALIZATION", "#OHMSLAW",
+    "#PLANETRADIUS", "#PLASMA",        "#SCALINGFACTOR", "#UNIFORMSTATE"
+  };
+  static const std::set<std::string> ptCommands = {
+    // Handled by ParticleTrackerInfo::read_param().
+    "#TESTPARTICLENUMBER", "#TPCELLINTERVAL", "#TPINITFROMPIC", "#TPPARTICLES",
+    "#TPREGION",           "#TPRELATIVISTIC", "#TPSAVE",        "#TPSAVEAT",
+    "#TPSTATESI"
+  };
+
+  if (picCommands.count(command))
+    owner = ParameterOwner::Pic;
+  else if (fiCommands.count(command))
+    owner = ParameterOwner::FluidInterface;
+  else if (ptCommands.count(command))
+    owner = ParameterOwner::ParticleTracker;
+  else if (std::count(sourceParameterCommands.begin(),
+                      sourceParameterCommands.end(), command))
+    owner = ParameterOwner::Source;
+  else
+    return false;
+  return true;
+}
+
+//========================================================
+// Commands read by read_construction_parameters(): they decide whether
+// and how grid, fi, pic and pt are constructed, so they are read first.
+bool Domain::is_construction_command(const std::string &command) {
+  static const std::set<std::string> commands = {
+    // Grid geometry.
+    "#GEOMETRY", "#NCELL", "#MAXBLOCKSIZE", "#PERIODICITY", "#REFINEMENTRATIO",
+    // Where grid and fi come from.
+    "#RESTART", "#INITFROMSWMF", "#RECEIVEICONLY",
+    // Which objects are constructed, and how.
+    "#FIELDSOLVER", "#HYBRIDPIC", "#SOLVEEM", "#PARTICLETRACKER"
+  };
+  return commands.count(command) > 0;
 }
 
 //========================================================
 void Domain::init(double time, const int iDomain,
                   const std::string &paramString, const Vector<int> &paramInt,
                   const Vector<double> &paramRegion,
-                  const Vector<double> &paramComm, const bool isStandalone) {
+                  const Vector<double> &paramComm, const bool isStandaloneIn) {
 
-  domainParameters.isStandalone = isStandalone;
+  isStandalone = isStandaloneIn;
 
   tc->set_time_si(time);
 
@@ -243,76 +92,69 @@ void Domain::init(double time, const int iDomain,
   printPrefix = gridName + ": ";
 
 #ifdef _PT_COMPONENT_
-  domainParameters.useSource = true;
+  useSource = true;
 #endif
 
   { // It looks like the file saving may crash if the size of a single file is
     // too large. The numbers 64 and 2048 are chosen empirically.
     const int nFileBase = 64;
     int np = floor(ParallelDescriptor::NProcs() / 2048.0) + 1;
-    domainParameters.nFileField = np * nFileBase;
-    domainParameters.nFileParticle = np * nFileBase * 4;
+    nFileField = np * nFileBase;
+    nFileParticle = np * nFileBase * 4;
   }
 
   readParam = paramString;
-  parameterText = paramString;
 
   if (!paramInt.empty())
     if (paramInt[0] == 2 && nDim == 3)
       isFake2D = true;
 
-  prepare_grid_info(paramRegion);
+  // Read the commands needed to construct grid, fi, pic and pt, then rewind so
+  // read_param() can read the rest once they exist.
+  read_construction_parameters();
+  readParam.roll_back();
 
-  // Read Domain-level switches, then rewind so read_param re-reads the file.
-  {
-    read_domain_parameters(readParam);
-    readParam.roll_back();
-    validate_configuration();
-  }
+  Geometry geometry;
+  AmrInfo amrInfo;
+  prepare_grid_info(paramRegion, geometry, amrInfo);
 
-  refineRegionsStr.resize(amrInfo.max_level + 1);
-  refineRegions.resize(amrInfo.max_level + 1);
+  grid = std::make_unique<Grid>(geometry, amrInfo, nGst, gridID);
 
-  grid = std::make_unique<Grid>(gm, amrInfo, nGst, gridID);
-
-  if (domainParameters.receiveICOnly) {
-    fi = std::make_unique<FluidInterface>(*grid, "fi",
-                                          domainParameters.useHybridPIC);
+  if (receiveICOnly) {
+    fi = std::make_unique<FluidInterface>(*grid, "fi", useHybridPIC);
     ptInfo.set_fluid_interface(fi.get());
-    read_param(false);
+    read_param();
 
     gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
     return;
   }
 
-  if (domainParameters.initFromSWMF && !domainParameters.receiveICOnly) {
+  if (initFromSWMF) {
     fi = std::make_unique<FluidInterface>(
         *grid, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
-        domainParameters.useHybridPIC);
+        useHybridPIC);
   } else {
-    // if (NOT initFromSWMF) or receiveIConly
-    fi = std::make_unique<FluidInterface>(*grid, "fi",
-                                          domainParameters.useHybridPIC);
+    fi = std::make_unique<FluidInterface>(*grid, "fi", useHybridPIC);
   }
 
   ptInfo.set_fluid_interface(fi.get());
-  pic = std::make_unique<Pic>(*grid, fi.get(), tc.get(), gridID,
-                              domainParameters);
+  pic =
+      std::make_unique<Pic>(*grid, fi.get(), tc.get(), gridID, fieldSolverMode);
 
-  if (domainParameters.usePT)
+  if (usePT)
     pt = std::make_unique<ParticleTracker>(*grid, fi.get(), tc.get(), gridID,
-                                           ptInfo, domainParameters);
+                                           ptInfo);
 
   // Create the source object before read_param so that ionization
   // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
   // can be dispatched to source->read_param().
   source = std::make_unique<UserSource>(*grid, *fi, gridID, "picSource",
-                                        SourceFluid, domainParameters);
+                                        SourceFluid);
   source->register_parameter_commands(sourceParameterCommands);
 
-  read_param(false);
+  read_param();
 
   init_time_ctr();
 
@@ -331,13 +173,12 @@ void Domain::init(double time, const int iDomain,
 
   // #SOURCE command sets useSource during read_param; discard the
   // source object if user did not request a source.
-  if (!domainParameters.useSource) {
+  if (!useSource) {
     source.reset();
   } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
-  }
-  if (source)
     pic->set_fluid_source(source.get());
+  }
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -354,7 +195,7 @@ void Domain::init(double time, const int iDomain,
 
   pic->init_source(*fi);
 
-  if (domainParameters.doRestart) {
+  if (doRestart) {
     // Restoring the restart data before coupling with GM, because the PIC grid
     // may change again during coupling.
     read_restart();
@@ -362,56 +203,11 @@ void Domain::init(double time, const int iDomain,
 };
 
 //========================================================
-void Domain::calc_refine_region() {
-  bool doAMR = false;
-
-  if (!doAMR)
-    return;
-
-  int n = tc->get_cycle();
-  if (n % 10 != 0) {
-    return;
-  }
-  Print() << printPrefix << "Domain::calc_refine_region() is called"
-          << std::endl;
-
-  std::string name = "lev0new";
-  Real lo[nDim], hi[nDim];
-
-  Real t = tc->get_time_si();
-  Real u = 0.1;
-
-  lo[ix_] = -16 + u * t;
-  hi[ix_] = 16 + u * t;
-  lo[iy_] = -16;
-  hi[iy_] = 16;
-
-  if (SpaceDim > 2 && isFake2D) {
-    lo[iz_] = -10 * fabs(hi[ix_] - lo[ix_]);
-    hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
-  }
-
-  Vector<std::shared_ptr<Shape> > Shapes;
-  Shapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
-
-  refineRegions[0].define(Shapes, "+" + name);
-
-  isNewGrid = true;
-  refineRegions.mark_modified();
-
-  if (grid) {
-    grid->is_new_grid(isNewGrid);
-  }
-}
-
-//========================================================
 void Domain::update() {
   std::string funcName = "Domain::update";
   timing_func(funcName);
 
   bool doReport = tc->monitor.is_time_to();
-
-  calc_refine_region();
 
   regrid();
 
@@ -429,7 +225,7 @@ void Domain::update() {
   // update time, step number.
   tc->update();
 
-  if (doReport && !domainParameters.doCompact) {
+  if (doReport && !doCompact) {
     const Real t1 = tc->get_time_si();
     Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
             << " from t = " << std::setprecision(6) << t0
@@ -443,7 +239,7 @@ void Domain::update() {
   // - GM-PC: called from set_state_var() at coupling intervals; fi is
   //   unchanged between couplings, so skip here.
   // - OH-PT: not applicable; charge_exchange() handles source terms.
-  if (source && !domainParameters.initFromSWMF) {
+  if (source && !initFromSWMF) {
     source->set_source(*fi);
     source->convert_moment_to_velocity(true, false);
     source->fill_boundary();
@@ -456,39 +252,31 @@ void Domain::update() {
 
   pic->write_log();
 
-  if (pt)
+  if (pt) {
     pt->update(*pic, doReport);
-
-  if (pt)
     pt->write_log();
+  }
 };
 
 //========================================================
 void Domain::update_param(const std::string &paramString) {
   readParam = paramString;
-  parameterText = paramString;
-  parameterCommandLocations.clear();
   // Initial parsing builds the first mesh; only later sessions can dirty an
   // existing refinement hierarchy.
   readingSessionUpdate = true;
-  read_param(false);
+  read_param();
   readingSessionUpdate = false;
   init_time_ctr();
 };
 
 //========================================================
-void Domain::prepare_grid_info(const Vector<double> &info) {
-
-  read_param(true);
-  readParam.roll_back();
-
+void Domain::prepare_grid_info(const Vector<double> &info, Geometry &geometry,
+                               AmrInfo &amrInfo) {
   // If MHD is 2D, PIC has to be periodic in the z-direction.
   if (isFake2D)
     set_periodicity(iz_, true);
 
-  bool setGridFromSWMF = !domainParameters.doRestart &&
-                         domainParameters.initFromSWMF &&
-                         !domainParameters.receiveICOnly;
+  bool setGridFromSWMF = !doRestart && initFromSWMF && !receiveICOnly;
 
   if (setGridFromSWMF) {
     // If restart, the grid info will be read from restart.H
@@ -507,20 +295,18 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
         phyMax = dx;
       }
 
-      domainRange.setLo(i, phyMin);
-      domainRange.setHi(i, phyMax);
+      domainBox.setLo(i, phyMin);
+      domainBox.setHi(i, phyMax);
     }
   }
 
-  for (int i = 0; i < nDim; ++i) {
-    centerBoxLo[i] = 0;
+  const IntVect centerBoxLo(0);
+  IntVect centerBoxHi;
+  for (int i = 0; i < nDim; ++i)
     centerBoxHi[i] = nCell[i] - 1;
-  }
+  const Box centerBox(centerBoxLo, centerBoxHi);
 
-  centerBox.setSmall(centerBoxLo);
-  centerBox.setBig(centerBoxHi);
-
-  gm.define(centerBox, &domainRange, coord, periodicity.getVect());
+  geometry.define(centerBox, &domainBox, coord, periodicity.getVect());
 
   amrInfo.max_level = config::nLevMax - 1;
 
@@ -553,7 +339,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
   amrInfo.n_error_buf.clear();
   amrInfo.n_error_buf.push_back(IntVect(0));
 
-  Print() << printPrefix << "Domain range = " << domainRange << std::endl;
+  Print() << printPrefix << "Domain range = " << domainBox << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;
 }
 
@@ -561,17 +347,15 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell();
+  pic->calc_cost_per_cell(balanceStrategy, cellWeight);
 
   grid->load_balance(nullptr, doSplitLevs);
 
   fi->post_regrid();
 
-  if (pic) {
-    pic->post_regrid(MeshChangeReason::LoadBalance);
-    pic->report_load_balance(true, true);
-    pic->inject_particles_for_boundary_cells();
-  }
+  pic->post_regrid(MeshChangeReason::LoadBalance);
+  pic->report_load_balance(true, true);
+  pic->inject_particles_for_boundary_cells();
 
   if (source)
     source->post_regrid();
@@ -598,16 +382,19 @@ void Domain::regrid() {
   // unchanged.
   // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is
   // false, but it is still required to run the rest of the function to
-  // initialize variables. That's why we need isNewGrid here.
-  if (!gridInfo.is_grid_new() && !isNewGrid && !refineRegions.is_modified())
+  // initialize variables. That's why we need initialRegridPending here.
+  if (!gridInfo.is_grid_new() && !initialRegridPending &&
+      !grid->refinement_modified())
     return;
 
   Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   timing_func(nameFunc);
 
+  const Box &centerBox = grid->Geom(0).Domain();
   BoxList bl;
-  get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
+  get_boxlist_from_region(bl, gridInfo, centerBox.smallEnd(),
+                          centerBox.bigEnd());
   BoxArray activeRegion(bl);
 
   long nCellPic = 0;
@@ -629,9 +416,9 @@ void Domain::regrid() {
   // A restored hierarchy may already match the received region. Re-running
   // consumer hooks would request initialization of already restored fields.
   if (!grid->is_new_grid() && activeRegion == grid->get_base_grid() &&
-      !refineRegions.is_modified()) {
+      !grid->refinement_modified()) {
     gridInfo.is_grid_new(false);
-    isNewGrid = false;
+    initialRegridPending = false;
     return;
   }
 
@@ -642,7 +429,7 @@ void Domain::regrid() {
     pt->pre_regrid();
   }
 
-  grid->regrid(activeRegion, refineRegions, gridEfficiency);
+  grid->regrid(activeRegion);
 
   fi->post_regrid();
 
@@ -661,8 +448,9 @@ void Domain::regrid() {
     pic->post_regrid();
 
     // Do not fill cells before initial particle setup (e.g. #REGRIDONRESTART
-    // on a fluid-only restart marks refineRegions modified before set_ic()).
-    if (refineRegions.is_modified() && pic->are_particles_initialized()) {
+    // on a fluid-only restart marks the refinement policy modified before
+    // set_ic()).
+    if (grid->refinement_modified() && pic->are_particles_initialized()) {
       pic->fill_new_cells();
       // Add functions to fill in EM fields for new cells.
       // Some thoughts:
@@ -684,8 +472,8 @@ void Domain::regrid() {
   // Set gridInfo, which contains active PIC region information, to false,
   // otherwise, Domain::regrid() will be executed every step.
   gridInfo.is_grid_new(false);
-  isNewGrid = false;
-  refineRegions.clear_modified();
+  initialRegridPending = false;
+  grid->clear_refinement_modified();
 }
 
 //========================================================
@@ -694,12 +482,12 @@ void Domain::receive_grid_info(int *status) { gridInfo.set_status(status); }
 //========================================================
 void Domain::set_ic() {
 
-  if (domainParameters.receiveICOnly)
+  if (receiveICOnly)
     return;
 
   // If it is restart, the values should have been restored before coupling
   // with GM. See Domain::init().
-  if (!(domainParameters.doRestart && !domainParameters.doRestartFIOnly)) {
+  if (!(doRestart && !doRestartFIOnly)) {
 
     fi->set_node_fluid();
 
@@ -709,12 +497,9 @@ void Domain::set_ic() {
     pic->write_log(true, true);
   }
 
-  if (!domainParameters.doRestartPT) {
-    if (pt)
-      pt->set_ic(*pic);
-
-    if (pt)
-      pt->write_log(true, true);
+  if (!doRestartPT && pt) {
+    pt->set_ic(*pic);
+    pt->write_log(true, true);
   }
 }
 
@@ -732,7 +517,7 @@ void Domain::set_state_var(double *data, int *index,
   Print() << printPrefix << " " << sourceComp << " -> " << component
           << " coupling at t =" << tc->get_time_si() << " (s)" << std::endl;
 
-  if (domainParameters.receiveICOnly) {
+  if (receiveICOnly) {
     fi->set_node_fluid(data, index, names);
     // For some cases, the variables information is not unknown until the first
     // couping is called.
@@ -841,8 +626,6 @@ void Domain::read_restart() {
     is.ignore(100000, '\n');
   }
 
-  grid->SetGridEff(gridEfficiency);
-  grid->set_refine_regions(refineRegions);
   grid->restore_grid(bas);
 
   //----------------------------------------------------------------
@@ -857,25 +640,23 @@ void Domain::read_restart() {
   if (sourcePT2OH)
     sourcePT2OH->post_regrid();
 
-  if (pic) {
-    pic->post_regrid(MeshChangeReason::Restart);
-    if (!domainParameters.doRestartFIOnly) {
-      pic->read_restart();
-      write_plots(true);
-      pic->write_log(true, true);
-    }
+  pic->post_regrid(MeshChangeReason::Restart);
+  if (!doRestartFIOnly) {
+    pic->read_restart();
+    write_plots(true);
+    pic->write_log(true, true);
   }
 
   if (pt) {
     pt->post_regrid();
-    if (!domainParameters.doRestartFIOnly && domainParameters.doRestartPT) {
+    if (!doRestartFIOnly && doRestartPT) {
       pt->read_restart();
       pt->write_log(true, true);
     }
   }
 
-  if (domainParameters.doRegridOnRestart) {
-    refineRegions.mark_modified();
+  if (doRegridOnRestart) {
+    grid->mark_refinement_modified();
   }
 }
 
@@ -939,13 +720,12 @@ void Domain::save_restart_header() {
 
     std::string command_suffix = "_" + gridName + "\n";
 
-    domainParameters.doRestart = !fi->is_grid_empty();
+    doRestart = !fi->is_grid_empty();
     headerFile << "#RESTART" + command_suffix;
-    headerFile << (domainParameters.doRestart ? "T" : "F")
-               << "\t\t\tdoRestart\n";
+    headerFile << (doRestart ? "T" : "F") << "\t\t\tdoRestart\n";
     headerFile << "\n";
 
-    if (domainParameters.receiveICOnly) {
+    if (receiveICOnly) {
       headerFile << "#RESTARTFIONLY" + command_suffix;
       headerFile << "T"
                  << "\t\t\tdoRestartFIOnly\n";
@@ -989,17 +769,19 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     // Geometry
+    const auto &geometry = grid->Geom(0);
+    const auto &problemDomain = geometry.ProbDomain();
     headerFile << "#GEOMETRY" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
-      headerFile << domainRange.lo(i) << "\t\tmin\n";
-      headerFile << domainRange.hi(i) << "\t\tmax\n";
+      headerFile << problemDomain.lo(i) << "\t\tmin\n";
+      headerFile << problemDomain.hi(i) << "\t\tmax\n";
     }
     headerFile << "\n";
 
     // Cell
     headerFile << "#NCELL" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
-      headerFile << nCell[i] << "\t\tnCell\n";
+      headerFile << geometry.Domain().length(i) << "\t\tnCell\n";
     }
     headerFile << "\n";
 
@@ -1086,13 +868,17 @@ void Domain::init_time_ctr() {
       // Pass information to writers.
       writer.set_nDim(fi->get_fluid_dimension());
       writer.set_iRegion(gridID);
-      writer.set_domainMin_D({ AMREX_D_DECL(
-          domainRange.lo(ix_), domainRange.lo(iy_), domainRange.lo(iz_)) });
+      const auto &geometry = grid->Geom(0);
+      const auto &problemDomain = geometry.ProbDomain();
+      writer.set_domainMin_D(
+          { AMREX_D_DECL(problemDomain.lo(ix_), problemDomain.lo(iy_),
+                         problemDomain.lo(iz_)) });
 
-      writer.set_domainMax_D({ AMREX_D_DECL(
-          domainRange.hi(ix_), domainRange.hi(iy_), domainRange.hi(iz_)) });
+      writer.set_domainMax_D(
+          { AMREX_D_DECL(problemDomain.hi(ix_), problemDomain.hi(iy_),
+                         problemDomain.hi(iz_)) });
 
-      const Real *dx = gm.CellSize();
+      const Real *dx = geometry.CellSize();
       writer.set_dx_D({ AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]) });
       writer.set_nSpecies(nS);
       // TODO: no longer needed if we fix the PIC output variable ordering
@@ -1115,91 +901,118 @@ void Domain::init_time_ctr() {
 }
 
 //========================================================
-void Domain::read_domain_parameters(ReadParam &rp) {
-  // Only Domain-level switches are parsed here; the caller rolls back the
-  // stream, so read_param re-reads the whole file afterward.
+void Domain::read_construction_parameters() {
+  // Only the commands needed to construct grid, fi, pic and pt are read here;
+  // the caller rolls back the stream and read_param() reads the rest.
   std::string command;
-  while (rp.get_next_command(command)) {
-    if (command == "#RESTART") {
-      rp.read_var("doRestart", domainParameters.doRestart);
-      domainParameters.doRestartPT = domainParameters.doRestart;
-    } else if (command == "#TPRESTART") {
-      rp.read_var("doTPRestart", domainParameters.doRestartPT);
-    } else if (command == "#RESTARTFIONLY") {
-      rp.read_var("doRestartFIOnly", domainParameters.doRestartFIOnly);
-    } else if (command == "#REGRIDONRESTART") {
-      rp.read_var("doRegridOnRestart", domainParameters.doRegridOnRestart);
-    } else if (command == "#INITFROMSWMF") {
-      rp.read_var("initFromSWMF", domainParameters.initFromSWMF);
-    } else if (command == "#RECEIVEICONLY") {
-      rp.read_var("receiveICOnly", domainParameters.receiveICOnly);
-    } else if (command == "#NOUTFILE") {
-      rp.read_var("nFileField", domainParameters.nFileField);
-      rp.read_var("nFileParticle", domainParameters.nFileParticle);
-    } else if (command == "#PARTICLETRACKER") {
-      rp.read_var("usePT", domainParameters.usePT);
-    } else if (command == "#SOURCE") {
-      rp.read_var("useSource", domainParameters.useSource);
-    } else if (command == "#FIELDSOLVER") {
-      std::string mode;
-      rp.read_var("fieldSolverMode", mode);
-      domainParameters.set_field_solver_mode(mode);
-    } else if (command == "#HYBRIDPIC") {
-      bool useHyb = false;
-      rp.read_var("useHybridPIC", useHyb);
-      if (useHyb)
-        domainParameters.set_field_solver_mode("hybrid");
-    } else if (command == "#SOLVEEM") {
-      bool sEM = true;
-      rp.read_var("solveEM", sEM);
-      if (!sEM && domainParameters.fieldSolverMode != PicSolverMode::Hybrid)
-        domainParameters.set_field_solver_mode("none");
-    } else if (command == "#LOADBALANCE") {
-      std::string strategy;
-      rp.read_var("loadBalanceStrategy", strategy);
-      if (strategy.empty())
-        Abort("Invalid #LOADBALANCE: loadBalanceStrategy must not be empty.");
-      strategy[0] = toupper(strategy[0]);
-      const auto strategyIt = stringToBalanceStrategy.find(strategy);
-      if (strategyIt == stringToBalanceStrategy.end())
-        Abort("Invalid #LOADBALANCE strategy '" + strategy +
-              "'. Check the supported load-balance strategies.");
-      domainParameters.balanceStrategy = strategyIt->second;
+  bool hasFieldSolver = false;
+  readParam.set_verbose(false);
+  readParam.set_command_suffix(gridName);
+  readParam.set_component(component);
+  while (readParam.get_next_command(command)) {
+    if (!is_construction_command(command))
+      continue;
 
-      if (domainParameters.balanceStrategy == BalanceStrategy::Hybrid) {
-        rp.read_var("cellWeight", domainParameters.cellWeight);
+    readParam.set_verbose(ParallelDescriptor::IOProcessor());
+    Print() << "\n"
+            << component << ": " << command << " " << gridName << std::endl;
+
+    if (command == "#RESTART") {
+      readParam.read_var("doRestart", doRestart);
+      doRestartPT = doRestart;
+    } else if (command == "#INITFROMSWMF") {
+      readParam.read_var("initFromSWMF", initFromSWMF);
+    } else if (command == "#RECEIVEICONLY") {
+      readParam.read_var("receiveICOnly", receiveICOnly);
+    } else if (command == "#PARTICLETRACKER") {
+      readParam.read_var("usePT", usePT);
+    } else if (command == "#FIELDSOLVER") {
+      hasFieldSolver = true;
+      std::string mode;
+      readParam.read_var("fieldSolverMode", mode);
+      set_field_solver_mode(mode);
+    } else if (command == "#HYBRIDPIC") {
+      // Deprecated; #FIELDSOLVER takes priority.
+      Print()
+          << "  Warning: #HYBRIDPIC is deprecated; use #FIELDSOLVER instead.\n";
+      bool useHyb = false;
+      readParam.read_var("useHybridPIC", useHyb);
+      if (!hasFieldSolver && useHyb)
+        set_field_solver_mode("hybrid");
+    } else if (command == "#SOLVEEM") {
+      // Deprecated; #FIELDSOLVER takes priority.
+      Print()
+          << "  Warning: #SOLVEEM is deprecated; use #FIELDSOLVER instead.\n";
+      bool sEM = true;
+      readParam.read_var("solveEM", sEM);
+      if (!hasFieldSolver) {
+        if (sEM)
+          set_field_solver_mode("implicit");
+        else if (fieldSolverMode != PicSolverMode::Hybrid)
+          set_field_solver_mode("none");
+      }
+    } else if (command == "#GEOMETRY") {
+      for (int i = 0; i < nDim; ++i) {
+        Real lo, hi;
+        readParam.read_var("min", lo);
+        readParam.read_var("max", hi);
+        domainBox.setLo(i, lo);
+        domainBox.setHi(i, hi);
+      }
+      if (!domainBox.ok())
+        Abort("Error: invalid input!");
+    } else if (command == "#NCELL") {
+      for (int i = 0; i < nDim; ++i) {
+        readParam.read_var("nCell", nCell[i]);
+        if (nCell[i] <= 0)
+          Abort("Error: invalid input!");
+      }
+      isFake2D = (nDim == 3) && (nCell[iz_] == 1);
+
+    } else if (command == "#REFINEMENTRATIO") {
+      readParam.read_var("refineRatio", refinementRatio);
+      if (refinementRatio <= 1)
+        Abort("Error: #REFINEMENTRATIO must be > 1");
+    } else if (command == "#MAXBLOCKSIZE") {
+      // The block size in each direction can not larger than maxBlockSize.
+      int tmp;
+      for (int i = 0; i < nDim; ++i) {
+        readParam.read_var("maxBlockSize", tmp);
+        maxBlockSize[i] = tmp;
+      }
+    } else if (command == "#PERIODICITY") {
+      // ReadParam::read_var() is positional -- the description is only echoed
+      // back -- so these names just have to match what PARAM.XML documents.
+      static const char *isPeriodicName[3] = { "isPeriodicX", "isPeriodicY",
+                                               "isPeriodicZ" };
+      for (int i = 0; i < nDim; ++i) {
+        bool isPeriodic;
+        readParam.read_var(isPeriodicName[i], isPeriodic);
+        set_periodicity(i, isPeriodic);
       }
     }
-    // Non-Domain commands are left for read_param's later pass.
+    readParam.set_verbose(false);
   }
+
+  if (doRestart && receiveICOnly)
+    Abort("#RESTART and #RECEIVEICONLY cannot both be enabled.");
 }
 
 //========================================================
-void Domain::read_param(const bool readGridInfo) {
+void Domain::read_param() {
   // The default values shoudl be set in the constructor.
 
   std::string command;
-  std::size_t commandSearchPosition = 0;
   bool refineSelectorsChanged = false;
   bool gridEfficiencyChanged = false;
-  if (readGridInfo)
-    parameterCommandLocations.clear();
-
   readParam.set_verbose(false);
   bool sourceParamsSynced = false;
   readParam.set_command_suffix(gridName);
   readParam.set_component(component);
   while (readParam.get_next_command(command)) {
 
-    bool isGridCommand =
-        command == "#MAXBLOCKSIZE" || command == "#PERIODICITY" ||
-        command == "#GEOMETRY" || command == "#NCELL" ||
-        command == "#RESTART" || command == "#INITFROMSWMF" ||
-        command == "#RECEIVEICONLY" || command == "#PARTICLETRACKER" ||
-        command == "#REFINEMENTRATIO";
-
-    // Skip this command
-    if (readGridInfo != isGridCommand)
+    // Already read by read_construction_parameters().
+    if (is_construction_command(command))
       continue;
 
     if (command == "#DESCRIPTION" || command == "#STOP" || command == "#RUN") {
@@ -1211,21 +1024,6 @@ void Domain::read_param(const bool readGridInfo) {
     readParam.set_verbose(ParallelDescriptor::IOProcessor());
     Print() << "\n"
             << component << ": " << command << " " << gridName << std::endl;
-
-    {
-      const std::string key = canonical_command(command);
-      const ParameterCommandLocation location =
-          locate_command(parameterText, command, commandSearchPosition);
-      const auto previous = parameterCommandLocations.find(key);
-      if (previous != parameterCommandLocations.end() &&
-          is_singleton_command(key)) {
-        Abort("Duplicate command " + command + " at " +
-              format_location(location) + "; first occurrence was at " +
-              format_location(previous->second) + ".");
-      }
-      if (previous == parameterCommandLocations.end())
-        parameterCommandLocations.emplace(key, location);
-    }
 
     ParameterOwner owner;
     if (find_parameter_owner(command, owner)) {
@@ -1251,6 +1049,20 @@ void Domain::read_param(const bool readGridInfo) {
           fi->read_param(command, readParam);
           break;
       }
+    } else if (command == "#TPRESTART") {
+      readParam.read_var("doTPRestart", doRestartPT);
+    } else if (command == "#RESTARTFIONLY") {
+      readParam.read_var("doRestartFIOnly", doRestartFIOnly);
+    } else if (command == "#REGRIDONRESTART") {
+      readParam.read_var("doRegridOnRestart", doRegridOnRestart);
+    } else if (command == "#NOUTFILE") {
+      readParam.read_var("nFileField", nFileField);
+      readParam.read_var("nFileParticle", nFileParticle);
+      if (nFileField < 1 || nFileParticle < 1)
+        Abort("Invalid #NOUTFILE: nFileField and nFileParticle must be "
+              "positive.");
+    } else if (command == "#SOURCE") {
+      readParam.read_var("useSource", useSource);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       readParam.read_var("loadBalanceStrategy", strategy);
@@ -1261,71 +1073,18 @@ void Domain::read_param(const bool readGridInfo) {
       if (strategyIt == stringToBalanceStrategy.end())
         Abort("Invalid #LOADBALANCE strategy '" + strategy +
               "'. Check the supported load-balance strategies.");
-      domainParameters.balanceStrategy = strategyIt->second;
+      balanceStrategy = strategyIt->second;
 
-      if (domainParameters.balanceStrategy == BalanceStrategy::Hybrid) {
-        readParam.read_var("cellWeight", domainParameters.cellWeight);
+      if (balanceStrategy == BalanceStrategy::Hybrid) {
+        readParam.read_var("cellWeight", cellWeight);
+        if (cellWeight < 1)
+          Abort("Invalid #LOADBALANCE: cellWeight must be positive.");
       }
-
-      int dn;
-      readParam.read_var("dn", dn);
-      Real dt;
-      readParam.read_var("dt", dt);
-      tc->loadBalance.init(dt, dn);
-
-    } else if (command == "#PARTICLETRACKER") {
-      readParam.read_var("usePT", domainParameters.usePT);
-    } else if (command == "#SOURCE") {
-      readParam.read_var("useSource", domainParameters.useSource);
-    } else if (command == "#FIELDSOLVER") {
-      std::string mode;
-      readParam.read_var("fieldSolverMode", mode);
-      domainParameters.set_field_solver_mode(mode);
-    } else if (command == "#HYBRIDPIC") {
-      bool useHyb = false;
-      readParam.read_var("useHybridPIC", useHyb);
-      if (useHyb)
-        domainParameters.set_field_solver_mode("hybrid");
-    } else if (command == "#SOLVEEM") {
-      bool sEM = true;
-      readParam.read_var("solveEM", sEM);
-      if (!sEM)
-        domainParameters.set_field_solver_mode("none");
-    } else if (command == "#RESTART") {
-      readParam.read_var("doRestart", domainParameters.doRestart);
-      domainParameters.doRestartPT = domainParameters.doRestart;
-    } else if (command == "#TPRESTART") {
-      readParam.read_var("doTPRestart", domainParameters.doRestartPT);
-    } else if (command == "#RESTARTFIONLY") {
-      readParam.read_var("doRestartFIOnly", domainParameters.doRestartFIOnly);
-    } else if (command == "#REGRIDONRESTART") {
-      readParam.read_var("doRegridOnRestart",
-                         domainParameters.doRegridOnRestart);
-    } else if (command == "#INITFROMSWMF") {
-      readParam.read_var("initFromSWMF", domainParameters.initFromSWMF);
-    } else if (command == "#RECEIVEICONLY") {
-      readParam.read_var("receiveICOnly", domainParameters.receiveICOnly);
-    } else if (command == "#GEOMETRY") {
-      for (int i = 0; i < nDim; ++i) {
-        Real lo, hi;
-        readParam.read_var("min", lo);
-        readParam.read_var("max", hi);
-        domainRange.setLo(i, lo);
-        domainRange.setHi(i, hi);
-      }
-      if (!domainRange.ok())
-        Abort("Error: invalid input!");
-    } else if (command == "#NCELL") {
-      for (int i = 0; i < nDim; ++i) {
-        readParam.read_var("nCell", nCell[i]);
-        if (nCell[i] <= 0)
-          Abort("Error: invalid input!");
-      }
-      isFake2D = (nDim == 3) && (nCell[iz_] == 1);
-
     } else if (command == "#GRIDEFFICIENCY") {
-      const Real oldEfficiency = gridEfficiency;
+      const Real oldEfficiency = grid->gridEff();
+      Real gridEfficiency = oldEfficiency;
       readParam.read_var("gridEfficiency", gridEfficiency);
+      grid->SetGridEff(gridEfficiency);
       gridEfficiencyChanged |= gridEfficiency != oldEfficiency;
     } else if (command == "#REGION") {
       std::string name, type;
@@ -1405,22 +1164,8 @@ void Domain::read_param(const bool readGridInfo) {
       readParam.read_var("iLev", iLev);
 
       readParam.read_var("regions", s);
-      refineSelectorsChanged |= set_refine_region(iLev, s);
+      refineSelectorsChanged |= grid->set_refine_region(iLev, s);
 
-    } else if (command == "#REFINEMENTRATIO") {
-      readParam.read_var("refineRatio", refinementRatio);
-      if (refinementRatio <= 1)
-        Abort("Error: #REFINEMENTRATIO must be > 1");
-    } else if (command == "#NOUTFILE") {
-      readParam.read_var("nFileField", domainParameters.nFileField);
-      readParam.read_var("nFileParticle", domainParameters.nFileParticle);
-    } else if (command == "#MAXBLOCKSIZE") {
-      // The block size in each direction can not larger than maxBlockSize.
-      int tmp;
-      for (int i = 0; i < nDim; ++i) {
-        readParam.read_var("maxBlockSize", tmp);
-        maxBlockSize[i] = tmp;
-      }
     } else if (command == "#TIMESTEP" || command == "#TIMESTEPPING") {
       bool useFixedDt;
       readParam.read_var("useFixedDt", useFixedDt);
@@ -1436,16 +1181,6 @@ void Domain::read_param(const bool readGridInfo) {
         readParam.read_var("cfl", cfl);
         tc->set_cfl(cfl);
       }
-    } else if (command == "#PERIODICITY") {
-      // ReadParam::read_var() is positional -- the description is only echoed
-      // back -- so these names just have to match what PARAM.XML documents.
-      static const char *isPeriodicName[3] = { "isPeriodicX", "isPeriodicY",
-                                               "isPeriodicZ" };
-      for (int i = 0; i < nDim; ++i) {
-        bool isPeriodic;
-        readParam.read_var(isPeriodicName[i], isPeriodic);
-        set_periodicity(i, isPeriodic);
-      }
     } else if (command == "#SAVELOG") {
       int dn;
       readParam.read_var("dnSavePic", dn);
@@ -1456,8 +1191,8 @@ void Domain::read_param(const bool readGridInfo) {
       int dn;
       readParam.read_var("dnReport", dn);
       tc->monitor.init(-1, dn);
-      readParam.read_optional("dnReportLB", domainParameters.dnReportLB);
-      readParam.read_optional("doCompact", domainParameters.doCompact);
+      readParam.read_optional("dnReportLB", dnReportLB);
+      readParam.read_optional("doCompact", doCompact);
     } else if (command == "#SAVEPLOT" || command == "#SAVEIDL") {
 
       /*
@@ -1544,14 +1279,6 @@ void Domain::read_param(const bool readGridInfo) {
                       plotMax_D);
         tc->plots.push_back(pcTmp);
       }
-    } else if (command == "#OHMSLAW") {
-      std::string sOhmU;
-      Real eta;
-      readParam.read_var("OhmU", sOhmU);
-      readParam.read_var("resistivity", eta);
-
-      fi->set_resistivity(eta);
-      fi->set_ohm_u(sOhmU);
       //--------- The commands below exist in restart.H only --------
     } else if (command == "#NSTEP") {
       int nStep;
@@ -1577,63 +1304,71 @@ void Domain::read_param(const bool readGridInfo) {
   } // While
 
   // Post processing
-  if (!readGridInfo) {
-    validate_configuration();
+  // New #REGION definitions become available to selectors, but defining a
+  // shape alone must not change the current AMR mesh.
+  grid->rebuild_refine_regions(shapeList, shapeNames);
+  if (readingSessionUpdate && (refineSelectorsChanged || gridEfficiencyChanged))
+    grid->mark_refinement_modified();
 
-    // New #REGION definitions become available to selectors, but defining a
-    // shape alone must not change the current AMR mesh.
-    rebuild_refine_regions();
-    if (readingSessionUpdate &&
-        (refineSelectorsChanged || gridEfficiencyChanged))
-      refineRegions.mark_modified();
-
-    if (pic) {
-      pic->post_process_param();
-      // Autofill and validate periodic boundaries using gm.
-      pic->apply_periodicity_autofill(gm);
-      pic->validate_bc_pairing(gm);
-      pic->report_bc_warnings("read_param");
-    }
-
-    if (fi)
-      fi->post_process_param(domainParameters);
-
-    if (pic) {
-      pic->finalize_units_conversion();
-      pic->set_region_shapes(shapeList);
-    }
-
-    // Final sync of source's FluidInterfaceParameters from fi, now that
-    // fi->post_process_param() has finalized the derived arrays (MoMi_S,
-    // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...), so source->post_process_param()
-    // and base FluidInterface methods use correct, locally-owned data.
-    if (source)
-      source->sync_fluid_interface_params(*fi);
-
-    if (source)
-      source->post_process_param();
-
-    if (pt) {
-      // Resolve species-dependent sizes (dnSave / launchThreshold) now that
-      // fi is final, then refresh the tracker from the resolved config.
-      ptInfo.post_process_param();
-      pt->post_process_param();
-      pt->set_tp_init_shapes(shapeList);
-    }
+  if (pic) {
+    pic->set_report_options(dnReportLB, doCompact);
+    pic->post_process_param();
+    // Autofill and validate periodic boundaries using gm.
+    pic->apply_periodicity_autofill(grid->Geom(0));
+    pic->validate_bc_pairing(grid->Geom(0), isStandalone);
+    pic->report_bc_warnings("read_param");
   }
 
-  VisMF::SetNOutFiles(domainParameters.nFileField);
+  fi->post_process_param(receiveICOnly);
+
+  if (pic) {
+    pic->finalize_units_conversion();
+    pic->set_region_shapes(shapeList);
+  }
+
+  // Final sync of source's FluidInterfaceParameters from fi, now that
+  // fi->post_process_param() has finalized the derived arrays (MoMi_S,
+  // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...), so source->post_process_param()
+  // and base FluidInterface methods use correct, locally-owned data.
+  if (source) {
+    source->sync_fluid_interface_params(*fi);
+    source->post_process_param();
+  }
+
+  if (pt) {
+    // Resolve species-dependent sizes (dnSave / launchThreshold) now that
+    // fi is final, then refresh the tracker from the resolved config.
+    ptInfo.post_process_param();
+    pt->post_process_param();
+    pt->set_tp_init_shapes(shapeList);
+  }
+
+  VisMF::SetNOutFiles(nFileField);
 
   ParmParse pp("particles");
-  pp.add("particles_nfiles", domainParameters.nFileParticle);
+  pp.add("particles_nfiles", nFileParticle);
 }
 
-void Domain::validate_configuration() const {
-  reject_conflicting_commands(parameterCommandLocations, domainParameters);
-
-  const std::string error = domainParameters.validation_error();
-  if (!error.empty())
-    Abort("Invalid domain configuration: " + error);
+void Domain::set_field_solver_mode(const std::string &modeStr) {
+  std::string s = modeStr;
+  for (char &c : s)
+    c = std::tolower(c);
+  if (s == "implicit" || s == "semi-implicit") {
+    fieldSolverMode = PicSolverMode::Implicit;
+    useHybridPIC = false;
+  } else if (s == "explicit" || s == "explicit-pic") {
+    fieldSolverMode = PicSolverMode::Explicit;
+    useHybridPIC = false;
+  } else if (s == "hybrid" || s == "hybrid-pic") {
+    fieldSolverMode = PicSolverMode::Hybrid;
+    useHybridPIC = true;
+  } else if (s == "none" || s == "off" || s == "false") {
+    fieldSolverMode = PicSolverMode::None;
+    useHybridPIC = false;
+  } else {
+    Abort("Invalid #FIELDSOLVER mode '" + modeStr +
+          "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
+  }
 }
 
 //========================================================

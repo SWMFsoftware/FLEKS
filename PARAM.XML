@@ -306,12 +306,6 @@ implementation. Optional sub-parameters include:
   pertType                Perturbation mode ("standard" or "gaussian")
 </command>
 
-<command name="WAVE">
-#WAVE
-
-Defines a wave/fluid state block consumed by the fluid interface.
-</command>
-
 <command name="TESTPARTICLENUMBER">
 #TESTPARTICLENUMBER
 
