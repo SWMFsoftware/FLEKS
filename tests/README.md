@@ -153,6 +153,13 @@ python3 tests/validate_tests.py --verbose
 python3 tests/validate_tests.py -v
 ```
 
+The runner itself needs only the Python standard library. Some validators
+(e.g. `reconnection`, `reconnection_amr`, `langmuir`, `amr_equilibrium`,
+`wave_amr_3d`, and the expensive `beam.instability` and `iaw.landau`) also need
+numpy; without it those tests are reported as SKIPPED ("needs the Python
+package 'numpy'") and the rest run normally. The CI installs numpy, so there
+every test is validated.
+
 When `-n 1` (or the flag is omitted), the executable is invoked directly as
 `./FLEKS.exe` without `mpirun`. When `-n N` with `N > 1`, it uses
 `mpirun -n N ./FLEKS.exe`.
