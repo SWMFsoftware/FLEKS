@@ -1,5 +1,14 @@
 name: Performance Test
 
+# Builds the PR (the merge commit of a pull request, or the dispatched commit)
+# and the base commit (the pull request's target, or master for a manual run),
+# and benchmarks both executables in this job, alternating run by run.
+# Absolute timings are not comparable across GitHub runners, whose hardware
+# differs by up to a factor of two, so a metric fails only if the PR is slower
+# than the base by more than the tolerance of tests/validate_performance.py.
+# Each executable runs the benchmark decks of its own commit. The base
+# executable is cached on the base SHA and the AMReX build.
+
 on:
   pull_request:
     branches: [ "master" ]
@@ -36,6 +45,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup SWMF dependency tree
+        id: setup
         uses: ./.github/actions/setup-swmf
         with:
           fleks-path: SWMF/PC/FLEKS
@@ -59,12 +69,64 @@ jobs:
         run: |
           make EXE -j$(nproc)
 
+      - name: Keep the PR executable
+        working-directory: SWMF/PC/FLEKS
+        run: |
+          cp bin/FLEKS.exe "$RUNNER_TEMP/FLEKS_pr.exe"
+
+      - name: Resolve the base commit
+        id: base
+        working-directory: SWMF/PC/FLEKS
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE_SHA" ]; then
+            BASE_SHA=$(git ls-remote origin refs/heads/master | cut -f1)
+          fi
+          echo "sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Base commit: $BASE_SHA"
+          # The decks of the base commit, run by the base executable.
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          mkdir -p "$RUNNER_TEMP/perf_base_decks"
+          git archive "$BASE_SHA" tests/performance | \
+            tar -x -C "$RUNNER_TEMP/perf_base_decks" --strip-components=2
+          ls "$RUNNER_TEMP/perf_base_decks"
+
+      - name: Cache the base executable
+        id: cache-base
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/perf_base/FLEKS.exe
+          key: ${{ runner.os }}-fleks-perf-base-v1-${{ steps.setup.outputs.amrex-hash }}-${{ steps.base.outputs.sha }}
+
+      - name: Build the base executable
+        if: steps.cache-base.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        run: |
+          set -euo pipefail
+          HEAD_SHA=$(git rev-parse HEAD)
+          git checkout --detach "${{ steps.base.outputs.sha }}"
+          # The generated UserSource.h must match the base commit's sources;
+          # the PR build used the same default user source.
+          ./Config.pl -u=Default
+          make EXE -j$(nproc)
+          mkdir -p "$RUNNER_TEMP/perf_base"
+          cp bin/FLEKS.exe "$RUNNER_TEMP/perf_base/FLEKS.exe"
+          git checkout --detach "$HEAD_SHA"
+          ./Config.pl -u=Default
+          # The standalone-build cache saves bin/FLEKS.exe at the end of the
+          # job under the PR's key, so put the PR executable back.
+          cp "$RUNNER_TEMP/FLEKS_pr.exe" bin/FLEKS.exe
+
       - name: Run Standalone Performance Checks
         working-directory: SWMF/PC/FLEKS/tests
         run: |
-          ls -lh ../bin/FLEKS.exe
-          ldd ../bin/FLEKS.exe
-          python3 validate_performance.py --suite all
+          ls -lh "$RUNNER_TEMP/FLEKS_pr.exe" "$RUNNER_TEMP/perf_base/FLEKS.exe"
+          ldd "$RUNNER_TEMP/FLEKS_pr.exe"
+          python3 validate_performance.py --suite all \
+            --exe "$RUNNER_TEMP/FLEKS_pr.exe" \
+            --base-exe "$RUNNER_TEMP/perf_base/FLEKS.exe" \
+            --base-decks "$RUNNER_TEMP/perf_base_decks"
 
       - name: Write Job Summary
         if: always()
