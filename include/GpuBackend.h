@@ -9,6 +9,9 @@
 // only (tools/check_gpu_kernels.py enforces it), so the physics never forks.
 
 #include <algorithm>
+#include <map>
+#include <memory>
+#include <utility>
 
 #include <AMReX_Extension.H>
 #include <AMReX_FabArray.H>
@@ -27,6 +30,12 @@ constexpr bool fleksUseGpu = true;
 #else
 constexpr bool fleksUseGpu = false;
 #endif
+
+// Particle tile layout. The CPU keeps one particle tile per cell: the
+// particles of a cell are contiguous (cache locality) and the per-cell
+// algorithms (resampling, sources) work on a tile. The GPU uses one tile per
+// box, because every tile costs a kernel launch.
+constexpr bool useCellTiles = !fleksUseGpu;
 
 // Capacity of a KernelArray. FLEKS runs use a handful of species or fluids.
 constexpr int nKernelArrayMax = 16;
@@ -137,6 +146,41 @@ private:
 #endif
 };
 
+// Host access to FAB data for output code that reads it point by point. A
+// CPU build returns the FAB's own data. A GPU build copies a FAB to pinned
+// host memory the first time it is asked for and reuses the copy, so call
+// clear() whenever the data may have changed (e.g. before every output).
+class HostFabCache {
+public:
+  template <class FAB>
+  amrex::Array4<typename FAB::value_type const> array(
+      const amrex::FabArray<FAB>& fa, const amrex::MFIter& mfi) {
+#ifdef AMREX_USE_GPU
+    using T = typename FAB::value_type;
+    const Key key{ static_cast<const void*>(&fa), mfi.index() };
+    auto it = fabs.find(key);
+    if (it == fabs.end()) {
+      const FAB& src = fa[mfi];
+      const std::size_t nBytes = src.nBytes();
+      auto copy = std::make_shared<amrex::BaseFab<T> >(
+          src.box(), src.nComp(), amrex::The_Pinned_Arena());
+      amrex::Gpu::dtoh_memcpy(copy->dataPtr(), src.dataPtr(), nBytes);
+      it = fabs.emplace(key, std::static_pointer_cast<void>(copy)).first;
+    }
+    return static_cast<const amrex::BaseFab<T>*>(it->second.get())
+        ->const_array();
+#else
+    return fa[mfi].const_array();
+#endif
+  }
+
+  void clear() { fabs.clear(); }
+
+private:
+  using Key = std::pair<const void*, int>;
+  std::map<Key, std::shared_ptr<void> > fabs;
+};
+
 // Evaluate f(mfi, i, j, k, arr) on the host for every point of `box` of the
 // FAB `mfi` of `fa`, where arr is an Array4 of the FAB, and store the result
 // in the FAB.
@@ -148,14 +192,14 @@ template <class FAB, class F>
 void host_fill_fab(amrex::FabArray<FAB>& fa, amrex::MFIter& mfi,
                    const amrex::Box& box, F&& f) {
 #ifdef AMREX_USE_GPU
-  FAB host(fa[mfi].box(), fa.nComp(), amrex::The_Pinned_Arena());
+  using T = typename FAB::value_type;
+  FAB& fab = fa[mfi];
+  amrex::BaseFab<T> host(fab.box(), fab.nComp(), amrex::The_Pinned_Arena());
   // Start from the current values: f may leave some of them untouched.
-  host.template copy<amrex::RunOn::Device>(fa[mfi]);
-  amrex::Gpu::streamSynchronize();
+  amrex::Gpu::dtoh_memcpy(host.dataPtr(), fab.dataPtr(), fab.nBytes());
   const auto arr = host.array();
   amrex::LoopOnCpu(box, [&](int i, int j, int k) { f(mfi, i, j, k, arr); });
-  fa[mfi].template copy<amrex::RunOn::Device>(host);
-  amrex::Gpu::streamSynchronize();
+  amrex::Gpu::htod_memcpy(fab.dataPtr(), host.dataPtr(), fab.nBytes());
 #else
   const auto arr = fa[mfi].array();
   amrex::LoopOnCpu(box, [&](int i, int j, int k) { f(mfi, i, j, k, arr); });

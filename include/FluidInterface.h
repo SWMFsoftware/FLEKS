@@ -844,6 +844,14 @@ public:
     }
     return Ez;
   }
+
+  AMREX_GPU_HOST_DEVICE int get_nS() const { return nS; }
+  AMREX_GPU_HOST_DEVICE double get_species_mass(int i) const {
+    return MoMi_S[i];
+  }
+  AMREX_GPU_HOST_DEVICE double get_species_charge(int i) const {
+    return QoQi_S[i];
+  }
 };
 
 // A copy of the fluid parameters together with the node fluid of one FAB:

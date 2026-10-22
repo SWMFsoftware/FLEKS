@@ -161,15 +161,16 @@ void WaveIC::read_param(ReadParam& param) {
   }
 }
 
-amrex::Real WaveIC::gaussWidthEffective() const {
+AMREX_GPU_HOST_DEVICE amrex::Real WaveICParams::gaussWidthEffective() const {
   if (gaussWidth_ > 0.0)
     return gaussWidth_;
   // L/4 default, only for the pulse preset (Lx is known only in set_fields).
   return (profile_ == AlfvenPulse && Lx_ > 0.0) ? 0.25 * Lx_ : 0.0;
 }
 
-void WaveIC::envelope(amrex::Real x, amrex::Real gw, amrex::Real& f,
-                      amrex::Real& g) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::envelope(amrex::Real x, amrex::Real gw,
+                                                  amrex::Real& f,
+                                                  amrex::Real& g) const {
   if (gw > 0.0) {
     const amrex::Real xi = (x - xCenter_) / gw;
     f = std::exp(-xi * xi);
@@ -360,14 +361,15 @@ void WaveIC::set_fields(PicICFields& fields) const {
   fields.fill_boundary_E_B();
 }
 
-void WaveIC::modify_particle_weight(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::hook_weight(ParticleICState& s) const {
   if (!seedWeight_ || Lx_ <= 0.0)
     return;
   const amrex::Real factor = 1.0 + pert_ * std::sin(kx_ * s.x);
   s.q *= (factor > 0.0) ? factor : 0.0;
 }
 
-void WaveIC::modify_particle_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::hook_velocity(
+    ParticleICState& s) const {
   if (!velKick_)
     return;
   // Transverse velocity kick matching the seeded helicity:
@@ -382,7 +384,8 @@ void WaveIC::modify_particle_velocity(ParticleICState& s) const {
 
 // Bi-Maxwellian seeding: treat #UNIFORMSTATE T as T_par (parallel draw, x)
 // and inflate the two perpendicular draws by sqrt(T_perp/T_par).
-void WaveIC::modify_particle_thermal_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::hook_thermal_velocity(
+    ParticleICState& s) const {
   if (anisoTPerpOverTPar_ <= 0.0)
     return;
   const amrex::Real scale = std::sqrt(anisoTPerpOverTPar_);

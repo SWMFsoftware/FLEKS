@@ -138,7 +138,8 @@ void ForceFreeIC::set_fields(PicICFields& fields) const {
   fields.fill_boundary_E_B();
 }
 
-void ForceFreeIC::modify_particle_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void ForceFreeICParams::hook_velocity(
+    ParticleICState& s) const {
   if (s.charge == 0.0)
     return;
 
