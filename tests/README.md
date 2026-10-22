@@ -31,7 +31,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Constant PPV on AMR   | `constantppv/`        | `#CONSTANTPPV` + `#RESAMPLING` on a 3-level 3D grid: particle number and energy conserved (needs nLevMax >= 3) | [README](constantppv/README.md) |
 | Unresolved production | `photoproduction/`    | Photoproduction of a 1 km-scale-height atmosphere on 33 km cells around a body vs the analytic column, aligned and shifted grids | [README](photoproduction/README.md) |
 | Mars with AMR         | `mars_amr/`           | The Mars smoke test with two refinement levels around the body (212 km), 20 s; expensive, needs nLevMax >= 3 | [README](mars_amr/README.md) |
-| Mars smoke test       | `mars/`               | Coarse 3D standalone Martian magnetosphere (semi-implicit full PIC, photochemistry, inner body), 20 s; expensive | [README](mars/README.md) |
+| Mars                  | `mars/`               | Coarse 3D standalone Martian magnetosphere (semi-implicit full PIC, floating body, ionospheric emission shell, open faces), 10 s; expensive | [README](mars/README.md) |
 | Inner body            | `body/`               | Absorbing spherical inner boundary (`#BODY`): particle absorption, empty interior, wake | [README](body/README.md) |
 | Intrinsic field       | `intrinsic_field/`    | Static planetary magnetic field (`#DIPOLE`, `#CRUSTALFIELD`): analytic dipole, spherical harmonic crustal field | [README](intrinsic_field/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |

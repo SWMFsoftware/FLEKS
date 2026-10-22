@@ -2,7 +2,7 @@
 3D Standalone Martian Magnetosphere with AMR near the body: semi-implicit full PIC,
 base dx = 0.25 R_M refined to 0.125 R_M inside 2 R_M and to 0.0625 R_M (212 km) in
 the shell 0.95-1.3 R_M; constant particles per volume (64/8/8), photochemical
-boundary at 200 km, 20 s. Same physics as tests/mars.
+boundary at 200 km, 20 s. Absorbing body at 100 km, no emission shell.
 
 #INITFROMSWMF
 F                       initFromSWMF
