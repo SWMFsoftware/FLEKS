@@ -14,65 +14,27 @@
 
 using namespace amrex;
 
-//==========================================================
-void Pic::set_field_solver_mode(const std::string& modeStr) {
-  std::string s = modeStr;
-  for (char& c : s)
-    c = std::tolower(c);
-  if (s == "implicit" || s == "semi-implicit") {
-    fieldSolverMode = PicSolverMode::Implicit;
-    solveEM = true;
-    useExplicitPIC = false;
-  } else if (s == "explicit" || s == "explicit-pic") {
-    fieldSolverMode = PicSolverMode::Explicit;
-    solveEM = false;
-    useExplicitPIC = true;
-  } else if (s == "hybrid" || s == "hybrid-pic") {
-    fieldSolverMode = PicSolverMode::Hybrid;
-    solveEM = false;
-    useExplicitPIC = false;
-  } else if (s == "none" || s == "off" || s == "false") {
-    fieldSolverMode = PicSolverMode::None;
-    solveEM = false;
-    useExplicitPIC = false;
-  } else {
-    Abort("Invalid #FIELDSOLVER mode '" + modeStr +
-          "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
-  }
+namespace {
+// MUSCL limiter name -> the limType of the hybrid reconstructions; -1 if
+// unknown.
+int limiter_type(const std::string& name) {
+  if (name == "upwind1")
+    return 0;
+  if (name == "minmod")
+    return 1;
+  if (name == "vanleer")
+    return 2;
+  if (name == "mc")
+    return 3;
+  return -1;
 }
+} // namespace
 
 //==========================================================
 void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
-  } else if (command == "#FIELDSOLVER") {
-    hasFieldSolver_ = true;
-    std::string s;
-    param.read_var("fieldSolverMode", s);
-    set_field_solver_mode(s);
-  } else if (command == "#SOLVEEM") {
-    Print() << "  Warning: #SOLVEEM is deprecated; use #FIELDSOLVER instead.\n";
-    param.read_var("solveEM", solveEM);
-    if (!hasFieldSolver_) {
-      if (solveEM) {
-        fieldSolverMode = PicSolverMode::Implicit;
-        useExplicitPIC = false;
-      } else if (fieldSolverMode != PicSolverMode::Hybrid) {
-        fieldSolverMode = PicSolverMode::None;
-        useExplicitPIC = false;
-      }
-    }
-  } else if (command == "#HYBRIDPIC") {
-    Print()
-        << "  Warning: #HYBRIDPIC is deprecated; use #FIELDSOLVER instead.\n";
-    bool useHyb = false;
-    param.read_var("useHybridPIC", useHyb);
-    if (!hasFieldSolver_ && useHyb) {
-      fieldSolverMode = PicSolverMode::Hybrid;
-      useExplicitPIC = false;
-      solveEM = false;
-    }
   } else if (command == "#PARTMODE") {
     std::string s;
     param.read_var("partMode", s);
@@ -500,6 +462,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("etaHyperSI", etaHyperSI);
     param.read_var("etaHyperMode", etaHyperMode);
     param.read_var("etaHyperCh", etaHyperCh);
+  } else if (command == "#HYBRIDUPWIND") {
+    hasHybridUpwind_ = true;
+    param.read_var("useHybridUpwind", useHybridUpwind);
+    if (useHybridUpwind) {
+      param.read_var("upwindLimiter", upwindLimiter);
+      // The rest is optional and may come in any order: read_optional() only
+      // consumes the next line when its name matches, so loop until a pass
+      // consumes nothing.
+      bool progress = true;
+      while (progress) {
+        progress =
+            param.read_optional("upwindCoefWhistler", upwindCoefWhistler);
+        progress |= param.read_optional("upwindFixedSpeed", upwindFixedSpeed);
+        progress |= param.read_optional("upwindSensorFloor", upwindSensorFloor);
+      }
+    }
   } else if (command == "#MINIMUMDENSITY") {
     hasMinimumDensity_ = true;
     param.read_var("rhoMinOhm", rhoMinOhm);
@@ -601,13 +579,12 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
 // Validate boundary condition consistency across field, particles, and
 // geometry. Field vs particle checks are skipped if field BC was not explicitly
 // set.
-void Pic::validate_bc_pairing(const Geometry& gm) {
+void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
   static const char* const dimNames[3] = { "x", "y", "z" };
   static const char* const faceNames[3][2] = { { "x-lo", "x-hi" },
                                                { "y-lo", "y-hi" },
                                                { "z-lo", "z-hi" } };
 
-  const bool isStandalone = domainParameters.isStandalone;
   const bool hasNonPeriodic = !gm.isAllPeriodic();
 
   if (isStandalone && hasNonPeriodic) {
@@ -743,6 +720,17 @@ void Pic::post_process_param() {
     Abort("Invalid #HYPERRESISTIVITY: etaHyperCh must be non-negative.");
   if (rhoMinOhm < 0)
     Abort("Invalid #MINIMUMDENSITY: rhoMinOhm must be non-negative.");
+  if (useHybridUpwind) {
+    upwindLimiterType = limiter_type(upwindLimiter);
+    if (upwindLimiterType < 0)
+      Abort("Invalid #HYBRIDUPWIND: upwindLimiter must be 'upwind1', "
+            "'minmod', 'vanleer', or 'mc'.");
+    if (upwindCoefWhistler < 0)
+      Abort("Invalid #HYBRIDUPWIND: upwindCoefWhistler must be "
+            "non-negative.");
+    if (!(upwindSensorFloor > 0 && upwindSensorFloor <= 1))
+      Abort("Invalid #HYBRIDUPWIND: upwindSensorFloor must be in (0, 1].");
+  }
 
   if (useElectronPressureEq) {
     if (!useHybridPIC)
@@ -775,15 +763,8 @@ void Pic::post_process_param() {
     if (peMin < 0)
       Abort("Invalid #ELECTRONPRESSURE: peMin must be non-negative.");
 
-    if (peAdvectionLimiter == "upwind1") {
-      peLimiterType = 0;
-    } else if (peAdvectionLimiter == "minmod") {
-      peLimiterType = 1;
-    } else if (peAdvectionLimiter == "vanleer") {
-      peLimiterType = 2;
-    } else if (peAdvectionLimiter == "mc") {
-      peLimiterType = 3;
-    } else {
+    peLimiterType = limiter_type(peAdvectionLimiter);
+    if (peLimiterType < 0) {
       Abort("Invalid #ELECTRONADVECTION: peAdvectionLimiter must be "
             "'upwind1', 'minmod', 'vanleer', or 'mc'.");
     }
@@ -825,8 +806,7 @@ void Pic::post_process_param() {
     if (get_body_radius() <= 0)
       Abort("Invalid #BODY: radius must be positive.");
 
-    if (n_lev_max() > 1 && get_refine_regions() &&
-        !get_refine_regions()->empty())
+    if (n_lev_max() > 1 && has_refinement_regions())
       Print() << "  Warning: #BODY has not been verified with AMR "
               << "(refinement regions are defined).\n";
 
@@ -957,6 +937,9 @@ void Pic::post_process_param() {
             "(#FIELDSOLVER hybrid).");
     if (hasHyperResistivity_)
       Abort("Invalid command: #HYPERRESISTIVITY is only valid for hybrid PIC "
+            "(#FIELDSOLVER hybrid).");
+    if (hasHybridUpwind_)
+      Abort("Invalid command: #HYBRIDUPWIND is only valid for hybrid PIC "
             "(#FIELDSOLVER hybrid).");
     if (hasElectronPressure_)
       Abort("Invalid command: electron pressure commands (#ELECTRON*) are only "
@@ -1104,7 +1087,7 @@ void Pic::check_light_speed() {
   // In a stand-alone full-PIC run the speed of light is uNormSI (c = 1 in code
   // units, see #NORMALIZATION). A flow at or above c is unphysical and
   // distorts the field response; ~10 times the flow is a safe margin.
-  if (useHybridPIC || domainParameters.initFromSWMF)
+  if (useHybridPIC || !isStandalone)
     return;
 
   double uMaxSI = 0;

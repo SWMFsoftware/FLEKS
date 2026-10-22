@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """Performance regression runner for standalone FLEKS.
 
-Runs the full-PIC beam, hybrid-PIC whistler, and particle tracker benchmarks
-on 1 and 2 MPI processes (3 runs each for statistical robustness), parses AMReX
+Runs the full-PIC beam, hybrid-PIC whistler, particle tracker and 2D
+reconnection benchmarks on 1 and 2 MPI processes (3 runs each), parses AMReX
 TinyProfiler output to extract particle-mover and field-solver timings, and
-reports particle-step rates (μs/part-step) and parallel speedup against
-baseline targets.
+reports particle-step rates (μs/part-step) and the 2-process speedup.
+
+Two modes:
+
+* With --base-exe (the CI): the candidate and a reference executable (the
+  merge base) run on the same machine, alternating run by run, and a metric
+  fails only if the candidate is more than --tolerance slower than the
+  reference. Absolute timings are not comparable across CI runners, whose
+  hardware differs by up to a factor of two, so this is the regression check.
+  Each executable runs the benchmark decks of its own commit (--base-decks).
+* Without it (a local run): the candidate is compared with the absolute
+  targets in BASELINES, which describe the slowest GitHub runner class.
 """
+import argparse
 import os
 import shutil
 import subprocess
 import re
 import sys
 import time
-import glob
 
 MOVERS = [
     "Pts::charged_particle_mover",
@@ -40,7 +50,8 @@ _REQUIRED_MOVER = {
     "reconnection2d": "Pts::charged_particle_mover",
 }
 
-# Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
+# Absolute targets (μs/part-step) and 2-core speedup floor, one set per solver,
+# used only without a reference executable.
 BASELINES = {
     "fullpic": {
         "total_pps": 6.2,    # total wall-clock
@@ -76,10 +87,10 @@ def safe_symlink(src, dst):
             shutil.rmtree(dst)
     os.symlink(src, dst)
 
-def prepare_run_dir(run_dir):
+def prepare_run_dir(run_dir, exe):
     os.makedirs(run_dir, exist_ok=True)
-    safe_symlink(os.path.abspath("../bin/FLEKS.exe"), os.path.join(run_dir, "FLEKS.exe"))
-    
+    safe_symlink(os.path.abspath(exe), os.path.join(run_dir, "FLEKS.exe"))
+
     # Component plots and restart directories
     pc_dir = os.path.join(run_dir, "PC")
     os.makedirs(pc_dir, exist_ok=True)
@@ -211,12 +222,40 @@ def parse_tiny_profiler(stdout):
 
     return profiler_data
 
-def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
-                        count=3):
-    """Run `count` benchmark runs on `n_proc` MPI processes and collect timing
-    stats.  `solver_kind` selects the field-solver and mover TinyProfiler
-    region lists (FULLPIC_SOLVERS / HYBRID_SOLVERS; _REQUIRED_MOVER).
-    Returns (stats, 0) or (None, code) on failure."""
+
+SUITES = ("fullpic", "hybrid", "pt", "reconnection2d")
+
+LABELS = {
+    "fullpic": "FULL PIC",
+    "hybrid": "HYBRID PIC",
+    "pt": "PARTICLE TRACKER",
+    "reconnection2d": "2D RECONNECTION (FULL PIC)",
+}
+
+DECKS = {
+    "fullpic": "PARAM.in",
+    "hybrid": "PARAM.in.hybrid",
+    "pt": "PARAM.in.pt",
+    "reconnection2d": "PARAM.in.reconnection2d",
+}
+
+# (key, report label, unit) of the compared metrics; a rate passes when it is
+# low, the speedup when it is high.
+METRICS = (
+    ("total", "Total Wall-Clock Rate", "μs/pt"),
+    ("mover", "Particle Mover Rate", "μs/pt"),
+    ("solver", "Field Solver Rate", "μs/pt"),
+    ("speedup", "Parallel Speedup (2 Cores)", "x"),
+)
+
+# Below this a rate is a disabled component (the tracker has no field solver),
+# not something to compare.
+RATE_FLOOR = 1e-6
+
+
+def run_once(exe, n_proc, run_dir, param_file, solver_kind):
+    """Run one benchmark and return its wall-clock, mover and solver times
+    (seconds). Raises RuntimeError if FLEKS fails."""
     if solver_kind == "hybrid":
         solver_names = HYBRID_SOLVERS
     elif solver_kind == "pt":
@@ -224,165 +263,146 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
     else:
         solver_names = FULLPIC_SOLVERS
 
-    print(f"Running benchmark in {run_dir} with {n_proc} MPI process(es) "
-          f"({count} runs, solver={solver_kind})...")
-    runs = []
+    prepare_run_dir(run_dir, exe)
+    shutil.copy(param_file, os.path.join(run_dir, "PARAM.in"))
 
-    particles = count_particles_from_param(param_file)
-    cycles = cycles_from_param(param_file)
-    if particles is None or cycles is None:
-        print(f"Error: could not derive particle/cycle counts from {param_file}.")
-        return None, 1
+    start_time = time.perf_counter()
+    result = subprocess.run(["mpirun", "-n", str(n_proc), "./FLEKS.exe"],
+                            cwd=run_dir, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
+    duration = time.perf_counter() - start_time
+    if result.returncode != 0:
+        print(result.stderr)
+        raise RuntimeError(f"{exe} failed with exit code {result.returncode}")
 
-    for i in range(count):
-        print(f"  Run {i+1}/{count}...")
-        prepare_run_dir(run_dir)
+    prof = parse_tiny_profiler(result.stdout)
 
-        shutil.copy(param_file, os.path.join(run_dir, "PARAM.in"))
-
-        cmd = ["mpirun", "-n", str(n_proc), "./FLEKS.exe"]
-
-        start_time = time.perf_counter()
-        result = subprocess.run(cmd, cwd=run_dir, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True)
-        end_time = time.perf_counter()
-
-        duration = end_time - start_time
-
-        if result.returncode != 0:
-            print(f"Error executing benchmark in run {i+1}:")
-            print(result.stderr)
-            return None, result.returncode
-
-        prof = parse_tiny_profiler(result.stdout)
-
-        # Mover time (exclusive); warn if the required mover region is absent.
-        required_mover = _REQUIRED_MOVER[solver_kind]
-        mover_excl_time = 0.0
-        mover_missing = True
-        for name in MOVERS:
-            if "exclusive" in prof and name in prof["exclusive"]:
-                mover_excl_time = prof["exclusive"][name]["avg"]
-                if name == required_mover:
-                    mover_missing = False
-                    break
-
-        if mover_missing and mover_excl_time == 0.0:
-            print(f"  ⚠ WARNING: Required mover region '{required_mover}' "
-                  f"NOT FOUND in TinyProfiler exclusive table. "
-                  f"Available regions: {sorted(prof.get('exclusive',{}).keys())}")
-
-        # Solver time (inclusive); warn if no solver region was found.
-        solver_incl_time = 0.0
-        solver_missing = bool(solver_names)
-        for name in solver_names:
-            if "inclusive" in prof and name in prof["inclusive"]:
-                solver_incl_time = prof["inclusive"][name]["avg"]
-                solver_missing = False
+    # Mover time (exclusive); warn if the required mover region is absent.
+    required_mover = _REQUIRED_MOVER[solver_kind]
+    mover_time = 0.0
+    for name in MOVERS:
+        if name in prof.get("exclusive", {}):
+            mover_time = prof["exclusive"][name]["avg"]
+            if name == required_mover:
                 break
+    if required_mover not in prof.get("exclusive", {}):
+        print(f"  ⚠ WARNING: Required mover region '{required_mover}' NOT "
+              f"FOUND in the TinyProfiler exclusive table of {exe}.")
 
-        if solver_missing:
-            print(f"  ⚠ WARNING: No solver region in {solver_names} "
-                  f"found in TinyProfiler inclusive table. "
-                  f"Available inclusive regions: "
-                  f"{sorted(prof.get('inclusive',{}).keys())}")
+    # Solver time (inclusive); warn if no solver region was found.
+    solver_time = 0.0
+    for name in solver_names:
+        if name in prof.get("inclusive", {}):
+            solver_time = prof["inclusive"][name]["avg"]
+            break
+    else:
+        if solver_names:
+            print(f"  ⚠ WARNING: No solver region in {solver_names} found in "
+                  f"the TinyProfiler inclusive table of {exe}.")
 
-        runs.append({
-            "duration": duration,
-            "cycles": cycles,
-            "particles": particles,
-            "total_profile_time": prof.get("total_time", duration),
-            "mover_time": mover_excl_time,
-            "solver_time": solver_incl_time,
-        })
+    return {"duration": duration, "mover_time": mover_time,
+            "solver_time": solver_time}
 
-    def median(lst):
-        sorted_lst = sorted(lst)
-        n = len(sorted_lst)
-        if n % 2 == 1:
-            return sorted_lst[n//2]
-        else:
-            return (sorted_lst[n//2 - 1] + sorted_lst[n//2]) / 2.0
 
+def median(values):
+    s = sorted(values)
+    n = len(s)
+    return s[n // 2] if n % 2 else 0.5 * (s[n // 2 - 1] + s[n // 2])
+
+
+def summarize(runs):
     durations = [r["duration"] for r in runs]
-    movers = [r["mover_time"] for r in runs]
-    solvers = [r["solver_time"] for r in runs]
-
-    stats = {
+    return {
         "runs": runs,
-        "cycles": runs[-1]["cycles"],
-        "particles": runs[-1]["particles"],
         "duration_median": median(durations),
         "duration_min": min(durations),
-        "mover_median": median(movers),
-        "mover_min": min(movers),
-        "solver_median": median(solvers),
-        "solver_min": min(solvers),
+        "mover_median": median([r["mover_time"] for r in runs]),
+        "solver_median": median([r["solver_time"] for r in runs]),
     }
 
-    return stats, 0
 
-def _evaluate_solver(solver_kind, param_file, serial_dir, parallel_dir, count=3):
-    """Run the 1- and 2-process benchmark suites for one solver kind and return
-    (stats, pass_flags, label)."""
-    if solver_kind == "fullpic":
-        label = "FULL PIC"
-    elif solver_kind == "hybrid":
-        label = "HYBRID PIC"
-    elif solver_kind == "reconnection2d":
-        label = "2D RECONNECTION (FULL PIC)"
-    else:
-        label = "PARTICLE TRACKER"
+def evaluate_suite(solver_kind, targets, count):
+    """Benchmark one suite for every target {name: (exe, param_file)} on 1 and
+    2 processes, alternating the targets run by run so drift of the machine
+    affects them alike. Returns {name: metrics} or None on a failed run."""
+    label = LABELS[solver_kind]
+    steps = {}
+    for name, (exe, param_file) in targets.items():
+        particles = count_particles_from_param(param_file)
+        cycles = cycles_from_param(param_file)
+        if particles is None or cycles is None:
+            print(f"Error: could not derive particle/cycle counts from "
+                  f"{param_file}.")
+            return None
+        steps[name] = (particles, cycles)
 
-    serial_stats, code = run_benchmark_suite(
-        1, serial_dir, param_file, solver_kind=solver_kind, count=count)
-    if code != 0 or serial_stats is None:
-        print(f"FAIL: {label} serial benchmark runs failed.")
-        return None, None, label
+    runs = {(name, n_proc): [] for name in targets for n_proc in (1, 2)}
+    for n_proc in (1, 2):
+        print(f"Running {label} on {n_proc} MPI process(es), {count} runs "
+              f"per executable ({', '.join(targets)})...")
+        for i in range(count):
+            for name, (exe, param_file) in targets.items():
+                print(f"  Run {i + 1}/{count} [{name}]...")
+                try:
+                    runs[(name, n_proc)].append(run_once(
+                        exe, n_proc, f"run_perf_{name}_{n_proc}", param_file,
+                        solver_kind))
+                except RuntimeError as exc:
+                    print(f"FAIL: {label}: {exc}")
+                    return None
 
-    parallel_stats, code = run_benchmark_suite(
-        2, parallel_dir, param_file, solver_kind=solver_kind, count=count)
-    if code != 0 or parallel_stats is None:
-        print(f"FAIL: {label} parallel benchmark runs failed.")
-        return None, None, label
+    metrics = {}
+    for name in targets:
+        particles, cycles = steps[name]
+        total_steps = particles * cycles
+        serial = summarize(runs[(name, 1)])
+        parallel = summarize(runs[(name, 2)])
+        # For test particles the mover is the computation; the total
+        # wall-clock is dominated by redistributing the many attributes and
+        # by trajectory output, so the speedup is that of the mover.
+        if solver_kind == "pt" and parallel["mover_median"] > 0:
+            speedup = serial["mover_median"] / parallel["mover_median"]
+        else:
+            speedup = serial["duration_median"] / parallel["duration_median"]
+        metrics[name] = {
+            "particles": particles,
+            "cycles": cycles,
+            "total_steps": total_steps,
+            "serial": serial,
+            "parallel": parallel,
+            "total": serial["duration_median"] * 1e6 / total_steps,
+            "mover": serial["mover_median"] * 1e6 / total_steps,
+            "solver": serial["solver_median"] * 1e6 / total_steps,
+            "speedup": speedup,
+        }
+    return metrics
 
-    t_serial_median = serial_stats["duration_median"]
-    t_parallel_median = parallel_stats["duration_median"]
-    p_count = serial_stats["particles"]
-    cycles = serial_stats["cycles"]
-    total_steps = p_count * cycles
 
-    # μs/part-step = (T * 1e6) / (Particles * Cycles)
-    pps_total = (t_serial_median * 1e6) / total_steps
-    pps_mover = (serial_stats["mover_median"] * 1e6) / total_steps
-    pps_solver = (serial_stats["solver_median"] * 1e6) / total_steps
-
-    # For test particles, computation is isolated to the particle mover (no EM solver),
-    # while total wall-clock is dominated by AMReX Redistribute of 440 attributes.
-    if solver_kind == "pt" and parallel_stats["mover_median"] > 0:
-        speedup = serial_stats["mover_median"] / parallel_stats["mover_median"]
-    else:
-        speedup = t_serial_median / t_parallel_median
-
+def judge_absolute(solver_kind, m):
+    """Pass flags against the absolute targets (no reference executable)."""
     base = BASELINES[solver_kind]
-    passed = {
-        "total": pps_total <= base["total_pps"],
-        "mover": pps_mover <= base["mover_pps"],
-        "solver": pps_solver <= base["solver_pps"],
-        "speedup": speedup >= base["speedup"],
+    return {
+        "total": m["total"] <= base["total_pps"],
+        "mover": m["mover"] <= base["mover_pps"],
+        "solver": m["solver"] <= base["solver_pps"],
+        "speedup": m["speedup"] >= base["speedup"],
     }
 
-    stats = {
-        "serial_stats": serial_stats,
-        "parallel_stats": parallel_stats,
-        "total_steps": total_steps,
-        "pps_total": pps_total,
-        "pps_mover": pps_mover,
-        "pps_solver": pps_solver,
-        "speedup": speedup,
-    }
 
-    return stats, passed, label
+def judge_relative(cand, ref, tolerance):
+    """Pass flags and candidate/reference ratios. A rate fails if it is more
+    than `tolerance` above the reference; the speedup fails if it is more than
+    `tolerance` below it. A rate the reference does not have (a disabled
+    component) is not compared."""
+    passed, ratio = {}, {}
+    for key, _, _ in METRICS:
+        if key != "speedup" and ref[key] < RATE_FLOOR:
+            passed[key], ratio[key] = True, None
+            continue
+        ratio[key] = cand[key] / ref[key]
+        passed[key] = (ratio[key] >= 1.0 - tolerance if key == "speedup"
+                       else ratio[key] <= 1.0 + tolerance)
+    return passed, ratio
 
 
 def _status_markdown(flag):
@@ -393,199 +413,233 @@ def _status_console(flag):
     return "PASSED" if flag else "FAILED"
 
 
+def _speedup_label(solver_kind):
+    return ("Parallel Speedup (Mover, 2 Cores)" if solver_kind == "pt"
+            else "Parallel Speedup (2 Cores)")
+
+
+def _fmt(key, value):
+    return f"{value:.2f}x" if key == "speedup" else f"{value:.3f} μs/pt"
+
+
+def _runs_rows(m, tag):
+    rows = []
+    for title, s in ((f"1 MPI Process (Serial){tag}", m["serial"]),
+                     (f"2 MPI Processes (Parallel){tag}", m["parallel"])):
+        cells = " | ".join(f"{r['duration']:.3f}s" for r in s["runs"])
+        rows.append(f"| {title} | {cells} | {s['duration_median']:.3f}s | "
+                    f"{s['duration_min']:.3f}s |")
+    return rows
+
+
+def write_report(results, relative, tolerance, path="performance_summary.md"):
+    with open(path, "w") as f:
+        f.write("### ⚡ Standalone FLEKS Performance Report\n\n")
+        if relative:
+            f.write(f"The PR build and the merge-base build ran on the same "
+                    f"runner, alternating run by run (median of the runs per "
+                    f"executable). A metric fails if the PR is more than "
+                    f"{tolerance:.0%} slower than the base.\n\n")
+        else:
+            f.write("No reference build: compared with the absolute targets "
+                    "(median of the runs).\n\n")
+        for solver_kind in SUITES:
+            if solver_kind not in results:
+                continue
+            res = results[solver_kind]
+            cand = res["metrics"]["pr"]
+            f.write(f"\n#### {LABELS[solver_kind]}\n\n")
+            if res["relative"]:
+                ref = res["metrics"]["base"]
+                f.write("| Performance Metric | PR (Median) | Base (Median) | "
+                        "PR / Base | Status |\n")
+                f.write("| :--- | :--- | :--- | :--- | :--- |\n")
+                for key, name, _ in METRICS:
+                    if key == "speedup":
+                        name = _speedup_label(solver_kind)
+                    r = res["ratio"][key]
+                    f.write(f"| {name} | {_fmt(key, cand[key])} | "
+                            f"{_fmt(key, ref[key])} | "
+                            f"{'n/a' if r is None else f'{r:.3f}'} | "
+                            f"{_status_markdown(res['passed'][key])} |\n")
+            else:
+                base = BASELINES[solver_kind]
+                targets = {"total": base["total_pps"], "mover": base["mover_pps"],
+                           "solver": base["solver_pps"], "speedup": base["speedup"]}
+                if relative:
+                    f.write("*No base deck for this benchmark: compared with "
+                            "the absolute targets.*\n\n")
+                f.write("| Performance Metric | Measured (Median) | Target | "
+                        "Status |\n")
+                f.write("| :--- | :--- | :--- | :--- |\n")
+                for key, name, _ in METRICS:
+                    if key == "speedup":
+                        name = _speedup_label(solver_kind)
+                        target = f">= {targets[key]:.2f}x"
+                    else:
+                        target = f"<= {targets[key]:.3f} μs/pt"
+                    f.write(f"| {name} | {_fmt(key, cand[key])} | {target} | "
+                            f"{_status_markdown(res['passed'][key])} |\n")
+            part_label = "Test particles" if solver_kind == "pt" else "Macroparticles"
+            f.write(f"*{part_label}: {cand['particles']}, cycles: "
+                    f"{cand['cycles']} (total steps: {cand['total_steps']}).*\n")
+            f.write("\n**Detailed Runs (Wall-Clock Runtime)**\n")
+            n_runs = len(cand["serial"]["runs"])
+            f.write("| Process Count | " +
+                    " | ".join(f"Run {k + 1}" for k in range(n_runs)) +
+                    " | Median | Minimum |\n")
+            f.write("| :--- | " + " | ".join(":---" for _ in range(n_runs)) +
+                    " | :--- | :--- |\n")
+            if res["relative"]:
+                rows = (_runs_rows(cand, ", PR") +
+                        _runs_rows(res["metrics"]["base"], ", base"))
+            else:
+                rows = _runs_rows(cand, "")
+            f.write("\n".join(rows) + "\n")
+        f.write("\n*Note: Benchmark ran on virtualized runner.*\n")
+
+
+def print_profile(solver_kind, res, tolerance):
+    cand = res["metrics"]["pr"]
+    print("\n" + "=" * 85)
+    print(" " * 26 + f"PERFORMANCE PROFILE ({LABELS[solver_kind]})")
+    print("=" * 85)
+    if res["relative"]:
+        ref = res["metrics"]["base"]
+        print(f" {'Metric / Component':<30} | {'PR':<14} | {'Base':<14} | "
+              f"{'PR/Base':<7} | Status")
+        print("-" * 85)
+        for key, name, _ in METRICS:
+            if key == "speedup":
+                name = _speedup_label(solver_kind)
+            r = res["ratio"][key]
+            print(f" {name:<30} | {_fmt(key, cand[key]):<14} | "
+                  f"{_fmt(key, ref[key]):<14} | "
+                  f"{'n/a' if r is None else f'{r:.3f}':<7} | "
+                  f"{_status_console(res['passed'][key])}")
+        print(f" (fails beyond {tolerance:.0%} slower than the base)")
+    else:
+        base = BASELINES[solver_kind]
+        targets = {"total": base["total_pps"], "mover": base["mover_pps"],
+                   "solver": base["solver_pps"], "speedup": base["speedup"]}
+        print(f" {'Metric / Component':<30} | {'Measured':<16} | "
+              f"{'Target':<18} | Status")
+        print("-" * 85)
+        for key, name, _ in METRICS:
+            if key == "speedup":
+                name = _speedup_label(solver_kind)
+                target = f">= {targets[key]:.2f}x"
+            else:
+                target = f"<= {targets[key]:.3f} μs/pt"
+            print(f" {name:<30} | {_fmt(key, cand[key]):<16} | {target:<18} | "
+                  f"{_status_console(res['passed'][key])}")
+    print("=" * 85)
+
+
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="Performance regression runner for standalone FLEKS.")
-    parser.add_argument("--suite", choices=["fullpic", "hybrid", "pt", "reconnection2d", "all"], default="all",
+    parser = argparse.ArgumentParser(
+        description="Performance regression runner for standalone FLEKS.")
+    parser.add_argument("--suite", choices=list(SUITES) + ["all"],
+                        default="all",
                         help="Benchmark suite to run (default: all)")
     parser.add_argument("--count", type=int, default=3,
-                        help="Number of runs per process configuration (default: 3)")
-    parser.add_argument("--pt", action="store_true", help="Run the particle tracker benchmark suite")
+                        help="Runs per process count and executable "
+                             "(default: 3)")
+    parser.add_argument("--pt", action="store_true",
+                        help="Run the particle tracker benchmark suite")
+    parser.add_argument("--exe", default="../bin/FLEKS.exe",
+                        help="Candidate executable (default: ../bin/FLEKS.exe)")
+    parser.add_argument("--base-exe",
+                        help="Reference executable (e.g. the merge base). "
+                             "Enables the relative comparison.")
+    parser.add_argument("--base-decks",
+                        help="Directory with the reference commit's "
+                             "benchmark decks (default: the candidate's "
+                             "performance/ decks)")
+    parser.add_argument("--tolerance", type=float, default=0.15,
+                        help="Allowed slowdown relative to the reference "
+                             "(default: 0.15)")
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    exe = os.path.abspath(args.exe)
+    base_exe = os.path.abspath(args.base_exe) if args.base_exe else None
+    base_decks = os.path.abspath(args.base_decks) if args.base_decks else None
     os.chdir(script_dir)
 
-    if not os.path.exists("../bin/FLEKS.exe"):
-        print("Error: Standalone FLEKS.exe not found. Please compile it first.")
-        sys.exit(1)
+    for path in [exe] + ([base_exe] if base_exe else []):
+        if not os.path.exists(path):
+            print(f"Error: executable {path} not found. Please compile it "
+                  f"first.")
+            sys.exit(1)
 
-    print("================================================================================")
+    print("=" * 80)
     print("                 FLEKS ROBUST PERFORMANCE REGRESSION TEST")
-    print("================================================================================")
+    print("=" * 80)
+    if base_exe:
+        print(f"Candidate: {exe}\nReference: {base_exe}\n"
+              f"Tolerance: {args.tolerance:.0%}")
 
-    fullpic_param = os.path.join("performance", "PARAM.in")
-    hybrid_param = os.path.join("performance", "PARAM.in.hybrid")
-    pt_param = os.path.join("performance", "PARAM.in.pt")
-    reconnection_param = os.path.join("performance", "PARAM.in.reconnection2d")
-    if not os.path.exists(hybrid_param):
-        print(f"Error: Hybrid benchmark config {hybrid_param} not found.")
-        sys.exit(1)
-    if not os.path.exists(reconnection_param):
-        print(f"Error: Reconnection benchmark config {reconnection_param} not found.")
-        sys.exit(1)
-
-    # Benchmark suites: (solver_kind, param_file)
     if args.pt or args.suite == "pt":
-        suites = [("pt", pt_param)]
-    elif args.suite == "fullpic":
-        suites = [("fullpic", fullpic_param)]
-    elif args.suite == "hybrid":
-        suites = [("hybrid", hybrid_param)]
-    elif args.suite == "reconnection2d":
-        suites = [("reconnection2d", reconnection_param)]
+        suites = ["pt"]
+    elif args.suite == "all":
+        suites = list(SUITES)
     else:
-        suites = [
-            ("fullpic", fullpic_param),
-            ("hybrid", hybrid_param),
-            ("pt", pt_param),
-            ("reconnection2d", reconnection_param),
-        ]
+        suites = [args.suite]
 
     results = {}
     all_passed = True
-    for solver_kind, param_file in suites:
-        solver_title = ("FULL PIC" if solver_kind == "fullpic"
-                        else ("HYBRID PIC" if solver_kind == "hybrid"
-                        else ("2D RECONNECTION (FULL PIC)" if solver_kind == "reconnection2d"
-                        else "PARTICLE TRACKER")))
+    for solver_kind in suites:
+        deck = os.path.join("performance", DECKS[solver_kind])
+        if not os.path.exists(deck):
+            print(f"Error: benchmark deck {deck} not found.")
+            sys.exit(1)
+        targets = {"pr": (exe, deck)}
+        if base_exe:
+            base_deck = os.path.join(base_decks or "performance",
+                                     DECKS[solver_kind])
+            if os.path.exists(base_deck):
+                # Reference first, so neither side always runs on a warm cache.
+                targets = {"base": (base_exe, base_deck), "pr": (exe, deck)}
+            else:
+                print(f"  No reference deck {base_deck}: {solver_kind} is "
+                      f"compared with the absolute targets.")
+
         print("\n" + "#" * 85)
-        print(f"#  SOLVER: {solver_title}")
+        print(f"#  SOLVER: {LABELS[solver_kind]}")
         print("#" * 85)
-        stats, passed, label = _evaluate_solver(
-            solver_kind, param_file, "run_perf_serial", "run_perf_parallel",
-            count=args.count)
-        if stats is None:
+        metrics = evaluate_suite(solver_kind, targets, args.count)
+        if metrics is None:
             all_passed = False
             continue
-        results[solver_kind] = (stats, passed, label)
+        res = {"metrics": metrics, "relative": "base" in metrics}
+        if res["relative"]:
+            res["passed"], res["ratio"] = judge_relative(
+                metrics["pr"], metrics["base"], args.tolerance)
+        else:
+            res["passed"] = judge_absolute(solver_kind, metrics["pr"])
+        results[solver_kind] = res
+        print_profile(solver_kind, res, args.tolerance)
+        all_passed = all_passed and all(res["passed"].values())
 
-        base = BASELINES[solver_kind]
-        print(f"\nSerial Median Wall-Clock: "
-              f"{stats['serial_stats']['duration_median']:.3f} s "
-              f"(Rate: {stats['pps_total']:.3f} μs/part-step)")
-        print(f"Serial Median Mover:      "
-              f"{stats['serial_stats']['mover_median']:.3f} s "
-              f"(Rate: {stats['pps_mover']:.3f} μs/part-step)")
-        print(f"Serial Median Solver:     "
-              f"{stats['serial_stats']['solver_median']:.3f} s "
-              f"(Rate: {stats['pps_solver']:.3f} μs/part-step)")
-        print(f"Parallel Median Wall-Clock: "
-              f"{stats['parallel_stats']['duration_median']:.3f} s "
-              f"(Rate: "
-              f"{(stats['parallel_stats']['duration_median']*1e6)/stats['total_steps']:.3f} "
-              f"μs/part-step)")
-        print(f"Median Speedup (2 Cores):   {stats['speedup']:.2f}x")
-
-        # Console comparison profile for this solver
-        print("\n" + "=" * 85)
-        print(" " * 26 + f"PERFORMANCE PROFILE ({label})")
-        print("=" * 85)
-        print(f" {'Metric / Component':<30} | {'Measured':<18} | "
-              f"{'Baseline':<18} | {'Status':<8}")
-        print("-" * 85)
-        speedup_label = ("Parallel Speedup (Mover, 2 Cores)" if solver_kind == "pt"
-                         else "Parallel Speedup (2 Cores)")
-        rows = [
-            ("Total Runtime Rate (PPS)", stats["pps_total"], base["total_pps"],
-             "μs", passed["total"]),
-            ("Particle Mover Rate (PPS)", stats["pps_mover"], base["mover_pps"],
-             "μs", passed["mover"]),
-            ("Field Solver Rate (PPS)", stats["pps_solver"], base["solver_pps"],
-             "μs", passed["solver"]),
-            (speedup_label, stats["speedup"], base["speedup"],
-             "x", passed["speedup"]),
-        ]
-        for name, val, base_val, unit, flag in rows:
-            st = _status_console(flag)
-            if sys.stdout.isatty():
-                st = (f"\033[92;1m{st}\033[0m" if flag
-                      else f"\033[91;1m{st}\033[0m")
-            if unit == "x":
-                print(f" {name:<30} | {val:<16.2f} {unit}  | "
-                      f">={base_val:<14.2f} {unit} | {st}")
-            else:
-                print(f" {name:<30} | {val:<13.3f} {unit}/pt | "
-                      f"<={base_val:<14.2f} {unit} | {st}")
-        print("=" * 85)
-
-        all_passed = all_passed and all(passed.values())
-
-    # --- Generate markdown report ---
-    summary_path = "performance_summary.md"
     try:
-        with open(summary_path, "w") as f:
-            f.write("### ⚡ Standalone FLEKS Performance Report\n\n")
-            f.write("A robust statistical check was executed on the runner to "
-                    "filter out virtualization noise (3 runs per benchmark):\n\n")
-
-            for solver_kind in ("fullpic", "hybrid", "pt", "reconnection2d"):
-                if solver_kind not in results:
-                    continue
-                stats, passed, label = results[solver_kind]
-                base = BASELINES[solver_kind]
-                speedup_label = ("Parallel Speedup (Mover, 2 Cores)" if solver_kind == "pt"
-                                 else "Parallel Speedup (2 Cores)")
-                part_label = "Test particles" if solver_kind == "pt" else "Macroparticles"
-                f.write(f"\n#### {label}\n\n")
-                f.write("| Performance Metric | Measured (Median) | Target "
-                        "Baseline | Status |\n")
-                f.write("| :--- | :--- | :--- | :--- |\n")
-                f.write(f"| Total Wall-Clock Rate | {stats['pps_total']:.3f} "
-                        f"μs/pt | <= {base['total_pps']:.2f} μs/pt | "
-                        f"{_status_markdown(passed['total'])} |\n")
-                f.write(f"| Particle Mover Rate | {stats['pps_mover']:.3f} "
-                        f"μs/pt | <= {base['mover_pps']:.2f} μs/pt | "
-                        f"{_status_markdown(passed['mover'])} |\n")
-                f.write(f"| Field Solver Rate | {stats['pps_solver']:.3f} "
-                        f"μs/pt | <= {base['solver_pps']:.2f} μs/pt | "
-                        f"{_status_markdown(passed['solver'])} |\n")
-                f.write(f"| {speedup_label} | {stats['speedup']:.2f}"
-                        f"x | >= {base['speedup']:.2f}x | "
-                        f"{_status_markdown(passed['speedup'])} |\n")
-                f.write(f"*{part_label}: {stats['serial_stats']['particles']}, "
-                        f"cycles: {stats['serial_stats']['cycles']} "
-                        f"(total steps: {stats['total_steps']}).*\n")
-                f.write("\n**Detailed Runs (Wall-Clock Runtime)**\n")
-                s_runs = [f"{r['duration']:.3f}s"
-                          for r in stats["serial_stats"]["runs"]]
-                p_runs = [f"{r['duration']:.3f}s"
-                          for r in stats["parallel_stats"]["runs"]]
-                n_runs = len(s_runs)
-                run_cols = " | ".join([f"Run {k+1}" for k in range(n_runs)])
-                run_sep = " | ".join([":---" for _ in range(n_runs)])
-                f.write(f"| Process Count | {run_cols} | Median | Minimum |\n")
-                f.write(f"| :--- | {run_sep} | :--- | :--- |\n")
-                s_cells = " | ".join(s_runs)
-                p_cells = " | ".join(p_runs)
-                f.write(f"| 1 MPI Process (Serial) | {s_cells} | "
-                        f"{stats['serial_stats']['duration_median']:.3f}s | "
-                        f"{stats['serial_stats']['duration_min']:.3f}s |\n")
-                f.write(f"| 2 MPI Processes (Parallel) | {p_cells} | "
-                        f"{stats['parallel_stats']['duration_median']:.3f}s | "
-                        f"{stats['parallel_stats']['duration_min']:.3f}s |\n")
-            f.write("\n*Note: Benchmark ran on virtualized runner.*\n")
+        write_report(results, base_exe is not None, args.tolerance)
     except Exception as e:
         print(f"Warning: Could not write performance_summary.md: {e}")
 
-    # Clean up temporary run directories
-    for d in ("run_perf_serial", "run_perf_parallel"):
-        if os.path.exists(d):
+    for d in os.listdir("."):
+        if d.startswith("run_perf_") and os.path.isdir(d):
             shutil.rmtree(d)
-            print(f"Cleaned up {d}")
 
     if all_passed:
-        if sys.stdout.isatty():
-            print("\033[92;1m\nALL PERFORMANCE TESTS PASSED SUCCESSFULLY!\033[0m\n")
-        else:
-            print("\nALL PERFORMANCE TESTS PASSED SUCCESSFULLY!\n")
+        msg = "ALL PERFORMANCE TESTS PASSED SUCCESSFULLY!"
+        print(f"\033[92;1m\n{msg}\033[0m\n" if sys.stdout.isatty()
+              else f"\n{msg}\n")
         sys.exit(0)
-    else:
-        if sys.stdout.isatty():
-            print("\033[91;1m\nPERFORMANCE REGRESSION DETECTED.\033[0m\n")
-        else:
-            print("\nPERFORMANCE REGRESSION DETECTED.\n")
-        sys.exit(1)
+    msg = "PERFORMANCE REGRESSION DETECTED."
+    print(f"\033[91;1m\n{msg}\033[0m\n" if sys.stdout.isatty() else f"\n{msg}\n")
+    sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

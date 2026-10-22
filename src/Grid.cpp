@@ -1,3 +1,5 @@
+#include <sstream>
+
 #include <AMReX_PlotFileUtil.H>
 
 #include "Bit.h"
@@ -6,6 +8,57 @@
 #include "GridUtility.h"
 
 using namespace amrex;
+
+bool Grid::set_refine_region(int iLev, const std::string& selector) {
+  if (iLev < 0 || iLev >= static_cast<int>(refineRegionsStr.size()) - 1)
+    amrex::Abort("Invalid refinement level " + std::to_string(iLev) +
+                 " in #REFINEREGION: max allowed level is " +
+                 std::to_string(static_cast<int>(refineRegionsStr.size()) - 2));
+
+  std::stringstream input(selector);
+  std::string token, normalized;
+  bool hasNone = false;
+  int tokenCount = 0;
+  while (input >> token) {
+    ++tokenCount;
+    hasNone |= token == "none";
+    if (!normalized.empty())
+      normalized += ' ';
+    normalized += token;
+  }
+  if (hasNone && tokenCount > 1)
+    amrex::Abort("Cannot combine 'none' with other regions in #REFINEREGION");
+  if (normalized == "none")
+    normalized.clear();
+  if (refineRegionsStr[iLev] == normalized)
+    return false;
+  refineRegionsStr[iLev] = normalized;
+  return true;
+}
+
+void Grid::replace_refine_region(int iLev, const Regions& region) {
+  if (iLev < 0 || iLev >= static_cast<int>(refineRegions.size()) - 1)
+    amrex::Abort("Invalid refinement level in dynamic refinement update");
+  refineRegions[iLev] = region;
+  mark_refinement_modified();
+}
+
+void Grid::rebuild_refine_regions(const Vector<std::shared_ptr<Shape> >& shapes,
+                                  const std::set<std::string>& shapeNames) {
+  for (int i = 0; i < static_cast<int>(refineRegionsStr.size()); ++i) {
+    std::stringstream input(refineRegionsStr[i]);
+    std::string token;
+    while (input >> token) {
+      if (token.size() < 2 || (token[0] != '+' && token[0] != '-'))
+        amrex::Abort("Invalid shape prefix in #REFINEREGION: '" + token +
+                     "' (must start with '+' or '-')");
+      if (shapeNames.count(token.substr(1)) == 0)
+        amrex::Abort("Unknown shape in #REFINEREGION: '" + token.substr(1) +
+                     "'");
+    }
+    refineRegions[i].define(shapes, refineRegionsStr[i]);
+  }
+}
 
 Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
   BL_PROFILE("calc_balanced_maps");
@@ -86,14 +139,14 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
   if (!doLoadBalance) {
 
     if (grid) {
-      refineRegions = grid->get_refine_regions();
+      refineRegionsStr = grid->refineRegionsStr;
+      refineRegions = grid->refineRegions;
       SetGridEff(grid->gridEff());
     }
 
     // The base boxes can be identical while new refinement tags require a
     // different fine hierarchy. isNewGrid also forces first initialization.
-    if (region == activeRegion && !isNewGrid &&
-        !(refineRegions && refineRegions->is_modified()))
+    if (region == activeRegion && !isNewGrid && !refineRegions.is_modified())
       return;
 
     cGridsOld = cGrids;
@@ -167,10 +220,10 @@ void Grid::finish_regrid() {
   // simplifed. Simplify it here.
   activeRegion = activeRegion.simplified();
 
-  domainRange.clear();
+  activeDomainRanges.clear();
   for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
     RealBox rb(activeRegion[iBox], Geom(0).CellSize(), Geom(0).Offset());
-    domainRange.push_back(rb);
+    activeDomainRanges.push_back(rb);
   }
 
   isNewGrid = false;

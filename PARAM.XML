@@ -323,12 +323,6 @@ implementation. Optional sub-parameters include:
   pertType                Perturbation mode ("standard" or "gaussian")
 </command>
 
-<command name="WAVE">
-#WAVE
-
-Defines a wave/fluid state block consumed by the fluid interface.
-</command>
-
 <command name="TESTPARTICLENUMBER">
 #TESTPARTICLENUMBER
 
@@ -711,6 +705,71 @@ The explicit-diffusion CFL check uses eta_h * k_max\^4 * dt_sub / (4*pi) =
 resolution and time-step changes and is the recommended setting for general
 production runs. 0 (either mode) disables the term. Only used when HYBRIDPIC
 is T.
+</command>
+
+<command name="HYBRIDUPWIND" alias="HYBRIDUPWIND_FLEKS0,HYBRIDUPWIND_FLEKS1,HYBRIDUPWIND_FLEKS2" multiple="T">
+  <parameter name="useHybridUpwind" type="logical" default="T"/>
+  <if expr="$useHybridUpwind">
+    <parameter name="upwindLimiter" type="string" default="mc"/>
+    <parameter name="upwindCoefWhistler" type="real" min="0" default="0.0"/>
+    <parameter name="upwindFixedSpeed" type="real" default="-1.0"/>
+    <parameter name="upwindSensorFloor" type="real" min="0" max="1" default="0.1"/>
+  </if>
+
+#HYBRIDUPWIND
+T                 useHybridUpwind (rest is read if true)
+mc                upwindLimiter      (upwind1, minmod, vanleer, mc)
+0.0               upwindCoefWhistler (optional)
+-1.0              upwindFixedSpeed   (optional)
+0.1               upwindSensorFloor  (optional)
+
+[Ohm's-law term: upwind dissipation] Adds a Rusanov (local Lax-Friedrichs)
+dissipation to the nodal electric field of the generalized Ohm's law, the
+upwind alternative to #HYPERRESISTIVITY. It is ON by default in hybrid runs,
+with the MC limiter, upwindCoefWhistler = 0 and upwindSensorFloor = 0.1; use
+"F useHybridUpwind" to turn it off (for example to isolate other Ohm's-law
+terms, or to use #HYPERRESISTIVITY alone). The correction is
+   E += sum_d (a_d/2) e_d x (B\^R_d - B\^L_d),
+where B\^L_d and B\^R_d are the cell-centered B reconstructed to the two sides of
+the node along direction d with the MUSCL limiter upwindLimiter (upwind1 is
+first order), averaged over the cells around the node in the other directions.
+Because the correction is part of the nodal E, the Faraday update keeps the
+discrete div(B) at round-off and the coarse-fine E synchronization of AMR
+applies to it unchanged; no div(B) cleaning is needed for it. The intrinsic
+field B0 is not reconstructed, so it is not diffused.
+
+The signal speed is
+   a_d = |u_e,d| + c_fast + upwindCoefWhistler * |B| / (4 rho dx_d),
+with the electron velocity u_e = u_i - J/rho (u_i without the Hall term),
+c_fast = sqrt(v_A\^2 + gamma_e T_e), and the last term the whistler phase speed
+at k = pi/dx_d (only with the Hall term). upwindCoefWhistler = 0 (the default)
+upwinds with the flow and fast-wave speed only; 1 is the Hall-MHD Rusanov
+speed. On a whistler at k d_i = 4 resolved by 16 cells, 0 adds a damping of
+0.2 \% per radian (3 times grid-mode hyper-resistivity with etaHyperCh = 0.01),
+0.25 adds 2 \% and 1 adds 7 \%; 0 was stable in every hybrid test that needs
+dissipation. With the
+first-order reconstruction the grid-scale mode is damped at 2 a_d / dx_d, so a
+whistler coefficient of order one damps it at a rate comparable to its own
+frequency; limited reconstructions leave well-resolved modes damped at a rate
+proportional to dx\^3 k\^4 instead. The term enters the automatic sub-cycling
+(#FIELDSUBCYCLE) and the CFL warnings. upwindFixedSpeed > 0 replaces a_d by
+this constant (code units), which is meant for verification.
+
+upwindSensorFloor below 1 makes the dissipation act mainly at the grid scale. With
+a 2-cell reconstruction stencil per side, any linear correction damps smooth
+modes as (k dx)\^4 and can only be scaled; this option scales the jump of each
+component instead by phi = min(1, max(upwindSensorFloor, s)), where
+   s = abs(B(i+1) - 3 B(i) + 3 B(i-1) - B(i-2)) / (abs(B(i-1) - B(i-2))
+       + abs(B(i) - B(i-1)) + abs(B(i+1) - B(i)))
+uses the same 4 cells. s ~ (k dx)\^2 for smooth modes, also at their extrema,
+and is of order one for 2-3 cell noise and for jumps, so resolved modes are
+damped at about upwindSensorFloor times the unscaled rate while grid-scale
+noise and discontinuities keep it. A small grid-scale ripple on a large smooth
+structure (below ~1 \% of it) looks smooth to the sensor and gets only the floor.
+On a whistler at k d_i = 4 resolved by 16 cells, the default 0.1 lowers the
+added damping from 0.2 \% to 0.02 \% per radian; 1 gives the plain limited
+upwind term. The optional parameters may be listed in any order. Only used
+when HYBRIDPIC is T.
 </command>
 
 <command name="MINIMUMDENSITY" alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2" multiple="T">

@@ -24,7 +24,7 @@ Scale and Grid Calculation:
       electronTemperature = 0.4154 eV (isothermal, gamma = 1)
     beta_i = 0.50 -> Pi_code = 0.50 * P_mag = 0.25 / (4*pi) ~ 0.01989 code units
       T_i = 24191.0 K (Ti / Te = 5)
-    etaHyperCh = 0.0 (without hyper-resistivity)
+    no hyper-resistivity; the default upwind dissipation is on
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -81,11 +81,6 @@ T                       useHybridPIC
 0.4154                  electronTemperature  [eV; Te_code = 0.05 / (4*pi) ~ 0.00398, beta_e = 0.10]
 1.0                     electronGamma        [isothermal electrons]
 65.15939                electronDensity0     [amu/cc; n_e0 = 1.0 in code units]
-
-#HYPERRESISTIVITY
-0.0                     etaHyperSI      [m^4/s; unused in grid mode]
-grid                    etaHyperMode
-0.0                     etaHyperCh      [without hyper-resistivity]
 
 #SMOOTHMOMENTS
 T                       doSmoothMoments [smooth ion moments to suppress particle shot noise]

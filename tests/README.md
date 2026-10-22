@@ -16,6 +16,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |
 | Reactions             | `reactions/`          | Analytic checks of the source/loss terms against the particle plasma state: ion-neutral chemistry (incl. stiff), recombination (full/hybrid), charge exchange, source weight floor | [README](reactions/README.md) |
 | Whistler & Ohm's law  | `whistler/`           | 1D whistler–Alfvén wave, full generalized Ohm's law, and 4 hybrid timestepping schemes (rk4, rk4-pc, ssprk3, ssprk3-pc) | [README](whistler/README.md) |
+| Hybrid upwind         | `hybrid_upwind/`      | `#HYBRIDUPWIND` Rusanov dissipation of the Ohm's-law E: analytic first-order decay rate, MC-limited rate bounds, div(B) preserved in a noisy 2D plasma, damping of a resolved whistler, exact rates of the grid-scale sensor | [README](hybrid_upwind/README.md) |
 | Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
 | Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
@@ -26,7 +27,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Reflecting & PEC BC   | `bc_reflecting/`      | Specular reflecting particle walls + conducting (PEC) field walls (4 variants: full/hybrid fields/particles) | [README](bc_reflecting/README.md) |
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
 | Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |
-| Oblique shock         | `shock/`              | 1D oblique magnetized shock | [README](shock/README.md) |
+| Oblique shock         | `shock/`              | Oblique magnetized shock: 1D full PIC and hybrid; 2D hybrid with hyper-resistivity or upwind dissipation | [README](shock/README.md) |
 | Constant PPV on AMR   | `constantppv/`        | `#CONSTANTPPV` + `#RESAMPLING` on a 3-level 3D grid: particle number and energy conserved (needs nLevMax >= 3) | [README](constantppv/README.md) |
 | Unresolved production | `photoproduction/`    | Photoproduction of a 1 km-scale-height atmosphere on 33 km cells around a body vs the analytic column, aligned and shifted grids | [README](photoproduction/README.md) |
 | Mars with AMR         | `mars_amr/`           | The Mars smoke test with two refinement levels around the body (212 km), 20 s; expensive, needs nLevMax >= 3 | [README](mars_amr/README.md) |
@@ -75,6 +76,30 @@ back into metres.
 ## Architecture
 
 Ionization parameters are stored in `SourceInterface` and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain routes specific commands to the source object rather than to `FluidInterface`. This keeps the MHD coupling layer uncluttered by ionization-specific data.
+
+## Hybrid Dissipation Coverage
+
+The hybrid solver damps grid-scale noise with the upwind dissipation of
+`#HYBRIDUPWIND`, on by default (MC limiter with the grid-scale sensor
+`upwindSensorFloor = 0.1`). Two alternatives remain: plain MC upwind
+(`upwindSensorFloor = 1`) and grid-mode `#HYPERRESISTIVITY` (with
+`#HYBRIDUPWIND F`). Rather than repeating every hybrid deck three times, each
+scheme has exact operator tests plus a few stability guards chosen for the
+failure they catch, and every other hybrid deck runs the default:
+
+| Role | Default (MC + sensor) | Plain MC | Hyper-resistivity |
+|---|---|---|---|
+| Operator, exact | `hybrid_upwind.sensor_long`, `.sensor_grid`, `.whistler_sensor` | `hybrid_upwind` (upwind1), `.mc`, `.divb`, `.whistler` | `hyper_resistivity`, `.region` |
+| Grid-scale instability (24 s) | `whistler.rk4` | `whistler.rk4_mc` | `whistler.rk4_hyper` |
+| Discontinuity | `shock.hybrid`, `shock.hybrid_2d` | | `shock.hybrid_2d_hyper` |
+| Obstacle | `body.hybrid_conducting` (`_insulating`, `_reflect`) | `body.hybrid_linetied_mc` | `body.hybrid_linetied` (expensive) |
+| Reconnection, AMR | Fadeev, GEM, force-free, `reconnection_amr` GEM / lobe / force-free, `wave_amr_3d` | | `reconnection_amr.hybrid` |
+
+Decks that isolate other physics may turn the default off; only
+`bc_reflecting.hybrid.particles` does (on 8 cells the dissipation drains the
+streaming ions' energy through the field noise). Frozen-plasma decks without
+particles are unaffected, since the term acts only where the density is
+positive.
 
 ## Building the Test Executable
 
@@ -133,6 +158,13 @@ python3 tests/validate_tests.py --verbose
 python3 tests/validate_tests.py -v
 ```
 
+The runner itself needs only the Python standard library. Some validators
+(e.g. `reconnection`, `reconnection_amr`, `langmuir`, `amr_equilibrium`,
+`wave_amr_3d`, and the expensive `beam.instability` and `iaw.landau`) also need
+numpy; without it those tests are reported as SKIPPED ("needs the Python
+package 'numpy'") and the rest run normally. The CI installs numpy, so there
+every test is validated.
+
 When `-n 1` (or the flag is omitted), the executable is invoked directly as
 `./FLEKS.exe` without `mpirun`. When `-n N` with `N > 1`, it uses
 `mpirun -n N ./FLEKS.exe`.
@@ -163,13 +195,27 @@ python3 tests/validate_tests.py --include-expensive
 ### Performance Benchmark
 
 ```bash
+# Absolute targets (a quick local check):
 python3 tests/validate_performance.py
+
+# Against a reference build on the same machine (what the CI does):
+python3 tests/validate_performance.py --exe bin/FLEKS.exe \
+    --base-exe /path/to/FLEKS_master.exe --base-decks /path/to/master/tests/performance
 ```
 
-The script benchmarks the full-PIC beam test (`performance/PARAM.in`),
-the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and the
-particle tracker test (`performance/PARAM.in.pt`), and writes the results to
-`tests/performance_summary.md`.
+The script benchmarks the full-PIC beam test (`performance/PARAM.in`), the
+hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), the particle tracker
+test (`performance/PARAM.in.pt`) and the 2D reconnection test
+(`performance/PARAM.in.reconnection2d`) on 1 and 2 processes, and writes the
+results to `tests/performance_summary.md`.
+
+Absolute timings are not comparable across GitHub runners, whose hardware
+differs by up to a factor of two between jobs. The CI therefore builds the
+merge base as well, runs both executables in the same job, alternating run by
+run, each on the decks of its own commit (`--base-decks`), and fails a metric
+only if the PR is more than `--tolerance` (default 15 %) slower than the base.
+Without `--base-exe` the script compares with the absolute targets in
+`BASELINES`, which describe the slowest runner class.
 
 ### Memory Regression (master vs PR)
 

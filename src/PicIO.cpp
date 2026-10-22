@@ -800,7 +800,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   // The diagnostics below (particle budget, floating body) exist in
   // standalone runs only, and only for the commands they diagnose: the coupled
   // runs keep the log format of their SWMF reference solutions.
-  const bool standaloneLog = domainParameters.isStandalone;
+  const bool standaloneLog = isStandalone;
   const bool logMass = standaloneLog && log_species_mass();
   const bool logCount = standaloneLog && log_particle_count();
   const bool logFaces = standaloneLog && log_face_budget();

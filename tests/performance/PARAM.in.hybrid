@@ -8,7 +8,7 @@ full-PIC beam benchmark) and is exercised by tests/validate_performance.py and
 by the memory regression selection in tests/capture_memory.py.
 
 The solver setup is the one validated by tests/whistler/PARAM.in.hybrid: the
-same Hall-only Ohm's law, the same grid-mode hyper-resistivity, and the B
+same Hall-only Ohm's law, the default upwind dissipation, and the B
 sub-cycling scaled to this (finer) grid, so the benchmark exercises the same
 field-advance machinery as the hybrid validation test instead of a private
 configuration.  See the RESISTIVITY / BSUBCYCLE notes below.
@@ -56,20 +56,10 @@ what isolates the Hall/whistler workload, exactly as in the whistler deck.
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 
-Grid-mode hyper-resistivity, the same setting as tests/whistler/PARAM.in.hybrid
-(0.0 / grid / 1.0e-2): eta_h = 4*pi * C_h * dx^4 / dt, i.e. a damping
-gamma_h = C_h * (k*dx)^4 / dt that acts only on the badly resolved harmonics.
-At dx = 0.05 it is negligible where the physics lives (gamma_h = 1.2e-4 at
-k d_i = 1 against omega = 1.6) and it only reaches the few-cell band that the
-explicit Hall advance cannot integrate (gamma_h = 48 at k dx = pi, against the
-~11 per-step growth measured below).  Damping of that band is NOT sufficient on
-its own here: with C_h = 1e-2 the deck still diverges at nBSubcycle = 8, so the
-sub-cycling below carries the stability at this resolution.
-#HYPERRESISTIVITY
-0.0                     etaHyperSI
-grid                    etaHyperMode
-1.0e-2                  etaHyperCh
-
+Grid-scale damping comes from the default upwind dissipation (HYBRIDUPWIND:
+MC limiter with the grid-scale sensor), as in the whistler decks. It only
+damps the badly resolved band; the sub-cycling below carries the stability of
+the explicit Hall advance at this resolution.
 #ELECTRONTEMPERATURE
 0.0                     electronTemperature  [eV]
 1.0                     electronGamma

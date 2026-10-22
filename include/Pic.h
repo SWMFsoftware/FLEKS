@@ -9,7 +9,6 @@
 #include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
-#include "DomainParameters.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "GridAccess.h"
@@ -28,6 +27,13 @@
 
 class ParticleTracker;
 class Pic;
+
+enum class PicSolverMode {
+  Implicit, // Semi-implicit full PIC (default)
+  Explicit, // Explicit full PIC
+  Hybrid,   // Hybrid PIC (fluid electrons + kinetic ions)
+  None      // No field solve (particle tracer / test particles)
+};
 
 class FieldSolver {
 public:
@@ -87,14 +93,13 @@ struct NodeMMCommData {
 #endif
 };
 
-// The grid is defined in DomainGrid. This class contains the data on the grid.
+// The grid is defined in Grid. This class contains the data on the grid.
 class Pic : public GridAccess {
   friend PlotWriter;
   friend ParticleTracker;
   // private variables
 private:
-  const DomainParameters &domainParameters;
-  const bool &useHybridPIC;
+  bool useHybridPIC = false;
 
   PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
   bool usePIC = true;
@@ -151,6 +156,26 @@ private:
   std::string etaHyperMode = "si";
   amrex::Real etaHyperCh = 0.01;
   amrex::Vector<amrex::Real> etaHyperLev;
+
+  // Upwind (Rusanov) dissipation of the nodal Ohm's-law E (#HYBRIDUPWIND):
+  //   E += sum_d (a_d/2) e_d x (B^R_d - B^L_d),
+  // with MUSCL-reconstructed B on the two sides of the node along d and the
+  // signal speed a_d = |u_e,d| + c_fast + upwindCoefWhistler * c_w,d, where
+  // c_w,d = |B| / (4 rho dx_d) is the whistler phase speed at k = pi/dx_d.
+  // E stays nodal, so the discrete div(B) is preserved.
+  // On by default for the hybrid solver (MC + sensor floor 0.1); a deck turns
+  // it off with #HYBRIDUPWIND F.
+  bool useHybridUpwind = true;
+  std::string upwindLimiter = "mc";
+  int upwindLimiterType = 3; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
+  amrex::Real upwindCoefWhistler = 0.0;
+  // > 0 replaces a_d by this constant (code units); for verification.
+  amrex::Real upwindFixedSpeed = -1.0;
+  // < 1 scales the jump by max(floor, min(1, s)), with the grid-scale sensor
+  // s = |third difference of B| / sum|first differences| of the same 4 cells:
+  // ~(k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps. 1 = off
+  // (plain limited upwind).
+  amrex::Real upwindSensorFloor = 0.1;
 
   // Regional resistivity and hyper-resistivity
   struct RegionalResistivityConfig {
@@ -216,7 +241,6 @@ private:
   bool reportParticleQuality = false;
 
   // Command presence tracking flags for cross-solver validation.
-  bool hasFieldSolver_ = false;
   bool hasFieldIntegrator_ = false;
   bool hasFieldSubcycle_ = false;
   bool hasDiscretization_ = false;
@@ -224,6 +248,7 @@ private:
   bool hasHallTerm_ = false;
   bool hasResistivity_ = false;
   bool hasHyperResistivity_ = false;
+  bool hasHybridUpwind_ = false;
   bool hasElectronPressure_ = false;
   bool hasMinimumDensity_ = false;
 
@@ -619,6 +644,11 @@ private:
   std::string selectParticleInputFile;
 
   bool doReport = false;
+  // Report options from #MONITOR, set by Domain.
+  bool doCompact = true;
+  int dnReportLB = 100;
+  // Stand-alone run (not coupled through the SWMF), set by Domain.
+  bool isStandalone = false;
   amrex::Real maxCFL = 0.0;
   int dnMemory = -1;
 
@@ -650,11 +680,10 @@ public:
   ParticleBC::Type body_particle_bc() const { return grid.bodyParticleBC; }
 
   Pic(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-      const DomainParameters &parameters)
+      PicSolverMode solverMode)
       : GridAccess(gridIn),
-        domainParameters(parameters),
-        useHybridPIC(parameters.useHybridPIC),
-        fieldSolverMode(parameters.fieldSolverMode),
+        useHybridPIC(solverMode == PicSolverMode::Hybrid),
+        fieldSolverMode(solverMode),
         fi(fluidIn),
         tc(tcIn),
         gridID(id) {
@@ -779,6 +808,11 @@ public:
   bool get_useHybridPIC() const { return useHybridPIC; }
 
   PicSolverMode get_field_solver_mode() const { return fieldSolverMode; }
+  void set_report_options(int dnReportLBIn, bool doCompactIn) {
+    dnReportLB = dnReportLBIn;
+    doCompact = doCompactIn;
+  }
+  void set_standalone(bool isStandaloneIn) { isStandalone = isStandaloneIn; }
   bool is_implicit_pic() const {
     return fieldSolverMode == PicSolverMode::Implicit;
   }
@@ -791,7 +825,6 @@ public:
   bool is_field_solver_active() const {
     return fieldSolverMode != PicSolverMode::None;
   }
-  void set_field_solver_mode(const std::string &modeStr);
 
   // Returns the cell-centered coarse-to-fine interpolater to use.  For the
   // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
@@ -946,7 +979,7 @@ public:
 
   void report_bc_warnings(const std::string &context);
   void apply_periodicity_autofill(const amrex::Geometry &gm);
-  void validate_bc_pairing(const amrex::Geometry &gm);
+  void validate_bc_pairing(const amrex::Geometry &gm, bool isStandalone);
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
@@ -976,6 +1009,10 @@ public:
   void update_B_hybrid();
   void calc_hybrid_dt_and_subcycle(amrex::Real &dtNext, int &nSubNext,
                                    bool doReport);
+  // Largest damping rate sum_d 2 a_d / dx_d of the #HYBRIDUPWIND term on
+  // level iLev for the bulk speed uMax, field bMax and density rhoEff.
+  amrex::Real upwind_max_rate(int iLev, amrex::Real uMax, amrex::Real bMax,
+                              amrex::Real rhoEff) const;
   // Apply periodic and physical boundary conditions (and coarse-fine interface
   // ghosts on refined levels) to the cell-centered B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.
@@ -1107,7 +1144,7 @@ public:
   void report_load_balance(bool doReportSummary = true,
                            bool doReportDetail = false);
 
-  void calc_cost_per_cell();
+  void calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,

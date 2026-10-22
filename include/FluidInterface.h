@@ -23,8 +23,6 @@
 #include "GridUtility.h"
 #include "ReadParam.h"
 
-struct DomainParameters;
-
 // Immutable SI<->normalized conversion factors, computed once from a
 // FluidInterface and shared read-only (shared_ptr<const>) by all interfaces.
 class FluidInterface; // forward declaration; defined later in this header
@@ -263,7 +261,7 @@ public:
 
   void read_param(const std::string& command, ReadParam& param);
 
-  void post_process_param(const DomainParameters& parameters);
+  void post_process_param(bool receiveICOnly);
 
   virtual void post_regrid() {
     // Array redistribution creates fine nodes before their fluid state can be

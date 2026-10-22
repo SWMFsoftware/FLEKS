@@ -71,11 +71,6 @@ rk4                     fieldIntegrator
 #BSUBCYCLE
 10                      nBSubcycle
 
-#HYPERRESISTIVITY
-0.0                     etaHyperSI
-grid                    etaHyperMode
-0.02                    etaHyperCh
-
 #SMOOTHMOMENTS
 T                       doSmoothMoments
 2                       nSmoothMoments

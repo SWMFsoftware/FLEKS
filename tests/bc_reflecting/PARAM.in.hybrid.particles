@@ -12,6 +12,9 @@ The Ohm's law is kept minimal (ideal frozen-in: no Hall, no resistivity, no
 electron pressure gradient) so the motional (u x B) field stays small and the
 reflecting-wall physics is isolated from hybrid field-evolution artifacts.
 
+The default upwind dissipation is off (HYBRIDUPWIND F) for the same reason:
+on 8 cells it drains the streaming ions' energy through the field noise.
+
 #INITFROMSWMF
 F                       initFromSWMF
 
@@ -129,6 +132,9 @@ z=0 var ascii pic       plotString
 10.0                    dt
 1                       dx
 rhoS0 uxS0 uyS0 uzS0 Bx By Bz Ex Ey Ez   plotVar
+
+#HYBRIDUPWIND
+F                       useHybridUpwind
 
 #STOP
 -1                      MaxIter

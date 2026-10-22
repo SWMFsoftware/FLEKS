@@ -1,33 +1,95 @@
 #ifndef _DOMAIN_H_
 #define _DOMAIN_H_
 
-#include <cstddef>
-#include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
-#include "DomainGrid.h"
-#include "DomainParameters.h"
+#include <AMReX_AmrMesh.H>
+#include <AMReX_Box.H>
+#include <AMReX_Geometry.H>
+#include <AMReX_IntVect.H>
+#include <AMReX_RealBox.H>
+#include <AMReX_Vector.H>
+
+#include "FleksDistributionMap.h"
+#include "GridInfo.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
 #include "ReadParam.h"
+#include "RefineRegions.h"
 #include "SourceInterface.h"
-
-struct ParameterCommandLocation {
-  std::size_t line = 0;
-  std::size_t column = 0;
-};
 
 enum class ParameterOwner { Pic, ParticleTracker, Source, FluidInterface };
 
-class Domain : public DomainGrid {
+class Domain {
 private:
-  DomainParameters domainParameters;
+  // Inputs used to construct Grid; runtime geometry belongs to Grid.
+  static constexpr int nGst = 2;
+  static constexpr int coord = 0;
+  amrex::Vector<int> nCell = { 1, 1, 1 };
+  amrex::IntVect maxBlockSize = amrex::IntVect(8);
+  amrex::IntVect periodicity = amrex::IntVect(0);
+  amrex::RealBox domainBox;
+  int refinementRatio = 2;
+  bool isFake2D = false;
+
+  void set_periodicity(int iDir, bool isPeriodic) {
+    periodicity[iDir] = isPeriodic ? 1 : 0;
+  }
+
+  GridInfo gridInfo;
+  int iGrid = 1;
+  int iDecomp = 1;
+  int gridID = 1;
+  std::string printPrefix;
+  std::string gridName;
+  bool initialRegridPending = true;
+  bool doSplitLevs = false;
+  amrex::Vector<std::shared_ptr<Shape> > shapeList;
+  std::set<std::string> shapeNames;
+
+  void add_shape(const std::shared_ptr<Shape> &shape) {
+    const std::string name = shape->get_name();
+    if (!shapeNames.insert(name).second)
+      amrex::Abort("Duplicate #REGION name: " + name);
+    shapeList.push_back(shape);
+  }
+  // Read first by read_construction_parameters(): they decide whether and
+  // how grid, fi, pic and pt are constructed.
+  bool doRestart = false;
+  bool initFromSWMF = true;
+  bool receiveICOnly = false;
+  bool useHybridPIC = false;
+  PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
+  bool usePT = false;
+
+  // Read by read_param() together with the other commands.
+  bool doRestartPT = false;
+  bool doRestartFIOnly = false;
+  bool doRegridOnRestart = false;
+  bool useSource = false;
+
+  // Number of files per AMReX output.
+  int nFileField = 64;
+  int nFileParticle = 256;
+
+  // Load-balancing strategy.
+  BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
+  int cellWeight = 10;
+
+  // Reporting options.
+  int dnReportLB = 100;
+  bool doCompact = true;
+
+  // Set from init()'s argument, not from a command.
+  bool isStandalone = false;
+
+  void set_field_solver_mode(const std::string &modeStr);
 
   ReadParam readParam;
-  std::string parameterText;
-  std::map<std::string, ParameterCommandLocation> parameterCommandLocations;
   std::vector<std::string> sourceParameterCommands;
 
   ParticleTrackerInfo ptInfo;
@@ -37,6 +99,9 @@ private:
 
   bool find_parameter_owner(const std::string &command,
                             ParameterOwner &owner) const;
+  static bool is_construction_command(const std::string &command);
+  void prepare_grid_info(const amrex::Vector<double> &info,
+                         amrex::Geometry &geometry, amrex::AmrInfo &amrInfo);
 
 public:
   std::unique_ptr<TimeCtr> tc;
@@ -75,15 +140,13 @@ public:
 
   void update();
 
-  void calc_refine_region();
-
   //--------------Initialization begin-------------------------------
   void init(const double time = 0, const int iDomain = 1,
             const std::string &paramString = std::string(),
             const amrex::Vector<int> &paramInt = amrex::Vector<int>(),
             const amrex::Vector<double> &paramRegion = amrex::Vector<double>(),
             const amrex::Vector<double> &paramComm = amrex::Vector<double>(),
-            const bool isStandalone = false);
+            const bool isStandaloneIn = false);
   void update_param(const std::string &paramString);
   void set_ic();
   //----------------Initialization end-------------------------------
@@ -107,11 +170,11 @@ public:
   //------------Coupler related end--------------
 
   //--------------- IO begin--------------------------------
-  void read_param(const bool readGridInfo);
+  void read_param();
 
-  // Parse Domain-level switches before constructing children, then roll back.
-  void read_domain_parameters(ReadParam &param);
-  void validate_configuration() const;
+  // Read the commands that decide whether and how grid, fi, pic and pt are
+  // constructed; the caller rolls back so read_param() reads the rest.
+  void read_construction_parameters();
   void save_restart(std::string restartOutDir);
   void save_restart_header();
   void save_restart_data();
@@ -121,7 +184,6 @@ public:
 
   //-------------- grid begin-------------------------------
   // Preparing grid information for Grid/AmrCore initialization.
-  void prepare_grid_info(const amrex::Vector<double> &info);
   void regrid();
   void receive_grid_info(int *status = nullptr);
   //-------------- grid end---------------------------------
@@ -131,7 +193,13 @@ public:
   // void make_data();
   void init_time_ctr();
 
-  bool receive_ic_only() { return domainParameters.receiveICOnly; };
+  bool receive_ic_only() const { return receiveICOnly; };
+
+  int get_iGrid() const { return iGrid; }
+  int get_iDecomp() const { return iDecomp; }
+  int get_dim() const {
+    return grid ? grid->get_dim() : ((isFake2D || nDim == 2) ? 2 : nDim);
+  }
 };
 
 #endif

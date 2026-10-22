@@ -342,6 +342,17 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
             logger.info("%s: PASSED", display_name)
             results.append((display_name, "PASSED", "Passed"))
 
+    except ImportError as exc:
+        # A check that imports a third-party package (e.g. numpy) inside a
+        # function only finds out here that it is missing.
+        package = missing_dependency(exc)
+        if package is None:
+            raise
+        logger.warning("SKIP: %s needs the Python package '%s', which is not "
+                       "installed.", display_name, package)
+        results.append((display_name, "SKIPPED",
+                        f"needs the Python package '{package}'"))
+
     finally:
         logger.debug("  Cleaning up run_test/ output for %s...", display_name)
         cleanup_run_dir()
@@ -807,25 +818,54 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
 # ---------------------------------------------------------------------------
 # Per-test validator loading
 # ---------------------------------------------------------------------------
+class MissingDependency(Exception):
+    """A validator needs a third-party Python package that is not installed."""
+
+    def __init__(self, package):
+        super().__init__(package)
+        self.package = package
+
+
+def missing_dependency(exc):
+    """Return the top-level package name if *exc* is an ImportError for a
+    third-party package (e.g. numpy), or None if the missing module belongs to
+    the test tree itself (tests.*, or a module next to this script such as
+    _shared), which is a bug that must surface."""
+    if not isinstance(exc, ImportError) or not exc.name:
+        return None
+    top = exc.name.split(".")[0]
+    here = os.path.dirname(os.path.abspath(__file__))
+    if top == "tests" or os.path.isdir(os.path.join(here, top)) or \
+            os.path.isfile(os.path.join(here, top + ".py")):
+        return None
+    return top
+
+
 def load_validator(test_name):
     """Dynamically import the ``validate.py`` module for *test_name*.
 
     Returns a small object with attributes ``validate_log``, ``plot`` and
     ``particle_tol`` (some may be None) so the runner can invoke it uniformly.
     If the test has no ``validate.py`` (e.g. ``hyper_resistivity``), returns
-    None and the runner falls back to a generic no-op check.
+    None and the runner falls back to a generic no-op check.  If the module
+    needs a third-party package that is not installed (e.g. numpy), raises
+    MissingDependency so the runner reports the test as SKIPPED instead of
+    passing it with the generic check.
     """
     module_name = f"tests.{test_name}.validate"
     try:
         module = importlib.import_module(module_name)
     except ImportError as exc:
-        # Only swallow failures caused by a genuinely missing per-test module
-        # (hyper_resistivity and friends).  Any other import error (a bug in
-        # the module) should surface loudly.
-        if exc.name != module_name and not str(exc).startswith("No module named"):
-            raise
-        logger.debug("No per-test module %s; using generic check.", module_name)
-        return None
+        # Only a genuinely missing per-test module (hyper_resistivity and
+        # friends) falls back to the generic check.
+        if exc.name in (module_name, f"tests.{test_name}"):
+            logger.debug("No per-test module %s; using generic check.",
+                         module_name)
+            return None
+        package = missing_dependency(exc)
+        if package is not None:
+            raise MissingDependency(package) from exc
+        raise
 
     class _Validator:
         pass
@@ -891,6 +931,7 @@ EXPENSIVE_VARIANTS = {
     # Fadeev, GEM and asymmetric ones are research benchmarks: keep them
     # runnable explicitly (or with --all) so CI stays fast.
     "reconnection.fadeev_hybrid",
+    "reconnection.fadeev_hybrid_long",
     "reconnection.fadeev_pic",
     "reconnection.gem_hybrid",
     "reconnection.gem_pic",
@@ -942,7 +983,12 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
                             f"build misconfigured: {preflight_reason}"))
         return
 
-    validator = load_validator(name)
+    missing_package = None
+    try:
+        validator = load_validator(name)
+    except MissingDependency as exc:
+        validator = None
+        missing_package = exc.package
 
     # A test directory may hold several parameter files (PARAM.in plus any
     # PARAM.in.<suffix>) that group related test configurations (e.g. the same
@@ -1042,6 +1088,12 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
         variants = kept
 
     for param_file, display_name, base_name in variants:
+        if missing_package is not None:
+            logger.warning("SKIP: %s needs the Python package '%s', which is "
+                           "not installed.", display_name, missing_package)
+            results.append((display_name, "SKIPPED",
+                            f"needs the Python package '{missing_package}'"))
+            continue
         with open(param_file) as _f:
             _param_text = _f.read()
         run_and_validate(test_dir, display_name, validator, nprocs, results,

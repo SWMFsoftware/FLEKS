@@ -83,6 +83,19 @@ runs:
         make EXE -j$(nproc)
         make PIDL
 
+    - name: Install Python test dependencies
+      shell: bash
+      run: |
+        # Several validators (reconnection, langmuir, amr_equilibrium, ...)
+        # need numpy. Without it validate_tests.py reports them as SKIPPED,
+        # which is right for a local run but would hide them in CI, so install
+        # it here and fail this step if it cannot be imported. The runner's
+        # system python3 is externally managed (PEP 668), hence the distro
+        # package rather than pip.
+        sudo apt-get update
+        sudo apt-get install -y python3-numpy
+        python3 -c "import numpy; print('numpy', numpy.__version__)"
+
     - name: Run Standalone FLEKS Tests (Serial)
       id: test-serial
       working-directory: SWMF/PC/FLEKS/tests

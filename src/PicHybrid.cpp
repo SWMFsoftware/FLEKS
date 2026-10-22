@@ -45,7 +45,8 @@ ue_at(const Array4<Real const>& arrUe, const int i, const int j, const int k,
   }
 }
 
-// MUSCL slope limiter for the Pe advection.
+// MUSCL slope limiter for the Pe advection and the #HYBRIDUPWIND B
+// reconstruction.
 // limType: 0 = upwind1, 1 = minmod, 2 = van leer, 3 = monotonized central (mc).
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real pe_slope(const int limType,
                                                        const Real dL,
@@ -116,6 +117,84 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
   divUe += (uHi - uLo) * invDx;
 }
 
+// Limited jump phi * (B^R - B^L) of component iVar of the MUSCL-reconstructed
+// cell-centered B across the low face of cell (i,j,k) along DIR, i.e. between
+// the cells at offsets -1 and 0, from the cached cell slopes (below). The
+// upwind term at a node averages this over the 2 (2D) or 4 (3D) faces around
+// the node in the transverse directions, the same cells curl_center_to_node
+// averages over; computing each face once and averaging avoids reconstructing
+// it again for every node that shares it.
+template <int DIR>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
+upwind_face_jump(const Array4<Real const>& arrB,
+                 const Array4<Real const>& slope, const int i, const int j,
+                 const int k, const int iVar, const Real sensorFloor) noexcept {
+  constexpr int di = (DIR == ix_) ? 1 : 0;
+  constexpr int dj = (DIR == iy_) ? 1 : 0;
+  constexpr int dk = (DIR == iz_) ? 1 : 0;
+  const Real bM1 = arrB(i - di, j - dj, k - dk, iVar);
+  const Real b0 = arrB(i, j, k, iVar);
+  const Real bL = bM1 + 0.5 * slope(i - di, j - dj, k - dk, iVar);
+  const Real bR = b0 - 0.5 * slope(i, j, k, iVar);
+  Real phi = 1.0;
+  if (sensorFloor < 1.0) {
+    // Grid-scale sensor s = |third difference| / sum|first differences|:
+    // ~ (k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps.
+    const Real bM2 = arrB(i - 2 * di, j - 2 * dj, k - 2 * dk, iVar);
+    const Real bP1 = arrB(i + di, j + dj, k + dk, iVar);
+    const Real dM = bM1 - bM2, d0 = b0 - bM1, dP = bP1 - b0;
+    const Real den = std::abs(dM) + std::abs(d0) + std::abs(dP);
+    const Real s = (den > 0.0) ? std::abs(dP - 2.0 * d0 + dM) / den : 0.0;
+    phi = amrex::min(1.0, amrex::max(sensorFloor, s));
+  }
+  return phi * (bR - bL);
+}
+
+// Limited MUSCL slope of component iVar of the cell-centered B in cell (i,j,k)
+// along DIR. Each cell's slope serves the faces on both of its sides, so it is
+// computed once per direction instead of once per face.
+template <int DIR>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
+upwind_cell_slope(const Array4<Real const>& arrB, const int i, const int j,
+                  const int k, const int iVar, const int limType) noexcept {
+  constexpr int di = (DIR == ix_) ? 1 : 0;
+  constexpr int dj = (DIR == iy_) ? 1 : 0;
+  constexpr int dk = (DIR == iz_) ? 1 : 0;
+  const Real bM1 = arrB(i - di, j - dj, k - dk, iVar);
+  const Real b0 = arrB(i, j, k, iVar);
+  const Real bP1 = arrB(i + di, j + dj, k + dk, iVar);
+  return pe_slope(limType, b0 - bM1, bP1 - b0);
+}
+
+// Average of the face jumps around node (i,j,k) along DIR (see above).
+template <int DIR>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_node_jump(
+    const Array4<Real const>& faceJump, const int i, const int j, const int k,
+    Real jump[nDim3]) noexcept {
+  constexpr int t1 = (DIR == ix_) ? iy_ : ix_;
+  constexpr int t2 = (DIR == iz_) ? iy_ : iz_;
+  const int o2Min = (nDim > 2 || t2 != iz_) ? -1 : 0;
+
+  for (int iVar = 0; iVar < nDim3; ++iVar)
+    jump[iVar] = 0.0;
+
+  int nCell = 0;
+  for (int o1 = -1; o1 <= 0; ++o1) {
+    for (int o2 = o2Min; o2 <= 0; ++o2) {
+      int c[nDim3] = { i, j, k };
+      c[t1] += o1;
+      c[t2] += o2;
+      for (int iVar = 0; iVar < nDim3; ++iVar)
+        jump[iVar] += faceJump(c[ix_], c[iy_], c[iz_], iVar);
+      ++nCell;
+    }
+  }
+
+  const Real invN = 1.0 / nCell;
+  for (int iVar = 0; iVar < nDim3; ++iVar)
+    jump[iVar] *= invN;
+}
+
 // Algebraic polytropic electron closure the evolved equation starts from:
 //   Pe = P0 * (rho/rho0)^gamma,  or Pe = Te*rho when gamma == 1.
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
@@ -165,6 +244,24 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   const Real wCur = usePredictorCorrector ? hstep : (0.5 + hstep);
   const Real invFourPI = 1.0 / fourPI;
 
+  // #HYBRIDUPWIND: directions with a single cell carry no jump.
+  const bool doUpwind = useHybridUpwind;
+  GpuArray<int, nDim3> upwindDir = { 0, 0, 0 };
+  GpuArray<Real, nDim3> invDxUp = { 0.0, 0.0, 0.0 };
+  for (int iDim = 0; iDim < nDim; ++iDim) {
+    upwindDir[iDim] = (Geom(iLev).Domain().length(iDim) > 1) ? 1 : 0;
+    invDxUp[iDim] = Geom(iLev).InvCellSize(iDim);
+  }
+  const int limTypeUp = upwindLimiterType;
+  const Real sensorFloorUp = upwindSensorFloor;
+  const Real coefWhistlerUp = useHallTerm ? upwindCoefWhistler : 0.0;
+  const Real fixedSpeedUp = upwindFixedSpeed;
+  const Real cs2Up =
+      (electronTemperature > 0)
+          ? ((electronGamma > 0) ? electronGamma : 1.0) * electronTemperature
+          : 0.0;
+  const bool useHall = useHallTerm;
+
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
@@ -180,6 +277,72 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrEtaReg =
         hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
                                 : Array4<Real const>();
+    // Upwind face jumps, one array per direction over the faces the nodes of
+    // this box use: the node range along the direction, and one more cell on
+    // the low side of each transverse direction (the cells c-1 and c around a
+    // node). They read the cells i-2..i+1 along the direction, within the two
+    // ghost layers of centerBin.
+    FArrayBox faceJump[nDim3];
+    Array4<Real const> arrFace[nDim3];
+    if (doUpwind) {
+      const Array4<Real const>& arrBin = centerBin[mfi].const_array();
+      FArrayBox slopeFab;
+      for (int iDir = 0; iDir < nDim; ++iDir) {
+        if (!upwindDir[iDir])
+          continue;
+        Box faceBox(box.smallEnd(), box.bigEnd());
+        for (int t = 0; t < nDim; ++t) {
+          if (t != iDir)
+            faceBox.growLo(t, 1);
+        }
+        // A face uses the slopes of the cells on both of its sides.
+        Box slopeBox = faceBox;
+        slopeBox.growLo(iDir, 1);
+        slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
+        faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
+        const Array4<Real>& arrS = slopeFab.array();
+        const Array4<Real const>& arrSc = slopeFab.const_array();
+        const Array4<Real>& arrF = faceJump[iDir].array();
+        if (iDir == ix_) {
+          ParallelFor(slopeBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
+                            arrBin, i, j, k, iVar, limTypeUp);
+                      });
+          ParallelFor(faceBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                      });
+        } else if (iDir == iy_) {
+          ParallelFor(slopeBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
+                            arrBin, i, j, k, iVar, limTypeUp);
+                      });
+          ParallelFor(faceBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                      });
+        } else {
+          ParallelFor(slopeBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
+                            arrBin, i, j, k, iVar, limTypeUp);
+                      });
+          ParallelFor(faceBox, nDim3,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                        arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                      });
+        }
+        arrFace[iDir] = faceJump[iDir].const_array();
+      }
+    }
+    const Array4<Real const> arrFaceX = arrFace[ix_];
+    const Array4<Real const> arrFaceY = arrFace[iy_];
+    const Array4<Real const> arrFaceZ = arrFace[iz_];
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rhoPrev = momentsPrev(i, j, k, iRho_);
@@ -246,6 +409,56 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         ex += hall_x;
         ey += hall_y;
         ez += hall_z;
+      }
+
+      // Upwind (Rusanov) dissipation: E += sum_d (a_d/2) e_d x (B^R - B^L).
+      // The jumps use the evolved B only (no intrinsic B0), the speeds the
+      // total B and the electron velocity u_e = u_i - J/rho.
+      if (doUpwind && (rho > 0 || fixedSpeedUp > 0)) {
+        Real cFast = 0.0, bAbs = 0.0;
+        Real ue[nDim3] = { ui, vi, wi };
+        if (fixedSpeedUp <= 0) {
+          const Real b2 = bx * bx + by * by + bz * bz;
+          bAbs = std::sqrt(b2);
+          cFast = std::sqrt(b2 * invRhoEff * invFourPI + cs2Up);
+          if (useHall) {
+            ue[ix_] -= jx * invRhoEff;
+            ue[iy_] -= jy * invRhoEff;
+            ue[iz_] -= jz * invRhoEff;
+          }
+        }
+
+        Real jump[nDim3];
+        for (int iDir = 0; iDir < nDim; ++iDir) {
+          if (!upwindDir[iDir])
+            continue;
+          if (iDir == ix_) {
+            upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
+          } else if (iDir == iy_) {
+            upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
+          } else {
+            upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
+          }
+
+          // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).
+          const Real a = (fixedSpeedUp > 0) ? fixedSpeedUp
+                                            : std::abs(ue[iDir]) + cFast +
+                                                  coefWhistlerUp * 0.25 * bAbs *
+                                                      invRhoEff * invDxUp[iDir];
+          const Real halfA = 0.5 * a;
+
+          // e_d x jump
+          if (iDir == ix_) {
+            ey -= halfA * jump[iz_];
+            ez += halfA * jump[iy_];
+          } else if (iDir == iy_) {
+            ex += halfA * jump[iz_];
+            ez -= halfA * jump[ix_];
+          } else {
+            ex -= halfA * jump[iy_];
+            ey += halfA * jump[ix_];
+          }
+        }
       }
 
       arrE(i, j, k, ix_) = ex;
@@ -1869,7 +2082,7 @@ void Pic::update_B_hybrid() {
     }
     const Real maxEta = amrex::max(etaResistivity, maxRegionalEta);
     const Real maxHyper = amrex::max(etaHyperLev[iLev], maxRegionalHyperLev);
-    if (maxEta <= 0 && maxHyper <= 0 && !useHallTerm)
+    if (maxEta <= 0 && maxHyper <= 0 && !useHallTerm && !useHybridUpwind)
       continue;
 
     const auto dx = Geom(iLev).CellSizeArray();
@@ -1896,14 +2109,29 @@ void Pic::update_B_hybrid() {
           << cflHyper << " (> " << cflLimit
           << ", explicit 4th-order diffusion may be unstable)\n";
 
+    if (!useHallTerm && !useHybridUpwind)
+      continue;
+
+    Real bMaxLev = 0.0;
+    const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
+    for (int d = 0; d < 3; ++d) {
+      bMaxLev = amrex::max(bMaxLev, bForCfl.norm0(d, 0, false));
+    }
+    const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
+    const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
+
+    if (useHybridUpwind) {
+      // Wave speeds only: the bulk-flow part of a_d is not known here.
+      const Real cflUpwind =
+          upwind_max_rate(iLev, 0.0, bMaxLev, rhoEff) * subDt;
+      if (cflUpwind > cflLimit)
+        amrex::Print() << "  [CFL warning] upwind dissipation: "
+                          "sum_d 2*a_d/dx_d*dt_sub = "
+                       << cflUpwind << " (> " << cflLimit
+                       << ", explicit upwind term may be unstable)\n";
+    }
+
     if (useHallTerm) {
-      Real bMaxLev = 0.0;
-      const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
-      for (int d = 0; d < 3; ++d) {
-        bMaxLev = amrex::max(bMaxLev, bForCfl.norm0(d, 0, false));
-      }
-      const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
-      const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
       const Real cflWhistler = (sMax * bMaxLev / (fourPI * rhoEff)) * subDt;
       if (cflWhistler > cflLimit) {
         const int nSubReq =
@@ -2167,6 +2395,38 @@ void Pic::update_B_hybrid() {
 }
 
 //==========================================================
+// The first-order upwind term damps the grid-scale mode of direction d at
+// 2 a_d / dx_d (a real eigenvalue), so the explicit field advance needs
+// dt_sub * sum_d 2 a_d / dx_d below the real-axis stability limit of the RK
+// scheme. Limited reconstructions only damp less.
+Real Pic::upwind_max_rate(int iLev, Real uMax, Real bMax, Real rhoEff) const {
+  if (!useHybridUpwind)
+    return 0.0;
+
+  Real cFast = 0.0, cWhistlerDx = 0.0;
+  if (rhoEff > 0.0) {
+    Real cs2 = 0.0;
+    if (electronTemperature > 0.0)
+      cs2 = ((electronGamma > 0.0) ? electronGamma : 1.0) * electronTemperature;
+    cFast = std::sqrt(bMax * bMax / (fourPI * rhoEff) + cs2);
+    if (useHallTerm)
+      cWhistlerDx = upwindCoefWhistler * 0.25 * bMax / rhoEff;
+  }
+
+  Real rate = 0.0;
+  for (int iDim = 0; iDim < nDim; ++iDim) {
+    if (Geom(iLev).Domain().length(iDim) < 2)
+      continue;
+    const Real invDx = Geom(iLev).InvCellSize(iDim);
+    const Real a = (upwindFixedSpeed > 0.0)
+                       ? upwindFixedSpeed
+                       : uMax + cFast + cWhistlerDx * invDx;
+    rate += 2.0 * a * invDx;
+  }
+  return rate;
+}
+
+//==========================================================
 void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                                       bool doReport) {
   std::string nameFunc = "Pic::calc_hybrid_dt_and_subcycle";
@@ -2339,6 +2599,18 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
           }
         }
       }
+
+      if (useHybridUpwind) {
+        const Real omegaUpwind =
+            upwind_max_rate(iLev, uMaxLev, bMaxLev, rhoEff);
+        if (omegaUpwind > 0.0) {
+          Real dtUpwind = (cflLimit * fieldSafety) / omegaUpwind;
+          if (dtUpwind < dtSubMin) {
+            dtSubMin = dtUpwind;
+            localSubReason = "upwind dissipation";
+          }
+        }
+      }
     }
   }
 
@@ -2456,7 +2728,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     maxCFL = dtNext / dtMacroMin;
   }
 
-  if (doReport && !domainParameters.doCompact) {
+  if (doReport && !doCompact) {
     amrex::Print() << printPrefix << "[Hybrid Adaptive Step] dt = " << dtNext
                    << ", nSub = " << nSubNext
                    << " (limited by: " << dtLimitingReason << ")\n";

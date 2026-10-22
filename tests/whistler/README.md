@@ -8,11 +8,19 @@ hybrid timestepping schemes, and the full resistive generalized Ohm's law:
 | --- | --- | --- | --- |
 | **Full PIC** | `PARAM.in` | Maxwell / θ-scheme (`solveEM=T`) | Kinetic ions & electrons (displacement current) |
 | **Explicit Full PIC** | `PARAM.in.explicit` | Maxwell / explicit leapfrog (`#FIELDSOLVER explicit`) | Kinetic ions & electrons, m_i/m_e = 25, v_te = 0.3 c; full cold-plasma R-mode within 5% (measured 0.781 vs 0.775) |
-| **RK4** | `PARAM.in.rk4` | Hybrid PIC (`rk4`) | Hall whistler eigenmode (classical RK4) |
+| **RK4** | `PARAM.in.rk4` | Hybrid PIC (`rk4`) | Hall whistler eigenmode (classical RK4), default dissipation, run to 24 s |
 | **RK4-PC** | `PARAM.in.rk4_pc` | Hybrid PIC (`rk4-pc`) | Hall whistler eigenmode (predictor–corrector RK4) |
 | **SSPRK3** | `PARAM.in.ssprk3` | Hybrid PIC (`ssprk3`) | Hall whistler eigenmode (3-stage SSPRK3) |
 | **SSPRK3-PC** | `PARAM.in.ssprk3_pc` | Hybrid PIC (`ssprk3-pc`) | Hall whistler eigenmode (predictor–corrector SSPRK3) |
 | **Resistive** | `PARAM.in.resistive` | Hybrid PIC (`rk4`) | Full Ohm's law with finite resistivity $\eta$ and $T_e$ |
+| **RK4-MC** | `PARAM.in.rk4_mc` | Hybrid PIC (`rk4`) | RK4 with plain MC upwind (`upwindSensorFloor = 1`), run to 24 s |
+| **RK4-hyper** | `PARAM.in.rk4_hyper` | Hybrid PIC (`rk4`) | RK4 with hyper-resistivity alone (upwind off), run to 24 s |
+
+`rk4`, `rk4_mc` and `rk4_hyper` run past the time the grid-scale mode of
+gotcha 4 needs to grow without dissipation, so each guards one dissipation
+scheme: the transverse amplitude must grow less than 1.5× (all three: 1.3×;
+without dissipation the ion energy rises 95×). The other hybrid variants use
+the default dissipation for 10 s.
 
 All variants are seeded with the same x-aligned, transverse, circularly
 polarized **right-hand (whistler)** wave (`#TESTCASE HybridWave`,
@@ -102,6 +110,8 @@ python3 tests/validate_tests.py --test=whistler.rk4_pc       # Hybrid RK4-PC
 python3 tests/validate_tests.py --test=whistler.ssprk3       # Hybrid SSPRK3
 python3 tests/validate_tests.py --test=whistler.ssprk3_pc    # Hybrid SSPRK3-PC
 python3 tests/validate_tests.py --test=whistler.resistive    # Full generalized Ohm's law
+python3 tests/validate_tests.py --test=whistler.rk4_mc       # RK4 with plain MC upwind, 24 s
+python3 tests/validate_tests.py --test=whistler.rk4_hyper    # RK4 with hyper-resistivity alone, 24 s
 ```
 
 ### Dispersion-relation scan
@@ -199,6 +209,9 @@ hybrid variant it additionally runs the shared hybrid energy-log checks (see
    the validator and `dispersion.py` trimmed the fit window once `max|B_perp|`
    exceeded ~1.5× its seeded value; neither is necessary now.  (This option only
    exists in the hybrid solver — the full-PIC deck has no Ohm's law to damp.)
+   The hybrid solver now damps this band by default with the upwind
+   dissipation of `#HYBRIDUPWIND` (MC limiter with the grid-scale sensor);
+   only `rk4_hyper` still uses hyper-resistivity.
 5. **Full-PIC electron density** must be quasi-neutral (`ρ_e = 5/1836
    amu/cc`).  The previous value (`2.5552e-5`) violated `n_e = n_i` by 106×,
    which moved the measured frequency from 0.79 to 1.24 and would have made the

@@ -69,12 +69,10 @@ protected:
   // reactions use it to keep the products consistent with the loss.
   amrex::Real dtSI = 0.0;
 
-  const DomainParameters& domainParameters;
-
 public:
   SourceInterface(Grid& gridIn, const FluidInterface& other, int id,
-                  std::string tag, FluidType typeIn, const DomainParameters& dp)
-      : FluidInterface(gridIn, other, id, tag, typeIn), domainParameters(dp) {
+                  std::string tag, FluidType typeIn)
+      : FluidInterface(gridIn, other, id, tag, typeIn) {
     initFromSWMF = false;
   }
 

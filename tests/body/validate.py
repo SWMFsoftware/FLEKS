@@ -18,6 +18,8 @@ Variants are discovered from this directory:
   - PARAM.in.hybrid_linetied   -> "body_hybrid_linetied"   (hybrid PIC, absorb + linetied)
   - PARAM.in.hybrid_insulating -> "body_hybrid_insulating" (hybrid PIC, absorb + insulating)
   - PARAM.in.hybrid_reflect    -> "body_hybrid_reflect"    (hybrid PIC, reflect + linetied)
+  - PARAM.in.hybrid_linetied_mc -> "body_hybrid_linetied_mc" (hybrid_linetied with
+                                   plain MC upwind instead of hyper-resistivity)
 
 All of them use the same setup: a uniform plasma streams in +x through a
 2D box (inflow at -x, outflow at +x) past an absorbing sphere of radius R_BODY
@@ -36,6 +38,10 @@ R_BODY = 1.2          # #BODY radius in code units (see PARAM.in)
 WAKE_MAX_FRAC = 0.5   # wake density must stay below 50% of the upstream value
 ZERO_TOL = 1e-12      # "exactly zero" threshold inside the body
 ETOT_GROWTH_MAX = 10.0  # the body must not inject energy
+# Hybrid variants: magnetic energy growth over the run. Damped by
+# hyper-resistivity or #HYBRIDUPWIND it ends at 1.3x-6.8x; without either the
+# grid-scale noise of hybrid_linetied drives it to 45x.
+EB_GROWTH_MAX_HYBRID = 10.0
 CONSTRAINT_TOL = 1e-6   # relative tolerance of the conducting constraint
 # Max |divB|*dx/|B| on the body surface shell, measured at the 64-cell
 # resolution of these decks: 'conducting' ~0.1, 'linetied' 0.028,
@@ -154,6 +160,14 @@ def validate_log(pic_diags=None, test_name=None):
     if e0 > 0 and e1 > ETOT_GROWTH_MAX * e0:
         return False, (f"Energy blew up: Etot {e0:.3e} -> {e1:.3e} "
                        f"(>{ETOT_GROWTH_MAX:g}x)")
+    if test_name and "hybrid" in test_name:
+        b0 = first.get("Eb", 0.0)
+        b1 = last.get("Eb", 0.0)
+        logger.debug("    Eb: %.4e -> %.4e", b0, b1)
+        if b0 > 0 and b1 > EB_GROWTH_MAX_HYBRID * b0:
+            return False, (f"Magnetic energy grew {b1 / b0:.1f}x "
+                           f"(>{EB_GROWTH_MAX_HYBRID:g}x) -- grid-scale noise "
+                           "not damped")
 
     absorbed = [entry.get("nBodyAbsorb") for entry in pic_diags]
     if any(a is None for a in absorbed):

@@ -1,0 +1,112 @@
+#DESCRIPTION
+Damping of a resolved whistler by the upwind (Rusanov) dissipation of the
+Ohm's-law E: the n = 4 mode (k d_i = 3.9, 16 cells per wavelength) of the
+whistler/rk4 deck, with the plain MC upwind term (no sensor) in place of
+hyper-resistivity, a plot every step and 4 s of evolution.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+#HYBRIDUPWIND
+T                       useHybridUpwind
+mc                      upwindLimiter
+1.0                     upwindSensorFloor
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature  [eV]
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#BSUBCYCLE
+8                       nBSubcycle
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: ions (n = 5 /cc)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0439e-8               bx [T]      uniform guide field Bx0 (B_code ~ 1)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+HybridWave
+
+#WAVEIC
+T                       rightHand      right-hand (whistler) helicity
+4                       waveMode
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+2000                    nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+1                       dn
+-1                      dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+4.0                     TimeMax   ~11 periods of the n = 4 whistler
