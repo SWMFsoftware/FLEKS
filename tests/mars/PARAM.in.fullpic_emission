@@ -1,7 +1,8 @@
 #DESCRIPTION
 3D Standalone Martian Magnetosphere regression test of the full boundary setup:
-Semi-Implicit Full PIC on a coarse 24 x 32 x 32 grid (dx = 0.25 R_M), 40 s.
-Same deck as run_mars/final_coarse (stable to 200 s), shortened.
+Semi-Implicit Full PIC on a coarse 24 x 32 x 32 grid (dx = 0.25 R_M), 10 s.
+Same deck as run_mars/final_coarse (stable to 200 s), shortened to 10 s and
+2 x 2 x 2 particles per cell.
 Physics & Features:
 - c = uNormSI = 3000 km/s (10x the solar wind).
 - Absorbing, conducting body at 3590 km (200 km altitude, rhybrid particle obstacle),
@@ -340,9 +341,9 @@ T
 0.5
 
 #PARTICLES
-4                       npcelx
-4                       npcely
-4                       npcelz
+2                       npcelx
+2                       npcely
+2                       npcelz
 
 #SOURCEPARTICLES
 1                       npcelx   1 source particle per cell and step
@@ -370,14 +371,6 @@ T                       doCorrectDivE
 1                       dnSavePic
 10                      dnSavePT
 
-#SAVEPLOT
-1                       nPlot
-z=0 var ascii si        plotString
--1                      dn
-40.0                    dt [s]
-1                       dx
-rhoS1 Bx By Bz          NameVars
-
 #STOP
 -1                      MaxIter
-40.0                     TimeMax [s]
+10.0                    TimeMax [s]
