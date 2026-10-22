@@ -20,6 +20,7 @@ Validation is split into `validate_log` (energy-log) and `validate_plot`
 (final #SAVEPLOT snapshot).  See README.md "Validation" for the full physics
 context and the exact checks/tolerances.
 """
+import cmath
 import glob
 import logging
 import math
@@ -160,34 +161,60 @@ def _mean_relstd(values):
     return mean, math.sqrt(var) / abs(mean)
 
 
+def _fft_freq_abs(n):
+    """|frequency| in cycles per sample of each DFT index (numpy.fft.fftfreq)."""
+    return [abs(m if m < (n + 1) // 2 else m - n) / n for m in range(n)]
+
+
+def _dft(seq):
+    """Discrete Fourier transform of a list of (complex) numbers."""
+    n = len(seq)
+    w = [cmath.exp(-2j * math.pi * m / n) for m in range(n)]
+    return [sum(v * w[(m * j) % n] for j, v in enumerate(seq)) for m in range(n)]
+
+
 def _grid_noise(xs, data):
     """Return (overshoot, high_k) of a 2D snapshot.
 
     overshoot: max of the y-averaged |B| over its mean in the downstream half.
     high_k: fraction of the power of the y-varying part of B (the field minus its
     y average, i.e. without the planar shock profile) at |k| above half the
-    Nyquist wavenumber in either direction.
+    Nyquist wavenumber in either direction.  The 2D transform is done as 1D
+    transforms along y and then x.
     """
-    import numpy as np
-    x, y = np.array(xs), np.array(data["y"])
-    ux, uy = np.unique(x), np.unique(y)
-    order = np.lexsort((x, y))
+    ys = data["y"]
+    ux, uy = sorted(set(xs)), sorted(set(ys))
+    ix = {v: i for i, v in enumerate(ux)}
+    iy = {v: j for j, v in enumerate(uy)}
+    nx, ny = len(ux), len(uy)
 
     def field(name):
-        return np.array(data[name])[order].reshape(len(uy), len(ux))
+        f = [[0.0] * nx for _ in range(ny)]
+        for x, y, v in zip(xs, ys, data[name]):
+            f[iy[y]][ix[x]] = v
+        return f
 
     b = {c: field(c) for c in ("Bx", "By", "Bz")}
-    bmag = np.sqrt(b["Bx"] ** 2 + b["By"] ** 2 + b["Bz"] ** 2).mean(axis=0)
-    b_dn = bmag[ux <= ux.max() * DOWNSTREAM_FRAC].mean()
-    kx = np.abs(np.fft.fftfreq(len(ux)))[None, :]
-    ky = np.abs(np.fft.fftfreq(len(uy)))[:, None]
-    high = (kx > 0.25) | (ky > 0.25)
+    bmag = [sum(math.sqrt(b["Bx"][j][i] ** 2 + b["By"][j][i] ** 2 +
+                          b["Bz"][j][i] ** 2) for j in range(ny)) / ny
+            for i in range(nx)]
+    dn = [v for x, v in zip(ux, bmag) if x <= max(ux) * DOWNSTREAM_FRAC]
+    b_dn = sum(dn) / len(dn)
+
+    kx, ky = _fft_freq_abs(nx), _fft_freq_abs(ny)
     tot = hi = 0.0
     for f in b.values():
-        p = np.abs(np.fft.fft2(f - f.mean(axis=0))) ** 2
-        tot += p.sum()
-        hi += p[high].sum()
-    return bmag.max() / b_dn, (hi / tot if tot > 0 else 0.0)
+        mean_y = [sum(f[j][i] for j in range(ny)) / ny for i in range(nx)]
+        cols = [_dft([f[j][i] - mean_y[i] for j in range(ny)])
+                for i in range(nx)]
+        for m in range(ny):
+            row = _dft([cols[i][m] for i in range(nx)])
+            for l, c in enumerate(row):
+                p = abs(c) ** 2
+                tot += p
+                if kx[l] > 0.25 or ky[m] > 0.25:
+                    hi += p
+    return max(bmag) / b_dn, (hi / tot if tot > 0 else 0.0)
 
 
 def validate_log(pic_diags=None, test_name=None):

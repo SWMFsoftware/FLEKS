@@ -25,8 +25,6 @@ import logging
 import math
 import os
 
-import numpy as np
-
 from tests._shared import run_dir as _run_dir
 from tests._shared.validators import validate_hybrid_energy_bounded
 from tests.hyper_resistivity.validate import (_block_numbers, _fit_decay,
@@ -189,6 +187,14 @@ def validate_log(pic_diags=None, test_name=None):
     return True, "Passed"
 
 
+def _slope(x, y):
+    """Least-squares slope of y(x)."""
+    n = len(x)
+    mx, my = sum(x) / n, sum(y) / n
+    sxx = sum((xi - mx) ** 2 for xi in x)
+    return sum((xi - mx) * (yi - my) for xi, yi in zip(x, y)) / sxx
+
+
 def _whistler_fit(text):
     """Frequency and decay rate of the seeded whistler from the plot frames.
 
@@ -208,23 +214,33 @@ def _whistler_fit(text):
     ts, cp, cm = [], [], []
     for f in _run_dir.plot_files():
         vidx, rows = _run_dir._read_out_file(f)
-        a = np.array(rows)
-        x = a[:, vidx["X"]]
-        keep = x < x_lo + lx - 1e-6        # drop a periodic end node
-        e = np.exp(-1j * k * x[keep])
-        by, bz = a[keep, vidx["BY"]], a[keep, vidx["BZ"]]
-        cp.append(np.mean((by + 1j * bz) * e))
-        cm.append(np.mean((by - 1j * bz) * e))
+        sp = sm = 0.0
+        npt = 0
+        for r in rows:
+            x = r[vidx["X"]]
+            if x >= x_lo + lx - 1e-6:          # drop a periodic end node
+                continue
+            e = cmath.exp(-1j * k * x)
+            by, bz = r[vidx["BY"]], r[vidx["BZ"]]
+            sp += (by + 1j * bz) * e
+            sm += (by - 1j * bz) * e
+            npt += 1
+        cp.append(sp / npt)
+        cm.append(sm / npt)
         ts.append(int(os.path.basename(f).split("_n")[-1][:8]) * dt)
     if len(ts) < MIN_SAMPLES:
         return None
-    t = np.array(ts)
-    c = np.array(cp if abs(cp[0]) > abs(cm[0]) else cm)   # seeded helicity
-    omega = np.polyfit(t, np.unwrap(np.angle(c)), 1)[0]
+    t = ts
+    c = cp if abs(cp[0]) > abs(cm[0]) else cm   # seeded helicity
+    phase = [cmath.phase(c[0])]
+    for z in c[1:]:
+        d = cmath.phase(z) - phase[-1]
+        phase.append(phase[-1] + d - 2.0 * math.pi * round(d / (2.0 * math.pi)))
+    omega = _slope(t, phase)
     m = max(1, int(round(2.0 * math.pi / abs(omega) / dt)))
-    env = np.abs(np.convolve(c * np.exp(-1j * omega * t), np.ones(m) / m,
-                             mode="valid"))
-    gamma = -np.polyfit(t[m // 2:m // 2 + len(env)], np.log(env), 1)[0]
+    z = [ci * cmath.exp(-1j * omega * ti) for ci, ti in zip(c, t)]
+    env = [abs(sum(z[i:i + m]) / m) for i in range(len(z) - m + 1)]
+    gamma = -_slope(t[m // 2:m // 2 + len(env)], [math.log(v) for v in env])
     return abs(omega), gamma, len(t)
 
 
