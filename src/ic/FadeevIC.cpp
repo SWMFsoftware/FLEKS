@@ -105,7 +105,8 @@ void FadeevIC::set_fields(PicICFields& fields) const {
 }
 
 // Boost background density nb to the Fadeev sheet profile.
-void FadeevIC::modify_particle_weight(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void FadeevICParams::hook_weight(
+    ParticleICState& s) const {
   if (profileMax_ <= 0.0 || nb_ <= 0.0 || Ly_ <= 0.0)
     return;
   const amrex::Real denom = std::cosh(s.y / L_) + eps_ * std::cos(s.x / L_);
@@ -116,7 +117,8 @@ void FadeevIC::modify_particle_weight(ParticleICState& s) const {
 }
 
 // Diamagnetic drift u_s = -(T_s/q_s) (grad(n) x B)/(n B^2) for force balance.
-void FadeevIC::modify_particle_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void FadeevICParams::hook_velocity(
+    ParticleICState& s) const {
   if (profileMax_ <= 0.0 || nb_ <= 0.0 || Ly_ <= 0.0)
     return;
   if (s.temperature <= 0.0 || s.charge == 0.0)

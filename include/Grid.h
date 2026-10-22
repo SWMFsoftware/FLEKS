@@ -26,6 +26,7 @@
 #include "Array1D.h"
 #include "BC.h"
 #include "Constants.h"
+#include "GpuBackend.h"
 #include "RefineRegions.h"
 #include "TimeCtr.h"
 
@@ -462,27 +463,23 @@ public:
                    << std::endl;
     const int maxRegionLevel =
         std::min(n_lev_max() - 2, static_cast<int>(refineRegions.size()) - 1);
-    for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
-      const auto tagArr = tags.array(mfi);
-      const auto lo = lbound(bx);
-      const auto hi = ubound(bx);
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            amrex::Real xyz[nDim];
-            Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+    // The regions are host objects (virtual is_inside), so the tagging runs
+    // on the host (see host_fill).
+    host_fill(tags, false,
+              [&](const amrex::MFIter&, int i, int j, int k,
+                  amrex::Array4<char> const& tagArr) {
+                amrex::Real xyz[nDim];
+                Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
 
-            // Loop through all levels from the finest to the current level.
-            // If a cell is required to be refined at lev=n (n>=iLev), this
-            // cell should be also refined at lev=iLev.
-            for (int il = maxRegionLevel; il >= iLev; il--)
-              if (refineRegions[il].is_inside(xyz)) {
-                tagArr(i, j, k) = amrex::TagBox::SET;
-                break;
-              }
-          }
-    }
+                // Loop through all levels from the finest to the current
+                // level. If a cell is required to be refined at lev=n
+                // (n>=iLev), this cell should be also refined at lev=iLev.
+                for (int il = maxRegionLevel; il >= iLev; il--)
+                  if (refineRegions[il].is_inside(xyz)) {
+                    tagArr(i, j, k) = amrex::TagBox::SET;
+                    break;
+                  }
+              });
   };
 
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {

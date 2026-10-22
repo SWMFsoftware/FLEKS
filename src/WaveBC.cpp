@@ -257,3 +257,54 @@ void WaveBoundaryManager::read_param(ReadParam& param,
     }
   }
 }
+
+WaveKickView make_wave_kick_view(const WaveBoundaryManager& wave,
+                                 amrex::Real t) {
+  WaveKickView view;
+  if (!wave.active)
+    return view;
+  for (const auto& f : wave.faces) {
+    for (const auto& c : f.comps) {
+      if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
+        continue;
+      WaveKickComp k;
+      k.profile = c.profile;
+      k.amplitude = c.amplitude;
+      for (int d = 0; d < 3; ++d) {
+        k.k_vec[d] = c.k_vec[d];
+        k.pol[d] = c.pol[d];
+      }
+      k.frequency = c.frequency;
+      k.phase = c.phase;
+      k.env = wave.envelope(c, t);
+      if (c.profile == WaveComponent::kPacket) {
+        const amrex::Real tw = (c.tWidth > 0.0) ? c.tWidth : 1.0;
+        const amrex::Real tau = (t - c.tCenter) / tw;
+        k.packet = std::exp(-tau * tau);
+      }
+      if (c.profile == WaveComponent::kSpectral) {
+        k.sub0 = view.subs.size();
+        for (const auto& sub : c.comps) {
+          WaveKickComp m;
+          m.amplitude = sub.amplitude;
+          for (int d = 0; d < 3; ++d)
+            m.k_vec[d] = sub.k_vec[d];
+          m.frequency = sub.frequency;
+          m.phase = sub.phase;
+          view.subs.resize(view.subs.size() + 1);
+          view.subs[view.subs.size() - 1] = m;
+        }
+        k.nSub = view.subs.size() - k.sub0;
+      }
+      if (c.profile == WaveComponent::kCustom) {
+        if (fleksUseGpu)
+          amrex::Abort("A custom wave profile is a host function and cannot "
+                       "be used in a GPU run.");
+        k.orig = &c;
+      }
+      view.comps.resize(view.comps.size() + 1);
+      view.comps[view.comps.size() - 1] = k;
+    }
+  }
+  return view;
+}

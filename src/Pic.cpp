@@ -433,10 +433,7 @@ void Pic::post_regrid(MeshChangeReason reason) {
 
     if (waveBC.active) {
       for (auto& p : parts) {
-        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
-                                     Real& dvy, Real& dvz) {
-          wave_velocity_kick(pos, t, dvx, dvy, dvz);
-        };
+        p->waveBC = &waveBC;
       }
     }
   } else {
@@ -873,6 +870,20 @@ void Pic::re_sampling() {
   std::string nameFunc = "Pic::re_sampling";
 
   timing_func(nameFunc);
+
+  if (doReSampling && !useCellTiles) {
+    // TODO(GPU): resample on cell bins with one particle tile per box.
+    static bool isWarned = false;
+    if (!isWarned) {
+      Print() << "\n"
+              << printPrefix
+              << "WARNING: particle resampling (limit_weight, split, merge) "
+                 "is not implemented for GPU runs yet and is SKIPPED.\n"
+              << std::endl;
+      isWarned = true;
+    }
+    return;
+  }
 
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {

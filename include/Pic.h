@@ -911,6 +911,9 @@ public:
     amrex::Vector<int> nBoxUnknown; // per local box
   };
   amrex::Vector<LinearSystemLayout> nodeLayout, centerLayout;
+
+  // Host copies of the fields that the point-wise output reads (get_var).
+  HostFabCache ioCache;
   const LinearSystemLayout &linear_system_layout(const amrex::MultiFab &MF,
                                                  int iLev);
 

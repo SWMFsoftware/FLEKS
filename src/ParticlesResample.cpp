@@ -20,9 +20,12 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
   if (maxRatio <= 1)
     return;
 
+  // Resampling works on the particles of one cell, i.e., on one tile.
+  // TODO(GPU): resample on cell bins with one tile per box.
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
-    return;
+    Abort("Particle resampling needs one particle tile per cell, which GPU "
+          "runs do not use yet.");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
@@ -394,9 +397,12 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
   const int nInitial = product(nPartPerCell);
 
+  // Resampling works on the particles of one cell, i.e., on one tile.
+  // TODO(GPU): resample on cell bins with one tile per box.
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
-    return;
+    Abort("Particle resampling needs one particle tile per cell, which GPU "
+          "runs do not use yet.");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
@@ -926,9 +932,12 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
   timing_func("Pts::merge");
+  // Resampling works on the particles of one cell, i.e., on one tile.
+  // TODO(GPU): resample on cell bins with one tile per box.
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
-    return;
+    Abort("Particle resampling needs one particle tile per cell, which GPU "
+          "runs do not use yet.");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {

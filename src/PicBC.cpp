@@ -825,21 +825,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
                              Real& dvz) {
-  dvx = dvy = dvz = 0.0;
-  if (!waveBC.active)
-    return;
-  for (const auto& f : waveBC.faces) {
-    for (const auto& c : f.comps) {
-      if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
-        continue;
-      const Real val = waveBC.value(c, t, pos);
-      if (val == 0.0)
-        continue;
-      dvx += val * c.pol[0];
-      dvy += val * c.pol[1];
-      dvz += val * c.pol[2];
-    }
-  }
+  make_wave_kick_view(waveBC, t).kick(pos, t, dvx, dvy, dvz);
 }
 
 //==========================================================

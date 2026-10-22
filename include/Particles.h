@@ -47,6 +47,10 @@ struct PID {
   bool operator==(const PID& t) const { return cpu == t.cpu && id == t.id; }
 };
 
+struct CellSeeder;
+struct ParticleIDBlock;
+class WaveBoundaryManager;
+
 struct Vel {
   amrex::Real vth = 0.0;
   amrex::Real vx = 0.0;
@@ -446,10 +450,9 @@ public:
   // Non-owning pointer to the active initial condition (owned by Pic).
   const InitialCondition* ic_ = nullptr;
 
-  // Wave bulk-velocity kick (pos, t -> dvx,dvy,dvz), set by Pic; null = off.
-  std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
-                     amrex::Real&, amrex::Real&)>
-      waveVelocityKick = nullptr;
+  // Wave boundary whose velocity kick the particles created in the ghost
+  // cells of a wave face receive (see set_wave_face), set by Pic; null = off.
+  const WaveBoundaryManager* waveBC = nullptr;
 
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
@@ -464,6 +467,19 @@ public:
   int n_lev_max() const { return maxLevel() + 1; }
 
   void add_particles_domain(bool fillAll = false);
+
+  // Particle creation on the CPU or the GPU, see include/ParticlesSeed.h.
+  template <class Rule>
+  void add_particles_cells(int iLev, const amrex::MFIter& mfi,
+                           const amrex::Box& box, const Rule& rule,
+                           const FluidInterface* interface, bool doVacuumLimit,
+                           const Vel& tpVel = Vel(), amrex::Real dt = -1);
+  CellSeeder make_cell_seeder(int iLev, const amrex::MFIter& mfi,
+                              const FluidInterface* interface,
+                              bool doVacuumLimit, const Vel& tpVel,
+                              amrex::Real dt) const;
+  ParticleIDBlock reserve_particle_ids(long n);
+
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi,
                           const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,
@@ -494,10 +510,43 @@ public:
   // 1) Only inject particles ONCE for one ghost cells. This function decides
   // which block injects particles. 2) bx should be a valid box 3) The cell
   // (i,j,k) can NOT be the outmost ghost cell layer!!!!
-  bool do_inject_particles_for_this_cell(const amrex::Box& bx,
-                                         const amrex::Array4<const int>& status,
-                                         const amrex::IntVect ijk,
-                                         amrex::IntVect& ijksrc);
+  // Should particles be injected into the boundary cell ijk of the box bx?
+  // If so, ijksrc is the first neighbour inside the box.
+  AMREX_GPU_HOST_DEVICE static bool do_inject_particles_for_this_cell(
+      const amrex::Box& bx, const amrex::Array4<const int>& status,
+      const amrex::IntVect ijk, amrex::IntVect& ijksrc) {
+    // This cell should be a boundary cell at least.
+    if (!bit::is_lev_boundary(status(ijk)))
+      return false;
+
+    for (int iloop = 1; iloop <= 3; iloop++) {
+      // iloop==1: loop through faces;
+      // iloop==2: loop through edges;
+      // iloop==3: loop through corners;
+      for (int di = -1; di <= 1; di++)
+        for (int dj = -1; dj <= 1; dj++)
+          for (int dk = -1; dk <= 1; dk++) {
+            const int sum = amrex::Math::abs(di) + amrex::Math::abs(dj) +
+                            amrex::Math::abs(dk);
+            if (iloop != sum)
+              continue;
+
+            amrex::IntVect ijk1 =
+                ijk + amrex::IntVect{ AMREX_D_DECL(di, dj, dk) };
+            if (!bit::is_lev_boundary(status(ijk1))) {
+              // The first neighbor cell that is NOT a boundary cell.
+              if (bx.contains(ijk1)) {
+                ijksrc = ijk1;
+                return true;
+              } else {
+                return false;
+              }
+            }
+          }
+    }
+    amrex::Abort("do_inject_particles_for_this_cell:something is wrong!");
+    return false; // to suppress compilation warning.
+  }
 
   amrex::Real sum_moments(amrex::Vector<amrex::MultiFab>& momentsMF,
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
