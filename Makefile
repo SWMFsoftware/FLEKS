@@ -1,6 +1,6 @@
 default: EXE
 
-.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER PIDL PDF rundir \
+.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER GPUTEST PIDL PDF rundir \
 	clean distclean allclean compile_commands
 
 -include Makefile.conf
@@ -13,6 +13,7 @@ help:
 	@echo 'make FLEKS                  - same as make EXE'
 	@echo 'make LIB                    - compile libPC.a for SWMF'
 	@echo 'make CONVERTER              - compile format converter (converter.exe)'
+	@echo 'make GPUTEST                - compile AMReX GPU test (main_gpu.exe), needs C compiler nvcc'
 	@echo 'make PIDL                   - compile PostIDL.exe for post-processing'
 	@echo 'make PDF                    - build doc/USERMANUAL.pdf from PARAM.XML'
 	@echo 'make clean                  - remove object files'
@@ -83,6 +84,11 @@ LIB: bin include/Constants.h compile_commands
 CONVERTER: bin
 	+$(call prepare_exe)
 	$(MAKE) -C Converter CONVERTER
+
+# Standalone AMReX GPU test (src/main_gpu.cpp). It runs on the GPU only when
+# configured with ./Config.pl -install -compiler=nvfortran,nvcc.
+GPUTEST: bin
+	$(MAKE) -C src GPUTEST
 
 PIDL:
 	cd ${SHAREDIR}; $(MAKE) PIDL

@@ -11,12 +11,13 @@ LIBFLEKS = libFLEKS.a
 
 # source files
 #
-# Everything in this directory and in ic/ belongs to libFLEKS.a, except the two
+# Everything in this directory and in ic/ belongs to libFLEKS.a, except the
 # translation units that carry their own main() and are linked separately:
-# main.cpp into ../bin/FLEKS.exe, Converter.cpp into ../bin/converter.exe.
+# main.cpp into ../bin/FLEKS.exe, Converter.cpp into ../bin/converter.exe and
+# main_gpu.cpp into ../bin/main_gpu.exe.
 # $(sort) fixes the archive member order: $(wildcard) returns directory order,
 # which is not reproducible across machines.
-SRCS := $(sort $(filter-out main.cpp Converter.cpp, \
+SRCS := $(sort $(filter-out main.cpp main_gpu.cpp Converter.cpp, \
                  $(wildcard *.cpp) $(wildcard ic/*.cpp)))
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
@@ -33,6 +34,13 @@ EXE:
 	${LINK.f90} -o ../bin/FLEKS.exe main.o \
 		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
 
+# AMReX GPU test program. It does not use libFLEKS.a. Configure with
+# ./Config.pl -install -compiler=nvfortran,nvcc so that main_gpu.cpp is
+# compiled by nvcc and linked with the CUDA AMReX library.
+GPUTEST: main_gpu.o
+	mkdir -p ../bin
+	${LINK.cpp} -o ../bin/main_gpu.exe main_gpu.o ${AMREXLIB} ${CPPLIB}
+
 DEPEND:
 	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} main.o
 
@@ -46,7 +54,7 @@ ${LIBFLEKS}:${OBJECTS}
 	${AR} ${LIBFLEKS} ${OBJECTS}
 
 clean:
-	-@(rm -f ${OBJECTS} main.o ${LIBFLEKS})
+	-@(rm -f ${OBJECTS} main.o main_gpu.o ${LIBFLEKS})
 	-@(rm -rf .d)
 
 distclean: clean
