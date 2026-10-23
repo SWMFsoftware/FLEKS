@@ -1630,21 +1630,27 @@ public:
     }
   }
 
+  // Append the (host) particles newParticles to a tile.
+  static void append_particles(ParticleTileType& tile,
+                               const amrex::Vector<ParticleType>& newParticles) {
+    if (newParticles.empty())
+      return;
+    const std::size_t np = tile.numParticles();
+    tile.resize(np + newParticles.size());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, newParticles.begin(),
+                     newParticles.end(), tile.GetArrayOfStructs()().data() + np);
+    amrex::Gpu::streamSynchronize();
+  }
+
   // Write the resampled particles of a batch back to tile pti and append
   // the new particles.
   void scatter_resample_cells(int iLev, const amrex::MFIter& pti,
                               ResampleBatch& batch,
                               const amrex::Vector<ParticleType>& newParticles) {
     auto& tile = get_particle_tile(iLev, pti);
-    const int np = tile.numParticles();
     copy_resample_particles(tile.GetArrayOfStructs()().data(), batch,
                             /*toHost=*/false);
-    if (!newParticles.empty()) {
-      tile.resize(np + newParticles.size());
-      amrex::Gpu::copy(amrex::Gpu::hostToDevice, newParticles.begin(),
-                       newParticles.end(),
-                       tile.GetArrayOfStructs()().data() + np);
-    }
+    append_particles(tile, newParticles);
   }
 
   // Particle resampling routines:
