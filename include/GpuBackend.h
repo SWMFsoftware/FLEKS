@@ -225,13 +225,14 @@ private:
   amrex::Gpu::DeviceVector<int> keys, sortedKeys, index, sorted, offset;
 };
 
-// Deposit particle quantities onto the 2^D nodes of the cell of each particle:
+// Deposit particle quantities onto the S^D nodes (S = 2 by default) starting
+// at the cell of each particle:
 //   cellOf(ip, cell) -> bool   the cell (its lower node) of particle ip, or
 //                              false to skip the particle;
 //   idOf(ip)                   a unique key of particle ip (see CellBins);
 //   contrib(ip, acc)           add the contribution of particle ip to
 //                              acc[ii][jj][kk][n], n < NComp, the nodes
-//                              cell + (ii, jj, kk);
+//                              cell + (ii, jj, kk), ii, jj, kk < S;
 // dst(node, comp0 + n) receives the sums. cellBox must contain the cells of
 // all the particles, and dst the nodes of cellBox.
 //
@@ -242,11 +243,12 @@ private:
 //
 // deposit_to_nodes_with() is the general form: add(i, j, k, n, value) stores
 // the sums (e.g. into a FAB of a non-scalar type).
-template <int NComp, class Add, class CellOf, class IdOf, class Contrib>
+template <int NComp, int S = 2, class Add, class CellOf, class IdOf,
+          class Contrib>
 void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
                            CellOf&& cellOf, IdOf&& idOf, Contrib&& contrib) {
   using amrex::Real;
-  constexpr int nK = AMREX_SPACEDIM > 2 ? 2 : 1;
+  constexpr int nK = AMREX_SPACEDIM > 2 ? S : 1;
   if (np == 0)
     return;
 #ifdef AMREX_USE_GPU
@@ -273,39 +275,41 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
       idOf);
 
   // 1. The sum of every cell, particle by particle in the bin order.
-  constexpr int nAcc = 2 * 2 * nK * NComp;
+  constexpr int nAcc = S * S * nK * NComp;
   amrex::Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) *
                                          nAcc);
   Real* const sc = scratch.data();
   const int* const perm = bins.perm();
   const int* const off = bins.offsets();
   amrex::ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
-    Real acc[2][2][2][NComp];
-    for (int kk = 0; kk < 2; ++kk)
-      for (int jj = 0; jj < 2; ++jj)
-        for (int ii = 0; ii < 2; ++ii)
+    Real acc[S][S][S][NComp];
+    for (int kk = 0; kk < S; ++kk)
+      for (int jj = 0; jj < S; ++jj)
+        for (int ii = 0; ii < S; ++ii)
           for (int n = 0; n < NComp; ++n)
             acc[ii][jj][kk][n] = 0;
     for (int i = off[b]; i < off[b + 1]; ++i)
       contrib(perm[i], acc);
     Real* const out = sc + static_cast<std::size_t>(b) * nAcc;
     for (int kk = 0; kk < nK; ++kk)
-      for (int jj = 0; jj < 2; ++jj)
-        for (int ii = 0; ii < 2; ++ii)
+      for (int jj = 0; jj < S; ++jj)
+        for (int ii = 0; ii < S; ++ii)
           for (int n = 0; n < NComp; ++n)
-            out[((kk * 2 + jj) * 2 + ii) * NComp + n] = acc[ii][jj][kk][n];
+            out[((kk * S + jj) * S + ii) * NComp + n] = acc[ii][jj][kk][n];
   });
 
   // 2. Every node sums its cells.
-  const amrex::Box nodeBox = amrex::surroundingNodes(cellBox);
+  amrex::Box nodeBox = amrex::surroundingNodes(cellBox);
+  for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    nodeBox.growHi(d, S - 2);
   amrex::ParallelFor(nodeBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
     const int ijk[3] = { i, j, k };
     Real sum[NComp];
     for (int n = 0; n < NComp; ++n)
       sum[n] = 0;
     for (int kk = 0; kk < nK; ++kk)
-      for (int jj = 0; jj < 2; ++jj)
-        for (int ii = 0; ii < 2; ++ii) {
+      for (int jj = 0; jj < S; ++jj)
+        for (int ii = 0; ii < S; ++ii) {
           const int corner[3] = { ii, jj, kk };
           int c[3] = { 0, 0, 0 };
           bool inside = true;
@@ -319,7 +323,7 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
             continue;
           const int b = c[0] + len.x * (c[1] + len.y * c[2]);
           const Real* const in = sc + static_cast<std::size_t>(b) * nAcc +
-                                 ((kk * 2 + jj) * 2 + ii) * NComp;
+                                 ((kk * S + jj) * S + ii) * NComp;
           for (int n = 0; n < NComp; ++n)
             sum[n] += in[n];
         }
@@ -334,17 +338,17 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
     amrex::IntVect c;
     if (!cellOf(ip, c))
       continue;
-    Real acc[2][2][2][NComp];
-    for (int kk = 0; kk < 2; ++kk)
-      for (int jj = 0; jj < 2; ++jj)
-        for (int ii = 0; ii < 2; ++ii)
+    Real acc[S][S][S][NComp];
+    for (int kk = 0; kk < S; ++kk)
+      for (int jj = 0; jj < S; ++jj)
+        for (int ii = 0; ii < S; ++ii)
           for (int n = 0; n < NComp; ++n)
             acc[ii][jj][kk][n] = 0;
     contrib(ip, acc);
     for (int n = 0; n < NComp; ++n)
       for (int kk = 0; kk < nK; ++kk)
-        for (int jj = 0; jj < 2; ++jj)
-          for (int ii = 0; ii < 2; ++ii)
+        for (int jj = 0; jj < S; ++jj)
+          for (int ii = 0; ii < S; ++ii)
             add(c[0] + ii, AMREX_SPACEDIM > 1 ? c[1] + jj : 0,
                 AMREX_SPACEDIM > 2 ? c[AMREX_SPACEDIM > 2 ? 2 : 0] + kk : 0, n,
                 acc[ii][jj][kk][n]);
@@ -362,6 +366,18 @@ void deposit_to_nodes(int np, const amrex::Box& cellBox,
         dst(i, j, k, comp0 + n) += v;
       },
       cellOf, idOf, contrib);
+}
+
+// Sum the copies of the nodes shared by boxes (SumBoundary). A GPU build adds
+// them in a fixed order, then makes all the copies of a node equal: the
+// copies are sums in different orders, and AMReX's GPU FillBoundary copies a
+// ghost node covered by several boxes with racing stores, so unequal copies
+// would make the result change from run to run. A CPU build is unchanged.
+template <class FAB>
+void sum_boundary(amrex::FabArray<FAB>& mf, const amrex::Periodicity& period) {
+  mf.SumBoundary(period, /*deterministic=*/true);
+  if (fleksUseGpu && mf.is_nodal())
+    mf.OverrideSync(period);
 }
 
 // Sum of f(i), i = 0..n-1 (f a device lambda returning Real), returned on the
