@@ -25,10 +25,14 @@ namespace {
 // div_node_to_center(J) holds to round-off. In 2D the out-of-plane component is
 // q vOut / V times the time-averaged shape. Returns false if the particle moved
 // more than one cell.
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool deposit_esirkepov(
-    const Array4<Real>& jArr, const Real* x0, const Real* x1, Real q, Real vOut,
-    const Real* plo, const Real* invDx, const Real* dx, Real invDt,
-    Real invVol) {
+//
+// add(i, j, k, comp, value) stores a node current: an atomic deposit into the
+// current, or (deterministic GPU deposit) a per-particle accumulator.
+template <class Add>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
+deposit_esirkepov(const Real* x0, const Real* x1, Real q, Real vOut,
+                  const Real* plo, const Real* invDx, const Real* dx,
+                  Real invDt, Real invVol, Add&& add) {
   // A particle that stays in its cell touches 2 nodes per dimension, one that
   // crosses a cell face 3.
   constexpr int nS = 3;
@@ -82,7 +86,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool deposit_esirkepov(
           idx[d] = base[d] + a;
           idx[e] = base[e] + ie;
           idx[f] = base[f] + jf;
-          deposit_add(jArr.ptr(AMREX_D_DECL(idx[0], idx[1], idx[2]), d), jNode);
+          add(idx[0], idx[1], idx[2], d, jNode);
         }
       }
   }
@@ -93,9 +97,26 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool deposit_esirkepov(
       for (int b = 0; b < n[1]; ++b) {
         const Real w = transverse(0, 1, a, b);
         if (w != 0.0)
-          deposit_add(jArr.ptr(AMREX_D_DECL(base[0] + a, base[1] + b, 0), iz_),
-                      coef * w);
+          add(base[0] + a, base[1] + b, 0, iz_, coef * w);
       }
+  }
+  return true;
+}
+
+// The lowest node of the Esirkepov stencil of a particle moving from x0 to x1
+// (see deposit_esirkepov); false if it moved more than one cell.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
+esirkepov_base(const Real* x0, const Real* x1, const Real* plo,
+               const Real* invDx, int* base) {
+  for (int d = 0; d < 3; ++d) {
+    base[d] = 0;
+    if (d >= nDim)
+      continue;
+    const int i0 = static_cast<int>(std::floor((x0[d] - plo[d]) * invDx[d]));
+    const int i1 = static_cast<int>(std::floor((x1[d] - plo[d]) * invDx[d]));
+    if (amrex::Math::abs(i1 - i0) > 1)
+      return false;
+    base[d] = amrex::min(i0, i1);
   }
   return true;
 }
@@ -260,10 +281,21 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
       ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
+      const int np = pti.numParticles();
+
       const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
 
-      ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      // Deterministic current deposit (GPU): the inputs of the deposit of
+      // every particle, x0 (3), x1 (3), q, vOut, valid, and the particle key.
+      const bool binCurrent = depositCurrent && useCellBinDeposits;
+      constexpr int nIn = 9;
+      Gpu::DeviceVector<Real> depositInVec(binCurrent ? np * nIn : 0, 0.0);
+      Gpu::DeviceVector<unsigned long long> depositKeyVec(binCurrent ? np : 0);
+      Real* const depositIn = depositInVec.data();
+      unsigned long long* const depositKey = depositKeyVec.data();
+
+      ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
         ParticleType& p = pData[ip];
         if (p.id() < 0)
           return;
@@ -353,10 +385,29 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
         // J = q dx/dt for every component; in 2D the out-of-plane dx is
         // wDrift * dtLoc (dtLoc != dt when the time step changes).
-        if (depositCurrent &&
-            !deposit_esirkepov(jArr, xOld, xNew, qFactor * p.rdata(iqp_),
-                               wDrift * dtLoc * invDt, ploLoc, invDxLoc, dxLoc,
-                               invDt, invVolLev))
+        if (binCurrent) {
+          // Deposited after the push, cell by cell (deterministic on the
+          // GPU): keep what the deposit needs before the boundary condition
+          // moves or deletes the particle.
+          Real* const in = depositIn + static_cast<std::size_t>(ip) * nIn;
+          for (int d = 0; d < 3; ++d) {
+            in[d] = xOld[d];
+            in[3 + d] = xNew[d];
+          }
+          in[6] = qFactor * p.rdata(iqp_);
+          in[7] = wDrift * dtLoc * invDt;
+          in[8] = 1; // valid
+          depositKey[ip] = particle_key(p);
+          int base[3];
+          if (!esirkepov_base(xOld, xNew, ploLoc, invDxLoc, base))
+            *movedTooFar = 1;
+        } else if (depositCurrent &&
+                   !deposit_esirkepov(
+                       xOld, xNew, qFactor * p.rdata(iqp_),
+                       wDrift * dtLoc * invDt, ploLoc, invDxLoc, dxLoc, invDt,
+                       invVolLev, [&](int i, int j, int k, int d, Real v) {
+                         deposit_add(jArr.ptr(AMREX_D_DECL(i, j, k), d), v);
+                       }))
           *movedTooFar = 1;
 
         // A trial push only deposits the current of the trial state.
@@ -383,6 +434,42 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.id() = -1;
         }
       });
+
+      if (binCurrent && np > 0) {
+        // A stencil has at most 3 nodes per direction, starting at its base
+        // cell.
+        Box cellBox = (*currentMF)[iLev][pti].box();
+        cellBox.growHi(-1);
+        cellBox.enclosedCells();
+        deposit_to_nodes_with<3, 3>(
+            np, cellBox,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int d, Real v) {
+              jArr(i, j, k, d) += v;
+            },
+            [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+              const Real* const in =
+                  depositIn + static_cast<std::size_t>(ip) * nIn;
+              int base[3];
+              if (in[8] == 0 ||
+                  !esirkepov_base(in, in + 3, ploLoc, invDxLoc, base))
+                return false;
+              cell = IntVect(AMREX_D_DECL(base[0], base[1], base[2]));
+              return true;
+            },
+            [=] AMREX_GPU_DEVICE(int ip) { return depositKey[ip]; },
+            [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[3][3][3][3]) {
+              const Real* const in =
+                  depositIn + static_cast<std::size_t>(ip) * nIn;
+              int base[3];
+              esirkepov_base(in, in + 3, ploLoc, invDxLoc, base);
+              deposit_esirkepov(in, in + 3, in[6], in[7], ploLoc, invDxLoc,
+                                dxLoc, invDt, invVolLev,
+                                [&](int i, int j, int k, int d, Real v) {
+                                  acc[i - base[0]][j - base[1]][k - base[2]]
+                                     [d] += v;
+                                });
+            });
+      }
     } // for pti
 
     int movedTooFarHost = 0;
@@ -394,8 +481,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
     if (currentMF) {
       fold_wall_ghost_nodes((*currentMF)[iLev], iLev, true);
-      (*currentMF)[iLev].SumBoundary(Geom(iLev).periodicity(),
-                                     /*deterministic=*/true);
+      sum_boundary((*currentMF)[iLev], Geom(iLev).periodicity());
     }
   }
 }

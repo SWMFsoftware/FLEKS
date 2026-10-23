@@ -545,8 +545,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     // once.
     fold_wall_ghost_nodes(momentsMF[iLev], iLev, false);
 
-    momentsMF[iLev].SumBoundary(Geom(iLev).periodicity(),
-                                /*deterministic=*/true);
+    sum_boundary(momentsMF[iLev], Geom(iLev).periodicity());
   }
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {

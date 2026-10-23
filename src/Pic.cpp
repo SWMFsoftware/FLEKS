@@ -1172,7 +1172,7 @@ void Pic::calc_mass_matrix() {
     }
 
     jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
-    jHat[iLev].SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
+    sum_boundary(jHat[iLev], Geom(iLev).periodicity());
     jHat[iLev].FillBoundary(Geom(iLev).periodicity());
 
     // Undo the geometric dilution of the current at the staircase surface of
@@ -1276,7 +1276,7 @@ void Pic::calc_mass_matrix_amr() {
   }
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    jHat[iLev].SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
+    sum_boundary(jHat[iLev], Geom(iLev).periodicity());
     sum_boundary_node_mm(iLev);
   }
   Vector<Real> invVol(n_lev());
