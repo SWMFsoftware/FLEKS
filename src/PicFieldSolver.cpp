@@ -472,6 +472,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
       const auto& data0 = mmArr(ijk);
 
+      // Accumulate in registers, in the order of the stencil loop (outMF is
+      // zero on entry, so the result is the same as adding into outMF).
+      Real sumX = 0, sumY = 0, sumZ = 0;
 #if (AMREX_SPACEDIM == 2)
       for (int j2 = j - 1; j2 <= j + 1; ++j2) {
         for (int i2 = i - 1; i2 <= i + 1; ++i2) {
@@ -483,12 +486,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
           const double vctX = inArr(i2, j2, 0, ix_);
           const double vctY = inArr(i2, j2, 0, iy_);
           const double vctZ = inArr(i2, j2, 0, iz_);
-          outArr(i, j, 0, ix_) +=
-              (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-          outArr(i, j, 0, iy_) +=
-              (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-          outArr(i, j, 0, iz_) +=
-              (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+          sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+          sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+          sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
         }
       }
 #else
@@ -506,16 +506,16 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
             const double vctX = inArr(i2, j2, k2, ix_);
             const double vctY = inArr(i2, j2, k2, iy_);
             const double vctZ = inArr(i2, j2, k2, iz_);
-            outArr(i, j, k, ix_) +=
-                (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-            outArr(i, j, k, iy_) +=
-                (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-            outArr(i, j, k, iz_) +=
-                (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+            sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+            sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+            sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
           }
         }
       }
 #endif
+      outArr(i, j, k, ix_) = sumX;
+      outArr(i, j, k, iy_) = sumY;
+      outArr(i, j, k, iz_) = sumZ;
     });
   }
 
