@@ -50,18 +50,7 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
   const int nBins = static_cast<int>(cellBox.numPts());
 
   CellBins bins;
-  bins.build(np, nBins, [=] AMREX_GPU_DEVICE(int ip) {
-    IntVect c;
-    if (!cellOf(ip, c))
-      return nBins;
-    const int ijk[3] = { AMREX_D_DECL(c[0] - lo.x, c[1] - lo.y, c[2] - lo.z) };
-    const int lenD[3] = { len.x, len.y, len.z };
-    for (int d = 0; d < AMREX_SPACEDIM; ++d)
-      if (ijk[d] < 0 || ijk[d] >= lenD[d])
-        return nBins;
-    return ijk[0] + len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
-                             len.y * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
-  });
+  bins.build_cells(np, cellBox, cellOf);
 
   // 1. The 27 moments of every dual cell.
   constexpr int nM = 27;

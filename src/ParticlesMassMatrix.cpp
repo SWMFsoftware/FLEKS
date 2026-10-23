@@ -42,15 +42,7 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
   const int nBins = static_cast<int>(cellBox.numPts());
 
   CellBins bins;
-  bins.build(np, nBins, [=] AMREX_GPU_DEVICE(int ip) {
-    IntVect c;
-    if (!cellOf(ip, c))
-      return nBins;
-    const int i = c[0] - lo.x, j = c[1] - lo.y, k = c[2] - lo.z;
-    if (i < 0 || i >= len.x || j < 0 || j >= len.y || k < 0 || k >= len.z)
-      return nBins;
-    return i + len.x * (j + len.y * k);
-  });
+  bins.build_cells(np, cellBox, cellOf);
 
   // 1. Per cell: the jHat contribution of its 8 nodes and the 27 x 9 moments.
   constexpr int nJ = 8 * 3, nS = 27 * 9, nAcc = nJ + nS;
