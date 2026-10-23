@@ -541,20 +541,17 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   return -1; // To suppress compiler warnings.
 }
 
-inline amrex::Real get_decay_at_loc(const amrex::MultiFab& mf,
-                                    const amrex::MFIter& mfi,
-                                    const amrex::Geometry& gm,
-                                    const amrex::RealVect xyz, const int iVar,
-                                    const amrex::Real dt) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real decay_at_loc(
+    const amrex::Array4<amrex::Real const>& arr, const amrex::Real* plo,
+    const amrex::Real* invDx, const amrex::RealVect xyz, const int iVar,
+    const amrex::Real dt) {
   amrex::IntVect loIdx;
   amrex::RealVect dx;
-  find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
+  find_node_index(xyz, plo, invDx, loIdx, dx);
 
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
-
-  const auto& arr = mf.array(mfi);
 
   auto decay = [dt](amrex::Real nu) {
     return (nu > 0.0) ? std::exp(-nu * dt) : 1.0;
@@ -593,6 +590,15 @@ inline amrex::Real get_decay_at_loc(const amrex::MultiFab& mf,
 
   // Interpolate along z-axis
   return c0 * interpZ[1] + c1 * interpZ[0];
+}
+
+inline amrex::Real get_decay_at_loc(const amrex::MultiFab& mf,
+                                    const amrex::MFIter& mfi,
+                                    const amrex::Geometry& gm,
+                                    const amrex::RealVect xyz, const int iVar,
+                                    const amrex::Real dt) {
+  return decay_at_loc(mf.const_array(mfi), gm.ProbLo(), gm.InvCellSize(), xyz,
+                      iVar, dt);
 }
 
 inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,

@@ -532,21 +532,35 @@ void Particles<NStructReal, NStructInt>::apply_loss(
     const Real vol = dx[iLev].product();
     const Real ppcBase = product(nPartPerCell);
 
+    // Copies, so that the kernels capture values, not host pointers.
+    Real plo[3] = { 0, 0, 0 }, invDx[3] = { 0, 0, 0 };
+    for (int d = 0; d < nDim; ++d) {
+      plo[d] = Geom(iLev).ProbLo(d);
+      invDx[d] = Geom(iLev).InvCellSize(d);
+    }
+    const int iSp = speciesID;
+    const int iqp = iqp_;
+    const IntVect domSize = Geom(iLev).Domain().size();
+    const int nCellX = domSize[ix_];
+    const int nCellY = domSize[iy_];
+    const int nCellZ = nDim > 2 ? domSize[iz_] : 1;
+    const int iCycle = tc->get_cycle();
+    const bool useTargetPPC = isTargetPPCDefined && !isFake2D;
+
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      AoS& particles = pti.GetArrayOfStructs();
-      const int np = particles.numParticles();
+      const int np = pti.numParticles();
       if (np == 0)
         continue;
-      const Box tbx = pti.tilebox();
-      set_random_seed(iLev, tbx.smallEnd(), IntVect(313));
-      const auto tppc = isTargetPPCDefined && !isFake2D
-                            ? target_PPC(iLev)[pti].const_array()
-                            : Array4<int const>();
+      const auto tppc = useTargetPPC ? target_PPC(iLev)[pti].const_array()
+                                     : Array4<int const>();
+      ParticleType* const pData = pti.GetArrayOfStructs()().data();
+      const FluidView fv = fi->fluid_view(pti, iLev);
+      const Array4<Real const> lossArr = source->loss_array(pti, iLev);
 
-      for (int ip = 0; ip < np; ++ip) {
-        ParticleType& p = particles[ip];
+      ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
+        ParticleType& p = pData[ip];
         if (p.id() < 0)
-          continue;
+          return;
 
         RealVect xyz;
         for (int iDim = 0; iDim < nDim; ++iDim)
@@ -556,37 +570,43 @@ void Particles<NStructReal, NStructInt>::apply_loss(
         // exp(-nu*dt). This conservative discretization ensures exact balance
         // between particle losses and stiff product sources
         // (UserSource::set_source) even when reaction rates vary spatially.
-        const Real decay =
-            source->get_loss_decay(pti, xyz, speciesID, dt, iLev);
+        const Real decay = decay_at_loc(lossArr, plo, invDx, xyz, iSp, dt);
         if (decay >= 1.0)
-          continue;
+          return;
 
         // Discard particles whose survival factor has dropped to zero (< 1e-21)
         if (decay <= std::exp(-maxLossNuDt)) {
           p.id() = -1;
-          continue;
+          return;
         }
-        p.rdata(iqp_) *= decay;
+        p.rdata(iqp) *= decay;
 
         // Reference particle: the ions of fi, as for the source weight floor.
         IntVect ijk;
         for (int iDim = 0; iDim < nDim; ++iDim)
-          ijk[iDim] =
-              fastfloor((xyz[iDim] - plo[iLev][iDim]) * invDx[iLev][iDim]);
+          ijk[iDim] = fastfloor((xyz[iDim] - plo[iDim]) * invDx[iDim]);
         Real nRef = 0;
-        for (int iS = 0; iS < fi->get_nS(); iS++)
-          if (fi->get_species_charge(iS) > 0)
-            nRef += fi->get_number_density(pti, xyz, iS, iLev);
-        const Real ppc = tppc ? static_cast<Real>(tppc(ijk)) : ppcBase;
+        for (int iS = 0; iS < fv.get_nS(); iS++)
+          if (fv.get_species_charge(iS) > 0)
+            nRef += fv.get_number_density(fv.d, xyz, iS);
+        const Real ppc = useTargetPPC ? static_cast<Real>(tppc(ijk)) : ppcBase;
         const Real wMin = minLossWeightRatio * nRef * vol / ppc;
-        const Real w = std::abs(p.rdata(iqp_));
+        const Real w = amrex::Math::abs(p.rdata(iqp));
         if (w < wMin) {
-          if (randNum() * wMin < w)
-            p.rdata(iqp_) *= wMin / w;
+          const long nCellOffset =
+              static_cast<long>(nCellX) * nCellY * nCellZ * iCycle +
+              static_cast<long>(nCellY) * nCellZ * ijk[0] +
+              static_cast<long>(nCellZ) * ijk[1] + (nDim > 2 ? ijk[2] : 0) +
+              p.id();
+          const long seed = static_cast<long>(iSp + 3) * 7 *
+                            product(IntVect(313)) * nCellOffset;
+          RandNumHD rrRand(seed);
+          if (rrRand() * wMin < w)
+            p.rdata(iqp) *= wMin / w;
           else
             p.id() = -1;
         }
-      }
+      });
     }
   }
 
