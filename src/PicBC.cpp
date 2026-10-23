@@ -123,6 +123,68 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
 }
 
 //==========================================================
+void Pic::apply_field_bc_homogeneous(const iMultiFab& status, MultiFab& mf,
+                                     const int iLev) {
+  if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
+    return;
+
+  std::string nameFunc = "Pic::apply_field_bc_homogeneous";
+  timing_func(nameFunc);
+
+  const int nComp = mf.nComp();
+
+  // Zero-gradient ghosts on outflow/vacuum faces: a ghost takes the value of
+  // the boundary cell/node along the face normal, as the foextrap fill of
+  // apply_field_bc() does. The ghosts of the other faces are left alone: the
+  // caller zeroes the correction on inflow/fixed faces, conducting faces are
+  // handled below, and absorbing and wave faces are not treated here (the
+  // absorbing weights are unstable above c*dt/dx = 1 anyway).
+  if (bcField.has(FieldBC::outflow) || bcField.has(FieldBC::vacuum)) {
+    const BoxArray ba =
+        get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
+    const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bcField);
+    auto isOpen = [](int type) {
+      return type == FieldBC::outflow || type == FieldBC::vacuum;
+    };
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bxFab = mfi.fabbox();
+      if (ba.contains(bxFab))
+        continue;
+
+      Array4<Real> const& arr = mf[mfi].array();
+      const Array4<const int>& statusArr = status[mfi].array();
+
+      ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+          return;
+
+        const int ijk[3] = { i, j, k };
+        int m[3] = { i, j, k };
+        bool touched = false;
+        for (int d = 0; d < nDim; ++d) {
+          if (isOpen(bnd.bcLo[d]) && ijk[d] < bnd.loBnd[d]) {
+            m[d] = bnd.loBnd[d];
+            touched = true;
+          } else if (isOpen(bnd.bcHi[d]) && ijk[d] > bnd.hiBnd[d]) {
+            m[d] = bnd.hiBnd[d];
+            touched = true;
+          }
+        }
+        if (!touched)
+          return;
+
+        for (int iVar = 0; iVar < nComp; ++iVar)
+          arr(i, j, k, iVar) = arr(m[0], m[1], m[2], iVar);
+      });
+    }
+  }
+
+  if (hasConductingBC_)
+    apply_conducting_wall(status, mf, 0, nComp, iLev, bcField, false);
+}
+
+//==========================================================
 void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                        const int nComp, GETVALUE func, const int iLev,
                        const BoxBC<FieldBC::Type>* bc,
@@ -1016,4 +1078,25 @@ void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
       fill_body_E_insulating(mf, iLev);
     }
   }
+}
+
+//==========================================================
+void Pic::warn_absorb_cfl() {
+  const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
+  const Real* dx = Geom(0).CellSize();
+  Real cfl = 0.0;
+  for (int d = 0; d < nDim; ++d) {
+    if (bcField.face(d, 0) == FieldBC::absorb ||
+        bcField.face(d, 1) == FieldBC::absorb)
+      cfl = std::max(cfl, cs * tc->get_dt() / dx[d]);
+  }
+  if (cfl <= 1.0)
+    return;
+
+  isAbsorbCflWarned_ = true;
+  amrex::Print() << printPrefix
+                 << " [CFL warning] absorbing boundary: charSpeed*dt/dx = "
+                 << cfl
+                 << " (> 1). The absorbing boundary is unstable above 1; "
+                    "use a smaller time step or 'outflow' faces.\n";
 }

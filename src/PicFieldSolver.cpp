@@ -87,6 +87,9 @@ void Pic::update_E_impl() {
 
   timing_func(nameFunc);
 
+  if (hasAbsorbBC_ && !isAbsorbCflWarned_)
+    warn_absorb_cfl();
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
 
@@ -288,14 +291,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                   });
     }
 
-    // The conducting wall is linear and homogeneous, so the correction obeys
-    // it too: E_t = 0 on the wall nodes, mirrored ghost nodes. Without this
-    // GMRES solved for a different wall than the one imposed on E afterwards,
-    // which gained energy at every reflection and made the solver unstable
-    // above c*dt/dx ~ 3.
-    if (hasWallEt)
-      apply_conducting_wall(node_status(iLev), vecMF, 0, nDim3, iLev, bcField,
-                            false);
+    // The correction obeys the linear, homogeneous part of the field BC:
+    // E_t = 0 and mirrored ghosts on conducting walls, zero-gradient ghosts
+    // on outflow faces. Without it GMRES solved with zero ghosts, a different
+    // boundary than the one imposed on E afterwards, and the solver went
+    // unstable above c*dt/dx ~ 2-3.
+    if (iLev == 0)
+      apply_field_bc_homogeneous(node_status(iLev), vecMF, iLev);
   } else {
     // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
