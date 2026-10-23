@@ -497,6 +497,26 @@ void host_fill_fab(amrex::FabArray<FAB>& fa, amrex::MFIter& mfi,
 #endif
 }
 
+// Run f(particles, n) on the host for the n particles at `data` (device
+// memory in a GPU build), e.g. for I/O or MPI. A GPU build copies the
+// particles to a host buffer and, if writeBack, copies them back afterwards;
+// a CPU build passes `data` itself.
+template <class P, class F>
+void host_particles(P* data, int n, bool writeBack, F&& f) {
+  if (n <= 0)
+    return;
+#ifdef AMREX_USE_GPU
+  amrex::Gpu::PinnedVector<P> host(n);
+  amrex::Gpu::dtoh_memcpy(host.data(), data, sizeof(P) * n);
+  f(host.data(), n);
+  if (writeBack)
+    amrex::Gpu::htod_memcpy(data, host.data(), sizeof(P) * n);
+#else
+  amrex::ignore_unused(writeBack);
+  f(data, n);
+#endif
+}
+
 // host_fill_fab() for every FAB of `fa`, on the valid box or, if withGhost,
 // on the whole FAB including its ghost cells.
 template <class FAB, class F>

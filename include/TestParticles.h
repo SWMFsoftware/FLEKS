@@ -4,6 +4,17 @@
 #include "BitArray.h"
 #include "Particles.h"
 
+// The state of the trajectory recorder of the test particles (see
+// TestParticles::dtSave), copied into the mover kernels.
+struct RecordParams {
+  amrex::Real dtSave = -1;   // > 0: record at tNextSave (SI), else every save
+  amrex::Real tNextSave = 0; // SI
+  amrex::Real dtSI = 0;      // the SI length of the step
+  amrex::Real tNowSI = 0;
+  amrex::Real mass = 1, charge = 1;
+  bool isRelativistic = false;
+};
+
 class TestParticles : public PTParticles {
 public:
   static constexpr int iTPt_ = 0;
@@ -204,20 +215,10 @@ private:
   amrex::Real dtSave = -1.0;
   amrex::Real tNextSave = 0.0;
 
-  void interpolate_record_trajectory(
-      amrex::Real xp, amrex::Real yp, amrex::Real zp, amrex::Real up,
-      amrex::Real vp, amrex::Real wp, amrex::Real unp1, amrex::Real vnp1,
-      amrex::Real wnp1, amrex::Real dtStep, amrex::Real dtElse,
-      amrex::Real tNowSI, amrex::Real& tRec, amrex::Real& xRec,
-      amrex::Real& yRec, amrex::Real& zRec, amrex::Real& uRec,
-      amrex::Real& vRec, amrex::Real& wRec) const;
+  // The trajectory recorder state for the mover kernels.
+  RecordParams record_params(amrex::Real tNowSI) const;
 
-  void save_particle_record(ParticleType& p, amrex::Real tRec, amrex::Real xRec,
-                            amrex::Real yRec, amrex::Real zRec,
-                            amrex::Real uRec, amrex::Real vRec,
-                            amrex::Real wRec, const amrex::Real* bp = nullptr,
-                            const amrex::Real* ep = nullptr,
-                            const amrex::Real (*gradB)[3] = nullptr);
+  static void check_mover_error(const amrex::Gpu::DeviceVector<int>& flag);
 };
 
 #endif
