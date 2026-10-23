@@ -103,7 +103,8 @@ struct NodeMMCommData {
   struct PeerComm {
     int rank;
     std::vector<RemoteTagEntry> tags;
-    // Pinned host memory: kernels pack and unpack it, MPI sends it.
+    // Pinned host memory for MPI; the kernels pack and unpack a device
+    // buffer, which is copied to/from buf in one transfer.
     amrex::Gpu::PinnedVector<RealMM> buf;
     std::size_t totalPts = 0;
   };
@@ -112,7 +113,7 @@ struct NodeMMCommData {
   amrex::FabArrayBase::BDKey bdkey;
 
   std::vector<LocTagEntry> loc_tags;
-  amrex::Gpu::PinnedVector<RealMM> local_buf;
+  std::size_t localPts = 0; // size of the local snapshot buffer
   std::vector<std::vector<int> > box_to_loc_tags;
 
   std::vector<PeerComm> sends;
