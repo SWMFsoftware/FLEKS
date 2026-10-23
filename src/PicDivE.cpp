@@ -355,7 +355,7 @@ void Pic::amr_divE_correction() {
       }
       if (finestLevel() > 0) {
         for (int i = 0; i < nSpecies; ++i) {
-          parts[i]->Redistribute();
+          parts[i]->redistribute_particles();
         }
       }
     }

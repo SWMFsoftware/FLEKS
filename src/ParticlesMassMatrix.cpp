@@ -30,11 +30,11 @@ namespace {
 // The entries of the pairs (node, node + o) with o_z + 1 >= kpMin are filled:
 // kpMin = 1 for a single level (the kp = 0 half is mirrored afterwards),
 // kpMin = 0 for the AMR mass matrix, which stores all of them.
-template <class CellOf, class IdOf, class State>
+template <class CellOf, class State>
 void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
                                  const Array4<Real>& jArr,
                                  const Array4<RealMM>& mmArr, CellOf cellOf,
-                                 IdOf idOf, State state, int kpMin = 1) {
+                                 State state, int kpMin = 1) {
   if (np == 0)
     return;
   const Dim3 lo = lbound(cellBox);
@@ -42,18 +42,15 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
   const int nBins = static_cast<int>(cellBox.numPts());
 
   CellBins bins;
-  bins.build(
-      np, nBins,
-      [=] AMREX_GPU_DEVICE(int ip) {
-        IntVect c;
-        if (!cellOf(ip, c))
-          return nBins;
-        const int i = c[0] - lo.x, j = c[1] - lo.y, k = c[2] - lo.z;
-        if (i < 0 || i >= len.x || j < 0 || j >= len.y || k < 0 || k >= len.z)
-          return nBins;
-        return i + len.x * (j + len.y * k);
-      },
-      idOf);
+  bins.build(np, nBins, [=] AMREX_GPU_DEVICE(int ip) {
+    IntVect c;
+    if (!cellOf(ip, c))
+      return nBins;
+    const int i = c[0] - lo.x, j = c[1] - lo.y, k = c[2] - lo.z;
+    if (i < 0 || i >= len.x || j < 0 || j >= len.y || k < 0 || k >= len.z)
+      return nBins;
+    return i + len.x * (j + len.y * k);
+  });
 
   // 1. Per cell: the jHat contribution of its 8 nodes and the 27 x 9 moments.
   constexpr int nJ = 8 * 3, nS = 27 * 9, nAcc = nJ + nS;
@@ -192,9 +189,9 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
 
 // Whether the cell of particle p is next to a refined cell.
 template <class P>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
-is_next_to_refined(const P& p, const Array4<int const>& status,
-                   const Real* plo, const Real* invDx) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_next_to_refined(
+    const P& p, const Array4<int const>& status, const Real* plo,
+    const Real* invDx) {
   IntVect cell;
   RealVect dShift;
   find_cell_index_exp(p.pos(), plo, invDx, cell, dShift);
@@ -342,10 +339,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                                 dShift, coef);
         return true;
       };
-      deposit_mass_matrix_by_cell(
-          np, enclosedCells(nodeMM[pti].box()), jArr, mmArr, cellOf,
-          [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); },
-          particle_state);
+      deposit_mass_matrix_by_cell(np, enclosedCells(nodeMM[pti].box()), jArr,
+                                  mmArr, cellOf, particle_state);
       continue;
     }
 
@@ -534,8 +529,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
         return false;
 
       const bool refinedneighbour =
-          hasFiner && is_next_to_refined(p, status, ploAll[iLev],
-                                         invDxAll[iLev]);
+          hasFiner &&
+          is_next_to_refined(p, status, ploAll[iLev], invDxAll[iLev]);
       nCoef = iLev + 1 + refinedneighbour;
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -649,7 +644,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
                                       dS, c);
               return true;
             },
-            [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); },
             [=] AMREX_GPU_DEVICE(int ip, IntVect& loIdx1, RealVect& dShift1,
                                  Real(&coef1)[2][2][2], Real(&alpha)[9],
                                  Real(&currents)[3]) {

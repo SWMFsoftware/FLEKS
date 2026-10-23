@@ -38,13 +38,11 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_charge(
 // moments sum_p |q| sx^l sy^m sz^n (l, m, n = 0..2): the particles of a cell
 // are summed in a fixed order (CellBins), then every cell centre gathers its
 // entries from the dual cells around it. stateOf(ip, dShift, q) returns the
-// shift and the charge of particle ip; cellOf and idOf as in
-// deposit_to_nodes_with().
-template <class CellOf, class IdOf, class StateOf>
+// shift and the charge of particle ip; cellOf as in deposit_to_nodes_with().
+template <class CellOf, class StateOf>
 void deposit_center_mm_by_cell(int np, const Box& cellBox,
                                const Array4<RealCMM>& mmArr, const Real* dx,
-                               Real invVol, CellOf cellOf, IdOf idOf,
-                               StateOf stateOf) {
+                               Real invVol, CellOf cellOf, StateOf stateOf) {
   if (np == 0)
     return;
   const Dim3 lo = lbound(cellBox);
@@ -52,22 +50,18 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
   const int nBins = static_cast<int>(cellBox.numPts());
 
   CellBins bins;
-  bins.build(
-      np, nBins,
-      [=] AMREX_GPU_DEVICE(int ip) {
-        IntVect c;
-        if (!cellOf(ip, c))
-          return nBins;
-        const int ijk[3] = { AMREX_D_DECL(c[0] - lo.x, c[1] - lo.y,
-                                          c[2] - lo.z) };
-        const int lenD[3] = { len.x, len.y, len.z };
-        for (int d = 0; d < AMREX_SPACEDIM; ++d)
-          if (ijk[d] < 0 || ijk[d] >= lenD[d])
-            return nBins;
-        return ijk[0] + len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
-                                 len.y * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
-      },
-      idOf);
+  bins.build(np, nBins, [=] AMREX_GPU_DEVICE(int ip) {
+    IntVect c;
+    if (!cellOf(ip, c))
+      return nBins;
+    const int ijk[3] = { AMREX_D_DECL(c[0] - lo.x, c[1] - lo.y, c[2] - lo.z) };
+    const int lenD[3] = { len.x, len.y, len.z };
+    for (int d = 0; d < AMREX_SPACEDIM; ++d)
+      if (ijk[d] < 0 || ijk[d] >= lenD[d])
+        return nBins;
+    return ijk[0] + len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
+                             len.y * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
+  });
 
   // 1. The 27 moments of every dual cell.
   constexpr int nM = 27;
@@ -222,9 +216,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
           AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
       return true;
     };
-    auto idOf = [=] AMREX_GPU_DEVICE(int ip) {
-      return particle_key(pData[ip]);
-    };
     // The cells whose 2^D-cell stencil lies in the FABs.
     Box cellBox = netChargeMF[pti].box();
     cellBox.growHi(-1);
@@ -232,7 +223,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
     // Net charge: the product of the weights in the order of
     // ParticleInterpolator::ParticleToMesh.
     deposit_to_nodes<1>(
-        np, cellBox, chargeArr, 0, cellOf, idOf,
+        np, cellBox, chargeArr, 0, cellOf,
         [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
           const ParticleType& p = pData[ip];
           ParticleInterpolator::Linear interp(p, plo, dxi);
@@ -252,7 +243,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
       Box mmBox = centerMM[pti].box();
       mmBox.growHi(-1);
       deposit_center_mm_by_cell(
-          np, mmBox, mmArr, dxLoc, invV, cellOf, idOf,
+          np, mmBox, mmArr, dxLoc, invV, cellOf,
           [=] AMREX_GPU_DEVICE(int ip, RealVect& dShift, Real& q) {
             const ParticleType& p = pData[ip];
             ParticleInterpolator::Linear interp(p, plo, dxi);
@@ -335,13 +326,10 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
             cell = loIdx;
             return true;
           };
-          auto idOf = [=] AMREX_GPU_DEVICE(int ip) {
-            return particle_key(pData[ip]);
-          };
           Box cellBox = netChargeMF[pti].box();
           cellBox.growHi(-1);
           deposit_to_nodes<1>(
-              np, cellBox, chargeArr, 0, cellOf, idOf,
+              np, cellBox, chargeArr, 0, cellOf,
               [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
                 IntVect loIdx;
                 RealVect dShift;
@@ -367,7 +355,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                   return false;
                 return cellOf(ip, cell);
               },
-              idOf,
               [=] AMREX_GPU_DEVICE(int ip, RealVect& dShift, Real& q) {
                 IntVect loIdx;
                 Real coef[2][2][2];
@@ -444,7 +431,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                 cell = loIdx;
                 return true;
               },
-              [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); },
               [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
                 IntVect loIdx;
                 RealVect dShift;
@@ -698,7 +684,6 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
       deposit_to_nodes<nMoments>(
           np, enclosedCells(momentsMF[iLev][pti].box()), momentsArr, 0, cellOf,
-          [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); },
           [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][nMoments]) {
             const ParticleType& p = pData[ip];
             const Real up = p.rdata(iup_);

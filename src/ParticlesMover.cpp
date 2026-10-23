@@ -29,10 +29,9 @@ namespace {
 // add(i, j, k, comp, value) stores a node current: an atomic deposit into the
 // current, or (deterministic GPU deposit) a per-particle accumulator.
 template <class Add>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
-deposit_esirkepov(const Real* x0, const Real* x1, Real q, Real vOut,
-                  const Real* plo, const Real* invDx, const Real* dx,
-                  Real invDt, Real invVol, Add&& add) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool deposit_esirkepov(
+    const Real* x0, const Real* x1, Real q, Real vOut, const Real* plo,
+    const Real* invDx, const Real* dx, Real invDt, Real invVol, Add&& add) {
   // A particle that stays in its cell touches 2 nodes per dimension, one that
   // crosses a cell face 3.
   constexpr int nS = 3;
@@ -105,9 +104,11 @@ deposit_esirkepov(const Real* x0, const Real* x1, Real q, Real vOut,
 
 // The lowest node of the Esirkepov stencil of a particle moving from x0 to x1
 // (see deposit_esirkepov); false if it moved more than one cell.
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
-esirkepov_base(const Real* x0, const Real* x1, const Real* plo,
-               const Real* invDx, int* base) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool esirkepov_base(const Real* x0,
+                                                             const Real* x1,
+                                                             const Real* plo,
+                                                             const Real* invDx,
+                                                             int* base) {
   for (int d = 0; d < 3; ++d) {
     base[d] = 0;
     if (d >= nDim)
@@ -287,13 +288,11 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Dim3 hi = init_dim3(1);
 
       // Deterministic current deposit (GPU): the inputs of the deposit of
-      // every particle, x0 (3), x1 (3), q, vOut, valid, and the particle key.
+      // every particle, x0 (3), x1 (3), q, vOut, valid.
       const bool binCurrent = depositCurrent && useCellBinDeposits;
       constexpr int nIn = 9;
       Gpu::DeviceVector<Real> depositInVec(binCurrent ? np * nIn : 0, 0.0);
-      Gpu::DeviceVector<unsigned long long> depositKeyVec(binCurrent ? np : 0);
       Real* const depositIn = depositInVec.data();
-      unsigned long long* const depositKey = depositKeyVec.data();
 
       ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
         ParticleType& p = pData[ip];
@@ -397,7 +396,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           in[6] = qFactor * p.rdata(iqp_);
           in[7] = wDrift * dtLoc * invDt;
           in[8] = 1; // valid
-          depositKey[ip] = particle_key(p);
           int base[3];
           if (!esirkepov_base(xOld, xNew, ploLoc, invDxLoc, base))
             *movedTooFar = 1;
@@ -456,18 +454,16 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
               cell = IntVect(AMREX_D_DECL(base[0], base[1], base[2]));
               return true;
             },
-            [=] AMREX_GPU_DEVICE(int ip) { return depositKey[ip]; },
             [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[3][3][3][3]) {
               const Real* const in =
                   depositIn + static_cast<std::size_t>(ip) * nIn;
               int base[3];
               esirkepov_base(in, in + 3, ploLoc, invDxLoc, base);
-              deposit_esirkepov(in, in + 3, in[6], in[7], ploLoc, invDxLoc,
-                                dxLoc, invDt, invVolLev,
-                                [&](int i, int j, int k, int d, Real v) {
-                                  acc[i - base[0]][j - base[1]][k - base[2]]
-                                     [d] += v;
-                                });
+              deposit_esirkepov(
+                  in, in + 3, in[6], in[7], ploLoc, invDxLoc, dxLoc, invDt,
+                  invVolLev, [&](int i, int j, int k, int d, Real v) {
+                    acc[i - base[0]][j - base[1]][k - base[2]][d] += v;
+                  });
             });
       }
     } // for pti
