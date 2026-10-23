@@ -524,6 +524,11 @@ private:
   // Characteristic speed for the absorbing BC; 0 = auto (light speed).
   amrex::Real absorbCharSpeed = 0.0;
 
+  // The absorbing weights are only stable for charSpeed*dt/dx <= 1; the
+  // semi-implicit solver warns once if a time step exceeds it.
+  bool isAbsorbCflWarned_ = false;
+  void warn_absorb_cfl();
+
   // Upstream state declared by #INFLOW, stored as read from PARAM.in
   // (rho [1/cc] i.e. the species number density, ux/uy/uz [km/s], T [K] --
   // note that these are NOT SI: km/s and 1/cc are not).  One block may be
@@ -1062,6 +1067,11 @@ public:
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                 const int iStart, const int nComp, GETVALUE func,
                 const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
+
+  // The linear, homogeneous part of the electric-field BC (no prescribed
+  // values): what a correction to E, such as the GMRES vector, must obey.
+  void apply_field_bc_homogeneous(const amrex::iMultiFab &status,
+                                  amrex::MultiFab &mf, const int iLev);
 
   // Conducting wall: zero normal B / tangential E, mirror remaining components.
   void apply_conducting_wall(const amrex::iMultiFab &status,
