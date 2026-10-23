@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Validator for the reflecting / conducting wall boundary tests (tests/bc_reflecting/).
 
-Four variants are discovered from this directory:
+Five variants are discovered from this directory:
   - PARAM.in.fields          -> base_name "bc_reflecting_fields"
       Full-PIC conducting field wall (tophat EM pulse bounces off PEC walls,
       conserving total electromagnetic energy).
+  - PARAM.in.largedt.fields  -> base_name "bc_reflecting_largedt_fields"
+      The same pulse in vacuum at c*dt/dx = 3.5 with theta = 0.5: the
+      semi-implicit solve must conserve the EM energy at every step to the
+      GMRES tolerance across repeated wall reflections.
   - PARAM.in.hybrid.fields   -> base_name "bc_reflecting_hybrid_fields"
       Hybrid-PIC conducting field wall (shear-Alfvén wave in PEC cavity;
       finite and stable field advance).
@@ -42,6 +46,10 @@ RHO_MIN = 1e-3             # particles: deposited rhoS0 must stay > this fractio
 ETOT_CONDUCTING_MIN = 0.8  # full-PIC fields: Etot_final / Etot_initial >= 0.8 (conserved)
 ETOT_CONDUCTING_MAX = 1.25 # full-PIC fields: Etot_final / Etot_initial <= 1.25 (conserved)
 ETOT_HYBRID_GROWTH = 1e3   # hybrid fields: Etot may not grow by more than 1e3x (stable)
+# large-dt fields: max |Etot/Etot_initial - 1| over all steps. The theta = 0.5
+# scheme conserves energy to the GMRES tolerance (~3e-6 over 80 steps); an
+# inconsistent wall BC in the GMRES operator is off by 5e-3 after 10 steps.
+ETOT_LARGEDT_TOL = 1e-4
 
 
 def validate_log(pic_diags=None, test_name=None):
@@ -58,6 +66,8 @@ def validate_log(pic_diags=None, test_name=None):
 
     if test_name in ("bc_reflecting_fields", "bc_reflecting_explicit_fields"):
         return _validate_log_fields(e0, e1, first, last)
+    if test_name == "bc_reflecting_largedt_fields":
+        return _validate_log_largedt_fields(pic_diags)
     if test_name == "bc_reflecting_hybrid_fields":
         return _validate_log_hybrid_fields(pic_diags)
 
@@ -120,6 +130,33 @@ def _validate_log_fields(e0, e1, first, last):
     return True, "Passed (EM energy conserved across PEC reflections)"
 
 
+def _validate_log_largedt_fields(pic_diags):
+    """Semi-implicit solver at c*dt/dx = 3.5, theta = 0.5: EM energy conserved
+    at every step across the wall reflections."""
+    e0 = pic_diags[0].get("Etot", 0.0)
+    if not math.isfinite(e0) or e0 <= 0:
+        return False, "Initial Etot is zero or non-finite (pulse not seeded)"
+
+    worst, step = 0.0, 0
+    for i, d in enumerate(pic_diags):
+        e = d.get("Etot", 0.0)
+        if not math.isfinite(e):
+            return False, f"Non-finite EM energy at log entry {i}"
+        dev = abs(e / e0 - 1.0)
+        if dev > worst:
+            worst, step = dev, i
+    logger.debug("    max |Etot/Etot0 - 1| = %.3e (log entry %d)", worst, step)
+
+    if worst > ETOT_LARGEDT_TOL:
+        return False, (
+            f"EM energy not conserved: max |Etot/Etot0 - 1| = {worst:.3e} at log "
+            f"entry {step} > {ETOT_LARGEDT_TOL:.0e} -- the GMRES operator and "
+            f"the conducting-wall BC are inconsistent"
+        )
+
+    return True, f"Passed (EM energy conserved to {worst:.1e} at c*dt/dx = 3.5)"
+
+
 def _validate_log_hybrid_fields(pic_diags):
     """Hybrid-PIC conducting wall: advance stays finite, positive, and bounded."""
     return validate_hybrid_energy_bounded(
@@ -179,7 +216,8 @@ def validate_plot(test_name):
         logger.debug("    [RW] No .out files; skipping plot check.")
         return True, "No .out files (skipped)"
 
-    if test_name in ("bc_reflecting_fields", "bc_reflecting_explicit_fields"):
+    if test_name in ("bc_reflecting_fields", "bc_reflecting_explicit_fields",
+                     "bc_reflecting_largedt_fields"):
         return _check_fields_plot(out_files)
     if test_name == "bc_reflecting_hybrid_fields":
         return _check_hybrid_fields_plot(out_files)

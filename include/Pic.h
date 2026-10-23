@@ -342,6 +342,9 @@ private:
   amrex::Vector<amrex::MultiFab> solverVecMF;
   amrex::Vector<amrex::MultiFab> solverMatvecMF;
   amrex::Vector<amrex::MultiFab> solverTempNode3;
+  // Input vector of the E matvec before the conducting-wall BC zeroes the
+  // tangential E on the wall nodes (the identity rows of those unknowns).
+  amrex::Vector<amrex::MultiFab> solverWallInMF;
   amrex::Vector<amrex::MultiFab> solverCenterLapMF;
   amrex::Vector<amrex::MultiFab> solverTempCenter3;
   amrex::Vector<amrex::MultiFab> solverTempCenter1;
@@ -673,6 +676,7 @@ public:
     solverVecMF.resize(n_lev_max());
     solverMatvecMF.resize(n_lev_max());
     solverTempNode3.resize(n_lev_max());
+    solverWallInMF.resize(n_lev_max());
     solverCenterLapMF.resize(n_lev_max());
     solverTempCenter3.resize(n_lev_max());
     solverTempCenter1.resize(n_lev_max());

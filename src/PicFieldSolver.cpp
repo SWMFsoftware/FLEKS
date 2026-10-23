@@ -66,6 +66,22 @@ void Pic::update_E_expl() {
 }
 
 //==========================================================
+// The tangential electric field on a conducting wall node is a Dirichlet
+// unknown of the implicit E solve (E_t = 0): its matrix row is the identity
+// and its right-hand side is E^n, so the GMRES correction there is zero.
+AMREX_GPU_HOST_DEVICE inline bool
+is_conducting_wall_Et(const BoundaryBounds& bnd, const int ijk[3], int c) {
+  for (int d = 0; d < nDim; ++d) {
+    if (!bnd.isNode[d] || c == d)
+      continue;
+    if ((bnd.bcLo[d] == FieldBC::conducting && ijk[d] == bnd.loBnd[d]) ||
+        (bnd.bcHi[d] == FieldBC::conducting && ijk[d] == bnd.hiBnd[d]))
+      return true;
+  }
+  return false;
+}
+
+//==========================================================
 void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
@@ -216,6 +232,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                         DistributionMap(iLev), 3, 1);
   }
 
+  const bool hasWallEt = iLev == 0 && hasConductingBC_;
+  if (hasWallEt && solverWallInMF[iLev].empty())
+    distribute_FabArray(solverWallInMF[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, 0);
+
   MultiFab& vecMF = solverVecMF[iLev];
   vecMF.setVal(0.0);
 
@@ -238,6 +259,9 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     Periodicity period(IntVect(AMREX_D_DECL(0, 0, 1)));
     vecMF.FillBoundary(period);
   }
+
+  if (hasWallEt)
+    MultiFab::Copy(solverWallInMF[iLev], vecMF, 0, 0, 3, 0);
 
   if (useZeroBC) {
     // For Dirichlet physical boundaries (inflow, fixed), the correction in the
@@ -263,6 +287,15 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                     }
                   });
     }
+
+    // The conducting wall is linear and homogeneous, so the correction obeys
+    // it too: E_t = 0 on the wall nodes, mirrored ghost nodes. Without this
+    // GMRES solved for a different wall than the one imposed on E afterwards,
+    // which gained energy at every reflection and made the solver unstable
+    // above c*dt/dx ~ 3.
+    if (hasWallEt)
+      apply_conducting_wall(node_status(iLev), vecMF, 0, nDim3, iLev, bcField,
+                            false);
   } else {
     // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
@@ -400,6 +433,24 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
+
+  // Identity rows of the tangential E on conducting walls, from the input
+  // before the wall BC zeroed it.
+  if (hasWallEt) {
+    const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
+                             &bcField);
+    for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrOut = matvecMF[mfi].array();
+      const Array4<Real const>& arrIn = solverWallInMF[iLev][mfi].array();
+      ParallelFor(bx, matvecMF.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    if (is_conducting_wall_Et(bnd, ijk, c))
+                      arrOut(i, j, k, c) = arrIn(i, j, k, c);
+                  });
+    }
+  }
 
   // Dirichlet physical boundaries (inflow, fixed): enforce A_ii = 1, A_ij = 0
   // by copying vecMF to matvecMF on boundary nodes.
@@ -594,6 +645,23 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
                         arrRHS(i, j, k, c) = arrE(i, j, k, c);
                       }
                     }
+                  });
+    }
+  }
+
+  // Tangential E on conducting walls: rhs = E^n (zero after the wall BC).
+  if (iLev == 0 && hasConductingBC_) {
+    const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
+                             &bcField);
+    for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real>& arrRHS = temp2Node[mfi].array();
+      const Array4<Real const>& arrE = nodeE[iLev][mfi].array();
+      ParallelFor(bx, temp2Node.nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    const int ijk[3] = { i, j, k };
+                    if (is_conducting_wall_Et(bnd, ijk, c))
+                      arrRHS(i, j, k, c) = arrE(i, j, k, c);
                   });
     }
   }
