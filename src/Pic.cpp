@@ -200,6 +200,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
+        if (hasConductingBC_)
+          distribute_FabArray(solverWallInMF[iLev], node_box_array(iLev),
+                              DistributionMap(iLev), 3, 0, doMoveData);
         distribute_FabArray(solverCenterLapMF[iLev], boxArray(iLev),
                             DistributionMap(iLev), 3, 1, doMoveData);
         if (fsolver.coefDiff > 0) {

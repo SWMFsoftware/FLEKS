@@ -1,0 +1,112 @@
+#DESCRIPTION
+Conducting-field wall test of the semi-implicit field solver at a large time step: the tophat EM pulse (Ey/Bz step) of PARAM.in.fields in vacuum, with c*dt/dx = 3.5 and theta = 0.5 (energy conserving without the extended div(E) stencil), reflects off the conducting x-faces for 80 steps. Total EM energy must be conserved to the linear-solver tolerance; with an inconsistent wall BC in the GMRES operator the energy grows at every reflection.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-10.0                   xMin
+ 10.0                   xMax
+-0.5                    yMin
+ 0.5                    yMax
+-0.5                    zMin
+ 0.5                    zMax
+
+#NCELL
+40                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+10                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#PARTICLES
+0                       nParticlePerCellX   vacuum
+0                       nParticlePerCellY
+1                       nParticlePerCellZ
+
+#PLASMA
+1                       nSpecies
+0.01                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+100.0                   rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0e4                   T
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#TESTCASE
+tophat                  testCase
+
+#FIELDBOXBOUNDARY
+conducting              fieldBoxBoundaryLo
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#TIMESTEPPING
+T                       useFixedDt
+1.75                    dt          c*dt/dx = 3.5
+
+#DISCRETIZATION
+0.50                    theta
+0.0                     ratioDivC2C
+
+#MONITOR
+10                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#DIVE
+F                       doCorrectDivE
+
+#RESAMPLING
+F                       doReSampling
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+-1                      dnSavePlot
+35.0                    dtSavePlot
+-1                      dxSavePlot
+Ey Bz Ex Ez Bx By       plotVar
+
+#STOP
+-1                      MaxIter
+140.0                   TimeMax     80 steps, 7 wall-to-wall transits
