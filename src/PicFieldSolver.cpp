@@ -6,6 +6,7 @@
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_Scan.H>
 
+#include "GpuBackend.h"
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"
@@ -86,7 +87,7 @@ void Pic::update_E_impl() {
 
     nodeEth[iLev].setVal(0.0);
     convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
-    nodeEth[iLev].SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
+    sum_boundary(nodeEth[iLev], Geom(iLev).periodicity());
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
 
     if (doSmoothE) {
@@ -237,7 +238,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   convert_1d_to_3d(vecIn, vecMF, iLev);
 
   // The right side edges should be filled in.
-  vecMF.SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
+  sum_boundary(vecMF, Geom(iLev).periodicity());
 
   // M*E needs ghost cell information.
   vecMF.FillBoundary(Geom(iLev).periodicity());

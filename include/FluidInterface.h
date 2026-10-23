@@ -1170,8 +1170,7 @@ public:
   void sum_boundary() {
     timing_func("FI::sum_boundary");
     for (int iLev = 0; iLev < n_lev(); ++iLev)
-      nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity(),
-                                  /*deterministic=*/true);
+      ::sum_boundary(nodeFluid[iLev], Geom(iLev).periodicity());
 
     for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
       sum_two_lev_interface_node(
