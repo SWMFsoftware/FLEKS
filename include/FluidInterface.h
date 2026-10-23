@@ -1305,6 +1305,9 @@ public:
   }
 
   // The node fluid of the FAB mfi of level iLev and its geometry.
+  // The node fluid of level iLev (e.g. to stage it on the host).
+  amrex::MultiFab& get_node_fluid(int iLev) { return nodeFluid[iLev]; }
+
   FluidData fluid_data(const amrex::MFIter& mfi, const int iLev) const {
     FluidData d;
     d.fluid = nodeFluid[iLev].const_array(mfi);

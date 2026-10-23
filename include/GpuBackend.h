@@ -497,6 +497,56 @@ void host_fill_fab(amrex::FabArray<FAB>& fa, amrex::MFIter& mfi,
 #endif
 }
 
+// Make the FABs of `fa` host accessible for the lifetime of the object (for
+// host-only code such as the user sources): a GPU build swaps the data of
+// every FAB with a pinned host copy, and swaps it back (copying the possibly
+// modified host values to the device) in the destructor or in restore(). A
+// CPU build does nothing.
+template <class FAB> class HostStaging {
+public:
+  explicit HostStaging(amrex::FabArray<FAB>& fa, bool writeBack = true)
+      : fa_(fa), writeBack_(writeBack) {
+#ifdef AMREX_USE_GPU
+    for (amrex::MFIter mfi(fa_); mfi.isValid(); ++mfi) {
+      FAB& fab = fa_[mfi];
+      auto host = std::make_unique<FAB>(fab.box(), fab.nComp(),
+                                        amrex::The_Pinned_Arena());
+      amrex::Gpu::dtoh_memcpy(host->dataPtr(), fab.dataPtr(), fab.nBytes());
+      swap_fabs(fab, *host); // fa_ now holds the host copy
+      saved_.push_back(std::move(host));
+    }
+#endif
+  }
+  ~HostStaging() { restore(); }
+  HostStaging(const HostStaging&) = delete;
+  HostStaging& operator=(const HostStaging&) = delete;
+
+  void restore() {
+#ifdef AMREX_USE_GPU
+    int i = 0;
+    for (amrex::MFIter mfi(fa_); mfi.isValid() && !saved_.empty(); ++mfi) {
+      FAB& fab = fa_[mfi];
+      FAB& device = *saved_[i++];
+      if (writeBack_)
+        amrex::Gpu::htod_memcpy(device.dataPtr(), fab.dataPtr(), fab.nBytes());
+      swap_fabs(fab, device);
+    }
+    saved_.clear();
+#endif
+  }
+
+private:
+  static void swap_fabs(FAB& a, FAB& b) {
+    FAB tmp(std::move(a));
+    a = std::move(b);
+    b = std::move(tmp);
+  }
+
+  amrex::FabArray<FAB>& fa_;
+  bool writeBack_;
+  std::vector<std::unique_ptr<FAB> > saved_;
+};
+
 // Run f(particles, n) on the host for the n particles at `data` (device
 // memory in a GPU build), e.g. for I/O or MPI. A GPU build copies the
 // particles to a host buffer and, if writeBack, copies them back afterwards;

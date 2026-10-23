@@ -2202,33 +2202,19 @@ void Pic::fill_regional_resistivity_field(int iLev) {
       continue;
     Regions reg(regionShapes, cfg.regionStr);
 
-    for (MFIter mfi(nodeEtaRegional[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.growntilebox();
-      const Array4<Real>& arr = nodeEtaRegional[iLev][mfi].array();
-      const auto lo = box.smallEnd();
-      const auto hi = box.bigEnd();
-
+    // Regions are host objects (virtual shapes): fill on the host.
+    host_fill(nodeEtaRegional[iLev], /*withGhost=*/true,
+              [&](const MFIter&, int i, int j, int k, const auto& arr) {
+                Real xyz[nDim];
+                xyz[0] = probLo[0] + i * dx[0];
+                xyz[1] = probLo[1] + j * dx[1];
 #if (AMREX_SPACEDIM > 2)
-      for (int k = lo[2]; k <= hi[2]; ++k) {
-#else
-      int k = 0;
-      {
+                xyz[2] = probLo[2] + k * dx[2];
 #endif
-        for (int j = lo[1]; j <= hi[1]; ++j) {
-          for (int i = lo[0]; i <= hi[0]; ++i) {
-            Real xyz[nDim];
-            xyz[0] = probLo[0] + i * dx[0];
-            xyz[1] = probLo[1] + j * dx[1];
-#if (AMREX_SPACEDIM > 2)
-            xyz[2] = probLo[2] + k * dx[2];
-#endif
-            if (reg.is_inside(xyz)) {
-              arr(i, j, k) = amrex::max(arr(i, j, k), cfg.etaCode);
-            }
-          }
-        }
-      }
-    }
+                if (reg.is_inside(xyz)) {
+                  arr(i, j, k) = amrex::max(arr(i, j, k), cfg.etaCode);
+                }
+              });
   }
   nodeEtaRegional[iLev].FillBoundary(Geom(iLev).periodicity());
 }
@@ -2250,33 +2236,19 @@ void Pic::fill_regional_hyper_field(int iLev) {
       continue;
     Regions reg(regionShapes, cfg.regionStr);
 
-    for (MFIter mfi(nodeEtaHyperRegional[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.growntilebox();
-      const Array4<Real>& arr = nodeEtaHyperRegional[iLev][mfi].array();
-      const auto lo = box.smallEnd();
-      const auto hi = box.bigEnd();
-
+    // Regions are host objects (virtual shapes): fill on the host.
+    host_fill(nodeEtaHyperRegional[iLev], /*withGhost=*/true,
+              [&](const MFIter&, int i, int j, int k, const auto& arr) {
+                Real xyz[nDim];
+                xyz[0] = probLo[0] + i * dx[0];
+                xyz[1] = probLo[1] + j * dx[1];
 #if (AMREX_SPACEDIM > 2)
-      for (int k = lo[2]; k <= hi[2]; ++k) {
-#else
-      int k = 0;
-      {
+                xyz[2] = probLo[2] + k * dx[2];
 #endif
-        for (int j = lo[1]; j <= hi[1]; ++j) {
-          for (int i = lo[0]; i <= hi[0]; ++i) {
-            Real xyz[nDim];
-            xyz[0] = probLo[0] + i * dx[0];
-            xyz[1] = probLo[1] + j * dx[1];
-#if (AMREX_SPACEDIM > 2)
-            xyz[2] = probLo[2] + k * dx[2];
-#endif
-            if (reg.is_inside(xyz)) {
-              arr(i, j, k) = amrex::max(arr(i, j, k), etaVal);
-            }
-          }
-        }
-      }
-    }
+                if (reg.is_inside(xyz)) {
+                  arr(i, j, k) = amrex::max(arr(i, j, k), etaVal);
+                }
+              });
   }
   nodeEtaHyperRegional[iLev].FillBoundary(Geom(iLev).periodicity());
 }
