@@ -86,7 +86,7 @@ void Pic::update_E_impl() {
 
     nodeEth[iLev].setVal(0.0);
     convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
-    nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
+    nodeEth[iLev].SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
 
     if (doSmoothE) {
@@ -202,6 +202,8 @@ void Pic::solve_E_newton_krylov(int iLev) {
 
   eSolver.solve(jacobianFreeMatvec, iLev, doReport);
   BL_PROFILE_VAR_STOP(eSolver);
+  // base, baseMatvec and work are freed on return.
+  Gpu::streamSynchronize();
 }
 
 //==========================================================
@@ -235,7 +237,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   convert_1d_to_3d(vecIn, vecMF, iLev);
 
   // The right side edges should be filled in.
-  vecMF.SumBoundary(Geom(iLev).periodicity());
+  vecMF.SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
 
   // M*E needs ghost cell information.
   vecMF.FillBoundary(Geom(iLev).periodicity());
@@ -1281,24 +1283,22 @@ Real Pic::calc_E_field_energy() {
       const Dim3 lo = lbound(box);
       const Dim3 len = length(box);
       const int nNode = nDim > 2 ? 8 : 4;
-      ReduceOps<ReduceOpSum> reduceOp;
-      ReduceData<Real> reduceData(reduceOp);
-      reduceOp.eval(static_cast<int>(box.numPts()) * nNode, reduceData,
-                    [=] AMREX_GPU_DEVICE(int l) -> GpuTuple<Real> {
-                      const int c = l / nNode, m = l - c * nNode;
-                      const int k = lo.z + c / (len.x * len.y);
-                      const int j = lo.y + (c / len.x) % len.y;
-                      const int i = lo.x + c % len.x;
-                      if (bit::is_refined(status(i, j, k)))
-                        return { 0.0 };
-                      const int ii = i + (m & 1);
-                      const int jj = j + ((m >> 1) & 1);
-                      const int kk = k + (m >> 2);
-                      return { arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
-                               arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
-                               arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_) };
-                    });
-      const Real sumLoc = get<0>(reduceData.value(reduceOp));
+      const Real sumLoc = deterministic_sum(
+          static_cast<int>(box.numPts()) * nNode,
+          [=] AMREX_GPU_DEVICE(int l) -> Real {
+            const int c = l / nNode, m = l - c * nNode;
+            const int k = lo.z + c / (len.x * len.y);
+            const int j = lo.y + (c / len.x) % len.y;
+            const int i = lo.x + c % len.x;
+            if (bit::is_refined(status(i, j, k)))
+              return 0.0;
+            const int ii = i + (m & 1);
+            const int jj = j + ((m >> 1) & 1);
+            const int kk = k + (m >> 2);
+            return arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
+                   arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
+                   arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
+          });
 
       Real avg = (nDim == 3) ? 0.125 : 0.25;
 
@@ -1332,19 +1332,20 @@ Real Pic::calc_B_field_energy() {
       const Box& box = mfi.validbox();
       const Array4<Real const> arr = mfB[mfi].const_array();
 
-      ReduceOps<ReduceOpSum> reduceOp;
-      ReduceData<Real> reduceData(reduceOp);
-      reduceOp.eval(
-          box, reduceData,
-          [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<Real> {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
-            if (bit::is_refined(status(ijk)))
-              return { 0.0 };
-            return { arr(i, j, k, ix_) * arr(i, j, k, ix_) +
-                     arr(i, j, k, iy_) * arr(i, j, k, iy_) +
-                     arr(i, j, k, iz_) * arr(i, j, k, iz_) };
+      // Cells in the x-fastest order of a loop over the box.
+      const Dim3 lo = lbound(box);
+      const Dim3 len = length(box);
+      const Real sumLoc = deterministic_sum(
+          static_cast<int>(box.numPts()), [=] AMREX_GPU_DEVICE(int c) -> Real {
+            const int k = lo.z + c / (len.x * len.y);
+            const int j = lo.y + (c / len.x) % len.y;
+            const int i = lo.x + c % len.x;
+            if (bit::is_refined(status(i, j, k)))
+              return 0.0;
+            return arr(i, j, k, ix_) * arr(i, j, k, ix_) +
+                   arr(i, j, k, iy_) * arr(i, j, k, iy_) +
+                   arr(i, j, k, iz_) * arr(i, j, k, iz_);
           });
-      const Real sumLoc = get<0>(reduceData.value(reduceOp));
 
       sum += sumLoc * get_cell_volume(iLev) * 0.5 / fourPI;
     }

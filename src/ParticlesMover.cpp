@@ -394,7 +394,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
     if (currentMF) {
       fold_wall_ghost_nodes((*currentMF)[iLev], iLev, true);
-      (*currentMF)[iLev].SumBoundary(Geom(iLev).periodicity());
+      (*currentMF)[iLev].SumBoundary(Geom(iLev).periodicity(),
+                                     /*deterministic=*/true);
     }
   }
 }

@@ -209,10 +209,12 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
                               doNetChargeOnly, iLev);
     }
     if (!doNetChargeOnly) {
-      centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
+      centerMM[iLev].SumBoundary(Geom(iLev).periodicity(),
+                                 /*deterministic=*/true);
     }
 
-    centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
+    centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity(),
+                                         /*deterministic=*/true);
 
     if (iLev == 0) {
       apply_BC(cell_status(iLev), centerNetChargeNew[iLev], 0,
@@ -273,12 +275,14 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
   }
 
   if (!doNetChargeOnly) {
-    centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
+    centerMM[iLev].SumBoundary(Geom(iLev).periodicity(),
+                               /*deterministic=*/true);
   }
 
-  centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
-  jc.SumBoundary();
-  jf.SumBoundary();
+  centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity(),
+                                       /*deterministic=*/true);
+  jc.SumBoundary(Periodicity::NonPeriodic(), /*deterministic=*/true);
+  jf.SumBoundary(Periodicity::NonPeriodic(), /*deterministic=*/true);
   amrex::MultiFab tmp;
   tmp.define(centerB[iLev].boxArray(), centerB[iLev].DistributionMap(), 1, 0);
   tmp.setVal(0.0);

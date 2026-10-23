@@ -1172,7 +1172,7 @@ void Pic::calc_mass_matrix() {
     }
 
     jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
-    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+    jHat[iLev].SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
     jHat[iLev].FillBoundary(Geom(iLev).periodicity());
 
     // Undo the geometric dilution of the current at the staircase surface of
@@ -1276,7 +1276,7 @@ void Pic::calc_mass_matrix_amr() {
   }
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+    jHat[iLev].SumBoundary(Geom(iLev).periodicity(), /*deterministic=*/true);
     sum_boundary_node_mm(iLev);
   }
   Vector<Real> invVol(n_lev());
@@ -1289,15 +1289,26 @@ void Pic::calc_mass_matrix_amr() {
 
   for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
     for (int i = finestLevel(); i > iLev; i--) {
-      jHat[iLev].ParallelAdd(jhc[i][iLev]);
+      jHat[iLev].ParallelCopy(jhc[i][iLev], 0, 0, jHat[iLev].nComp(),
+                              IntVect(0), IntVect(0),
+                              Periodicity::NonPeriodic(), FabArrayBase::ADD,
+                              nullptr, /*deterministic=*/true);
       nmmc[i][iLev] *= (invVol[iLev] / invVol[i]);
-      nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
+      nodeMM[iLev].ParallelCopy(nmmc[i][iLev], 0, 0, nodeMM[iLev].nComp(),
+                                IntVect(0), IntVect(0),
+                                Periodicity::NonPeriodic(), FabArrayBase::ADD,
+                                nullptr, /*deterministic=*/true);
     }
   }
   for (int iLev = finestLevel(); iLev > 0; iLev--) {
-    jHat[iLev].ParallelAdd(jhf[iLev - 1]);
+    jHat[iLev].ParallelCopy(jhf[iLev - 1], 0, 0, jHat[iLev].nComp(), IntVect(0),
+                            IntVect(0), Periodicity::NonPeriodic(),
+                            FabArrayBase::ADD, nullptr, /*deterministic=*/true);
     nmmf[iLev - 1] *= (invVol[iLev] / invVol[iLev - 1]);
-    nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
+    nodeMM[iLev].ParallelCopy(nmmf[iLev - 1], 0, 0, nodeMM[iLev].nComp(),
+                              IntVect(0), IntVect(0),
+                              Periodicity::NonPeriodic(), FabArrayBase::ADD,
+                              nullptr, /*deterministic=*/true);
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {

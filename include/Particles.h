@@ -510,6 +510,17 @@ public:
   // 1) Only inject particles ONCE for one ghost cells. This function decides
   // which block injects particles. 2) bx should be a valid box 3) The cell
   // (i,j,k) can NOT be the outmost ghost cell layer!!!!
+  // A unique key of a particle: (cpu, supID, id) packed in 64 bits. It orders
+  // the particles of a cell independently of their storage order (CellBins).
+  AMREX_GPU_HOST_DEVICE static unsigned long long particle_key(
+      const ParticleType& p) {
+    const unsigned long long cpu = static_cast<unsigned int>(p.cpu());
+    const unsigned long long sup =
+        static_cast<unsigned int>(p.idata(iSupID_)) & 1u;
+    const unsigned long long id = static_cast<unsigned int>(p.id());
+    return (cpu << 32) | (sup << 31) | (id & 0x7fffffffULL);
+  }
+
   // Should particles be injected into the boundary cell ijk of the box bx?
   // If so, ijksrc is the first neighbour inside the box.
   AMREX_GPU_HOST_DEVICE static bool do_inject_particles_for_this_cell(
@@ -628,6 +639,21 @@ public:
       const amrex::Real* dx, amrex::Real invVol, const amrex::IntVect& loIdx,
       const amrex::RealVect& dShift, amrex::Real qp,
       amrex::Array4<RealCMM> const& mmArr) {
+    accumulate_mass_matrix_terms(
+        dx, invVol, loIdx, dShift, qp,
+        [&](int ii, int jj, int kk, int gp, amrex::Real value) {
+          deposit_add(&mmArr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                             nDim > 2 ? loIdx[iz_] + kk : 0)[gp],
+                      value);
+        });
+  }
+
+  // The terms of accumulate_mass_matrix_contribution(): add(ii, jj, kk, gp,
+  // value) adds value to entry gp of the cell loIdx + (ii, jj, kk).
+  template <class Add>
+  AMREX_GPU_HOST_DEVICE static void accumulate_mass_matrix_terms(
+      const amrex::Real* dx, amrex::Real invVol, const amrex::IntVect& loIdx,
+      const amrex::RealVect& dShift, amrex::Real qp, Add&& add) {
 
     amrex::Real weights_IIID[2][2][2][nDim3];
     //----- Mass matrix calculation begin--------------
@@ -695,7 +721,6 @@ public:
                 coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
           }
 
-          auto& data = mmArr(i1, j1, k1);
           // amrex::Real weights[27] = { 0 };
           for (int i2 = iMin; i2 <= iMax; i2++) {
             int ip = i2 - i1 + 1;
@@ -706,7 +731,8 @@ public:
               const amrex::Real(&wg1_D)[nDim3] =
                   weights_IIID[i2 - iMin][j2 - jMin][0];
               for (int iDim = 0; iDim < nDim; iDim++) {
-                deposit_add(&data[gp], wg_D[iDim] * wg1_D[iDim]);
+                add(i1 - iMin, j1 - jMin, k1 - kMin, gp,
+                    wg_D[iDim] * wg1_D[iDim]);
               }
             }
 #else
@@ -721,7 +747,8 @@ public:
                 // const int kp = k2 - k1 + 1;
                 const int gp = gp1 + k2 - k1 + 1;
                 for (int iDim = 0; iDim < nDim; iDim++) {
-                  deposit_add(&data[gp], wg_D[iDim] * wg1_D[iDim]);
+                  add(i1 - iMin, j1 - jMin, k1 - kMin, gp,
+                      wg_D[iDim] * wg1_D[iDim]);
                 }
               }
             }
@@ -1256,6 +1283,57 @@ public:
     if (!gdb->boxArray(0).empty()) {
       // It will crash if there is no active cells.
       Redistribute();
+      sort_particles();
+    }
+  }
+
+  // Put the particles of every tile in a canonical order: by cell, and inside
+  // a cell by particle_key(). The storage order after AMReX's GPU
+  // redistribution changes from run to run; with this, every pass over the
+  // particles (sums, deposits) sees the same order in every run, and the
+  // particles of a cell are contiguous. One tile per cell (CPU) needs nothing.
+  void sort_particles() {
+    if (useCellTiles)
+      return;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+        const int np = pti.numParticles();
+        if (np < 2)
+          continue;
+        ParticleType* const pData = pti.GetArrayOfStructs()().data();
+        const amrex::Box box = cell_status(iLev)[pti].box();
+        const amrex::Dim3 lo = amrex::lbound(box);
+        const amrex::Dim3 len = amrex::length(box);
+        const int nBins = static_cast<int>(box.numPts());
+        const auto ploLev = Geom(iLev).ProbLoArray();
+        const auto invDxLev = Geom(iLev).InvCellSizeArray();
+
+        CellBins bins;
+        bins.build(
+            np, nBins,
+            [=] AMREX_GPU_DEVICE(int ip) {
+              int ijk[3] = { 0, 0, 0 };
+              for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                ijk[d] = static_cast<int>(amrex::Math::floor(
+                    (pData[ip].pos(d) - ploLev[d]) * invDxLev[d]));
+              }
+              const int i = ijk[0] - lo.x, j = ijk[1] - lo.y, k = ijk[2] - lo.z;
+              if (i < 0 || i >= len.x || j < 0 || j >= len.y || k < 0 ||
+                  k >= len.z)
+                return nBins;
+              return i + len.x * (j + len.y * k);
+            },
+            [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); });
+
+        amrex::Gpu::DeviceVector<ParticleType> sorted(np);
+        ParticleType* const out = sorted.data();
+        const int* const perm = bins.perm();
+        amrex::ParallelFor(
+            np, [=] AMREX_GPU_DEVICE(int i) { out[i] = pData[perm[i]]; });
+        amrex::Gpu::copyAsync(amrex::Gpu::deviceToDevice, sorted.begin(),
+                              sorted.end(), pData);
+        amrex::Gpu::streamSynchronize();
+      }
     }
   }
 
