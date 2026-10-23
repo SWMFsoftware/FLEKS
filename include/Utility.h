@@ -14,6 +14,7 @@
 #include <mpi.h>
 
 #include "Constants.h"
+#include "GpuBackend.h"
 #include "Timer.h"
 
 // Only works for x>-8;
@@ -92,13 +93,8 @@ inline std::string normalize_string_token(std::string name,
 // always combines them in the same order for the same n.
 inline double dot_product_mpi(const double* a, const double* b, const int n,
                               const MPI_Comm iComm) {
-  amrex::ReduceOps<amrex::ReduceOpSum> reduceOp;
-  amrex::ReduceData<double> reduceData(reduceOp);
-  reduceOp.eval(n, reduceData,
-                [=] AMREX_GPU_DEVICE(int i) -> amrex::GpuTuple<double> {
-                  return { a[i] * b[i] };
-                });
-  double c = amrex::get<0>(reduceData.value(reduceOp));
+  double c = deterministic_sum(
+      n, [=] AMREX_GPU_DEVICE(int i) -> double { return a[i] * b[i]; });
 
   if (iComm == MPI_COMM_SELF) {
     return c;

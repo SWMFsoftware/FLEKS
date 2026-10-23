@@ -11,6 +11,181 @@
 
 using namespace amrex;
 
+namespace {
+
+// Deterministic deposit of jHat and of the kp > 0 half of the node mass
+// matrix (see calc_mass_matrix) for one tile: the particles of each cell
+// are summed in a fixed order (CellBins), then every node gathers from the
+// cells around it. No floating-point atomics, so the result is the same from
+// run to run.
+//
+// With the trilinear weight w0 = 1 - s, w1 = s of the lower and upper node in
+// each direction, the mass-matrix entry of a node pair in a cell is
+//   sum_p alpha_p prod_d w_a(s_d) w_b(s_d),
+// and w_a w_b is a quadratic in s_d: (1-s)^2, s(1-s) or s^2. So a cell only
+// needs the 27 moments sum_p alpha_p sx^l sy^m sz^n (l, m, n = 0, 1, 2) of
+// each of the 9 alpha components, and the entries are fixed combinations of
+// them: 243 sums per cell instead of 432 scattered additions per particle.
+template <class CellOf, class IdOf, class State>
+void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
+                                 const Array4<Real>& jArr,
+                                 const Array4<RealMM>& mmArr, CellOf cellOf,
+                                 IdOf idOf, State state) {
+  if (np == 0)
+    return;
+  const Dim3 lo = lbound(cellBox);
+  const Dim3 len = length(cellBox);
+  const int nBins = static_cast<int>(cellBox.numPts());
+
+  CellBins bins;
+  bins.build(
+      np, nBins,
+      [=] AMREX_GPU_DEVICE(int ip) {
+        IntVect c;
+        if (!cellOf(ip, c))
+          return nBins;
+        const int i = c[0] - lo.x, j = c[1] - lo.y, k = c[2] - lo.z;
+        if (i < 0 || i >= len.x || j < 0 || j >= len.y || k < 0 || k >= len.z)
+          return nBins;
+        return i + len.x * (j + len.y * k);
+      },
+      idOf);
+
+  // 1. Per cell: the jHat contribution of its 8 nodes and the 27 x 9 moments.
+  constexpr int nJ = 8 * 3, nS = 27 * 9, nAcc = nJ + nS;
+  Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) * nAcc);
+  Real* const sc = scratch.data();
+  const int* const perm = bins.perm();
+  const int* const off = bins.offsets();
+  ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
+    Real acc[nAcc];
+    for (int n = 0; n < nAcc; ++n)
+      acc[n] = 0;
+    for (int i = off[b]; i < off[b + 1]; ++i) {
+      IntVect loIdx;
+      RealVect dShift;
+      Real coef[2][2][2], alpha[9], currents[3];
+      state(perm[i], loIdx, dShift, coef, alpha, currents);
+      for (int kk = 0; kk < 2; ++kk)
+        for (int jj = 0; jj < 2; ++jj)
+          for (int ii = 0; ii < 2; ++ii)
+            for (int d = 0; d < 3; ++d)
+              acc[((kk * 2 + jj) * 2 + ii) * 3 + d] +=
+                  coef[ii][jj][kk] * currents[d];
+      const Real sx[3] = { 1, dShift[0], dShift[0] * dShift[0] };
+      const Real sy[3] = { 1, dShift[1], dShift[1] * dShift[1] };
+      const Real sz[3] = { 1, dShift[2], dShift[2] * dShift[2] };
+      for (int n = 0; n < 3; ++n)
+        for (int m = 0; m < 3; ++m)
+          for (int l = 0; l < 3; ++l) {
+            const Real w = sx[l] * sy[m] * sz[n];
+            Real* const a = acc + nJ + ((n * 3 + m) * 3 + l) * 9;
+            for (int idx = 0; idx < 9; ++idx)
+              a[idx] += alpha[idx] * w;
+          }
+    }
+    Real* const out = sc + static_cast<std::size_t>(b) * nAcc;
+    for (int n = 0; n < nAcc; ++n)
+      out[n] = acc[n];
+  });
+
+  // 2. Per node: gather jHat and the mass-matrix entries from the cells.
+  ParallelFor(surroundingNodes(cellBox), [=] AMREX_GPU_DEVICE(int i, int j,
+                                                              int k) {
+    const int node[3] = { i, j, k };
+    const int loC[3] = { lo.x, lo.y, lo.z };
+    const int lenC[3] = { len.x, len.y, len.z };
+    // Polynomial of w_a w_b in s (coefficients of 1, s, s^2).
+    auto poly = [](int a, int b, int m) -> Real {
+      constexpr Real p00[3] = { 1, -2, 1 }, p01[3] = { 0, 1, -1 },
+                     p11[3] = { 0, 0, 1 };
+      return (a == 0 && b == 0) ? p00[m] : (a != b ? p01[m] : p11[m]);
+    };
+
+    // jHat: the cells that have this node as a corner.
+    Real jSum[3] = { 0, 0, 0 };
+    for (int kk = 0; kk < 2; ++kk)
+      for (int jj = 0; jj < 2; ++jj)
+        for (int ii = 0; ii < 2; ++ii) {
+          const int corner[3] = { ii, jj, kk };
+          int c[3];
+          bool inside = true;
+          for (int d = 0; d < 3; ++d) {
+            c[d] = node[d] - corner[d] - loC[d];
+            inside = inside && c[d] >= 0 && c[d] < lenC[d];
+          }
+          if (!inside)
+            continue;
+          const Real* const in = sc +
+                                 static_cast<std::size_t>(
+                                     c[0] + lenC[0] * (c[1] + lenC[1] * c[2])) *
+                                     nAcc +
+                                 ((kk * 2 + jj) * 2 + ii) * 3;
+          for (int d = 0; d < 3; ++d)
+            jSum[d] += in[d];
+        }
+    for (int d = 0; d < 3; ++d)
+      jArr(i, j, k, d) += jSum[d];
+
+    // Mass matrix: the pairs (node, node + o) with o_z >= 0 (kp = o_z + 1).
+    RealMM& data = mmArr(i, j, k);
+    for (int kp = 1; kp < 3; ++kp)
+      for (int jp = 0; jp < 3; ++jp)
+        for (int ip = 0; ip < 3; ++ip) {
+          const int o[3] = { ip - 1, jp - 1, kp - 1 };
+          Real value[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+          // The cells that contain both nodes.
+          for (int cz = 0; cz < 2; ++cz)
+            for (int cy = 0; cy < 2; ++cy)
+              for (int cx = 0; cx < 2; ++cx) {
+                const int a[3] = { cx, cy, cz }; // corner of node in the cell
+                int c[3], bb[3];
+                bool ok = true;
+                for (int d = 0; d < 3; ++d) {
+                  c[d] = node[d] - a[d] - loC[d];
+                  bb[d] = a[d] + o[d]; // corner of node + o
+                  ok = ok && c[d] >= 0 && c[d] < lenC[d] && bb[d] >= 0 &&
+                       bb[d] <= 1;
+                }
+                if (!ok)
+                  continue;
+                const Real* const in =
+                    sc +
+                    static_cast<std::size_t>(
+                        c[0] + lenC[0] * (c[1] + lenC[1] * c[2])) *
+                        nAcc +
+                    nJ;
+                for (int n = 0; n < 3; ++n) {
+                  const Real pz = poly(a[2], bb[2], n);
+                  if (pz == 0)
+                    continue;
+                  for (int m = 0; m < 3; ++m) {
+                    const Real py = poly(a[1], bb[1], m);
+                    if (py == 0)
+                      continue;
+                    for (int l = 0; l < 3; ++l) {
+                      const Real px = poly(a[0], bb[0], l);
+                      if (px == 0)
+                        continue;
+                      const Real w = px * py * pz;
+                      const Real* const s = in + ((n * 3 + m) * 3 + l) * 9;
+                      for (int idx = 0; idx < 9; ++idx)
+                        value[idx] += w * s[idx];
+                    }
+                  }
+                }
+              }
+          const int idx0 = kp * 81 + jp * 27 + ip * 9;
+          for (int idx = 0; idx < 9; ++idx)
+            data[idx0 + idx] += value[idx];
+        }
+  });
+  // The kernels read the bins and the scratch, which are freed on return.
+  Gpu::streamSynchronize();
+}
+
+} // namespace
+
 //==========================================================
 
 template <int NStructReal, int NStructInt>
@@ -40,10 +215,17 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
 
-    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+    const int np = pti.numParticles();
+
+    // The state of particle ip that the mass matrix and jHat need: its
+    // interpolation stencil and weights, alpha and its current.
+    auto particle_state =
+        [=] AMREX_GPU_DEVICE(int ip, IntVect& loIdx, RealVect& dShift,
+                             Real(&coef)[2][2][2], Real(&alpha)[9],
+                             Real(&currents)[3]) -> bool {
       const ParticleType& p = pData[ip];
       if (p.id() < 0)
-        return;
+        return false;
 
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -51,10 +233,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolation coef begin-------------
-      IntVect loIdx;
-      RealVect dShift;
-
-      Real coef[2][2][2];
       find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), loIdx,
                               dShift, coef);
       //-----calculate interpolate coef end-------------
@@ -105,7 +283,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       const Real c0 = denom * invVolLev * qp * qdto2mc;
 
-      Real alpha[9];
       alpha[0] = (1 + omx2) * c0;
       alpha[1] = (omz + omxomy) * c0;
       alpha[2] = (-omy + omxomz) * c0;
@@ -118,7 +295,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       {
         // jHat
-        Real currents[3];
 
         const Real up1 = up - u0[0];
         const Real vp1 = vp - u0[1];
@@ -135,9 +311,39 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           currents[iz_] =
               (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
         }
-
-        deposit_vector_field(jArr, loIdx, coef, lo, hi, currents, 3);
       }
+      return true;
+    };
+
+    if (useCellBinDeposits && AMREX_SPACEDIM == 3) {
+      // GPU: deterministic per-cell sums (see deposit_mass_matrix_by_cell).
+      auto cellOf = [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+        const ParticleType& p = pData[ip];
+        if (p.id() < 0)
+          return false;
+        RealVect dShift;
+        Real coef[2][2][2];
+        find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), cell,
+                                dShift, coef);
+        return true;
+      };
+      deposit_mass_matrix_by_cell(
+          np, enclosedCells(nodeMM[pti].box()), jArr, mmArr, cellOf,
+          [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); },
+          particle_state);
+      continue;
+    }
+
+    ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
+      IntVect loIdx;
+      RealVect dShift;
+      Real coef[2][2][2];
+      Real alpha[9];
+      Real currents[3];
+      if (!particle_state(ip, loIdx, dShift, coef, alpha, currents))
+        return;
+
+      deposit_vector_field(jArr, loIdx, coef, lo, hi, currents, 3);
 
       const int iMin = loIdx[ix_];
       const int jMin = loIdx[iy_];

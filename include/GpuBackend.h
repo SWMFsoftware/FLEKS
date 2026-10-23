@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include <AMReX_Extension.H>
 #include <AMReX_FabArray.H>
@@ -22,6 +23,11 @@
 #include <AMReX_Print.H>
 #include <AMReX_Reduce.H>
 #include <AMReX_Utility.H>
+
+#ifdef AMREX_USE_CUDA
+#include <cub/device/device_radix_sort.cuh>
+#include <cub/device/device_reduce.cuh>
+#endif
 
 // True in a GPU build. Use it for run-time decisions (e.g. rejecting a
 // feature that is not available on the GPU) instead of #ifdef.
@@ -36,6 +42,12 @@ constexpr bool fleksUseGpu = false;
 // algorithms (resampling, sources) work on a tile. The GPU uses one tile per
 // box, because every tile costs a kernel launch.
 constexpr bool useCellTiles = !fleksUseGpu;
+
+// Deposition strategy. The CPU adds every particle in order (deposit_add is a
+// plain +=). The GPU sums the particles of each cell in a fixed order and
+// gathers per node (CellBins, deposit_to_nodes), which is reproducible run to
+// run without floating-point atomics.
+constexpr bool useCellBinDeposits = fleksUseGpu;
 
 // Capacity of a KernelArray. FLEKS runs use a handful of species or fluids.
 constexpr int nKernelArrayMax = 16;
@@ -109,6 +121,278 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_add(T* target, T value) {
 #endif
 }
 
+// The particles of a tile grouped by cell ("bin"), in a canonical order: by
+// bin, and inside a bin by a unique particle key (idOf, e.g. built from the
+// particle cpu and id), not by the storage order, which AMReX's GPU
+// redistribution does not keep from run to run. perm()[i] is the i-th
+// particle in this order, and the particles of bin b are
+// perm()[offsets()[b]] ... perm()[offsets()[b + 1] - 1]. A particle whose bin
+// is nBins (or larger) is left out.
+//
+// Kernels that loop over the particles of a bin in this order give
+// bitwise-reproducible results without floating-point atomics.
+class CellBins {
+public:
+  // binOf(ip) returns the bin of particle ip and idOf(ip) its unique key (an
+  // unsigned 64-bit integer); both must be device lambdas.
+  template <class F, class G>
+  void build(int np, int nBins, F&& binOf, G&& idOf) {
+    nBin = nBins;
+    keys.resize(np);
+    sortedKeys.resize(np);
+    index.resize(np);
+    sorted.resize(np);
+    offset.resize(nBins + 2);
+    int* const k = keys.data();
+    int* const v = index.data();
+#ifdef AMREX_USE_CUDA
+    // 1. Order the particles by their unique key.
+    amrex::Gpu::DeviceVector<unsigned long long> ids(np), sortedIds(np);
+    unsigned long long* const id = ids.data();
+    amrex::ParallelFor(np, [=] AMREX_GPU_DEVICE(int i) {
+      id[i] = idOf(i);
+      v[i] = i;
+    });
+    std::size_t tmpBytes = 0;
+    cub::DeviceRadixSort::SortPairs(nullptr, tmpBytes, id, sortedIds.data(), v,
+                                    sorted.data(), np, 0, 64,
+                                    amrex::Gpu::gpuStream());
+    {
+      amrex::Gpu::DeviceVector<char> tmp(tmpBytes);
+      cub::DeviceRadixSort::SortPairs(tmp.data(), tmpBytes, id,
+                                      sortedIds.data(), v, sorted.data(), np, 0,
+                                      64, amrex::Gpu::gpuStream());
+      amrex::Gpu::streamSynchronize();
+    }
+    // 2. Their bins, in that order; a stable sort by bin keeps it in a bin.
+    const int* const byId = sorted.data();
+    amrex::ParallelFor(np, [=] AMREX_GPU_DEVICE(int i) {
+      const int b = binOf(byId[i]);
+      k[i] = (b < 0 || b > nBins) ? nBins : b;
+      v[i] = byId[i];
+    });
+    int nBits = 1;
+    while ((1L << nBits) <= nBins)
+      ++nBits;
+    tmpBytes = 0;
+    cub::DeviceRadixSort::SortPairs(nullptr, tmpBytes, k, sortedKeys.data(), v,
+                                    sorted.data(), np, 0, nBits,
+                                    amrex::Gpu::gpuStream());
+    amrex::Gpu::DeviceVector<char> tmp(tmpBytes);
+    cub::DeviceRadixSort::SortPairs(tmp.data(), tmpBytes, k, sortedKeys.data(),
+                                    v, sorted.data(), np, 0, nBits,
+                                    amrex::Gpu::gpuStream());
+    // Start of every bin: binary search in the sorted keys.
+    const int* const sk = sortedKeys.data();
+    int* const off = offset.data();
+    amrex::ParallelFor(nBins + 2, [=] AMREX_GPU_DEVICE(int b) {
+      int lo = 0, hi = np;
+      while (lo < hi) {
+        const int mid = (lo + hi) / 2;
+        if (sk[mid] < b)
+          lo = mid + 1;
+        else
+          hi = mid;
+      }
+      off[b] = lo;
+    });
+    amrex::Gpu::streamSynchronize();
+#else
+    // Stable counting sort in storage order: a CPU run keeps its order.
+    amrex::ignore_unused(idOf);
+    for (int i = 0; i < np; ++i) {
+      const int b = binOf(i);
+      k[i] = (b < 0 || b > nBins) ? nBins : b;
+    }
+    std::vector<int> count(nBins + 2, 0);
+    for (int i = 0; i < np; ++i)
+      count[k[i] + 1]++;
+    for (int b = 0; b <= nBins; ++b)
+      count[b + 1] += count[b];
+    for (int b = 0; b < nBins + 2; ++b)
+      offset[b] = count[b];
+    for (int i = 0; i < np; ++i)
+      sorted[count[k[i]]++] = i;
+#endif
+  }
+
+  const int* perm() const { return sorted.data(); }
+  const int* offsets() const { return offset.data(); }
+  int n_bins() const { return nBin; }
+
+private:
+  int nBin = 0;
+  amrex::Gpu::DeviceVector<int> keys, sortedKeys, index, sorted, offset;
+};
+
+// Deposit particle quantities onto the 2^D nodes of the cell of each particle:
+//   cellOf(ip, cell) -> bool   the cell (its lower node) of particle ip, or
+//                              false to skip the particle;
+//   idOf(ip)                   a unique key of particle ip (see CellBins);
+//   contrib(ip, acc)           add the contribution of particle ip to
+//                              acc[ii][jj][kk][n], n < NComp, the nodes
+//                              cell + (ii, jj, kk);
+// dst(node, comp0 + n) receives the sums. cellBox must contain the cells of
+// all the particles, and dst the nodes of cellBox.
+//
+// A CPU build adds every particle in order, exactly like a serial loop. A GPU
+// build sums the particles of each cell in a fixed order (see CellBins) and
+// then every node sums its 2^D cells in a fixed order, so the result is the
+// same from run to run, without floating-point atomics.
+//
+// deposit_to_nodes_with() is the general form: add(i, j, k, n, value) stores
+// the sums (e.g. into a FAB of a non-scalar type).
+template <int NComp, class Add, class CellOf, class IdOf, class Contrib>
+void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
+                           CellOf&& cellOf, IdOf&& idOf, Contrib&& contrib) {
+  using amrex::Real;
+  constexpr int nK = AMREX_SPACEDIM > 2 ? 2 : 1;
+  if (np == 0)
+    return;
+#ifdef AMREX_USE_GPU
+  const amrex::Dim3 lo = amrex::lbound(cellBox);
+  const amrex::Dim3 len = amrex::length(cellBox);
+  const int nBins = static_cast<int>(cellBox.numPts());
+  CellBins bins;
+  bins.build(
+      np, nBins,
+      [=] AMREX_GPU_DEVICE(int ip) {
+        amrex::IntVect c;
+        if (!cellOf(ip, c))
+          return nBins;
+        const int ijk[3] = { AMREX_D_DECL(c[0] - lo.x, c[1] - lo.y,
+                                          c[2] - lo.z) };
+        for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+          const int l = d == 0 ? len.x : (d == 1 ? len.y : len.z);
+          if (ijk[d] < 0 || ijk[d] >= l)
+            return nBins;
+        }
+        return ijk[0] + len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
+                                 len.y * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
+      },
+      idOf);
+
+  // 1. The sum of every cell, particle by particle in the bin order.
+  constexpr int nAcc = 2 * 2 * nK * NComp;
+  amrex::Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) *
+                                         nAcc);
+  Real* const sc = scratch.data();
+  const int* const perm = bins.perm();
+  const int* const off = bins.offsets();
+  amrex::ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
+    Real acc[2][2][2][NComp];
+    for (int kk = 0; kk < 2; ++kk)
+      for (int jj = 0; jj < 2; ++jj)
+        for (int ii = 0; ii < 2; ++ii)
+          for (int n = 0; n < NComp; ++n)
+            acc[ii][jj][kk][n] = 0;
+    for (int i = off[b]; i < off[b + 1]; ++i)
+      contrib(perm[i], acc);
+    Real* const out = sc + static_cast<std::size_t>(b) * nAcc;
+    for (int kk = 0; kk < nK; ++kk)
+      for (int jj = 0; jj < 2; ++jj)
+        for (int ii = 0; ii < 2; ++ii)
+          for (int n = 0; n < NComp; ++n)
+            out[((kk * 2 + jj) * 2 + ii) * NComp + n] = acc[ii][jj][kk][n];
+  });
+
+  // 2. Every node sums its cells.
+  const amrex::Box nodeBox = amrex::surroundingNodes(cellBox);
+  amrex::ParallelFor(nodeBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    const int ijk[3] = { i, j, k };
+    Real sum[NComp];
+    for (int n = 0; n < NComp; ++n)
+      sum[n] = 0;
+    for (int kk = 0; kk < nK; ++kk)
+      for (int jj = 0; jj < 2; ++jj)
+        for (int ii = 0; ii < 2; ++ii) {
+          const int corner[3] = { ii, jj, kk };
+          int c[3] = { 0, 0, 0 };
+          bool inside = true;
+          for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+            const int l = d == 0 ? len.x : (d == 1 ? len.y : len.z);
+            const int lo_d = d == 0 ? lo.x : (d == 1 ? lo.y : lo.z);
+            c[d] = ijk[d] - corner[d] - lo_d;
+            inside = inside && c[d] >= 0 && c[d] < l;
+          }
+          if (!inside)
+            continue;
+          const int b = c[0] + len.x * (c[1] + len.y * c[2]);
+          const Real* const in = sc + static_cast<std::size_t>(b) * nAcc +
+                                 ((kk * 2 + jj) * 2 + ii) * NComp;
+          for (int n = 0; n < NComp; ++n)
+            sum[n] += in[n];
+        }
+    for (int n = 0; n < NComp; ++n)
+      add(i, j, k, n, sum[n]);
+  });
+  // The kernels read the bins and the scratch, which are freed on return.
+  amrex::Gpu::streamSynchronize();
+#else
+  amrex::ignore_unused(cellBox, idOf);
+  for (int ip = 0; ip < np; ++ip) {
+    amrex::IntVect c;
+    if (!cellOf(ip, c))
+      continue;
+    Real acc[2][2][2][NComp];
+    for (int kk = 0; kk < 2; ++kk)
+      for (int jj = 0; jj < 2; ++jj)
+        for (int ii = 0; ii < 2; ++ii)
+          for (int n = 0; n < NComp; ++n)
+            acc[ii][jj][kk][n] = 0;
+    contrib(ip, acc);
+    for (int n = 0; n < NComp; ++n)
+      for (int kk = 0; kk < nK; ++kk)
+        for (int jj = 0; jj < 2; ++jj)
+          for (int ii = 0; ii < 2; ++ii)
+            add(c[0] + ii, AMREX_SPACEDIM > 1 ? c[1] + jj : 0,
+                AMREX_SPACEDIM > 2 ? c[AMREX_SPACEDIM > 2 ? 2 : 0] + kk : 0, n,
+                acc[ii][jj][kk][n]);
+  }
+#endif
+}
+
+template <int NComp, class CellOf, class IdOf, class Contrib>
+void deposit_to_nodes(int np, const amrex::Box& cellBox,
+                      const amrex::Array4<amrex::Real>& dst, int comp0,
+                      CellOf&& cellOf, IdOf&& idOf, Contrib&& contrib) {
+  deposit_to_nodes_with<NComp>(
+      np, cellBox,
+      [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k, int n, amrex::Real v) {
+        dst(i, j, k, comp0 + n) += v;
+      },
+      cellOf, idOf, contrib);
+}
+
+// Sum of f(i), i = 0..n-1 (f a device lambda returning Real), returned on the
+// host. A CPU build adds the values in index order, like a serial loop. A GPU
+// build stores the values and reduces them with cub::DeviceReduce, whose fixed
+// decomposition gives the same result from run to run (amrex::ReduceOps does
+// not guarantee that).
+template <class F> amrex::Real deterministic_sum(int n, F&& f) {
+#ifdef AMREX_USE_CUDA
+  if (n <= 0)
+    return 0;
+  amrex::Gpu::DeviceVector<amrex::Real> values(n), result(1);
+  amrex::Real* const v = values.data();
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { v[i] = f(i); });
+  std::size_t tmpBytes = 0;
+  cub::DeviceReduce::Sum(nullptr, tmpBytes, v, result.data(), n,
+                         amrex::Gpu::gpuStream());
+  amrex::Gpu::DeviceVector<char> tmp(tmpBytes);
+  cub::DeviceReduce::Sum(tmp.data(), tmpBytes, v, result.data(), n,
+                         amrex::Gpu::gpuStream());
+  amrex::Real sum = 0;
+  amrex::Gpu::dtoh_memcpy(&sum, result.data(), sizeof(amrex::Real));
+  return sum;
+#else
+  amrex::Real sum = 0;
+  for (int i = 0; i < n; ++i)
+    sum += f(i);
+  return sum;
+#endif
+}
+
 // Sum of the values f(i), i = 0..n-1, returned by the threads of one or more
 // kernel launches (add() can be called many times before value()).
 //
@@ -116,34 +400,25 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_add(T* target, T value) {
 // exactly what a serial loop with `sum += ...` does; amrex::ReduceOps would
 // add a partial sum per launch instead, which changes the round-off when the
 // launches are small (e.g. one particle tile per cell). A GPU build uses
-// amrex::ReduceOps, which combines the values in a fixed order, so the result
+// deterministic_sum() for every launch, so the result
 // is the same from run to run.
 class KernelSum {
 public:
   template <class F> void add(int n, F&& f) {
 #ifdef AMREX_USE_GPU
-    reduceOp.eval(n, reduceData, std::forward<F>(f));
+    // One deterministic partial sum per launch, added in launch order.
+    sum += deterministic_sum(
+        n, [=] AMREX_GPU_DEVICE(int i) { return amrex::get<0>(f(i)); });
 #else
     for (int i = 0; i < n; ++i)
       sum += amrex::get<0>(f(i));
 #endif
   }
 
-  amrex::Real value() {
-#ifdef AMREX_USE_GPU
-    return amrex::get<0>(reduceData.value(reduceOp));
-#else
-    return sum;
-#endif
-  }
+  amrex::Real value() { return sum; }
 
 private:
-#ifdef AMREX_USE_GPU
-  amrex::ReduceOps<amrex::ReduceOpSum> reduceOp;
-  amrex::ReduceData<amrex::Real> reduceData{ reduceOp };
-#else
   amrex::Real sum = 0;
-#endif
 };
 
 // Host access to FAB data for output code that reads it point by point. A
