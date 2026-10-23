@@ -173,7 +173,71 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
         const ParticleType* const pData = pti.GetArrayOfStructs()().data();
         const Dim3 lo = init_dim3(0);
         const Dim3 hi = init_dim3(1);
-        ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+        const int np = pti.numParticles();
+        if (useCellBinDeposits) {
+          // GPU: per-cell sums in particle-key order (see deposit_to_nodes).
+          // On this level every particle deposits its charge.
+          auto cellOf = [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+            IntVect loIdx;
+            RealVect dShift;
+            Real coef[2][2][2];
+            find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev, loIdx,
+                                    dShift, coef);
+            cell = loIdx;
+            return true;
+          };
+          auto idOf = [=] AMREX_GPU_DEVICE(int ip) {
+            return particle_key(pData[ip]);
+          };
+          Box cellBox = netChargeMF[pti].box();
+          cellBox.growHi(-1);
+          deposit_to_nodes<1>(
+              np, cellBox, chargeArr, 0, cellOf, idOf,
+              [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
+                IntVect loIdx;
+                RealVect dShift;
+                Real coef[2][2][2];
+                find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev,
+                                        loIdx, dShift, coef);
+                const Real cTmp = pData[ip].rdata(iqp) * invVolLev;
+                for (int kk = lo.z; kk <= hi.z; ++kk)
+                  for (int jj = lo.y; jj <= hi.y; ++jj)
+                    for (int ii = lo.x; ii <= hi.x; ++ii)
+                      acc[ii][jj][kk][0] += coef[ii][jj][kk] * cTmp;
+              });
+          if (doNetChargeOnly)
+            continue;
+          Box mmBox = centerMM[pti].box();
+          mmBox.growHi(-1);
+          deposit_to_nodes_with<nCMMComponents>(
+              np, mmBox,
+              [=] AMREX_GPU_DEVICE(int i, int j, int k, int n, Real v) {
+                mmArr(i, j, k)[n] += v;
+              },
+              [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+                if (multiLevel &&
+                    skip_particle_for_dive_cleaning(pData[ip].pos(), ploLev,
+                                                    invDxLev, iLev, status))
+                  return false;
+                return cellOf(ip, cell);
+              },
+              idOf,
+              [=] AMREX_GPU_DEVICE(int ip,
+                                   Real(&acc)[2][2][2][nCMMComponents]) {
+                IntVect loIdx;
+                RealVect dShift;
+                Real coef[2][2][2];
+                find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev,
+                                        loIdx, dShift, coef);
+                accumulate_mass_matrix_terms(
+                    dxLev, invVolLev, loIdx, dShift, pData[ip].rdata(iqp),
+                    [&](int ii, int jj, int kk, int gp, Real value) {
+                      acc[ii][jj][kk][gp] += value;
+                    });
+              });
+          continue;
+        }
+        ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
           const ParticleType& p = pData[ip];
           const Real qp = p.rdata(iqp);
           IntVect loIdx;
@@ -213,16 +277,54 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
         const ParticleType* const pData = pti.GetArrayOfStructs()().data();
         const Dim3 lo = init_dim3(0);
         const Dim3 hi = init_dim3(1);
-        ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+        const int np = pti.numParticles();
+        // A particle deposits if its cell (on its own level) is next to the
+        // refinement or on the level edge.
+        auto deposits = [=] AMREX_GPU_DEVICE(int ip) {
+          IntVect realIdx;
+          RealVect tmprv;
+          find_cell_index_exp(pData[ip].pos(), ploN, invDxN, realIdx, tmprv);
+          return bit::is_refined_neighbour(status(realIdx)) ||
+                 bit::is_lev_edge(status(realIdx));
+        };
+        if (useCellBinDeposits) {
+          // GPU: per-cell sums in particle-key order (see deposit_to_nodes).
+          Box cellBox = depositMF[pti].box();
+          cellBox.growHi(-1);
+          deposit_to_nodes<1>(
+              np, cellBox, chargeArr, 0,
+              [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+                if (!deposits(ip))
+                  return false;
+                IntVect loIdx;
+                RealVect dShift;
+                Real coef[2][2][2];
+                find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev,
+                                        loIdx, dShift, coef);
+                cell = loIdx;
+                return true;
+              },
+              [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); },
+              [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
+                IntVect loIdx;
+                RealVect dShift;
+                Real coef[2][2][2];
+                find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev,
+                                        loIdx, dShift, coef);
+                const Real cTmp = pData[ip].rdata(iqp) * invVolLev;
+                for (int kk = lo.z; kk <= hi.z; ++kk)
+                  for (int jj = lo.y; jj <= hi.y; ++jj)
+                    for (int ii = lo.x; ii <= hi.x; ++ii)
+                      acc[ii][jj][kk][0] += coef[ii][jj][kk] * cTmp;
+              });
+          continue;
+        }
+        ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
           const ParticleType& p = pData[ip];
           const Real qp = p.rdata(iqp);
           IntVect loIdx;
           RealVect dShift;
-          IntVect realIdx;
-          RealVect tmprv;
-          find_cell_index_exp(p.pos(), ploN, invDxN, realIdx, tmprv);
-          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
-                               bit::is_lev_edge(status(realIdx)))) {
+          if (deposits(ip)) {
             Real coef[2][2][2];
             find_cell_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift,
                                     coef);

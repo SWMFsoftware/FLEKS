@@ -26,11 +26,15 @@ namespace {
 // needs the 27 moments sum_p alpha_p sx^l sy^m sz^n (l, m, n = 0, 1, 2) of
 // each of the 9 alpha components, and the entries are fixed combinations of
 // them: 243 sums per cell instead of 432 scattered additions per particle.
+//
+// The entries of the pairs (node, node + o) with o_z + 1 >= kpMin are filled:
+// kpMin = 1 for a single level (the kp = 0 half is mirrored afterwards),
+// kpMin = 0 for the AMR mass matrix, which stores all of them.
 template <class CellOf, class IdOf, class State>
 void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
                                  const Array4<Real>& jArr,
                                  const Array4<RealMM>& mmArr, CellOf cellOf,
-                                 IdOf idOf, State state) {
+                                 IdOf idOf, State state, int kpMin = 1) {
   if (np == 0)
     return;
   const Dim3 lo = lbound(cellBox);
@@ -127,9 +131,9 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
     for (int d = 0; d < 3; ++d)
       jArr(i, j, k, d) += jSum[d];
 
-    // Mass matrix: the pairs (node, node + o) with o_z >= 0 (kp = o_z + 1).
+    // Mass matrix: the pairs (node, node + o), kp = o_z + 1 >= kpMin.
     RealMM& data = mmArr(i, j, k);
-    for (int kp = 1; kp < 3; ++kp)
+    for (int kp = kpMin; kp < 3; ++kp)
       for (int jp = 0; jp < 3; ++jp)
         for (int ip = 0; ip < 3; ++ip) {
           const int o[3] = { ip - 1, jp - 1, kp - 1 };
@@ -185,6 +189,17 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
 }
 
 } // namespace
+
+// Whether the cell of particle p is next to a refined cell.
+template <class P>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
+is_next_to_refined(const P& p, const Array4<int const>& status,
+                   const Real* plo, const Real* invDx) {
+  IntVect cell;
+  RealVect dShift;
+  find_cell_index_exp(p.pos(), plo, invDx, cell, dShift);
+  return bit::is_refined_neighbour(status(cell));
+}
 
 //==========================================================
 
@@ -458,11 +473,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     Array4<Real> const jArr = jHat[pti].array();
     Array4<RealMM> const mmArr = nodeMM[pti].array();
     Array4<Real const> const u0Arr = u0MF[pti].const_array();
-    // The particles also deposit onto the finer level if the first cell of
-    // the tile is next to a refined cell. The status is read in the kernel.
+    // The particles also deposit onto the finer level if their cell is next
+    // to a refined cell (a tile is a single cell on the CPU, a box on the
+    // GPU, so the status is read at the particle's cell).
     const Array4<int const> status = cellstatus[iLev][pti].const_array();
-    const Box tileBox = pti.tilebox();
-    const IntVect ibx = tileBox.smallEnd();
     // jhf/nmmf exist below the finest level.
     const bool hasFiner = iLev < n_lev() - 1;
     constexpr int maxCoef = 8;
@@ -471,21 +485,25 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     // Coarser levels, this level, and (possibly) the finer level.
     Array4<Real> jArrt[maxCoef];
     Array4<RealMM> mmArrt[maxCoef];
+    Box mmBoxt[maxCoef]; // the (nodal) boxes of the mass matrices
     int count = 0;
     if (iLev > 0) {
       for (int i = 0; i < iLev; i++) {
         jArrt[count] = jhc[iLev][i][pti].array();
         mmArrt[count] = nmmc[iLev][i][pti].array();
+        mmBoxt[count] = nmmc[iLev][i][pti].box();
         count++;
       }
     }
     jArrt[count] = jArr;
     mmArrt[count] = mmArr;
+    mmBoxt[count] = nodeMM[pti].box();
     count++;
 
     if (hasFiner) {
       jArrt[count] = jhf[iLev][pti].array();
       mmArrt[count] = nmmf[iLev][pti].array();
+      mmBoxt[count] = nmmf[iLev][pti].box();
     }
 
     // Copies, so that the kernels capture values, not host pointers.
@@ -504,20 +522,21 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
 
-    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+    // The state of particle ip: its stencils on the nCoef levels it deposits
+    // onto, alpha and its current. False for a deleted particle.
+    auto particle_state =
+        [=] AMREX_GPU_DEVICE(int ip, IntVect(&loIdx)[maxCoef],
+                             RealVect(&dShift)[maxCoef],
+                             Real(&coef)[maxCoef][2][2][2], Real(&alpha)[9],
+                             Real(&currents)[3], int& nCoef) -> bool {
       const ParticleType& p = pData[ip];
       if (p.id() < 0)
-        return;
+        return false;
 
       const bool refinedneighbour =
-          hasFiner && bit::is_refined_neighbour(status(ibx));
-      const int nCoef = iLev + 1 + refinedneighbour;
-
-      IntVect loIdx[maxCoef];
-      RealVect dShift[maxCoef];
-      Real coef[maxCoef][2][2][2];
-
-      // Print()<<"p = "<<p<<std::endl;
+          hasFiner && is_next_to_refined(p, status, ploAll[iLev],
+                                         invDxAll[iLev]);
+      nCoef = iLev + 1 + refinedneighbour;
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
@@ -578,7 +597,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
       const Real c0 = denom * invVolLev * qp * qdto2mc;
 
-      Real alpha[9];
       alpha[0] = (1 + omx2) * c0;
       alpha[1] = (omz + omxomy) * c0;
       alpha[2] = (-omy + omxomz) * c0;
@@ -590,7 +608,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       alpha[8] = (1 + omz2) * c0;
 
       // jHat
-      Real currents[3];
 
       const Real up1 = up - u0[0];
       const Real vp1 = vp - u0[1];
@@ -602,6 +619,70 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       currents[ix_] = (up1 + (vp1 * omz - wp1 * omy + udotOm1 * omx)) * coef1;
       currents[iy_] = (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
       currents[iz_] = (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
+
+      return true;
+    };
+
+    const int np = pti.numParticles();
+
+    if (useCellBinDeposits && AMREX_SPACEDIM == 3) {
+      // GPU: deterministic per-cell sums (see deposit_mass_matrix_by_cell),
+      // one level at a time.
+      for (int iT = 0; iT < nCoefMax; ++iT) {
+        GpuArray<Real, 3> ploT = { 0, 0, 0 }, invDxT = { 0, 0, 0 };
+        for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+          ploT[d] = ploAll[iT][d];
+          invDxT[d] = invDxAll[iT][d];
+        }
+        const bool finer = iT == iLev + 1;
+        deposit_mass_matrix_by_cell(
+            np, enclosedCells(mmBoxt[iT]), jArrt[iT], mmArrt[iT],
+            [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+              const ParticleType& p = pData[ip];
+              if (p.id() < 0 ||
+                  (finer && !is_next_to_refined(p, status, ploAll[iLev],
+                                                invDxAll[iLev])))
+                return false;
+              RealVect dS;
+              Real c[2][2][2];
+              find_node_interpolation(p.pos(), ploT.data(), invDxT.data(), cell,
+                                      dS, c);
+              return true;
+            },
+            [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); },
+            [=] AMREX_GPU_DEVICE(int ip, IntVect& loIdx1, RealVect& dShift1,
+                                 Real(&coef1)[2][2][2], Real(&alpha)[9],
+                                 Real(&currents)[3]) {
+              IntVect loIdx[maxCoef];
+              RealVect dShift[maxCoef];
+              Real coef[maxCoef][2][2][2];
+              int nCoef = 0;
+              if (!particle_state(ip, loIdx, dShift, coef, alpha, currents,
+                                  nCoef) ||
+                  iT >= nCoef)
+                return false;
+              loIdx1 = loIdx[iT];
+              dShift1 = dShift[iT];
+              for (int kk = 0; kk < 2; ++kk)
+                for (int jj = 0; jj < 2; ++jj)
+                  for (int ii = 0; ii < 2; ++ii)
+                    coef1[ii][jj][kk] = coef[iT][ii][jj][kk];
+              return true;
+            },
+            /*kpMin=*/0);
+      }
+      continue;
+    }
+
+    ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
+      IntVect loIdx[maxCoef];
+      RealVect dShift[maxCoef];
+      Real coef[maxCoef][2][2][2];
+      Real alpha[9];
+      Real currents[3];
+      int nCoef = 0;
+      if (!particle_state(ip, loIdx, dShift, coef, alpha, currents, nCoef))
+        return;
 
       for (int i = 0; i < nCoef; ++i)
         deposit_vector_field(jArrt[i], loIdx[i], coef[i], lo, hi, currents, 3);
