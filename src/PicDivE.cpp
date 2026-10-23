@@ -156,7 +156,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
   constexpr int kMin = -1, kMax = 1;
 #endif
 
-  for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(inMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Array4<Real>& lArr = outMF[mfi].array();

@@ -460,7 +460,7 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
   outMF.setVal(0.0);
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
-  for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(outMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Array4<Real const> inArr = inMF[mfi].const_array();
@@ -692,7 +692,7 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 
   const int nComp = MF.nComp();
   int offset = 0;
-  for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Array4<Real> arr = MF[mfi].array();
     const Array4<int const> idx = layout.localIdx[mfi].const_array();
     const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];
@@ -717,7 +717,7 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 
   const int nComp = MF.nComp();
   int offset = 0;
-  for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Array4<Real const> arr = MF[mfi].const_array();
     const Array4<int const> idx = layout.localIdx[mfi].const_array();
     const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];

@@ -116,6 +116,8 @@ struct GmresWorkspace {
   std::vector<double> rs;
   amrex::Gpu::DeviceVector<double> krylovBuffer;
   std::vector<double> hhBuffer;
+  // One Hessenberg column in device memory (single-rank Arnoldi step).
+  amrex::Gpu::DeviceVector<double> hhColumn;
 };
 
 void matvec_E_solver(const double *vecIn, double *vecOut, int iLev);
