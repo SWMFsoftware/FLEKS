@@ -1259,6 +1259,10 @@ void Pic::project_down_E() {
       average_down_nodal(tmp, nodeE[iLev - 1], refRatio(iLev - 1));
     }
     for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+      // The coarse/fine updates may leave the copies of a node shared by two
+      // boxes unequal; the GPU FillBoundary would pick one at random.
+      if (fleksUseGpu)
+        nodeE[iLev].OverrideSync(Geom(iLev).periodicity());
       nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
