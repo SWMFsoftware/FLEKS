@@ -39,6 +39,14 @@ constexpr bool fleksUseGpu = true;
 constexpr bool fleksUseGpu = false;
 #endif
 
+// MFIter options for a loop that only launches kernels whose results are
+// read by later kernels: everything runs on the default stream, so the loop
+// does not synchronize the device when it ends (AMReX otherwise spreads the
+// boxes over several streams and waits for all of them).
+inline amrex::MFItInfo stream_ordered_mfi() {
+  return amrex::MFItInfo().UseDefaultStream().DisableDeviceSync();
+}
+
 // Particle tile layout. The CPU keeps one particle tile per cell: the
 // particles of a cell are contiguous (cache locality) and the per-cell
 // algorithms (resampling, sources) work on a tile. The GPU uses one tile per
@@ -433,6 +441,53 @@ inline amrex::Real* deterministic_sum_result() {
 }
 #endif
 
+#ifdef AMREX_USE_CUDA
+// Device scratch for the CUB reductions, kept for the whole run. Grows as
+// needed.
+inline void* reduction_scratch(std::size_t nBytes) {
+  static void* p = nullptr;
+  static std::size_t size = 0;
+  if (nBytes > size) {
+    if (p) {
+      // The arena may hand the block out again at once: wait for the kernels
+      // that still use it.
+      amrex::Gpu::streamSynchronize();
+      amrex::The_Arena()->free(p);
+    }
+    size = std::max(nBytes, 2 * size);
+    p = amrex::The_Arena()->alloc(size);
+  }
+  return p;
+}
+#endif
+
+// Sum of f(i), i = 0..n-1, written to *result, which is device memory in a
+// GPU build: unlike deterministic_sum() this does not wait for the GPU, so
+// later kernels can read the result without a round trip to the host. The
+// summation order is that of deterministic_sum().
+template <class F>
+void deterministic_sum_to(int n, F&& f, amrex::Real* result) {
+#ifdef AMREX_USE_CUDA
+  if (n <= 0) {
+    amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE(int) { *result = 0; });
+    return;
+  }
+  auto values = cuda::make_transform_iterator(
+      cuda::counting_iterator<int>(0),
+      cuda::proclaim_return_type<amrex::Real>(std::decay_t<F>(f)));
+  std::size_t tmpBytes = 0;
+  cub::DeviceReduce::Sum(nullptr, tmpBytes, values, result, n,
+                         amrex::Gpu::gpuStream());
+  cub::DeviceReduce::Sum(reduction_scratch(tmpBytes), tmpBytes, values, result,
+                         n, amrex::Gpu::gpuStream());
+#else
+  amrex::Real sum = 0;
+  for (int i = 0; i < n; ++i)
+    sum += f(i);
+  *result = sum;
+#endif
+}
+
 template <class F> amrex::Real deterministic_sum(int n, F&& f) {
 #ifdef AMREX_USE_CUDA
   if (n <= 0)
@@ -446,9 +501,8 @@ template <class F> amrex::Real deterministic_sum(int n, F&& f) {
   std::size_t tmpBytes = 0;
   cub::DeviceReduce::Sum(nullptr, tmpBytes, values, result, n,
                          amrex::Gpu::gpuStream());
-  amrex::Gpu::DeviceVector<char> tmp(tmpBytes);
-  cub::DeviceReduce::Sum(tmp.data(), tmpBytes, values, result, n,
-                         amrex::Gpu::gpuStream());
+  cub::DeviceReduce::Sum(reduction_scratch(tmpBytes), tmpBytes, values, result,
+                         n, amrex::Gpu::gpuStream());
   amrex::Gpu::streamSynchronize();
   return *result;
 #else
