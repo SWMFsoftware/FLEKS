@@ -542,6 +542,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
       Real sumY = outArr(i, j, k, iy_);
       Real sumZ = outArr(i, j, k, iz_);
 
+      // Accumulate in registers, in the order of the stencil loop (outMF is
+      // zero on entry, so the result is the same as adding into outMF).
+      Real sumX = 0, sumY = 0, sumZ = 0;
 #if (AMREX_SPACEDIM == 2)
       for (int j2 = j - 1; j2 <= j + 1; ++j2) {
         for (int i2 = i - 1; i2 <= i + 1; ++i2) {
