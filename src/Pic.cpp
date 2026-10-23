@@ -948,7 +948,7 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
   }
 
   cd.loc_tags.clear();
-  cd.local_buf.clear();
+  cd.localPts = 0;
   cd.box_to_loc_tags.clear();
   cd.sends.clear();
   cd.recvs.clear();
@@ -969,7 +969,7 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
                          total_loc_pts };
       total_loc_pts += tag.sbox.numPts();
     }
-    cd.local_buf.resize(total_loc_pts);
+    cd.localPts = total_loc_pts;
 
     const int nLocalBoxes = nodeMM[iLev].size();
     cd.box_to_loc_tags.resize(nLocalBoxes);
@@ -1058,16 +1058,18 @@ void Pic::sum_boundary_node_mm(int iLev) {
     }
   }
 
-  // 2. Pack and post non-blocking sends
+  // 2. Pack (on the device) and post non-blocking sends
   for (int s = 0; s < n_sends; ++s) {
     auto& peer = cd.sends[s];
-    for (const auto& rt : peer.tags) {
-      const auto src_arr = nodeMM[iLev].array(rt.boxIndex);
-      pack_node_mm_box(src_arr, rt.box, &peer.buf[rt.bufOffset]);
-    }
     if (peer.totalPts > 0) {
-      // The packing kernels must be done before MPI reads the buffer.
-      amrex::Gpu::streamSynchronize();
+      amrex::Gpu::DeviceVector<RealMM> packed(peer.totalPts);
+      for (const auto& rt : peer.tags) {
+        const auto src_arr = nodeMM[iLev].array(rt.boxIndex);
+        pack_node_mm_box(src_arr, rt.box, packed.data() + rt.bufOffset);
+      }
+      // One transfer; it waits for the packing kernels.
+      amrex::Gpu::dtoh_memcpy(peer.buf.data(), packed.data(),
+                              peer.totalPts * sizeof(RealMM));
       MPI_Isend(reinterpret_cast<const void*>(peer.buf.data()),
                 peer.totalPts * sizeof(RealMM), MPI_BYTE, peer.rank, seq_num,
                 comm, &cd.send_reqs[s]);
@@ -1075,12 +1077,15 @@ void Pic::sum_boundary_node_mm(int iLev) {
   }
 #endif
 
-  // 3. Snapshot local tags into local_buf (Phase 1)
+  // 3. Snapshot local tags into a device buffer (Phase 1): a source region
+  // may also be a destination, so all sources are copied first.
   const int n_loc = static_cast<int>(cd.loc_tags.size());
+  amrex::Gpu::DeviceVector<RealMM> localBuf(cd.localPts);
+  RealMM* const local_buf = localBuf.data();
   for (int i = 0; i < n_loc; ++i) {
     const auto& tag = cd.loc_tags[i];
     const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
-    pack_node_mm_box(src_arr, tag.sbox, &cd.local_buf[tag.bufOffset]);
+    pack_node_mm_box(src_arr, tag.sbox, local_buf + tag.bufOffset);
   }
 
   // 4. Accumulate local tags into destination boxes (Phase 2)
@@ -1093,7 +1098,7 @@ void Pic::sum_boundary_node_mm(int iLev) {
     auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
     for (int tag_idx : tag_indices) {
       const auto& tag = cd.loc_tags[tag_idx];
-      accumulate_node_mm_box(&cd.local_buf[tag.bufOffset], tag.dbox, dst_arr);
+      accumulate_node_mm_box(local_buf + tag.bufOffset, tag.dbox, dst_arr);
     }
   }
 
@@ -1103,10 +1108,17 @@ void Pic::sum_boundary_node_mm(int iLev) {
     MPI_Waitall(n_recvs, cd.recv_reqs.data(), MPI_STATUSES_IGNORE);
     for (int r = 0; r < n_recvs; ++r) {
       const auto& peer = cd.recvs[r];
+      if (peer.totalPts == 0)
+        continue;
+      amrex::Gpu::DeviceVector<RealMM> received(peer.totalPts);
+      amrex::Gpu::htod_memcpy(received.data(), peer.buf.data(),
+                              peer.totalPts * sizeof(RealMM));
       for (const auto& rt : peer.tags) {
         auto dst_arr = nodeMM[iLev].array(rt.boxIndex);
-        accumulate_node_mm_box(&peer.buf[rt.bufOffset], rt.box, dst_arr);
+        accumulate_node_mm_box(received.data() + rt.bufOffset, rt.box, dst_arr);
       }
+      // The kernels read `received`, which is freed at the end of the loop.
+      amrex::Gpu::streamSynchronize();
     }
   }
 
