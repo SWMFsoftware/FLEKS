@@ -180,6 +180,30 @@ public:
 #endif
   }
 
+  // One bin per cell of cellBox (bin = x-fastest index of the cell);
+  // cellOf(ip, cell) gives the cell of particle ip, or false to leave the
+  // particle out, as does a cell outside cellBox. A bin keeps the storage
+  // order.
+  template <class CellOf>
+  void build_cells(int np, const amrex::Box& cellBox, CellOf&& cellOf) {
+    const amrex::Dim3 lo = amrex::lbound(cellBox);
+    const amrex::Dim3 len = amrex::length(cellBox);
+    const int nBins = static_cast<int>(cellBox.numPts());
+    build(np, nBins, [=] AMREX_GPU_DEVICE(int ip) {
+      amrex::IntVect c;
+      if (!cellOf(ip, c))
+        return nBins;
+      const int ijk[3] = { AMREX_D_DECL(c[0] - lo.x, c[1] - lo.y,
+                                        c[2] - lo.z) };
+      const int lenD[3] = { len.x, len.y, len.z };
+      for (int d = 0; d < AMREX_SPACEDIM; ++d)
+        if (ijk[d] < 0 || ijk[d] >= lenD[d])
+          return nBins;
+      return ijk[0] + len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
+                               len.y * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
+    });
+  }
+
   const int* perm() const { return sorted.data(); }
   const int* offsets() const { return offset.data(); }
   int n_bins() const { return nBin; }
@@ -287,19 +311,7 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
   const amrex::Dim3 len = amrex::length(cellBox);
   const int nBins = static_cast<int>(cellBox.numPts());
   CellBins bins;
-  bins.build(np, nBins, [=] AMREX_GPU_DEVICE(int ip) {
-    amrex::IntVect c;
-    if (!cellOf(ip, c))
-      return nBins;
-    const int ijk[3] = { AMREX_D_DECL(c[0] - lo.x, c[1] - lo.y, c[2] - lo.z) };
-    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
-      const int l = d == 0 ? len.x : (d == 1 ? len.y : len.z);
-      if (ijk[d] < 0 || ijk[d] >= l)
-        return nBins;
-    }
-    return ijk[0] + len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
-                             len.y * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
-  });
+  bins.build_cells(np, cellBox, cellOf);
 
   // 1. The sum of every cell, particle by particle in the bin order.
   constexpr int nAcc = S * S * nK * NComp;
