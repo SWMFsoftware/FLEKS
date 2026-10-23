@@ -27,6 +27,8 @@
 #ifdef AMREX_USE_CUDA
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/device/device_reduce.cuh>
+#include <cuda/functional>
+#include <cuda/iterator>
 #endif
 
 // True in a GPU build. Use it for run-time decisions (e.g. rejecting a
@@ -410,22 +412,33 @@ void sum_boundary(amrex::FabArray<FAB>& mf, const amrex::Periodicity& period) {
 // build stores the values and reduces them with cub::DeviceReduce, whose fixed
 // decomposition gives the same result from run to run (amrex::ReduceOps does
 // not guarantee that).
+#ifdef AMREX_USE_CUDA
+// A pinned host double that receives the result of deterministic_sum().
+inline amrex::Real* deterministic_sum_result() {
+  static amrex::Real* p = static_cast<amrex::Real*>(
+      amrex::The_Pinned_Arena()->alloc(sizeof(amrex::Real)));
+  return p;
+}
+#endif
+
 template <class F> amrex::Real deterministic_sum(int n, F&& f) {
 #ifdef AMREX_USE_CUDA
   if (n <= 0)
     return 0;
-  amrex::Gpu::DeviceVector<amrex::Real> values(n), result(1);
-  amrex::Real* const v = values.data();
-  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { v[i] = f(i); });
+  // CUB reads the values from f directly (no temporary array); the result
+  // goes to pinned memory, so one stream synchronization returns it.
+  auto values = cuda::make_transform_iterator(
+      cuda::counting_iterator<int>(0),
+      cuda::proclaim_return_type<amrex::Real>(std::decay_t<F>(f)));
+  amrex::Real* const result = deterministic_sum_result();
   std::size_t tmpBytes = 0;
-  cub::DeviceReduce::Sum(nullptr, tmpBytes, v, result.data(), n,
+  cub::DeviceReduce::Sum(nullptr, tmpBytes, values, result, n,
                          amrex::Gpu::gpuStream());
   amrex::Gpu::DeviceVector<char> tmp(tmpBytes);
-  cub::DeviceReduce::Sum(tmp.data(), tmpBytes, v, result.data(), n,
+  cub::DeviceReduce::Sum(tmp.data(), tmpBytes, values, result, n,
                          amrex::Gpu::gpuStream());
-  amrex::Real sum = 0;
-  amrex::Gpu::dtoh_memcpy(&sum, result.data(), sizeof(amrex::Real));
-  return sum;
+  amrex::Gpu::streamSynchronize();
+  return *result;
 #else
   amrex::Real sum = 0;
   for (int i = 0; i < n; ++i)
