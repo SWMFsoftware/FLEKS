@@ -28,6 +28,165 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_charge(
       }
 }
 
+// Deterministic GPU deposit of the cell-centred mass matrix of the divE
+// correction (see accumulate_mass_matrix_terms). The entry of the pair
+// (n1, n2) of corners of a dual cell is
+//   |q| invVol^3 sum_d sgn(n1_d) sgn(n2_d) prod_{e != d} h_e^2 P_e(s_e),
+// where s is the position of the particle in the dual cell (0..1), h the cell
+// size, sgn(1) = 1, sgn(0) = -1, and P_e is (1-s)^2, s(1-s) or s^2 for the
+// corner pair (0,0), (0,1)/(1,0), (1,1). So a dual cell only needs the 27
+// moments sum_p |q| sx^l sy^m sz^n (l, m, n = 0..2): the particles of a cell
+// are summed in a fixed order (CellBins), then every cell centre gathers its
+// entries from the dual cells around it. stateOf(ip, dShift, q) returns the
+// shift and the charge of particle ip; cellOf and idOf as in
+// deposit_to_nodes_with().
+template <class CellOf, class IdOf, class StateOf>
+void deposit_center_mm_by_cell(int np, const Box& cellBox,
+                               const Array4<RealCMM>& mmArr, const Real* dx,
+                               Real invVol, CellOf cellOf, IdOf idOf,
+                               StateOf stateOf) {
+  if (np == 0)
+    return;
+  const Dim3 lo = lbound(cellBox);
+  const Dim3 len = length(cellBox);
+  const int nBins = static_cast<int>(cellBox.numPts());
+
+  CellBins bins;
+  bins.build(
+      np, nBins,
+      [=] AMREX_GPU_DEVICE(int ip) {
+        IntVect c;
+        if (!cellOf(ip, c))
+          return nBins;
+        const int ijk[3] = { AMREX_D_DECL(c[0] - lo.x, c[1] - lo.y,
+                                          c[2] - lo.z) };
+        const int lenD[3] = { len.x, len.y, len.z };
+        for (int d = 0; d < AMREX_SPACEDIM; ++d)
+          if (ijk[d] < 0 || ijk[d] >= lenD[d])
+            return nBins;
+        return ijk[0] + len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
+                                 len.y * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
+      },
+      idOf);
+
+  // 1. The 27 moments of every dual cell.
+  constexpr int nM = 27;
+  Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) * nM);
+  Real* const sc = scratch.data();
+  const int* const perm = bins.perm();
+  const int* const off = bins.offsets();
+  ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
+    Real m[nM];
+    for (int n = 0; n < nM; ++n)
+      m[n] = 0;
+    for (int i = off[b]; i < off[b + 1]; ++i) {
+      RealVect dShift;
+      Real q;
+      stateOf(perm[i], dShift, q);
+      const Real w = amrex::Math::abs(q);
+      const Real sz = nDim > 2 ? dShift[nDim > 2 ? 2 : 0] : 0;
+      const Real px[3] = { 1, dShift[0], dShift[0] * dShift[0] };
+      const Real py[3] = { 1, dShift[1], dShift[1] * dShift[1] };
+      const Real pz[3] = { 1, sz, sz * sz };
+      for (int n = 0; n < 3; ++n)
+        for (int l = 0; l < 3; ++l) {
+          const Real wln = w * px[l] * pz[n];
+          for (int k = 0; k < 3; ++k)
+            m[(n * 3 + k) * 3 + l] += wln * py[k];
+        }
+    }
+    Real* const out = sc + static_cast<std::size_t>(b) * nM;
+    for (int n = 0; n < nM; ++n)
+      out[n] = m[n];
+  });
+
+  // 2. Every cell centre gathers the entries from the dual cells around it.
+  const Real h2[3] = { dx[0] * dx[0], dx[1] * dx[1],
+                       nDim > 2 ? dx[nDim > 2 ? 2 : 0] * dx[nDim > 2 ? 2 : 0]
+                                : 1 };
+  const Real coef = invVol * invVol * invVol;
+  const int nK = nDim > 2 ? 2 : 1;
+  Box nodeBox = cellBox;
+  nodeBox.growHi(1);
+  ParallelFor(nodeBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    const int node[3] = { i, j, k };
+    const int loC[3] = { lo.x, lo.y, lo.z };
+    const int lenC[3] = { len.x, len.y, len.z };
+    // Polynomial of the corner pair (a, b) in s (coefficients of 1, s, s^2).
+    auto poly = [](int a, int b, int m) -> Real {
+      constexpr Real p00[3] = { 1, -2, 1 }, p01[3] = { 0, 1, -1 },
+                     p11[3] = { 0, 0, 1 };
+      return (a == 0 && b == 0) ? p00[m] : (a != b ? p01[m] : p11[m]);
+    };
+    Real sum[nCMMComponents];
+    for (int g = 0; g < nCMMComponents; ++g)
+      sum[g] = 0;
+    // The dual cells that have this centre as corner a.
+    for (int cz = 0; cz < nK; ++cz)
+      for (int cy = 0; cy < 2; ++cy)
+        for (int cx = 0; cx < 2; ++cx) {
+          const int a[3] = { cx, cy, cz };
+          int c[3] = { 0, 0, 0 };
+          bool inside = true;
+          for (int d = 0; d < nDim; ++d) {
+            c[d] = node[d] - a[d] - loC[d];
+            inside = inside && c[d] >= 0 && c[d] < lenC[d];
+          }
+          if (!inside)
+            continue;
+          const Real* const m =
+              sc + static_cast<std::size_t>(c[0] +
+                                            lenC[0] * (c[1] + lenC[1] * c[2])) *
+                       nM;
+          // The other corner b of the pair.
+          for (int bz = 0; bz < nK; ++bz)
+            for (int by = 0; by < 2; ++by)
+              for (int bx = 0; bx < 2; ++bx) {
+                const int bb[3] = { bx, by, bz };
+                Real pe[3][3];
+                for (int e = 0; e < 3; ++e)
+                  for (int o = 0; o < 3; ++o)
+                    pe[e][o] = poly(a[e], bb[e], o);
+                Real value = 0;
+                for (int d = 0; d < nDim; ++d) {
+                  const Real sgn = (a[d] == bb[d]) ? 1 : -1;
+                  Real hProd = 1;
+                  for (int e = 0; e < 3; ++e)
+                    if (e != d)
+                      hProd *= h2[e];
+                  Real t = 0;
+                  for (int n = 0; n < 3; ++n) {
+                    const Real fz = (d == 2) ? (n == 0) : pe[2][n];
+                    if (fz == 0)
+                      continue;
+                    for (int kk = 0; kk < 3; ++kk) {
+                      const Real fy = (d == 1) ? (kk == 0) : pe[1][kk];
+                      if (fy == 0)
+                        continue;
+                      for (int l = 0; l < 3; ++l) {
+                        const Real fx = (d == 0) ? (l == 0) : pe[0][l];
+                        if (fx == 0)
+                          continue;
+                        t += fx * fy * fz * m[(n * 3 + kk) * 3 + l];
+                      }
+                    }
+                  }
+                  value += sgn * hProd * t;
+                }
+                const int ip = bx - cx + 1, jp = by - cy + 1;
+                const int gp =
+                    nDim > 2 ? (ip * 3 + jp) * 3 + (bz - cz + 1) : ip * 3 + jp;
+                sum[gp] += coef * value;
+              }
+        }
+    RealCMM& data = mmArr(i, j, k);
+    for (int g = 0; g < nCMMComponents; ++g)
+      data[g] += sum[g];
+  });
+  // The kernels read the bins and the scratch, which are freed on return.
+  Gpu::streamSynchronize();
+}
+
 } // namespace
 
 template <int NStructReal, int NStructInt>
@@ -92,24 +251,14 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
       // GPU: per-cell sums of the mass-matrix terms (see deposit_to_nodes).
       Box mmBox = centerMM[pti].box();
       mmBox.growHi(-1);
-      deposit_to_nodes_with<nCMMComponents>(
-          np, mmBox,
-          [=] AMREX_GPU_DEVICE(int i, int j, int k, int n, Real v) {
-            mmArr(i, j, k)[n] += v;
-          },
-          cellOf, idOf,
-          [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][nCMMComponents]) {
+      deposit_center_mm_by_cell(
+          np, mmBox, mmArr, dxLoc, invV, cellOf, idOf,
+          [=] AMREX_GPU_DEVICE(int ip, RealVect& dShift, Real& q) {
             const ParticleType& p = pData[ip];
             ParticleInterpolator::Linear interp(p, plo, dxi);
-            const IntVect loIdx(AMREX_D_DECL(interp.index[0], interp.index[1],
-                                             interp.index[2]));
-            const RealVect dShift(
-                AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
-            accumulate_mass_matrix_terms(
-                dxLoc, invV, loIdx, dShift, p.rdata(iqp),
-                [&](int ii, int jj, int kk, int gp, Real value) {
-                  acc[ii][jj][kk][gp] += value;
-                });
+            dShift =
+                RealVect(AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
+            q = p.rdata(iqp);
           });
     } else {
       // CPU: every term in particle order, as before.
@@ -209,11 +358,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
             continue;
           Box mmBox = centerMM[pti].box();
           mmBox.growHi(-1);
-          deposit_to_nodes_with<nCMMComponents>(
-              np, mmBox,
-              [=] AMREX_GPU_DEVICE(int i, int j, int k, int n, Real v) {
-                mmArr(i, j, k)[n] += v;
-              },
+          deposit_center_mm_by_cell(
+              np, mmBox, mmArr, dxLev, invVolLev,
               [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
                 if (multiLevel &&
                     skip_particle_for_dive_cleaning(pData[ip].pos(), ploLev,
@@ -222,18 +368,12 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                 return cellOf(ip, cell);
               },
               idOf,
-              [=] AMREX_GPU_DEVICE(int ip,
-                                   Real(&acc)[2][2][2][nCMMComponents]) {
+              [=] AMREX_GPU_DEVICE(int ip, RealVect& dShift, Real& q) {
                 IntVect loIdx;
-                RealVect dShift;
                 Real coef[2][2][2];
                 find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev,
                                         loIdx, dShift, coef);
-                accumulate_mass_matrix_terms(
-                    dxLev, invVolLev, loIdx, dShift, pData[ip].rdata(iqp),
-                    [&](int ii, int jj, int kk, int gp, Real value) {
-                      acc[ii][jj][kk][gp] += value;
-                    });
+                q = pData[ip].rdata(iqp);
               });
           continue;
         }
