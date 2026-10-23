@@ -1467,6 +1467,186 @@ public:
       }
   }
 
+  // Run the resampling routine f(cell, particles, nPart, newParticles) on
+  // the particles of every cell of the tile pti that may need it; f modifies
+  // the nPart particles in place and appends the particles it creates.
+  //
+  // CPU (one tile per cell): f runs on every tile, as a plain loop.
+  // GPU (one tile per box): the particles are binned by cell in particle-key
+  // order, mayResample(particles, perm, begin, end, cell) selects the cells
+  // on the device, and only the particles of the selected cells go to the
+  // host, cell after cell in a fixed order, so the result (and the IDs of the
+  // new particles) is the same from run to run.
+  template <class May, class F>
+  void resample_cells(int iLev, const amrex::MFIter& pti, May&& mayResample,
+                      F&& f) {
+    auto& tile = get_particle_tile(iLev, pti);
+    amrex::Vector<ParticleType> newParticles;
+    if (useCellTiles) {
+      const amrex::Box tileBox = pti.tilebox();
+      const amrex::IntVect cell = tileBox.smallEnd();
+      f(cell, tile.GetArrayOfStructs()().data(),
+        static_cast<int>(tile.numParticles()), newParticles);
+      for (auto& p : newParticles)
+        tile.push_back(p);
+      return;
+    }
+
+    ResampleBatch batch;
+    if (!gather_resample_cells(iLev, pti, mayResample, batch))
+      return;
+    // Cell by cell on the host, in the order of the cells.
+    int start = 0;
+    for (std::size_t i = 0; i < batch.cells.size(); ++i) {
+      f(batch.cells[i], batch.host.data() + start, batch.nPart[i],
+        newParticles);
+      start += batch.nPart[i];
+    }
+    scatter_resample_cells(iLev, pti, batch, newParticles);
+  }
+
+  // The particles of the cells selected for resampling (GPU), see
+  // resample_cells().
+  struct ResampleBatch {
+    amrex::Vector<amrex::IntVect> cells; // the selected cells, in order
+    amrex::Vector<int> nPart;            // the number of particles of each
+    amrex::Vector<ParticleType> host;    // their particles, cell after cell
+    amrex::Gpu::DeviceVector<int> index; // their indices in the tile
+  };
+
+  // Bin the particles of tile pti by cell (particle-key order inside a cell),
+  // select the cells with mayResample on the device, and copy the particles
+  // of the selected cells to the host. False if no cell is selected.
+  template <class May>
+  bool gather_resample_cells(int iLev, const amrex::MFIter& pti,
+                             May&& mayResample, ResampleBatch& batch) {
+    auto& tile = get_particle_tile(iLev, pti);
+    const int np = tile.numParticles();
+    if (np == 0)
+      return false;
+    ParticleType* const pData = tile.GetArrayOfStructs()().data();
+    // The cells of the valid box. A particle outside it (in a ghost cell)
+    // belongs to the nearest valid cell, as with one particle tile per cell,
+    // where AMReX puts it in the tile of that cell.
+    const amrex::Box box = pti.validbox();
+    const amrex::Dim3 lo = amrex::lbound(box);
+    const amrex::Dim3 len = amrex::length(box);
+    const int nBins = static_cast<int>(box.numPts());
+    const auto ploLev = Geom(iLev).ProbLoArray();
+    const auto invDxLev = Geom(iLev).InvCellSizeArray();
+
+    CellBins bins;
+    bins.build(
+        np, nBins,
+        [=] AMREX_GPU_DEVICE(int ip) {
+          if (pData[ip].id() < 0)
+            return nBins;
+          int ijk[3] = { 0, 0, 0 };
+          const int lenD[3] = { len.x, len.y, len.z };
+          const int loD[3] = { lo.x, lo.y, lo.z };
+          for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+            const int c = static_cast<int>(amrex::Math::floor(
+                (pData[ip].pos(d) - ploLev[d]) * invDxLev[d]));
+            ijk[d] = amrex::min(amrex::max(c - loD[d], 0), lenD[d] - 1);
+          }
+          return ijk[0] + len.x * (ijk[1] + len.y * ijk[2]);
+        },
+        [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); });
+
+    auto cell_of_bin = [=] AMREX_GPU_HOST_DEVICE(int b) {
+      return amrex::IntVect(AMREX_D_DECL(lo.x + b % len.x,
+                                         lo.y + (b / len.x) % len.y,
+                                         lo.z + b / (len.x * len.y)));
+    };
+
+    // 1. Select the cells on the device.
+    amrex::Gpu::DeviceVector<int> flagVec(nBins);
+    int* const flag = flagVec.data();
+    const int* const perm = bins.perm();
+    const int* const off = bins.offsets();
+    amrex::ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
+      flag[b] = off[b + 1] > off[b] &&
+                mayResample(pData, perm, off[b], off[b + 1], cell_of_bin(b));
+    });
+    amrex::Vector<int> flagHost(nBins), offHost(nBins + 1);
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, flagVec.begin(), flagVec.end(),
+                     flagHost.begin());
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, off, off + nBins + 1,
+                     offHost.begin());
+    // The routines reseed randNum in every cell they visit, and the state
+    // left by the last cell carries over to the next user of randNum (e.g.
+    // the inflow injection). One tile per cell visits every non-empty cell,
+    // so always visit the last one too: the routines repeat their tests, and
+    // the final state is then that of a CPU run.
+    for (int b = nBins - 1; b >= 0; --b) {
+      if (offHost[b + 1] > offHost[b]) {
+        flagHost[b] = 1;
+        break;
+      }
+    }
+
+    // 2. The particles of the selected cells, gathered on the device.
+    amrex::Vector<int> permHost(np);
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, perm, perm + np,
+                     permHost.begin());
+    amrex::Vector<int> index;
+    for (int b = 0; b < nBins; ++b) {
+      if (!flagHost[b])
+        continue;
+      batch.cells.push_back(cell_of_bin(b));
+      batch.nPart.push_back(offHost[b + 1] - offHost[b]);
+      for (int i = offHost[b]; i < offHost[b + 1]; ++i)
+        index.push_back(permHost[i]);
+    }
+    if (batch.cells.empty())
+      return false;
+    batch.index.resize(index.size());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, index.begin(), index.end(),
+                     batch.index.begin());
+    copy_resample_particles(pData, batch, /*toHost=*/true);
+    return true;
+  }
+
+  // Copy the particles of a batch from the tile data to batch.host (toHost)
+  // or back.
+  void copy_resample_particles(ParticleType* pData, ResampleBatch& batch,
+                               bool toHost) {
+    const int n = batch.index.size();
+    amrex::Gpu::DeviceVector<ParticleType> bufVec(n);
+    ParticleType* const buf = bufVec.data();
+    const int* const index = batch.index.data();
+    if (toHost) {
+      batch.host.resize(n);
+      amrex::ParallelFor(
+          n, [=] AMREX_GPU_DEVICE(int i) { buf[i] = pData[index[i]]; });
+      amrex::Gpu::copy(amrex::Gpu::deviceToHost, bufVec.begin(), bufVec.end(),
+                       batch.host.begin());
+    } else {
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice, batch.host.begin(),
+                       batch.host.end(), bufVec.begin());
+      amrex::ParallelFor(
+          n, [=] AMREX_GPU_DEVICE(int i) { pData[index[i]] = buf[i]; });
+      amrex::Gpu::streamSynchronize();
+    }
+  }
+
+  // Write the resampled particles of a batch back to tile pti and append
+  // the new particles.
+  void scatter_resample_cells(int iLev, const amrex::MFIter& pti,
+                              ResampleBatch& batch,
+                              const amrex::Vector<ParticleType>& newParticles) {
+    auto& tile = get_particle_tile(iLev, pti);
+    const int np = tile.numParticles();
+    copy_resample_particles(tile.GetArrayOfStructs()().data(), batch,
+                            /*toHost=*/false);
+    if (!newParticles.empty()) {
+      tile.resize(np + newParticles.size());
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice, newParticles.begin(),
+                       newParticles.end(),
+                       tile.GetArrayOfStructs()().data() + np);
+    }
+  }
+
   // Particle resampling routines:
   void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false,
                     bool useTargetPPC = false);
@@ -1489,13 +1669,13 @@ public:
   // per-particle hooks) can call this.
   void add_velocity_perturbation(amrex::Real ampY, amrex::Real ampZ,
                                  amrex::Real kx);
-  bool merge_particles_fast(int iLev, AoS& particles,
+  bool merge_particles_fast(int iLev, ParticleType* particles,
                             amrex::Vector<int>& partIdx,
                             amrex::Vector<int>& idx_I, int nPartCombine,
                             int nPartNew, amrex::Vector<amrex::Real>& x,
                             long seed);
 
-  bool merge_particles_accurate(int iLev, AoS& particles,
+  bool merge_particles_accurate(int iLev, ParticleType* particles,
                                 amrex::Vector<int>& partIdx,
                                 amrex::Vector<int>& idx_I, int nPartCombine,
                                 int nPartNew, amrex::Vector<amrex::Real>& x,
