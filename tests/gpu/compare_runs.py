@@ -42,25 +42,32 @@ def deck_name(deck):
     return deck.replace("/", "__")
 
 
+def prepare_run_dir(deck, out):
+    """Create OUT/<deck>/ with the deck as PARAM.in and the data files next
+    to it, and return its path."""
+    src = os.path.join(TESTS, deck)
+    run_dir = os.path.join(out, deck_name(deck))
+    if os.path.isdir(run_dir):
+        shutil.rmtree(run_dir)
+    os.makedirs(os.path.join(run_dir, "PC", "plots"))
+    os.makedirs(os.path.join(run_dir, "PC", "restartOUT"))
+    shutil.copy(src, os.path.join(run_dir, "PARAM.in"))
+    # Data files next to the deck (e.g. field coefficient tables).
+    deck_dir = os.path.dirname(src)
+    for f in os.listdir(deck_dir):
+        path = os.path.join(deck_dir, f)
+        if (os.path.isfile(path) and not f.startswith("PARAM.in")
+                and not f.endswith((".py", ".md"))):
+            shutil.copy(path, run_dir)
+    return run_dir
+
+
 def run(args):
     exe = os.path.abspath(args.exe)
     os.makedirs(args.out, exist_ok=True)
     status = 0
     for deck in args.decks:
-        src = os.path.join(TESTS, deck)
-        run_dir = os.path.join(args.out, deck_name(deck))
-        if os.path.isdir(run_dir):
-            shutil.rmtree(run_dir)
-        os.makedirs(os.path.join(run_dir, "PC", "plots"))
-        os.makedirs(os.path.join(run_dir, "PC", "restartOUT"))
-        shutil.copy(src, os.path.join(run_dir, "PARAM.in"))
-        # Data files next to the deck (e.g. field coefficient tables).
-        deck_dir = os.path.dirname(src)
-        for f in os.listdir(deck_dir):
-            path = os.path.join(deck_dir, f)
-            if (os.path.isfile(path) and not f.startswith("PARAM.in")
-                    and not f.endswith((".py", ".md"))):
-                shutil.copy(path, run_dir)
+        run_dir = prepare_run_dir(deck, args.out)
         cmd = [exe] + args.fleks_args.split()
         if args.np > 1:
             cmd = ["mpirun", "-n", str(args.np)] + cmd
