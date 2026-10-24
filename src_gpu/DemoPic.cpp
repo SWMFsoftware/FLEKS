@@ -71,7 +71,8 @@ void DemoPic::initialize() {
           << " theta=" << config.theta << " omega_p_dt="
           << std::sqrt(demo_field::fourPi * (1 + 1 / config.massRatio)) *
                  config.dt
-          << " correction=" << config.correctDivE << " rho_theta=0.51\n";
+          << " correction=" << config.correctDivE
+          << " rho_theta=" << demo_field::rhoTheta << "\n";
 }
 
 void DemoPic::deposit_moments() {

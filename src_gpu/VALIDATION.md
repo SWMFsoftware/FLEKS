@@ -44,15 +44,25 @@ outside a restrictive sandbox. Compilation alone is not GPU verification.
   CPU result in `production_one_step.json`.
 - Compare global physical diagnostics over eight coupled steps between box
   sizes four and eight, and optionally between one and two MPI ranks.
+- Repeat the box and MPI comparisons on a nonuniform longitudinal wave
+  (`perturbation=0.01`) with div(E) correction enabled. The uniform case alone
+  cannot detect stencil or seam errors.
 - Exercise uniform plasma with div(E) correction enabled and disabled.
 - Run a nonuniform longitudinal perturbation with correction off/on and require
-  the corrected Gauss residual to decrease by at least 5%.
+  the corrected Gauss residual to fall below `1e-6` times the uncorrected value
+  plus `1e-12` (measured: about 1e-4 to 1e-14).
+- Run 20 steps at `dt=0.5` (`c*dt/dx=8`, `n_cell=16`, `b0=0.5`) with
+  correction enabled, the regime FLEKS targets. Require at least ten GMRES
+  iterations in some step, so the case keeps exercising a nontrivial solve,
+  and a corrected Gauss residual below `1e-7` after step 0. Optionally
+  compare one and two ranks with relative tolerance `1e-6`.
 - Require finite diagnostics, increasing steps/times, constant particle count,
   integrated neutral charge within `1e-9`, nonnegative energy, and the true
   electric-solver residual below `1e-7`.
 
 Decomposition comparisons use relative tolerance `2e-7` and absolute tolerance
-`2e-10`. These compare energy, charge, particle count, time, and step. Krylov
+`1e-14`. These compare energy, charge, the minimum nodal `E_x`, particle
+count, time, and step. Krylov
 iteration counts and near-zero residual maxima may depend on accumulation order
 and are intentionally not required to match bitwise.
 
@@ -125,10 +135,11 @@ correction disabled, for 600 steps at `dt=0.01`. For normalized density one,
 electron mass one, and ion mass 25, the expected frequency is
 `sqrt(4*pi*(1+1/25))`. Successive maxima in electric energy occur at twice the
 field frequency; the estimator accounts for that factor and interpolates peak
-locations. It requires at least three peaks, frequency error below 6%, and total
-energy drift below 2%. A 1200-step run at half the timestep must not increase
-frequency error by more than `0.002` in relative units. This margin accounts for
-finite-record peak estimation near machine-precision temporal convergence.
+locations. It requires at least three peaks, frequency error below `1e-3`
+(measured `1.09e-4`), and total energy drift below `1e-9` (measured
+`2.2e-15`). A 1200-step run at half the timestep must reduce the frequency
+error by at least a factor of three; second-order convergence predicts four,
+and the measured ratio is 4.0.
 
 The small-step `theta=0.51` smoke runs and `theta=0.5` energy run are distinct:
 `theta=0.51` is dissipative. Neither run establishes stability for large plasma

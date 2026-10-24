@@ -670,6 +670,24 @@ int DemoParticles::run_checks(DemoFields& fields) {
   report("uniform B rotation converges under dt refinement",
          std::max(Real(0), gyroError[1] - .3 * gyroError[0]), tol);
 
+  // Oblique B exercises every rotation term, including omega omega^T, which
+  // an axis-aligned field leaves at zero.
+  const Real obliqueB[3] = { .15, -.25, .4 };
+  fields.nodeE.setVal(.2, 0, 1, fields.nodeE.nGrow());
+  for (int d = 0; d < 3; ++d)
+    fields.nodeB.setVal(obliqueB[d], d, 1, fields.nodeB.nGrow());
+  set_particles(samples);
+  expected = samples;
+  for (auto& p : expected)
+    reference_boris(p, uniformE, obliqueB, charge / mass, .071);
+  gather(fields.nodeE, fields.nodeB);
+  push(.071);
+  report("Boris oblique E and B independent cross-product reference",
+         compare_particles(expected), tol);
+  fields.nodeE.setVal(0);
+  fields.nodeB.setVal(0);
+  fields.nodeB.setVal(.4, 2, 1, fields.nodeB.nGrow());
+
   // Nonuniform periodic nodal field tests gather independently of a constant
   // field. Every reference interpolation evaluates the sampled grid values.
   const int n = config.nCell;
@@ -729,16 +747,31 @@ int DemoParticles::run_checks(DemoFields& fields) {
          compare_reference(fields.moments, moments, n) / invVol, tol);
 
   // Full nodal response reference for seven particles, including collisions
-  // on the same nodes and deposits at periodic corners.
+  // on the same nodes and deposits at periodic corners. The oblique B fills
+  // all nine alpha entries.
+  for (int d = 0; d < 3; ++d)
+    fields.nodeB.setVal(obliqueB[d], d, 1, fields.nodeB.nGrow());
   fields.clear_response();
   accumulate_response(fields, .071);
   fields.finish_response();
   std::vector<Real> current(std::size_t(n) * n * n * 3, 0),
       matrix(std::size_t(n) * n * n * 243, 0);
-  const Real t = charge / mass * .071 * .4 / 2, den = 1 + t * t;
-  const Real aMatrix[9] = {
-    1 / den, t / den, 0, -t / den, 1 / den, 0, 0, 0, 1
-  };
+  // Build alpha column by column from the production vector form
+  // (u + u x omega + (u.omega) omega)/(1 + omega^2), not the device matrix.
+  Real omega[3], omega2 = 0, aMatrix[9];
+  for (int d = 0; d < 3; ++d) {
+    omega[d] = charge / mass * .071 / 2 * obliqueB[d];
+    omega2 += omega[d] * omega[d];
+  }
+  for (int c = 0; c < 3; ++c) {
+    Real u[3] = { 0, 0, 0 };
+    u[c] = 1;
+    for (int d = 0; d < 3; ++d)
+      aMatrix[3 * d + c] =
+          (u[d] + u[(d + 1) % 3] * omega[(d + 2) % 3] -
+           u[(d + 2) % 3] * omega[(d + 1) % 3] + u[c] * omega[c] * omega[d]) /
+          (1 + omega2);
+  }
   for (const auto& p : samples) {
     const auto s = reference_shape(p, n);
     for (int a = 0; a < 8; ++a) {

@@ -83,3 +83,23 @@ implementation proceeds. The implementation plan remains the acceptance list.
   dependency checks, incremental direct build, and `git diff --check` passed.
 - Implementation and verification are complete for the single-level scope.
   All changes will be committed to local branch `gpu`; no push is authorized.
+
+## 2026-10-24 — review follow-up: validation strength
+
+- Tightened automated gates to roughly ten times the measured values:
+  plasma frequency 6% -> 1e-3, theta=0.5 energy drift 2% -> 1e-9, div(E)
+  reduction 5% -> six orders of magnitude, dt refinement must cut the error by
+  at least 3x, decomposition absolute floor 2e-10 -> 1e-14, and minimum nodal
+  E_x added to the compared quantities.
+- Added box/MPI invariance on a nonuniform wave with div(E) correction, and a
+  large-dt case (c*dt/dx=8, b0=0.5) that needs up to 28 GMRES iterations, plus
+  its two-rank comparison.
+- Added oblique-B Boris and mass-matrix references so every alpha entry,
+  including the omega omega^T terms, is checked independently.
+- Named production rhoTheta once in DemoFieldKernels.h and documented the
+  ghost-fill ordering that the E operator relies on.
+- Full suite (`--mpi --physics --reference`) passed on two RTX 4090s.
+- Still open: the production CPU fixture compares only three global scalars
+  for a spatially uniform state without div(E) correction. A nonuniform
+  fixture with field dumps and correction enabled would require new
+  production FLEKS runs.

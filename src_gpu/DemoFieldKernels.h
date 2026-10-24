@@ -41,6 +41,9 @@ using DemoNodeMMFab = amrex::FabArray<amrex::BaseFab<DemoRealMM> >;
 namespace demo_field {
 constexpr amrex::Real pi = 3.1415926535897932384626433832795;
 constexpr amrex::Real fourPi = 4 * pi;
+// Production Pic::rhoTheta weights old/new charge in div(E) correction. It is
+// fixed independently of the field-solver theta.
+constexpr amrex::Real rhoTheta = 0.51;
 
 // FLEKS dual-grid derivative: difference in direction d, averaged over the
 // four transverse corners. toCenter selects node->center or center->node.

@@ -128,6 +128,8 @@ void DemoFields::refresh_node_b() {
 void DemoFields::apply_e_operator(MultiFab& input, MultiFab& output) {
   // Production I - delt^2 lap + delt^2 grad(div) + 4pi delt M.
   // curlcurl reproduces the coefDiff=0 part exactly.
+  // curl_node_to_center synchronizes input and fills its ghosts; the M*x
+  // stencil below reads those ghosts, so keep this call first.
   curl_node_to_center(input, curlCenter);
   curl_center_to_node(curlCenter, curlNode);
   divergence(input, divE);
@@ -232,8 +234,6 @@ void DemoFields::apply_div_e_operator(MultiFab& input, MultiFab& output) {
 }
 bool DemoFields::solve_div_e() {
   divergence(nodeE, divE);
-  // Production rhoTheta is fixed at .51 (independent of field theta).
-  constexpr Real rhoTheta = .51;
   MultiFab::LinComb(scalarRhs, 1 / rhoTheta, divE, 0,
                     -fourPi * (1 - rhoTheta) / rhoTheta, rhoOld, 0, 0, 1, 0);
   MultiFab::Saxpy(scalarRhs, -fourPi, rho, 0, 0, 1, 0);
@@ -259,8 +259,8 @@ Real DemoFields::field_energy() {
 }
 Real DemoFields::gauss_error() {
   divergence(nodeE, divE);
-  MultiFab::Saxpy(divE, -fourPi * .51, rho, 0, 0, 1, 0);
-  MultiFab::Saxpy(divE, -fourPi * .49, rhoOld, 0, 0, 1, 0);
+  MultiFab::Saxpy(divE, -fourPi * rhoTheta, rho, 0, 0, 1, 0);
+  MultiFab::Saxpy(divE, -fourPi * (1 - rhoTheta), rhoOld, 0, 0, 1, 0);
   return divE.norm0(0);
 }
 Real DemoFields::div_b_error() {

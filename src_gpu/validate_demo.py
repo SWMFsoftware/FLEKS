@@ -115,12 +115,14 @@ def validate_diagnostics(records, steps):
                 "Diagnostic steps/times must increase")
 
 
-def compare_records(left, right, label, relative=2e-7, absolute=2e-10):
+def compare_records(left, right, label, relative=2e-7, absolute=1e-14):
     require(len(left) == len(right), f"{label}: diagnostic record counts differ")
     # Gauss maxima and Krylov residuals can be dominated by reduction-order
     # noise near zero. Compare physical global quantities, not solver work.
+    # The absolute floor stays far below the O(1e-10) early field energies.
     for a, b in zip(left, right):
-        for key in ("step", "time", "particles", "kinetic", "field", "charge"):
+        for key in ("step", "time", "particles", "kinetic", "field", "charge",
+                    "electric_x"):
             require(math.isclose(a[key], b[key], rel_tol=relative, abs_tol=absolute),
                     f"{label}: {key} differs at step {a['step']}: {a[key]} vs {b[key]}")
 
@@ -204,13 +206,46 @@ class Suite:
             distributed = self.run("implicit-mpi2", coupled, ranks=2, diagnostics=True)
             compare_records(baseline, distributed, "MPI decomposition")
             print("PASS mpi-decomposition-invariance", flush=True)
+        # A uniform state hides stencil and seam errors. Repeat the invariance
+        # checks with spatial structure and the div(E) position correction.
+        wave = {**coupled, "initial_condition": "langmuir", "perturbation": 0.01,
+                "correct_div_e": 1}
+        wave_box4 = self.run("langmuir-divE-box4", wave, diagnostics=True)
+        wave_box8 = self.run("langmuir-divE-box8", {**wave, "max_grid_size": 8},
+                             diagnostics=True)
+        compare_records(wave_box4, wave_box8, "nonuniform box decomposition")
+        print("PASS nonuniform-box-decomposition-invariance", flush=True)
+        if self.args.mpi:
+            wave_mpi = self.run("langmuir-divE-mpi2", wave, ranks=2, diagnostics=True)
+            compare_records(wave_box4, wave_mpi, "nonuniform MPI decomposition")
+            print("PASS nonuniform-mpi-decomposition-invariance", flush=True)
         self.run("implicit-divE", {**coupled, "correct_div_e": 1}, diagnostics=True)
         nonuniform = {**coupled, "initial_condition": "langmuir", "n_step": 4}
         uncorrected = self.run("langmuir-divE-off", nonuniform, diagnostics=True)
         corrected = self.run("langmuir-divE-on", {**nonuniform, "correct_div_e": 1}, diagnostics=True)
-        require(corrected[-1]["gauss"] <= 0.95 * uncorrected[-1]["gauss"] + 1e-10,
-                "Position correction did not reduce the nonuniform Gauss residual by5%")
+        require(corrected[-1]["gauss"] <= 1e-6 * uncorrected[-1]["gauss"] + 1e-12,
+                f"Position correction reduced the Gauss residual only from "
+                f"{uncorrected[-1]['gauss']} to {corrected[-1]['gauss']}")
         print("PASS nonuniform-divE-reduction", flush=True)
+        # FLEKS targets c*dt/dx >> 1, where the field operator is far from the
+        # identity. Small-dt cases converge in a couple of Krylov iterations.
+        large = dict(mode="implicit", n_cell=16, max_grid_size=8, particles_per_cell=8,
+                     n_step=20, dt=0.5, b0=0.5, initial_condition="langmuir",
+                     perturbation=0.01, correct_div_e=1, diagnostic_interval=1)
+        large_records = self.run("large-dt", large, diagnostics=True)
+        require(max(r["iterations"] for r in large_records[1:]) >= 10,
+                "Large-dt case no longer exercises a nontrivial field solve")
+        # Step 0 precedes any correction: the half drift creates charge while
+        # E is still zero. Check every corrected step.
+        corrected_gauss = max(r["gauss"] for r in large_records[1:])
+        require(corrected_gauss <= 1e-7,
+                f"Large-dt corrected Gauss residual too large: {corrected_gauss}")
+        print("PASS large-dt-solve", flush=True)
+        if self.args.mpi:
+            large_mpi = self.run("large-dt-mpi2", large, ranks=2, diagnostics=True)
+            compare_records(large_records, large_mpi, "large-dt MPI decomposition",
+                            relative=1e-6)
+            print("PASS large-dt-mpi-decomposition-invariance", flush=True)
         if self.args.reference:
             self.run("production-operators", dict(n_cell=8, max_grid_size=4,
                      reference_prefix=str(self.directory / "operators")),
@@ -223,11 +258,13 @@ class Suite:
             records = self.run("plasma-theta05", physics, diagnostics=True)
             expected = math.sqrt(4 * math.pi * (1 + 1 / physics["mass_ratio"]))
             measured = oscillation_frequency(records)
-            require(abs(measured / expected - 1) < 0.06,
-                    f"Plasma frequency {measured} differs from {expected} by >6%")
+            # Measured on RTX 4090: frequency error 1.09e-4, energy drift
+            # 2.2e-15. Gates keep roughly an order of magnitude of headroom.
+            require(abs(measured / expected - 1) < 1e-3,
+                    f"Plasma frequency {measured} differs from {expected} by >0.1%")
             energies = [r["kinetic"] + r["field"] for r in records]
             drift = max(abs(value / energies[0] - 1) for value in energies)
-            require(drift < 0.02, f"theta=0.5 energy drift {drift} exceeds 2%")
+            require(drift < 1e-9, f"theta=0.5 energy drift {drift} exceeds 1e-9")
             self.results.append({"case": "plasma-frequency-energy", "passed": True,
                                  "omega_expected": expected, "omega_measured": measured,
                                  "relative_energy_drift": drift})
@@ -235,9 +272,14 @@ class Suite:
             half = self.run("plasma-half-dt", {**physics, "n_step": 1200, "dt": 0.005},
                             diagnostics=True)
             fine_frequency = oscillation_frequency(half)
-            require(abs(fine_frequency / expected - 1) <= abs(measured / expected - 1) + 0.002,
-                    "Timestep refinement increased plasma-frequency error")
-            print(f"PASS timestep-refinement omega={fine_frequency:.8g}")
+            coarse_error = abs(measured / expected - 1)
+            fine_error = abs(fine_frequency / expected - 1)
+            # Second order predicts a ratio of 4; require at least 3.
+            require(fine_error <= coarse_error / 3,
+                    f"Halving dt reduced the frequency error only from "
+                    f"{coarse_error} to {fine_error}")
+            print(f"PASS timestep-refinement omega={fine_frequency:.8g} "
+                  f"error_ratio={coarse_error / max(fine_error, 1e-300):.3g}")
         (self.directory / "results.json").write_text(json.dumps(self.results, indent=2) + "\n")
 
 

@@ -60,7 +60,11 @@ before flushing 64 tensor blocks. It reduces global atomics but introduces
 large thread-local storage and poor parallelism in densely occupied cells.
 The clustered result is a concrete reason to keep the atomic path as default;
 this buffering strategy is an experimental comparison, not an optimization to
-transfer directly into FLEKS. Similarly, the small fused-kernel difference
+transfer directly into FLEKS. Each thread holds 600 doubles (4.8 KB) of
+private buffers, which spill from registers to local memory, and each call
+allocates range arrays and synchronizes the stream once per box. The result
+therefore measures this implementation, not buffering in general; it does not
+rule out block- or warp-level reduction in shared memory. Similarly, the small fused-kernel difference
 needs longer repeated trials before attributing a speedup to fusion.
 
 Logs and structured results from this run are in
