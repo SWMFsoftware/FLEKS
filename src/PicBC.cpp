@@ -236,7 +236,7 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
   const BoxListView activeView =
       skipCoarseFineGhosts ? activeBoxes->view() : BoxListView();
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     if (ba.contains(bxFab))
       continue;
@@ -342,7 +342,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         skipCoarseFineGhosts ? activeBoxes->view() : BoxListView();
     const int nDimLoc = nDim;
 
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
       if (skipCoarseFineGhosts && ba.contains(bxFab))
@@ -398,7 +398,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
       get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     if (ba.contains(bxFab))
       continue;
@@ -535,7 +535,7 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
     weights.drive[d] = 2.0 * drive0 / (1.0 + drive0);
   }
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     if (ba.contains(bxFab))
       continue;
@@ -601,7 +601,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     if (ba.contains(bxFab))
       continue;
@@ -764,7 +764,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            bnd.isNode[2] ? 0.0 : 0.5 };
   const WaveWindow window = waveBC.window;
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     const Box& bxValid = mfi.validbox();
     if (ba.contains(bxFab))
@@ -953,7 +953,7 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
 
   const int activeDim = get_dim();
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     auto arr = mf[mfi].array();
     const auto statusArr = status[mfi].array();
@@ -1015,7 +1015,7 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
   }
   const bool hasB0 = (b0 != nullptr);
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     auto arr = mf[mfi].array();
     const auto statusArr = status[mfi].array();
@@ -1083,7 +1083,7 @@ void Pic::fill_body_E_insulating(amrex::MultiFab& mf, const int iLev) {
     MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
     mfOld.FillBoundary(Geom(iLev).periodicity());
 
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       auto arr = mf[mfi].array();
       const auto arrOld = mfOld[mfi].array();

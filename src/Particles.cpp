@@ -170,7 +170,7 @@ void Particles<NStructReal, NStructInt>::select_particle(
 
   // loop through particles
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (p.id() < 0)
@@ -208,7 +208,7 @@ void Particles<NStructReal, NStructInt>::calculate_particle_quality(
     amrex::Vector<amrex::MultiFab>& quality) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     quality[iLev].setVal(0.0);
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       Box bx = pti.tilebox();
       IntVect ibx = bx.smallEnd();
       const auto tppc = target_PPC(iLev)[pti].array();
@@ -242,7 +242,7 @@ void Particles<NStructReal, NStructInt>::add_velocity_perturbation(Real ampY,
                                                                    Real ampZ,
                                                                    Real kx) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (p.id() < 0)

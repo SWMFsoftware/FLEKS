@@ -1478,7 +1478,7 @@ public:
     if (useCellTiles)
       return;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
         const int np = pti.numParticles();
         if (np < 2)
           continue;
@@ -1514,7 +1514,8 @@ public:
             np, [=] AMREX_GPU_DEVICE(int i) { out[i] = pData[perm[i]]; });
         amrex::Gpu::copyAsync(amrex::Gpu::deviceToDevice, sorted.begin(),
                               sorted.end(), pData);
-        amrex::Gpu::streamSynchronize();
+        // sorted and the bins are freed at the end of the iteration.
+        sync_before_free();
       }
     }
   }
@@ -1606,7 +1607,8 @@ public:
         int lastFab = -1;
         ActiveRegionBox ab;
 
-        for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+        for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid();
+             ++pti) {
           ParticleType* const pData = pti.GetArrayOfStructs()().data();
           const int np = pti.numParticles();
           if (cell_status(iLev).empty()) {
@@ -1637,7 +1639,8 @@ public:
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         const LevelGeomBox lb = make_level_geom_box(iLev);
-        for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+        for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid();
+             ++pti) {
           ParticleType* const pData = pti.GetArrayOfStructs()().data();
           amrex::ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
             ParticleType& p = pData[ip];
@@ -1808,7 +1811,8 @@ public:
                        batch.host.end(), bufVec.begin());
       amrex::ParallelFor(
           n, [=] AMREX_GPU_DEVICE(int i) { pData[index[i]] = buf[i]; });
-      amrex::Gpu::streamSynchronize();
+      // The kernel reads bufVec, which is freed on return.
+      sync_before_free();
     }
   }
 
@@ -1822,7 +1826,6 @@ public:
     amrex::Gpu::copy(amrex::Gpu::hostToDevice, newParticles.begin(),
                      newParticles.end(),
                      tile.GetArrayOfStructs()().data() + np);
-    amrex::Gpu::streamSynchronize();
   }
 
   // Write the resampled particles of a batch back to tile pti and append

@@ -423,7 +423,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   // or achieved relative residual norm reduction.
 
   // The last kernels may still use krylovFallback, freed on return.
-  Gpu::streamSynchronize();
+  sync_before_free();
 
   nIter = its;
   tol = tol / Tol1 * ro; // (relative) tolerance achieved
