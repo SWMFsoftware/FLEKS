@@ -191,6 +191,15 @@ struct CellSeeder {
           if (q == 0)
             continue;
 
+          // Counting pass: every particle that gets here is created; the
+          // velocity does not change that, and the random stream of the cell
+          // is not used after its last particle.
+          if constexpr (Emit::isCountOnly) {
+            emit(xyz, 0, 0, 0, 0);
+            icount++;
+            continue;
+          }
+
           amrex::Real u, v, w;
           const amrex::Real rand1 = randNum();
           const amrex::Real rand2 = randNum();
@@ -295,6 +304,7 @@ struct CellSeeder {
 
 // Counts the particles of a cell.
 struct SeedCounter {
+  static constexpr bool isCountOnly = true;
   int n = 0;
   AMREX_GPU_HOST_DEVICE void operator()(const amrex::RealVect&, amrex::Real,
                                         amrex::Real, amrex::Real, amrex::Real) {
@@ -328,6 +338,7 @@ struct ParticleIDBlock {
 // Writes the particles of a cell, starting at dst, with IDs from the block
 // starting at the global index g0.
 template <class ParticleType, int NStructInt> struct SeedWriter {
+  static constexpr bool isCountOnly = false;
   ParticleType* dst = nullptr;
   ParticleIDBlock ids;
   long g0 = 0;
