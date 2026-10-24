@@ -17,8 +17,9 @@
 #include "Bit.h"
 #include "Constants.h"
 #include "FluidInterface.h"
+#include "GpuBackend.h"
 #include "GridUtility.h"
-#include "RandNum.h"
+#include "RandNumHD.h"
 #include "SourceInterface.h"
 #include "TimeCtr.h"
 
@@ -45,6 +46,10 @@ struct PID {
 
   bool operator==(const PID& t) const { return cpu == t.cpu && id == t.id; }
 };
+
+struct CellSeeder;
+struct ParticleIDBlock;
+class WaveBoundaryManager;
 
 struct Vel {
   amrex::Real vth = 0.0;
@@ -340,7 +345,7 @@ protected:
   PartMode pMode = PartMode::PIC;
 
   int speciesID;
-  RandNum randNum;
+  RandNumHD randNum;
   amrex::Real charge;
   amrex::Real mass;
 
@@ -398,17 +403,24 @@ protected:
   // type of its own.
   bool isWaveFace[6] = { false, false, false, false, false, false };
 
-  // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
-  amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
-  amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
-  amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
+  // Tallies of the particles removed by the boundaries, in device memory in a
+  // GPU build (see ParticleBoundary): the count, charge and mass absorbed
+  // through each domain face (2*d + {0=lo,1=hi}), then the count, charge and
+  // mass absorbed by the inner body (see #BODY).
+  static constexpr int iTallyCount_ = 0;
+  static constexpr int iTallyCharge_ = 6;
+  static constexpr int iTallyMass_ = 12;
+  static constexpr int iTallyBody_ = 18;
+  static constexpr int nTally_ = 21;
+  amrex::Gpu::DeviceVector<amrex::Real> boundaryTallies =
+      amrex::Gpu::DeviceVector<amrex::Real>(nTally_, 0.0);
 
-  // Tallies for the particles absorbed by the inner body (see #BODY). They
-  // are kept separate from the face tallies above, which are indexed by the
-  // domain face the particle left through.
-  amrex::Real bodyAbsorbCount = 0;
-  amrex::Real bodyAbsorbCharge = 0;
-  amrex::Real bodyAbsorbMass = 0;
+  amrex::Real get_tally(int i) const {
+    amrex::Real value;
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, boundaryTallies.begin() + i,
+                     boundaryTallies.begin() + i + 1, &value);
+    return value;
+  }
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
@@ -438,10 +450,9 @@ public:
   // Non-owning pointer to the active initial condition (owned by Pic).
   const InitialCondition* ic_ = nullptr;
 
-  // Wave bulk-velocity kick (pos, t -> dvx,dvy,dvz), set by Pic; null = off.
-  std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
-                     amrex::Real&, amrex::Real&)>
-      waveVelocityKick = nullptr;
+  // Wave boundary whose velocity kick the particles created in the ghost
+  // cells of a wave face receive (see set_wave_face), set by Pic; null = off.
+  const WaveBoundaryManager* waveBC = nullptr;
 
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
@@ -456,6 +467,19 @@ public:
   int n_lev_max() const { return maxLevel() + 1; }
 
   void add_particles_domain(bool fillAll = false);
+
+  // Particle creation on the CPU or the GPU, see include/ParticlesSeed.h.
+  template <class Rule>
+  void add_particles_cells(int iLev, const amrex::MFIter& mfi,
+                           const amrex::Box& box, const Rule& rule,
+                           const FluidInterface* interface, bool doVacuumLimit,
+                           const Vel& tpVel = Vel(), amrex::Real dt = -1);
+  CellSeeder make_cell_seeder(int iLev, const amrex::MFIter& mfi,
+                              const FluidInterface* interface,
+                              bool doVacuumLimit, const Vel& tpVel,
+                              amrex::Real dt) const;
+  ParticleIDBlock reserve_particle_ids(long n);
+
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi,
                           const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,
@@ -486,10 +510,54 @@ public:
   // 1) Only inject particles ONCE for one ghost cells. This function decides
   // which block injects particles. 2) bx should be a valid box 3) The cell
   // (i,j,k) can NOT be the outmost ghost cell layer!!!!
-  bool do_inject_particles_for_this_cell(const amrex::Box& bx,
-                                         const amrex::Array4<const int>& status,
-                                         const amrex::IntVect ijk,
-                                         amrex::IntVect& ijksrc);
+  // A unique key of a particle: (cpu, supID, id) packed in 64 bits. It orders
+  // the particles of a cell independently of their storage order (CellBins).
+  AMREX_GPU_HOST_DEVICE static unsigned long long particle_key(
+      const ParticleType& p) {
+    const unsigned long long cpu = static_cast<unsigned int>(p.cpu());
+    const unsigned long long sup =
+        static_cast<unsigned int>(p.idata(iSupID_)) & 1u;
+    const unsigned long long id = static_cast<unsigned int>(p.id());
+    return (cpu << 32) | (sup << 31) | (id & 0x7fffffffULL);
+  }
+
+  // Should particles be injected into the boundary cell ijk of the box bx?
+  // If so, ijksrc is the first neighbour inside the box.
+  AMREX_GPU_HOST_DEVICE static bool do_inject_particles_for_this_cell(
+      const amrex::Box& bx, const amrex::Array4<const int>& status,
+      const amrex::IntVect ijk, amrex::IntVect& ijksrc) {
+    // This cell should be a boundary cell at least.
+    if (!bit::is_lev_boundary(status(ijk)))
+      return false;
+
+    for (int iloop = 1; iloop <= 3; iloop++) {
+      // iloop==1: loop through faces;
+      // iloop==2: loop through edges;
+      // iloop==3: loop through corners;
+      for (int di = -1; di <= 1; di++)
+        for (int dj = -1; dj <= 1; dj++)
+          for (int dk = -1; dk <= 1; dk++) {
+            const int sum = amrex::Math::abs(di) + amrex::Math::abs(dj) +
+                            amrex::Math::abs(dk);
+            if (iloop != sum)
+              continue;
+
+            amrex::IntVect ijk1 =
+                ijk + amrex::IntVect{ AMREX_D_DECL(di, dj, dk) };
+            if (!bit::is_lev_boundary(status(ijk1))) {
+              // The first neighbor cell that is NOT a boundary cell.
+              if (bx.contains(ijk1)) {
+                ijksrc = ijk1;
+                return true;
+              } else {
+                return false;
+              }
+            }
+          }
+    }
+    amrex::Abort("do_inject_particles_for_this_cell:something is wrong!");
+    return false; // to suppress compilation warning.
+  }
 
   amrex::Real sum_moments(amrex::Vector<amrex::MultiFab>& momentsMF,
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
@@ -565,11 +633,129 @@ public:
 
   void release_particle_backup() { backupContainer_.reset(); }
 
-  void accumulate_mass_matrix_contribution(int iLev,
-                                           const amrex::IntVect& loIdx,
-                                           const amrex::RealVect& dShift,
-                                           amrex::Real qp,
-                                           amrex::Array4<RealCMM> const& mmArr);
+  // Add the contribution of a particle of charge qp to the cell-centered mass
+  // matrix of the divE correction. dx is the cell size, invVol 1/cell volume.
+  AMREX_GPU_HOST_DEVICE static void accumulate_mass_matrix_contribution(
+      const amrex::Real* dx, amrex::Real invVol, const amrex::IntVect& loIdx,
+      const amrex::RealVect& dShift, amrex::Real qp,
+      amrex::Array4<RealCMM> const& mmArr) {
+    accumulate_mass_matrix_terms(
+        dx, invVol, loIdx, dShift, qp,
+        [&](int ii, int jj, int kk, int gp, amrex::Real value) {
+          deposit_add(&mmArr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                             nDim > 2 ? loIdx[iz_] + kk : 0)[gp],
+                      value);
+        });
+  }
+
+  // The terms of accumulate_mass_matrix_contribution(): add(ii, jj, kk, gp,
+  // value) adds value to entry gp of the cell loIdx + (ii, jj, kk).
+  template <class Add>
+  AMREX_GPU_HOST_DEVICE static void accumulate_mass_matrix_terms(
+      const amrex::Real* dx, amrex::Real invVol, const amrex::IntVect& loIdx,
+      const amrex::RealVect& dShift, amrex::Real qp, Add&& add) {
+
+    amrex::Real weights_IIID[2][2][2][nDim3];
+    //----- Mass matrix calculation begin--------------
+    const amrex::Real xi0 = dShift[ix_] * dx[ix_];
+    const amrex::Real eta0 = dShift[iy_] * dx[iy_];
+    const amrex::Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iz_] : 0;
+    const amrex::Real xi1 = dx[ix_] - xi0;
+    const amrex::Real eta1 = dx[iy_] - eta0;
+    const amrex::Real zeta1 = nDim > 2 ? dx[iz_] - zeta0 : 1;
+
+    weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol;
+    weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol;
+    weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol;
+
+    // xi0*eta0*zeta1*invVol;
+    weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol;
+    weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol;
+    weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol;
+
+    // xi0*eta1*zeta0*invVol;
+    weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol;
+    weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol;
+    weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol;
+
+    // xi0*eta1*zeta1*invVol;
+    weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol;
+    weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol;
+    weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol;
+
+    // xi1*eta0*zeta0*invVol;
+    weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol;
+    weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol;
+    weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol;
+
+    // xi1*eta0*zeta1*invVol;
+    weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol;
+    weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol;
+    weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol;
+
+    // xi1*eta1*zeta0*invVol;
+    weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol;
+    weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol;
+    weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol;
+
+    // xi1*eta1*zeta1*invVol;
+    weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol;
+    weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol;
+    weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol;
+
+    const int iMin = loIdx[ix_];
+    const int jMin = loIdx[iy_];
+    const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+    const int iMax = iMin + 1;
+    const int jMax = jMin + 1;
+    const int kMax = nDim > 2 ? kMin + 1 : 0;
+
+    const amrex::Real coef = amrex::Math::abs(qp) * invVol;
+    amrex::Real wg_D[nDim3];
+    for (int k1 = kMin; k1 <= kMax; k1++)
+      for (int j1 = jMin; j1 <= jMax; j1++)
+        for (int i1 = iMin; i1 <= iMax; i1++) {
+
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            wg_D[iDim] =
+                coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
+          }
+
+          // amrex::Real weights[27] = { 0 };
+          for (int i2 = iMin; i2 <= iMax; i2++) {
+            int ip = i2 - i1 + 1;
+#if (AMREX_SPACEDIM == 2)
+            for (int j2 = jMin; j2 <= jMax; j2++) {
+              int jp = j2 - j1 + 1;
+              const int gp = ip * 3 + jp;
+              const amrex::Real(&wg1_D)[nDim3] =
+                  weights_IIID[i2 - iMin][j2 - jMin][0];
+              for (int iDim = 0; iDim < nDim; iDim++) {
+                add(i1 - iMin, j1 - jMin, k1 - kMin, gp,
+                    wg_D[iDim] * wg1_D[iDim]);
+              }
+            }
+#else
+            const int gp0 = ip * 9;
+            for (int j2 = jMin; j2 <= jMax; j2++) {
+              int jp = j2 - j1 + 1;
+              const int gp1 = gp0 + jp * nDim3;
+              for (int k2 = kMin; k2 <= kMax; k2++) {
+                const amrex::Real(&wg1_D)[nDim3] =
+                    weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
+
+                // const int kp = k2 - k1 + 1;
+                const int gp = gp1 + k2 - k1 + 1;
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  add(i1 - iMin, j1 - jMin, k1 - kMin, gp,
+                      wg_D[iDim] * wg1_D[iDim]);
+                }
+              }
+            }
+#endif
+          }
+        }
+  }
 
   void get_ion_fluid(FluidInterface* stateOH, PIter& pti, const int iLev,
                      const int iFluid, const amrex::RealVect xyz,
@@ -734,172 +920,290 @@ public:
                                   statusBox);
   }
 
-  // Cheap accept: see ActiveRegionBox.lo/hi.  No arithmetic, no status lookup.
-  inline bool is_inside_valid_box(const ParticleType& p,
-                                  const ActiveRegionBox& ab) const {
-    return AMREX_D_TERM(p.pos(0) >= ab.lo[0] && p.pos(0) < ab.hi[0],
-                        &&p.pos(1) >= ab.lo[1] && p.pos(1) < ab.hi[1],
-                        &&p.pos(2) >= ab.lo[2] && p.pos(2) < ab.hi[2]);
-  }
+  // Everything the particle position tests need, in a form that a kernel can
+  // capture by value: the particle boundary conditions, the active domain,
+  // the inner body, and the tallies of the particles that the boundaries
+  // remove (a pointer to device memory in a GPU build). The level geometry
+  // comes with the ActiveRegionBox/LevelGeomBox argument of each test.
+  struct ParticleBoundary {
+    DomainView domain;
+    bool hasGrid = false;
+    int bcLo[3] = { 0, 0, 0 };
+    int bcHi[3] = { 0, 0, 0 };
+    int bodyBC = ParticleBC::absorb;
+    amrex::Real bodyRadius = 0.0;
+    amrex::Real charge = 0.0;
+    amrex::Real mass = 0.0;
+    amrex::Real* tallies = nullptr;
 
-  // Cell index of `p` plus its status bitmask.  `isInside` is false when the
-  // index is outside the status fab; `mask` is then 0.
-  inline void locate_particle_cell(const ParticleType& p,
-                                   const ActiveRegionBox& ab,
-                                   amrex::Array4<int const> const& status,
-                                   bool& isInside, amrex::IntVect& idx,
-                                   int& mask) const {
-    for (int d = 0; d < nDim; ++d) {
-      const amrex::Real dShift = (p.pos(d) - ab.plo[d]) * ab.invDx[d];
-      idx[d] = fastfloor(dShift);
-      if (idx[d] > ab.hiIdx[d] || idx[d] < ab.loIdx[d]) {
-        isInside = false;
-        mask = 0;
-        return;
-      }
+    // Cheap accept: see ActiveRegionBox.lo/hi.  No arithmetic, no status
+    // lookup.
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE static bool is_inside_valid_box(
+        const ParticleType& p, const ActiveRegionBox& ab) {
+      return AMREX_D_TERM(p.pos(0) >= ab.lo[0] && p.pos(0) < ab.hi[0],
+                          &&p.pos(1) >= ab.lo[1] && p.pos(1) < ab.hi[1],
+                          &&p.pos(2) >= ab.lo[2] && p.pos(2) < ab.hi[2]);
     }
 
-    isInside = true;
-    mask = status(idx);
-  }
-
-  inline void locate_particle_cell(const ParticleType& p,
-                                   const ActiveRegionBox& ab,
-                                   amrex::Array4<int const> const& status,
-                                   bool& isInside, int& mask) const {
-    amrex::IntVect idx;
-    locate_particle_cell(p, ab, status, isInside, idx, mask);
-  }
-
-  // Returns true if a pushed particle should be deleted.  `absorb` removes and
-  // tallies; `reflect` mirrors.  Only acts at iLev == 0.
-  inline bool reflect_or_delete_particle(ParticleType& p,
-                                         amrex::Array4<int const> const& status,
-                                         const ActiveRegionBox& ab) {
-    // The cell location is computed at most once and shared by the #BODY test
-    // and the active-region test; a reflection moves the particle and
-    // invalidates it (see `isLocateValid`).
-    const amrex::Real* const ploLoc = ab.plo;
-    const amrex::Real* const phiLoc = ab.phi;
-    bool isInsideBox = false;
-    int cellMask = 0;
-    bool isLocateValid = false;
-
-    // Absorbing inner body (see #BODY).  The test uses the cell containing the
-    // particle, i.e. the same cell-based staircase as the field/moment mask.
-    if (grid != nullptr && grid->use_body()) {
-      if (grid->bodyParticleBC == ParticleBC::reflect) {
-        // Specular reflection on the smooth sphere: the test uses the exact
-        // radius, because reflecting does not remove charge and therefore the
-        // cell-staircase argument of the absorbing case does not apply.
-        amrex::Real xyz[3] = { 0.0, 0.0, 0.0 };
-        for (int d = 0; d < nDim; ++d)
-          xyz[d] = p.pos(d);
-
-        // The reflection moves the particle, so nothing may be cached here.
-        if (grid->is_inside_body(xyz))
-          reflect_particle_at_body(p);
-      } else {
-        locate_particle_cell(p, ab, status, isInsideBox, cellMask);
-        isLocateValid = true;
-
-        if (isInsideBox && bit::is_body(cellMask)) {
-          body_absorb_tally(p.rdata(iqp_));
-          return true;
+    // Cell index of `p` plus its status bitmask.  `isInside` is false when
+    // the index is outside the status fab; `mask` is then 0.
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE static void locate_particle_cell(
+        const ParticleType& p, const ActiveRegionBox& ab,
+        amrex::Array4<int const> const& status, bool& isInside,
+        amrex::IntVect& idx, int& mask) {
+      for (int d = 0; d < nDim; ++d) {
+        const amrex::Real dShift = (p.pos(d) - ab.plo[d]) * ab.invDx[d];
+        idx[d] = fastfloor(dShift);
+        if (idx[d] > ab.hiIdx[d] || idx[d] < ab.loIdx[d]) {
+          isInside = false;
+          mask = 0;
+          return;
         }
       }
+
+      isInside = true;
+      mask = status(idx);
     }
 
-    for (int d = 0; d < nDim; ++d) {
-      const int bcLo = bc.lo[d];
-      const int bcHi = bc.hi[d];
-      // Absorbing and inflow faces remove particles that cross outward,
-      // tallying the lost charge/mass per face.
-      if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
-          p.pos(d) < ploLoc[d]) {
-        absorb_tally(2 * d, p.rdata(iqp_));
-        return true;
-      }
-      if ((bcHi == ParticleBC::absorb || bcHi == ParticleBC::inflow) &&
-          p.pos(d) > phiLoc[d]) {
-        absorb_tally(2 * d + 1, p.rdata(iqp_));
-        return true;
-      }
-      // Specular reflection: mirror position and normal velocity.
-      if (bcLo == ParticleBC::reflect && p.pos(d) < ploLoc[d]) {
-        p.pos(d) = 2.0 * ploLoc[d] - p.pos(d);
-        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-        isLocateValid = false;
-      } else if (bcHi == ParticleBC::reflect && p.pos(d) > phiLoc[d]) {
-        p.pos(d) = 2.0 * phiLoc[d] - p.pos(d);
-        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-        isLocateValid = false;
-      }
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE static void locate_particle_cell(
+        const ParticleType& p, const ActiveRegionBox& ab,
+        amrex::Array4<int const> const& status, bool& isInside, int& mask) {
+      amrex::IntVect idx;
+      locate_particle_cell(p, ab, status, isInside, idx, mask);
     }
 
-    if (!isLocateValid)
-      return is_outside_active_region(p, status, ab);
+    AMREX_GPU_HOST_DEVICE bool is_outside_active_region(
+        const ParticleType& p, const LevelGeomBox& lb) const {
+      amrex::Real loc[AMREX_SPACEDIM];
+      for (int iDim = 0; iDim < AMREX_SPACEDIM; ++iDim)
+        loc[iDim] = 0.0;
+      for (int iDim = 0; iDim < nDim; ++iDim) {
+        loc[iDim] = p.pos(iDim);
+        if (lb.periodic[iDim]) {
+          // Divide/std::floor only when the point is more than one domain
+          // length out, which a single push cannot produce.
+          const amrex::Real L = lb.periodicL[iDim];
+          if (loc[iDim] < lb.plo[iDim] || loc[iDim] >= lb.phi[iDim]) {
+            if (loc[iDim] >= lb.plo[iDim] - L && loc[iDim] < lb.phi[iDim] + L) {
+              loc[iDim] += (loc[iDim] < lb.plo[iDim]) ? L : -L;
+            } else {
+              loc[iDim] -= std::floor((loc[iDim] - lb.plo[iDim]) / L) * L;
+            }
+          }
+          if (loc[iDim] >= lb.phi[iDim]) {
+            loc[iDim] = lb.plo[iDim];
+          }
+        } else {
+          // Fast bounding-box check: if outside global [plo, phi], cannot be
+          // inside activeRegion.
+          if (loc[iDim] < lb.plo[iDim] || loc[iDim] > lb.phi[iDim]) {
+            return true;
+          }
+        }
+      }
 
-    return isInsideBox ? bit::is_domain_boundary(cellMask)
-                       : is_outside_active_region(p, ab);
-  }
+      return !domain.is_inside_domain(loc);
+    }
 
-  // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
-  inline void absorb_tally(int face, amrex::Real weight) {
-    absorbTallyCount[face] += 1.0;
-    absorbTallyCharge[face] += weight * charge;
-    absorbTallyMass[face] += weight * mass;
-  }
+    // Tile-based variant used by the hot particle loops: particles still
+    // inside the level box are accepted by position, those outside the status
+    // fab fall back to the geometric test above.
+    AMREX_GPU_HOST_DEVICE bool is_outside_active_region(
+        const ParticleType& p, amrex::Array4<int const> const& status,
+        const ActiveRegionBox& ab) const {
+      if (is_inside_valid_box(p, ab))
+        return false;
 
-  // Specular reflection on the smooth body sphere (#BODYBOUNDARY reflect);
-  // unlike absorption it keeps the particle, so nothing is tallied.
-  inline void reflect_particle_at_body(ParticleType& p) {
-    if (grid == nullptr)
-      return;
+      bool isInside = false;
+      int cellMask = 0;
+      locate_particle_cell(p, ab, status, isInside, cellMask);
 
-    const amrex::Real* c = grid->get_body_center();
-    const amrex::Real radius = grid->get_body_radius();
+      return isInside ? bit::is_domain_boundary(cellMask)
+                      : is_outside_active_region(p, ab);
+    }
 
-    const int activeDim = grid->get_dim();
+    // Tally a particle of weight (charge per unit charge) `weight` removed
+    // through face `face` (2*d + {0=lo,1=hi}), or by the body if face < 0.
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void tally(
+        int face, amrex::Real weight) const {
+      const int iCount = face < 0 ? iTallyBody_ : iTallyCount_ + face;
+      const int iCharge = face < 0 ? iTallyBody_ + 1 : iTallyCharge_ + face;
+      const int iMass = face < 0 ? iTallyBody_ + 2 : iTallyMass_ + face;
+      deposit_add(tallies + iCount, amrex::Real(1.0));
+      deposit_add(tallies + iCharge, weight * charge);
+      deposit_add(tallies + iMass, weight * mass);
+    }
 
-    amrex::Real dr[3] = { 0.0, 0.0, 0.0 };
-    for (int d = 0; d < activeDim; ++d)
-      dr[d] = p.pos(d) - c[d];
+    // Specular reflection on the smooth body sphere (#BODYBOUNDARY reflect);
+    // unlike absorption it keeps the particle, so nothing is tallied.
+    AMREX_GPU_HOST_DEVICE void reflect_particle_at_body(ParticleType& p) const {
+      const amrex::Real* c = domain.bodyCenter;
+      const amrex::Real radius = bodyRadius;
 
-    amrex::Real r2 = 0.0;
-    for (int d = 0; d < activeDim; ++d)
-      r2 += dr[d] * dr[d];
+      const int activeDim = domain.activeDim;
 
-    const amrex::Real r = std::sqrt(r2);
-    if (r <= 0.0)
-      return; // Degenerate (particle at the center): leave it unchanged.
-
-    const amrex::Real invR = 1.0 / r;
-    amrex::Real n[3] = { 0.0, 0.0, 0.0 };
-    for (int d = 0; d < activeDim; ++d)
-      n[d] = dr[d] * invR;
-
-    // Mirror the radial position about the surface.
-    const amrex::Real rNew = 2.0 * radius - r;
-    for (int d = 0; d < activeDim; ++d)
-      p.pos(d) = c[d] + rNew * n[d];
-
-    // Only an inward velocity is reversed; an outward one is kept.
-    amrex::Real vn = 0.0;
-    for (int d = 0; d < activeDim; ++d)
-      vn += p.rdata(iup_ + d) * n[d];
-
-    if (vn < 0.0) {
+      amrex::Real dr[3] = { 0.0, 0.0, 0.0 };
       for (int d = 0; d < activeDim; ++d)
-        p.rdata(iup_ + d) -= 2.0 * vn * n[d];
+        dr[d] = p.pos(d) - c[d];
+
+      amrex::Real r2 = 0.0;
+      for (int d = 0; d < activeDim; ++d)
+        r2 += dr[d] * dr[d];
+
+      const amrex::Real r = std::sqrt(r2);
+      if (r <= 0.0)
+        return; // Degenerate (particle at the center): leave it unchanged.
+
+      const amrex::Real invR = 1.0 / r;
+      amrex::Real n[3] = { 0.0, 0.0, 0.0 };
+      for (int d = 0; d < activeDim; ++d)
+        n[d] = dr[d] * invR;
+
+      // Mirror the radial position about the surface.
+      const amrex::Real rNew = 2.0 * radius - r;
+      for (int d = 0; d < activeDim; ++d)
+        p.pos(d) = c[d] + rNew * n[d];
+
+      // Only an inward velocity is reversed; an outward one is kept.
+      amrex::Real vn = 0.0;
+      for (int d = 0; d < activeDim; ++d)
+        vn += p.rdata(iup_ + d) * n[d];
+
+      if (vn < 0.0) {
+        for (int d = 0; d < activeDim; ++d)
+          p.rdata(iup_ + d) -= 2.0 * vn * n[d];
+      }
     }
+
+    // Returns true if a pushed particle should be deleted.  `absorb` removes
+    // and tallies; `reflect` mirrors.  Only acts at iLev == 0.
+    AMREX_GPU_HOST_DEVICE bool reflect_or_delete_particle(
+        ParticleType& p, amrex::Array4<int const> const& status,
+        const ActiveRegionBox& ab) const {
+      // The cell location is computed at most once and shared by the #BODY
+      // test and the active-region test; a reflection moves the particle and
+      // invalidates it (see `isLocateValid`).
+      const amrex::Real* const ploLoc = ab.plo;
+      const amrex::Real* const phiLoc = ab.phi;
+      bool isInsideBox = false;
+      int cellMask = 0;
+      bool isLocateValid = false;
+
+      // Absorbing inner body (see #BODY).  The test uses the cell containing
+      // the particle, i.e. the same cell-based staircase as the field/moment
+      // mask.
+      if (hasGrid && domain.useBody) {
+        if (bodyBC == ParticleBC::reflect) {
+          // Specular reflection on the smooth sphere: the test uses the exact
+          // radius, because reflecting does not remove charge and therefore
+          // the cell-staircase argument of the absorbing case does not apply.
+          amrex::Real xyz[3] = { 0.0, 0.0, 0.0 };
+          for (int d = 0; d < nDim; ++d)
+            xyz[d] = p.pos(d);
+
+          // The reflection moves the particle, so nothing may be cached here.
+          if (domain.is_inside_body(xyz))
+            reflect_particle_at_body(p);
+        } else {
+          locate_particle_cell(p, ab, status, isInsideBox, cellMask);
+          isLocateValid = true;
+
+          if (isInsideBox && bit::is_body(cellMask)) {
+            tally(-1, p.rdata(iqp_));
+            return true;
+          }
+        }
+      }
+
+      for (int d = 0; d < nDim; ++d) {
+        const int bcLoD = bcLo[d];
+        const int bcHiD = bcHi[d];
+        // Absorbing and inflow faces remove particles that cross outward,
+        // tallying the lost charge/mass per face.
+        if ((bcLoD == ParticleBC::absorb || bcLoD == ParticleBC::inflow) &&
+            p.pos(d) < ploLoc[d]) {
+          tally(2 * d, p.rdata(iqp_));
+          return true;
+        }
+        if ((bcHiD == ParticleBC::absorb || bcHiD == ParticleBC::inflow) &&
+            p.pos(d) > phiLoc[d]) {
+          tally(2 * d + 1, p.rdata(iqp_));
+          return true;
+        }
+        // Specular reflection: mirror position and normal velocity.
+        if (bcLoD == ParticleBC::reflect && p.pos(d) < ploLoc[d]) {
+          p.pos(d) = 2.0 * ploLoc[d] - p.pos(d);
+          p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+          isLocateValid = false;
+        } else if (bcHiD == ParticleBC::reflect && p.pos(d) > phiLoc[d]) {
+          p.pos(d) = 2.0 * phiLoc[d] - p.pos(d);
+          p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+          isLocateValid = false;
+        }
+      }
+
+      if (!isLocateValid)
+        return is_outside_active_region(p, status, ab);
+
+      return isInsideBox ? bit::is_domain_boundary(cellMask)
+                         : is_outside_active_region(p, ab);
+    }
+  };
+
+  // What the movers' boundary condition has to do on level iLev:
+  //   kNoBC         nothing: a single-level grid, all directions periodic,
+  //                 the active region is the whole domain, no inner body;
+  //   kActiveRegion only delete the particles that leave the active region:
+  //                 no body and no absorbing, inflow or reflecting face
+  //                 (reflect_or_delete_particle() then reduces to that test);
+  //   kFullBC       reflect_or_delete_particle().
+  // The movers instantiate a kernel per case (see charged_particle_mover):
+  // even when its branches are not taken, the full boundary code slows the
+  // particle loop down on the CPU (a larger body and more register spills).
+  enum BCMode : int { kNoBC, kActiveRegion, kFullBC };
+  int particle_bc_mode(int iLev) const {
+    if (grid == nullptr)
+      return kFullBC;
+    if (grid->use_body())
+      return kFullBC;
+    for (int d = 0; d < nDim; ++d)
+      for (int t : { bc.lo[d], bc.hi[d] })
+        if (t == ParticleBC::absorb || t == ParticleBC::inflow ||
+            t == ParticleBC::reflect)
+          return kFullBC;
+    if (iLev == 0 && n_lev() == 1 && Geom(0).isAllPeriodic() &&
+        grid->active_region_ref().numPts() == Geom(0).Domain().numPts())
+      return kNoBC;
+    return kActiveRegion;
   }
 
-  // Tally a particle absorbed by the inner body (see #BODY).
-  inline void body_absorb_tally(amrex::Real weight) {
-    bodyAbsorbCount += 1.0;
-    bodyAbsorbCharge += weight * charge;
-    bodyAbsorbMass += weight * mass;
+  ParticleBoundary particle_boundary() {
+    ParticleBoundary pb;
+    pb.hasGrid = (grid != nullptr);
+    if (grid != nullptr) {
+      pb.domain = grid->domain_view();
+      pb.bodyBC = grid->bodyParticleBC;
+      pb.bodyRadius = grid->get_body_radius();
+    }
+    for (int d = 0; d < 3; ++d) {
+      pb.bcLo[d] = bc.lo[d];
+      pb.bcHi[d] = bc.hi[d];
+    }
+    pb.charge = charge;
+    pb.mass = mass;
+    pb.tallies = boundaryTallies.data();
+    return pb;
+  }
+
+  // Host wrappers for the code that is not ported to kernels yet.
+  bool is_outside_active_region(const ParticleType& p,
+                                amrex::Array4<int const> const& status,
+                                const ActiveRegionBox& ab) {
+    return particle_boundary().is_outside_active_region(p, status, ab);
+  }
+
+  bool is_outside_active_region(const ParticleType& p, const LevelGeomBox& lb) {
+    return particle_boundary().is_outside_active_region(p, lb);
   }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
@@ -931,7 +1235,8 @@ public:
     return false;
   }
 
-  amrex::Real cosine(ParticleType& p, amrex::Real (&bIn)[nDim3]) {
+  AMREX_GPU_HOST_DEVICE static amrex::Real cosine(const ParticleType& p,
+                                                  amrex::Real (&bIn)[nDim3]) {
     amrex::Real u[nDim3];
     amrex::Real b[nDim3];
     for (int i = 0; i < nDim3; ++i) {
@@ -1005,6 +1310,57 @@ public:
     if (!gdb->boxArray(0).empty()) {
       // It will crash if there is no active cells.
       Redistribute();
+      sort_particles();
+    }
+  }
+
+  // Put the particles of every tile in a canonical order: by cell, and inside
+  // a cell by particle_key(). The storage order after AMReX's GPU
+  // redistribution changes from run to run; with this, every pass over the
+  // particles (sums, deposits) sees the same order in every run, and the
+  // particles of a cell are contiguous. One tile per cell (CPU) needs nothing.
+  void sort_particles() {
+    if (useCellTiles)
+      return;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+        const int np = pti.numParticles();
+        if (np < 2)
+          continue;
+        ParticleType* const pData = pti.GetArrayOfStructs()().data();
+        const amrex::Box box = cell_status(iLev)[pti].box();
+        const amrex::Dim3 lo = amrex::lbound(box);
+        const amrex::Dim3 len = amrex::length(box);
+        const int nBins = static_cast<int>(box.numPts());
+        const auto ploLev = Geom(iLev).ProbLoArray();
+        const auto invDxLev = Geom(iLev).InvCellSizeArray();
+
+        CellBins bins;
+        bins.build(
+            np, nBins,
+            [=] AMREX_GPU_DEVICE(int ip) {
+              int ijk[3] = { 0, 0, 0 };
+              for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                ijk[d] = static_cast<int>(amrex::Math::floor(
+                    (pData[ip].pos(d) - ploLev[d]) * invDxLev[d]));
+              }
+              const int i = ijk[0] - lo.x, j = ijk[1] - lo.y, k = ijk[2] - lo.z;
+              if (i < 0 || i >= len.x || j < 0 || j >= len.y || k < 0 ||
+                  k >= len.z)
+                return nBins;
+              return i + len.x * (j + len.y * k);
+            },
+            [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); });
+
+        amrex::Gpu::DeviceVector<ParticleType> sorted(np);
+        ParticleType* const out = sorted.data();
+        const int* const perm = bins.perm();
+        amrex::ParallelFor(
+            np, [=] AMREX_GPU_DEVICE(int i) { out[i] = pData[perm[i]]; });
+        amrex::Gpu::copyAsync(amrex::Gpu::deviceToDevice, sorted.begin(),
+                              sorted.end(), pData);
+        amrex::Gpu::streamSynchronize();
+      }
     }
   }
 
@@ -1087,55 +1443,8 @@ public:
 
   void set_is_target_ppc_defined(bool in) { isTargetPPCDefined = in; }
 
-  inline bool is_outside_active_region(const ParticleType& p,
-                                       const LevelGeomBox& lb) const {
-    amrex::RealVect loc;
-    for (int iDim = 0; iDim < nDim; ++iDim) {
-      loc[iDim] = p.pos(iDim);
-      if (lb.periodic[iDim]) {
-        // Divide/std::floor only when the point is more than one domain length
-        // out, which a single push cannot produce.
-        const amrex::Real L = lb.periodicL[iDim];
-        if (loc[iDim] < lb.plo[iDim] || loc[iDim] >= lb.phi[iDim]) {
-          if (loc[iDim] >= lb.plo[iDim] - L && loc[iDim] < lb.phi[iDim] + L) {
-            loc[iDim] += (loc[iDim] < lb.plo[iDim]) ? L : -L;
-          } else {
-            loc[iDim] -= std::floor((loc[iDim] - lb.plo[iDim]) / L) * L;
-          }
-        }
-        if (loc[iDim] >= lb.phi[iDim]) {
-          loc[iDim] = lb.plo[iDim];
-        }
-      } else {
-        // Fast bounding-box check: if outside global [plo, phi], cannot be
-        // inside activeRegion.
-        if (loc[iDim] < lb.plo[iDim] || loc[iDim] > lb.phi[iDim]) {
-          return true;
-        }
-      }
-    }
-
-    return !grid->is_inside_domain(loc.begin());
-  }
-
-  // Tile-based variant used by the hot particle loops: particles still inside
-  // the level box are accepted by position, those outside the status fab fall
-  // back to the geometric test above.
-  inline bool is_outside_active_region(const ParticleType& p,
-                                       amrex::Array4<int const> const& status,
-                                       const ActiveRegionBox& ab) const {
-    if (is_inside_valid_box(p, ab))
-      return false;
-
-    bool isInside = false;
-    int cellMask = 0;
-    locate_particle_cell(p, ab, status, isInside, cellMask);
-
-    return isInside ? bit::is_domain_boundary(cellMask)
-                    : is_outside_active_region(p, ab);
-  }
-
   inline void label_particles_outside_active_region() {
+    const ParticleBoundary pb = particle_boundary();
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         const LevelGeomBox lb = make_level_geom_box(iLev);
@@ -1143,43 +1452,233 @@ public:
         ActiveRegionBox ab;
 
         for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-          AoS& particles = pti.GetArrayOfStructs();
+          ParticleType* const pData = pti.GetArrayOfStructs()().data();
+          const int np = pti.numParticles();
           if (cell_status(iLev).empty()) {
-            for (auto& p : particles) {
-              p.id() = -1;
-            }
+            amrex::ParallelFor(
+                np, [=] AMREX_GPU_DEVICE(int ip) { pData[ip].id() = -1; });
           } else {
             if (pti.index() != lastFab) {
               lastFab = pti.index();
               const amrex::Box& bx = cell_status(iLev)[pti].box();
               ab = make_active_region_box(lb, pti.validbox(), bx);
             }
-            const amrex::Array4<int const>& status =
-                cell_status(iLev)[pti].array();
+            const amrex::Array4<int const> status =
+                cell_status(iLev)[pti].const_array();
 
-            for (auto& p : particles) {
-              if (is_outside_active_region(p, status, ab)) {
+            amrex::ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
+              ParticleType& p = pData[ip];
+              if (pb.is_outside_active_region(p, status, ab)) {
                 p.id() = -1;
               }
-            }
+            });
           }
         }
       }
   }
 
   inline void label_particles_outside_active_region_general() {
+    const ParticleBoundary pb = particle_boundary();
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         const LevelGeomBox lb = make_level_geom_box(iLev);
         for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-          AoS& particles = pti.GetArrayOfStructs();
-          for (auto& p : particles) {
-            if (is_outside_active_region(p, lb)) {
+          ParticleType* const pData = pti.GetArrayOfStructs()().data();
+          amrex::ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+            ParticleType& p = pData[ip];
+            if (pb.is_outside_active_region(p, lb)) {
               p.id() = -1;
             }
-          }
+          });
         }
       }
+  }
+
+  // Run the resampling routine f(cell, particles, nPart, newParticles) on
+  // the particles of every cell of the tile pti that may need it; f modifies
+  // the nPart particles in place and appends the particles it creates.
+  //
+  // CPU (one tile per cell): f runs on every tile, as a plain loop.
+  // GPU (one tile per box): the particles are binned by cell in particle-key
+  // order, mayResample(particles, perm, begin, end, cell) selects the cells
+  // on the device, and only the particles of the selected cells go to the
+  // host, cell after cell in a fixed order, so the result (and the IDs of the
+  // new particles) is the same from run to run.
+  template <class May, class F>
+  void resample_cells(int iLev, const amrex::MFIter& pti, May&& mayResample,
+                      F&& f) {
+    auto& tile = get_particle_tile(iLev, pti);
+    amrex::Vector<ParticleType> newParticles;
+    if (useCellTiles) {
+      const amrex::Box tileBox = pti.tilebox();
+      const amrex::IntVect cell = tileBox.smallEnd();
+      f(cell, tile.GetArrayOfStructs()().data(),
+        static_cast<int>(tile.numParticles()), newParticles);
+      for (auto& p : newParticles)
+        tile.push_back(p);
+      return;
+    }
+
+    ResampleBatch batch;
+    if (!gather_resample_cells(iLev, pti, mayResample, batch))
+      return;
+    // Cell by cell on the host, in the order of the cells.
+    int start = 0;
+    for (std::size_t i = 0; i < batch.cells.size(); ++i) {
+      f(batch.cells[i], batch.host.data() + start, batch.nPart[i],
+        newParticles);
+      start += batch.nPart[i];
+    }
+    scatter_resample_cells(iLev, pti, batch, newParticles);
+  }
+
+  // The particles of the cells selected for resampling (GPU), see
+  // resample_cells().
+  struct ResampleBatch {
+    amrex::Vector<amrex::IntVect> cells; // the selected cells, in order
+    amrex::Vector<int> nPart;            // the number of particles of each
+    amrex::Vector<ParticleType> host;    // their particles, cell after cell
+    amrex::Gpu::DeviceVector<int> index; // their indices in the tile
+  };
+
+  // Bin the particles of tile pti by cell (particle-key order inside a cell),
+  // select the cells with mayResample on the device, and copy the particles
+  // of the selected cells to the host. False if no cell is selected.
+  template <class May>
+  bool gather_resample_cells(int iLev, const amrex::MFIter& pti,
+                             May&& mayResample, ResampleBatch& batch) {
+    auto& tile = get_particle_tile(iLev, pti);
+    const int np = tile.numParticles();
+    if (np == 0)
+      return false;
+    ParticleType* const pData = tile.GetArrayOfStructs()().data();
+    // The cells of the valid box. A particle outside it (in a ghost cell)
+    // belongs to the nearest valid cell, as with one particle tile per cell,
+    // where AMReX puts it in the tile of that cell.
+    const amrex::Box box = pti.validbox();
+    const amrex::Dim3 lo = amrex::lbound(box);
+    const amrex::Dim3 len = amrex::length(box);
+    const int nBins = static_cast<int>(box.numPts());
+    const auto ploLev = Geom(iLev).ProbLoArray();
+    const auto invDxLev = Geom(iLev).InvCellSizeArray();
+
+    CellBins bins;
+    bins.build(
+        np, nBins,
+        [=] AMREX_GPU_DEVICE(int ip) {
+          if (pData[ip].id() < 0)
+            return nBins;
+          int ijk[3] = { 0, 0, 0 };
+          const int lenD[3] = { len.x, len.y, len.z };
+          const int loD[3] = { lo.x, lo.y, lo.z };
+          for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+            const int c = static_cast<int>(amrex::Math::floor(
+                (pData[ip].pos(d) - ploLev[d]) * invDxLev[d]));
+            ijk[d] = amrex::min(amrex::max(c - loD[d], 0), lenD[d] - 1);
+          }
+          return ijk[0] + len.x * (ijk[1] + len.y * ijk[2]);
+        },
+        [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); });
+
+    auto cell_of_bin = [=] AMREX_GPU_HOST_DEVICE(int b) {
+      return amrex::IntVect(AMREX_D_DECL(lo.x + b % len.x,
+                                         lo.y + (b / len.x) % len.y,
+                                         lo.z + b / (len.x * len.y)));
+    };
+
+    // 1. Select the cells on the device.
+    amrex::Gpu::DeviceVector<int> flagVec(nBins);
+    int* const flag = flagVec.data();
+    const int* const perm = bins.perm();
+    const int* const off = bins.offsets();
+    amrex::ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
+      flag[b] = off[b + 1] > off[b] &&
+                mayResample(pData, perm, off[b], off[b + 1], cell_of_bin(b));
+    });
+    amrex::Vector<int> flagHost(nBins), offHost(nBins + 1);
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, flagVec.begin(), flagVec.end(),
+                     flagHost.begin());
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, off, off + nBins + 1,
+                     offHost.begin());
+    // The routines reseed randNum in every cell they visit, and the state
+    // left by the last cell carries over to the next user of randNum (e.g.
+    // the inflow injection). One tile per cell visits every non-empty cell,
+    // so always visit the last one too: the routines repeat their tests, and
+    // the final state is then that of a CPU run.
+    for (int b = nBins - 1; b >= 0; --b) {
+      if (offHost[b + 1] > offHost[b]) {
+        flagHost[b] = 1;
+        break;
+      }
+    }
+
+    // 2. The particles of the selected cells, gathered on the device.
+    amrex::Vector<int> permHost(np);
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, perm, perm + np,
+                     permHost.begin());
+    amrex::Vector<int> index;
+    for (int b = 0; b < nBins; ++b) {
+      if (!flagHost[b])
+        continue;
+      batch.cells.push_back(cell_of_bin(b));
+      batch.nPart.push_back(offHost[b + 1] - offHost[b]);
+      for (int i = offHost[b]; i < offHost[b + 1]; ++i)
+        index.push_back(permHost[i]);
+    }
+    if (batch.cells.empty())
+      return false;
+    batch.index.resize(index.size());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, index.begin(), index.end(),
+                     batch.index.begin());
+    copy_resample_particles(pData, batch, /*toHost=*/true);
+    return true;
+  }
+
+  // Copy the particles of a batch from the tile data to batch.host (toHost)
+  // or back.
+  void copy_resample_particles(ParticleType* pData, ResampleBatch& batch,
+                               bool toHost) {
+    const int n = batch.index.size();
+    amrex::Gpu::DeviceVector<ParticleType> bufVec(n);
+    ParticleType* const buf = bufVec.data();
+    const int* const index = batch.index.data();
+    if (toHost) {
+      batch.host.resize(n);
+      amrex::ParallelFor(
+          n, [=] AMREX_GPU_DEVICE(int i) { buf[i] = pData[index[i]]; });
+      amrex::Gpu::copy(amrex::Gpu::deviceToHost, bufVec.begin(), bufVec.end(),
+                       batch.host.begin());
+    } else {
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice, batch.host.begin(),
+                       batch.host.end(), bufVec.begin());
+      amrex::ParallelFor(
+          n, [=] AMREX_GPU_DEVICE(int i) { pData[index[i]] = buf[i]; });
+      amrex::Gpu::streamSynchronize();
+    }
+  }
+
+  // Append the (host) particles newParticles to a tile.
+  static void append_particles(
+      ParticleTileType& tile, const amrex::Vector<ParticleType>& newParticles) {
+    if (newParticles.empty())
+      return;
+    const std::size_t np = tile.numParticles();
+    tile.resize(np + newParticles.size());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, newParticles.begin(),
+                     newParticles.end(),
+                     tile.GetArrayOfStructs()().data() + np);
+    amrex::Gpu::streamSynchronize();
+  }
+
+  // Write the resampled particles of a batch back to tile pti and append
+  // the new particles.
+  void scatter_resample_cells(int iLev, const amrex::MFIter& pti,
+                              ResampleBatch& batch,
+                              const amrex::Vector<ParticleType>& newParticles) {
+    auto& tile = get_particle_tile(iLev, pti);
+    copy_resample_particles(tile.GetArrayOfStructs()().data(), batch,
+                            /*toHost=*/false);
+    append_particles(tile, newParticles);
   }
 
   // Particle resampling routines:
@@ -1204,13 +1703,13 @@ public:
   // per-particle hooks) can call this.
   void add_velocity_perturbation(amrex::Real ampY, amrex::Real ampZ,
                                  amrex::Real kx);
-  bool merge_particles_fast(int iLev, AoS& particles,
+  bool merge_particles_fast(int iLev, ParticleType* particles,
                             amrex::Vector<int>& partIdx,
                             amrex::Vector<int>& idx_I, int nPartCombine,
                             int nPartNew, amrex::Vector<amrex::Real>& x,
                             long seed);
 
-  bool merge_particles_accurate(int iLev, AoS& particles,
+  bool merge_particles_accurate(int iLev, ParticleType* particles,
                                 amrex::Vector<int>& partIdx,
                                 amrex::Vector<int>& idx_I, int nPartCombine,
                                 int nPartNew, amrex::Vector<amrex::Real>& x,
@@ -1226,9 +1725,13 @@ public:
   amrex::Real get_mass() const { return mass; }
 
   // Tallies for the particles absorbed by the inner body (see #BODY).
-  amrex::Real get_body_absorb_count() const { return bodyAbsorbCount; }
-  amrex::Real get_body_absorb_charge() const { return bodyAbsorbCharge; }
-  amrex::Real get_body_absorb_mass() const { return bodyAbsorbMass; }
+  amrex::Real get_body_absorb_count() const { return get_tally(iTallyBody_); }
+  amrex::Real get_body_absorb_charge() const {
+    return get_tally(iTallyBody_ + 1);
+  }
+  amrex::Real get_body_absorb_mass() const {
+    return get_tally(iTallyBody_ + 2);
+  }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

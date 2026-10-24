@@ -59,7 +59,7 @@ Particles<NStructReal, NStructInt>::Particles(
   ionOH = pInfo.ionOH;
   bc = pInfo.particle_bc(speciesID);
   supID = pInfo.initial_sup_id(speciesID);
-  do_tiling = true;
+  do_tiling = useCellTiles;
 
   qom = charge / mass;
   qomSign = qom >= 0 ? 1 : -1;

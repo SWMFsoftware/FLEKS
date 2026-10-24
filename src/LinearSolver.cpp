@@ -97,7 +97,7 @@ void linear_solver_wrapper_hy(
   param.typePrecondSide = LEFT;
 
   // Initialize solution std::vector to zero
-  std::fill(x_I, x_I + nImpl, 0.0);
+  amrex::ParallelFor(nImpl, [=] AMREX_GPU_DEVICE(int i) { x_I[i] = 0.0; });
 
   // Get preconditioning matrix if required.
   // Precondition RHS and initial guess (for symmetric prec only)
@@ -190,15 +190,28 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   std::vector<double> cFallback;
   std::vector<double> sFallback;
   std::vector<double> rsFallback;
-  std::vector<double> krylovFallback;
+  amrex::Gpu::DeviceVector<double> krylovFallback;
   std::vector<double> hhFallback;
 
   std::vector<double> &c = work ? work->c : cFallback;
   std::vector<double> &s = work ? work->s : sFallback;
   std::vector<double> &rs = work ? work->rs : rsFallback;
-  std::vector<double> &krylovBuffer =
+  amrex::Gpu::DeviceVector<double> &krylovBuffer =
       work ? work->krylovBuffer : krylovFallback;
   std::vector<double> &hhBuffer = work ? work->hhBuffer : hhFallback;
+  amrex::Gpu::DeviceVector<double> hhColumnFallback;
+  amrex::Gpu::DeviceVector<double> &hhColumn =
+      work ? work->hhColumn : hhColumnFallback;
+  if (hhColumn.size() < static_cast<size_t>(nKrylov1))
+    hhColumn.resize(nKrylov1);
+
+  // On one rank the Arnoldi step keeps the Gram-Schmidt coefficients on the
+  // device (no host round trip per dot product); the operations are the
+  // same, so the results are too. With several ranks the dot products need
+  // MPI_Allreduce on the host.
+  int nRank = 1;
+  MPI_Comm_size(iComm, &nRank);
+  const bool deviceArnoldi = (nRank == 1);
 
   if (c.size() < static_cast<size_t>(nKrylov))
     c.resize(nKrylov);
@@ -211,6 +224,9 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   if (hhBuffer.size() < hhSize)
     hhBuffer.resize(hhSize);
 
+  // The Krylov vectors are in device memory in a GPU build, so all vector
+  // operations are kernels. Each kernel visits the elements in index order in
+  // a CPU build, which keeps the results identical to a plain loop.
   auto *Krylov_II = krylovBuffer.data();
   auto *hh = hhBuffer.data();
 
@@ -232,14 +248,12 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     // Krylov_II[1]:=A*sol
     if (isInit || its > 0) {
       matvec(sol, Krylov_II, iLev);
-      for (int i = 0; i < n; ++i) {
+      ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
         Krylov_II[i] = rhs[i] - Krylov_II[i];
-      }
+      });
     } else {
       // Save a matvec when starting from zero initial condition
-      for (int i = 0; i < n; ++i) {
-        Krylov_II[i] = rhs[i];
-      }
+      ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { Krylov_II[i] = rhs[i]; });
     }
     //-------------------------------------------------------------
     ro = sqrt(dot_product_mpi(Krylov_II, Krylov_II, n, iComm));
@@ -282,9 +296,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     }
 
     auto coef = 1.0 / ro;
-    for (int i = 0; i < n; ++i) {
-      Krylov_II[i] *= coef;
-    }
+    ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { Krylov_II[i] *= coef; });
 
     // Initialize 1st term of RHS of Hessenberg system
     rs[0] = ro;
@@ -299,21 +311,52 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
       matvec(&Krylov_II[i * n], &Krylov_II[i1 * n], iLev);
 
       // Modified Gram-Schmidt
-      for (int j = 0; j <= i; ++j) {
-        double t =
-            dot_product_mpi(&Krylov_II[j * n], &Krylov_II[i1 * n], n, iComm);
-        hh[i * nKrylov1 + j] = t;
-        for (int k = 0; k < n; ++k) {
-          Krylov_II[i1 * n + k] -= t * Krylov_II[j * n + k];
+      if (deviceArnoldi) {
+        double *const vNew = &Krylov_II[i1 * n];
+        double *const col = hhColumn.data();
+        for (int j = 0; j <= i; ++j) {
+          const double *const vOld = &Krylov_II[j * n];
+          double *const t = col + j;
+          deterministic_sum_to(
+              n,
+              [=] AMREX_GPU_DEVICE(int k) -> double {
+                return vOld[k] * vNew[k];
+              },
+              t);
+          ParallelFor(n,
+                      [=] AMREX_GPU_DEVICE(int k) { vNew[k] -= *t * vOld[k]; });
         }
-      }
-      double cDot = sqrt(
-          dot_product_mpi(&Krylov_II[i1 * n], &Krylov_II[i1 * n], n, iComm));
-      hh[i * nKrylov1 + i1] = cDot;
-      if (cDot != 0.0) {
-        cDot = 1.0 / cDot;
-        for (int k = 0; k < n; ++k) {
-          Krylov_II[i1 * n + k] *= cDot;
+        double *const norm = col + i1;
+        deterministic_sum_to(
+            n,
+            [=] AMREX_GPU_DEVICE(int k) -> double { return vNew[k] * vNew[k]; },
+            norm);
+        ParallelFor(1, [=] AMREX_GPU_DEVICE(int) { *norm = sqrt(*norm); });
+        ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) {
+          const double cDot = *norm;
+          if (cDot != 0.0)
+            vNew[k] *= 1.0 / cDot;
+        });
+        // The column of hh: one copy, which also waits for the kernels.
+        Gpu::copy(Gpu::deviceToHost, hhColumn.begin(),
+                  hhColumn.begin() + i1 + 1, &hh[i * nKrylov1]);
+      } else {
+        for (int j = 0; j <= i; ++j) {
+          double t =
+              dot_product_mpi(&Krylov_II[j * n], &Krylov_II[i1 * n], n, iComm);
+          hh[i * nKrylov1 + j] = t;
+          double *const vNew = &Krylov_II[i1 * n];
+          const double *const vOld = &Krylov_II[j * n];
+          ParallelFor(n,
+                      [=] AMREX_GPU_DEVICE(int k) { vNew[k] -= t * vOld[k]; });
+        }
+        double cDot = sqrt(
+            dot_product_mpi(&Krylov_II[i1 * n], &Krylov_II[i1 * n], n, iComm));
+        hh[i * nKrylov1 + i1] = cDot;
+        if (cDot != 0.0) {
+          cDot = 1.0 / cDot;
+          double *const vNew = &Krylov_II[i1 * n];
+          ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] *= cDot; });
         }
       }
       // Done with modified Gram-Schmidt and Arnoldi step.
@@ -366,10 +409,10 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     // Done with back substitution.
     // Form linear combination to get solution.
     for (int j = 0; j < i; ++j) {
-      for (int k = 0; k < n; ++k) {
-        // sol[i] += rs[j] * Krylov_II[i][j];
-        sol[k] += rs[j] * Krylov_II[j * n + k];
-      }
+      // sol[i] += rs[j] * Krylov_II[i][j];
+      const double rsj = rs[j];
+      const double *const v = &Krylov_II[j * n];
+      ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) { sol[k] += rsj * v[k]; });
     }
   } while (ro > Tol1 && its < nIter);
 
@@ -378,6 +421,9 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   // || current residual||/||initial residual|| <= eps
   // on OUTPUT: actual achieved norm residual (if iabs!=0)
   // or achieved relative residual norm reduction.
+
+  // The last kernels may still use krylovFallback, freed on return.
+  Gpu::streamSynchronize();
 
   nIter = its;
   tol = tol / Tol1 * ro; // (relative) tolerance achieved

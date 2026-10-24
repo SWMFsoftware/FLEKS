@@ -20,167 +20,192 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
   if (maxRatio <= 1)
     return;
 
+  // Resampling works on the particles of one cell (see resample_cells).
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
-  if (!(do_tiling && tile_size == iv))
-    return;
+  if (useCellTiles && !(do_tiling && tile_size == iv))
+    Abort("Particle resampling needs one particle tile per cell.");
 
+  const int iqp = iqp_;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    HostFabCache hostFabs;
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      const Array4<int const> tppcDev = useTargetPPC
+                                            ? target_PPC(iLev).const_array(pti)
+                                            : Array4<int const>();
+      const Array4<int const> tppc = useTargetPPC
+                                         ? hostFabs.array(target_PPC(iLev), pti)
+                                         : Array4<int const>();
 
-      AoS& particles = pti.GetArrayOfStructs();
-      if (particles.empty())
-        continue;
-
-      Real totalMass = 0;
-      for (const auto& p : particles) {
-        totalMass += fabs(p.rdata(iqp_));
-      }
-
-      Real avg = 0;
-      Real dl = 0;
-      if (useTargetPPC) {
-        const auto tppc = target_PPC(iLev)[pti].array();
-        const Box& bx = pti.tilebox();
-        IntVect ibx = bx.smallEnd();
-        int target = tppc(ibx);
-        if (target <= 0)
-          continue;
-        avg = totalMass / target;
-        dl = 4.0 * Geom(iLev).CellSize()[ix_] / sqrt(static_cast<Real>(target));
-      } else {
-        avg = totalMass / particles.size();
-        dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
-      }
-
-      Real maxWeight = avg * maxRatio;
-
-      Vector<ParticleType> newparticles;
-      auto& pTile = get_particle_tile(iLev, pti);
-
-      // Sort the particles first to make sure the results
-      // are the same for different number of processors
-      std::sort(particles.begin(), particles.end(), compare_two_parts);
-
-      if (seperateVelocity) {
-        Box bx = pti.tilebox();
-        set_random_seed(iLev, bx.smallEnd(), IntVect(444));
-        Vector<ParticleType*> pold;
-        for (size_t ip = 0; ip < particles.size(); ip++) {
-          Real qp1 = particles[ip].rdata(iqp_);
-          if (fabs(qp1) < maxWeight)
-            continue;
-          pold.push_back(&(particles[ip]));
+      // GPU: the cells whose heaviest particle may reach the limit (the cell
+      // routine repeats the exact test).
+      auto mayResample = [=] AMREX_GPU_DEVICE(const ParticleType* pd,
+                                              const int* perm, int b, int e,
+                                              const IntVect& cell) -> bool {
+        Real total = 0, qMax = 0;
+        for (int i = b; i < e; ++i) {
+          const Real q = amrex::Math::abs(pd[perm[i]].rdata(iqp));
+          total += q;
+          qMax = amrex::max(qMax, q);
         }
-        split_particles_by_velocity(pold, newparticles);
-      } else {
-        const auto lo = lbound(pti.tilebox());
-        const auto hi = ubound(pti.tilebox());
-
-        const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
-                          Geom(iLev).CellSize()[ix_] * 1e-10,
-                   xMax = Geom(iLev).HiEdge(hi.x, ix_) -
-                          Geom(iLev).CellSize()[ix_] * 1e-10;
-
-        const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
-                          Geom(iLev).CellSize()[iy_] * 1e-10,
-                   yMax = Geom(iLev).HiEdge(hi.y, iy_) -
-                          Geom(iLev).CellSize()[iy_] * 1e-10;
-
-        const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
-                                         Geom(iLev).CellSize()[iz_] * 1e-10
-                                   : 0.0,
-                   zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
-                                         Geom(iLev).CellSize()[iz_] * 1e-10
-                                   : 0.0;
-
-        if (is_neutral()) {
-          Box bx = pti.tilebox();
-          set_random_seed(iLev, bx.smallEnd(), IntVect(999));
+        Real n = e - b;
+        if (useTargetPPC) {
+          if (tppcDev(cell) <= 0)
+            return false;
+          n = tppcDev(cell);
         }
+        return qMax * n * (1 + 1e-9) >= total * maxRatio;
+      };
 
-        for (auto& p : particles) {
-          Real qp1 = p.rdata(iqp_);
-          if (fabs(qp1) < maxWeight)
-            continue;
+      resample_cells(
+          iLev, pti, mayResample,
+          [&](const IntVect& cell, ParticleType* particles, int nPart,
+              Vector<ParticleType>& newparticles) {
+            if (nPart == 0)
+              return;
 
-          Real up1 = p.rdata(iup_);
-          Real vp1 = p.rdata(ivp_);
-          Real wp1 = p.rdata(iwp_);
-
-          Real xp1 = p.pos(ix_);
-          Real yp1 = p.pos(iy_);
-          Real zp1 = nDim > 2 ? p.pos(iz_) : 0.0;
-
-          int nNew = is_neutral() ? 7 : 1;
-          p.rdata(iqp_) = qp1 / (nNew + 1.0);
-
-          if (useTargetPPC && !is_neutral()) {
-            const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
-            Real coef = (u2 < 1e-13) ? 0.0 : dl / sqrt(u2);
-            const Real dpx = coef * up1;
-            const Real dpy = coef * vp1;
-            const Real dpz = coef * wp1;
-
-            Real xp2 = std::clamp(xp1 + dpx, xMin, xMax);
-            Real yp2 = std::clamp(yp1 + dpy, yMin, yMax);
-            Real zp2 = std::clamp(zp1 + dpz, zMin, zMax);
-
-            xp1 = std::clamp(xp1 - dpx, xMin, xMax);
-            yp1 = std::clamp(yp1 - dpy, yMin, yMax);
-            zp1 = std::clamp(zp1 - dpz, zMin, zMax);
-
-            p.pos(ix_) = xp1;
-            p.pos(iy_) = yp1;
-            if (nDim > 2)
-              p.pos(iz_) = zp1;
-
-            // NOTE: Initializing via make_particle() matches legacy behavior.
-            // Copying parent particle metadata (pnew = p) preserves PT
-            // attributes, but diverges from legacy test references (e.g. SWMF
-            // test22).
-            auto pnew = make_particle();
-            set_ids(pnew);
-            pnew.pos(ix_) = xp2;
-            pnew.pos(iy_) = yp2;
-            if (nDim > 2)
-              pnew.pos(iz_) = zp2;
-            pnew.rdata(iup_) = up1;
-            pnew.rdata(ivp_) = vp1;
-            pnew.rdata(iwp_) = wp1;
-
-            pnew.rdata(iqp_) = qp1 / 2.0;
-            newparticles.push_back(pnew);
-          } else {
-            for (int iNew = 0; iNew < nNew; iNew++) {
-              // NOTE: Initializing via make_particle() matches legacy behavior.
-              // Copying parent particle metadata (pnew = p) preserves PT
-              // attributes, but diverges from legacy test references (e.g. SWMF
-              // test22).
-              auto pnew = make_particle();
-              set_ids(pnew);
-              pnew.rdata(iup_) = up1;
-              pnew.rdata(ivp_) = vp1;
-              pnew.rdata(iwp_) = wp1;
-
-              Real xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
-              Real yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
-              Real zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
-
-              pnew.pos(ix_) = std::clamp(xp2, xMin, xMax);
-              pnew.pos(iy_) = std::clamp(yp2, yMin, yMax);
-              if (nDim > 2)
-                pnew.pos(iz_) = std::clamp(zp2, zMin, zMax);
-
-              pnew.rdata(iqp_) = qp1 / (nNew + 1.0);
-              newparticles.push_back(pnew);
+            Real totalMass = 0;
+            for (int ip = 0; ip < nPart; ++ip) {
+              totalMass += fabs(particles[ip].rdata(iqp_));
             }
-          }
-        }
-      }
 
-      for (auto& p : newparticles) {
-        pTile.push_back(p);
-      }
+            Real avg = 0;
+            Real dl = 0;
+            if (useTargetPPC) {
+              int target = tppc(cell);
+              if (target <= 0)
+                return;
+              avg = totalMass / target;
+              dl = 4.0 * Geom(iLev).CellSize()[ix_] /
+                   sqrt(static_cast<Real>(target));
+            } else {
+              avg = totalMass / nPart;
+              dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
+            }
+
+            Real maxWeight = avg * maxRatio;
+
+            // Sort the particles first to make sure the results
+            // are the same for different number of processors
+            std::sort(particles, particles + nPart, compare_two_parts);
+
+            if (seperateVelocity) {
+              set_random_seed(iLev, cell, IntVect(444));
+              Vector<ParticleType*> pold;
+              for (int ip = 0; ip < nPart; ip++) {
+                Real qp1 = particles[ip].rdata(iqp_);
+                if (fabs(qp1) < maxWeight)
+                  continue;
+                pold.push_back(&(particles[ip]));
+              }
+              split_particles_by_velocity(pold, newparticles);
+            } else {
+              const Dim3 lo = cell.dim3();
+              const Dim3 hi = lo;
+
+              const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+                                Geom(iLev).CellSize()[ix_] * 1e-10,
+                         xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                                Geom(iLev).CellSize()[ix_] * 1e-10;
+
+              const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+                                Geom(iLev).CellSize()[iy_] * 1e-10,
+                         yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                                Geom(iLev).CellSize()[iy_] * 1e-10;
+
+              const Real zMin = nDim > 2
+                                    ? Geom(iLev).LoEdge(lo.z, iz_) +
+                                          Geom(iLev).CellSize()[iz_] * 1e-10
+                                    : 0.0,
+                         zMax = nDim > 2
+                                    ? Geom(iLev).HiEdge(hi.z, iz_) -
+                                          Geom(iLev).CellSize()[iz_] * 1e-10
+                                    : 0.0;
+
+              if (is_neutral()) {
+                set_random_seed(iLev, cell, IntVect(999));
+              }
+
+              for (int ip = 0; ip < nPart; ++ip) {
+                auto& p = particles[ip];
+                Real qp1 = p.rdata(iqp_);
+                if (fabs(qp1) < maxWeight)
+                  continue;
+
+                Real up1 = p.rdata(iup_);
+                Real vp1 = p.rdata(ivp_);
+                Real wp1 = p.rdata(iwp_);
+
+                Real xp1 = p.pos(ix_);
+                Real yp1 = p.pos(iy_);
+                Real zp1 = nDim > 2 ? p.pos(iz_) : 0.0;
+
+                int nNew = is_neutral() ? 7 : 1;
+                p.rdata(iqp_) = qp1 / (nNew + 1.0);
+
+                if (useTargetPPC && !is_neutral()) {
+                  const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+                  Real coef = (u2 < 1e-13) ? 0.0 : dl / sqrt(u2);
+                  const Real dpx = coef * up1;
+                  const Real dpy = coef * vp1;
+                  const Real dpz = coef * wp1;
+
+                  Real xp2 = std::clamp(xp1 + dpx, xMin, xMax);
+                  Real yp2 = std::clamp(yp1 + dpy, yMin, yMax);
+                  Real zp2 = std::clamp(zp1 + dpz, zMin, zMax);
+
+                  xp1 = std::clamp(xp1 - dpx, xMin, xMax);
+                  yp1 = std::clamp(yp1 - dpy, yMin, yMax);
+                  zp1 = std::clamp(zp1 - dpz, zMin, zMax);
+
+                  p.pos(ix_) = xp1;
+                  p.pos(iy_) = yp1;
+                  if (nDim > 2)
+                    p.pos(iz_) = zp1;
+
+                  // NOTE: Initializing via make_particle() matches legacy
+                  // behavior. Copying parent particle metadata (pnew = p)
+                  // preserves PT attributes, but diverges from legacy test
+                  // references (e.g. SWMF test22).
+                  auto pnew = make_particle();
+                  set_ids(pnew);
+                  pnew.pos(ix_) = xp2;
+                  pnew.pos(iy_) = yp2;
+                  if (nDim > 2)
+                    pnew.pos(iz_) = zp2;
+                  pnew.rdata(iup_) = up1;
+                  pnew.rdata(ivp_) = vp1;
+                  pnew.rdata(iwp_) = wp1;
+
+                  pnew.rdata(iqp_) = qp1 / 2.0;
+                  newparticles.push_back(pnew);
+                } else {
+                  for (int iNew = 0; iNew < nNew; iNew++) {
+                    // NOTE: Initializing via make_particle() matches legacy
+                    // behavior. Copying parent particle metadata (pnew = p)
+                    // preserves PT attributes, but diverges from legacy test
+                    // references (e.g. SWMF test22).
+                    auto pnew = make_particle();
+                    set_ids(pnew);
+                    pnew.rdata(iup_) = up1;
+                    pnew.rdata(ivp_) = vp1;
+                    pnew.rdata(iwp_) = wp1;
+
+                    Real xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
+                    Real yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
+                    Real zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+
+                    pnew.pos(ix_) = std::clamp(xp2, xMin, xMax);
+                    pnew.pos(iy_) = std::clamp(yp2, yMin, yMax);
+                    if (nDim > 2)
+                      pnew.pos(iz_) = std::clamp(zp2, zMin, zMax);
+
+                    pnew.rdata(iqp_) = qp1 / (nNew + 1.0);
+                    newparticles.push_back(pnew);
+                  }
+                }
+              }
+            }
+          });
     }
   }
 }
@@ -394,186 +419,206 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
   const int nInitial = product(nPartPerCell);
 
+  // Resampling works on the particles of one cell (see resample_cells).
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
-  if (!(do_tiling && tile_size == iv))
-    return;
+  if (useCellTiles && !(do_tiling && tile_size == iv))
+    Abort("Particle resampling needs one particle tile per cell.");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
     const Real vol = dx[iLev].product();
     const Real vacuumMass = vacuum * vol;
 
+    const bool checkRefined = usePreSplitting && doPreSplitting;
+    const Real refFactorLev = pow(get_ref_ratio(iLev).max(), nDim);
+    const Real levFactor = pow(pLevRatio, iLev);
+    HostFabCache hostFabs;
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / (nPartPerCell.max());
-      int nLowerLimit = 0;
-      int nGoal = 0;
+      const Array4<int const> statusDev = cell_status(iLev).const_array(pti);
+      const Array4<int const> status =
+          checkRefined ? hostFabs.array(cell_status(iLev), pti) : statusDev;
 
-      if (usePreSplitting) {
-        nLowerLimit = nInitial * limit;
-        nGoal = nInitial;
-        if (doPreSplitting) {
-          const Array4<int const>& status = cell_status(iLev)[pti].array();
-          Box bx = pti.tilebox();
-          IntVect ibx = bx.smallEnd();
-          if (bit::is_refined_neighbour(status(ibx))) {
-            const int refMax = get_ref_ratio(iLev).max();
-            const Real refFactor = pow(refMax, nDim);
-            nLowerLimit = nLowerLimit * refFactor;
-            nGoal = nGoal * refFactor;
-            dl = dl / refMax;
+      // GPU: the cells with too few particles (the same limits as below).
+      auto mayResample = [=] AMREX_GPU_DEVICE(const ParticleType*, const int*,
+                                              int b, int e,
+                                              const IntVect& cell) -> bool {
+        int nLow = 0, nGoal = 0;
+        if (usePreSplitting) {
+          nLow = nInitial * limit;
+          nGoal = nInitial;
+          if (checkRefined && bit::is_refined_neighbour(statusDev(cell))) {
+            nLow = nLow * refFactorLev;
+            nGoal = nGoal * refFactorLev;
           }
+        } else {
+          nLow = nInitial * limit * levFactor;
+          nGoal = nLow > nInitial ? nLow : nInitial;
         }
-      } else {
-        nLowerLimit = nInitial * limit * pow(pLevRatio, iLev);
-        nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
-      }
+        return e - b <= nLow && e - b < nGoal;
+      };
 
-      auto& pTile = get_particle_tile(iLev, pti);
-      AoS& particles = pTile.GetArrayOfStructs();
+      resample_cells(
+          iLev, pti, mayResample,
+          [&](const IntVect& cell, ParticleType* particles, int nPart,
+              Vector<ParticleType>& newparticles) {
+            Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / (nPartPerCell.max());
+            int nLowerLimit = 0;
+            int nGoal = 0;
 
-      const int nPartOrig = particles.size();
-      if (nPartOrig > nLowerLimit || nPartOrig == 0)
-        continue;
-
-      const int nSplit =
-          nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
-      if (nSplit <= 0)
-        continue;
-
-      Real totalMass = 0;
-      for (auto& p : particles) {
-        // So far, the vacuum limit is designed for OH-PT neutrals only.
-        totalMass += qomSign * p.rdata(iqp_);
-      }
-      if (totalMass < vacuumMass)
-        continue;
-
-      Vector<ParticleType> newparticles;
-
-      // Sort the particles by the location first to make sure the results
-      // are the same for different number of processors
-      std::sort(particles.begin(), particles.end(), compare_two_parts);
-
-      // Sort the particles by the weight in descending order.
-      std::sort(particles.begin(), particles.end(),
-                [](const ParticleType& pl, const ParticleType& pr) {
-                  const Real ql = fabs(pl.rdata(iqp_));
-                  const Real qr = fabs(pr.rdata(iqp_));
-                  if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
-                    return ql > qr;
-                  }
-
-                  if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
-                      1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
-                    return pl.pos(ix_) > pr.pos(ix_);
-                  }
-                  return false;
-                });
-
-      const auto lo = lbound(pti.tilebox());
-      const auto hi = ubound(pti.tilebox());
-
-      const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
-                        Geom(iLev).CellSize()[ix_] * 1e-10,
-                 xMax = Geom(iLev).HiEdge(hi.x, ix_) -
-                        Geom(iLev).CellSize()[ix_] * 1e-10;
-
-      const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
-                        Geom(iLev).CellSize()[iy_] * 1e-10,
-                 yMax = Geom(iLev).HiEdge(hi.y, iy_) -
-                        Geom(iLev).CellSize()[iy_] * 1e-10;
-
-      const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
-                                       Geom(iLev).CellSize()[iz_] * 1e-10
-                                 : 0.0,
-                 zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
-                                       Geom(iLev).CellSize()[iz_] * 1e-10
-                                 : 0.0;
-
-      if (is_neutral() || seperateVelocity) {
-        Box bx = pti.tilebox();
-        set_random_seed(iLev, bx.smallEnd(), IntVect(888));
-      }
-
-      if (seperateVelocity) {
-        Vector<ParticleType*> pold;
-        pold.reserve(nSplit);
-        for (int ip = 0; ip < nSplit; ip++) {
-          pold.push_back(&(particles[ip]));
-        }
-        split_particles_by_velocity(pold, newparticles);
-      } else {
-        for (int ip = 0; ip < nSplit; ip++) {
-          auto& p = particles[ip];
-          Real qp1 = p.rdata(iqp_);
-          Real xp1 = p.pos(ix_);
-          Real yp1 = p.pos(iy_);
-          Real zp1 = nDim > 2 ? p.pos(iz_) : 0.0;
-          Real up1 = p.rdata(iup_);
-          Real vp1 = p.rdata(ivp_);
-          Real wp1 = p.rdata(iwp_);
-
-          const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
-
-          Real coef = (u2 < 1e-13) ? 0.0 : dl / sqrt(u2);
-          const Real dpx = coef * up1;
-          const Real dpy = coef * vp1;
-          const Real dpz = coef * wp1;
-
-          Real xp2 = xp1 + dpx;
-          Real yp2 = yp1 + dpy;
-          Real zp2 = zp1 + dpz;
-
-          int nNew = is_neutral() ? 7 : 1;
-          p.rdata(iqp_) = qp1 / (nNew + 1.0);
-
-          for (int iNew = 0; iNew < nNew; iNew++) {
-            if (is_neutral()) {
-              xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
-              yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
-              zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+            if (usePreSplitting) {
+              nLowerLimit = nInitial * limit;
+              nGoal = nInitial;
+              if (doPreSplitting) {
+                if (bit::is_refined_neighbour(status(cell))) {
+                  const int refMax = get_ref_ratio(iLev).max();
+                  const Real refFactor = pow(refMax, nDim);
+                  nLowerLimit = nLowerLimit * refFactor;
+                  nGoal = nGoal * refFactor;
+                  dl = dl / refMax;
+                }
+              }
             } else {
-              xp1 -= dpx;
-              yp1 -= dpy;
-              zp1 -= dpz;
-
-              xp1 = std::clamp(xp1, xMin, xMax);
-              yp1 = std::clamp(yp1, yMin, yMax);
-              zp1 = std::clamp(zp1, zMin, zMax);
-              p.pos(ix_) = xp1;
-              p.pos(iy_) = yp1;
-
-              if (nDim > 2)
-                p.pos(iz_) = zp1;
+              nLowerLimit = nInitial * limit * pow(pLevRatio, iLev);
+              nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
             }
 
-            xp2 = std::clamp(xp2, xMin, xMax);
-            yp2 = std::clamp(yp2, yMin, yMax);
-            zp2 = std::clamp(zp2, zMin, zMax);
+            const int nPartOrig = nPart;
+            if (nPartOrig > nLowerLimit || nPartOrig == 0)
+              return;
 
-            // NOTE: Initializing via make_particle() matches legacy behavior.
-            // Copying parent particle metadata (pnew = p) preserves PT
-            // attributes, but diverges from legacy test references (e.g. SWMF
-            // test22).
-            auto pnew = make_particle();
-            set_ids(pnew);
+            const int nSplit =
+                nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
+            if (nSplit <= 0)
+              return;
 
-            pnew.pos(ix_) = xp2;
-            pnew.pos(iy_) = yp2;
-            if (nDim > 2)
-              pnew.pos(iz_) = zp2;
-            pnew.rdata(iup_) = up1;
-            pnew.rdata(ivp_) = vp1;
-            pnew.rdata(iwp_) = wp1;
-            pnew.rdata(iqp_) = qp1 / (nNew + 1.0);
-            newparticles.push_back(pnew);
-          }
-        }
-      }
+            Real totalMass = 0;
+            for (int ip = 0; ip < nPart; ++ip) {
+              // So far, the vacuum limit is designed for OH-PT neutrals only.
+              totalMass += qomSign * particles[ip].rdata(iqp_);
+            }
+            if (totalMass < vacuumMass)
+              return;
 
-      for (auto& p : newparticles) {
-        pTile.push_back(p);
-      }
+            // Sort the particles by the location first to make sure the results
+            // are the same for different number of processors
+            std::sort(particles, particles + nPart, compare_two_parts);
+
+            // Sort the particles by the weight in descending order.
+            std::sort(particles, particles + nPart,
+                      [](const ParticleType& pl, const ParticleType& pr) {
+                        const Real ql = fabs(pl.rdata(iqp_));
+                        const Real qr = fabs(pr.rdata(iqp_));
+                        if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
+                          return ql > qr;
+                        }
+
+                        if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+                            1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
+                          return pl.pos(ix_) > pr.pos(ix_);
+                        }
+                        return false;
+                      });
+
+            const Dim3 lo = cell.dim3();
+            const Dim3 hi = lo;
+
+            const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+                              Geom(iLev).CellSize()[ix_] * 1e-10,
+                       xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                              Geom(iLev).CellSize()[ix_] * 1e-10;
+
+            const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+                              Geom(iLev).CellSize()[iy_] * 1e-10,
+                       yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                              Geom(iLev).CellSize()[iy_] * 1e-10;
+
+            const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
+                                             Geom(iLev).CellSize()[iz_] * 1e-10
+                                       : 0.0,
+                       zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
+                                             Geom(iLev).CellSize()[iz_] * 1e-10
+                                       : 0.0;
+
+            if (is_neutral() || seperateVelocity) {
+              set_random_seed(iLev, cell, IntVect(888));
+            }
+
+            if (seperateVelocity) {
+              Vector<ParticleType*> pold;
+              pold.reserve(nSplit);
+              for (int ip = 0; ip < nSplit; ip++) {
+                pold.push_back(&(particles[ip]));
+              }
+              split_particles_by_velocity(pold, newparticles);
+            } else {
+              for (int ip = 0; ip < nSplit; ip++) {
+                auto& p = particles[ip];
+                Real qp1 = p.rdata(iqp_);
+                Real xp1 = p.pos(ix_);
+                Real yp1 = p.pos(iy_);
+                Real zp1 = nDim > 2 ? p.pos(iz_) : 0.0;
+                Real up1 = p.rdata(iup_);
+                Real vp1 = p.rdata(ivp_);
+                Real wp1 = p.rdata(iwp_);
+
+                const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+
+                Real coef = (u2 < 1e-13) ? 0.0 : dl / sqrt(u2);
+                const Real dpx = coef * up1;
+                const Real dpy = coef * vp1;
+                const Real dpz = coef * wp1;
+
+                Real xp2 = xp1 + dpx;
+                Real yp2 = yp1 + dpy;
+                Real zp2 = zp1 + dpz;
+
+                int nNew = is_neutral() ? 7 : 1;
+                p.rdata(iqp_) = qp1 / (nNew + 1.0);
+
+                for (int iNew = 0; iNew < nNew; iNew++) {
+                  if (is_neutral()) {
+                    xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
+                    yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
+                    zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+                  } else {
+                    xp1 -= dpx;
+                    yp1 -= dpy;
+                    zp1 -= dpz;
+
+                    xp1 = std::clamp(xp1, xMin, xMax);
+                    yp1 = std::clamp(yp1, yMin, yMax);
+                    zp1 = std::clamp(zp1, zMin, zMax);
+                    p.pos(ix_) = xp1;
+                    p.pos(iy_) = yp1;
+
+                    if (nDim > 2)
+                      p.pos(iz_) = zp1;
+                  }
+
+                  xp2 = std::clamp(xp2, xMin, xMax);
+                  yp2 = std::clamp(yp2, yMin, yMax);
+                  zp2 = std::clamp(zp2, zMin, zMax);
+
+                  // NOTE: Initializing via make_particle() matches legacy
+                  // behavior. Copying parent particle metadata (pnew = p)
+                  // preserves PT attributes, but diverges from legacy test
+                  // references (e.g. SWMF test22).
+                  auto pnew = make_particle();
+                  set_ids(pnew);
+
+                  pnew.pos(ix_) = xp2;
+                  pnew.pos(iy_) = yp2;
+                  if (nDim > 2)
+                    pnew.pos(iz_) = zp2;
+                  pnew.rdata(iup_) = up1;
+                  pnew.rdata(ivp_) = vp1;
+                  pnew.rdata(iwp_) = wp1;
+                  pnew.rdata(iqp_) = qp1 / (nNew + 1.0);
+                  newparticles.push_back(pnew);
+                }
+              }
+            }
+          });
     }
   }
 }
@@ -582,7 +627,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
 template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
-    int iLev, AoS& particles, Vector<int>& partIdx, Vector<int>& idx_I,
+    int iLev, ParticleType* particles, Vector<int>& partIdx, Vector<int>& idx_I,
     int nPartCombine, int nPartNew, Vector<Real>& x, Real velNorm) {
   timing_func("Pts::merge_particles_accurate");
 
@@ -771,7 +816,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
 
 template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::merge_particles_fast(
-    int iLev, AoS& particles, Vector<int>& partIdx, Vector<int>& idx_I,
+    int iLev, ParticleType* particles, Vector<int>& partIdx, Vector<int>& idx_I,
     int nPartCombine, int nPartNew, Vector<Real>& x, long seed) {
   timing_func("Pts::merge_particles_fast");
 
@@ -926,218 +971,245 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
   timing_func("Pts::merge");
+  // Resampling works on the particles of one cell (see resample_cells).
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
-  if (!(do_tiling && tile_size == iv))
-    return;
+  if (useCellTiles && !(do_tiling && tile_size == iv))
+    Abort("Particle resampling needs one particle tile per cell.");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const int nPartGoalLev =
+        product(nPartPerCell) * limit * pow(pLevRatio, iLev);
+    HostFabCache hostFabs;
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      int nPartGoal = 0;
-      if (useTargetPPC) {
-        const auto tppc = target_PPC(iLev)[pti].array();
-        const Box& bx = pti.tilebox();
-        IntVect ibx = bx.smallEnd();
-        int target = tppc(ibx);
-        nPartGoal = target * limit;
-      } else {
-        nPartGoal = product(nPartPerCell) * limit * pow(pLevRatio, iLev);
-      }
+      const Array4<int const> tppcDev = useTargetPPC
+                                            ? target_PPC(iLev).const_array(pti)
+                                            : Array4<int const>();
+      const Array4<int const> tppc = useTargetPPC
+                                         ? hostFabs.array(target_PPC(iLev), pti)
+                                         : Array4<int const>();
 
-      // It is assumed the tile size is 1x1x1.
-      Box bx = pti.tilebox();
-      long seed = set_random_seed(iLev, bx.smallEnd(), IntVect(777));
-
-      AoS& particles = pti.GetArrayOfStructs();
-      const int nPartOrig = particles.size();
-
-      if (nPartOrig <= nPartGoal || nPartOrig == 0)
-        continue;
-
-      // The range of the velocity domain:
-      // [-r0,r0]*thermal_velocity+bulk_velocity
-      const Real r0 = fastMerge ? 2.0 : 1.0;
-
-      // Phase space cell number in one direction.
-      int nCell = 0;
-      if (fastMerge) {
-        nCell = r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim3));
-      } else {
-        nCell = r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim3));
-      }
-
-      if (nCell < 3)
-        continue;
-
-      // Sort the particles by the location first to make sure the results
-      // are the same for different number of processors
-      std::sort(particles.begin(), particles.end(), compare_two_parts);
-
-      // One particle may belong to more than one velocity bins, but it can be
-      // only merged at most once.
-      std::vector<bool> merged(nPartOrig, false);
-
-      // Estimate the bulk velocity and thermal velocity.
-      Real uBulk[nDim3] = { 0, 0, 0 };
-      for (int pid = 0; pid < nPartOrig; pid++) {
-        auto& pcl = particles[pid];
-        for (int iDir = 0; iDir < nDim3; iDir++) {
-          uBulk[iDir] += pcl.rdata(iup_ + iDir);
-        }
-      }
-
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        uBulk[iDir] /= nPartOrig;
-      }
-
-      Real thVel2 = 0;
-      for (int pid = 0; pid < nPartOrig; pid++) {
-        auto& pcl = particles[pid];
-        for (int iDir = 0; iDir < nDim3; iDir++) {
-          Real dv = pcl.rdata(iup_ + iDir) - uBulk[iDir];
-          thVel2 += dv * dv;
-        }
-      }
-
-      thVel2 /= nPartOrig;
-      Real thVel = sqrt(thVel2);
-
-      const Real velNorm = (thVel < 1e-13) ? 0.0 : 1.0 / (0.5 * thVel);
-
-      // Assign the particle IDs to the corresponding velocity space cells.
-      Vector<Vector<int> > phasePartIdx_I(nCell * nCell * nCell);
-      const auto bin_index = [nCell](int i, int j, int k) {
-        return (i * nCell + j) * nCell + k;
+      // GPU: the cells with too many particles (the same goal as below).
+      auto mayResample = [=] AMREX_GPU_DEVICE(const ParticleType*, const int*,
+                                              int b, int e,
+                                              const IntVect& cell) -> bool {
+        const int nGoal = useTargetPPC ? static_cast<int>(tppcDev(cell) * limit)
+                                       : nPartGoalLev;
+        return e - b > nGoal;
       };
 
-      Real dv = (2.0 * r0 * thVel) / nCell;
-      Real invDv = (dv < 1e-13) ? 0.0 : 1.0 / dv;
+      resample_cells(
+          iLev, pti, mayResample,
+          [&](const IntVect& cell, ParticleType* particles, int nPart,
+              Vector<ParticleType>& newparticles) {
+            int nPartGoal = 0;
+            if (useTargetPPC) {
+              int target = tppc(cell);
+              nPartGoal = target * limit;
+            } else {
+              nPartGoal = nPartGoalLev;
+            }
 
-      // Velocity domain range.
-      Real velMin_D[nDim3], velMax_D[nDim3];
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        Real dvshift = (randNum() - 0.5) * dv;
-        velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
-        velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
-      }
+            long seed = set_random_seed(iLev, cell, IntVect(777));
 
-      int iCell_D[nDim3];
-      for (int pid = 0; pid < nPartOrig; pid++) {
-        auto& pcl = particles[pid];
+            const int nPartOrig = nPart;
 
-        bool isOutside = false;
-        for (int iDim = 0; iDim < nDim3; iDim++) {
-          Real v = pcl.rdata(iup_ + iDim);
-          if (v < velMin_D[iDim] || v > velMax_D[iDim])
-            isOutside = true;
-        }
-        if (isOutside)
-          continue;
+            if (nPartOrig <= nPartGoal || nPartOrig == 0)
+              return;
 
-        for (int iDim = 0; iDim < nDim3; iDim++) {
-          iCell_D[iDim] = std::clamp(
-              fastfloor((pcl.rdata(iup_ + iDim) - velMin_D[iDim]) * invDv), 0,
-              nCell - 1);
-        }
+            // The range of the velocity domain:
+            // [-r0,r0]*thermal_velocity+bulk_velocity
+            const Real r0 = fastMerge ? 2.0 : 1.0;
 
-        // One particle may belong to multiple bins when each bin has a buffer
-        // region.
-        for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
-          for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
-            for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
-                 zCell++) {
+            // Phase space cell number in one direction.
+            int nCell = 0;
+            if (fastMerge) {
+              nCell = r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim3));
+            } else {
+              nCell = r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim3));
+            }
 
-              if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
-                  zCell < 0 || zCell >= nCell)
-                continue;
+            if (nCell < 3)
+              return;
 
-              Vector<int> cellIdx = { xCell, yCell, zCell };
+            // Sort the particles by the location first to make sure the results
+            // are the same for different number of processors
+            std::sort(particles, particles + nPart, compare_two_parts);
 
-              Real binMin_D[nDim3], binMax_D[nDim3];
+            // One particle may belong to more than one velocity bins, but it
+            // can be only merged at most once.
+            std::vector<bool> merged(nPartOrig, false);
 
-              for (int iDim = 0; iDim < nDim3; iDim++) {
-                binMin_D[iDim] =
-                    velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
-                binMax_D[iDim] = velMin_D[iDim] +
-                                 (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+            // Estimate the bulk velocity and thermal velocity.
+            Real uBulk[nDim3] = { 0, 0, 0 };
+            for (int pid = 0; pid < nPartOrig; pid++) {
+              auto& pcl = particles[pid];
+              for (int iDir = 0; iDir < nDim3; iDir++) {
+                uBulk[iDir] += pcl.rdata(iup_ + iDir);
               }
+            }
 
-              bool isInside = true;
+            for (int iDir = 0; iDir < nDim3; iDir++) {
+              uBulk[iDir] /= nPartOrig;
+            }
+
+            Real thVel2 = 0;
+            for (int pid = 0; pid < nPartOrig; pid++) {
+              auto& pcl = particles[pid];
+              for (int iDir = 0; iDir < nDim3; iDir++) {
+                Real dv = pcl.rdata(iup_ + iDir) - uBulk[iDir];
+                thVel2 += dv * dv;
+              }
+            }
+
+            thVel2 /= nPartOrig;
+            Real thVel = sqrt(thVel2);
+
+            const Real velNorm = (thVel < 1e-13) ? 0.0 : 1.0 / (0.5 * thVel);
+
+            // Assign the particle IDs to the corresponding velocity space
+            // cells.
+            Vector<Vector<int> > phasePartIdx_I(nCell * nCell * nCell);
+            const auto bin_index = [nCell](int i, int j, int k) {
+              return (i * nCell + j) * nCell + k;
+            };
+
+            Real dv = (2.0 * r0 * thVel) / nCell;
+            Real invDv = (dv < 1e-13) ? 0.0 : 1.0 / dv;
+
+            // Velocity domain range.
+            Real velMin_D[nDim3], velMax_D[nDim3];
+            for (int iDir = 0; iDir < nDim3; iDir++) {
+              Real dvshift = (randNum() - 0.5) * dv;
+              velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
+              velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
+            }
+
+            int iCell_D[nDim3];
+            for (int pid = 0; pid < nPartOrig; pid++) {
+              auto& pcl = particles[pid];
+
+              bool isOutside = false;
               for (int iDim = 0; iDim < nDim3; iDim++) {
                 Real v = pcl.rdata(iup_ + iDim);
-                if (v < binMin_D[iDim] || v > binMax_D[iDim])
-                  isInside = false;
+                if (v < velMin_D[iDim] || v > velMax_D[iDim])
+                  isOutside = true;
+              }
+              if (isOutside)
+                continue;
+
+              for (int iDim = 0; iDim < nDim3; iDim++) {
+                iCell_D[iDim] = std::clamp(
+                    fastfloor((pcl.rdata(iup_ + iDim) - velMin_D[iDim]) *
+                              invDv),
+                    0, nCell - 1);
               }
 
-              if (isInside) {
-                phasePartIdx_I[bin_index(cellIdx[ix_], cellIdx[iy_],
-                                         cellIdx[iz_])]
-                    .push_back(pid);
-              }
+              // One particle may belong to multiple bins when each bin has a
+              // buffer region.
+              for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1;
+                   xCell++)
+                for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1;
+                     yCell++)
+                  for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
+                       zCell++) {
+
+                    if (xCell < 0 || xCell >= nCell || yCell < 0 ||
+                        yCell >= nCell || zCell < 0 || zCell >= nCell)
+                      continue;
+
+                    Vector<int> cellIdx = { xCell, yCell, zCell };
+
+                    Real binMin_D[nDim3], binMax_D[nDim3];
+
+                    for (int iDim = 0; iDim < nDim3; iDim++) {
+                      binMin_D[iDim] = velMin_D[iDim] +
+                                       (cellIdx[iDim] - velBinBufferSize) * dv;
+                      binMax_D[iDim] =
+                          velMin_D[iDim] +
+                          (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+                    }
+
+                    bool isInside = true;
+                    for (int iDim = 0; iDim < nDim3; iDim++) {
+                      Real v = pcl.rdata(iup_ + iDim);
+                      if (v < binMin_D[iDim] || v > binMax_D[iDim])
+                        isInside = false;
+                    }
+
+                    if (isInside) {
+                      phasePartIdx_I[bin_index(cellIdx[ix_], cellIdx[iy_],
+                                               cellIdx[iz_])]
+                          .push_back(pid);
+                    }
+                  }
             }
-      }
 
-      for (int iu = 0; iu < nCell; iu++)
-        for (int iv = 0; iv < nCell; iv++)
-          for (int iw = 0; iw < nCell; iw++) {
-            Vector<int> partIdx;
-            auto& pIdx = phasePartIdx_I[bin_index(iu, iv, iw)];
-            for (int i = 0; i < pIdx.size(); ++i) {
-              int pid = pIdx[i];
-              if (!merged[pid]) {
-                partIdx.push_back(pid);
-              }
-            }
+            for (int iu = 0; iu < nCell; iu++)
+              for (int iv = 0; iv < nCell; iv++)
+                for (int iw = 0; iw < nCell; iw++) {
+                  Vector<int> partIdx;
+                  auto& pIdx = phasePartIdx_I[bin_index(iu, iv, iw)];
+                  for (int i = 0; i < pIdx.size(); ++i) {
+                    int pid = pIdx[i];
+                    if (!merged[pid]) {
+                      partIdx.push_back(pid);
+                    }
+                  }
 
-            if (partIdx.size() < nPartNew + 1)
-              continue;
+                  if (partIdx.size() < nPartNew + 1)
+                    continue;
 
-            Vector<Real> x;
-            Vector<int> idx_I;
+                  Vector<Real> x;
+                  Vector<int> idx_I;
 
-            int nOld = nPartCombine;
-            bool isSolved = false;
-            if (fastMerge) {
-              if (nOld > partIdx.size())
-                nOld = partIdx.size();
+                  int nOld = nPartCombine;
+                  bool isSolved = false;
+                  if (fastMerge) {
+                    if (nOld > partIdx.size())
+                      nOld = partIdx.size();
 
-              for (int iTry = 0; iTry < nMergeTry; iTry++) {
-                long sd = seed + iu * 777 + iv * 77 + iw + iTry;
-                isSolved = merge_particles_fast(iLev, particles, partIdx, idx_I,
-                                                nOld, nPartNew, x, sd);
-                if (isSolved)
-                  break;
-              }
-            } else {
-              isSolved = merge_particles_accurate(
-                  iLev, particles, partIdx, idx_I, nOld, nPartNew, x, velNorm);
-            }
-            if (!isSolved)
-              continue;
+                    for (int iTry = 0; iTry < nMergeTry; iTry++) {
+                      long sd = seed + iu * 777 + iv * 77 + iw + iTry;
+                      isSolved =
+                          merge_particles_fast(iLev, particles, partIdx, idx_I,
+                                               nOld, nPartNew, x, sd);
+                      if (isSolved)
+                        break;
+                    }
+                  } else {
+                    isSolved = merge_particles_accurate(iLev, particles,
+                                                        partIdx, idx_I, nOld,
+                                                        nPartNew, x, velNorm);
+                  }
+                  if (!isSolved)
+                    continue;
 
-            // Reject merge if any solved weight is non-finite (NaN / Inf).
-            bool xIsFinite = true;
-            for (int ip = 0; ip < nPartNew; ++ip) {
-              if (!std::isfinite(x[ip])) {
-                xIsFinite = false;
-                break;
-              }
-            }
-            if (!xIsFinite)
-              continue;
+                  // Reject merge if any solved weight is non-finite (NaN /
+                  // Inf).
+                  bool xIsFinite = true;
+                  for (int ip = 0; ip < nPartNew; ++ip) {
+                    if (!std::isfinite(x[ip])) {
+                      xIsFinite = false;
+                      break;
+                    }
+                  }
+                  if (!xIsFinite)
+                    continue;
 
-            // Adjust weight.
-            for (int ip = 0; ip < nPartNew; ip++) {
-              auto& p = particles[idx_I[ip]];
-              p.rdata(iqp_) = x[ip];
-              merged[idx_I[ip]] = true;
-            }
-            // Mark for deletion
-            for (int ip = nPartNew; ip < nOld; ip++) {
-              particles[idx_I[ip]].id() = -1;
-              particles[idx_I[ip]].rdata(iqp_) = 0;
-              merged[idx_I[ip]] = true;
-            }
-          }
+                  // Adjust weight.
+                  for (int ip = 0; ip < nPartNew; ip++) {
+                    auto& p = particles[idx_I[ip]];
+                    p.rdata(iqp_) = x[ip];
+                    merged[idx_I[ip]] = true;
+                  }
+                  // Mark for deletion
+                  for (int ip = nPartNew; ip < nOld; ip++) {
+                    particles[idx_I[ip]].id() = -1;
+                    particles[idx_I[ip]].rdata(iqp_) = 0;
+                    merged[idx_I[ip]] = true;
+                  }
+                }
+          });
     }
   }
 }
@@ -1153,10 +1225,10 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
                                                Vector<T::ParticleType>&);      \
   template bool T::split_by_seperate_velocity(                                 \
       T::ParticleType&, T::ParticleType&, T::ParticleType&, T::ParticleType&); \
-  template bool T::merge_particles_accurate(int, T::AoS&, Vector<int>&,        \
-                                            Vector<int>&, int, int,            \
-                                            Vector<Real>&, Real);              \
-  template bool T::merge_particles_fast(int, T::AoS&, Vector<int>&,            \
+  template bool T::merge_particles_accurate(int, T::ParticleType*,             \
+                                            Vector<int>&, Vector<int>&, int,   \
+                                            int, Vector<Real>&, Real);         \
+  template bool T::merge_particles_fast(int, T::ParticleType*, Vector<int>&,   \
                                         Vector<int>&, int, int, Vector<Real>&, \
                                         long);
 

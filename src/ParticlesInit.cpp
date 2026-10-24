@@ -5,6 +5,7 @@
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
+#include "ParticlesSeed.h"
 #include "SWMFInterface.h"
 #include "Timer.h"
 #include "Utility.h"
@@ -36,253 +37,14 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
     const Vel& tpVel, Real dt) {
-
-  // If true, initialize the test particles with user defined velocities instead
-  // of from fluid.
-  bool userState = (tpVel.tag == speciesID);
-
-  // If dt>0, it suggests the 'density' obtained from interface is actually the
-  // density changing rate.
-  if (dt <= 0)
-    dt = 1;
-
-  IntVect nPPC = nPartPerCell;
-  if (!(ppc == 0)) {
-    nPPC = ppc;
-  }
-
-  if (nPPC == 0)
-    return;
-
-  // No particle is created inside the absorbing inner body (see #BODY). The
-  // test uses the cell center, i.e., the same cell-based staircase as the
-  // particle absorption and the field mask. This covers the initial fill, the
-  // source particles and the boundary (ghost) injection, which all funnel
-  // through this function.
-  if (grid != nullptr && grid->use_body()) {
-    Real cellCenter[nDim];
-    for (int iDim = 0; iDim < nDim; iDim++)
-      cellCenter[iDim] = (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
-
-    if (grid->is_inside_body(cellCenter))
-      return;
-  }
-
-  if (isTargetPPCDefined && !isFake2D) {
-    const auto tppc = target_PPC(iLev)[mfi].array();
-    for (int i = 0; i < nDim; ++i) {
-      if (nDim > 2) {
-        nPPC[i] = cbrt(tppc(ijk));
-      } else {
-        nPPC[i] = sqrt(tppc(ijk));
-      }
-    }
-  }
-  set_random_seed(iLev, ijk, nPPC);
-
-  const Real vol = dx[iLev].product();
-  const int npcel = product(nPPC);
-
-  const Real vol2Npcel = qomSign * vol / npcel;
-
-  ParticleTileType& particles = get_particle_tile(iLev, mfi, ijk);
-
-  int icount = 0;
-  // Loop over particles inside grid cell i, j, k
-
-  const int kmax = nDim > 2 ? nPPC[iz_] : 1;
-
-  for (int ii = 0; ii < nPPC[ix_]; ++ii)
-    for (int jj = 0; jj < nPPC[iy_]; ++jj)
-      for (int kk = 0; kk < kmax; ++kk) {
-        RealVect xyz, xyz0;
-
-        IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
-
-        for (int iDim = 0; iDim < nDim; iDim++) {
-          xyz[iDim] = (ijk0[iDim] + randNum()) * (dx[iLev][iDim] / nPPC[iDim]) +
-                      ijk[iDim] * dx[iLev][iDim] + plo[iLev][iDim];
-
-          // If the particle weight is sampled in a random location, the sum of
-          // particle mass is NOT the same as the integral of the grid density.
-          // It is more convenient for debugging if mass is exactly conserved.
-          // For a production run, it makes little difference.
-          xyz0[iDim] = (ijk0[iDim] + 0.5) * (dx[iLev][iDim] / nPPC[iDim]) +
-                       ijk[iDim] * dx[iLev][iDim] + plo[iLev][iDim];
-        }
-
-        if (nDim == 2) {
-          // For comparison with the 3D case only.
-          randNum();
-        }
-
-        if (!isParticleLocationRandom) {
-          xyz = xyz0;
-        }
-
-        const Real zp = (nDim > 2) ? xyz[2] : 0.0;
-
-        const Real nDens =
-            (userState && tpVel.nDens >= 0.0)
-                ? tpVel.nDens
-                : interface->get_number_density(mfi, xyz0, speciesID, iLev);
-
-        if (doVacuumLimit && nDens * dt < vacuum)
-          continue;
-
-        Real q = vol2Npcel * nDens;
-
-        // Per-particle weight modification (e.g. ion-acoustic-wave density
-        // perturbation). Routed through the InitialCondition plugin; runs
-        // before the q != 0 guard so an IC can suppress a particle.
-        if (ic_ && ic_->modifies_weights()) {
-          ParticleICState pics;
-          pics.iLev = iLev;
-          pics.iSpec = speciesID;
-          pics.iCount = icount;
-          pics.nPerCell = npcel;
-          pics.x = xyz[0];
-          pics.y = xyz[1];
-          pics.z = zp;
-          pics.q = q;
-          ic_->modify_particle_weight(pics);
-          q = pics.q;
-        }
-
-        if (q != 0) {
-          Real u, v, w;
-          Real rand1 = randNum();
-          Real rand2 = randNum();
-          Real rand3 = randNum();
-          Real rand4 = randNum();
-
-          Real uth = (userState ? tpVel.vth : -1);
-
-          if (!is_neutral() && interface->get_UseAnisoP() &&
-              (speciesID > 0 || interface->get_useElectronFluid())) {
-            interface->set_particle_uth_aniso(iLev, mfi, xyz, &u, &v, &w, rand1,
-                                              rand2, rand3, rand4, speciesID,
-                                              uth, uth);
-          } else {
-            interface->set_particle_uth_iso(iLev, mfi, xyz, &u, &v, &w, rand1,
-                                            rand2, rand3, rand4, speciesID,
-                                            uth);
-          }
-
-          // Per-particle THERMAL-velocity override (e.g. a bi-Maxwellian with
-          // distinct T_perp / T_par for the proton-cyclotron anisotropy
-          // instability). Routed through the InitialCondition plugin; runs
-          // AFTER the isotropic thermal velocity is sampled and BEFORE the bulk
-          // velocity is added, so the IC may fully replace the sampled thermal
-          // velocity with its own anisotropic draw.
-          if (ic_ && ic_->modifies_thermal_velocity()) {
-            ParticleICState pics;
-            pics.iLev = iLev;
-            pics.iSpec = speciesID;
-            pics.iCount = icount;
-            pics.nPerCell = npcel;
-            pics.x = xyz[0];
-            pics.y = xyz[1];
-            pics.z = zp;
-            pics.uThermal = u;
-            pics.vThermal = v;
-            pics.wThermal = w;
-            pics.rand[0] = rand1;
-            pics.rand[1] = rand2;
-            pics.rand[2] = rand3;
-            pics.rand[3] = rand4;
-            ic_->modify_particle_thermal_velocity(pics);
-            u = pics.uThermal;
-            v = pics.vThermal;
-            w = pics.wThermal;
-          }
-
-          Real uBulk = userState ? tpVel.vx
-                                 : interface->get_ux(mfi, xyz, speciesID, iLev);
-          Real vBulk = userState ? tpVel.vy
-                                 : interface->get_uy(mfi, xyz, speciesID, iLev);
-          Real wBulk = userState ? tpVel.vz
-                                 : interface->get_uz(mfi, xyz, speciesID, iLev);
-
-          // Per-particle velocity / weight modification (e.g. beam bulk
-          // override, or the hybrid-wave Alfven velocity kick). Routed through
-          // the InitialCondition plugin; runs after the bulk velocity is
-          // computed and before it is added to the thermal velocity.
-          if (ic_ && ic_->modifies_velocities()) {
-            ParticleICState pics;
-            pics.iLev = iLev;
-            pics.iSpec = speciesID;
-            pics.iCount = icount;
-            pics.nPerCell = npcel;
-            pics.x = xyz[0];
-            pics.y = xyz[1];
-            pics.z = zp;
-            pics.uBulk = uBulk;
-            pics.vBulk = vBulk;
-            pics.wBulk = wBulk;
-            pics.qScale = 1.0;
-            pics.charge = charge;
-            pics.temperature =
-                interface->get_uth_iso(mfi, xyz, speciesID, iLev);
-            pics.temperature *= pics.temperature * mass;
-            ic_->modify_particle_velocity(pics);
-            uBulk = pics.uBulk;
-            vBulk = pics.vBulk;
-            wBulk = pics.wBulk;
-            q *= pics.qScale;
-          }
-          // Wave boundary: add the velocity kick to particles in a wave cell.
-          if (waveVelocityKick) {
-            const int loX = mfi.validbox().smallEnd(ix_);
-            const int hiX = mfi.validbox().bigEnd(ix_);
-            const int loY = mfi.validbox().smallEnd(iy_);
-            const int hiY = mfi.validbox().bigEnd(iy_);
-            const int loZ = (nDim > 2) ? mfi.validbox().smallEnd(iz_) : 0;
-            const int hiZ = (nDim > 2) ? mfi.validbox().bigEnd(iz_) : 0;
-            // Driven by the field-side wave faces (set from Pic::bcField),
-            // not by a particle-side spelling.
-            const bool onWaveX = (isWaveFace[0] && ijk[ix_] < loX) ||
-                                 (isWaveFace[1] && ijk[ix_] > hiX);
-            const bool onWaveY = (isWaveFace[2] && ijk[iy_] < loY) ||
-                                 (isWaveFace[3] && ijk[iy_] > hiY);
-            const bool onWaveZ =
-                (nDim > 2) && ((isWaveFace[4] && ijk[iz_] < loZ) ||
-                               (isWaveFace[5] && ijk[iz_] > hiZ));
-            if (onWaveX || onWaveY || onWaveZ) {
-              const Real ppos[3] = { xyz[0], xyz[1], zp };
-              const Real tNow = tc ? tc->get_time() : 0.0;
-              Real dvx = 0, dvy = 0, dvz = 0;
-              waveVelocityKick(ppos, tNow, dvx, dvy, dvz);
-              uBulk += dvx;
-              vBulk += dvy;
-              wBulk += dvz;
-            }
-          }
-          u += uBulk;
-          v += vBulk;
-          w += wBulk;
-
-          auto p = make_particle();
-          set_ids(p);
-          for (int iDim = 0; iDim < nDim; iDim++) {
-            p.pos(iDim) = xyz[iDim];
-          }
-          p.rdata(iup_) = u;
-          p.rdata(ivp_) = v;
-          p.rdata(iwp_) = w;
-          // Convert 'density changing rate' to 'density' if necessary.
-          p.rdata(iqp_) = q * dt;
-
-          if (NStructInt > iRecordCount_) {
-            // For test particle only.
-            p.idata(iRecordCount_) = 0;
-          }
-
-          particles.push_back(p);
-
-          icount++;
-        }
-      }
+  // A single cell: see add_particles_cells().
+  add_particles_cells(
+      iLev, mfi, Box(ijk, ijk),
+      [=] AMREX_GPU_HOST_DEVICE(const IntVect&, IntVect& ppcCell) {
+        ppcCell = ppc;
+        return true;
+      },
+      interface, doVacuumLimit, tpVel, dt);
 }
 
 //==========================================================
@@ -292,60 +54,80 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     Real dt, IntVect ppc, const bool doSelectRegion, const bool adaptivePPC) {
   timing_func("Pts::add_particles_source");
 
+  const int initPPC = product(nPartPerCell);
+  const int sourcePPC = product(ppc);
+  const int iSpecies = speciesID;
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const Box& tile_box = mfi.validbox();
-      const auto lo = lbound(tile_box);
-      const auto hi = ubound(tile_box);
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            const auto& status = cell_status(iLev)[mfi].array();
-            if (bit::is_refined(status(i, j, k)))
-              continue;
-
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
-            bool doAdd = true;
+      // Cells of the source region of this species (OH-PT only). The region
+      // test runs on the host.
+      Vector<int> inRegion;
+      const bool useRegion = (stateOH && doSelectRegion);
 #ifdef _PT_COMPONENT_
-            if (stateOH && doSelectRegion) {
-              const int iRegion =
-                  stateOH->get_neu_source_region(mfi, ijk, iLev);
-              doAdd = (iRegion == speciesID);
-            }
+      if (useRegion) {
+        if (fleksUseGpu)
+          Abort("add_particles_source: the source region selection is not "
+                "available in GPU runs yet.");
+        inRegion.resize(tile_box.numPts());
+        int l = 0;
+        LoopOnCpu(tile_box, [&](int i, int j, int k) {
+          const IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          inRegion[l++] =
+              (stateOH->get_neu_source_region(mfi, ijk, iLev) == speciesID);
+        });
+      }
 #endif
-            if (doAdd) {
-              IntVect ppcCell = ppc;
-              if (adaptivePPC) {
-                // Adjust ppc so that the weight of the
-                // source particles is not too small.
-                const int initPPC = product(nPartPerCell);
-                const int sourcePPC = product(ppc);
+      Gpu::AsyncArray<int> regionStore(inRegion.data(), inRegion.size());
+      const int* const region = useRegion ? regionStore.data() : nullptr;
+      const Dim3 lo = lbound(tile_box);
+      const Dim3 len = length(tile_box);
 
-                Real rho = fi->get_number_density(mfi, ijk, speciesID, iLev);
-                Real rhoSource =
-                    interface->get_number_density(mfi, ijk, speciesID, iLev);
-                if (dt > 0)
-                  rhoSource *= dt;
+      const FluidView fvPic = fi->fluid_view(mfi, iLev);
+      const FluidView fvSource = interface->fluid_view(mfi, iLev);
 
-                Real avgInitW = rho / initPPC;
-                Real avgSourceW = rhoSource / sourcePPC;
+      add_particles_cells(
+          iLev, mfi, tile_box,
+          [=] AMREX_GPU_HOST_DEVICE(const IntVect& ijk, IntVect& ppcCell) {
+            if (bit::is_refined(status(ijk)))
+              return false;
+            if (region) {
+              const int l =
+                  (ijk[0] - lo.x) +
+                  len.x * ((AMREX_SPACEDIM > 1 ? ijk[1] - lo.y : 0) +
+                           len.y * (AMREX_SPACEDIM > 2 ? ijk[2] - lo.z : 0));
+              if (!region[l])
+                return false;
+            }
 
-                Real targetSourceW = avgInitW * 0.1;
+            ppcCell = ppc;
+            if (adaptivePPC) {
+              // Adjust ppc so that the weight of the source particles is not
+              // too small.
+              Real rho = fvPic.get_number_density(fvPic.d, ijk, iSpecies);
+              Real rhoSource =
+                  fvSource.get_number_density(fvSource.d, ijk, iSpecies);
+              if (dt > 0)
+                rhoSource *= dt;
 
-                if (avgSourceW < targetSourceW) {
-                  Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
-                  for (int iDim = 0; iDim < nDim; iDim++) {
-                    ppcCell[iDim] = std::max(1, int(ppc[iDim] * ratio));
-                  }
+              Real avgInitW = rho / initPPC;
+              Real avgSourceW = rhoSource / sourcePPC;
+
+              Real targetSourceW = avgInitW * 0.1;
+
+              if (avgSourceW < targetSourceW) {
+                Real ratio = std::pow(avgSourceW / targetSourceW, 1.0 / nDim);
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  ppcCell[iDim] = amrex::max(1, int(ppc[iDim] * ratio));
                 }
               }
-
-              add_particles_cell(iLev, mfi, ijk, interface, false, ppcCell,
-                                 Vel(), dt);
             }
-          }
+            return true;
+          },
+          interface, false, Vel(), dt);
     }
   }
 }
@@ -365,16 +147,16 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(bool fillAll) {
   for (int iLev = 0; iLev < nLev; iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
 
-      const auto& status = cell_status(iLev)[mfi].array();
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) noexcept {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        // A fluid-only restart can retain mesh cells without restoring any
-        // particles. The first particle fill must seed every leaf cell.
-        if ((fillAll || bit::is_new(status(ijk))) &&
-            !bit::is_refined(status(ijk))) {
-          add_particles_cell(iLev, mfi, ijk, fi, true);
-        }
-      });
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
+      add_particles_cells(
+          iLev, mfi, mfi.validbox(),
+          [=] AMREX_GPU_HOST_DEVICE(const IntVect& ijk, IntVect&) {
+            // A fluid-only restart can retain mesh cells without restoring any
+            // particles. The first particle fill must seed every leaf cell.
+            return (fillAll || bit::is_new(status(ijk))) &&
+                   !bit::is_refined(status(ijk));
+          },
+          fi, true);
     }
   }
 }

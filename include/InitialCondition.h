@@ -12,30 +12,11 @@
 #include <AMReX_MultiFab.H>
 
 #include "Constants.h"
+#include "ICHooks.h"
 
 class Pic;
 class ReadParam;
 class ParticlesInfo;
-
-// Per-particle state handed to a particle-seeding IC (position, index,
-// in/out bulk velocity and weight, thermal-seeding fields and draws).
-struct ParticleICState {
-  int iLev = 0;
-  int iSpec = 0;
-  int iCount = 0;   // particle index within the cell
-  int nPerCell = 0; // macroparticles to seed in this cell
-  amrex::Real x = 0.0, y = 0.0, z = 0.0;
-  amrex::Real q = 0.0; // in/out: macroparticle weight
-  amrex::Real uBulk = 0.0, vBulk = 0.0, wBulk = 0.0; // in/out: bulk velocity
-  amrex::Real qScale = 1.0; // out: extra weight multiplier (Beam)
-  amrex::Real temperature = 0.0;
-  amrex::Real charge = 0.0; // species charge (code units)
-
-  // Anisotropic (bi-Maxwellian) seeding: isotropic thermal velocity and the
-  // four uniform [0,1) draws may be overwritten for custom sampling.
-  amrex::Real uThermal = 0.0, vThermal = 0.0, wThermal = 0.0;
-  amrex::Real rand[4] = { 0.0, 0.0, 0.0, 0.0 };
-};
 
 // Named InitialCondition factories; lookup is case-insensitive.
 class ICRegistry {
@@ -85,6 +66,10 @@ public:
   virtual void modify_particle_thermal_velocity(ParticleICState& s) const {
     (void)s;
   }
+
+  // The hooks above in a form the particle-seeding kernels can call. Every IC
+  // that overrides a particle hook must also override this.
+  virtual ICHooks particle_hooks() const { return ICHooks{}; }
 
   // Field-seeding hook for a discontinuous field in refined-cell sub-regions.
   virtual bool is_tophat() const { return false; }

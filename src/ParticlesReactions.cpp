@@ -522,52 +522,59 @@ void Particles<NStructReal, NStructInt>::apply_loss(
     if (!source->has_loss_array(iLev))
       continue;
 
-    const Real* plo = Geom(iLev).ProbLo();
-    const Real* inv_dx = Geom(iLev).InvCellSize();
+    // Copies, so that the kernels capture values, not host pointers.
+    Real plo[3] = { 0, 0, 0 }, invDx[3] = { 0, 0, 0 };
+    for (int d = 0; d < nDim; ++d) {
+      plo[d] = Geom(iLev).ProbLo(d);
+      invDx[d] = Geom(iLev).InvCellSize(d);
+    }
+    const int iSp = speciesID;
+    const int iqp = iqp_;
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      AoS& particles = pti.GetArrayOfStructs();
-      const int np = particles.numParticles();
+      const int np = pti.numParticles();
       if (np == 0)
         continue;
+      ParticleType* const pData = pti.GetArrayOfStructs()().data();
+      const FluidView fv = fi->fluid_view(pti, iLev);
+      const Array4<Real const> lossArr = source->loss_array(pti, iLev);
 
-      for (int ip = 0; ip < np; ++ip) {
-        ParticleType& p = particles[ip];
+      ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
+        ParticleType& p = pData[ip];
         if (p.id() < 0)
-          continue;
+          return;
 
         // Find the cell index for this particle.
         IntVect ijk;
         for (int iDim = 0; iDim < nDim; ++iDim) {
           ijk[iDim] = static_cast<int>(
-              std::floor((p.pos(iDim) - plo[iDim]) * inv_dx[iDim]));
+              amrex::Math::floor((p.pos(iDim) - plo[iDim]) * invDx[iDim]));
         }
 
         // Existing mass density (normalized) from the plasma state.
-        Real rhoExisting =
-            fi->get_fluid_mass_density(pti, ijk, speciesID, iLev);
+        const Real rhoExisting = fv.get_fluid_mass_density(fv.d, ijk, iSp);
         if (rhoExisting <= 0.0)
-          continue;
+          return;
 
         // Loss rate (normalized mass-density rate) from nodeLossFluid.
-        Real lossRate = source->get_loss_value(pti, ijk, speciesID, iLev);
+        const Real lossRate = lossArr(ijk, iSp);
         if (lossRate <= 0.0)
-          continue;
+          return;
 
         // Fraction of mass to remove in this step.
         Real fraction = lossRate * dt / rhoExisting;
         if (fraction > 1.0)
           fraction = 1.0;
         if (fraction <= 0.0)
-          continue;
+          return;
 
         // Reduce particle weight proportionally.  The sign is preserved
         // (ions have positive weight, electrons negative).
-        p.rdata(iqp_) *= (1.0 - fraction);
+        p.rdata(iqp) *= (1.0 - fraction);
         if (fraction >= 1.0) {
           p.id() = -1;
         }
-      }
+      });
     }
   }
 

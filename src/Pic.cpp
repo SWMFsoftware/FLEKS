@@ -13,6 +13,7 @@
 #include <malloc.h>
 #endif
 
+#include "GpuBackend.h"
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"
@@ -435,10 +436,7 @@ void Pic::post_regrid(MeshChangeReason reason) {
 
     if (waveBC.active) {
       for (auto& p : parts) {
-        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
-                                     Real& dvy, Real& dvz) {
-          wave_velocity_kick(pos, t, dvx, dvy, dvz);
-        };
+        p->waveBC = &waveBC;
       }
     }
   } else {
@@ -491,26 +489,27 @@ void Pic::fill_new_node_E(bool fillAll) {
     }
 
     int iLev = 0;
+    const bool isTopHat = ic_ && ic_->is_tophat();
+    const auto plo = Geom(iLev).ProbLoArray();
+    const auto dx = Geom(iLev).CellSizeArray();
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeE[iLev][mfi];
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrE = fab.array();
-      const auto& status = node_status(iLev)[mfi].array();
-
-      ParallelFor(box, [&](int i, int j, int k) {
+      const Array4<Real> arrE = nodeE[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (fillAll || bit::is_new(status(ijk))) {
-          if (ic_ && ic_->is_tophat()) {
-            const Real x =
-                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
-            if (x > xL && x < xR) {
-              arrE(ijk, iy_) = 1;
-            }
-          } else {
-            arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
-            arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
-            arrE(ijk, iz_) = fi->get_ez(mfi, ijk, iLev);
+        if (!(fillAll || bit::is_new(status(ijk))))
+          return;
+        if (isTopHat) {
+          // Geometry::CellCenter(i, ix_) - 0.5 * CellSize(ix_)
+          const Real x = (plo[ix_] + dx[ix_] * (0.5 + i)) - 0.5 * dx[ix_];
+          if (x > xL && x < xR) {
+            arrE(ijk, iy_) = 1;
           }
+        } else {
+          arrE(ijk, ix_) = fv.get_ex(fv.d, ijk);
+          arrE(ijk, iy_) = fv.get_ey(fv.d, ijk);
+          arrE(ijk, iz_) = fv.get_ez(fv.d, ijk);
         }
       });
     }
@@ -544,25 +543,27 @@ void Pic::fill_new_node_B(bool fillAll) {
     }
 
     int iLev = 0;
+    const bool isTopHat = ic_ && ic_->is_tophat();
+    const auto plo = Geom(iLev).ProbLoArray();
+    const auto dx = Geom(iLev).CellSizeArray();
     for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
-      const auto& status = node_status(iLev)[mfi].array();
-
-      ParallelFor(box, [&](int i, int j, int k) {
+      const Array4<Real> arrB = nodeB[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (fillAll || bit::is_new(status(ijk))) {
-          if (ic_ && ic_->is_tophat()) {
-            const Real x =
-                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
-            if (x > xL && x < xR) {
-              arrB(ijk, iz_) = 1;
-            }
-          } else {
-            arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
-            arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
-            arrB(ijk, iz_) = fi->get_bz(mfi, ijk, iLev);
+        if (!(fillAll || bit::is_new(status(ijk))))
+          return;
+        if (isTopHat) {
+          // Geometry::CellCenter(i, ix_) - 0.5 * CellSize(ix_)
+          const Real x = (plo[ix_] + dx[ix_] * (0.5 + i)) - 0.5 * dx[ix_];
+          if (x > xL && x < xR) {
+            arrB(ijk, iz_) = 1;
           }
+        } else {
+          arrB(ijk, ix_) = fv.get_bx(fv.d, ijk);
+          arrB(ijk, iy_) = fv.get_by(fv.d, ijk);
+          arrB(ijk, iz_) = fv.get_bz(fv.d, ijk);
         }
       });
     }
@@ -584,24 +585,27 @@ void Pic::fill_new_center_B(bool fillAll) {
     int iLev = 0;
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const Array4<Real>& centerArr = centerB[iLev][mfi].array();
-      const auto& nodeArr = nodeB[iLev][mfi].array();
-      const auto& status = cell_status(iLev)[mfi].array();
+      const Array4<Real> centerArr = centerB[iLev][mfi].array();
+      const Array4<Real const> nodeArr = nodeB[iLev][mfi].const_array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
-      ParallelFor(
-          box, centerB[iLev].nComp(), [&](int i, int j, int k, int iVar) {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      ParallelFor(box, centerB[iLev].nComp(),
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                    IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-            if (fillAll || bit::is_new(status(ijk))) {
-              centerArr(ijk, iVar) = 0;
-
-              Box subBox(ijk, ijk + 1);
-              ParallelFor(subBox, [&](int ii, int jj, int kk) {
-                const Real coef = (nDim == 2 ? 0.25 : 0.125);
-                centerArr(ijk, iVar) += coef * nodeArr(ii, jj, kk, iVar);
-              });
-            }
-          });
+                    if (fillAll || bit::is_new(status(ijk))) {
+                      // Average of the nodes of the cell, in the order of a
+                      // ParallelFor over the box (ijk, ijk + 1).
+                      const Real coef = (nDim == 2 ? 0.25 : 0.125);
+                      Real sum = 0;
+                      for (int kk = k; kk <= (AMREX_SPACEDIM > 2 ? k + 1 : k);
+                           ++kk)
+                        for (int jj = j; jj <= j + 1; ++jj)
+                          for (int ii = i; ii <= i + 1; ++ii)
+                            sum += coef * nodeArr(ii, jj, kk, iVar);
+                      centerArr(ijk, iVar) = sum;
+                    }
+                  });
     }
   }
   if (finestLevel() > 0) {
@@ -714,8 +718,8 @@ void Pic::fill_intrinsic_B() {
       distribute_FabArray(centerB0[iLev], boxArray(iLev), DistributionMap(iLev),
                           3, get_n_ghost(), false);
 
-    const auto plo = Geom(iLev).ProbLo();
-    const auto dx = Geom(iLev).CellSize();
+    const auto plo = Geom(iLev).ProbLoArray();
+    const auto dx = Geom(iLev).CellSizeArray();
 
     if (onlyDipole) {
       // Dipole evaluation is scratch-free and device-callable: run in
@@ -761,69 +765,46 @@ void Pic::fill_intrinsic_B() {
         });
       }
     } else {
-      // Crustal evaluation uses host scratch workspace.
-      for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = nodeB0[iLev][mfi].array();
-        // Under a 2D build index 2 of a Box is out of range, so the z loop
-        // collapses to a single pass and z comes from the model center.
+      // Crustal evaluation uses host scratch workspace, so it runs on the
+      // host (see host_fill). B0 is computed once.
+      // Under a 2D build index 2 of a Box is out of range, so z comes from the
+      // model center.
+      host_fill(
+          nodeB0[iLev], true,
+          [&](const MFIter&, int i, int j, int k, Array4<Real> const& arr) {
 #if (AMREX_SPACEDIM > 2)
-        const int kLo = box.smallEnd(2);
-        const int kHi = box.bigEnd(2);
+            const Real z =
+                (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : p.center[2];
 #else
-        const int kLo = 0;
-        const int kHi = 0;
+            amrex::ignore_unused(k);
+            const Real z = p.center[2];
 #endif
-        for (int k = kLo; k <= kHi; ++k) {
-#if (AMREX_SPACEDIM > 2)
-          const Real z =
-              (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : p.center[2];
-#else
-          const Real z = p.center[2];
-#endif
-          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
             const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
-            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-              Real b[3] = { 0.0, 0.0, 0.0 };
-              field.eval(plo[ix_] + i * dx[ix_], y, z, b);
-              arr(i, j, k, ix_) = b[0];
-              arr(i, j, k, iy_) = b[1];
-              arr(i, j, k, iz_) = b[2];
-            }
-          }
-        }
-      }
+            Real b[3] = { 0.0, 0.0, 0.0 };
+            field.eval(plo[ix_] + i * dx[ix_], y, z, b);
+            arr(i, j, k, ix_) = b[0];
+            arr(i, j, k, iy_) = b[1];
+            arr(i, j, k, iz_) = b[2];
+          });
 
-      for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = centerB0[iLev][mfi].array();
+      host_fill(
+          centerB0[iLev], true,
+          [&](const MFIter&, int i, int j, int k, Array4<Real> const& arr) {
 #if (AMREX_SPACEDIM > 2)
-        const int kLo = box.smallEnd(2);
-        const int kHi = box.bigEnd(2);
+            const Real z = (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_])
+                                           : p.center[2];
 #else
-        const int kLo = 0;
-        const int kHi = 0;
+            amrex::ignore_unused(k);
+            const Real z = p.center[2];
 #endif
-        for (int k = kLo; k <= kHi; ++k) {
-#if (AMREX_SPACEDIM > 2)
-          const Real z =
-              (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : p.center[2];
-#else
-          const Real z = p.center[2];
-#endif
-          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
             const Real y =
                 (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
-            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-              Real b[3] = { 0.0, 0.0, 0.0 };
-              field.eval(plo[ix_] + (i + 0.5) * dx[ix_], y, z, b);
-              arr(i, j, k, ix_) = b[0];
-              arr(i, j, k, iy_) = b[1];
-              arr(i, j, k, iz_) = b[2];
-            }
-          }
-        }
-      }
+            Real b[3] = { 0.0, 0.0, 0.0 };
+            field.eval(plo[ix_] + (i + 0.5) * dx[ix_], y, z, b);
+            arr(i, j, k, ix_) = b[0];
+            arr(i, j, k, iy_) = b[1];
+            arr(i, j, k, iz_) = b[2];
+          });
     }
   }
 }
@@ -929,41 +910,44 @@ void Pic::particle_mover(int pushStage) {
 
 namespace {
 
+// Copy the nodes of `box` of src into buf, x fastest, the nMMComponents
+// entries of a node contiguous. A row of nodes along x is one contiguous block
+// of len.x * nMMComponents Reals in both, so a thread copies one Real of a row:
+// a plain contiguous copy on the CPU and coalesced on the GPU.
 template <typename Array4Type>
 inline void pack_node_mm_box(const Array4Type& src, const amrex::Box& box,
-                             RealMM* __restrict__ buf) {
+                             amrex::Real* buf) {
   const auto lo = amrex::lbound(box);
-  const auto hi = amrex::ubound(box);
-  const int len_x = hi.x - lo.x + 1;
-  const std::size_t row_bytes =
-      static_cast<std::size_t>(len_x) * sizeof(RealMM);
-  std::size_t p = 0;
-  for (int k = lo.z; k <= hi.z; ++k) {
-    for (int j = lo.y; j <= hi.y; ++j) {
-      std::memcpy(&buf[p], &src(lo.x, j, k), row_bytes);
-      p += len_x;
-    }
-  }
+  const auto len = amrex::length(box);
+  const int rowLen = len.x * nMMComponents;
+  // (row element, j, k), the row element fastest.
+  // (In 2D len.z is 1 and k is always 0.)
+  const amrex::Box rows(
+      amrex::IntVect(0),
+      amrex::IntVect(AMREX_D_DECL(rowLen - 1, len.y - 1, len.z - 1)));
+  amrex::ParallelFor(rows, [=] AMREX_GPU_DEVICE(int t, int j, int k) {
+    const amrex::Real* const row = src(lo.x, lo.y + j, lo.z + k).data;
+    buf[(k * len.y + j) * rowLen + t] = row[t];
+  });
 }
 
-inline void accumulate_node_mm_box(const RealMM* __restrict__ buf,
+// Add buf (see pack_node_mm_box) to the nodes of `box` of dst. Different
+// calls may add to the same node, so they run one after the other (each is
+// one kernel on the GPU), which keeps the order of the additions.
+inline void accumulate_node_mm_box(const amrex::Real* buf,
                                    const amrex::Box& box,
                                    const amrex::Array4<RealMM>& dst) {
   const auto lo = amrex::lbound(box);
-  const auto hi = amrex::ubound(box);
-  const int len_x = hi.x - lo.x + 1;
-  const std::size_t n_doubles = static_cast<std::size_t>(len_x) * nMMComponents;
-  std::size_t p = 0;
-  for (int k = lo.z; k <= hi.z; ++k) {
-    for (int j = lo.y; j <= hi.y; ++j) {
-      amrex::Real* __restrict__ dst_ptr = dst(lo.x, j, k).data;
-      const amrex::Real* __restrict__ src_ptr = buf[p].data;
-      for (std::size_t d = 0; d < n_doubles; ++d) {
-        dst_ptr[d] += src_ptr[d];
-      }
-      p += len_x;
-    }
-  }
+  const auto len = amrex::length(box);
+  const int rowLen = len.x * nMMComponents;
+  // (In 2D len.z is 1 and k is always 0.)
+  const amrex::Box rows(
+      amrex::IntVect(0),
+      amrex::IntVect(AMREX_D_DECL(rowLen - 1, len.y - 1, len.z - 1)));
+  amrex::ParallelFor(rows, [=] AMREX_GPU_DEVICE(int t, int j, int k) {
+    amrex::Real* const row = dst(lo.x, lo.y + j, lo.z + k).data;
+    row[t] += buf[(k * len.y + j) * rowLen + t];
+  });
 }
 
 } // anonymous namespace
@@ -980,7 +964,7 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
   }
 
   cd.loc_tags.clear();
-  cd.local_buf.clear();
+  cd.localPts = 0;
   cd.box_to_loc_tags.clear();
   cd.sends.clear();
   cd.recvs.clear();
@@ -1001,7 +985,7 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
                          total_loc_pts };
       total_loc_pts += tag.sbox.numPts();
     }
-    cd.local_buf.resize(total_loc_pts);
+    cd.localPts = total_loc_pts;
 
     const int nLocalBoxes = nodeMM[iLev].size();
     cd.box_to_loc_tags.resize(nLocalBoxes);
@@ -1090,14 +1074,21 @@ void Pic::sum_boundary_node_mm(int iLev) {
     }
   }
 
-  // 2. Pack and post non-blocking sends
+  // 2. Pack (on the device) and post non-blocking sends
   for (int s = 0; s < n_sends; ++s) {
     auto& peer = cd.sends[s];
-    for (const auto& rt : peer.tags) {
-      const auto src_arr = nodeMM[iLev].array(rt.boxIndex);
-      pack_node_mm_box(src_arr, rt.box, &peer.buf[rt.bufOffset]);
-    }
     if (peer.totalPts > 0) {
+      // Plain Reals: a buffer of RealMM would be zeroed on allocation.
+      amrex::Gpu::DeviceVector<amrex::Real> packed(peer.totalPts *
+                                                   nMMComponents);
+      for (const auto& rt : peer.tags) {
+        const auto src_arr = nodeMM[iLev].array(rt.boxIndex);
+        pack_node_mm_box(src_arr, rt.box,
+                         packed.data() + rt.bufOffset * nMMComponents);
+      }
+      // One transfer; it waits for the packing kernels.
+      amrex::Gpu::dtoh_memcpy(peer.buf.data(), packed.data(),
+                              peer.totalPts * sizeof(RealMM));
       MPI_Isend(reinterpret_cast<const void*>(peer.buf.data()),
                 peer.totalPts * sizeof(RealMM), MPI_BYTE, peer.rank, seq_num,
                 comm, &cd.send_reqs[s]);
@@ -1105,22 +1096,21 @@ void Pic::sum_boundary_node_mm(int iLev) {
   }
 #endif
 
-  // 3. Snapshot local tags into local_buf (Phase 1)
+  // 3. Snapshot local tags into a device buffer (Phase 1): a source region
+  // may also be a destination, so all sources are copied first.
   const int n_loc = static_cast<int>(cd.loc_tags.size());
-#ifdef AMREX_USE_OMP
-#pragma omp parallel for schedule(static)
-#endif
+  // Plain Reals: a buffer of RealMM would be zeroed on allocation.
+  amrex::Gpu::DeviceVector<amrex::Real> localBuf(cd.localPts * nMMComponents);
+  amrex::Real* const local_buf = localBuf.data();
   for (int i = 0; i < n_loc; ++i) {
     const auto& tag = cd.loc_tags[i];
     const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
-    pack_node_mm_box(src_arr, tag.sbox, &cd.local_buf[tag.bufOffset]);
+    pack_node_mm_box(src_arr, tag.sbox,
+                     local_buf + tag.bufOffset * nMMComponents);
   }
 
   // 4. Accumulate local tags into destination boxes (Phase 2)
   const int nLocalBoxes = nodeMM[iLev].size();
-#ifdef AMREX_USE_OMP
-#pragma omp parallel for schedule(dynamic)
-#endif
   for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
     const auto& tag_indices = cd.box_to_loc_tags[localDst];
     if (tag_indices.empty())
@@ -1129,7 +1119,8 @@ void Pic::sum_boundary_node_mm(int iLev) {
     auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
     for (int tag_idx : tag_indices) {
       const auto& tag = cd.loc_tags[tag_idx];
-      accumulate_node_mm_box(&cd.local_buf[tag.bufOffset], tag.dbox, dst_arr);
+      accumulate_node_mm_box(local_buf + tag.bufOffset * nMMComponents,
+                             tag.dbox, dst_arr);
     }
   }
 
@@ -1139,10 +1130,19 @@ void Pic::sum_boundary_node_mm(int iLev) {
     MPI_Waitall(n_recvs, cd.recv_reqs.data(), MPI_STATUSES_IGNORE);
     for (int r = 0; r < n_recvs; ++r) {
       const auto& peer = cd.recvs[r];
+      if (peer.totalPts == 0)
+        continue;
+      amrex::Gpu::DeviceVector<amrex::Real> received(peer.totalPts *
+                                                     nMMComponents);
+      amrex::Gpu::htod_memcpy(received.data(), peer.buf.data(),
+                              peer.totalPts * sizeof(RealMM));
       for (const auto& rt : peer.tags) {
         auto dst_arr = nodeMM[iLev].array(rt.boxIndex);
-        accumulate_node_mm_box(&peer.buf[rt.bufOffset], rt.box, dst_arr);
+        accumulate_node_mm_box(received.data() + rt.bufOffset * nMMComponents,
+                               rt.box, dst_arr);
       }
+      // The kernels read `received`, which is freed at the end of the loop.
+      amrex::Gpu::streamSynchronize();
     }
   }
 
@@ -1194,7 +1194,7 @@ void Pic::calc_mass_matrix() {
     }
 
     jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
-    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+    sum_boundary(jHat[iLev], Geom(iLev).periodicity());
     jHat[iLev].FillBoundary(Geom(iLev).periodicity());
 
     // Undo the geometric dilution of the current at the staircase surface of
@@ -1298,7 +1298,7 @@ void Pic::calc_mass_matrix_amr() {
   }
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+    sum_boundary(jHat[iLev], Geom(iLev).periodicity());
     sum_boundary_node_mm(iLev);
   }
   Vector<Real> invVol(n_lev());
@@ -1311,15 +1311,26 @@ void Pic::calc_mass_matrix_amr() {
 
   for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
     for (int i = finestLevel(); i > iLev; i--) {
-      jHat[iLev].ParallelAdd(jhc[i][iLev]);
+      jHat[iLev].ParallelCopy(jhc[i][iLev], 0, 0, jHat[iLev].nComp(),
+                              IntVect(0), IntVect(0),
+                              Periodicity::NonPeriodic(), FabArrayBase::ADD,
+                              nullptr, /*deterministic=*/true);
       nmmc[i][iLev] *= (invVol[iLev] / invVol[i]);
-      nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
+      nodeMM[iLev].ParallelCopy(nmmc[i][iLev], 0, 0, nodeMM[iLev].nComp(),
+                                IntVect(0), IntVect(0),
+                                Periodicity::NonPeriodic(), FabArrayBase::ADD,
+                                nullptr, /*deterministic=*/true);
     }
   }
   for (int iLev = finestLevel(); iLev > 0; iLev--) {
-    jHat[iLev].ParallelAdd(jhf[iLev - 1]);
+    jHat[iLev].ParallelCopy(jhf[iLev - 1], 0, 0, jHat[iLev].nComp(), IntVect(0),
+                            IntVect(0), Periodicity::NonPeriodic(),
+                            FabArrayBase::ADD, nullptr, /*deterministic=*/true);
     nmmf[iLev - 1] *= (invVol[iLev] / invVol[iLev - 1]);
-    nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
+    nodeMM[iLev].ParallelCopy(nmmf[iLev - 1], 0, 0, nodeMM[iLev].nComp(),
+                              IntVect(0), IntVect(0),
+                              Periodicity::NonPeriodic(), FabArrayBase::ADD,
+                              nullptr, /*deterministic=*/true);
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1514,10 +1525,11 @@ void Pic::calc_mach_number() {
     const auto& momentsMF = nodePlasma[nSpecies][iLev];
     for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<const Real>& moments = momentsMF[mfi].array();
-      const Array4<Real>& mach = mMach[iLev][mfi].array();
+      const Array4<const Real> moments = momentsMF[mfi].const_array();
+      const Array4<Real> mach = mMach[iLev][mfi].array();
+      const Real gamma = gamma0;
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         Real rho = moments(i, j, k, iRho_);
         if (rho <= 0) {
           mach(i, j, k) = 0;
@@ -1532,7 +1544,7 @@ void Pic::calc_mach_number() {
         Real p = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
                   moments(i, j, k, iPzz_)) /
                  3.0;
-        Real vth = sqrt(gamma0 * p / rho);
+        Real vth = sqrt(gamma * p / rho);
 
         mach(i, j, k) = uBulk / max(vth, 1e-99);
       });
@@ -1557,10 +1569,10 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
     for (MFIter mfi(grid.cell_cost()[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      const Array4<Real>& cost = grid.cell_cost()[iLev][mfi].array();
-      const Array4<int const> status = cell_status(iLev)[mfi].array();
+      const Array4<Real> cost = grid.cell_cost()[iLev][mfi].array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         if (bit::is_refined(status(i, j, k))) {
           cost(i, j, k) = 0;
         } else if (bit::is_domain_edge(status(i, j, k))) {
@@ -1909,14 +1921,12 @@ void Pic::update_U0_E0() {
     uBg[iLev].setVal(0.0);
     eBg[iLev].setVal(0.0);
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<const Real>& arrMoments =
-          nodePlasma[nSpecies][iLev][mfi].array();
-
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
+      const Array4<Real> arrU = uBg[iLev][mfi].array();
+      const Array4<const Real> arrMoments =
+          nodePlasma[nSpecies][iLev][mfi].const_array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 0) {
           const Real invRho = 1. / rho;
@@ -1924,16 +1934,20 @@ void Pic::update_U0_E0() {
             arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
         }
       });
+    }
 
-      // Fill in ghost nodes
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+    // Fill in ghost nodes from the fluid state.
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrU = uBg[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.fabbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_domain_boundary(status(ijk))) {
           const int iFluid = 0;
-          for (int iDir = 0; iDir < nDim3; iDir++) {
-            arrU(i, j, k, iDir) =
-                get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
-          }
+          arrU(i, j, k, ix_) = fv.get_fluid_ux(fv.d, ijk, iFluid);
+          arrU(i, j, k, iy_) = fv.get_fluid_uy(fv.d, ijk, iFluid);
+          arrU(i, j, k, iz_) = fv.get_fluid_uz(fv.d, ijk, iFluid);
         }
       });
     }
@@ -1944,14 +1958,12 @@ void Pic::update_U0_E0() {
       smooth_multifab(uBg[iLev], iLev, i % 2 + 1);
 
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<Real>& arrE = eBg[iLev][mfi].array();
-      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
-
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
+      const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
+      const Array4<Real> arrE = eBg[iLev][mfi].array();
+      const Array4<Real const> arrB = nodeB[iLev][mfi].const_array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         const Real& bx = arrB(i, j, k, ix_);
         const Real& by = arrB(i, j, k, iy_);
         const Real& bz = arrB(i, j, k, iz_);
@@ -1964,14 +1976,19 @@ void Pic::update_U0_E0() {
         arrE(i, j, k, iy_) = -uz * bx + ux * bz;
         arrE(i, j, k, iz_) = -ux * by + uy * bx;
       });
+    }
 
-      // Fill in boundary nodes
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+    // Fill in boundary nodes from the fluid state.
+    for (MFIter mfi(eBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrE = eBg[iLev][mfi].array();
+      const Array4<const int> status = node_status(iLev)[mfi].const_array();
+      const FluidView fv = fi->fluid_view(mfi, iLev);
+      ParallelFor(mfi.fabbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_domain_boundary(status(ijk))) {
-          arrE(i, j, k, ix_) = get_node_E(mfi, ijk, ix_, iLev);
-          arrE(i, j, k, iy_) = get_node_E(mfi, ijk, iy_, iLev);
-          arrE(i, j, k, iz_) = get_node_E(mfi, ijk, iz_, iLev);
+          arrE(i, j, k, ix_) = fv.get_ex(fv.d, ijk);
+          arrE(i, j, k, iy_) = fv.get_ey(fv.d, ijk);
+          arrE(i, j, k, iz_) = fv.get_ez(fv.d, ijk);
         }
       });
     }
@@ -2221,33 +2238,19 @@ void Pic::fill_regional_resistivity_field(int iLev) {
       continue;
     Regions reg(regionShapes, cfg.regionStr);
 
-    for (MFIter mfi(nodeEtaRegional[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.growntilebox();
-      const Array4<Real>& arr = nodeEtaRegional[iLev][mfi].array();
-      const auto lo = box.smallEnd();
-      const auto hi = box.bigEnd();
-
+    // Regions are host objects (virtual shapes): fill on the host.
+    host_fill(nodeEtaRegional[iLev], /*withGhost=*/true,
+              [&](const MFIter&, int i, int j, int k, const auto& arr) {
+                Real xyz[nDim];
+                xyz[0] = probLo[0] + i * dx[0];
+                xyz[1] = probLo[1] + j * dx[1];
 #if (AMREX_SPACEDIM > 2)
-      for (int k = lo[2]; k <= hi[2]; ++k) {
-#else
-      int k = 0;
-      {
+                xyz[2] = probLo[2] + k * dx[2];
 #endif
-        for (int j = lo[1]; j <= hi[1]; ++j) {
-          for (int i = lo[0]; i <= hi[0]; ++i) {
-            Real xyz[nDim];
-            xyz[0] = probLo[0] + i * dx[0];
-            xyz[1] = probLo[1] + j * dx[1];
-#if (AMREX_SPACEDIM > 2)
-            xyz[2] = probLo[2] + k * dx[2];
-#endif
-            if (reg.is_inside(xyz)) {
-              arr(i, j, k) = amrex::max(arr(i, j, k), cfg.etaCode);
-            }
-          }
-        }
-      }
-    }
+                if (reg.is_inside(xyz)) {
+                  arr(i, j, k) = amrex::max(arr(i, j, k), cfg.etaCode);
+                }
+              });
   }
   nodeEtaRegional[iLev].FillBoundary(Geom(iLev).periodicity());
 }
@@ -2269,33 +2272,19 @@ void Pic::fill_regional_hyper_field(int iLev) {
       continue;
     Regions reg(regionShapes, cfg.regionStr);
 
-    for (MFIter mfi(nodeEtaHyperRegional[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.growntilebox();
-      const Array4<Real>& arr = nodeEtaHyperRegional[iLev][mfi].array();
-      const auto lo = box.smallEnd();
-      const auto hi = box.bigEnd();
-
+    // Regions are host objects (virtual shapes): fill on the host.
+    host_fill(nodeEtaHyperRegional[iLev], /*withGhost=*/true,
+              [&](const MFIter&, int i, int j, int k, const auto& arr) {
+                Real xyz[nDim];
+                xyz[0] = probLo[0] + i * dx[0];
+                xyz[1] = probLo[1] + j * dx[1];
 #if (AMREX_SPACEDIM > 2)
-      for (int k = lo[2]; k <= hi[2]; ++k) {
-#else
-      int k = 0;
-      {
+                xyz[2] = probLo[2] + k * dx[2];
 #endif
-        for (int j = lo[1]; j <= hi[1]; ++j) {
-          for (int i = lo[0]; i <= hi[0]; ++i) {
-            Real xyz[nDim];
-            xyz[0] = probLo[0] + i * dx[0];
-            xyz[1] = probLo[1] + j * dx[1];
-#if (AMREX_SPACEDIM > 2)
-            xyz[2] = probLo[2] + k * dx[2];
-#endif
-            if (reg.is_inside(xyz)) {
-              arr(i, j, k) = amrex::max(arr(i, j, k), etaVal);
-            }
-          }
-        }
-      }
-    }
+                if (reg.is_inside(xyz)) {
+                  arr(i, j, k) = amrex::max(arr(i, j, k), etaVal);
+                }
+              });
   }
   nodeEtaHyperRegional[iLev].FillBoundary(Geom(iLev).periodicity());
 }

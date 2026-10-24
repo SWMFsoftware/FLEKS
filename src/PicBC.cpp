@@ -8,6 +8,7 @@
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_PhysBCFunct.H>
 
+#include "GpuBackend.h"
 #include "GridUtility.h"
 #include "Pic.h"
 #include "Timer.h"
@@ -54,19 +55,39 @@ inline BoxArray get_level_active_ba(const BoxArray& activeRegion,
 // status bit cannot tell them apart: it is also set on ghost nodes lying
 // exactly on a domain face, e.g. on a periodic seam or on both z layers of a
 // fake-2D grid.)
-inline bool is_outside_active(const BoxArray& ba, const Geometry& geom,
-                              const BoundaryBounds& bnd, int nDimVal,
-                              IntVect iv) {
+// periodic[d] and domainLen[d] describe the periodicity of geom; ba is a
+// device-side view of the active-region boxes.
+AMREX_GPU_HOST_DEVICE inline bool is_outside_active(const BoxListView& ba,
+                                                    const int* periodic,
+                                                    const int* domainLen,
+                                                    const BoundaryBounds& bnd,
+                                                    int nDimVal, IntVect iv) {
   for (int d = 0; d < nDimVal; ++d) {
-    if (!geom.isPeriodic(d))
+    if (!periodic[d])
       continue;
     if (iv[d] < bnd.loBnd[d])
-      iv[d] += geom.Domain().length(d);
+      iv[d] += domainLen[d];
     else if (iv[d] > bnd.hiBnd[d])
-      iv[d] -= geom.Domain().length(d);
+      iv[d] -= domainLen[d];
   }
   return !ba.contains(iv);
 }
+
+// A wave component active at the current time (see Pic::apply_wave_field).
+// At namespace scope: a device lambda cannot capture a type local to a
+// function.
+struct ActiveComp {
+  int dir;
+  int side;
+  Real effAmp;
+  Real omega_t;
+  Real k_vec[3];
+  Real pol[3];
+  int profile;
+  Real tCenter;
+  Real tInvWidth;
+  const WaveComponent* orig;
+};
 
 } // namespace
 
@@ -202,30 +223,39 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                           : get_boundary_active_ba(active_region_ref(), mf,
                                                    Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
-  const Geometry& geom = Geom(iLev);
+  const bool hasBC = (bc != nullptr);
+  int periodic[3] = { 0, 0, 0 }, domainLen[3] = { 0, 0, 0 };
+  for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+    periodic[d] = Geom(iLev).isPeriodic(d);
+    domainLen[d] = Geom(iLev).Domain().length(d);
+  }
+  std::unique_ptr<BoxListStorage> activeBoxes;
+  if (skipCoarseFineGhosts)
+    activeBoxes = std::make_unique<BoxListStorage>(ba);
+  const BoxListView activeView =
+      skipCoarseFineGhosts ? activeBoxes->view() : BoxListView();
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     if (ba.contains(bxFab))
       continue;
 
-    Array4<Real> const arr = mf.array(mfi);
-    Array4<const int> const statusArr = status.array(mfi);
+    const Array4<Real> arr = mf.array(mfi);
+    const Array4<const int> statusArr = status.const_array(mfi);
+    const BoundaryValue value = boundary_value(func, mfi, iLev);
 
-    // Note: [&mfi] is retained because host member-function pointer func
-    // requires mfi. All other data are captured by value for GPU readiness.
-    ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
+    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
       if (skipCoarseFineGhosts &&
-          !is_outside_active(ba, geom, bnd, nDim,
+          !is_outside_active(activeView, periodic, domainLen, bnd, nDim,
                              IntVect(AMREX_D_DECL(i, j, k))))
         return;
 
       // If at an outer physical boundary with non-Dirichlet condition,
       // PhysBCFunct and dedicated wall operators handle it.
-      if (bc != nullptr) {
+      if (hasBC) {
         const int ijk[3] = { i, j, k };
         bool skipForPhysWall = false;
         for (int d = 0; d < nDim; ++d) {
@@ -243,7 +273,7 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
 
       for (int iVar = 0; iVar < nComp; ++iVar) {
         arr(i, j, k, iStart + iVar) =
-            (this->*func)(mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+            value(IntVect{ AMREX_D_DECL(i, j, k) }, iVar);
       }
     });
   }
@@ -301,11 +331,11 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
       if (iLev > 0 || !ba.contains(bxFab)) {
-        Array4<Real> const& arr = mf[mfi].array();
-        const Array4<const int>& statusArr = status[mfi].array();
+        Array4<Real> const arr = mf[mfi].array();
+        const Array4<const int> statusArr = status[mfi].const_array();
         Box box = bxValid;
         box.grow(1);
-        ParallelFor(box, [&](int i, int j, int k) {
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             bool isNeiFound = false;
             const int kmin = (nDim > 2) ? -1 : 0;
@@ -552,25 +582,23 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
     if (ba.contains(bxFab))
       continue;
 
-    Array4<Real> const& arr = mf[mfi].array();
-    const Array4<const int>& statusArr = status[mfi].array();
     const Box& bxValid = mfi.validbox();
     const Dim3 vLo = bxValid.smallEnd().dim3();
     const Dim3 vHi = bxValid.bigEnd().dim3();
     const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
     const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
-    ParallelFor(bxFab, [=, &mfi](int i, int j, int k) {
-      const int ijk[3] = { i, j, k };
-
-      // 1. Boundary nodes on physical inflow wall (node-centered only).
+    // Is (i,j,k) a node on a physical inflow wall, and on which side? Returns
+    // the direction of the wall, or -1.
+    auto wall_dir = [=] AMREX_GPU_HOST_DEVICE(const int ijk[3],
+                                              bool& onLoWall) -> int {
       for (int d = 0; d < nDim; ++d) {
         if (!bnd.isNode[d])
           continue;
 
-        const bool onLoWall = ((bnd.bcLo[d] == FieldBC::inflow ||
-                                bnd.bcLo[d] == FieldBC::fixed) &&
-                               (ijk[d] == bnd.loBnd[d]));
+        onLoWall = ((bnd.bcLo[d] == FieldBC::inflow ||
+                     bnd.bcLo[d] == FieldBC::fixed) &&
+                    (ijk[d] == bnd.loBnd[d]));
         const bool onHiWall = ((bnd.bcHi[d] == FieldBC::inflow ||
                                 bnd.bcHi[d] == FieldBC::fixed) &&
                                (ijk[d] == bnd.hiBnd[d]));
@@ -582,51 +610,80 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
               break;
             }
           }
-          if (inValid) {
-            for (int iVar = 0; iVar < nComp; ++iVar) {
-              const int comp = iStart + iVar;
-              if (func != nullptr) {
-                arr(i, j, k, comp) = (this->*func)(
-                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
-              } else {
-                int m[3] = { i, j, k };
-                m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
-                arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
-              }
-            }
-          }
+          if (inValid)
+            return d;
         }
       }
+      return -1;
+    };
 
-      // Cell-centered data is not pinned here: for cell-centered B the cell at
-      // loBnd/hiBnd is the last *physical* cell, advanced by Faraday's law.
-      // Overwriting it with the prescribed state every call breaks div(B) = 0
-      // against its evolving neighbour, so Bx grows in a layer next to the
-      // face. The prescribed state enters through the ghost cells (filled by
-      // fill_ext_dir) and the pinned boundary nodes above.
+    // Cell-centered data is not pinned here: for cell-centered B the cell at
+    // loBnd/hiBnd is the last *physical* cell, advanced by Faraday's law.
+    // Overwriting it with the prescribed state every call breaks div(B) = 0
+    // against its evolving neighbour, so Bx grows in a layer next to the
+    // face. The prescribed state enters through the ghost cells (filled by
+    // fill_ext_dir) and the pinned boundary nodes above.
 
-      // 2. Ghost cells/nodes outside domain if func == nullptr
-      // (When func != nullptr, fill_ext_dir handles them).
-      if (func == nullptr && bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-        int m[3] = { i, j, k };
-        bool touched = false;
-        for (int d = 0; d < nDim; ++d) {
-          if ((bnd.bcLo[d] == FieldBC::inflow ||
-               bnd.bcLo[d] == FieldBC::fixed) &&
-              ijk[d] < bnd.loBnd[d]) {
-            m[d] = bnd.loBnd[d];
-            touched = true;
-          } else if ((bnd.bcHi[d] == FieldBC::inflow ||
-                      bnd.bcHi[d] == FieldBC::fixed) &&
-                     ijk[d] > bnd.hiBnd[d]) {
-            m[d] = bnd.hiBnd[d];
-            touched = true;
-          }
+    if (func != nullptr) {
+      // 1. Boundary nodes on the physical inflow wall take the prescribed
+      // state; fill_ext_dir has filled the ghosts.
+      const Array4<Real> arr = mf.array(mfi);
+      const BoundaryValue value = boundary_value(func, mfi, iLev);
+      ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        const int ijk[3] = { i, j, k };
+        bool onLoWall = false;
+        if (wall_dir(ijk, onLoWall) < 0)
+          return;
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          arr(i, j, k, iStart + iVar) =
+              value(IntVect{ AMREX_D_DECL(i, j, k) }, iVar);
         }
-        if (touched) {
-          for (int iVar = 0; iVar < nComp; ++iVar) {
-            arr(i, j, k, iStart + iVar) = arr(m[0], m[1], m[2], iStart + iVar);
-          }
+      });
+      continue;
+    }
+
+    Array4<Real> const arr = mf[mfi].array();
+    const Array4<const int> statusArr = status[mfi].const_array();
+
+    // 1. Boundary nodes on the physical inflow wall copy their inner
+    // neighbour.
+    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      const int ijk[3] = { i, j, k };
+      bool onLoWall = false;
+      const int d = wall_dir(ijk, onLoWall);
+      if (d < 0)
+        return;
+      int m[3] = { i, j, k };
+      m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
+      for (int iVar = 0; iVar < nComp; ++iVar) {
+        const int comp = iStart + iVar;
+        arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
+      }
+    });
+
+    // 2. Ghost cells/nodes outside the domain copy the boundary value. This is
+    // a second pass so that every ghost sees the updated wall nodes.
+    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+      const int ijk[3] = { i, j, k };
+      int m[3] = { i, j, k };
+      bool touched = false;
+      for (int d = 0; d < nDim; ++d) {
+        if ((bnd.bcLo[d] == FieldBC::inflow || bnd.bcLo[d] == FieldBC::fixed) &&
+            ijk[d] < bnd.loBnd[d]) {
+          m[d] = bnd.loBnd[d];
+          touched = true;
+        } else if ((bnd.bcHi[d] == FieldBC::inflow ||
+                    bnd.bcHi[d] == FieldBC::fixed) &&
+                   ijk[d] > bnd.hiBnd[d]) {
+          m[d] = bnd.hiBnd[d];
+          touched = true;
+        }
+      }
+      if (touched) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          arr(i, j, k, iStart + iVar) = arr(m[0], m[1], m[2], iStart + iVar);
         }
       }
     });
@@ -640,20 +697,8 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            GETVALUE func) {
   // Pre-filter components active at time t for iField.
   // Hoisting envelope and time-phase evaluation out of the cell loops.
-  struct ActiveComp {
-    int dir;
-    int side;
-    Real effAmp;
-    Real omega_t;
-    Real k_vec[3];
-    Real pol[3];
-    int profile;
-    Real tCenter;
-    Real tInvWidth;
-    const WaveComponent* orig;
-  };
 
-  std::vector<ActiveComp> activeComps;
+  KernelArray<ActiveComp> activeComps;
   for (const auto& f : waveBC.faces) {
     if (f.direction >= nDim)
       continue;
@@ -676,7 +721,11 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       ac.tCenter = c.tCenter;
       ac.tInvWidth = (c.tWidth > 0.0) ? (1.0 / c.tWidth) : 1.0;
       ac.orig = &c;
-      activeComps.push_back(ac);
+      if (fleksUseGpu && ac.profile == WaveComponent::kCustom)
+        Abort("Pic::apply_wave_field: a custom wave profile is a host "
+              "function and cannot be used in a GPU run.");
+      activeComps.resize(activeComps.size() + 1);
+      activeComps[activeComps.size() - 1] = ac;
     }
   }
   if (activeComps.empty())
@@ -689,8 +738,8 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
-  const Real* plo = Geom(iLev).ProbLo();
-  const Real* dx = Geom(iLev).CellSize();
+  const auto plo = Geom(iLev).ProbLoArray();
+  const auto dx = Geom(iLev).CellSizeArray();
   const Real offset[3] = { bnd.isNode[0] ? 0.0 : 0.5, bnd.isNode[1] ? 0.0 : 0.5,
                            bnd.isNode[2] ? 0.0 : 0.5 };
 
@@ -703,7 +752,8 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
     // Box culling: check if this FAB touches any face active for wave
     // injection.
     bool boxTouchesWaveFace = false;
-    for (const auto& ac : activeComps) {
+    for (int iComp = 0; iComp < activeComps.size(); ++iComp) {
+      const ActiveComp& ac = activeComps[iComp];
       const int d = ac.dir;
       const int side = ac.side;
       if (side == 0) {
@@ -723,14 +773,19 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
     if (!boxTouchesWaveFace)
       continue;
 
-    Array4<Real> const& arr = mf[mfi].array();
-    const Array4<const int>& statusArr = status[mfi].array();
     const Dim3 vLo = bxValid.smallEnd().dim3();
     const Dim3 vHi = bxValid.bigEnd().dim3();
     const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
     const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
-    ParallelFor(bxFab, [&](int i, int j, int k) {
+    const Array4<const int> statusArr = status.const_array(mfi);
+    const Array4<Real> arr = mf.array(mfi);
+    const bool hasFunc = (func != nullptr);
+    const BoundaryValue value = boundary_value(func, mfi, iLev);
+    const int bxLo[3] = { vLo.x, vLo.y, vLo.z };
+    const int bxHi[3] = { vHi.x, vHi.y, vHi.z };
+
+    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const int ijk[3] = { i, j, k };
       const bool isGhost = bit::is_lev_boundary(statusArr(i, j, k, 0));
 
@@ -742,13 +797,13 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       bool hasWave = false;
       bool isBndNode = false;
 
-      for (const auto& ac : activeComps) {
+      for (int iComp = 0; iComp < activeComps.size(); ++iComp) {
+        const ActiveComp& ac = activeComps[iComp];
         const int d = ac.dir;
         const int side = ac.side;
         const int idx = ijk[d];
-        const bool onGhostFace =
-            isGhost && ((side == 0 && idx < bxValid.smallEnd(d)) ||
-                        (side == 1 && idx > bxValid.bigEnd(d)));
+        const bool onGhostFace = isGhost && ((side == 0 && idx < bxLo[d]) ||
+                                             (side == 1 && idx > bxHi[d]));
 
         // Boundary node on physical wall (node-centered only).
         bool onNodeWall = false;
@@ -776,10 +831,12 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
         // Evaluate wave profile value with precomputed parameters.
         Real val = 0.0;
-        if (ac.profile == WaveComponent::kCustom && ac.orig &&
-            ac.orig->custom) {
-          val = ac.orig->custom(*ac.orig, t, pos) *
-                (ac.effAmp / ac.orig->amplitude);
+        if (ac.profile == WaveComponent::kCustom) {
+          // A custom profile is a host function (rejected in a GPU run).
+          AMREX_IF_ON_HOST((if (ac.orig && ac.orig->custom) {
+            val = ac.orig->custom(*ac.orig, t, pos) *
+                  (ac.effAmp / ac.orig->amplitude);
+          }))
         } else {
           const Real kdotx = ac.k_vec[0] * pos[0] + ac.k_vec[1] * pos[1] +
                              ac.k_vec[2] * pos[2];
@@ -795,7 +852,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
         hasWave = true;
         if (iField == 0 || iField == 1) {
-          for (int iVar = 0; iVar < std::min(nComp, 3); ++iVar) {
+          for (int iVar = 0; iVar < amrex::min(nComp, 3); ++iVar) {
             waveVal[iVar] += val * ac.pol[iVar];
           }
         } else {
@@ -804,17 +861,16 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       }
 
       if (hasWave) {
-        if (isBndNode && func) {
-          // Reset nodal physical boundary from base state before superimposing
-          // wave.
+        if (isBndNode && hasFunc) {
+          // Reset nodal physical boundary from base state before
+          // superimposing wave.
           for (int iVar = 0; iVar < nComp; ++iVar) {
-            const Real baseVal = (this->*func)(
-                mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+            const Real baseVal = value(IntVect{ AMREX_D_DECL(i, j, k) }, iVar);
             arr(i, j, k, iStart + iVar) = baseVal + waveVal[iVar % 3];
           }
         } else {
-          // Ghost cells already contain base state from apply_BC(); add wave
-          // perturbation.
+          // Ghost cells already contain base state from apply_BC(); add
+          // wave perturbation.
           if (iField == 0 || iField == 1) {
             for (int iVar = 0; iVar < nComp; ++iVar) {
               arr(i, j, k, iStart + iVar) += waveVal[iVar % 3];
@@ -831,21 +887,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
                              Real& dvz) {
-  dvx = dvy = dvz = 0.0;
-  if (!waveBC.active)
-    return;
-  for (const auto& f : waveBC.faces) {
-    for (const auto& c : f.comps) {
-      if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
-        continue;
-      const Real val = waveBC.value(c, t, pos);
-      if (val == 0.0)
-        continue;
-      dvx += val * c.pol[0];
-      dvy += val * c.pol[1];
-      dvz += val * c.pol[2];
-    }
-  }
+  make_wave_kick_view(waveBC, t).kick(pos, t, dvx, dvy, dvz);
 }
 
 //==========================================================
@@ -878,8 +920,8 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
   if (mf.nComp() < 3)
     return;
 
-  const auto plo = Geom(iLev).ProbLo();
-  const auto dx = Geom(iLev).CellSize();
+  const auto plo = Geom(iLev).ProbLoArray();
+  const auto dx = Geom(iLev).CellSizeArray();
   const Real cx = get_body_center()[ix_];
   const Real cy = get_body_center()[iy_];
   const Real cz = get_body_center()[iz_];
@@ -931,8 +973,8 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
 
   const bool isCell = mf.ixType().cellCentered();
   const auto& status = isCell ? cell_status(iLev) : node_status(iLev);
-  const auto plo = Geom(iLev).ProbLo();
-  const auto dx = Geom(iLev).CellSize();
+  const auto plo = Geom(iLev).ProbLoArray();
+  const auto dx = Geom(iLev).CellSizeArray();
   const Real cx = get_body_center()[ix_];
   const Real cy = get_body_center()[iy_];
   const Real cz = get_body_center()[iz_];

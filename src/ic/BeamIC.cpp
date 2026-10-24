@@ -10,7 +10,8 @@ void BeamIC::read_param(ReadParam& param) {
     param.read_var("vel", vel_[iDim]);
 }
 
-void BeamIC::modify_particle_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void BeamICParams::hook_velocity(
+    ParticleICState& s) const {
   if (s.iSpec != iSpecies_)
     return;
 

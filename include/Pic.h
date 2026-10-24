@@ -52,6 +52,36 @@ public:
 typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, amrex::IntVect ijk,
                                      int iVar, const int iLev);
 
+// The prescribed boundary state of a field, evaluated from the fluid state in
+// a kernel. Pic::boundary_value() maps a GETVALUE accessor (get_node_E,
+// get_node_B, ...) to it.
+struct BoundaryValue {
+  enum Kind { zero, E, B, centerB, Pe };
+  int kind = zero;
+  FluidView fv;
+  amrex::Array4<amrex::Real const> centerBArr;
+
+  AMREX_GPU_HOST_DEVICE amrex::Real operator()(const amrex::IntVect &ijk,
+                                               int iVar) const {
+    switch (kind) {
+      case E:
+        return iVar == ix_   ? fv.get_ex(fv.d, ijk)
+               : iVar == iy_ ? fv.get_ey(fv.d, ijk)
+                             : fv.get_ez(fv.d, ijk);
+      case B:
+        return iVar == ix_   ? fv.get_bx(fv.d, ijk)
+               : iVar == iy_ ? fv.get_by(fv.d, ijk)
+                             : fv.get_bz(fv.d, ijk);
+      case centerB:
+        return centerBArr(ijk, iVar);
+      case Pe:
+        return fv.get_pe(fv.d, ijk);
+      default:
+        return 0.0;
+    }
+  }
+};
+
 typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
                                    const std::string varName);
 
@@ -73,7 +103,9 @@ struct NodeMMCommData {
   struct PeerComm {
     int rank;
     std::vector<RemoteTagEntry> tags;
-    std::vector<RealMM> buf;
+    // Pinned host memory for MPI; the kernels pack and unpack a device
+    // buffer, which is copied to/from buf in one transfer.
+    amrex::Gpu::PinnedVector<RealMM> buf;
     std::size_t totalPts = 0;
   };
 
@@ -81,7 +113,7 @@ struct NodeMMCommData {
   amrex::FabArrayBase::BDKey bdkey;
 
   std::vector<LocTagEntry> loc_tags;
-  std::vector<RealMM> local_buf;
+  std::size_t localPts = 0; // size of the local snapshot buffer
   std::vector<std::vector<int> > box_to_loc_tags;
 
   std::vector<PeerComm> sends;
@@ -879,6 +911,23 @@ public:
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF, int iLev);
   void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p, int iLev);
 
+  // Where the unknowns of a linear system (the implicit E field, or the
+  // cell-centered divE correction) are stored in the 1D solver vectors. The
+  // vector holds the boxes in MFIter order; inside a box, the components one
+  // after the other, each with the selected nodes (cells) in x-fastest order.
+  // localIdx is the position of a node within its box and component block,
+  // or -1 if the node is not an unknown.
+  struct LinearSystemLayout {
+    amrex::iMultiFab localIdx;
+    amrex::Vector<int> nBoxUnknown; // per local box
+  };
+  amrex::Vector<LinearSystemLayout> nodeLayout, centerLayout;
+
+  // Host copies of the fields that the point-wise output reads (get_var).
+  HostFabCache ioCache;
+  const LinearSystemLayout &linear_system_layout(const amrex::MultiFab &MF,
+                                                 int iLev);
+
   void smooth_E(amrex::MultiFab &mfE, int iLev);
   void project_down_E();
 
@@ -1133,6 +1182,31 @@ public:
     return 0.0;
   }
 
+  // The device-callable form of the accessor func on the FAB mfi.
+  BoundaryValue boundary_value(GETVALUE func, const amrex::MFIter &mfi,
+                               int iLev) const {
+    BoundaryValue bv;
+    if (func == static_cast<GETVALUE>(&Pic::get_node_E) ||
+        func == static_cast<GETVALUE>(&Pic::get_center_E)) {
+      bv.kind = BoundaryValue::E;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_node_B)) {
+      bv.kind = BoundaryValue::B;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_center_B)) {
+      bv.kind = BoundaryValue::centerB;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_center_Pe)) {
+      bv.kind = BoundaryValue::Pe;
+    } else if (func == static_cast<GETVALUE>(&Pic::get_zero) || !func) {
+      bv.kind = BoundaryValue::zero;
+      return bv;
+    } else {
+      amrex::Abort("Pic::boundary_value: unknown boundary accessor");
+    }
+    bv.fv = fi->fluid_view(mfi, iLev);
+    if (bv.kind == BoundaryValue::centerB)
+      bv.centerBArr = fi->get_center_b(iLev).const_array(mfi);
+    return bv;
+  }
+
   inline amrex::Real get_node_fluid_u(amrex::MFIter &mfi, amrex::IntVect ijk,
                                       int iVar, const int iLev, int iFluid) {
     amrex::Real u;
@@ -1207,16 +1281,17 @@ public:
 
       for (amrex::MFIter mfi(errorDivE[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
-        const amrex::Array4<amrex::Real> &error = errorDivE[iLev][mfi].array();
+        const amrex::Array4<amrex::Real> error = errorDivE[iLev][mfi].array();
         const amrex::Array4<amrex::Real const> divEcc =
-            centerDivE[iLev][mfi].array();
+            centerDivE[iLev][mfi].const_array();
         const amrex::Array4<amrex::Real const> qcc =
-            centerNetChargeN[iLev][mfi].array();
-        const auto &status = cell_status(iLev)[mfi].array();
+            centerNetChargeN[iLev][mfi].const_array();
+        const amrex::Array4<int const> status =
+            cell_status(iLev)[mfi].const_array();
 
-        amrex::ParallelFor(box, [&](int i, int j, int k) {
-          error(i, j, k) =
-              sqrt(pow((4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k)), 2));
+        amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          error(i, j, k) = std::sqrt(
+              std::pow((4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k)), 2));
           if (bit::is_refined(status(i, j, k))) {
             error(i, j, k) = 0;
           }
@@ -1231,51 +1306,57 @@ public:
       amrex::Abort(
           "ConstantPPV and PreSplitting cannot be true at the same time");
     }
+    const int ppcDefault = product(pInfo.nPartPerCell);
+    const bool doPreSplitting = pInfo.doPreSplitting;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.fabbox();
-        const auto &ppcArr = targetPPC[iLev][mfi].array();
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
-          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
-        });
+        const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
+        amrex::ParallelFor(box,
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k)
+                               noexcept { ppcArr(i, j, k, 0) = ppcDefault; });
       }
     }
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const int refRatioMax = (pInfo.isPPVconstant || pInfo.doPreSplitting)
                                   ? refRatio(iLev).max()
                                   : 1;
+      // Target PPC of a cell, and of a cell next to a refined cell when the
+      // particles are split in advance.
+      int ppcCell = ppcDefault;
+      if (pInfo.isPPVconstant) {
+        int tmp = 1;
+        for (int i = 0; i < nDim; i++) {
+          tmp *= (pInfo.nPartPerCell[i] / pow(refRatioMax, iLev));
+        }
+        ppcCell = tmp;
+      }
+      const int ppcPreSplit = ppcDefault * pow(refRatioMax, nDim);
+
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
-        const auto &ppcArr = targetPPC[iLev][mfi].array();
-        const auto &status = cell_status(iLev)[mfi].array();
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
-          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          if (pInfo.isPPVconstant) {
-            int tmp = 1;
-            for (int i = 0; i < nDim; i++) {
-              tmp *= (pInfo.nPartPerCell[i] / pow(refRatioMax, iLev));
-            }
-            ppcArr(ijk, 0) = tmp;
-          } else {
-            ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
-          }
-          if (pInfo.doPreSplitting) {
-            for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
-              for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
-                for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
-                  amrex::IntVect ijk2 =
-                      ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
-                  if (bit::is_refined(status(ijk2)) &&
-                      !bit::is_refined(status(ijk))) {
-                    ppcArr(ijk, 0) =
-                        product(pInfo.nPartPerCell) * pow(refRatioMax, nDim);
+        const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
+        const amrex::Array4<int const> status =
+            cell_status(iLev)[mfi].const_array();
+        amrex::ParallelFor(
+            box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+              ppcArr(ijk, 0) = ppcCell;
+              if (doPreSplitting) {
+                for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
+                  for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
+                    for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
+                      amrex::IntVect ijk2 =
+                          ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
+                      if (bit::is_refined(status(ijk2)) &&
+                          !bit::is_refined(status(ijk))) {
+                        ppcArr(ijk, 0) = ppcPreSplit;
+                      }
+                    }
                   }
                 }
               }
-            }
-          }
-        });
+            });
       }
     }
   }
@@ -1286,8 +1367,8 @@ public:
     parts[1]->calculate_particle_quality(particleQuality);
     grid.write_mf(particleQuality, finestLevel(), "particleQuality1");
   }
-  // private methods
-private:
+  // These would be private, but nvcc does not allow device lambdas inside
+  // private member functions.
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
 };
