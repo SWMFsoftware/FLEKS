@@ -907,31 +907,44 @@ void Pic::particle_mover(int pushStage) {
 
 namespace {
 
-// Copy the nodes of `box` of src into buf, x fastest.
+// Copy the nodes of `box` of src into buf, x fastest, the nMMComponents
+// entries of a node contiguous. A row of nodes along x is one contiguous block
+// of len.x * nMMComponents Reals in both, so a thread copies one Real of a row:
+// a plain contiguous copy on the CPU and coalesced on the GPU.
 template <typename Array4Type>
 inline void pack_node_mm_box(const Array4Type& src, const amrex::Box& box,
-                             RealMM* buf) {
+                             amrex::Real* buf) {
   const auto lo = amrex::lbound(box);
   const auto len = amrex::length(box);
-  amrex::ParallelFor(
-      box, nMMComponents, [=] AMREX_GPU_DEVICE(int i, int j, int k, int d) {
-        const int p = ((k - lo.z) * len.y + (j - lo.y)) * len.x + i - lo.x;
-        buf[p][d] = src(i, j, k)[d];
-      });
+  const int rowLen = len.x * nMMComponents;
+  // (row element, j, k), the row element fastest.
+  // (In 2D len.z is 1 and k is always 0.)
+  const amrex::Box rows(
+      amrex::IntVect(0),
+      amrex::IntVect(AMREX_D_DECL(rowLen - 1, len.y - 1, len.z - 1)));
+  amrex::ParallelFor(rows, [=] AMREX_GPU_DEVICE(int t, int j, int k) {
+    const amrex::Real* const row = src(lo.x, lo.y + j, lo.z + k).data;
+    buf[(k * len.y + j) * rowLen + t] = row[t];
+  });
 }
 
 // Add buf (see pack_node_mm_box) to the nodes of `box` of dst. Different
 // calls may add to the same node, so they run one after the other (each is
 // one kernel on the GPU), which keeps the order of the additions.
-inline void accumulate_node_mm_box(const RealMM* buf, const amrex::Box& box,
+inline void accumulate_node_mm_box(const amrex::Real* buf,
+                                   const amrex::Box& box,
                                    const amrex::Array4<RealMM>& dst) {
   const auto lo = amrex::lbound(box);
   const auto len = amrex::length(box);
-  amrex::ParallelFor(
-      box, nMMComponents, [=] AMREX_GPU_DEVICE(int i, int j, int k, int d) {
-        const int p = ((k - lo.z) * len.y + (j - lo.y)) * len.x + i - lo.x;
-        dst(i, j, k)[d] += buf[p][d];
-      });
+  const int rowLen = len.x * nMMComponents;
+  // (In 2D len.z is 1 and k is always 0.)
+  const amrex::Box rows(
+      amrex::IntVect(0),
+      amrex::IntVect(AMREX_D_DECL(rowLen - 1, len.y - 1, len.z - 1)));
+  amrex::ParallelFor(rows, [=] AMREX_GPU_DEVICE(int t, int j, int k) {
+    amrex::Real* const row = dst(lo.x, lo.y + j, lo.z + k).data;
+    row[t] += buf[(k * len.y + j) * rowLen + t];
+  });
 }
 
 } // anonymous namespace
@@ -1062,10 +1075,13 @@ void Pic::sum_boundary_node_mm(int iLev) {
   for (int s = 0; s < n_sends; ++s) {
     auto& peer = cd.sends[s];
     if (peer.totalPts > 0) {
-      amrex::Gpu::DeviceVector<RealMM> packed(peer.totalPts);
+      // Plain Reals: a buffer of RealMM would be zeroed on allocation.
+      amrex::Gpu::DeviceVector<amrex::Real> packed(peer.totalPts *
+                                                   nMMComponents);
       for (const auto& rt : peer.tags) {
         const auto src_arr = nodeMM[iLev].array(rt.boxIndex);
-        pack_node_mm_box(src_arr, rt.box, packed.data() + rt.bufOffset);
+        pack_node_mm_box(src_arr, rt.box,
+                         packed.data() + rt.bufOffset * nMMComponents);
       }
       // One transfer; it waits for the packing kernels.
       amrex::Gpu::dtoh_memcpy(peer.buf.data(), packed.data(),
@@ -1080,12 +1096,14 @@ void Pic::sum_boundary_node_mm(int iLev) {
   // 3. Snapshot local tags into a device buffer (Phase 1): a source region
   // may also be a destination, so all sources are copied first.
   const int n_loc = static_cast<int>(cd.loc_tags.size());
-  amrex::Gpu::DeviceVector<RealMM> localBuf(cd.localPts);
-  RealMM* const local_buf = localBuf.data();
+  // Plain Reals: a buffer of RealMM would be zeroed on allocation.
+  amrex::Gpu::DeviceVector<amrex::Real> localBuf(cd.localPts * nMMComponents);
+  amrex::Real* const local_buf = localBuf.data();
   for (int i = 0; i < n_loc; ++i) {
     const auto& tag = cd.loc_tags[i];
     const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
-    pack_node_mm_box(src_arr, tag.sbox, local_buf + tag.bufOffset);
+    pack_node_mm_box(src_arr, tag.sbox,
+                     local_buf + tag.bufOffset * nMMComponents);
   }
 
   // 4. Accumulate local tags into destination boxes (Phase 2)
@@ -1098,7 +1116,8 @@ void Pic::sum_boundary_node_mm(int iLev) {
     auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
     for (int tag_idx : tag_indices) {
       const auto& tag = cd.loc_tags[tag_idx];
-      accumulate_node_mm_box(local_buf + tag.bufOffset, tag.dbox, dst_arr);
+      accumulate_node_mm_box(local_buf + tag.bufOffset * nMMComponents,
+                             tag.dbox, dst_arr);
     }
   }
 
@@ -1110,12 +1129,14 @@ void Pic::sum_boundary_node_mm(int iLev) {
       const auto& peer = cd.recvs[r];
       if (peer.totalPts == 0)
         continue;
-      amrex::Gpu::DeviceVector<RealMM> received(peer.totalPts);
+      amrex::Gpu::DeviceVector<amrex::Real> received(peer.totalPts *
+                                                     nMMComponents);
       amrex::Gpu::htod_memcpy(received.data(), peer.buf.data(),
                               peer.totalPts * sizeof(RealMM));
       for (const auto& rt : peer.tags) {
         auto dst_arr = nodeMM[iLev].array(rt.boxIndex);
-        accumulate_node_mm_box(received.data() + rt.bufOffset, rt.box, dst_arr);
+        accumulate_node_mm_box(received.data() + rt.bufOffset * nMMComponents,
+                               rt.box, dst_arr);
       }
       // The kernels read `received`, which is freed at the end of the loop.
       amrex::Gpu::streamSynchronize();
