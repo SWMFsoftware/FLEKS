@@ -295,7 +295,8 @@ private:
 //   cellOf(ip, cell) -> bool   the cell (its lower node) of particle ip, or
 //                              false to skip the particle;
 //   contrib(ip, acc)           add the contribution of particle ip to
-//                              acc[ii][jj][kk][n], n < NComp, the nodes
+//                              acc[ii][jj][kk][n] (with +=; take acc as
+//                              auto&&), n < NComp, the nodes
 //                              cell + (ii, jj, kk), ii, jj, kk < S;
 // dst(node, comp0 + n) receives the sums. cellBox must contain the cells of
 // all the particles, and dst the nodes of cellBox.
@@ -307,6 +308,43 @@ private:
 //
 // deposit_to_nodes_with() is the general form: add(i, j, k, n, value) stores
 // the sums (e.g. into a FAB of a non-scalar type).
+// The CPU stand-in for the accumulator acc[ii][jj][kk][n] of
+// deposit_to_nodes_with(): acc[ii][jj][kk][n] += v adds v to the node
+// cell + (ii, jj, kk) right away.
+template <class Add> struct NodeAdder {
+  const Add* add;
+  amrex::IntVect cell;
+
+  struct Term {
+    const Add* add;
+    int i, j, k, n;
+    void operator+=(amrex::Real v) const { (*add)(i, j, k, n, v); }
+  };
+  struct K {
+    const Add* add;
+    int i, j, k;
+    Term operator[](int n) const { return Term{ add, i, j, k, n }; }
+  };
+  struct J {
+    const Add* add;
+    int i, j, k0;
+    K operator[](int kk) const {
+      return K{ add, i, j, AMREX_SPACEDIM > 2 ? k0 + kk : 0 };
+    }
+  };
+  struct I {
+    const Add* add;
+    int i, j0, k0;
+    J operator[](int jj) const {
+      return J{ add, i, AMREX_SPACEDIM > 1 ? j0 + jj : 0, k0 };
+    }
+  };
+  I operator[](int ii) const {
+    return I{ add, cell[0] + ii, AMREX_SPACEDIM > 1 ? cell[1] : 0,
+              AMREX_SPACEDIM > 2 ? cell[AMREX_SPACEDIM - 1] : 0 };
+  }
+};
+
 template <int NComp, int S = 2, class Add, class CellOf, class Contrib>
 void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
                            CellOf&& cellOf, Contrib&& contrib) {
@@ -380,25 +418,15 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
   // The kernels read the bins and the scratch, which are freed on return.
   amrex::Gpu::streamSynchronize();
 #else
+  // Every term goes straight to its node (NodeAdder), in particle order: no
+  // per-particle buffer to clear and copy.
   amrex::ignore_unused(cellBox);
   for (int ip = 0; ip < np; ++ip) {
     amrex::IntVect c;
     if (!cellOf(ip, c))
       continue;
-    Real acc[S][S][S][NComp];
-    for (int kk = 0; kk < S; ++kk)
-      for (int jj = 0; jj < S; ++jj)
-        for (int ii = 0; ii < S; ++ii)
-          for (int n = 0; n < NComp; ++n)
-            acc[ii][jj][kk][n] = 0;
+    const NodeAdder<std::decay_t<Add> > acc{ &add, c };
     contrib(ip, acc);
-    for (int n = 0; n < NComp; ++n)
-      for (int kk = 0; kk < nK; ++kk)
-        for (int jj = 0; jj < S; ++jj)
-          for (int ii = 0; ii < S; ++ii)
-            add(c[0] + ii, AMREX_SPACEDIM > 1 ? c[1] + jj : 0,
-                AMREX_SPACEDIM > 2 ? c[AMREX_SPACEDIM > 2 ? 2 : 0] + kk : 0, n,
-                acc[ii][jj][kk][n]);
   }
 #endif
 }
