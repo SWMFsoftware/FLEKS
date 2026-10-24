@@ -1,0 +1,44 @@
+{
+  "description": "Production FLEKS CPU quiet-start uniform cold neutral two-species plasma, one semi-implicit step. No divergence correction.",
+  "production_binary_sha256": "903f3cebe1a7357422462d6cac6bee683e0769189094cee62bb6c89da8852b1f",
+  "production_version_header": [
+    "Initializing AMReX (45a1fc5e1e5a)...",
+    "MPI initialized with 1 MPI processes",
+    "MPI initialized with thread support level 0",
+    "AMReX (45a1fc5e1e5a) initialized",
+    "Main dir=/home/yuxichen/gpu/FLEKS_GPU",
+    "Remote  =git@github.com:SWMFsoftware",
+    "FLEKS                               modified  gpu 2026-10-22 23adbf8 detached",
+    "  share                             modified  master 2026-10-22 5bdf2984",
+    "  util                              original  master 2026-10-16 b7a24a6",
+    "  util/AMREX                        original  master 2026-03-31 45a1fc5e1"
+  ],
+  "parameters": {
+    "n_cell": 4,
+    "max_grid_size": 4,
+    "particles_per_cell": 8,
+    "n_step": 1,
+    "dt": 0.01,
+    "theta": 0.51,
+    "coef_diff": 0.1,
+    "mass_ratio": 25,
+    "perturbation": 0.001,
+    "initial_condition": "uniform",
+    "correct_div_e": 0
+  },
+  "param_in": "#DESCRIPTION\nGPU demo uniform cold plasma CPU reference\n#INITFROMSWMF\nF\n#NORMALIZATION\n1.0e5\n1.0e5\n#GEOMETRY\n0.0\n1.0\n0.0\n1.0\n0.0\n1.0\n#NCELL\n4\n4\n4\n#MAXBLOCKSIZE\n4\n4\n4\n#PERIODICITY\nT\nT\nT\n#FIELDSOLVER\nimplicit\n#PLASMA\n2\n25.0\n1.0\n1.0\n-1.0\n#UNIFORMSTATE\n65.15939\n0.0\n0.0\n0.0\n0.0\n65.15939\n0.1\n0.0\n0.0\n0.0\n0.0\n0.0\n0.0\n0.0\n0.0\n0.0\n#TIMESTEPPING\nT\n0.01\n#PARTICLES\n2\n2\n2\n#RANDOMPARTICLESLOCATION\nF\n#DISCRETIZATION\n0.51\n0.1\n#EFIELDSOLVER\n1.0e-10\n200\n#DIVE\nF\n#RESAMPLING\nF\n#SAVELOG\n1\n1\n#SAVEPLOT\n1\nz=0.5 var ascii pic\n1\n-1\n1\nEx Ey Ez Bx By Bz uxS0 uxS1 rhoS0 rhoS1\n#STOP\n1\n-1\n",
+  "initial": {
+    "kinetic": 5.000000129515328e-07,
+    "field": 0.0,
+    "electric_x": 0
+  },
+  "final": {
+    "kinetic": 4.993595549663868e-07,
+    "field": 6.278999854368504e-10,
+    "electric_x": 0.00012562184
+  },
+  "electric_x_spread": 0.0,
+  "relative_tolerance": 2e-07,
+  "absolute_tolerance": 1e-13,
+  "normalization_note": "rho=65.15939/cm3 gives normalized n=1.0000000259030656 rather than exactly1; production ASCII Ex has8 significant digits. Demo uses exactly n=1. Tolerance includes both rounding effects."
+}

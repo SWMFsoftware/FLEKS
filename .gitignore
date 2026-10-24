@@ -41,6 +41,7 @@ tools/*user.py
 compile_commands.json
 .cache/*
 .worktrees/
+src_gpu/ProductionOperators.h
 PC/
 PostProc.pl
 summary.md

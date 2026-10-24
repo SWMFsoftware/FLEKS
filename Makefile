@@ -1,6 +1,6 @@
 default: EXE
 
-.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER GPUTEST PIDL PDF rundir \
+.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER GPUTEST GPUTEST_REFERENCE PIDL PDF rundir \
 	clean distclean allclean compile_commands
 
 -include Makefile.conf
@@ -13,7 +13,8 @@ help:
 	@echo 'make FLEKS                  - same as make EXE'
 	@echo 'make LIB                    - compile libPC.a for SWMF'
 	@echo 'make CONVERTER              - compile format converter (converter.exe)'
-	@echo 'make GPUTEST                - compile AMReX GPU test (main_gpu.exe), needs C compiler nvcc'
+	@echo 'make GPUTEST                - compile src_gpu PIC demo (main_gpu.exe)'
+	@echo 'make GPUTEST_REFERENCE      - compile production field-operator comparison'
 	@echo 'make PIDL                   - compile PostIDL.exe for post-processing'
 	@echo 'make PDF                    - build doc/USERMANUAL.pdf from PARAM.XML'
 	@echo 'make clean                  - remove object files'
@@ -85,10 +86,15 @@ CONVERTER: bin
 	+$(call prepare_exe)
 	$(MAKE) -C Converter CONVERTER
 
-# Standalone AMReX GPU test (src/main_gpu.cpp). It runs on the GPU only when
+# Standalone AMReX GPU demo (src_gpu/). It runs on the GPU only when
 # configured with ./Config.pl -install -compiler=nvfortran,nvcc.
-GPUTEST: bin
-	$(MAKE) -C src GPUTEST
+GPUTEST: bin compile_commands
+	$(MAKE) -C src_gpu GPUTEST
+
+# Serialize the recursive builds when both goals are requested with -j:
+# the reference executable shares several demo objects.
+GPUTEST_REFERENCE: GPUTEST
+	$(MAKE) -C src_gpu GPUTEST_REFERENCE
 
 PIDL:
 	cd ${SHAREDIR}; $(MAKE) PIDL
@@ -113,6 +119,7 @@ rundir:
 
 clean:
 	$(MAKE) -C src clean
+	$(MAKE) -C src_gpu clean
 	$(MAKE) -C srcInterface clean
 	$(MAKE) -C Converter clean
 	rm -rf bin/*
@@ -122,6 +129,7 @@ distclean:
 
 allclean:
 	-@(cd src; $(MAKE) distclean)
+	-@$(MAKE) -C src_gpu distclean
 	-@(cd srcInterface; $(MAKE) distclean)
 	-@$(MAKE) -C Converter distclean
 	-@$(MAKE) -C doc/Tex cleanpdf

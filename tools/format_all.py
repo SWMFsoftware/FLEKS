@@ -108,7 +108,7 @@ def main():
     if targets:
         files = collect_files(targets)
     else:
-        repo_dirs = ["src", "include", "srcInterface"]
+        repo_dirs = ["src", "src_gpu", "include", "srcInterface"]
         files = collect_files(repo_dirs)
 
     for file_path in files:

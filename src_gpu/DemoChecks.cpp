@@ -1,135 +1,24 @@
-// Standalone test of AMReX FabArray/MultiFab operations on the GPU. It is the
-// first step towards running FLEKS on GPUs and does not use any FLEKS class.
-//
-// Build: ./Config.pl -install -compiler=nvfortran,nvcc; make GPUTEST
-// Run:   mpirun -np 2 bin/main_gpu.exe [n_cell=128] [max_grid_size=32]
-//                                      [n_iter=100]
-//
-// Every check compares the GPU result with an exact or host-computed value and
-// prints PASS/FAIL. The exit code is non-zero if any check fails.
-
-#include <cmath>
-#include <string>
-
-#include <AMReX.H>
-#include <AMReX_Geometry.H>
-#include <AMReX_Gpu.H>
-#include <AMReX_MultiFab.H>
-#include <AMReX_ParReduce.H>
-#include <AMReX_ParmParse.H>
 #include <AMReX_Print.H>
+
+#include "DemoChecks.h"
 
 using namespace amrex;
 
-// nvcc requires the member functions that define device lambdas to be public,
-// and the lambdas must not capture 'this'. Members used inside a kernel are
-// copied to local variables first.
-class FabArrayGpuTest {
-public:
-  // Read the parameters and create the grid and the MultiFabs
-  FabArrayGpuTest();
-
-  // Run all tests. Return the number of failed checks.
-  int run();
-
-  void test_fill();
-  void test_reductions();
-  void test_fill_boundary();
-  void test_arithmetic();
-  void test_laplacian();
-  void test_parallel_copy();
-  void test_device_to_host();
-  void time_kernels();
-
-  void apply_laplacian();
-
-  // Global max |mfIn - expected(i,j,k)| over the valid cells and nGhostIn
-  // ghost cells
-  template <typename F>
-  Real max_error(const MultiFab& mfIn, int nGhostIn, F const& expected) const {
-    auto const& arrs = mfIn.const_arrays();
-    Real err = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, mfIn,
-                         IntVect(nGhostIn),
-                         [=] AMREX_GPU_DEVICE(int iBox, int i, int j, int k)
-                             -> GpuTuple<Real> {
-                           return { std::abs(arrs[iBox](i, j, k) -
-                                             expected(i, j, k)) };
-                         });
-    ParallelDescriptor::ReduceRealMax(err);
-    return err;
-  }
-
-  // Periodic test function on the unit cube, evaluated at the cell center of
-  // (i,j,k). It is also valid for ghost cells outside the domain.
-  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE static Real
-  exact_value(int i, int j, int k, GpuArray<Real, 3> const& dx) noexcept {
-    const Real x = (i + 0.5) * dx[0];
-    const Real y = (j + 0.5) * dx[1];
-    const Real z = (k + 0.5) * dx[2];
-    return 1 + std::sin(twoPi * x) * std::cos(twoPi * y) +
-           0.5 * std::sin(twoPi * z);
-  }
-
-  // Exact 7-point discrete Laplacian of exact_value() for a uniform grid
-  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE static Real
-  exact_laplacian(int i, int j, int k, GpuArray<Real, 3> const& dx) noexcept {
-    const Real x = (i + 0.5) * dx[0];
-    const Real y = (j + 0.5) * dx[1];
-    const Real z = (k + 0.5) * dx[2];
-    const Real dx2 = dx[0] * dx[0];
-    const Real factor = (2 * std::cos(twoPi * dx[0]) - 2) / dx2;
-    return 2 * factor * std::sin(twoPi * x) * std::cos(twoPi * y) +
-           0.5 * factor * std::sin(twoPi * z);
-  }
-
-private:
-  void report(const std::string& name, Real err, Real tol);
-
-  void print_device_info() const;
-
-  static constexpr Real twoPi = 2 * 3.14159265358979323846;
-
-  static constexpr int nGhost = 1;
-
-  int nCell = 128;
-  int maxGridSize = 32;
-  int nIter = 100;
-
-  int nFail = 0;
-
-  // Periodic unit cube
-  Box domain;
-  Geometry geom;
-  BoxArray ba;
-  DistributionMapping dm;
-
-  // Test function with ghost cells, and its Laplacian
-  MultiFab mf;
-  MultiFab lap;
-};
-
 //==========================================================
-FabArrayGpuTest::FabArrayGpuTest() {
-  ParmParse pp;
-  pp.query("n_cell", nCell);
-  pp.query("max_grid_size", maxGridSize);
-  pp.query("n_iter", nIter);
-
-  domain = Box(IntVect(0), IntVect(nCell - 1));
-  const RealBox realBox({ 0., 0., 0. }, { 1., 1., 1. });
-  const Array<int, 3> isPeriodic{ 1, 1, 1 };
-  geom.define(domain, realBox, CoordSys::cartesian, isPeriodic);
-
-  ba.define(domain);
-  ba.maxSize(maxGridSize);
-  dm.define(ba);
-
+DemoChecks::DemoChecks(const DemoGrid& grid, const DemoConfig& config)
+    : nCell(config.nCell),
+      maxGridSize(config.maxGridSize),
+      nIter(config.nIter),
+      domain(grid.geom.Domain()),
+      geom(grid.geom),
+      ba(grid.ba),
+      dm(grid.dm) {
   mf.define(ba, dm, 1, nGhost);
   lap.define(ba, dm, 1, 0);
 }
 
 //==========================================================
-int FabArrayGpuTest::run() {
+int DemoChecks::run() {
   print_device_info();
   Print() << "Domain " << nCell << "^3, " << ba.size() << " boxes of "
           << maxGridSize << "^3\n\n";
@@ -148,11 +37,10 @@ int FabArrayGpuTest::run() {
 
 //==========================================================
 // Fill the valid cells on the device
-void FabArrayGpuTest::test_fill() {
+void DemoChecks::test_fill() {
   const auto dx = geom.CellSizeArray();
-  const auto exact = [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k) noexcept {
-    return exact_value(i, j, k, dx);
-  };
+  const auto exact = [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k)
+                         noexcept { return exact_value(i, j, k, dx); };
 
   auto const& arrs = mf.arrays();
   ParallelFor(mf, [=] AMREX_GPU_DEVICE(int iBox, int i, int j, int k) {
@@ -164,7 +52,7 @@ void FabArrayGpuTest::test_fill() {
 
 //==========================================================
 // Built-in reductions compared with a brute-force host reference
-void FabArrayGpuTest::test_reductions() {
+void DemoChecks::test_reductions() {
   const auto dx = geom.CellSizeArray();
 
   Real sumRef = 0, maxRef = 0, sum2Ref = 0, minRef = 1e30;
@@ -189,8 +77,8 @@ void FabArrayGpuTest::test_reductions() {
   ReduceOps<ReduceOpSum, ReduceOpMin> reduceOp;
   ReduceData<Real, Real> reduceData(reduceOp);
   reduceOp.eval(mf, IntVect(0), reduceData,
-                [=] AMREX_GPU_DEVICE(int iBox, int i, int j, int k)
-                    -> GpuTuple<Real, Real> {
+                [=] AMREX_GPU_DEVICE(int iBox, int i, int j,
+                                     int k) -> GpuTuple<Real, Real> {
                   const Real v = arrs[iBox](i, j, k);
                   return { v * v, v };
                 });
@@ -205,11 +93,10 @@ void FabArrayGpuTest::test_reductions() {
 
 //==========================================================
 // Periodic ghost cell exchange across boxes and MPI ranks
-void FabArrayGpuTest::test_fill_boundary() {
+void DemoChecks::test_fill_boundary() {
   const auto dx = geom.CellSizeArray();
-  const auto exact = [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k) noexcept {
-    return exact_value(i, j, k, dx);
-  };
+  const auto exact = [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k)
+                         noexcept { return exact_value(i, j, k, dx); };
 
   mf.setBndry(-999.);
   mf.FillBoundary(geom.periodicity());
@@ -218,7 +105,7 @@ void FabArrayGpuTest::test_fill_boundary() {
 
 //==========================================================
 // MultiFab arithmetic
-void FabArrayGpuTest::test_arithmetic() {
+void DemoChecks::test_arithmetic() {
   const auto dx = geom.CellSizeArray();
 
   MultiFab mf2(ba, dm, 1, 0);
@@ -226,9 +113,8 @@ void FabArrayGpuTest::test_arithmetic() {
   MultiFab::Saxpy(mf2, 2., mf, 0, 0, 1, 0); // mf2 = 2*mf + 3
   report("MultiFab::Saxpy",
          max_error(mf2, 0,
-                   [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k) noexcept {
-                     return 2 * exact_value(i, j, k, dx) + 3;
-                   }),
+                   [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k)
+                       noexcept { return 2 * exact_value(i, j, k, dx) + 3; }),
          1e-13);
 
   MultiFab mf3(ba, dm, 1, 0);
@@ -243,25 +129,23 @@ void FabArrayGpuTest::test_arithmetic() {
 
 //==========================================================
 // Stencil kernel that reads the ghost cells
-void FabArrayGpuTest::test_laplacian() {
+void DemoChecks::test_laplacian() {
   const auto dx = geom.CellSizeArray();
 
   apply_laplacian();
   report("7-point Laplacian",
          max_error(lap, 0,
-                   [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k) noexcept {
-                     return exact_laplacian(i, j, k, dx);
-                   }),
+                   [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k)
+                       noexcept { return exact_laplacian(i, j, k, dx); }),
          1e-7);
 }
 
 //==========================================================
 // Copy to a different BoxArray and DistributionMapping
-void FabArrayGpuTest::test_parallel_copy() {
+void DemoChecks::test_parallel_copy() {
   const auto dx = geom.CellSizeArray();
-  const auto exact = [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k) noexcept {
-    return exact_value(i, j, k, dx);
-  };
+  const auto exact = [=] AMREX_GPU_HOST_DEVICE(int i, int j, int k)
+                         noexcept { return exact_value(i, j, k, dx); };
 
   BoxArray baNew(domain);
   baNew.maxSize(maxGridSize / 2);
@@ -275,7 +159,7 @@ void FabArrayGpuTest::test_parallel_copy() {
 
 //==========================================================
 // Copy to host memory and check on the CPU, independent of any GPU reduction
-void FabArrayGpuTest::test_device_to_host() {
+void DemoChecks::test_device_to_host() {
   const auto dx = geom.CellSizeArray();
 
   Real err = 0;
@@ -294,7 +178,7 @@ void FabArrayGpuTest::test_device_to_host() {
 }
 
 //==========================================================
-void FabArrayGpuTest::time_kernels() {
+void DemoChecks::time_kernels() {
   const double nBytes = 2. * sizeof(Real) * nCell * nCell * nCell;
 
   Gpu::synchronize();
@@ -321,7 +205,7 @@ void FabArrayGpuTest::time_kernels() {
 
 //==========================================================
 // lap = 7-point Laplacian of mf. The ghost cells of mf must be filled.
-void FabArrayGpuTest::apply_laplacian() {
+void DemoChecks::apply_laplacian() {
   const auto dx = geom.CellSizeArray();
   const Real dx2 = dx[0] * dx[0];
 
@@ -329,15 +213,15 @@ void FabArrayGpuTest::apply_laplacian() {
   auto const& src = mf.const_arrays();
   ParallelFor(lap, [=] AMREX_GPU_DEVICE(int iBox, int i, int j, int k) {
     auto const& a = src[iBox];
-    dst[iBox](i, j, k) = (a(i - 1, j, k) + a(i + 1, j, k) + a(i, j - 1, k) +
-                          a(i, j + 1, k) + a(i, j, k - 1) + a(i, j, k + 1) -
-                          6 * a(i, j, k)) /
-                         dx2;
+    dst[iBox](i, j, k) =
+        (a(i - 1, j, k) + a(i + 1, j, k) + a(i, j - 1, k) + a(i, j + 1, k) +
+         a(i, j, k - 1) + a(i, j, k + 1) - 6 * a(i, j, k)) /
+        dx2;
   });
 }
 
 //==========================================================
-void FabArrayGpuTest::report(const std::string& name, Real err, Real tol) {
+void DemoChecks::report(const std::string& name, Real err, Real tol) {
   const bool isPass = err <= tol;
   if (!isPass)
     ++nFail;
@@ -346,9 +230,9 @@ void FabArrayGpuTest::report(const std::string& name, Real err, Real tol) {
 }
 
 //==========================================================
-void FabArrayGpuTest::print_device_info() const {
-  Print() << "AMReX " << Version() << ", MPI ranks = "
-          << ParallelDescriptor::NProcs() << "\n";
+void DemoChecks::print_device_info() const {
+  Print() << "AMReX " << Version()
+          << ", MPI ranks = " << ParallelDescriptor::NProcs() << "\n";
 #ifdef AMREX_USE_GPU
   AllPrint() << "  rank " << ParallelDescriptor::MyProc() << " -> GPU "
              << Gpu::Device::deviceId() << " (" << Gpu::Device::deviceName()
@@ -362,30 +246,3 @@ void FabArrayGpuTest::print_device_info() const {
 }
 
 //==========================================================
-// Stage MPI messages through host memory unless amrex.use_gpu_aware_mpi is
-// given. The shared-memory transport (OMPI_MCA_btl=self,vader) cannot read
-// device buffers and crashes when AMReX detects a CUDA-aware MPI.
-static void set_default_parameters() {
-  ParmParse pp("amrex");
-  if (!pp.contains("use_gpu_aware_mpi"))
-    pp.add("use_gpu_aware_mpi", 0);
-}
-
-//==========================================================
-int main(int argc, char* argv[]) {
-  amrex::Initialize(argc, argv, true, MPI_COMM_WORLD, set_default_parameters);
-
-  int nFail = 0;
-  {
-    // The MultiFabs must be destroyed before amrex::Finalize()
-    FabArrayGpuTest test;
-    nFail = test.run();
-  }
-
-  if (nFail == 0)
-    Print() << "\nALL AMREX GPU TESTS PASSED\n";
-  else
-    Print() << "\n" << nFail << " AMREX GPU TEST(S) FAILED\n";
-  amrex::Finalize();
-  return nFail == 0 ? 0 : 1;
-}

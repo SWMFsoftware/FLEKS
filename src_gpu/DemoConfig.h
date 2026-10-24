@@ -1,0 +1,41 @@
+#ifndef DEMO_CONFIG_H_
+#define DEMO_CONFIG_H_
+
+#include <string>
+
+#include <AMReX_REAL.H>
+
+struct DemoConfig {
+  int nCell = 16;
+  int maxGridSize = 8;
+  int nIter = 10;
+  int nStep = 20;
+  int particlesPerCell = 8;
+  int seed = 1;
+  int diagnosticInterval = 1;
+  int gmresRestart = 20;
+  int gmresMaxIter = 200;
+  int divEMaxIter = 20;
+  int nDivECorrection = 3;
+  int productionGhost = 3;
+  int sortInterval = 0;
+  amrex::Real dt = 0.01;
+  amrex::Real theta = 0.51;
+  amrex::Real massRatio = 25;
+  amrex::Real perturbation = 0.001;
+  amrex::Real b0 = 0;
+  amrex::Real solverTolerance = 1.e-9;
+  amrex::Real divETolerance = 0.01;
+  amrex::Real coefDiff = 0.1;
+  bool correctDivE = true;
+  bool fusedPush = false;
+  bool bufferedResponse = false;
+  bool clustered = false;
+  std::string mode = "fields";
+  std::string initialCondition = "uniform";
+  std::string referencePrefix;
+
+  DemoConfig();
+};
+
+#endif

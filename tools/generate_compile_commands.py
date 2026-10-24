@@ -85,10 +85,10 @@ def generate():
 
     base_cmd = " ".join([compiler] + includes + flags)
 
-    # src/ holds the FLEKS library, Converter/ the standalone format converter.
-    # Both sit one level below the root, so -I../include is correct for either.
+    # All three source directories sit one level below the root.
     entries = []
-    for src_dir in (os.path.join(root, "src"), os.path.join(root, "Converter")):
+    for directory in ("src", "Converter", "src_gpu"):
+        src_dir = os.path.join(root, directory)
         entries += [{
             "directory": src_dir,
             "command": f"{base_cmd} -c {os.path.basename(f)} -o {os.path.splitext(os.path.basename(f))[0]}.o",
