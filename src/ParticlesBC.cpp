@@ -92,7 +92,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   // finest level.
   int iLev = 0;
 
-  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+  for (MFIter mfi = MakeMFIter(iLev, stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Array4<const int> status = cell_status(iLev)[mfi].const_array();
     const Box bx = mfi.validbox();
     const IntVect bxLo = bx.smallEnd();
@@ -281,7 +282,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real* probHi = geom.ProbHi();
   const Real* cellSize = geom.CellSize();
 
-  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+  for (MFIter mfi = MakeMFIter(iLev, stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
 

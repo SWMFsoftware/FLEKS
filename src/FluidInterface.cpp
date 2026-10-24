@@ -665,7 +665,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     if (fluid.empty())
       continue;
 
-    for (MFIter mfi(fluid); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(fluid, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       // For each block, looping through all nodes, including ghost nodes.
       const Box& box = mfi.fabbox();
       const Box& validBox = mfi.validbox();
@@ -893,7 +893,8 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
     ReduceOps<ReduceOpSum> reduceOp;
     ReduceData<int> reduceData(reduceOp);
 
-    for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeFluid[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       Box box = mfi.fabbox();
       if (phyNodeOnly)
         box = mfi.validbox();
@@ -949,7 +950,8 @@ void FluidInterface::report_zero_density(int iLev, bool phyNodeOnly) const {
   // the host before an abort, so it reads a host copy of the fluid.
   const Real* dx = Geom(iLev).CellSize();
   const auto plo = Geom(iLev).ProbLo();
-  for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeFluid[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     Box box = phyNodeOnly ? mfi.validbox() : mfi.fabbox();
     FArrayBox fab(nodeFluid[iLev][mfi].box(), nodeFluid[iLev].nComp(),
                   The_Pinned_Arena());
@@ -1684,7 +1686,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     bool found = false;
     const int iStart = iPoint * nVar;
 
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bx = convert(mfi.validbox(), { AMREX_D_DECL(0, 0, 0) });
       if (bx.contains(cellIdx)) {
         const auto& arr = mf.array(mfi);

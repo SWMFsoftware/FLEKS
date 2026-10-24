@@ -289,7 +289,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       continue;
 
     // Set default status for all cells.
-    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.fabbox();
       const auto cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -298,7 +299,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
     // Set 'boundary', 'new' status.
-    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int> cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -327,7 +329,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       auto iRefine = makeFineMask(grids[iLev], dmap[iLev], grids[iLev + 1],
                                   ref_ratio[iLev], iNotRefined, iRefined);
 
-      for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<int> cellArr = cellStatus[iLev][mfi].array();
         const auto iRef = iRefine[mfi].array();
@@ -346,7 +349,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     const DomainView domain = domain_view();
 
     // Find domain boundary cells
-    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int> cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -364,7 +368,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     // The body is approximated by the union of the cells whose centers are
     // inside the sphere, i.e., a staircase boundary with an error of dx/2.
     if (useBody) {
-      for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.fabbox();
         const Array4<int> cellArr = cellStatus[iLev][mfi].array();
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -381,7 +386,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       // Split the body into a one-cell-thick surface layer, where the field
       // boundary condition acts, and the interior, where the fields are frozen
       // (E = 0 and B at its initial value).
-      for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<int> cellArr = cellStatus[iLev][mfi].array();
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -410,7 +416,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     }
 
     // Set edge cells and find cells with 'is_refined' neighbors
-    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int> cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -443,7 +450,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       // For the fake 2D cases, in the z-direction, only the first layer
       // ghost cells are filled in correctly by the method FillBoundary.
       if (!cellStatus[iLev].empty())
-        for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+        for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+             ++mfi) {
           const Box& box = mfi.fabbox();
           const Array4<int> cellArr = cellStatus[iLev][mfi].array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -465,7 +473,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       continue;
 
     // Set default status for all nodes.
-    for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.fabbox();
       const auto nodeArr = nodeStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -482,7 +491,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     }
 
     // Set 'boundary', 'new' status.
-    for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.validbox();
       const auto nodeArr = nodeStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -512,7 +522,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     const DomainView domain = domain_view();
 
     // Find domain boundary cells
-    for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int> nodeArr = nodeStatus[iLev][mfi].array();
 
@@ -530,7 +541,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     // Mark the nodes inside the absorbing inner body (see #BODY). The
     // electric field is pinned to zero on these nodes.
     if (useBody) {
-      for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(nodeStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.fabbox();
         const Array4<int> nodeArr = nodeStatus[iLev][mfi].array();
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -546,7 +558,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
 
       // A body node belongs to the frozen interior when all the cells around
       // it belong to the body interior, so that it only sees frozen cells.
-      for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(nodeStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<int> nodeArr = nodeStatus[iLev][mfi].array();
         const Array4<int const> cellArr = cellStatus[iLev][mfi].const_array();
@@ -577,7 +590,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
     }
 
-    for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeStatus[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int> nodeArr = nodeStatus[iLev][mfi].array();
       const auto lo = lbound(box);

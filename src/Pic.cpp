@@ -489,7 +489,7 @@ void Pic::fill_new_node_E(bool fillAll) {
     const bool isTopHat = ic_ && ic_->is_tophat();
     const auto plo = Geom(iLev).ProbLoArray();
     const auto dx = Geom(iLev).CellSizeArray();
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeE[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Array4<Real> arrE = nodeE[iLev][mfi].array();
       const Array4<const int> status = node_status(iLev)[mfi].const_array();
       const FluidView fv = fi->fluid_view(mfi, iLev);
@@ -543,7 +543,7 @@ void Pic::fill_new_node_B(bool fillAll) {
     const bool isTopHat = ic_ && ic_->is_tophat();
     const auto plo = Geom(iLev).ProbLoArray();
     const auto dx = Geom(iLev).CellSizeArray();
-    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeB[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Array4<Real> arrB = nodeB[iLev][mfi].array();
       const Array4<const int> status = node_status(iLev)[mfi].const_array();
       const FluidView fv = fi->fluid_view(mfi, iLev);
@@ -580,7 +580,8 @@ void Pic::fill_new_node_B(bool fillAll) {
 void Pic::fill_new_center_B(bool fillAll) {
   {
     int iLev = 0;
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(centerB[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real> centerArr = centerB[iLev][mfi].array();
       const Array4<Real const> nodeArr = nodeB[iLev][mfi].const_array();
@@ -721,7 +722,8 @@ void Pic::fill_intrinsic_B() {
     if (onlyDipole) {
       // Dipole evaluation is scratch-free and device-callable: run in
       // ParallelFor.
-      for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(nodeB0[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.fabbox();
         const Array4<Real>& arr = nodeB0[iLev][mfi].array();
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -741,7 +743,8 @@ void Pic::fill_intrinsic_B() {
         });
       }
 
-      for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(centerB0[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.fabbox();
         const Array4<Real>& arr = centerB0[iLev][mfi].array();
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -1139,7 +1142,7 @@ void Pic::sum_boundary_node_mm(int iLev) {
                                rt.box, dst_arr);
       }
       // The kernels read `received`, which is freed at the end of the loop.
-      amrex::Gpu::streamSynchronize();
+      sync_before_free();
     }
   }
 
@@ -1520,7 +1523,7 @@ void Pic::calc_mach_number() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
     const auto& momentsMF = nodePlasma[nSpecies][iLev];
-    for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(momentsMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<const Real> moments = momentsMF[mfi].const_array();
       const Array4<Real> mach = mMach[iLev][mfi].array();
@@ -1563,7 +1566,8 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
           grid.cell_cost()[iLev].nComp(), grid.cell_cost()[iLev].nGrow());
     }
 
-    for (MFIter mfi(grid.cell_cost()[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(grid.cell_cost()[iLev], stream_ordered_mfi());
+         mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       const Array4<Real> cost = grid.cell_cost()[iLev][mfi].array();
@@ -1917,7 +1921,7 @@ void Pic::update_U0_E0() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     uBg[iLev].setVal(0.0);
     eBg[iLev].setVal(0.0);
-    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(uBg[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Array4<Real> arrU = uBg[iLev][mfi].array();
       const Array4<const Real> arrMoments =
           nodePlasma[nSpecies][iLev][mfi].const_array();
@@ -1934,7 +1938,7 @@ void Pic::update_U0_E0() {
     }
 
     // Fill in ghost nodes from the fluid state.
-    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(uBg[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Array4<Real> arrU = uBg[iLev][mfi].array();
       const Array4<const int> status = node_status(iLev)[mfi].const_array();
       const FluidView fv = fi->fluid_view(mfi, iLev);
@@ -1954,7 +1958,7 @@ void Pic::update_U0_E0() {
     for (int i = 0; i < nSmoothBackGroundU; ++i)
       smooth_multifab(uBg[iLev], iLev, i % 2 + 1);
 
-    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(uBg[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
       const Array4<Real> arrE = eBg[iLev][mfi].array();
       const Array4<Real const> arrB = nodeB[iLev][mfi].const_array();
@@ -1976,7 +1980,7 @@ void Pic::update_U0_E0() {
     }
 
     // Fill in boundary nodes from the fluid state.
-    for (MFIter mfi(eBg[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(eBg[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Array4<Real> arrE = eBg[iLev][mfi].array();
       const Array4<const int> status = node_status(iLev)[mfi].const_array();
       const FluidView fv = fi->fluid_view(mfi, iLev);

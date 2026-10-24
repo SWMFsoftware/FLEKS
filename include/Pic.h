@@ -1265,7 +1265,8 @@ public:
                              get_n_ghost());
       errorDivE[iLev].setVal(0.0);
 
-      for (amrex::MFIter mfi(errorDivE[iLev]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(errorDivE[iLev], stream_ordered_mfi());
+           mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
         const amrex::Array4<amrex::Real> error = errorDivE[iLev][mfi].array();
         const amrex::Array4<amrex::Real const> divEcc =
@@ -1295,7 +1296,8 @@ public:
     const int ppcDefault = product(pInfo.nPartPerCell);
     const bool doPreSplitting = pInfo.doPreSplitting;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(targetPPC[iLev], stream_ordered_mfi());
+           mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.fabbox();
         const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
         amrex::ParallelFor(box,
@@ -1319,7 +1321,8 @@ public:
       }
       const int ppcPreSplit = ppcDefault * pow(refRatioMax, nDim);
 
-      for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(targetPPC[iLev], stream_ordered_mfi());
+           mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
         const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
         const amrex::Array4<int const> status =

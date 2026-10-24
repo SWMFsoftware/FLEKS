@@ -28,7 +28,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
   const int iqp = iqp_;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     HostFabCache hostFabs;
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       const Array4<int const> tppcDev = useTargetPPC
                                             ? target_PPC(iLev).const_array(pti)
                                             : Array4<int const>();
@@ -433,7 +433,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
     const Real refFactorLev = pow(get_ref_ratio(iLev).max(), nDim);
     const Real levFactor = pow(pLevRatio, iLev);
     HostFabCache hostFabs;
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       const Array4<int const> statusDev = cell_status(iLev).const_array(pti);
       const Array4<int const> status =
           checkRefined ? hostFabs.array(cell_status(iLev), pti) : statusDev;
@@ -980,7 +980,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
     const int nPartGoalLev =
         product(nPartPerCell) * limit * pow(pLevRatio, iLev);
     HostFabCache hostFabs;
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       const Array4<int const> tppcDev = useTargetPPC
                                             ? target_PPC(iLev).const_array(pti)
                                             : Array4<int const>();

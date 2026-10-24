@@ -52,7 +52,7 @@ void mask_body_vars(amrex::MultiFab& dst, const amrex::iMultiFab& fstatus,
     if (!is_body_moment_var(varNames[iVar]))
       continue;
 
-    for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    for (amrex::MFIter mfi(dst, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const auto& box = mfi.fabbox();
       auto data = dst[mfi].array();
       const auto statusArr = fstatus[mfi].array();
@@ -97,7 +97,8 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   const Real invDx_y = invDx[iy_];
   const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
-  for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerMF, stream_ordered_mfi(doTiling)); mfi.isValid();
+       ++mfi) {
     Box box = mfi.validbox();
     box.grow(std::min(1, centerMF.nGrow()));
 
@@ -136,7 +137,7 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
   const Real invDx_y = invDx[iy_];
   const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
-  for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeMF, stream_ordered_mfi(doTiling)); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Array4<Real>& node = nodeMF[mfi].array();
@@ -184,7 +185,7 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
   const Real invDx_y = invDx[iy_];
   const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
-  for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeMF, stream_ordered_mfi(doTiling)); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Array4<Real const>& center = centerMF[mfi].array();
@@ -225,7 +226,8 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   const Real invDx_y = invDx[iy_];
   const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
-  for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerMF, stream_ordered_mfi(doTiling)); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.fabbox();
 
     const Array4<Real const>& node = nodeMF[mfi].array();
@@ -267,7 +269,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
   const Real invDx_y = invDx[iy_];
   const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
-  for (MFIter mfi(dstMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(dstMF, stream_ordered_mfi(doTiling)); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
     box.grow(std::min(1, dstMF.nGrow()));
 
@@ -321,7 +323,7 @@ void print_MultiFab(const MultiFab& data, const std::string& tag, Geometry& gm,
 
   const Box& gbx = convert(gm.Domain(), data.boxArray().ixType());
 
-  for (MFIter mfi(data); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(data, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const FArrayBox& fab = data[mfi];
     const Box& box = mfi.validbox();
     const Array4<const Real>& data = fab.array();
@@ -394,7 +396,7 @@ void print_MultiFab(const MultiFab& data, const std::string& tag,
   Real sum = 0;
   Real sum2 = 0;
 
-  for (MFIter mfi(data); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(data, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const FArrayBox& fab = data[mfi];
     const Box& box = mfi.validbox();
     const Array4<const Real>& data = fab.array();
@@ -425,7 +427,7 @@ void print_MultiFab(const iMultiFab& data, const std::string& tag, int nshift) {
   Real sum = 0;
   Real sum2 = 0;
 
-  for (MFIter mfi(data); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(data, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const IArrayBox& fab = data[mfi];
     const Box& box = mfi.validbox();
     const Array4<const int>& dataArr = fab.array();
@@ -458,7 +460,7 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
   const Real invDx_y = invDx[iy_];
   const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
-  for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeMF, stream_ordered_mfi(doTiling)); mfi.isValid(); ++mfi) {
     const int ng = std::min(nodeMF.nGrow(), std::max(0, centerMF.nGrow() - 1));
     Box box = mfi.validbox();
     box.grow(ng);
@@ -529,7 +531,8 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   const Real invDx_y = invDx[iy_];
   const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
-  for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerMF, stream_ordered_mfi(doTiling)); mfi.isValid();
+       ++mfi) {
     const int ng = std::min(centerMF.nGrow(), std::max(0, nodeMF.nGrow() - 1));
     Box box = mfi.validbox();
     box.grow(ng);
@@ -594,7 +597,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 }
 
 void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
-  for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeMF, stream_ordered_mfi(doTiling)); mfi.isValid(); ++mfi) {
     const int ng = std::min(nodeMF.nGrow(), std::max(0, centerMF.nGrow() - 1));
     Box box = mfi.validbox();
     box.grow(ng);
@@ -623,7 +626,8 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
   // z extent is a dummy (k is constant), so the average reduces to the 4 corner
   // nodes. The factor is 1/(2^nDim).
   const Real inv2d = (nDim > 2) ? 0.125 : 0.25;
-  for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerMF, stream_ordered_mfi(doTiling)); mfi.isValid();
+       ++mfi) {
     Box box = mfi.validbox();
 
     const Array4<Real>& centerArr = centerMF[mfi].array();
@@ -656,7 +660,8 @@ void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
   const Real iy2 = invDx[iy_] * invDx[iy_];
   const Real iz2 = (nDim > 2) ? invDx[iz_] * invDx[iz_] : 0.0;
 
-  for (MFIter mfi(centerMFout, doTiling); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerMFout, stream_ordered_mfi(doTiling)); mfi.isValid();
+       ++mfi) {
     const int ng =
         std::min(centerMFout.nGrow(), std::max(0, centerMF.nGrow() - 1));
     Box box = mfi.validbox();

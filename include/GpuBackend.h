@@ -43,8 +43,66 @@ constexpr bool fleksUseGpu = false;
 // read by later kernels: everything runs on the default stream, so the loop
 // does not synchronize the device when it ends (AMReX otherwise spreads the
 // boxes over several streams and waits for all of them).
-inline amrex::MFItInfo stream_ordered_mfi() {
-  return amrex::MFItInfo().UseDefaultStream().DisableDeviceSync();
+//
+// FLEKS loops use it by default: all FLEKS host copies are synchronous (they
+// wait for the stream), so no host code depends on the end-of-loop sync, and
+// a later AMReX loop over several streams synchronizes the default stream
+// before it starts. Small boxes make FLEKS launch-bound, and this sync, one
+// per loop, was a large part of the run time.
+inline amrex::MFItInfo stream_ordered_mfi(bool doTiling = false) {
+  amrex::MFItInfo info;
+  if (doTiling)
+    info.EnableTiling();
+  return info.UseDefaultStream().DisableDeviceSync();
+}
+
+// The same for a particle iterator (PIter), which takes the options by
+// reference. A particle container with tiles keeps its tiling.
+inline amrex::MFItInfo& stream_ordered_pti() {
+  static thread_local amrex::MFItInfo info;
+  info = stream_ordered_mfi();
+  return info;
+}
+
+// A scope in which all GPU work, AMReX's own loops included, runs on one
+// stream, in launch order. Freed device temporaries then need no wait (see
+// sync_before_free()), and DeferredSums can queue its sums. The scope ends
+// with one stream synchronization, so the caller sees finished results.
+//
+// This does not use amrex::Gpu::NoSyncRegion: AMReX frees the pinned staging
+// buffer of a FabArray's arrays() table without waiting for the copy that
+// reads it, so with NoSyncRegion a temporary MultiFab can hand its table to
+// another one before the copy runs (an illegal-address error in AMR runs).
+//
+// Use it around a whole FLEKS step (Domain::update). Nested scopes are
+// allowed; only the outermost one synchronizes.
+class StreamOrderedRegion {
+#ifdef AMREX_USE_GPU
+public:
+  StreamOrderedRegion() : outermost(!amrex::Gpu::inSingleStreamRegion()) {}
+  ~StreamOrderedRegion() {
+    if (outermost)
+      amrex::Gpu::streamSynchronize();
+  }
+  StreamOrderedRegion(const StreamOrderedRegion&) = delete;
+  StreamOrderedRegion& operator=(const StreamOrderedRegion&) = delete;
+
+private:
+  bool outermost;
+  amrex::Gpu::SingleStreamRegion singleStream;
+#endif
+};
+
+// Call before device temporaries go out of scope while kernels launched on
+// them may still run. The arena hands a freed block out again at once. With
+// one stream (inside a StreamOrderedRegion) the next kernel that uses the
+// block runs after the ones that read it, so there is nothing to wait for.
+// With several streams (MFIter spreads boxes over them), wait.
+inline void sync_before_free() {
+#ifdef AMREX_USE_GPU
+  if (amrex::Gpu::numGpuStreams() > 1)
+    amrex::Gpu::streamSynchronize();
+#endif
 }
 
 // Particle tile layout. The CPU keeps one particle tile per cell: the
@@ -265,7 +323,8 @@ public:
       }
       off[b] = lo;
     });
-    amrex::Gpu::streamSynchronize();
+    // The sort scratch is freed on return.
+    sync_before_free();
 #else
     // Stable counting sort in storage order: a CPU run keeps its order.
     amrex::ignore_unused(order, v);
@@ -416,7 +475,7 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
       add(i, j, k, n, sum[n]);
   });
   // The kernels read the bins and the scratch, which are freed on return.
-  amrex::Gpu::streamSynchronize();
+  sync_before_free();
 #else
   // Every term goes straight to its node (NodeAdder), in particle order: no
   // per-particle buffer to clear and copy.
@@ -541,6 +600,77 @@ template <class F> amrex::Real deterministic_sum(int n, F&& f) {
 #endif
 }
 
+// Several deterministic_sum() results returned to the host together: add()
+// starts the sum of f(i), i = 0..n-1, and values() returns the sums in the
+// order of the add() calls (and forgets them). The sums are the same as
+// those of deterministic_sum(), but a GPU build waits for the device once in
+// values() instead of once per sum, e.g. one partial sum per box or tile.
+//
+// The sums share the CUB scratch, so they run on one stream: outside a
+// StreamOrderedRegion (several streams) add() waits for each sum, as
+// deterministic_sum() does.
+class DeferredSums {
+public:
+  DeferredSums() = default;
+  DeferredSums(const DeferredSums&) = delete;
+  DeferredSums& operator=(const DeferredSums&) = delete;
+  ~DeferredSums() {
+#ifdef AMREX_USE_CUDA
+    if (buf) {
+      if (nPending > 0)
+        amrex::Gpu::streamSynchronize();
+      amrex::The_Pinned_Arena()->free(buf);
+    }
+#endif
+  }
+
+  template <class F> void add(int n, F&& f) {
+#ifdef AMREX_USE_CUDA
+    if (amrex::Gpu::numGpuStreams() > 1) {
+      done.push_back(deterministic_sum(n, std::forward<F>(f)));
+      return;
+    }
+    if (!buf)
+      buf = static_cast<amrex::Real*>(
+          amrex::The_Pinned_Arena()->alloc(sizeof(amrex::Real) * capacity));
+    if (nPending == capacity)
+      flush();
+    // The result goes straight to pinned host memory.
+    deterministic_sum_to(n, std::forward<F>(f), buf + nPending++);
+#else
+    amrex::Real sum = 0;
+    for (int i = 0; i < n; ++i)
+      sum += f(i);
+    done.push_back(sum);
+#endif
+  }
+
+  std::vector<amrex::Real> values() {
+#ifdef AMREX_USE_CUDA
+    flush();
+#endif
+    std::vector<amrex::Real> v;
+    v.swap(done);
+    return v;
+  }
+
+private:
+#ifdef AMREX_USE_CUDA
+  void flush() {
+    if (nPending == 0)
+      return;
+    amrex::Gpu::streamSynchronize();
+    done.insert(done.end(), buf, buf + nPending);
+    nPending = 0;
+  }
+
+  static constexpr int capacity = 256;
+  amrex::Real* buf = nullptr;
+  int nPending = 0;
+#endif
+  std::vector<amrex::Real> done;
+};
+
 // Sum of the values f(i), i = 0..n-1, returned by the threads of one or more
 // kernel launches (add() can be called many times before value()).
 //
@@ -555,18 +685,27 @@ public:
   template <class F> void add(int n, F&& f) {
 #ifdef AMREX_USE_GPU
     // One deterministic partial sum per launch, added in launch order.
-    sum += deterministic_sum(
-        n, [=] AMREX_GPU_DEVICE(int i) { return amrex::get<0>(f(i)); });
+    partials.add(n,
+                 [=] AMREX_GPU_DEVICE(int i) { return amrex::get<0>(f(i)); });
 #else
     for (int i = 0; i < n; ++i)
       sum += amrex::get<0>(f(i));
 #endif
   }
 
-  amrex::Real value() { return sum; }
+  amrex::Real value() {
+#ifdef AMREX_USE_GPU
+    for (const amrex::Real v : partials.values())
+      sum += v;
+#endif
+    return sum;
+  }
 
 private:
   amrex::Real sum = 0;
+#ifdef AMREX_USE_GPU
+  DeferredSums partials;
+#endif
 };
 
 // Host access to FAB data for output code that reads it point by point. A

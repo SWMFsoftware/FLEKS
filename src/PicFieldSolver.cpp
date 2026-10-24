@@ -204,7 +204,7 @@ void Pic::solve_E_newton_krylov(int iLev) {
   eSolver.solve(jacobianFreeMatvec, iLev, doReport);
   BL_PROFILE_VAR_STOP(eSolver);
   // base, baseMatvec and work are freed on return.
-  Gpu::streamSynchronize();
+  sync_before_free();
 }
 
 //==========================================================
@@ -253,7 +253,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // For Dirichlet physical boundaries (inflow, fixed), the correction in the
     // Krylov subspace must be identically zero on the boundary nodes.
     const BoundaryBounds bnd(Geom(iLev), vecMF.boxArray().ixType(), &bcField);
-    for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(vecMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrVec = vecMF[mfi].array();
       ParallelFor(bx, vecMF.nComp(),
@@ -304,7 +304,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
     const Real theta = limiterThetaE;
     const Real cMax = cMaxE;
-    for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(vecMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real const> arrE = vecMF[mfi].const_array();
       const Array4<Real const> arrE0 = nodeE[iLev][mfi].const_array();
@@ -420,7 +420,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   {
     const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
                              &bcField);
-    for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(matvecMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrOut = matvecMF[mfi].array();
       const Array4<Real const>& arrIn = vecMF[mfi].array();
@@ -589,7 +589,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   {
     const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
                              &bcField);
-    for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(temp2Node, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrRHS = temp2Node[mfi].array();
       const Array4<Real const>& arrE = nodeE[iLev][mfi].array();
@@ -644,7 +644,8 @@ const Pic::LinearSystemLayout& Pic::linear_system_layout(const MultiFab& MF,
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
 
-  for (MFIter mfi(layout.localIdx); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(layout.localIdx, stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<int> idx = layout.localIdx[mfi].array();
     const Array4<int const> nodeArr =
@@ -899,7 +900,7 @@ void Pic::solve_hyp_phi(int iLev) {
   Real ch = 0.8 * Geom(iLev).CellSize()[ix_] / tc->get_dt();
 
   Real coef = -tc->get_dt() * (ch * ch);
-  for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerB[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
 
     const Array4<Real const> divBArr = divB[iLev][mfi].const_array();
@@ -952,7 +953,8 @@ void Pic::correct_B(int iLev) {
       coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
     }
 
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(centerB[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       Box box = mfi.validbox();
 
       const Array4<Real const> cB = centerB[iLev][mfi].const_array();
@@ -1116,7 +1118,8 @@ void Pic::correct_B(int iLev) {
     average_node_to_cellcenter(gradPhi, 0, gradPhiNode, 0, nDim3,
                                gradPhi.nGrow());
 
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(centerB[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       Box box = mfi.validbox();
 
       const Array4<Real> dB = cDB[mfi].array();
@@ -1168,7 +1171,7 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
     const int domLo = bnd.loBnd[iDir];
     const int domHi = bnd.hiBnd[iDir];
 
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       Array4<Real> const& arrE = mf[mfi].array();
@@ -1230,7 +1233,7 @@ void Pic::project_down_E() {
       }
       amrex::MultiFab& tmp = projectScratchMF[iLev];
       tmp.setVal(0.0);
-      for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(tmp, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real const> arrE = nodeE[iLev][mfi].const_array();
         const Array4<Real> arrTmp = tmp[mfi].array();
@@ -1275,9 +1278,12 @@ void Pic::project_down_E() {
 
 //==========================================================
 Real Pic::calc_E_field_energy() {
-  Real sum = 0;
+  // One partial sum per box, added in box order.
+  DeferredSums partials;
+  std::vector<int> levOf;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(centerB[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Array4<int const> status = cell_status(iLev)[mfi].const_array();
       Box box = mfi.validbox();
       const Array4<Real const> arr = nodeE[iLev][mfi].const_array();
@@ -1288,27 +1294,29 @@ Real Pic::calc_E_field_energy() {
       const Dim3 lo = lbound(box);
       const Dim3 len = length(box);
       const int nNode = nDim > 2 ? 8 : 4;
-      const Real sumLoc = deterministic_sum(
-          static_cast<int>(box.numPts()) * nNode,
-          [=] AMREX_GPU_DEVICE(int l) -> Real {
-            const int c = l / nNode, m = l - c * nNode;
-            const int k = lo.z + c / (len.x * len.y);
-            const int j = lo.y + (c / len.x) % len.y;
-            const int i = lo.x + c % len.x;
-            if (bit::is_refined(status(i, j, k)))
-              return 0.0;
-            const int ii = i + (m & 1);
-            const int jj = j + ((m >> 1) & 1);
-            const int kk = k + (m >> 2);
-            return arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
-                   arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
-                   arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
-          });
-
-      Real avg = (nDim == 3) ? 0.125 : 0.25;
-
-      sum += sumLoc * 0.5 * avg * get_cell_volume(iLev) / fourPI;
+      levOf.push_back(iLev);
+      partials.add(static_cast<int>(box.numPts()) * nNode,
+                   [=] AMREX_GPU_DEVICE(int l) -> Real {
+                     const int c = l / nNode, m = l - c * nNode;
+                     const int k = lo.z + c / (len.x * len.y);
+                     const int j = lo.y + (c / len.x) % len.y;
+                     const int i = lo.x + c % len.x;
+                     if (bit::is_refined(status(i, j, k)))
+                       return 0.0;
+                     const int ii = i + (m & 1);
+                     const int jj = j + ((m >> 1) & 1);
+                     const int kk = k + (m >> 2);
+                     return arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
+                            arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
+                            arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
+                   });
     }
+  }
+  Real sum = 0;
+  const std::vector<Real> partial = partials.values();
+  for (std::size_t i = 0; i < partial.size(); ++i) {
+    Real avg = (nDim == 3) ? 0.125 : 0.25;
+    sum += partial[i] * 0.5 * avg * get_cell_volume(levOf[i]) / fourPI;
   }
   ParallelDescriptor::ReduceRealSum(sum,
                                     ParallelDescriptor::IOProcessorNumber());
@@ -1321,7 +1329,9 @@ Real Pic::calc_E_field_energy() {
 
 //==========================================================
 Real Pic::calc_B_field_energy() {
-  Real sum = 0;
+  // One partial sum per box, added in box order.
+  DeferredSums partials;
+  std::vector<int> levOf;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     // The magnetic energy is that of the *total* field, so the frozen
@@ -1331,7 +1341,7 @@ Real Pic::calc_B_field_energy() {
         hasB0 ? &total_center_B(centerB[iLev], iLev) : nullptr;
     MultiFab& mfB = hasB0 ? *centerBt : centerB[iLev];
 
-    for (MFIter mfi(mfB); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mfB, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
       const Box& box = mfi.validbox();
@@ -1340,21 +1350,24 @@ Real Pic::calc_B_field_energy() {
       // Cells in the x-fastest order of a loop over the box.
       const Dim3 lo = lbound(box);
       const Dim3 len = length(box);
-      const Real sumLoc = deterministic_sum(
-          static_cast<int>(box.numPts()), [=] AMREX_GPU_DEVICE(int c) -> Real {
-            const int k = lo.z + c / (len.x * len.y);
-            const int j = lo.y + (c / len.x) % len.y;
-            const int i = lo.x + c % len.x;
-            if (bit::is_refined(status(i, j, k)))
-              return 0.0;
-            return arr(i, j, k, ix_) * arr(i, j, k, ix_) +
-                   arr(i, j, k, iy_) * arr(i, j, k, iy_) +
-                   arr(i, j, k, iz_) * arr(i, j, k, iz_);
-          });
-
-      sum += sumLoc * get_cell_volume(iLev) * 0.5 / fourPI;
+      levOf.push_back(iLev);
+      partials.add(static_cast<int>(box.numPts()),
+                   [=] AMREX_GPU_DEVICE(int c) -> Real {
+                     const int k = lo.z + c / (len.x * len.y);
+                     const int j = lo.y + (c / len.x) % len.y;
+                     const int i = lo.x + c % len.x;
+                     if (bit::is_refined(status(i, j, k)))
+                       return 0.0;
+                     return arr(i, j, k, ix_) * arr(i, j, k, ix_) +
+                            arr(i, j, k, iy_) * arr(i, j, k, iy_) +
+                            arr(i, j, k, iz_) * arr(i, j, k, iz_);
+                   });
     }
   }
+  Real sum = 0;
+  const std::vector<Real> partial = partials.values();
+  for (std::size_t i = 0; i < partial.size(); ++i)
+    sum += partial[i] * get_cell_volume(levOf[i]) * 0.5 / fourPI;
   ParallelDescriptor::ReduceRealSum(sum,
                                     ParallelDescriptor::IOProcessorNumber());
 

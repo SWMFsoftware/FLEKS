@@ -167,7 +167,7 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
       data[g] += sum[g];
   });
   // The kernels read the bins and the scratch, which are freed on return.
-  Gpu::streamSynchronize();
+  sync_before_free();
 }
 
 } // namespace
@@ -187,7 +187,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
   for (int d = 0; d < nDim; ++d)
     dxLoc[d] = dx[iLev][d];
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     Array4<Real> const chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const mmArr = centerMM[pti].array();
     const ParticleType* const pData = pti.GetArrayOfStructs()().data();
@@ -304,7 +304,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
     }
 
     if (iLev == nLev) {
-      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
+      for (PIter pti(*this, nLev, stream_ordered_pti()); pti.isValid(); ++pti) {
         Array4<Real> const chargeArr = netChargeMF[pti].array();
 
         Array4<RealCMM> const mmArr = centerMM[pti].array();
@@ -397,7 +397,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
     // (finer level) or jc (coarser level).
     if (nLev != iLev) {
       MultiFab& depositMF = (nLev > iLev) ? jf : jc;
-      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
+      for (PIter pti(*this, nLev, stream_ordered_pti()); pti.isValid(); ++pti) {
         Array4<Real> const chargeArr = depositMF[pti].array();
         const Array4<int const> status = cell_status(nLev)[pti].const_array();
         const ParticleType* const pData = pti.GetArrayOfStructs()().data();
@@ -478,34 +478,38 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
   // Charge, momentum and energy, one partial sum per tile added in tile
   // order (the order of amrex::ParticleReduce in a CPU build), every partial
   // a deterministic_sum.
-  Real r[5] = { 0, 0, 0, 0, 0 };
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  DeferredSums partials;
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     const ParticleType* const pData = pti.GetArrayOfStructs()().data();
     for (int c = 0; c < 5; ++c) {
-      r[c] += deterministic_sum(
-          pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) -> Real {
-            const ParticleType& p = pData[ip];
-            if (p.id() < 0)
-              return 0.0;
-            const Real up = p.rdata(iup);
-            const Real vp = p.rdata(ivp);
-            const Real wp = p.rdata(iwp);
-            const Real qp = p.rdata(iqp);
-            switch (c) {
-              case 0:
-                return qp;
-              case 1:
-                return qp * up;
-              case 2:
-                return qp * vp;
-              case 3:
-                return qp * wp;
-              default:
-                return 0.5 * qp * (up * up + vp * vp + wp * wp);
-            }
-          });
+      partials.add(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) -> Real {
+        const ParticleType& p = pData[ip];
+        if (p.id() < 0)
+          return 0.0;
+        const Real up = p.rdata(iup);
+        const Real vp = p.rdata(ivp);
+        const Real wp = p.rdata(iwp);
+        const Real qp = p.rdata(iqp);
+        switch (c) {
+          case 0:
+            return qp;
+          case 1:
+            return qp * up;
+          case 2:
+            return qp * vp;
+          case 3:
+            return qp * wp;
+          default:
+            return 0.5 * qp * (up * up + vp * vp + wp * wp);
+        }
+      });
     }
   }
+  Real r[5] = { 0, 0, 0, 0, 0 };
+  const std::vector<Real> partial = partials.values();
+  for (std::size_t t = 0; t < partial.size(); t += 5)
+    for (int c = 0; c < 5; ++c)
+      r[c] += partial[t + c];
 
   const Real factor = qomSign * get_mass();
   std::array<Real, 5> sum = { r[0] * factor, r[1] * factor, r[2] * factor,
@@ -541,7 +545,7 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
 
   const Box& dom = Geom(iLev).Domain();
   const int nCompMF = mf.nComp();
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
     Array4<Real> const& arr = mf[mfi].array();
 
@@ -661,7 +665,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     momentsMF[iLev].setVal(0.0);
     const auto ploLev = Geom(iLev).ProbLoArray();
     const auto invDxLev = Geom(iLev).InvCellSizeArray();
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       Array4<Real> const momentsArr = momentsMF[iLev][pti].array();
 
       const ParticleType* const pData = pti.GetArrayOfStructs()().data();
@@ -833,7 +837,8 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
     MultiFab tmpMF(momentsMF[iLev], make_alias, iRho_, iPyz_ - iRho_ + 1);
     tmpMF.mult(qomSign * get_mass(), tmpMF.nGrow());
 
-    for (MFIter mfi(momentsMF[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(momentsMF[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Array4<Real> arr = momentsMF[iLev][mfi].array();
 
       ParallelFor(mfi.fabbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {

@@ -148,7 +148,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     }
     const auto& geom = Geom(iLev);
     int iBlock = 0;
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeE[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       const auto& typeArr = ioCache.array(node_status(iLev), mfi);
@@ -312,7 +312,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     int iBlockCount = 0;
-    for (MFIter mfi(gridMF[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(gridMF[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       while (iPoint < nPoint) {
         IntVect ijk;
         for (int iDim = 0; iDim < nDim; iDim++) {
@@ -1119,7 +1119,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       const auto plo = Geom(iLev).ProbLoArray();
       const auto dx = Geom(iLev).CellSizeArray();
       const Real shift = saveNode ? 0.0 : 0.5;
-      for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(xyz, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Array4<Real> cellArr = xyz[mfi].array();
         ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const int ijk[3] = { i, j, k };
@@ -1199,7 +1199,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         const bool useBody = use_body();
         ReduceOps<ReduceOpSum> reduceOp;
         ReduceData<int> reduceData(reduceOp);
-        for (MFIter mfi(plasma); mfi.isValid(); ++mfi) {
+        for (MFIter mfi(plasma, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
           const Array4<Real> plasmaArr = plasma[mfi].array();
           const Array4<Real> uxArr = ux[mfi].array();
           const Array4<Real> uyArr = uy[mfi].array();
@@ -1227,7 +1227,8 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         if (!isDensityZero && get<0>(reduceData.value(reduceOp)) > 0) {
           // Find the first such node for the error message below.
           ioCache.clear();
-          for (MFIter mfi(plasma); mfi.isValid() && !isDensityZero; ++mfi) {
+          for (MFIter mfi(plasma, stream_ordered_mfi());
+               mfi.isValid() && !isDensityZero; ++mfi) {
             const auto plasmaArr = ioCache.array(plasma, mfi);
             const auto statusArr = ioCache.array(node_status(iLev), mfi);
             const Box& box = mfi.validbox();
@@ -1278,7 +1279,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       //-------------body mask---------------------
       const auto& status = saveNode ? node_status(iLev) : cell_status(iLev);
 
-      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(out[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& outArr = out[iLev][mfi].array();
         const Array4<int const>& statusArr = status[mfi].array();
@@ -1307,7 +1308,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       // only ever read here.
       const Real peMinOut = peMin;
       const Real rhoMinOut = rhoMinOhm;
-      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(out[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& outArr = out[iLev][mfi].array();
         const Array4<Real const>& peArr = centerPeState[iLev][mfi].array();

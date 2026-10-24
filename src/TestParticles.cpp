@@ -260,7 +260,7 @@ void TestParticles::move_and_save_charged_particles(
   Gpu::DeviceVector<int> errorFlag(1, 0);
   int* const error = errorFlag.data();
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     const Array4<Real const> nodeEArr = nodeEMF[pti].const_array();
     const Array4<Real const> nodeBArr = nodeBMF[pti].const_array();
     const bool hasJacB = (nodeJacBMF != nullptr);
@@ -474,7 +474,7 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
   Gpu::DeviceVector<int> errorFlag(1, 0);
   int* const error = errorFlag.data();
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     if (pti.index() != lastFab) {
@@ -810,7 +810,7 @@ void TestParticles::pack_particles_and_records(char* recordBuff, char* listBuff,
   unsigned long long int nByteCount = 0;
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       auto& aos = pti.GetArrayOfStructs();
       host_particles(
           aos().data(), aos.numParticles(), /*writeBack=*/true,
@@ -939,7 +939,7 @@ unsigned long long int TestParticles::loop_particles(
   constexpr int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       auto& aos = pti.GetArrayOfStructs();
       host_particles(
           aos().data(), aos.numParticles(),
@@ -1107,7 +1107,7 @@ void TestParticles::print_record_buffer(char* buffer,
 
 void TestParticles::reset_record_counter() {
   const int iLev = 0;
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     ParticleType* const pData = pti.GetArrayOfStructs()().data();
     ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
       pData[ip].idata(iRecordCount_) = 0;

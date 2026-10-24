@@ -74,7 +74,7 @@ void print_MultiFab(const amrex::MultiFab& data, const std::string& tag,
 inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
   int nTotal = 0;
   if (!MF.empty())
-    for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
+    for (amrex::MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       nTotal += mfi.validbox().numPts();
     }
   return nTotal;
@@ -527,7 +527,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::RealVect xyz, const int iVar) {
   auto idx = gm.CellIndex(xyz.begin());
 
-  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     // Cell box
     const amrex::Box& bx =
         amrex::convert(mfi.validbox(), { AMREX_D_DECL(0, 0, 0) });
@@ -664,7 +664,7 @@ void interp_from_coarse_to_fine(amrex::FabArray<FAB>& coarse,
   if (AMREX_SPACEDIM > 2 && cgeom.isPeriodic(2) &&
       cgeom.Domain().length(2) == 1) {
     const int numComp = f.nComp();
-    for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+    for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const auto& vbox = mfi.validbox();
       const auto& fbox = mfi.fabbox();
       auto farr = f[mfi].array();
@@ -708,7 +708,7 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
 template <class FAB, typename U,
           std::enable_if_t<std::is_arithmetic_v<U>, int> IsArithmetic = 0>
 inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
-  for (amrex::MFIter mfi(fa); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(fa, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto arr = fa[mfi].array();
     const auto& bx = mfi.fabbox();
     const int ncomp = fa.nComp();
@@ -725,7 +725,7 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
                                 const amrex::iMultiFab& fstatus, int iLev) {
   const int nComp = dst.nComp();
   if (iLev > 0) {
-    for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    for (amrex::MFIter mfi(dst, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const auto& box = mfi.fabbox();
       auto data = dst[mfi].array();
       const auto statusArr = fstatus[mfi].array();
@@ -741,7 +741,7 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
                          });
     }
   } else if (iLev == 0) {
-    for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    for (amrex::MFIter mfi(dst, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const auto& box = mfi.fabbox();
       auto data = dst[mfi].array();
       const auto statusArr = fstatus[mfi].array();
@@ -765,7 +765,7 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
 template <class FAB>
 void mask_body(amrex::FabArray<FAB>& dst, const amrex::iMultiFab& fstatus) {
   const int nComp = dst.nComp();
-  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(dst, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.fabbox();
     auto data = dst[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -804,7 +804,7 @@ template <class FAB>
 void mask_body_interior(amrex::FabArray<FAB>& dst,
                         const amrex::iMultiFab& fstatus) {
   const int nComp = dst.nComp();
-  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(dst, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.fabbox();
     auto data = dst[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -843,7 +843,7 @@ void rescale_body_surface_nodes(amrex::FabArray<FAB>& dst,
   const int chi[3] = { AMREX_D_DECL(cellDomain.bigEnd(0), cellDomain.bigEnd(1),
                                     cellDomain.bigEnd(2)) };
 
-  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(dst, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.fabbox();
     auto data = dst[mfi].array();
     const auto cellArr = cellStatus[mfi].array();
@@ -901,7 +901,7 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
                              f.nGrow());
 
   const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.fabbox();
     auto data = f[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -942,7 +942,7 @@ void fill_fine_lev_outer_bny_from_coarse(
                              f.nGrow());
 
   const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.fabbox();
     const amrex::Box keepBox = amrex::grow(mfi.validbox(), nKeep);
     auto data = f[mfi].array();
@@ -979,7 +979,7 @@ void fill_fine_lev_new_from_coarse(
                              f.nGrow());
 
   const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.validbox();
     auto data = f[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -1014,7 +1014,7 @@ void fill_fine_lev_edge_from_coarse(
                              f.nGrow());
 
   const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.fabbox();
     auto data = f[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -1052,7 +1052,7 @@ void sum_coarse_to_fine_lev_bny_node(
   }
 
   const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.validbox();
     auto data = f[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -1111,7 +1111,7 @@ void sum_coarse_to_fine_lev_bny_cell(
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
 
   const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.validbox();
     auto data = f[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -1145,7 +1145,7 @@ void interp_from_coarse_to_fine_for_domain_edge(
                              &amrex::node_bilinear_interp);
 
   const int numComp = f.nComp();
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& box = mfi.validbox();
     auto data = f[mfi].array();
     const auto statusArr = fstatus[mfi].array();
@@ -1178,7 +1178,8 @@ void sum_two_lev_interface_node(amrex::FabArray<FAB>& coarse,
   // ftmp.setVal(0.0);
   // amrex::UNodeBilinear<typename FAB::value_type> mapper;
   // interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
-  // &mapper); for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  // &mapper); for (amrex::MFIter mfi(f, stream_ordered_mfi()); mfi.isValid();
+  // ++mfi) {
   //   FAB& fab = f[mfi];
   //   const auto& box = mfi.validbox();
   //   const auto& data = fab.array();

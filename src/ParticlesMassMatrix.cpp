@@ -174,7 +174,7 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
         }
   });
   // The kernels read the bins and the scratch, which are freed on return.
-  Gpu::streamSynchronize();
+  sync_before_free();
 }
 
 } // namespace
@@ -205,7 +205,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
   const auto invDxLev = Geom(iLev).InvCellSizeArray();
   const Real invVolLev = invVol[iLev];
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
     const Array4<Real const> nodeB0Arr =
         useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
@@ -389,7 +389,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
   }
 
 #if (AMREX_SPACEDIM != 2)
-  for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeMM, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     // Finalize the mass matrix calculation: copy the kp = 2 half that the
     // particles deposited into the mirrored kp = 0 entries of the receiving
     // nodes. Every receiving entry has exactly one sender, so the nodes can
@@ -453,7 +453,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
     const Array4<Real const> nodeB0Arr =
         useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
@@ -732,7 +732,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   const int iLev = 0;
   const auto ploLev = Geom(iLev).ProbLoArray();
   const auto invDxLev = Geom(iLev).InvCellSizeArray();
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
     const Array4<Real const> nodeB0Arr =
         useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
@@ -832,7 +832,7 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
   if (!Geom(iLev).isAllPeriodic() && jHat.nGrow() > 0) {
     const Box& dom = Geom(iLev).Domain();
     const int nCompJ = jHat.nComp();
-    for (MFIter mfi(jHat); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(jHat, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       Array4<Real> const& jArr = jHat[mfi].array();
 

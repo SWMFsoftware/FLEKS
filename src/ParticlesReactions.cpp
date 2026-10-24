@@ -206,7 +206,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   };
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
 
       if (kineticSource) {
@@ -531,7 +531,7 @@ void Particles<NStructReal, NStructInt>::apply_loss(
     const int iSp = speciesID;
     const int iqp = iqp_;
 
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       const int np = pti.numParticles();
       if (np == 0)
         continue;

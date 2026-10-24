@@ -172,7 +172,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   int lastFab = -1;
   ActiveRegionBox ab;
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     if (pti.index() != lastFab) {
@@ -268,7 +268,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     if (currentMF)
       (*currentMF)[iLev].setVal(0.0);
 
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       const Array4<Real> jArr =
           currentMF ? (*currentMF)[iLev][pti].array() : Array4<Real>();
       const Array4<Real const> EArr = nodeE[iLev][pti].const_array();
@@ -522,7 +522,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
     int lastFab = -1;
     ActiveRegionBox ab;
 
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
       if (pti.index() != lastFab) {
@@ -585,7 +585,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   int lastFab = -1;
   ActiveRegionBox ab;
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     Array4<Real const> const phiArr = phiMF[iLev][pti].const_array();
     const Array4<int const> status = cell_status(iLev)[pti].const_array();
 

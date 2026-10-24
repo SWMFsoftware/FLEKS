@@ -542,7 +542,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cells(
       (*sp)(ijk, ppc, writer);
     });
     // The kernel reads counts and offsets, which are freed on return.
-    Gpu::streamSynchronize();
+    sync_before_free();
   }
 }
 
