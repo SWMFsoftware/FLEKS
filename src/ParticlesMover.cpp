@@ -454,7 +454,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
               cell = IntVect(AMREX_D_DECL(base[0], base[1], base[2]));
               return true;
             },
-            [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[3][3][3][3]) {
+            [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
               const Real* const in =
                   depositIn + static_cast<std::size_t>(ip) * nIn;
               int base[3];

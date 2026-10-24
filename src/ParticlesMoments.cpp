@@ -211,23 +211,45 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
 
     // Net charge: the product of the weights in the order of
     // ParticleInterpolator::ParticleToMesh.
-    deposit_to_nodes<1>(
-        np, cellBox, chargeArr, 0, cellOf,
-        [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
+    auto chargeContrib = [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
+      const ParticleType& p = pData[ip];
+      ParticleInterpolator::Linear interp(p, plo, dxi);
+      const Real pval = p.rdata(iqp) * invV;
+      for (int kk = 0; kk <= ParticleInterpolator::Linear::nz; ++kk)
+        for (int jj = 0; jj <= ParticleInterpolator::Linear::ny; ++jj)
+          for (int ii = 0; ii <= ParticleInterpolator::Linear::nx; ++ii)
+            acc[ii][jj][kk][0] +=
+                interp.w[ii] * interp.w[2 + jj] * interp.w[4 + kk] * pval;
+    };
+
+    if constexpr (!useCellBinDeposits) {
+      if (!doNetChargeOnly) {
+        // CPU: the charge and the mass-matrix terms of a particle in one pass
+        // (one read and one interpolation per particle), in particle order.
+        auto addCharge = [=](int i, int j, int k, int, Real v) {
+          chargeArr(i, j, k, 0) += v;
+        };
+        for (int ip = 0; ip < np; ++ip) {
+          IntVect cell;
+          cellOf(ip, cell);
+          chargeContrib(ip, NodeAdder<decltype(addCharge)>{ &addCharge, cell });
           const ParticleType& p = pData[ip];
           ParticleInterpolator::Linear interp(p, plo, dxi);
-          const Real pval = p.rdata(iqp) * invV;
-          for (int kk = 0; kk <= ParticleInterpolator::Linear::nz; ++kk)
-            for (int jj = 0; jj <= ParticleInterpolator::Linear::ny; ++jj)
-              for (int ii = 0; ii <= ParticleInterpolator::Linear::nx; ++ii)
-                acc[ii][jj][kk][0] +=
-                    interp.w[ii] * interp.w[2 + jj] * interp.w[4 + kk] * pval;
-        });
+          const RealVect dShift(
+              AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
+          accumulate_mass_matrix_contribution(dxLoc, invV, cell, dShift,
+                                              p.rdata(iqp), mmArr);
+        }
+        continue;
+      }
+    }
+
+    deposit_to_nodes<1>(np, cellBox, chargeArr, 0, cellOf, chargeContrib);
 
     if (doNetChargeOnly)
       continue;
 
-    if (useCellBinDeposits) {
+    {
       // GPU: per-cell sums of the mass-matrix terms (see deposit_to_nodes).
       Box mmBox = centerMM[pti].box();
       mmBox.growHi(-1);
@@ -240,18 +262,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
                 RealVect(AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
             q = p.rdata(iqp);
           });
-    } else {
-      // CPU: every term in particle order, as before.
-      ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
-        const ParticleType& p = pData[ip];
-        ParticleInterpolator::Linear interp(p, plo, dxi);
-        const IntVect loIdx(
-            AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
-        const RealVect dShift(
-            AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
-        accumulate_mass_matrix_contribution(dxLoc, invV, loIdx, dShift,
-                                            p.rdata(iqp), mmArr);
-      });
     }
   }
 }
@@ -319,7 +329,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
           cellBox.growHi(-1);
           deposit_to_nodes<1>(
               np, cellBox, chargeArr, 0, cellOf,
-              [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
+              [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
                 IntVect loIdx;
                 RealVect dShift;
                 Real coef[2][2][2];
@@ -420,7 +430,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                 cell = loIdx;
                 return true;
               },
-              [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][1]) {
+              [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
                 IntVect loIdx;
                 RealVect dShift;
                 Real coef[2][2][2];
@@ -673,7 +683,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
       deposit_to_nodes<nMoments>(
           np, enclosedCells(momentsMF[iLev][pti].box()), momentsArr, 0, cellOf,
-          [=] AMREX_GPU_DEVICE(int ip, Real(&acc)[2][2][2][nMoments]) {
+          [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
             const ParticleType& p = pData[ip];
             const Real up = p.rdata(iup_);
             const Real vp = p.rdata(ivp_);
