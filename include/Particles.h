@@ -1150,6 +1150,33 @@ public:
     }
   };
 
+  // What the movers' boundary condition has to do on level iLev:
+  //   kNoBC         nothing: a single-level grid, all directions periodic,
+  //                 the active region is the whole domain, no inner body;
+  //   kActiveRegion only delete the particles that leave the active region:
+  //                 no body and no absorbing, inflow or reflecting face
+  //                 (reflect_or_delete_particle() then reduces to that test);
+  //   kFullBC       reflect_or_delete_particle().
+  // The movers instantiate a kernel per case (see charged_particle_mover):
+  // even when its branches are not taken, the full boundary code slows the
+  // particle loop down on the CPU (a larger body and more register spills).
+  enum BCMode : int { kNoBC, kActiveRegion, kFullBC };
+  int particle_bc_mode(int iLev) const {
+    if (grid == nullptr)
+      return kFullBC;
+    if (grid->use_body())
+      return kFullBC;
+    for (int d = 0; d < nDim; ++d)
+      for (int t : { bc.lo[d], bc.hi[d] })
+        if (t == ParticleBC::absorb || t == ParticleBC::inflow ||
+            t == ParticleBC::reflect)
+          return kFullBC;
+    if (iLev == 0 && n_lev() == 1 && Geom(0).isAllPeriodic() &&
+        grid->active_region_ref().numPts() == Geom(0).Domain().numPts())
+      return kNoBC;
+    return kActiveRegion;
+  }
+
   ParticleBoundary particle_boundary() {
     ParticleBoundary pb;
     pb.hasGrid = (grid != nullptr);
@@ -1631,14 +1658,15 @@ public:
   }
 
   // Append the (host) particles newParticles to a tile.
-  static void append_particles(ParticleTileType& tile,
-                               const amrex::Vector<ParticleType>& newParticles) {
+  static void append_particles(
+      ParticleTileType& tile, const amrex::Vector<ParticleType>& newParticles) {
     if (newParticles.empty())
       return;
     const std::size_t np = tile.numParticles();
     tile.resize(np + newParticles.size());
     amrex::Gpu::copy(amrex::Gpu::hostToDevice, newParticles.begin(),
-                     newParticles.end(), tile.GetArrayOfStructs()().data() + np);
+                     newParticles.end(),
+                     tile.GetArrayOfStructs()().data() + np);
     amrex::Gpu::streamSynchronize();
   }
 

@@ -122,6 +122,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool esirkepov_base(const Real* x0,
   return true;
 }
 
+// Current deposit modes of the charged-particle mover kernel.
+enum CurrentMode : int { kNoCurrent, kDirectCurrent, kBinCurrent };
+
 // E at a particle with the shape of the charge-conserving current: along
 // component d, the average of the two nodes of the particle's cell; across d
 // (and for the out-of-plane component in 2D), linear. loIdx and dShift come
@@ -257,6 +260,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       dxLoc[d] = Geom(iLev).CellSize(d);
     }
     const Real invVolLev = invVol[iLev];
+    const int bcMode = particle_bc_mode(iLev);
     const LevelGeomBox lb = make_level_geom_box(iLev);
     int lastFab = -1;
     ActiveRegionBox ab;
@@ -290,148 +294,172 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       // Deterministic current deposit (GPU): the inputs of the deposit of
       // every particle, x0 (3), x1 (3), q, vOut, valid.
       const bool binCurrent = depositCurrent && useCellBinDeposits;
+      const int currentMode = !depositCurrent ? kNoCurrent
+                              : binCurrent    ? kBinCurrent
+                                              : kDirectCurrent;
       constexpr int nIn = 9;
       Gpu::DeviceVector<Real> depositInVec(binCurrent ? np * nIn : 0, 0.0);
       Real* const depositIn = depositInVec.data();
 
-      ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
-        ParticleType& p = pData[ip];
-        if (p.id() < 0)
-          return;
+      // The current deposit and the boundary condition are compile-time
+      // options of the kernel: an instantiation without them is markedly
+      // faster on the CPU, even though their branches would not be taken
+      // (smaller loop body, fewer register spills).
+      ParallelFor(
+          TypeList<CompileTimeOptions<kNoCurrent, kDirectCurrent, kBinCurrent>,
+                   CompileTimeOptions<kNoBC, kActiveRegion, kFullBC> >{},
+          { currentMode, bcMode }, np,
+          [=] AMREX_GPU_DEVICE(int ip, auto currentOpt, auto bcOpt) {
+            // Captured here, outside the constexpr-if blocks (see AMReX's CTO
+            // ParallelFor).
+            amrex::ignore_unused(jArr, depositIn, movedTooFar, pb, status, ab,
+                                 qFactor, invDt, invVolLev, dxLoc, nIn);
+            ParticleType& p = pData[ip];
+            if (p.id() < 0)
+              return;
 
-        const Real u_start = p.rdata(iup_);
-        const Real v_start = p.rdata(ivp_);
-        const Real w_start = p.rdata(iwp_);
-        Real up = u_start;
-        Real vp = v_start;
-        Real wp = w_start;
-        const Real xp = p.pos(ix_);
-        const Real yp = p.pos(iy_);
-        const Real zp = nDim > 2 ? p.pos(iz_) : 0;
+            const Real u_start = p.rdata(iup_);
+            const Real v_start = p.rdata(ivp_);
+            const Real w_start = p.rdata(iwp_);
+            Real up = u_start;
+            Real vp = v_start;
+            Real wp = w_start;
+            const Real xp = p.pos(ix_);
+            const Real yp = p.pos(iy_);
+            const Real zp = nDim > 2 ? p.pos(iz_) : 0;
 
-        //-----calculate interpolate coef begin-------------
-        // The stencil is centered on the node that contains the particle: plain
-        // trilinear weights over the surrounding 2x2x2 nodes.
-        IntVect loIdx;
-        RealVect dShift;
+            //-----calculate interpolate coef begin-------------
+            // The stencil is centered on the node that contains the particle:
+            // plain trilinear weights over the surrounding 2x2x2 nodes.
+            IntVect loIdx;
+            RealVect dShift;
 
-        Real coef[2][2][2];
-        RealVect posEval = p.pos();
-        if (pushStage == 2) {
-          posEval[ix_] += 0.5 * u_start * dt;
-          posEval[iy_] += 0.5 * v_start * dt;
-          if (nDim > 2)
-            posEval[iz_] += 0.5 * w_start * dt;
-        }
-        find_node_interpolation(posEval, ploLoc, invDxLoc, loIdx, dShift, coef);
-        //-----calculate interpolate coef end-------------
+            Real coef[2][2][2];
+            RealVect posEval = p.pos();
+            if (pushStage == 2) {
+              posEval[ix_] += 0.5 * u_start * dt;
+              posEval[iy_] += 0.5 * v_start * dt;
+              if (nDim > 2)
+                posEval[iz_] += 0.5 * w_start * dt;
+            }
+            find_node_interpolation(posEval, ploLoc, invDxLoc, loIdx, dShift,
+                                    coef);
+            //-----calculate interpolate coef end-------------
 
-        Real bp[3] = { 0, 0, 0 };
-        Real ep[3] = { 0, 0, 0 };
-        Real u0p[3] = { 0, 0, 0 };
-        Real b0p[3] = { 0, 0, 0 };
-        if (useB0) {
-          const Array4<Real const> fields[3] = { BArr, EArr, B0Arr };
-          Real* values[3] = { bp, ep, b0p };
-          interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-          bp[ix_] += b0p[ix_];
-          bp[iy_] += b0p[iy_];
-          bp[iz_] += b0p[iz_];
-        } else {
-          const Array4<Real const> fields[2] = { BArr, EArr };
-          Real* values[2] = { bp, ep };
-          interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-        }
+            Real bp[3] = { 0, 0, 0 };
+            Real ep[3] = { 0, 0, 0 };
+            Real u0p[3] = { 0, 0, 0 };
+            Real b0p[3] = { 0, 0, 0 };
+            if (useB0) {
+              const Array4<Real const> fields[3] = { BArr, EArr, B0Arr };
+              Real* values[3] = { bp, ep, b0p };
+              interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+              bp[ix_] += b0p[ix_];
+              bp[iy_] += b0p[iy_];
+              bp[iz_] += b0p[iz_];
+            } else {
+              const Array4<Real const> fields[2] = { BArr, EArr };
+              Real* values[2] = { bp, ep };
+              interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+            }
 
-        // The charge-conserving current of E_d has a zeroth-order shape along
-        // d (the average of the two nodes of the cell the particle is in).
-        // Gather E with the same shape, the transpose of the deposit, so the
-        // work of the field on the particles matches the field energy loss.
-        if (depositCurrent)
-          gather_E_matched_to_current(EArr, loIdx, dShift, ep);
+            // The charge-conserving current of E_d has a zeroth-order shape
+            // along d (the average of the two nodes of the cell the particle is
+            // in). Gather E with the same shape, the transpose of the deposit,
+            // so the work of the field on the particles matches the field
+            // energy loss.
+            if (depositCurrent)
+              gather_E_matched_to_current(EArr, loIdx, dShift, ep);
 
-        up = up - u0p[ix_];
-        vp = vp - u0p[iy_];
-        wp = wp - u0p[iz_];
+            up = up - u0p[ix_];
+            vp = vp - u0p[iy_];
+            wp = wp - u0p[iz_];
 
-        const Real omx = qdto2mc * bp[ix_];
-        const Real omy = qdto2mc * bp[iy_];
-        const Real omz = qdto2mc * bp[iz_];
+            const Real omx = qdto2mc * bp[ix_];
+            const Real omy = qdto2mc * bp[iy_];
+            const Real omz = qdto2mc * bp[iz_];
 
-        // end interpolation
-        const Real velocity[3] = { up, vp, wp };
-        const Real ut = up + qdto2mc * ep[ix_];
-        const Real vt = vp + qdto2mc * ep[iy_];
-        const Real wt = wp + qdto2mc * ep[iz_];
-        const Real electricVelocity[3] = { ut, vt, wt };
-        const Real omega[3] = { omx, omy, omz };
-        Real updatedVelocity[3];
-        boris_push_nonrelativistic(velocity, electricVelocity, omega,
-                                   updatedVelocity);
+            // end interpolation
+            const Real velocity[3] = { up, vp, wp };
+            const Real ut = up + qdto2mc * ep[ix_];
+            const Real vt = vp + qdto2mc * ep[iy_];
+            const Real wt = wp + qdto2mc * ep[iz_];
+            const Real electricVelocity[3] = { ut, vt, wt };
+            const Real omega[3] = { omx, omy, omz };
+            Real updatedVelocity[3];
+            boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                       updatedVelocity);
 
-        const Real unp1 = updatedVelocity[ix_] + u0p[ix_];
-        const Real vnp1 = updatedVelocity[iy_] + u0p[iy_];
-        const Real wnp1 = updatedVelocity[iz_] + u0p[iz_];
+            const Real unp1 = updatedVelocity[ix_] + u0p[ix_];
+            const Real vnp1 = updatedVelocity[iy_] + u0p[iy_];
+            const Real wnp1 = updatedVelocity[iz_] + u0p[iz_];
 
-        // Drift velocity: v^{n+1/2} (leapfrog) or the average of the start
-        // and end velocities (predictor-corrector stages).
-        const Real uDrift = pushStage > 0 ? 0.5 * (u_start + unp1) : unp1;
-        const Real vDrift = pushStage > 0 ? 0.5 * (v_start + vnp1) : vnp1;
-        const Real wDrift = pushStage > 0 ? 0.5 * (w_start + wnp1) : wnp1;
-        const Real xOld[3] = { xp, yp, zp };
-        const Real xNew[3] = { xp + uDrift * dtLoc, yp + vDrift * dtLoc,
-                               zp + wDrift * dtLoc };
+            // Drift velocity: v^{n+1/2} (leapfrog) or the average of the start
+            // and end velocities (predictor-corrector stages).
+            const Real uDrift = pushStage > 0 ? 0.5 * (u_start + unp1) : unp1;
+            const Real vDrift = pushStage > 0 ? 0.5 * (v_start + vnp1) : vnp1;
+            const Real wDrift = pushStage > 0 ? 0.5 * (w_start + wnp1) : wnp1;
+            const Real xOld[3] = { xp, yp, zp };
+            const Real xNew[3] = { xp + uDrift * dtLoc, yp + vDrift * dtLoc,
+                                   zp + wDrift * dtLoc };
 
-        // J = q dx/dt for every component; in 2D the out-of-plane dx is
-        // wDrift * dtLoc (dtLoc != dt when the time step changes).
-        if (binCurrent) {
-          // Deposited after the push, cell by cell (deterministic on the
-          // GPU): keep what the deposit needs before the boundary condition
-          // moves or deletes the particle.
-          Real* const in = depositIn + static_cast<std::size_t>(ip) * nIn;
-          for (int d = 0; d < 3; ++d) {
-            in[d] = xOld[d];
-            in[3 + d] = xNew[d];
-          }
-          in[6] = qFactor * p.rdata(iqp_);
-          in[7] = wDrift * dtLoc * invDt;
-          in[8] = 1; // valid
-          int base[3];
-          if (!esirkepov_base(xOld, xNew, ploLoc, invDxLoc, base))
-            *movedTooFar = 1;
-        } else if (depositCurrent &&
-                   !deposit_esirkepov(
-                       xOld, xNew, qFactor * p.rdata(iqp_),
-                       wDrift * dtLoc * invDt, ploLoc, invDxLoc, dxLoc, invDt,
-                       invVolLev, [&](int i, int j, int k, int d, Real v) {
-                         deposit_add(jArr.ptr(AMREX_D_DECL(i, j, k), d), v);
-                       }))
-          *movedTooFar = 1;
+            // J = q dx/dt for every component; in 2D the out-of-plane dx is
+            // wDrift * dtLoc (dtLoc != dt when the time step changes).
+            if constexpr (currentOpt.value == kBinCurrent) {
+              // Deposited after the push, cell by cell (deterministic on the
+              // GPU): keep what the deposit needs before the boundary condition
+              // moves or deletes the particle.
+              Real* const in = depositIn + static_cast<std::size_t>(ip) * nIn;
+              for (int d = 0; d < 3; ++d) {
+                in[d] = xOld[d];
+                in[3 + d] = xNew[d];
+              }
+              in[6] = qFactor * p.rdata(iqp_);
+              in[7] = wDrift * dtLoc * invDt;
+              in[8] = 1; // valid
+              int base[3];
+              if (!esirkepov_base(xOld, xNew, ploLoc, invDxLoc, base))
+                *movedTooFar = 1;
+            } else if constexpr (currentOpt.value == kDirectCurrent) {
+              if (!deposit_esirkepov(
+                      xOld, xNew, qFactor * p.rdata(iqp_),
+                      wDrift * dtLoc * invDt, ploLoc, invDxLoc, dxLoc, invDt,
+                      invVolLev, [&](int i, int j, int k, int d, Real v) {
+                        deposit_add(jArr.ptr(AMREX_D_DECL(i, j, k), d), v);
+                      }))
+                *movedTooFar = 1;
+            }
 
-        // A trial push only deposits the current of the trial state.
-        if (trialOnly)
-          return;
+            // A trial push only deposits the current of the trial state.
+            if (trialOnly)
+              return;
 
-        p.rdata(iup_) = unp1;
-        p.rdata(ivp_) = vnp1;
-        p.rdata(iwp_) = wnp1;
+            p.rdata(iup_) = unp1;
+            p.rdata(ivp_) = vnp1;
+            p.rdata(iwp_) = wnp1;
 
-        if (savePitchAngle) {
-          // Note: bp should be calculated at the new position. Now, bp at the
-          // old position is used to save the calculation.
-          p.rdata(imu_) = cosine(p, bp);
-        }
+            if (savePitchAngle) {
+              // Note: bp should be calculated at the new position. Now, bp at
+              // the old position is used to save the calculation.
+              p.rdata(imu_) = cosine(p, bp);
+            }
 
-        p.pos(ix_) = xNew[ix_];
-        p.pos(iy_) = xNew[iy_];
-        if (nDim > 2)
-          p.pos(iz_) = xNew[iz_];
+            p.pos(ix_) = xNew[ix_];
+            p.pos(iy_) = xNew[iy_];
+            if (nDim > 2)
+              p.pos(iz_) = xNew[iz_];
 
-        // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (pb.reflect_or_delete_particle(p, status, ab)) {
-          p.id() = -1;
-        }
-      });
+            // Apply boundary condition (absorb: delete; reflect: mirror).
+            if constexpr (bcOpt.value == kFullBC) {
+              if (pb.reflect_or_delete_particle(p, status, ab)) {
+                p.id() = -1;
+              }
+            } else if constexpr (bcOpt.value == kActiveRegion) {
+              if (pb.is_outside_active_region(p, status, ab)) {
+                p.id() = -1;
+              }
+            }
+          });
 
       if (binCurrent && np > 0) {
         // A stencil has at most 3 nodes per direction, starting at its base
