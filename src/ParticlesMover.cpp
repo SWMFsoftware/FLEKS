@@ -157,6 +157,12 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void gather_E_matched_to_current(
     ep[c] = sum;
   }
 }
+// The data of a tile for the level current deposit of the mover.
+struct CurrentTile {
+  const Real* in; // the deposit inputs of the particles of the tile
+  Array4<Real> j;
+};
+
 } // namespace
 
 template <int NStructReal, int NStructInt>
@@ -268,6 +274,22 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     if (currentMF)
       (*currentMF)[iLev].setVal(0.0);
 
+    // Deterministic current deposit (GPU): the inputs of the deposit of
+    // every particle of the level, x0 (3), x1 (3), q, vOut, valid; all the
+    // tiles are deposited at once after the push (see LevelBins).
+    const bool binCurrent = depositCurrent && useCellBinDeposits;
+    constexpr int nIn = 9;
+    int nLevel = 0;
+    if (binCurrent)
+      for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti)
+        nLevel += pti.numParticles();
+    Gpu::DeviceVector<Real> depositInVec(
+        binCurrent ? static_cast<std::size_t>(nLevel) * nIn : 0, 0.0);
+    std::vector<int> nps;
+    std::vector<Box> cellBoxes;
+    Vector<CurrentTile> tiles;
+    int pOffset = 0;
+
     for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       const Array4<Real> jArr =
           currentMF ? (*currentMF)[iLev][pti].array() : Array4<Real>();
@@ -291,15 +313,13 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
 
-      // Deterministic current deposit (GPU): the inputs of the deposit of
-      // every particle, x0 (3), x1 (3), q, vOut, valid.
-      const bool binCurrent = depositCurrent && useCellBinDeposits;
       const int currentMode = !depositCurrent ? kNoCurrent
                               : binCurrent    ? kBinCurrent
                                               : kDirectCurrent;
-      constexpr int nIn = 9;
-      Gpu::DeviceVector<Real> depositInVec(binCurrent ? np * nIn : 0, 0.0);
-      Real* const depositIn = depositInVec.data();
+      Real* const depositIn =
+          binCurrent
+              ? depositInVec.data() + static_cast<std::size_t>(pOffset) * nIn
+              : nullptr;
 
       // The current deposit and the boundary condition are compile-time
       // options of the kernel: an instantiation without them is markedly
@@ -461,40 +481,51 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
             }
           });
 
-      if (binCurrent && np > 0) {
+      if (binCurrent) {
         // A stencil has at most 3 nodes per direction, starting at its base
         // cell.
         Box cellBox = (*currentMF)[iLev][pti].box();
         cellBox.growHi(-1);
         cellBox.enclosedCells();
-        deposit_to_nodes_with<3, 3>(
-            np, cellBox,
-            [=] AMREX_GPU_DEVICE(int i, int j, int k, int d, Real v) {
-              jArr(i, j, k, d) += v;
-            },
-            [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
-              const Real* const in =
-                  depositIn + static_cast<std::size_t>(ip) * nIn;
-              int base[3];
-              if (in[8] == 0 ||
-                  !esirkepov_base(in, in + 3, ploLoc, invDxLoc, base))
-                return false;
-              cell = IntVect(AMREX_D_DECL(base[0], base[1], base[2]));
-              return true;
-            },
-            [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
-              const Real* const in =
-                  depositIn + static_cast<std::size_t>(ip) * nIn;
-              int base[3];
-              esirkepov_base(in, in + 3, ploLoc, invDxLoc, base);
-              deposit_esirkepov(
-                  in, in + 3, in[6], in[7], ploLoc, invDxLoc, dxLoc, invDt,
-                  invVolLev, [&](int i, int j, int k, int d, Real v) {
-                    acc[i - base[0]][j - base[1]][k - base[2]][d] += v;
-                  });
-            });
+        nps.push_back(np);
+        cellBoxes.push_back(cellBox);
+        tiles.push_back({ depositIn, jArr });
+        pOffset += np;
       }
     } // for pti
+
+    if (!tiles.empty()) {
+      Gpu::AsyncArray<CurrentTile> tileStore(tiles.data(), tiles.size());
+      const CurrentTile* const tile = tileStore.data();
+      LevelBins bins;
+      bins.build<3>(nps, cellBoxes,
+                    [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& cell) {
+                      const Real* const in =
+                          tile[t].in + static_cast<std::size_t>(ip) * nIn;
+                      int base[3];
+                      if (in[8] == 0 ||
+                          !esirkepov_base(in, in + 3, ploLoc, invDxLoc, base))
+                        return false;
+                      cell = IntVect(AMREX_D_DECL(base[0], base[1], base[2]));
+                      return true;
+                    });
+      deposit_level_to_nodes<3, 3>(
+          bins,
+          [=] AMREX_GPU_DEVICE(int t, int ip, auto&& acc) {
+            const Real* const in =
+                tile[t].in + static_cast<std::size_t>(ip) * nIn;
+            int base[3];
+            esirkepov_base(in, in + 3, ploLoc, invDxLoc, base);
+            deposit_esirkepov(
+                in, in + 3, in[6], in[7], ploLoc, invDxLoc, dxLoc, invDt,
+                invVolLev, [&](int i, int j, int k, int d, Real v) {
+                  acc[i - base[0]][j - base[1]][k - base[2]][d] += v;
+                });
+          },
+          [=] AMREX_GPU_DEVICE(int t, int i, int j, int k, int d, Real v) {
+            tile[t].j(i, j, k, d) += v;
+          });
+    }
 
     int movedTooFarHost = 0;
     Gpu::copy(Gpu::deviceToHost, movedTooFarFlag.begin(), movedTooFarFlag.end(),
