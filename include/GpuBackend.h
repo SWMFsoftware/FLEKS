@@ -456,27 +456,133 @@ template <class Add> struct NodeAdder {
   }
 };
 
-template <int NComp, int S = 2, class Add, class CellOf, class Contrib>
-void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
-                           CellOf&& cellOf, Contrib&& contrib) {
+// A tile of a level deposit (see LevelBins): its particles have the global
+// indices pStart + ip, its cells (the x-fastest cells of the box lo, len)
+// the bins bStart + cell, and the nodes of its gather (the box nodeLo,
+// nodeLen) the global indices nodeStart + node.
+struct DepositTile {
+  int pStart = 0, bStart = 0, nodeStart = 0;
+  amrex::Dim3 lo{ 0, 0, 0 }, len{ 1, 1, 1 };
+  amrex::Dim3 nodeLo{ 0, 0, 0 }, nodeLen{ 1, 1, 1 };
+};
+
+// The last tile t of tiles[0..n) with key(tiles[t]) <= x, for keys that grow
+// with t (pStart, bStart, nodeStart).
+template <class Key>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int find_deposit_tile(
+    const DepositTile* tiles, int n, int x, Key key) {
+  int lo = 0, hi = n - 1;
+  while (lo < hi) {
+    const int mid = (lo + hi + 1) / 2;
+    if (key(tiles[mid]) <= x)
+      lo = mid;
+    else
+      hi = mid - 1;
+  }
+  return lo;
+}
+
+// The particles of all the tiles of a level, binned by cell, for a deposit
+// over all the tiles with one launch per step (deposit_level_to_nodes)
+// instead of one per tile. Tile t has np[t] particles and the cells of
+// cellBox[t]; cellOf(t, ip, cell) gives the cell of particle ip of tile t, or
+// false to leave it out (as does a cell outside cellBox[t]). The bins of a
+// tile only receive particles of that tile, so the particles of a bin and
+// their order (storage order) are those of CellBins::build_cells() on the
+// tile alone: the deposits give the same result as tile by tile. The node
+// boxes are those of a deposit onto S^D nodes per cell.
+class LevelBins {
+public:
+  template <int S = 2, class CellOf>
+  void build(const std::vector<int>& np, const std::vector<amrex::Box>& cellBox,
+             CellOf cellOf) {
+    nTile = static_cast<int>(np.size());
+    hTiles.assign(nTile, DepositTile{});
+    nParticle = nBin = nNode = 0;
+    for (int t = 0; t < nTile; ++t) {
+      DepositTile& d = hTiles[t];
+      d.pStart = nParticle;
+      d.bStart = nBin;
+      d.nodeStart = nNode;
+      d.lo = amrex::lbound(cellBox[t]);
+      d.len = amrex::length(cellBox[t]);
+      amrex::Box nodeBox = amrex::surroundingNodes(cellBox[t]);
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        nodeBox.growHi(dir, S - 2);
+      d.nodeLo = amrex::lbound(nodeBox);
+      d.nodeLen = amrex::length(nodeBox);
+      nParticle += np[t];
+      nBin += static_cast<int>(cellBox[t].numPts());
+      nNode += static_cast<int>(nodeBox.numPts());
+    }
+    if (nParticle == 0)
+      return;
+    dTiles.resize(nTile);
+    amrex::Gpu::copyAsync(amrex::Gpu::hostToDevice, hTiles.begin(),
+                          hTiles.end(), dTiles.begin());
+    const DepositTile* const tl = tiles();
+    const int nT = nTile, nB = nBin;
+    bins.build(nParticle, nBin, [=] AMREX_GPU_DEVICE(int g) {
+      const int t = find_deposit_tile(
+          tl, nT, g, [](const DepositTile& d) { return d.pStart; });
+      amrex::IntVect c;
+      if (!cellOf(t, g - tl[t].pStart, c))
+        return nB;
+      const int ijk[3] = { AMREX_D_DECL(c[0] - tl[t].lo.x, c[1] - tl[t].lo.y,
+                                        c[2] - tl[t].lo.z) };
+      const int lenD[3] = { tl[t].len.x, tl[t].len.y, tl[t].len.z };
+      for (int d = 0; d < AMREX_SPACEDIM; ++d)
+        if (ijk[d] < 0 || ijk[d] >= lenD[d])
+          return nB;
+      return tl[t].bStart + ijk[0] +
+             lenD[0] * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
+                        lenD[1] * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
+    });
+  }
+
+  int n_tiles() const { return nTile; }
+  int n_particles() const { return nParticle; }
+  int n_bins() const { return nBin; }
+  int n_nodes() const { return nNode; }
+  // The tile table in device memory (host memory in a CPU build).
+  const DepositTile* tiles() const {
+#ifdef AMREX_USE_GPU
+    return dTiles.data();
+#else
+    return hTiles.data();
+#endif
+  }
+  const int* perm() const { return bins.perm(); }
+  const int* offsets() const { return bins.offsets(); }
+
+private:
+  int nTile = 0, nParticle = 0, nBin = 0, nNode = 0;
+  std::vector<DepositTile> hTiles;
+  amrex::Gpu::DeviceVector<DepositTile> dTiles;
+  CellBins bins;
+};
+
+// deposit_to_nodes_with() for all the tiles of lb at once (GPU builds):
+// contrib(t, ip, acc) as contrib(ip, acc) for particle ip of tile t, and
+// add(t, i, j, k, n, value) stores the sums of tile t. Every bin is summed by
+// a warp (see warp_sums), every node of every tile gathers its cells in the
+// order of deposit_to_nodes_with().
+template <int NComp, int S = 2, class Contrib, class Add>
+void deposit_level_to_nodes(const LevelBins& lb, Contrib contrib, Add add) {
   using amrex::Real;
   constexpr int nK = AMREX_SPACEDIM > 2 ? S : 1;
-  if (np == 0)
-    return;
-#ifdef AMREX_USE_GPU
-  const amrex::Dim3 lo = amrex::lbound(cellBox);
-  const amrex::Dim3 len = amrex::length(cellBox);
-  const int nBins = static_cast<int>(cellBox.numPts());
-  CellBins bins;
-  bins.build_cells(np, cellBox, cellOf);
-
-  // 1. The sum of every cell, by a warp per cell (see warp_sums).
   constexpr int nAcc = S * S * nK * NComp;
+  if (lb.n_particles() == 0)
+    return;
+  const int nBins = lb.n_bins(), nTile = lb.n_tiles();
+  const DepositTile* const tl = lb.tiles();
+  const int* const perm = lb.perm();
+  const int* const off = lb.offsets();
   amrex::Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) *
                                          nAcc);
   Real* const sc = scratch.data();
-  const int* const perm = bins.perm();
-  const int* const off = bins.offsets();
+
+  // 1. The sum of every cell, by a warp per cell (see warp_sums).
   using Acc = Real[S][S][S][NComp];
   warp_sums<S * S * S * NComp>(
       nBins,
@@ -484,8 +590,10 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
         begin = off[b];
         end = off[b + 1];
       },
-      [=] AMREX_GPU_DEVICE(int, int i, Real* acc) {
-        contrib(perm[i], *reinterpret_cast<Acc*>(acc));
+      [=] AMREX_GPU_DEVICE(int b, int i, Real* acc) {
+        const int t = find_deposit_tile(
+            tl, nTile, b, [](const DepositTile& d) { return d.bStart; });
+        contrib(t, perm[i] - tl[t].pStart, *reinterpret_cast<Acc*>(acc));
       },
       [=] AMREX_GPU_DEVICE(int b, int m, Real v) {
         // m = ((ii * S + jj) * S + kk) * NComp + n
@@ -496,12 +604,16 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
              ((kk * S + jj) * S + ii) * NComp + n] = v;
       });
 
-  // 2. Every node sums its cells.
-  amrex::Box nodeBox = amrex::surroundingNodes(cellBox);
-  for (int d = 0; d < AMREX_SPACEDIM; ++d)
-    nodeBox.growHi(d, S - 2);
-  amrex::ParallelFor(nodeBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-    const int ijk[3] = { i, j, k };
+  // 2. Every node of every tile sums its cells.
+  amrex::ParallelFor(lb.n_nodes(), [=] AMREX_GPU_DEVICE(int g) {
+    const int t = find_deposit_tile(
+        tl, nTile, g, [](const DepositTile& d) { return d.nodeStart; });
+    const DepositTile& d = tl[t];
+    const int m = g - d.nodeStart;
+    const int nz = m / (d.nodeLen.x * d.nodeLen.y);
+    const int ny = (m - nz * d.nodeLen.x * d.nodeLen.y) / d.nodeLen.x;
+    const int nx = m - (nz * d.nodeLen.y + ny) * d.nodeLen.x;
+    const int ijk[3] = { d.nodeLo.x + nx, d.nodeLo.y + ny, d.nodeLo.z + nz };
     Real sum[NComp];
     for (int n = 0; n < NComp; ++n)
       sum[n] = 0;
@@ -511,25 +623,44 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
           const int corner[3] = { ii, jj, kk };
           int c[3] = { 0, 0, 0 };
           bool inside = true;
-          for (int d = 0; d < AMREX_SPACEDIM; ++d) {
-            const int l = d == 0 ? len.x : (d == 1 ? len.y : len.z);
-            const int lo_d = d == 0 ? lo.x : (d == 1 ? lo.y : lo.z);
-            c[d] = ijk[d] - corner[d] - lo_d;
-            inside = inside && c[d] >= 0 && c[d] < l;
+          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            const int l = dir == 0 ? d.len.x : (dir == 1 ? d.len.y : d.len.z);
+            const int lo_d = dir == 0 ? d.lo.x : (dir == 1 ? d.lo.y : d.lo.z);
+            c[dir] = ijk[dir] - corner[dir] - lo_d;
+            inside = inside && c[dir] >= 0 && c[dir] < l;
           }
           if (!inside)
             continue;
-          const int b = c[0] + len.x * (c[1] + len.y * c[2]);
+          const int b = d.bStart + c[0] + d.len.x * (c[1] + d.len.y * c[2]);
           const Real* const in = sc + static_cast<std::size_t>(b) * nAcc +
                                  ((kk * S + jj) * S + ii) * NComp;
           for (int n = 0; n < NComp; ++n)
             sum[n] += in[n];
         }
     for (int n = 0; n < NComp; ++n)
-      add(i, j, k, n, sum[n]);
+      add(t, ijk[0], ijk[1], ijk[2], n, sum[n]);
   });
   // The kernels read the bins and the scratch, which are freed on return.
   sync_before_free();
+}
+
+template <int NComp, int S = 2, class Add, class CellOf, class Contrib>
+void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
+                           CellOf&& cellOf, Contrib&& contrib) {
+  if (np == 0)
+    return;
+#ifdef AMREX_USE_GPU
+  // One tile of a level deposit.
+  LevelBins lb;
+  lb.build<S>({ np }, { cellBox },
+              [=] AMREX_GPU_DEVICE(int, int ip, amrex::IntVect& cell) {
+                return cellOf(ip, cell);
+              });
+  deposit_level_to_nodes<NComp, S>(
+      lb, [=] AMREX_GPU_DEVICE(int, int ip, auto&& acc) { contrib(ip, acc); },
+      [=] AMREX_GPU_DEVICE(int, int i, int j, int k, int n, amrex::Real v) {
+        add(i, j, k, n, v);
+      });
 #else
   // Every term goes straight to its node (NodeAdder), in particle order: no
   // per-particle buffer to clear and copy.
