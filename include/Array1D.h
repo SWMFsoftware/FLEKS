@@ -7,11 +7,13 @@
 #include <AMReX_FabArray.H>
 #include <AMReX_REAL.H>
 
+// The default constructor leaves the values uninitialized, so that the type
+// is trivial: AMReX then allocates FABs of it without a constructor kernel
+// per FAB (e.g. the temporary FABs of every SumBoundary). Set the values
+// before use (FabArray::setVal, or Arr1D(b)).
 template <class T, const int n> struct Arr1D {
   T data[n];
 
-  // Trivially default-constructible so that AMReX's FabArray/BaseFab treats
-  // Arr1D as POD (uninitialized allocation, memcpy-based communication).
   Arr1D() = default;
 
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D(const T& b) {
@@ -86,12 +88,12 @@ constexpr int nCMMComponents = 27;
 
 using RealMM = Arr1D<amrex::Real, nMMComponents>;
 using RealCMM = Arr1D<amrex::Real, nCMMComponents>;
-static_assert(std::is_trivially_default_constructible_v<RealMM>&&
-                  std::is_trivially_copyable_v<RealMM>);
-static_assert(std::is_trivially_default_constructible_v<RealCMM>&&
-                  std::is_trivially_copyable_v<RealCMM>);
 
 using NodeMMFab = amrex::FabArray<amrex::BaseFab<RealMM> >;
 using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM> >;
+
+static_assert(std::is_trivially_default_constructible_v<RealMM>&&
+                  std::is_trivially_copyable_v<RealMM>,
+              "RealMM must stay trivial (see Arr1D)");
 
 #endif
