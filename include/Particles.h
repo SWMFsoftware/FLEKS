@@ -1549,7 +1549,7 @@ public:
       return;
     // Cell by cell on the host, in the order of the cells.
     int start = 0;
-    for (std::size_t i = 0; i < batch.cells.size(); ++i) {
+    for (amrex::Long i = 0; i < batch.cells.size(); ++i) {
       f(batch.cells[i], batch.host.data() + start, batch.nPart[i],
         newParticles);
       start += batch.nPart[i];
