@@ -166,7 +166,7 @@ void deposit_level_mass_matrix(const LevelBins& lb, State state, JOf jOf,
       jArr(i, j, k, d) += jSum[d];
 
     // Mass matrix: the pairs (node, node + o), kp = o_z + 1 >= kpMin.
-    RealMM& data = mmOf(t)(i, j, k);
+    const Array4<Real> mmArr = mmOf(t);
     for (int kp = kpMin; kp < 3; ++kp)
       for (int jp = 0; jp < 3; ++jp)
         for (int ip = 0; ip < 3; ++ip) {
@@ -215,7 +215,7 @@ void deposit_level_mass_matrix(const LevelBins& lb, State state, JOf jOf,
               }
           const int idx0 = kp * 81 + jp * 27 + ip * 9;
           for (int idx = 0; idx < 9; ++idx)
-            data[idx0 + idx] += value[idx];
+            mmArr(i, j, k, idx0 + idx) += value[idx];
         }
   });
   // The kernels read the bins and the scratch, which are freed on return.
@@ -227,7 +227,7 @@ void deposit_level_mass_matrix(const LevelBins& lb, State state, JOf jOf,
 template <class CellOf, class State>
 void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
                                  const Array4<Real>& jArr,
-                                 const Array4<RealMM>& mmArr, CellOf cellOf,
+                                 const Array4<Real>& mmArr, CellOf cellOf,
                                  State state, int kpMin = 1) {
   if (np == 0)
     return;
@@ -252,7 +252,7 @@ template <class P> struct MassTile {
   const P* p;
   Array4<Real const> b, b0, u0;
   Array4<Real> j;
-  Array4<RealMM> mm;
+  Array4<Real> mm;
 };
 
 } // namespace
@@ -389,7 +389,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const Array4<Real const> nodeB0Arr =
         useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
     Array4<Real> const jArr = jHat[pti].array();
-    Array4<RealMM> const mmArr = nodeMM[pti].array();
+    Array4<Real> const mmArr = nodeMM[pti].array();
 
     Array4<Real const> const u0Arr = u0MF[pti].const_array();
 
@@ -436,7 +436,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
         for (int j1 = jMin; j1 <= jMax; j1++)
           for (int i1 = iMin; i1 <= iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-            auto& data0 = mmArr(i1, j1, k1);
             for (int k2 = kMin; k2 <= kMax; k2++) {
               const int kp = k2 - k1 + 1;
               if (kp > 0) {
@@ -451,9 +450,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
 #endif
 
-                    Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
-                      deposit_add(&data[idx], alpha[idx] * weight);
+                      deposit_add(&mmArr(i1, j1, k1, idx0 + idx),
+                                  alpha[idx] * weight);
                     }
                   } // k2
 
@@ -505,7 +504,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    Array4<RealMM> const mmArr = nodeMM[mfi].array();
+    Array4<Real> const mmArr = nodeMM[mfi].array();
 
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
@@ -520,7 +519,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const int kr = nDim > 2 ? k1 + kp - 1 : 0;
       if (kr > kMax || kr < kMin)
         return;
-      const auto& datas0 = mmArr(i1, j1, k1);
       for (int jp = 0; jp < 3; jp++) {
         const int jr = j1 + jp - 1;
         if (jr > jMax || jr < jMin)
@@ -534,10 +532,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           const int gpr = jpr * 3 + ipr;    // gp_receive
           const int gps = 18 + jp * 3 + ip; // gp_send = kp*9+jp*3+ip
 
-          Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
-          const Real* const datas = &(datas0[gps * 9]);
+          const int dst0 = gpr * 9;
+          const int src0 = gps * 9;
           for (int idx = 0; idx < 9; idx++) {
-            datar[idx] = datas[idx];
+            mmArr(ir, jr, kr, dst0 + idx) = mmArr(i1, j1, k1, src0 + idx);
           } // idx
         } // ip
       } // jp
@@ -565,7 +563,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     const Array4<Real const> nodeB0Arr =
         useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
     Array4<Real> const jArr = jHat[pti].array();
-    Array4<RealMM> const mmArr = nodeMM[pti].array();
+    Array4<Real> const mmArr = nodeMM[pti].array();
     Array4<Real const> const u0Arr = u0MF[pti].const_array();
     // The particles also deposit onto the finer level if their cell is next
     // to a refined cell (a tile is a single cell on the CPU, a box on the
@@ -578,7 +576,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
     // Coarser levels, this level, and (possibly) the finer level.
     Array4<Real> jArrt[maxCoef];
-    Array4<RealMM> mmArrt[maxCoef];
+    Array4<Real> mmArrt[maxCoef];
     Box mmBoxt[maxCoef]; // the (nodal) boxes of the mass matrices
     int count = 0;
     if (iLev > 0) {
@@ -792,7 +790,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
               const Real wg = coef[i][i1 - iMin][j1 - jMin][k1 - kMin];
-              auto& data0 = mmArrt[i](i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
 #if (AMREX_SPACEDIM == 3)
                 const int kp = k2 - k1 + 1;
@@ -810,9 +807,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
                       const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
 #endif
 
-                      Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
-                        deposit_add(&data[idx], alpha[idx] * weight);
+                        deposit_add(&mmArrt[i](i1, j1, k1, idx0 + idx),
+                                    alpha[idx] * weight);
                       }
                     } // k2
 

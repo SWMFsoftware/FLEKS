@@ -89,7 +89,7 @@ constexpr int nCMMComponents = 27;
 using RealMM = Arr1D<amrex::Real, nMMComponents>;
 using RealCMM = Arr1D<amrex::Real, nCMMComponents>;
 
-using NodeMMFab = amrex::FabArray<amrex::BaseFab<RealMM> >;
+using NodeMMFab = amrex::MultiFab;
 using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM> >;
 
 static_assert(std::is_trivially_default_constructible_v<RealMM>&&
