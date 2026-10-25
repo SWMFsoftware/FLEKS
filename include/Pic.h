@@ -85,67 +85,6 @@ struct BoundaryValue {
 typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
                                    const std::string varName);
 
-struct NodeMMCommData {
-  struct LocTagEntry {
-    int srcIndex;
-    int dstIndex;
-    amrex::Box sbox;
-    amrex::Box dbox;
-    std::size_t bufOffset;
-  };
-
-  struct RemoteTagEntry {
-    int boxIndex;
-    amrex::Box box;
-    std::size_t bufOffset;
-  };
-
-  struct PeerComm {
-    int rank;
-    std::vector<RemoteTagEntry> tags;
-    // Pinned host memory for MPI; the kernels pack and unpack a device
-    // buffer, which is copied to/from buf in one transfer.
-    amrex::Gpu::PinnedVector<RealMM> buf;
-    std::size_t totalPts = 0;
-  };
-
-  bool is_initialized = false;
-  amrex::FabArrayBase::BDKey bdkey;
-
-  std::vector<LocTagEntry> loc_tags;
-  std::size_t localPts = 0; // size of the local snapshot buffer
-  std::vector<std::vector<int> > box_to_loc_tags;
-
-  // Device tables of the local exchange, for one kernel launch per step
-  // (see Pic::sum_boundary_node_mm). A tag copies the box len from the
-  // local box srcLocal at slo to the local box dstLocal at dlo; its values
-  // are at bufStart ... in the snapshot buffer (Reals, nodes in x-fastest
-  // order, the components of a node together).
-  struct LocTagDev {
-    int srcLocal, dstLocal;
-    amrex::Dim3 slo, dlo, len;
-    amrex::Long bufStart;
-  };
-  amrex::Gpu::DeviceVector<LocTagDev> locTagDev;
-  amrex::Gpu::DeviceVector<amrex::Long> locTagStart; // bufStart, tag order
-  // Wave w adds the w-th tag of every destination box, so the tags of a box
-  // are added in order. waveTag holds the tags of wave w at
-  // waveBegin[w] ... waveBegin[w + 1] - 1, waveStart the position of each in
-  // the elements of its wave, waveElems the elements of the wave.
-  amrex::Gpu::DeviceVector<int> waveTag;
-  amrex::Gpu::DeviceVector<amrex::Long> waveStart;
-  std::vector<int> waveBegin;
-  std::vector<amrex::Long> waveElems;
-
-  std::vector<PeerComm> sends;
-  std::vector<PeerComm> recvs;
-
-#ifdef BL_USE_MPI
-  std::vector<MPI_Request> recv_reqs;
-  std::vector<MPI_Request> send_reqs;
-#endif
-};
-
 // The grid is defined in Grid. This class contains the data on the grid.
 class Pic : public GridAccess {
   friend PlotWriter;
@@ -376,7 +315,6 @@ private:
   amrex::Vector<amrex::MultiFab> mMach;
 
   amrex::Vector<NodeMMFab> nodeMM;
-  amrex::Vector<NodeMMCommData> nodeMM_comm_data;
 
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
@@ -863,7 +801,6 @@ public:
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
-  void init_boundary_node_mm_comm(int iLev);
   void sum_boundary_node_mm(int iLev);
 
   void update_part_loc_to_half_stage();

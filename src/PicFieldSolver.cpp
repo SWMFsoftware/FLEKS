@@ -465,13 +465,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
     const Array4<Real const> inArr = inMF[mfi].const_array();
     const Array4<Real> outArr = outMF[mfi].array();
-    const Array4<RealMM const> mmArr = nodeMM[iLev][mfi].const_array();
+    const Array4<Real const> mmArr = nodeMM[iLev][mfi].const_array();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
-      const auto& data0 = mmArr(ijk);
-
       // Accumulate in registers, in the order of the stencil loop (outMF is
       // zero on entry, so the result is the same as adding into outMF).
       Real sumX = 0, sumY = 0, sumZ = 0;
@@ -481,14 +477,21 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
           const int gp = (j2 - j + 1) * 3 + i2 - i + 1;
           const int idx0 = gp * 9;
 
-          const Real* const M_I = &(data0[idx0]);
-
           const double vctX = inArr(i2, j2, 0, ix_);
           const double vctY = inArr(i2, j2, 0, iy_);
           const double vctZ = inArr(i2, j2, 0, iz_);
-          sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-          sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-          sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+          sumX += (vctX * mmArr(i, j, 0, idx0 + 0) +
+                   vctY * mmArr(i, j, 0, idx0 + 1) +
+                   vctZ * mmArr(i, j, 0, idx0 + 2)) *
+                  c0;
+          sumY += (vctX * mmArr(i, j, 0, idx0 + 3) +
+                   vctY * mmArr(i, j, 0, idx0 + 4) +
+                   vctZ * mmArr(i, j, 0, idx0 + 5)) *
+                  c0;
+          sumZ += (vctX * mmArr(i, j, 0, idx0 + 6) +
+                   vctY * mmArr(i, j, 0, idx0 + 7) +
+                   vctZ * mmArr(i, j, 0, idx0 + 8)) *
+                  c0;
         }
       }
 #else
@@ -501,14 +504,18 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
             const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
             const int idx0 = gp * 9;
 
-            const Real* const M_I = &(data0[idx0]);
-
             const double vctX = inArr(i2, j2, k2, ix_);
             const double vctY = inArr(i2, j2, k2, iy_);
             const double vctZ = inArr(i2, j2, k2, iz_);
-            sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-            sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-            sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+            sumX += (vctX * mmArr(i, j, k, idx0 + 0) +
+                     vctY * mmArr(i, j, k, idx0 + 1) +
+                     vctZ * mmArr(i, j, k, idx0 + 2)) * c0;
+            sumY += (vctX * mmArr(i, j, k, idx0 + 3) +
+                     vctY * mmArr(i, j, k, idx0 + 4) +
+                     vctZ * mmArr(i, j, k, idx0 + 5)) * c0;
+            sumZ += (vctX * mmArr(i, j, k, idx0 + 6) +
+                     vctY * mmArr(i, j, k, idx0 + 7) +
+                     vctZ * mmArr(i, j, k, idx0 + 8)) * c0;
           }
         }
       }
