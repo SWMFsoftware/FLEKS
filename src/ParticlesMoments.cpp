@@ -37,27 +37,27 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_charge(
 // corner pair (0,0), (0,1)/(1,0), (1,1). So a dual cell only needs the 27
 // moments sum_p |q| sx^l sy^m sz^n (l, m, n = 0..2): the particles of a cell
 // are summed in a fixed order (CellBins), then every cell centre gathers its
-// entries from the dual cells around it. stateOf(ip, dShift, q) returns the
-// shift and the charge of particle ip; cellOf as in deposit_to_nodes_with().
-template <class CellOf, class StateOf>
-void deposit_center_mm_by_cell(int np, const Box& cellBox,
-                               const Array4<RealCMM>& mmArr, const Real* dx,
-                               Real invVol, CellOf cellOf, StateOf stateOf) {
-  if (np == 0)
+// entries from the dual cells around it. This is done for all the tiles of
+// lb at once (see LevelBins): stateOf(t, ip, dShift, q) returns the shift and
+// the charge of particle ip of tile t, and mmOf(t) the Array4 of tile t.
+template <class StateOf, class MMOf>
+void deposit_level_center_mm(const LevelBins& lb, const Real* dx, Real invVol,
+                             StateOf stateOf, MMOf mmOf) {
+  if (lb.n_particles() == 0)
     return;
-  const Dim3 lo = lbound(cellBox);
-  const Dim3 len = length(cellBox);
-  const int nBins = static_cast<int>(cellBox.numPts());
-
-  CellBins bins;
-  bins.build_cells(np, cellBox, cellOf);
+  const int nBins = lb.n_bins(), nTile = lb.n_tiles();
+  const DepositTile* const tl = lb.tiles();
+  auto tile_of_bin = [=] AMREX_GPU_DEVICE(int b) {
+    return find_deposit_tile(tl, nTile, b,
+                             [](const DepositTile& d) { return d.bStart; });
+  };
 
   // 1. The 27 moments of every dual cell.
   constexpr int nM = 27;
   Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) * nM);
   Real* const sc = scratch.data();
-  const int* const perm = bins.perm();
-  const int* const off = bins.offsets();
+  const int* const perm = lb.perm();
+  const int* const off = lb.offsets();
   // Three parts per cell, one per power n of sz, each summed by a warp (see
   // warp_sums).
   warp_sums<9>(
@@ -69,9 +69,10 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
       },
       [=] AMREX_GPU_DEVICE(int t, int i, Real* acc) {
         const int n = t % 3;
+        const int iTile = tile_of_bin(t / 3);
         RealVect dShift;
         Real q;
-        stateOf(perm[i], dShift, q);
+        stateOf(iTile, perm[i] - tl[iTile].pStart, dShift, q);
         const Real w = amrex::Math::abs(q);
         const Real sz = nDim > 2 ? dShift[nDim > 2 ? 2 : 0] : 0;
         const Real px[3] = { 1, dShift[0], dShift[0] * dShift[0] };
@@ -93,12 +94,18 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
                                 : 1 };
   const Real coef = invVol * invVol * invVol;
   const int nK = nDim > 2 ? 2 : 1;
-  Box nodeBox = cellBox;
-  nodeBox.growHi(1);
-  ParallelFor(nodeBox, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+  // The node boxes of lb are the cell boxes grown by one on the high side.
+  ParallelFor(lb.n_nodes(), [=] AMREX_GPU_DEVICE(int gNode) {
+    const int iTile = find_deposit_tile(
+        tl, nTile, gNode, [](const DepositTile& d) { return d.nodeStart; });
+    const DepositTile& dt = tl[iTile];
+    const int mNode = gNode - dt.nodeStart;
+    const int k = dt.nodeLo.z + mNode / (dt.nodeLen.x * dt.nodeLen.y);
+    const int j = dt.nodeLo.y + (mNode / dt.nodeLen.x) % dt.nodeLen.y;
+    const int i = dt.nodeLo.x + mNode % dt.nodeLen.x;
     const int node[3] = { i, j, k };
-    const int loC[3] = { lo.x, lo.y, lo.z };
-    const int lenC[3] = { len.x, len.y, len.z };
+    const int loC[3] = { dt.lo.x, dt.lo.y, dt.lo.z };
+    const int lenC[3] = { dt.len.x, dt.len.y, dt.len.z };
     // Polynomial of the corner pair (a, b) in s (coefficients of 1, s, s^2).
     auto poly = [](int a, int b, int m) -> Real {
       constexpr Real p00[3] = { 1, -2, 1 }, p01[3] = { 0, 1, -1 },
@@ -122,7 +129,7 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
           if (!inside)
             continue;
           const Real* const m =
-              sc + static_cast<std::size_t>(c[0] +
+              sc + static_cast<std::size_t>(dt.bStart + c[0] +
                                             lenC[0] * (c[1] + lenC[1] * c[2])) *
                        nM;
           // The other corner b of the pair.
@@ -166,13 +173,47 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
                 sum[gp] += coef * value;
               }
         }
-    RealCMM& data = mmArr(i, j, k);
+    RealCMM& data = mmOf(iTile)(i, j, k);
     for (int g = 0; g < nCMMComponents; ++g)
       data[g] += sum[g];
   });
   // The kernels read the bins and the scratch, which are freed on return.
   sync_before_free();
 }
+
+// deposit_level_center_mm() for one tile: the cells of cellBox, cellOf and
+// stateOf(ip, dShift, q) for its particles, as in deposit_to_nodes_with().
+template <class CellOf, class StateOf>
+void deposit_center_mm_by_cell(int np, const Box& cellBox,
+                               const Array4<RealCMM>& mmArr, const Real* dx,
+                               Real invVol, CellOf cellOf, StateOf stateOf) {
+  if (np == 0)
+    return;
+  LevelBins lb;
+  lb.build({ np }, { cellBox },
+           [=] AMREX_GPU_DEVICE(int, int ip, IntVect& cell) {
+             return cellOf(ip, cell);
+           });
+  deposit_level_center_mm(
+      lb, dx, invVol,
+      [=] AMREX_GPU_DEVICE(int, int ip, RealVect& dShift, Real& q) {
+        stateOf(ip, dShift, q);
+      },
+      [=] AMREX_GPU_DEVICE(int) { return mmArr; });
+}
+
+// The data of a tile for the level deposit of sum_moments().
+template <class P> struct MomentTile {
+  const P* p;
+  Array4<Real> arr;
+};
+
+// The data of a tile for the level deposits of sum_to_center().
+template <class P> struct CenterTile {
+  const P* p;
+  Array4<Real> charge;
+  Array4<RealCMM> mm;
+};
 
 } // namespace
 
@@ -190,6 +231,69 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
   Real dxLoc[3] = { 0, 0, 0 };
   for (int d = 0; d < nDim; ++d)
     dxLoc[d] = dx[iLev][d];
+
+  if constexpr (useCellBinDeposits) {
+    // GPU: the deposits of all the tiles at once (see LevelBins). The net
+    // charge and the mass matrix have the same boxes, so they share the bins.
+    std::vector<int> nps;
+    std::vector<Box> cellBoxes;
+    Vector<CenterTile<ParticleType> > tiles;
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
+      // The cells whose 2^D-cell stencil lies in the FABs.
+      Box cellBox = netChargeMF[pti].box();
+      cellBox.growHi(-1);
+      AMREX_ALWAYS_ASSERT(doNetChargeOnly ||
+                          centerMM[pti].box() == netChargeMF[pti].box());
+      nps.push_back(pti.numParticles());
+      cellBoxes.push_back(cellBox);
+      tiles.push_back(
+          { pti.GetArrayOfStructs()().data(), netChargeMF[pti].array(),
+            doNetChargeOnly ? Array4<RealCMM>() : centerMM[pti].array() });
+    }
+    if (tiles.empty())
+      return;
+    Gpu::AsyncArray<CenterTile<ParticleType> > tileStore(tiles.data(),
+                                                         tiles.size());
+    const CenterTile<ParticleType>* const tile = tileStore.data();
+
+    // IDs of ghost cell particles are set to -1 inside divE_correct_position()
+    // but these particles count here (see below).
+    LevelBins lb;
+    lb.build(nps, cellBoxes,
+             [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& cell) {
+               ParticleInterpolator::Linear interp(tile[t].p[ip], plo, dxi);
+               cell = IntVect(AMREX_D_DECL(interp.index[0], interp.index[1],
+                                           interp.index[2]));
+               return true;
+             });
+    deposit_level_to_nodes<1>(
+        lb,
+        [=] AMREX_GPU_DEVICE(int t, int ip, auto&& acc) {
+          const ParticleType& p = tile[t].p[ip];
+          ParticleInterpolator::Linear interp(p, plo, dxi);
+          const Real pval = p.rdata(iqp) * invV;
+          for (int kk = 0; kk <= ParticleInterpolator::Linear::nz; ++kk)
+            for (int jj = 0; jj <= ParticleInterpolator::Linear::ny; ++jj)
+              for (int ii = 0; ii <= ParticleInterpolator::Linear::nx; ++ii)
+                acc[ii][jj][kk][0] +=
+                    interp.w[ii] * interp.w[2 + jj] * interp.w[4 + kk] * pval;
+        },
+        [=] AMREX_GPU_DEVICE(int t, int i, int j, int k, int n, Real v) {
+          tile[t].charge(i, j, k, n) += v;
+        });
+    if (!doNetChargeOnly)
+      deposit_level_center_mm(
+          lb, dxLoc, invV,
+          [=] AMREX_GPU_DEVICE(int t, int ip, RealVect& dShift, Real& q) {
+            const ParticleType& p = tile[t].p[ip];
+            ParticleInterpolator::Linear interp(p, plo, dxi);
+            dShift =
+                RealVect(AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
+            q = p.rdata(iqp);
+          },
+          [=] AMREX_GPU_DEVICE(int t) { return tile[t].mm; });
+    return;
+  }
 
   for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     Array4<Real> const chargeArr = netChargeMF[pti].array();
@@ -669,6 +773,68 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     momentsMF[iLev].setVal(0.0);
     const auto ploLev = Geom(iLev).ProbLoArray();
     const auto invDxLev = Geom(iLev).InvCellSizeArray();
+    // The cell of a particle is the cell whose lower node is the lower node
+    // of its interpolation stencil.
+    auto cellOfParticle = [=] AMREX_GPU_DEVICE(const ParticleType& p,
+                                               IntVect& cell) {
+      if (p.id() < 0)
+        return false;
+      RealVect dShift;
+      Real coef[2][2][2];
+      find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), cell,
+                              dShift, coef);
+      return true;
+    };
+    auto momentsOfParticle = [=] AMREX_GPU_DEVICE(const ParticleType& p,
+                                                  auto&& acc) {
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real qp = p.rdata(iqp_);
+
+      //-----calculate interpolate coef begin-------------
+      IntVect loIdx;
+      RealVect dShift;
+      Real coef[2][2][2];
+      find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), loIdx,
+                              dShift, coef);
+      //-----calculate interpolate coef end-------------
+
+      //-------nodePlasma begin---------
+      Real pMoments[nMoments];
+
+      pMoments[iNum_] = 1;
+      pMoments[iRho_] = qp;
+
+      {
+        const Real mx = qp * up;
+        const Real my = qp * vp;
+        const Real mz = qp * wp;
+        pMoments[iMx_] = mx;
+        pMoments[iMy_] = my;
+        pMoments[iMz_] = mz;
+
+        pMoments[iPxx_] = mx * up;
+        pMoments[iPyy_] = my * vp;
+        pMoments[iPzz_] = mz * wp;
+
+        pMoments[iPxy_] = mx * vp;
+        pMoments[iPxz_] = mx * wp;
+        pMoments[iPyz_] = my * wp;
+      }
+
+      for (int iVar = 0; iVar < nMoments; iVar++)
+        for (int kk = 0; kk < 2; ++kk)
+          for (int jj = 0; jj < 2; ++jj)
+            for (int ii = 0; ii < 2; ++ii)
+              acc[ii][jj][kk][iVar] += coef[ii][jj][kk] * pMoments[iVar];
+      //-------nodePlasma end---------
+    };
+
+    // A GPU build deposits all the tiles at once (see LevelBins).
+    std::vector<int> nps;
+    std::vector<Box> cellBoxes;
+    Vector<MomentTile<ParticleType> > tiles;
     for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       Array4<Real> const momentsArr = momentsMF[iLev][pti].array();
 
@@ -676,66 +842,21 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
       const int np = pti.numParticles();
 
-      // The cell of a particle is the cell whose lower node is the lower node
-      // of its interpolation stencil.
-      auto cellOf = [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
-        const ParticleType& p = pData[ip];
-        if (p.id() < 0)
-          return false;
-        RealVect dShift;
-        Real coef[2][2][2];
-        find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), cell,
-                                dShift, coef);
-        return true;
-      };
-
-      deposit_to_nodes<nMoments>(
-          np, enclosedCells(momentsMF[iLev][pti].box()), momentsArr, 0, cellOf,
-          [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
-            const ParticleType& p = pData[ip];
-            const Real up = p.rdata(iup_);
-            const Real vp = p.rdata(ivp_);
-            const Real wp = p.rdata(iwp_);
-            const Real qp = p.rdata(iqp_);
-
-            //-----calculate interpolate coef begin-------------
-            IntVect loIdx;
-            RealVect dShift;
-            Real coef[2][2][2];
-            find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(),
-                                    loIdx, dShift, coef);
-            //-----calculate interpolate coef end-------------
-
-            //-------nodePlasma begin---------
-            Real pMoments[nMoments];
-
-            pMoments[iNum_] = 1;
-            pMoments[iRho_] = qp;
-
-            {
-              const Real mx = qp * up;
-              const Real my = qp * vp;
-              const Real mz = qp * wp;
-              pMoments[iMx_] = mx;
-              pMoments[iMy_] = my;
-              pMoments[iMz_] = mz;
-
-              pMoments[iPxx_] = mx * up;
-              pMoments[iPyy_] = my * vp;
-              pMoments[iPzz_] = mz * wp;
-
-              pMoments[iPxy_] = mx * vp;
-              pMoments[iPxz_] = mx * wp;
-              pMoments[iPyz_] = my * wp;
-            }
-
-            for (int iVar = 0; iVar < nMoments; iVar++)
-              for (int kk = 0; kk < 2; ++kk)
-                for (int jj = 0; jj < 2; ++jj)
-                  for (int ii = 0; ii < 2; ++ii)
-                    acc[ii][jj][kk][iVar] += coef[ii][jj][kk] * pMoments[iVar];
-            //-------nodePlasma end---------
-          });
+      const Box cellBox = enclosedCells(momentsMF[iLev][pti].box());
+      if constexpr (useCellBinDeposits) {
+        nps.push_back(np);
+        cellBoxes.push_back(cellBox);
+        tiles.push_back({ pData, momentsArr });
+      } else {
+        deposit_to_nodes<nMoments>(
+            np, cellBox, momentsArr, 0,
+            [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+              return cellOfParticle(pData[ip], cell);
+            },
+            [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
+              momentsOfParticle(pData[ip], acc);
+            });
+      }
 
       energySum.add(np, [=] AMREX_GPU_DEVICE(int ip) -> GpuTuple<Real> {
         const ParticleType& p = pData[ip];
@@ -746,6 +867,25 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         const Real wp = p.rdata(iwp_);
         return { p.rdata(iqp_) * (up * up + vp * vp + wp * wp) };
       });
+    }
+
+    if (!tiles.empty()) {
+      Gpu::AsyncArray<MomentTile<ParticleType> > tileStore(tiles.data(),
+                                                           tiles.size());
+      const MomentTile<ParticleType>* const tile = tileStore.data();
+      LevelBins lb;
+      lb.build(nps, cellBoxes,
+               [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& cell) {
+                 return cellOfParticle(tile[t].p[ip], cell);
+               });
+      deposit_level_to_nodes<nMoments>(
+          lb,
+          [=] AMREX_GPU_DEVICE(int t, int ip, auto&& acc) {
+            momentsOfParticle(tile[t].p[ip], acc);
+          },
+          [=] AMREX_GPU_DEVICE(int t, int i, int j, int k, int n, Real v) {
+            tile[t].arr(i, j, k, n) += v;
+          });
     }
 
     // Exclude the number density.
