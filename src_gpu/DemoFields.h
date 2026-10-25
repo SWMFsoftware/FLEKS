@@ -34,12 +34,22 @@ public:
   amrex::Real div_b_error();
   double lastResidual = 0, lastDivResidual = 0;
   int lastIterations = 0, lastDivIterations = 0;
+  DemoLinearSolver& electric_solver() { return eSolver; }
+  DemoLinearSolver& div_e_solver() { return divSolver; }
+  // Optional div(E) methods (div_e_method). They launch device lambdas, so
+  // nvcc requires them to be public.
+  void update_div_e_jacobi();
+  void scale_by_jacobi(const amrex::MultiFab& source,
+                       amrex::MultiFab& destination);
+  DemoSolveResult solve_div_e_pcg();
 
 private:
   const DemoGrid& grid;
   const DemoConfig& config;
   amrex::MultiFab rhs, curlCenter, curlNode, divE, scalarRhs, centerAverage,
       alternativeDiv;
+  // Work arrays for the optional preconditioned div(E) methods.
+  amrex::MultiFab jacobiInverse, scalarP, scalarQ, scalarR, scalarZ, scalarU;
   std::unique_ptr<amrex::iMultiFab> owner;
   DemoLinearSolver eSolver, divSolver;
 };

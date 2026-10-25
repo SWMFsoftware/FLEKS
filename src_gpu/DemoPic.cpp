@@ -141,6 +141,14 @@ int DemoPic::advance() {
     const bool measured =
         config.mode == "benchmark" && step > config.warmupSteps;
     profileActive = measured && !throughput;
+    // Solver counters cover exactly the measured steps; section timers run
+    // only in stage mode with solver_sections=1.
+    if (measured && step == config.warmupSteps + 1) {
+      fields.electric_solver().reset_stats();
+      fields.div_e_solver().reset_stats();
+    }
+    fields.electric_solver().set_timing(profileActive && config.solverSections);
+    fields.div_e_solver().set_timing(profileActive && config.solverSections);
     if (throughput && measured && !windowActive) {
       Gpu::synchronize();
       windowStart = second();
@@ -307,6 +315,25 @@ void DemoPic::benchmark() {
   for (const auto& entry : timings)
     Print() << "TIMING stage=" << entry.first
             << " seconds=" << entry.second / std::max(1, measured) << "\n";
+  // Per-solver costs. Section times are zero unless solver_sections=1 in
+  // stage mode.
+  for (const auto& entry :
+       { std::make_pair("electric", &fields.electric_solver()),
+         std::make_pair("div_e", &fields.div_e_solver()) }) {
+    const auto& s = entry.second->stats();
+    const double perStep = 1. / std::max(1, measured);
+    const double perIteration = 1. / std::max(1L, s.iterations);
+    Print() << "SOLVER name=" << entry.first << " solves=" << s.solves
+            << " iterations=" << s.iterations
+            << " host_waits_per_iteration=" << s.hostWaits * perIteration
+            << " norm_fallbacks=" << s.normFallbacks
+            << " operator_ms_per_step=" << 1e3 * s.operatorSeconds * perStep
+            << " orthogonalize_ms_per_step="
+            << 1e3 * s.orthogonalizeSeconds * perStep
+            << " update_ms_per_step=" << 1e3 * s.updateSeconds * perStep
+            << " residual_ms_per_step=" << 1e3 * s.residualSeconds * perStep
+            << "\n";
+  }
   if (failures == 0 && measured && timings["timestep"] > 0)
     Print() << "THROUGHPUT particles_per_second="
             << expectedCount * measured / timings["timestep"]

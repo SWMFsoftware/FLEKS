@@ -17,14 +17,16 @@ import time
 from validate_demo import ROOT, compare_records, parse_diagnostics, require, validate_diagnostics
 
 
+# Cases recorded before CGS2 became the default pin gmres_batched=0 so their
+# meaning is unchanged; "combined" is the current recommended configuration.
 CASES = {
-    "baseline": {},
-    "pairs": {"pair_symmetry": 1},
-    "pairs-fused": {"pair_symmetry": 1, "fused_push": 1},
-    "folded": {"pair_symmetry": 1, "fold_charge": 1},
-    "chunks": {"pair_symmetry": 1, "cell_chunk_size": 256},
+    "baseline": {"gmres_batched": 0},
+    "pairs": {"pair_symmetry": 1, "gmres_batched": 0},
+    "pairs-fused": {"pair_symmetry": 1, "fused_push": 1, "gmres_batched": 0},
+    "folded": {"pair_symmetry": 1, "fold_charge": 1, "gmres_batched": 0},
+    "chunks": {"pair_symmetry": 1, "cell_chunk_size": 256, "gmres_batched": 0},
     "batched": {"gmres_batched": 1},
-    "fused": {"fused_push": 1},
+    "fused": {"fused_push": 1, "gmres_batched": 0},
     "combined": {"pair_symmetry": 1, "gmres_batched": 1, "fused_push": 1},
 }
 

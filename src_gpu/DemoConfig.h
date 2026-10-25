@@ -36,7 +36,17 @@ struct DemoConfig {
   bool microbenchmarks = true;
   bool pairSymmetry = false;
   bool foldCharge = false;
-  bool batchedGmres = false;
+  // Twice classical Gram-Schmidt with one host wait per Arnoldi step (see
+  // DemoLinearSolver.cpp); 0 selects the reference twice modified
+  // Gram-Schmidt.
+  bool batchedGmres = true;
+  // Time solver sections (operator, orthogonalization, ...). Each section
+  // boundary synchronizes, so this inflates the stage-mode solve times.
+  bool solverSections = false;
+  // div(E) correction solve: gmres (production), jacobi_gmres (right Jacobi
+  // preconditioning), or pcg (Jacobi-preconditioned conjugate gradients).
+  // The last two change the partial potential at the iteration limit.
+  std::string divEMethod = "gmres";
   std::string benchmarkTiming = "stages";
   std::string mode = "fields";
   // Mass-matrix assembly: atomic (per particle), cell (block-reduced per

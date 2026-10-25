@@ -242,8 +242,10 @@ class Suite:
         print("PASS cell-deposit-matches-atomic", flush=True)
         optimized_wave = {**wave, "response": "cell", "deposit": "cell",
                           "b0": 0.5}
+        # Reference: atomic deposits and the twice-MGS solver (gmres_batched=0).
         magnetized = self.run("langmuir-magnetized-atomic",
-                              {**wave, "b0": 0.5}, diagnostics=True)
+                              {**wave, "b0": 0.5, "gmres_batched": 0},
+                              diagnostics=True)
         for label, extra in (("pairs", dict(pair_symmetry=1)),
                              ("split-folded", optimized),
                              ("batched", dict(gmres_batched=1)),
@@ -278,12 +280,35 @@ class Suite:
                 f"Position correction reduced the Gauss residual only from "
                 f"{uncorrected[-1]['gauss']} to {corrected[-1]['gauss']}")
         print("PASS nonuniform-divE-reduction", flush=True)
+        # Opt-in correction solvers change the partial potential, so they are
+        # held to the same Gauss-residual reduction rather than to matching
+        # diagnostics.
+        for method in ("jacobi_gmres", "pcg"):
+            trial = self.run(f"langmuir-divE-{method}",
+                             {**nonuniform, "correct_div_e": 1,
+                              "div_e_method": method}, diagnostics=True)
+            require(trial[-1]["gauss"] <= 1e-6 * uncorrected[-1]["gauss"] + 1e-12,
+                    f"{method} reduced the Gauss residual only from "
+                    f"{uncorrected[-1]['gauss']} to {trial[-1]['gauss']}")
+            print(f"PASS nonuniform-divE-reduction-{method}", flush=True)
+        # Optional preconditioned correction solves change the partial
+        # potential, so they cannot match the GMRES run; require the same
+        # Gauss-residual reduction instead.
+        for method in ("jacobi_gmres", "pcg"):
+            alternative = self.run(f"langmuir-divE-{method}",
+                                   {**nonuniform, "correct_div_e": 1,
+                                    "div_e_method": method}, diagnostics=True)
+            require(alternative[-1]["gauss"] <= 1e-6 * uncorrected[-1]["gauss"] + 1e-12,
+                    f"{method} correction reduced the Gauss residual only from "
+                    f"{uncorrected[-1]['gauss']} to {alternative[-1]['gauss']}")
+            print(f"PASS nonuniform-divE-reduction-{method}", flush=True)
         # FLEKS targets c*dt/dx >> 1, where the field operator is far from the
         # identity. Small-dt cases converge in a couple of Krylov iterations.
         large = dict(mode="implicit", n_cell=16, max_grid_size=8, particles_per_cell=8,
                      n_step=20, dt=0.5, b0=0.5, initial_condition="langmuir",
                      perturbation=0.01, correct_div_e=1, diagnostic_interval=1)
-        large_records = self.run("large-dt", large, diagnostics=True)
+        large_records = self.run("large-dt", {**large, "gmres_batched": 0},
+                                 diagnostics=True)
         require(max(r["iterations"] for r in large_records[1:]) >= 10,
                 "Large-dt case no longer exercises a nontrivial field solve")
         # Step 0 precedes any correction: the half drift creates charge while
@@ -297,7 +322,8 @@ class Suite:
         compare_records(large_records, large_batched, "large-dt batched CGS2",
                         relative=1e-6)
         if self.args.mpi:
-            large_mpi = self.run("large-dt-mpi2", large, ranks=2, diagnostics=True)
+            large_mpi = self.run("large-dt-mpi2", {**large, "gmres_batched": 0},
+                                 ranks=2, diagnostics=True)
             compare_records(large_records, large_mpi, "large-dt MPI decomposition",
                             relative=1e-6)
             print("PASS large-dt-mpi-decomposition-invariance", flush=True)

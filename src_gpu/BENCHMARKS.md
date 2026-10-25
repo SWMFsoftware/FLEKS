@@ -283,3 +283,19 @@ Compute Sanitizer reported zero memory errors and zero race hazards for
 clustered cooperative kernels and again after the final device-batched
 projection change. Logs are `/tmp/fleks-performance-{memcheck,racecheck}.log`
 and `/tmp/fleks-performance-final-{memcheck,racecheck}.log`.
+
+## Synchronization-free CGS2 solver — 2026-10-25
+
+`gmres_batched=1` was rewritten to remove host waits and is now the default
+(`DIVE_SOLVER_OPTIMIZATION_PLAN.md`, "Outcome"). With the recommended flags
+on the reference case, three alternating trials per configuration:
+
+| Layout | Scalar div(E) solves, MGS2 -> CGS2 (ms/step) | Throughput step, MGS2 -> CGS2 (s) |
+| --- | ---: | ---: |
+| 8 boxes of 32^3 | 33.80 -> 13.79 | 0.3449 -> 0.3203 |
+| 64 boxes of 16^3 | 35.58 -> 15.30 | 0.3999 -> 0.3728 |
+
+Host waits per scalar iteration fell from 43.8 to 1.10 with identical
+iteration counts and warnings. The scalar solve is now 2.0x faster than 64
+CPU cores. The earlier `gmres_batched=1` measurements above (0.981x) refer
+to the previous implementation.

@@ -52,6 +52,12 @@ outside a restrictive sandbox. Compilation alone is not GPU verification.
   the cell-reduced `jHat` and mass matrix against the independent serial
   reference (oblique B, shared nodes, periodic corners), and `benchmark` mode
   compares all three assembly methods entry by entry.
+- The default solver is batched CGS2. Reference runs that the solver is
+  compared against (`langmuir-magnetized-atomic`, `large-dt`, `large-dt-mpi2`)
+  pin `gmres_batched=0`, so those comparisons stay MGS2 versus CGS2. The
+  optional `div_e_method=jacobi_gmres` and `pcg` change the applied correction
+  and are required instead to reduce the nonuniform Gauss residual as much as
+  GMRES does (`nonuniform-divE-reduction-<method>`).
 - A div(E) solve that reaches `div_e_max_iter` prints `WARN` and the partial
   potential is applied, as in production `LinearSolver`; it is not a failure.
   An electric solve that does not converge still fails the run.

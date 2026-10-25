@@ -149,3 +149,18 @@ implementation proceeds. The implementation plan remains the acceptance list.
 - Recorded an Nsight Systems trace and measured outcomes in BENCHMARKS.md.
   Migration deferral, preconditioning, adaptive selection, matrix-storage
   replacement, and cross-device scaling remain conditional follow-up work.
+
+## 2026-10-25 — div(E) solver optimization
+
+- Implemented DIVE_SOLVER_OPTIMIZATION_PLAN.md phases 0-2 and 4: solver
+  counters and section timers (`SOLVER` lines, `solver_sections`), a
+  synchronization-free batched CGS2 (one host wait per Arnoldi step on one
+  rank, basis stored once, device-resident projections, fused launches,
+  norm from the second-pass reduction), a zero-initial-guess shortcut and
+  fused right-hand side, and opt-in `div_e_method=jacobi_gmres|pcg`.
+  Phase 3 was not needed on one GPU.
+- Scalar solves 33.8 -> 13.8 ms per step (8 boxes) and 35.6 -> 15.3 ms
+  (64 boxes) with identical iterations and warnings; complete step -7%.
+  CGS2 is now the default; `gmres_batched=0` keeps MGS2.
+- Validated with unit checks, coupled runs on one and two ranks, the CPU
+  build, compute-sanitizer memcheck and racecheck, and the full suite.

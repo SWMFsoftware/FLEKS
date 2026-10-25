@@ -32,6 +32,12 @@ DemoFields::DemoFields(const DemoGrid& g, const DemoConfig& c)
       scalarRhs(g.ba, g.dm, 1, 1),
       centerAverage(g.ba, g.dm, 3, 1),
       alternativeDiv(g.ba, g.dm, 1, 1),
+      jacobiInverse(g.ba, g.dm, 1, 0),
+      scalarP(g.ba, g.dm, 1, 1),
+      scalarQ(g.ba, g.dm, 1, 0),
+      scalarR(g.ba, g.dm, 1, 0),
+      scalarZ(g.ba, g.dm, 1, 0),
+      scalarU(g.ba, g.dm, 1, 1),
       eSolver(g.nodeBa, g.dm, 3, c.gmresRestart, g.geom, c.batchedGmres),
       divSolver(g.ba, g.dm, 1, c.gmresRestart, g.geom, c.batchedGmres) {
   owner = nodeE.OwnerMask(grid.geom.periodicity());
@@ -244,41 +250,198 @@ void DemoFields::advance_b() {
   refresh_node_b();
 }
 void DemoFields::apply_div_e_operator(MultiFab& input, MultiFab& output) {
+  // One launch over all boxes on the current stream, with a non-waiting
+  // local halo copy: the solver consumes the output on the same stream, and
+  // any later MFIter consumer synchronizes the stream before it starts.
+  Gpu::NoSyncRegion noSync;
   input.FillBoundary(grid.geom.periodicity());
-  for (MFIter mfi(output); mfi.isValid(); ++mfi) {
-    auto x = input.const_array(mfi);
-    auto m = centerMM.const_array(mfi);
-    auto y = output.array(mfi);
-    ParallelFor(
-        mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          Real sum = 0;
-          for (int di = -1; di <= 1; ++di)
-            for (int dj = -1; dj <= 1; ++dj)
-              for (int dk = -1; dk <= 1; ++dk)
-                sum += m(i, j, k, (di + 1) * 9 + (dj + 1) * 3 + dk + 1) *
-                       x(i + di, j + dj, k + dk);
-          y(i, j, k) = fourPi * fourPi * sum;
-        });
-  }
+  const auto x = input.const_arrays();
+  const auto m = centerMM.const_arrays();
+  const auto y = output.arrays();
+  ParallelFor(output, IntVect(0),
+              [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                Real sum = 0;
+                for (int di = -1; di <= 1; ++di)
+                  for (int dj = -1; dj <= 1; ++dj)
+                    for (int dk = -1; dk <= 1; ++dk)
+                      sum += m[box](i, j, k,
+                                    (di + 1) * 9 + (dj + 1) * 3 + dk + 1) *
+                             x[box](i + di, j + dj, k + dk);
+                y[box](i, j, k) = fourPi * fourPi * sum;
+              });
 }
 bool DemoFields::solve_div_e() {
   divergence(nodeE, divE);
-  MultiFab::LinComb(scalarRhs, 1 / rhoTheta, divE, 0,
-                    -fourPi * (1 - rhoTheta) / rhoTheta, rhoOld, 0, 0, 1, 0);
-  MultiFab::Saxpy(scalarRhs, -fourPi, rho, 0, 0, 1, 0);
+  // One kernel forms the right-hand side, one reduction returns its mean,
+  // and the mean subtraction runs without a host wait.
   const Real cells = static_cast<Real>(grid.geom.Domain().numPts());
+  {
+    Gpu::NoSyncRegion noSync;
+    const Real a = 1 / rhoTheta, b = -fourPi * (1 - rhoTheta) / rhoTheta,
+               c = -fourPi;
+    const auto out = scalarRhs.arrays();
+    const auto div = divE.const_arrays();
+    const auto old = rhoOld.const_arrays();
+    const auto now = rho.const_arrays();
+    ParallelFor(scalarRhs, IntVect(0),
+                [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                  out[box](i, j, k) = a * div[box](i, j, k) +
+                                      b * old[box](i, j, k) +
+                                      c * now[box](i, j, k);
+                });
+  }
   const Real mean = scalarRhs.sum(0) / cells;
-  scalarRhs.plus(-mean, 0, 1, 0);
-  phi.setVal(0);
-  const auto result = divSolver.solve(
-      phi, scalarRhs,
-      [this](MultiFab& x, MultiFab& y) { apply_div_e_operator(x, y); },
-      config.divETolerance, config.divEMaxIter);
+  {
+    Gpu::NoSyncRegion noSync;
+    const auto out = scalarRhs.arrays();
+    const auto potential = phi.arrays();
+    ParallelFor(scalarRhs, IntVect(0),
+                [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                  out[box](i, j, k) -= mean;
+                  potential[box](i, j, k) = 0;
+                });
+  }
+  DemoSolveResult result;
+  if (config.divEMethod == "gmres") {
+    result = divSolver.solve(
+        phi, scalarRhs,
+        [this](MultiFab& x, MultiFab& y) { apply_div_e_operator(x, y); },
+        config.divETolerance, config.divEMaxIter, true);
+  } else if (config.divEMethod == "jacobi_gmres") {
+    // Right preconditioning: solve (A D^-1) u = b, then phi = D^-1 u. The
+    // residual of the preconditioned system equals that of A phi = b.
+    update_div_e_jacobi();
+    {
+      Gpu::NoSyncRegion noSync;
+      scalarU.setVal(0);
+    }
+    result = divSolver.solve(
+        scalarU, scalarRhs,
+        [this](MultiFab& x, MultiFab& y) {
+          scale_by_jacobi(x, scalarP);
+          apply_div_e_operator(scalarP, y);
+        },
+        config.divETolerance, config.divEMaxIter, true);
+    scale_by_jacobi(scalarU, phi);
+  } else {
+    update_div_e_jacobi();
+    result = solve_div_e_pcg();
+  }
   phi.plus(-phi.sum(0) / cells, 0, 1, 0);
   phi.FillBoundary(grid.geom.periodicity());
   lastDivResidual = result.residual;
   lastDivIterations = result.iterations;
   return result.converged;
+}
+void DemoFields::update_div_e_jacobi() {
+  // Inverse of the operator diagonal 4 pi^2 M_center. Cells without
+  // particles have a zero row; they keep unit scaling.
+  Gpu::NoSyncRegion noSync;
+  const auto inverse = jacobiInverse.arrays();
+  const auto m = centerMM.const_arrays();
+  ParallelFor(jacobiInverse, IntVect(0),
+              [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                const Real diagonal = fourPi * fourPi * m[box](i, j, k, 13);
+                inverse[box](i, j, k) = diagonal > 0 ? 1 / diagonal : 1;
+              });
+}
+void DemoFields::scale_by_jacobi(const MultiFab& source, MultiFab& destination) {
+  Gpu::NoSyncRegion noSync;
+  const auto inverse = jacobiInverse.const_arrays();
+  const auto src = source.const_arrays();
+  const auto dst = destination.arrays();
+  ParallelFor(destination, IntVect(0),
+              [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                dst[box](i, j, k) = inverse[box](i, j, k) * src[box](i, j, k);
+              });
+}
+// Jacobi-preconditioned conjugate gradients for the symmetric positive
+// semidefinite correction operator (null space: constants, removed from the
+// right-hand side). Two reductions per iteration; vector updates are fused
+// and do not wait. phi must be zero on entry. The stopping test uses the
+// recurrence residual; the reported residual is recomputed from A phi.
+DemoSolveResult DemoFields::solve_div_e_pcg() {
+  DemoSolveResult result;
+  auto sum2 = [](const MultiFab& a, const MultiFab& b, const MultiFab& c,
+                 const MultiFab& d) {
+    const auto aa = a.const_arrays(), bb = b.const_arrays();
+    const auto cc = c.const_arrays(), dd = d.const_arrays();
+    auto value = ParReduce(
+        TypeList<ReduceOpSum, ReduceOpSum>{}, TypeList<Real, Real>{}, a,
+        IntVect(0),
+        [=] AMREX_GPU_DEVICE(int box, int i, int j, int k)
+            -> GpuTuple<Real, Real> {
+          return { aa[box](i, j, k) * bb[box](i, j, k),
+                   cc[box](i, j, k) * dd[box](i, j, k) };
+        });
+    Real out[2] = { amrex::get<0>(value), amrex::get<1>(value) };
+    ParallelDescriptor::ReduceRealSum(out, 2);
+    return std::make_pair(out[0], out[1]);
+  };
+  {
+    Gpu::NoSyncRegion noSync;
+    const auto b = scalarRhs.const_arrays();
+    const auto inverse = jacobiInverse.const_arrays();
+    const auto r = scalarR.arrays(), z = scalarZ.arrays(), p = scalarP.arrays();
+    ParallelFor(scalarR, IntVect(0),
+                [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                  r[box](i, j, k) = b[box](i, j, k);
+                  z[box](i, j, k) = inverse[box](i, j, k) * b[box](i, j, k);
+                  p[box](i, j, k) = z[box](i, j, k);
+                });
+  }
+  auto [rz, rr] = sum2(scalarR, scalarZ, scalarR, scalarR);
+  const Real target = config.divETolerance * std::max(std::sqrt(rr), 1e-14);
+  result.initialResidual = std::sqrt(rr);
+  Real recurrence = result.initialResidual;
+  while (result.iterations < config.divEMaxIter && recurrence > target) {
+    apply_div_e_operator(scalarP, scalarQ);
+    const Real pq = sum2(scalarP, scalarQ, scalarP, scalarQ).first;
+    if (!(pq > 0))
+      break;
+    const Real alpha = rz / pq;
+    {
+      Gpu::NoSyncRegion noSync;
+      const auto inverse = jacobiInverse.const_arrays();
+      const auto x = phi.arrays(), r = scalarR.arrays(), z = scalarZ.arrays();
+      const auto p = scalarP.const_arrays(), q = scalarQ.const_arrays();
+      ParallelFor(scalarR, IntVect(0),
+                  [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                    x[box](i, j, k) += alpha * p[box](i, j, k);
+                    r[box](i, j, k) -= alpha * q[box](i, j, k);
+                    z[box](i, j, k) = inverse[box](i, j, k) * r[box](i, j, k);
+                  });
+    }
+    const auto [rzNew, rrNew] = sum2(scalarR, scalarZ, scalarR, scalarR);
+    recurrence = std::sqrt(rrNew);
+    ++result.iterations;
+    const Real beta = rzNew / rz;
+    rz = rzNew;
+    {
+      Gpu::NoSyncRegion noSync;
+      const auto p = scalarP.arrays();
+      const auto z = scalarZ.const_arrays();
+      ParallelFor(scalarP, IntVect(0),
+                  [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                    p[box](i, j, k) = z[box](i, j, k) + beta * p[box](i, j, k);
+                  });
+    }
+  }
+  // True residual b - A phi, reported like the GMRES solves.
+  apply_div_e_operator(phi, scalarQ);
+  {
+    Gpu::NoSyncRegion noSync;
+    const auto b = scalarRhs.const_arrays();
+    const auto q = scalarQ.arrays();
+    ParallelFor(scalarQ, IntVect(0),
+                [=] AMREX_GPU_DEVICE(int box, int i, int j, int k) noexcept {
+                  q[box](i, j, k) = b[box](i, j, k) - q[box](i, j, k);
+                });
+  }
+  result.residual = std::sqrt(sum2(scalarQ, scalarQ, scalarQ, scalarQ).first);
+  result.converged =
+      std::isfinite(result.residual) && result.residual <= target;
+  return result;
 }
 Real DemoFields::field_energy() {
   const auto dx = grid.geom.CellSizeArray();
@@ -507,6 +670,27 @@ int DemoFields::run_checks() {
         scalarSolved.converged ? scalarSolved.residual : Real(1),
         std::max(tol, config.solverTolerance *
                           std::sqrt(divSolver.dot(scalarRhs, scalarRhs))));
+  // The optional preconditioned methods must reach the correction tolerance
+  // on the same manufactured potential, with a recomputed true residual.
+  const Real scalarRhsNorm = std::sqrt(divSolver.dot(scalarRhs, scalarRhs));
+  update_div_e_jacobi();
+  phi.setVal(0);
+  const auto pcgSolved = solve_div_e_pcg();
+  check("Jacobi PCG manufactured potential true relative residual",
+        pcgSolved.converged ? pcgSolved.residual / scalarRhsNorm : Real(1),
+        config.divETolerance);
+  scalarU.setVal(0);
+  const auto jacobiSolved = divSolver.solve(
+      scalarU, scalarRhs,
+      [this](MultiFab& x, MultiFab& y) {
+        scale_by_jacobi(x, scalarP);
+        apply_div_e_operator(scalarP, y);
+      },
+      config.divETolerance, config.divEMaxIter, true);
+  check("Jacobi GMRES manufactured potential true relative residual",
+        jacobiSolved.converged ? jacobiSolved.residual / scalarRhsNorm
+                               : Real(1),
+        config.divETolerance);
   phi.setVal(0);
   centerMM.setVal(0);
   // A varying, nonsymmetric block operator exercises multiple Arnoldi

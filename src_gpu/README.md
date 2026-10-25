@@ -86,7 +86,9 @@ Its AMReX device arena starts at 64 MiB and grows as needed; override
 | `warmup_steps` | 1 | Coupled steps excluded before benchmark measurements |
 | `microbenchmarks` | 1 | Run layout/deposit/ghost microbenchmarks after benchmark evolution |
 | `pair_symmetry` | 0 | Experimental cell-kernel reuse of unordered node-pair arithmetic |
-| `gmres_batched` | 0 | Experimental twice classical Gram–Schmidt with batched projection reductions |
+| `gmres_batched` | 1 | Twice classical Gram–Schmidt with one host wait per Arnoldi step; 0 selects the reference twice modified Gram–Schmidt |
+| `solver_sections` | 0 | In `benchmark_timing=stages`, time solver sections (operator, orthogonalization, updates, residual); adds synchronization |
+| `div_e_method` | gmres | div(E) correction solve: `gmres` (production), `jacobi_gmres`, or `pcg`; the last two change the applied correction |
 | `fold_charge` | 0 | Experimental cell correction deposit staging of charge-weighted gradients |
 | `cell_chunk_size` | 0 | Experimental maximum particles per cell block; zero is unlimited, otherwise at least 64 |
 | `clustered` | 0 | Compress quiet-start positions to test scatter contention |
@@ -175,11 +177,15 @@ for response, correction-matrix, and moment deposits. Chunk scheduling adds
 a prefix scan and a host synchronization per tile; zero preserves one block
 per cell. Folded gradients use an additional 12 KiB of shared memory per block.
 These options preserve atomic output accumulation and CPU fallback paths.
-`gmres_batched=1` uses twice classical Gram–Schmidt with batched MPI
-projection reductions and fused vector updates. On CUDA/HIP, all local
-projections in a pass share one device buffer and one host transfer; CPU
-builds retain local dot products. Its packed basis adds memory included in
-the startup estimate. The default remains twice modified Gram–Schmidt.
+`gmres_batched=1` (the default) uses twice classical Gram–Schmidt. On
+CUDA/HIP both projection passes, their vector updates, and the norm run on
+the device without host waits; the host waits once per Arnoldi step for the
+Hessenberg column (once per pass with several MPI ranks). The basis is stored
+once, in a packed array that the per-vector MultiFabs alias. CPU builds use
+local dot products. `gmres_batched=0` keeps twice modified Gram–Schmidt as the
+reference. Benchmark mode prints one `SOLVER` line per solver with
+iterations, host waits per iteration, and, with `solver_sections=1`, section
+times. `DIVE_SOLVER_OPTIMIZATION_PLAN.md` records the measurements.
 
 For repeated comparisons, with logs, diagnostics, source/build provenance,
 CPU affinity/load, arena peaks, and median/spread in `results.json`, run:

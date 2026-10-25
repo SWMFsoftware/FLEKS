@@ -29,6 +29,11 @@ DemoConfig::DemoConfig() {
   pp.query("pair_symmetry", pairSymmetry);
   pp.query("fold_charge", foldCharge);
   pp.query("gmres_batched", batchedGmres);
+  pp.query("solver_sections", solverSections);
+  pp.query("div_e_method", divEMethod);
+  if (divEMethod != "gmres" && divEMethod != "jacobi_gmres" &&
+      divEMethod != "pcg")
+    amrex::Abort("div_e_method must be gmres, jacobi_gmres, or pcg");
   if (benchmarkTiming != "stages" && benchmarkTiming != "throughput")
     amrex::Abort("benchmark_timing must be stages or throughput");
   pp.query("dt", dt);
