@@ -17,6 +17,7 @@
 #include <AMReX_Extension.H>
 #include <AMReX_FabArray.H>
 #include <AMReX_Gpu.H>
+#include <AMReX_GpuAsyncArray.H>
 #include <AMReX_GpuAtomic.H>
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_Loop.H>
@@ -578,9 +579,11 @@ public:
     }
     if (nParticle == 0)
       return 0;
-    dTiles.resize(nTile);
-    amrex::Gpu::copyAsync(amrex::Gpu::hostToDevice, hTiles.begin(),
-                          hTiles.end(), dTiles.begin());
+    // An AsyncArray, not a copy from the vector: the copy may run after this
+    // object is gone (the GPU runs behind the host), and an AsyncArray keeps
+    // its pinned source until the copy is done.
+    dTiles = std::make_unique<amrex::Gpu::AsyncArray<DepositTile> >(
+        hTiles.data(), hTiles.size());
     return nParticle;
   }
 
@@ -593,13 +596,7 @@ public:
   int n_bins() const { return nBin; }
   int n_nodes() const { return nNode; }
   // The tile table in device memory (host memory in a CPU build).
-  const DepositTile* tiles() const {
-#ifdef AMREX_USE_GPU
-    return dTiles.data();
-#else
-    return hTiles.data();
-#endif
-  }
+  const DepositTile* tiles() const { return dTiles ? dTiles->data() : nullptr; }
   const int* perm() const { return bins.perm(); }
   const int* offsets() const { return bins.offsets(); }
 
@@ -607,7 +604,7 @@ private:
   int nTile = 0, nParticle = 0, nBin = 0, nNode = 0;
   bool hasRestBin = false;
   std::vector<DepositTile> hTiles;
-  amrex::Gpu::DeviceVector<DepositTile> dTiles;
+  std::unique_ptr<amrex::Gpu::AsyncArray<DepositTile> > dTiles;
   CellBins bins;
 };
 
