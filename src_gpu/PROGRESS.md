@@ -178,3 +178,16 @@ implementation proceeds. The implementation plan remains the acceptance list.
   double. Validation adds single-precision serial references, precision-aware
   benchmark comparisons, a single-precision energy/frequency gate (1e-7), and
   a single-precision nonuniform div(E) reduction check.
+
+## 2026-10-25 — separable-moment div(E) deposit
+
+- Implemented phase 1 of DIVE_DEPOSIT_OPTIMIZATION_PLAN.md: the div(E)
+  correction matrix is rebuilt from 27 per-cell moment sums (plus 8 charge
+  sums) with 8 lanes per cell, register accumulators, and a shuffle
+  reduction. New default `center_kernel=moments`; `pairs` keeps the old
+  kernel.
+- div(E) deposit 96.1 -> 38.9 ms per step and step 319 -> 262 ms in double
+  precision (faster than the previous single-precision step), identical
+  solver work. Validated with serial references, per-species atomic
+  comparisons (uniform, clustered, chunked), coupled runs of both kernels,
+  the CPU build, compute-sanitizer, and the full suite.

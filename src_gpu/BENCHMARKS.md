@@ -360,3 +360,22 @@ plain FP32; and the per-cell products are too small to amortize data layout
 changes. The solver work is bandwidth-bound. FP64 tensor cores on A100/H100
 could run the same per-cell sums in full double precision and are the
 relevant target for data-center GPUs.
+
+## Separable-moment div(E) deposit — 2026-10-25
+
+`center_kernel=moments` (default) rebuilds the div(E) correction matrix from
+27 per-cell sums of non-negative terms (CIC weights factor by dimension),
+plus 8 charge sums, instead of 36 node-pair gradient dot products per
+particle. See `DIVE_DEPOSIT_OPTIMIZATION_PLAN.md`.
+
+Reference case, stage mode, GPU 0, two undisturbed trials each:
+
+| | Pairs | Moments | Gain |
+| --- | ---: | ---: | ---: |
+| div(E) deposit, double | 96.1 ms | 38.9 ms | 2.47x |
+| Whole step, double | 319.2 ms | 262.0 ms | 1.22x |
+| Whole step, `cell_precision=single` | 268.4 ms | 236.6 ms | 1.13x |
+
+Throughput mode: 0.3233 -> 0.2660 s. 64 boxes of 16^3: 371.5 -> 309.7 ms per
+step. Solver work identical. The kernel is double precision only, so
+`cell_precision=single` now speeds up only the response kernel.

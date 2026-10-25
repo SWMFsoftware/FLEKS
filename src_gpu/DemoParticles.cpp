@@ -986,6 +986,17 @@ int DemoParticles::run_checks(DemoFields& fields) {
            single ? Real(2.e-6) * largest(centerMatrix) / (invVol * n * n)
                   : tol);
   }
+  // The separable-moment kernel must match the same reference.
+  fields.rho.setVal(0);
+  fields.centerMM.setVal(0);
+  deposit_center_charge_moments(fields.rho, fields.centerMM);
+  fields.rho.SumBoundary(grid.geom.periodicity());
+  fields.centerMM.SumBoundary(grid.geom.periodicity());
+  report("moment-kernel charge CIC serial reference",
+         compare_reference(fields.rho, rho, n) / invVol, tol);
+  report("moment-kernel divE matrix serial reference",
+         compare_reference(fields.centerMM, centerMatrix, n) / (invVol * n * n),
+         tol);
   fields.rho.setVal(0);
   deposit_center_charge_cell(fields.rho);
   fields.rho.SumBoundary(grid.geom.periodicity());
@@ -1261,10 +1272,174 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
     deposit_center_charge(rho);
     return;
   }
-  if (config.cellPrecision == "single")
+  if (config.centerKernel == "moments")
+    deposit_center_charge_moments(rho, *centerMatrix);
+  else if (config.cellPrecision == "single")
     deposit_center_charge_cell_impl<float>(rho, centerMatrix);
   else
     deposit_center_charge_cell_impl<Real>(rho, centerMatrix);
+}
+
+// Separable-moment form of the div(E) correction matrix. CIC weights factor
+// by dimension, w_a = X_a(fx) Y_a(fy) Z_a(fz), and a gradient component
+// replaces one factor by +-1/dx. Every entry of the cell's matrix is then
+//   M(a,c) = (1/V) sum_d (1/dx_d^2) s_a^d s_c^d T_d[i][j],
+//   T_d[i][j] = sum_p |q| P_i(f_e1) P_j(f_e2),
+// with P_0 = (1-f)^2, P_1 = f(1-f), P_2 = f^2, s = +-1 the node's side in
+// direction d, e1 and e2 the other two directions, and i (j) = 0, 1, 2 the
+// number of the two nodes on the upper side in e1 (e2). That is 27 sums of
+// non-negative terms per cell plus 8 charge sums, about a quarter of the
+// FP64 work of the pair kernel, and no staging in shared memory.
+void DemoParticles::deposit_center_charge_moments(MultiFab& rho,
+                                                  MultiFab& centerMatrix) {
+#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
+  // G lanes share one base cell; lanes stride through its particles, keep
+  // 35 running sums in registers, and combine them with an xor shuffle.
+  constexpr int nThread = 128, G = 8, cellsPerBlock = nThread / G,
+                nSum = 35;
+  static_assert(G <= 32 && nThread % 32 == 0, "groups must not span warps");
+  const auto lo = grid.geom.ProbLoArray();
+  const auto invDx = grid.geom.InvCellSizeArray();
+  const Real invVol = 1 / cell_volume(grid);
+  const GpuArray<Real, 3> scale{ invVol * invDx[0] * invDx[0],
+                                 invVol * invDx[1] * invDx[1],
+                                 invVol * invDx[2] * invDx[2] };
+  for (ParConstIterType pti(*this, 0); pti.isValid(); ++pti) {
+    const int np = pti.numParticles();
+    if (!np)
+      continue;
+    const auto box = pti.validbox();
+    const IntVect small = box.smallEnd() - 1;
+    const IntVect big = box.bigEnd();
+    const IntVect length = big - small + 1;
+    const int ncells = length[0] * length[1] * length[2];
+    const auto* particles = pti.GetArrayOfStructs().data();
+    // Same half-cell-shifted bins as deposit_center_charge_cell_impl.
+    auto cell_of = [=] AMREX_GPU_DEVICE(const ParticleType& p) noexcept {
+      int index[3];
+      for (int d = 0; d < 3; ++d)
+        index[d] = amrex::min(
+            big[d], amrex::max(small[d], static_cast<int>(std::floor(
+                                             (p.pos(d) - lo[d]) * invDx[d] -
+                                             Real(0.5)))));
+      return ((index[2] - small[2]) * length[1] + index[1] - small[1]) *
+                 length[0] +
+             index[0] - small[0];
+    };
+    auto& bins = centerBins[{ pti.index(), pti.LocalTileIndex() }];
+    {
+      BL_PROFILE("particles.cell_bins");
+      bins.build(np, particles, ncells, cell_of);
+    }
+    const auto* perm = bins.permutationPtr();
+    const auto* offsets = bins.offsetsPtr();
+    const int chunkSize = config.cellChunkSize;
+    auto& taskStorage = cellTasks[{ pti.index(), pti.LocalTileIndex() }];
+    const int ntasks = cell_tasks(ncells, offsets, chunkSize, taskStorage);
+    const int* tasks = chunkSize ? taskStorage.data() : nullptr;
+    const auto r = rho.array(pti);
+    const auto mm = centerMatrix.array(pti);
+    const int nblocks = (ntasks + cellsPerBlock - 1) / cellsPerBlock;
+    BL_PROFILE("particles.cell_kernel_launch");
+    amrex::launch<nThread>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
+      const int group = threadIdx.x / G, lane = threadIdx.x % G;
+      const int task = blockIdx.x * cellsPerBlock + group;
+      // Every lane reaches the shuffles below, so out-of-range groups get an
+      // empty particle range instead of returning early.
+      int cell = 0, begin = 0, end = 0;
+      if (task < ntasks)
+        cell_task_range(task, ncells, offsets, tasks, chunkSize, cell, begin,
+                        end);
+      const int base[3] = { small[0] + cell % length[0],
+                            small[1] + (cell / length[0]) % length[1],
+                            small[2] + cell / (length[0] * length[1]) };
+      // acc[9 d + 3 i + j] = T_d[i][j]; acc[27 + b] = charge of corner b.
+      Real acc[nSum];
+#pragma unroll
+      for (int n = 0; n < nSum; ++n)
+        acc[n] = 0;
+      for (int ip = begin + lane; ip < end; ip += G) {
+        const auto& p = particles[perm[ip]];
+        const Real q = p.id() > 0 ? p.rdata(iqp_) : Real(0);
+        const Real magnitude = std::abs(q);
+        Real L[3][2], P[3][3];
+#pragma unroll
+        for (int d = 0; d < 3; ++d) {
+          const Real f = (p.pos(d) - lo[d]) * invDx[d] - Real(0.5) - base[d];
+          const Real g = 1 - f;
+          L[d][0] = g;
+          L[d][1] = f;
+          P[d][0] = g * g;
+          P[d][1] = g * f;
+          P[d][2] = f * f;
+        }
+#pragma unroll
+        for (int d = 0; d < 3; ++d) {
+          const int e1 = (d + 1) % 3, e2 = (d + 2) % 3;
+#pragma unroll
+          for (int i = 0; i < 3; ++i) {
+            const Real weighted = magnitude * P[e1][i];
+#pragma unroll
+            for (int j = 0; j < 3; ++j)
+              acc[9 * d + 3 * i + j] += weighted * P[e2][j];
+          }
+        }
+#pragma unroll
+        for (int bx = 0; bx < 2; ++bx)
+#pragma unroll
+          for (int by = 0; by < 2; ++by) {
+            const Real qxy = q * L[0][bx] * L[1][by];
+#pragma unroll
+            for (int bz = 0; bz < 2; ++bz)
+              acc[27 + bx + 2 * by + 4 * bz] += qxy * L[2][bz];
+          }
+      }
+#pragma unroll
+      for (int n = 0; n < nSum; ++n)
+        for (int offset = G / 2; offset > 0; offset /= 2)
+          acc[n] += AMREX_HIP_OR_CUDA(
+              __shfl_xor(acc[n], offset, G),
+              __shfl_xor_sync(0xffffffff, acc[n], offset, G));
+      // Every lane now holds all 35 sums. Stage them in shared memory so
+      // the lanes can index them at run time while writing the outputs.
+      __shared__ Real sums[cellsPerBlock][nSum];
+#pragma unroll
+      for (int n = 0; n < nSum; ++n)
+        if (lane == n % G)
+          sums[group][n] = acc[n];
+      AMREX_HIP_OR_CUDA((void)0, __syncwarp());
+      if (begin == end)
+        return;
+      for (int e = lane; e < 64 + 8; e += G) {
+        if (e < 64) {
+          const int a = e / 8, c = e % 8;
+          const int ab[3] = { a & 1, (a >> 1) & 1, a >> 2 };
+          const int cb[3] = { c & 1, (c >> 1) & 1, c >> 2 };
+          Real value = 0;
+          for (int d = 0; d < 3; ++d) {
+            const int e1 = (d + 1) % 3, e2 = (d + 2) % 3;
+            const Real term =
+                scale[d] *
+                sums[group][9 * d + 3 * (ab[e1] + cb[e1]) + ab[e2] + cb[e2]];
+            value += ab[d] == cb[d] ? term : -term;
+          }
+          const int offset = (cb[0] - ab[0] + 1) * 9 +
+                             (cb[1] - ab[1] + 1) * 3 + (cb[2] - ab[2] + 1);
+          Gpu::Atomic::AddNoRet(
+              &mm(base[0] + ab[0], base[1] + ab[1], base[2] + ab[2], offset),
+              value);
+        } else {
+          const int b = e - 64;
+          Gpu::Atomic::AddNoRet(&r(base[0] + (b & 1), base[1] + ((b >> 1) & 1),
+                                   base[2] + (b >> 2)),
+                                invVol * sums[group][27 + b]);
+        }
+      }
+    });
+  }
+#else
+  deposit_center_charge(rho, &centerMatrix);
+#endif
 }
 
 // T is the type of the staged gradients and of the per-cell matrix sums

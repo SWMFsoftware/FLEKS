@@ -58,6 +58,9 @@ struct DemoConfig {
   // div(E) charge/matrix, final charge, and moment deposits: atomic (per
   // particle) or cell (block-reduced per cell, GPU).
   std::string deposit = "atomic";
+  // Kernel for the cell div(E) matrix deposit: moments (separable sums,
+  // double precision) or pairs (node-pair kernel; honors cell_precision).
+  std::string centerKernel = "moments";
   std::string initialCondition = "uniform";
   std::string referencePrefix;
 

@@ -240,6 +240,13 @@ class Suite:
                                 diagnostics=True)
         compare_records(wave_box4, wave_deposit, "cell-reduced deposits")
         print("PASS cell-deposit-matches-atomic", flush=True)
+        # The default div(E) deposit uses the separable-moment kernel; keep
+        # the node-pair kernel covered as well.
+        wave_pairs = self.run("langmuir-divE-cell-deposit-pairs",
+                              {**wave, "response": "cell", "deposit": "cell",
+                               "center_kernel": "pairs"}, diagnostics=True)
+        compare_records(wave_box4, wave_pairs, "pair-kernel div(E) deposit")
+        print("PASS pair-kernel-deposit-matches-atomic", flush=True)
         optimized_wave = {**wave, "response": "cell", "deposit": "cell",
                           "b0": 0.5}
         # Reference: atomic deposits and the twice-MGS solver (gmres_batched=0).

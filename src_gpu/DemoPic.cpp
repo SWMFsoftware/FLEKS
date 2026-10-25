@@ -313,7 +313,8 @@ void DemoPic::benchmark() {
           << " cell_chunk_size=" << config.cellChunkSize
           << " gmres_batched=" << config.batchedGmres
           << " div_e_method=" << config.divEMethod
-          << " cell_precision=" << config.cellPrecision << "\n";
+          << " cell_precision=" << config.cellPrecision
+          << " center_kernel=" << config.centerKernel << "\n";
   for (const auto& entry : timings)
     Print() << "TIMING stage=" << entry.first
             << " seconds=" << entry.second / std::max(1, measured) << "\n";

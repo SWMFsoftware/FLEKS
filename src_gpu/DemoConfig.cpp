@@ -56,6 +56,9 @@ DemoConfig::DemoConfig() {
   if (response != "atomic" && response != "cell" && response != "buffered")
     amrex::Abort("response must be atomic, cell, or buffered");
   pp.query("deposit", deposit);
+  pp.query("center_kernel", centerKernel);
+  if (centerKernel != "moments" && centerKernel != "pairs")
+    amrex::Abort("center_kernel must be moments or pairs");
   if (deposit != "atomic" && deposit != "cell")
     amrex::Abort("deposit must be atomic or cell");
   pp.query("clustered", clustered);

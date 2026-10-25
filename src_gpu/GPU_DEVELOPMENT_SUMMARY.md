@@ -6,10 +6,10 @@ linked at the end.
 
 ## Result in one line
 
-One RTX 4090 now runs the reference semi-implicit PIC step in **0.318 s**
-(default double precision) or **0.268 s** (opt-in single-precision matrix
-sums), down from **1.066 s** for the first GPU version: **3.4x** and **4.0x**
-faster. It is **4.8x** (double) and **5.7x** (single) faster than all 64 CPU
+One RTX 4090 now runs the reference semi-implicit PIC step in **0.262 s**
+(double precision) or **0.237 s** (opt-in single-precision response sums),
+down from **1.066 s** for the first GPU version: **4.1x** and **4.5x**
+faster. It is **5.8x** (double) and **6.4x** (single) faster than all 64 CPU
 cores of the same workstation running the same code (1.525 s).
 
 ## Reference case and how speed was measured
@@ -152,6 +152,29 @@ matrix and the particle push. Default stays double. Tensor cores were
 assessed and do not help on this card (no FP64 support; TF32 is no faster
 than FP32 here).
 
+### 9. Separable-moment div(E) deposit (`center_kernel=moments`)
+
+CIC weights factor by dimension, so every entry of the div(E) correction
+matrix can be rebuilt from 27 per-cell sums of non-negative terms,
+sum |q| P_i(f) P_j(f) with P in {(1-f)^2, f(1-f), f^2}, plus 8 charge sums,
+instead of 36 node-pair gradient dot products per particle. Groups of 8
+lanes share a cell, keep the 35 sums in registers, and combine them with a
+shuffle. Double precision only; now the default (`pairs` keeps the old
+kernel).
+
+| | Before (pairs) | After (moments) | Gain |
+| --- | ---: | ---: | ---: |
+| div(E) deposit, 3 passes | 96.1 ms | 38.9 ms | **2.47x** |
+| Step, double, stage mode | 0.319 s | 0.262 s | **1.22x** |
+| Step, double, throughput mode | 0.323 s | 0.266 s | **1.22x** |
+| Step, `cell_precision=single` | 0.268 s | 0.237 s | **1.13x** |
+
+The default double-precision step is now faster than the previous
+single-precision step, without its energy-conservation cost; with this
+kernel, `cell_precision=single` affects only the response kernel. Solver
+work is identical, and clustered particles also gain (2.9x over the atomic
+path with `cell_chunk_size=256`).
+
 ## Cumulative speedup
 
 Stage-mode step time, reference case, one RTX 4090, 8 boxes:
@@ -162,17 +185,20 @@ Stage-mode step time, reference case, one RTX 4090, 8 boxes:
 | 4. Cell-reduced mass matrix | 0.603 | 1.77x | 1.8x |
 | 5. Cell-reduced deposits | 0.387 | 1.56x | 2.8x |
 | 6. Pair reuse + fused push | 0.344 | 1.13x | 3.1x |
-| 7. GMRES without host waits | 0.318 | 1.08x | **3.4x** (default) |
-| 8. Single-precision matrix sums | 0.268 | 1.19x | **4.0x** (opt-in) |
+| 7. GMRES without host waits | 0.318 | 1.08x | 3.4x |
+| 8. Single-precision matrix sums (opt-in) | 0.268 | 1.19x | 4.0x |
+| 9. Separable-moment div(E) deposit, double | 0.262 | 1.22x over 7 | **4.1x** (double) |
+| 9. Separable-moment div(E) deposit, single | 0.237 | 1.13x over 8 | **4.5x** (opt-in) |
 
 ## Current speed of each part, GPU versus CPU
 
-Fresh runs of the current code, medians of three trials. CPU: one rank per
-physical core, 64 boxes of 16^3. GPU: 8 boxes of 32^3, recommended flags.
+CPU: one rank per physical core, 64 boxes of 16^3, medians of three trials.
+GPU: 8 boxes of 32^3, recommended flags, means of two undisturbed trials
+after change 9; other GPU rows were unchanged by it.
 
 | Part (ms per step) | CPU 64 cores | CPU 32 cores | GPU double | GPU single | GPU single vs 64 cores |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| div(E) charge + matrix deposit, 3 passes | 425.1 | 667.7 | 95.8 | 70.6 | 6.0x |
+| div(E) charge + matrix deposit, 3 passes | 425.1 | 667.7 | 38.9 | 38.9 | 10.9x |
 | Mass-matrix assembly | 318.2 | 358.5 | 50.6 | 25.2 | 12.6x |
 | div(E) position correction + migration, 3 passes | 268.7 | 286.3 | 50.2 | 50.2 | 5.4x |
 | Electric-field GMRES solve | 240.6 | 297.8 | 42.7 | 42.7 | 5.6x |
@@ -182,11 +208,11 @@ physical core, 64 boxes of 16^3. GPU: 8 boxes of 32^3, recommended flags.
 | Final charge deposit | 32.7 | 39.2 | 13.0 | 13.0 | 2.5x |
 | div(E) GMRES solves, 3 passes | 23.5 | 33.3 | 13.7 | 13.7 | 1.7x |
 | Magnetic-field update | 1.3 | 1.6 | 0.2 | 0.2 | 6.9x |
-| **Step** | **1525** | **1930** | **318.5** | **267.9** | **5.7x** |
+| **Step** | **1525** | **1930** | **262.0** | **236.6** | **6.4x** |
 
-On the CPU's own layout (64 boxes of 16^3) the GPU takes 370 ms (double) and
-325 ms (single), 4.1x and 4.7x faster than 64 cores; small boxes mainly
-slow the GPU's mass-matrix exchange. Doubling the CPU from 32 to 64 cores
+On the CPU's own layout (64 boxes of 16^3) the GPU takes 310 ms in double
+precision, 4.9x faster than 64 cores; small boxes mainly slow the GPU's
+mass-matrix exchange. Doubling the CPU from 32 to 64 cores
 gains only 1.27x.
 
 ## Correctness and validation
@@ -213,8 +239,8 @@ a CPU build of the same source passes all checks on four ranks.
 
 - The div(E) correction loop is half of the step (deposit, solve, and
   position correction with particle migration, three passes each).
-- The div(E) deposit is limited by its per-particle setup arithmetic in
-  double precision; moving that setup to float is the next candidate.
+- The div(E) deposit's sort (about 4 ms of each ~13 ms pass) is now its
+  largest remaining part; see `DIVE_DEPOSIT_OPTIMIZATION_PLAN.md`.
 - Particle migration after each correction pass (about 50 ms) is the
   largest phase not yet optimized.
 - Opt-in options that change results and need a production decision:
@@ -226,7 +252,8 @@ a CPU build of the same source passes all checks on four ranks.
 ## Defaults and recommended flags
 
 - Defaults: `response=atomic deposit=atomic gmres_batched=1
-  div_e_method=gmres cell_precision=double` (production-matching results).
+  div_e_method=gmres cell_precision=double center_kernel=moments`
+  (production-matching results).
 - Recommended for speed with production-matching results:
   `response=cell deposit=cell pair_symmetry=1 fused_push=1`.
 - Fastest, with the accuracy trade-off above: add `cell_precision=single`.
@@ -235,8 +262,9 @@ a CPU build of the same source passes all checks on four ranks.
 
 - [README.md](README.md): build, run, and all options.
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md): scope of the demo.
-- [DEPOSIT_OPTIMIZATION_PLAN.md](DEPOSIT_OPTIMIZATION_PLAN.md) and
-  [DIVE_SOLVER_OPTIMIZATION_PLAN.md](DIVE_SOLVER_OPTIMIZATION_PLAN.md):
+- [DEPOSIT_OPTIMIZATION_PLAN.md](DEPOSIT_OPTIMIZATION_PLAN.md),
+  [DIVE_SOLVER_OPTIMIZATION_PLAN.md](DIVE_SOLVER_OPTIMIZATION_PLAN.md), and
+  [DIVE_DEPOSIT_OPTIMIZATION_PLAN.md](DIVE_DEPOSIT_OPTIMIZATION_PLAN.md):
   plans with measured outcomes.
 - [BENCHMARKS.md](BENCHMARKS.md): all measurements and their protocols.
 - [VALIDATION.md](VALIDATION.md): what each check verifies.

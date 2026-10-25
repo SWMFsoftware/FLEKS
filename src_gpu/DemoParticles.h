@@ -64,6 +64,10 @@ public:
   void deposit_center_charge_cell(amrex::MultiFab& rho,
                                   amrex::MultiFab* centerMatrix = nullptr);
   void deposit_cell(amrex::MultiFab& moments);
+  // Separable-moment div(E) matrix and charge deposit (center_kernel=moments).
+  // Public only because nvcc forbids extended lambdas in non-public members.
+  void deposit_center_charge_moments(amrex::MultiFab& rho,
+                                     amrex::MultiFab& centerMatrix);
   void correct_positions(const amrex::MultiFab& phi);
   void sort_by_cell();
   DemoParticleDiagnostics diagnostics() const;
