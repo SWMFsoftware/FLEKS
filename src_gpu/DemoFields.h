@@ -20,9 +20,14 @@ public:
   bool solve_div_e();
   void apply_e_operator(amrex::MultiFab&, amrex::MultiFab&);
   void apply_div_e_operator(amrex::MultiFab&, amrex::MultiFab&);
-  void curl_node_to_center(amrex::MultiFab&, amrex::MultiFab&);
-  void curl_center_to_node(amrex::MultiFab&, amrex::MultiFab&);
-  void divergence(amrex::MultiFab&, amrex::MultiFab&);
+  // Prepared inputs must already have synchronized valid nodes and ghosts.
+  // Output ghosts are optional when the next consumer uses valid data only.
+  void curl_node_to_center(amrex::MultiFab&, amrex::MultiFab&,
+                           bool inputPrepared = false, bool fillOutput = true);
+  void curl_center_to_node(amrex::MultiFab&, amrex::MultiFab&,
+                           bool inputPrepared = false, bool fillOutput = true);
+  void divergence(amrex::MultiFab&, amrex::MultiFab&,
+                  bool inputPrepared = false, bool fillOutput = true);
   int run_checks();
   amrex::Real field_energy();
   amrex::Real gauss_error();

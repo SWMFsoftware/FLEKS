@@ -95,7 +95,7 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-def validate_diagnostics(records, steps):
+def validate_diagnostics(records, steps, max_residual=1e-7):
     require(len(records) >= 2, "Expected initial and final DIAG records")
     required = ("step", "time", "kinetic", "field", "charge", "gauss", "div_b", "residual", "particles")
     count = records[0].get("particles")
@@ -108,7 +108,7 @@ def validate_diagnostics(records, steps):
         require(record["particles"] == count, "Particle count changed during periodic run")
         require(record["kinetic"] >= 0 and record["field"] >= 0, "Negative energy")
         require(abs(record["charge"]) <= 1e-9, f"Neutral plasma charge drift: {record['charge']}")
-        require(record["residual"] <= 1e-7, f"True field-solver residual too large: {record['residual']}")
+        require(record["residual"] <= max_residual, f"True field-solver residual too large: {record['residual']}")
     require(records[-1]["step"] == steps, "Last diagnostic is not the requested final step")
     for left, right in zip(records, records[1:]):
         require(right["step"] > left["step"] and right["time"] > left["time"],
@@ -188,6 +188,22 @@ class Suite:
             for mode in ("particles", "deposit"):
                 self.run(f"{mode}-ppc{ppc}", {**base, "mode": mode,
                          "n_cell": 4, "particles_per_cell": ppc})
+        # Serial per-species scatter references include periodic corners and
+        # box faces. A clustered high-occupancy case also exercises split bins.
+        optimized = dict(pair_symmetry=1, fold_charge=1, cell_chunk_size=64)
+        for label, extra in (("symmetric", dict(pair_symmetry=1)),
+                             ("folded", optimized)):
+            for ranks in ((1, 2) if self.args.mpi else (1,)):
+                self.run(f"deposit-{label}-mpi{ranks}",
+                         {**base, "mode": "deposit", **extra}, ranks=ranks)
+        self.run("deposit-split-clustered",
+                 {**base, "mode": "deposit", "n_cell": 4,
+                  "particles_per_cell": 125, "clustered": 1, **optimized})
+        for clustered in (0, 1):
+            self.run(f"benchmark-split-occupancy{clustered}",
+                     {**base, "mode": "benchmark", "n_cell": 4,
+                      "particles_per_cell": 125, "clustered": clustered,
+                      "n_step": 0, "n_iter": 1, **optimized})
         reference = json.loads((ROOT / "src_gpu/production_one_step.json").read_text())
         one_step = self.run("production-one-step", {"mode": "implicit", **reference["parameters"],
                             "diagnostic_interval": 1}, diagnostics=True)
@@ -224,6 +240,32 @@ class Suite:
                                 diagnostics=True)
         compare_records(wave_box4, wave_deposit, "cell-reduced deposits")
         print("PASS cell-deposit-matches-atomic", flush=True)
+        optimized_wave = {**wave, "response": "cell", "deposit": "cell",
+                          "b0": 0.5}
+        magnetized = self.run("langmuir-magnetized-atomic",
+                              {**wave, "b0": 0.5}, diagnostics=True)
+        for label, extra in (("pairs", dict(pair_symmetry=1)),
+                             ("split-folded", optimized),
+                             ("batched", dict(gmres_batched=1)),
+                             ("fused", dict(fused_push=1))):
+            trial = self.run(f"langmuir-magnetized-{label}",
+                             {**optimized_wave, **extra}, diagnostics=True)
+            compare_records(magnetized, trial, f"magnetized {label}")
+        if self.args.mpi:
+            trial = self.run("langmuir-optimized-mpi2",
+                             {**optimized_wave, **optimized, "gmres_batched": 1},
+                             ranks=2, diagnostics=True)
+            compare_records(magnetized, trial, "optimized magnetized MPI")
+        for timing in ("stages", "throughput"):
+            trial = self.run(f"benchmark-{timing}",
+                             {**wave, "mode": "benchmark", "n_step": 3,
+                              "warmup_steps": 1, "microbenchmarks": 0,
+                              "benchmark_timing": timing}, diagnostics=True)
+            compare_records(wave_box4[:4], trial, f"{timing} timing physics")
+        self.run("benchmark-no-measured-steps",
+                 {**base, "mode": "benchmark", "n_step": 1,
+                  "warmup_steps": 1, "microbenchmarks": 0,
+                  "benchmark_timing": "throughput"}, diagnostics=True)
         if self.args.mpi:
             wave_mpi = self.run("langmuir-divE-mpi2", wave, ranks=2, diagnostics=True)
             compare_records(wave_box4, wave_mpi, "nonuniform MPI decomposition")
@@ -250,6 +292,10 @@ class Suite:
         require(corrected_gauss <= 1e-7,
                 f"Large-dt corrected Gauss residual too large: {corrected_gauss}")
         print("PASS large-dt-solve", flush=True)
+        large_batched = self.run("large-dt-batched", {**large, "gmres_batched": 1},
+                                 diagnostics=True)
+        compare_records(large_records, large_batched, "large-dt batched CGS2",
+                        relative=1e-6)
         if self.args.mpi:
             large_mpi = self.run("large-dt-mpi2", large, ranks=2, diagnostics=True)
             compare_records(large_records, large_mpi, "large-dt MPI decomposition",

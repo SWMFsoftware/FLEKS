@@ -12,6 +12,8 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for scope and acceptance,
 [PARTICLE_NOTES.md](PARTICLE_NOTES.md) for particle conventions and benchmarks.
 Measured initial costs and their limits are recorded in
 [BENCHMARKS.md](BENCHMARKS.md).
+The current performance review and prioritized next steps are in
+[PERFORMANCE_PLAN.md](PERFORMANCE_PLAN.md).
 
 ## Build and run
 
@@ -80,6 +82,13 @@ Its AMReX device arena starts at 64 MiB and grows as needed; override
 | `buffered_response` | 0 | Alias for `response=buffered` |
 | `deposit` | atomic | div(E) charge/matrix and moment deposits: `atomic` (per particle) or `cell` (GPU block reduction per cell); the charge-only deposit always stays per particle |
 | `sort_interval` | 0 | Additional periodic particle sorting; zero disables |
+| `benchmark_timing` | stages | `stages` adds synchronized phase timers; `throughput` times one complete measured window |
+| `warmup_steps` | 1 | Coupled steps excluded before benchmark measurements |
+| `microbenchmarks` | 1 | Run layout/deposit/ghost microbenchmarks after benchmark evolution |
+| `pair_symmetry` | 0 | Experimental cell-kernel reuse of unordered node-pair arithmetic |
+| `gmres_batched` | 0 | Experimental twice classical Gram–Schmidt with batched projection reductions |
+| `fold_charge` | 0 | Experimental cell correction deposit staging of charge-weighted gradients |
+| `cell_chunk_size` | 0 | Experimental maximum particles per cell block; zero is unlimited, otherwise at least 64 |
 | `clustered` | 0 | Compress quiet-start positions to test scatter contention |
 | `production_ghost` | 3 | Comparison width in the ghost-exchange benchmark |
 
@@ -134,11 +143,62 @@ mpirun -np 1 bin/main_gpu.exe mode=benchmark n_cell=16 max_grid_size=8 \
   n_step=10 n_iter=20 correct_div_e=0 fused_push=1 buffered_response=1 clustered=1
 ```
 
-Benchmark mode excludes the first coupled step as warmup. Stage timings use GPU
+Benchmark mode excludes `warmup_steps` coupled steps (default one). Stage timings use GPU
 synchronization at measured boundaries and the maximum rank elapsed time. They
 include response assembly/exchange, electric solve, gather/push/migration,
 magnetic advance, charge/moment deposition, and correction when enabled. Normal
 implicit mode does not insert those per-stage timing synchronizations.
+
+For complete evolution throughput without phase-timer barriers, use
+`benchmark_timing=throughput microbenchmarks=0`. This synchronizes the GPU
+only at the endpoints of the measured window and reduces elapsed time across
+ranks once at the end. Algorithm-required synchronization remains in the
+solvers and diagnostics. Window time includes diagnostics, reported separately
+as `TIMING stage=diagnostics_included`; this measures wall time in diagnostic
+calls, including waits for pending evolution work. It is a subset of timestep time and
+must not be added to it. Stage-mode timestep time excludes diagnostics. Use
+matching `diagnostic_interval` in comparisons. Both modes divide by completed
+measured steps; aborted runs are marked and do not report throughput. The
+initial diagnostic and warmup are outside both measurement windows.
+
+For the measured 64^3, 100-particle-per-cell RTX 4090 workload, the best
+validated settings are `response=cell deposit=cell pair_symmetry=1 fused_push=1`.
+Five alternating trials reduced median timestep time by 14.7% and reduced
+peak device-arena usage by about 2,406 AMReX-reported MB. See
+[BENCHMARKS.md](BENCHMARKS.md) for spread, solver work, and workload limits.
+
+The optional GPU cell options can be evaluated independently:
+`pair_symmetry=1` computes 36 unordered spatial pairs and writes both
+destinations, `fold_charge=1` stages charge-weighted correction gradients,
+and `cell_chunk_size=256` splits populated bins into bounded particle chunks
+for response, correction-matrix, and moment deposits. Chunk scheduling adds
+a prefix scan and a host synchronization per tile; zero preserves one block
+per cell. Folded gradients use an additional 12 KiB of shared memory per block.
+These options preserve atomic output accumulation and CPU fallback paths.
+`gmres_batched=1` uses twice classical Gram–Schmidt with batched MPI
+projection reductions and fused vector updates. On CUDA/HIP, all local
+projections in a pass share one device buffer and one host transfer; CPU
+builds retain local dot products. Its packed basis adds memory included in
+the startup estimate. The default remains twice modified Gram–Schmidt.
+
+For repeated comparisons, with logs, diagnostics, source/build provenance,
+CPU affinity/load, arena peaks, and median/spread in `results.json`, run:
+
+```bash
+python3 src_gpu/measure_performance.py --output-dir /tmp/fleks-perf-trials \
+  --cases baseline pairs folded chunks batched fused combined --repeats 5
+```
+
+The runner alternates case order, disables microbenchmarks, checks physical
+diagnostics against the baseline, and uses the documented 64^3 reference
+problem by default. Use an empty output directory. Set `CUDA_VISIBLE_DEVICES`
+and CPU affinity for an idle device/core before launch; when pinning the
+parent, `--launcher 'mpirun --bind-to none'` preserves inherited affinity.
+Use `--set n_cell=32 max_grid_size=16 particles_per_cell=27` for common
+problem overrides, `--ranks 2` for MPI, or `--timing stages` for attribution.
+AMReX profiling ranges distinguish bin construction, migration, response
+communication operations, and phase submissions. A GPU timeline is needed
+to distinguish asynchronous kernel execution from host submission time.
 
 Microbenchmarks compare AoS with explicit component-SoA scratch, atomic with
 cell-buffered response assembly, custom with component matrix storage, and

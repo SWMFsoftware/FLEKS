@@ -22,6 +22,15 @@ DemoConfig::DemoConfig() {
   pp.query("n_div_e_correction", nDivECorrection);
   pp.query("production_ghost", productionGhost);
   pp.query("sort_interval", sortInterval);
+  pp.query("warmup_steps", warmupSteps);
+  pp.query("cell_chunk_size", cellChunkSize);
+  pp.query("benchmark_timing", benchmarkTiming);
+  pp.query("microbenchmarks", microbenchmarks);
+  pp.query("pair_symmetry", pairSymmetry);
+  pp.query("fold_charge", foldCharge);
+  pp.query("gmres_batched", batchedGmres);
+  if (benchmarkTiming != "stages" && benchmarkTiming != "throughput")
+    amrex::Abort("benchmark_timing must be stages or throughput");
   pp.query("dt", dt);
   pp.query("theta", theta);
   pp.query("mass_ratio", massRatio);
@@ -50,7 +59,8 @@ DemoConfig::DemoConfig() {
   if (nCell < 4 || maxGridSize < 2 || nIter < 1 || nStep < 0 ||
       particlesPerCell < 1 || diagnosticInterval < 1 || gmresRestart < 1 ||
       gmresMaxIter < 1 || divEMaxIter < 1 || nDivECorrection < 1 ||
-      productionGhost < 1 || sortInterval < 0)
+      productionGhost < 1 || sortInterval < 0 || warmupSteps < 0 ||
+      (cellChunkSize != 0 && cellChunkSize < 64))
     amrex::Abort("Invalid grid, particle, iteration, or diagnostic count");
   if (!std::isfinite(dt) || dt <= 0 || !std::isfinite(theta) || theta < 0.5 ||
       theta > 1 || !std::isfinite(massRatio) || massRatio <= 0 ||

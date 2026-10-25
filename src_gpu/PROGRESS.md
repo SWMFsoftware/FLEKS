@@ -129,3 +129,23 @@ implementation proceeds. The implementation plan remains the acceptance list.
 - Reference case timestep 0.599 s -> 0.387 s; moment deposit 7.5x, div(E)
   deposit 2.0x (now FP64-bound). The charge-only deposit stays per particle
   because the cell version measured slower. Phase 3 skipped by its criterion.
+
+## 2026-10-25 — next performance plan implementation
+
+- Added throughput-window timing, warmup/microbenchmark controls, complete-step
+  accounting, solver work totals, profiling ranges, and a repeated alternating
+  measurement runner with diagnostics, provenance, spread, and arena peaks.
+- Implemented spatial pair reuse in both cell matrix deposits, including
+  particle-sharing lane groups; added optional folded gradients and bounded
+  cell chunks. Removed duplicate operator halo fills and fused normalization.
+- Added optional CGS2 with device-local and MPI projection batches, fused
+  vector updates, owner masking, and independently checked true residuals.
+- Five alternating reference trials: recommended pair reuse plus fused push
+  reduced median timestep from 0.41599 to 0.35493 s (14.7%), reaching
+  147.7M particles/s. Folded gradients and batched GMRES were slower here;
+  keep them optional. Chunking gave a small gain on the clustered comparison.
+- Final GPU suite: 45 cases passed. CPU suite and refreshed solver/MPI checks
+  passed, as did 12 timing edge cases. CUDA memcheck and racecheck were clean.
+- Recorded an Nsight Systems trace and measured outcomes in BENCHMARKS.md.
+  Migration deferral, preconditioning, adaptive selection, matrix-storage
+  replacement, and cross-device scaling remain conditional follow-up work.

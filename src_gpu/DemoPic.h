@@ -33,6 +33,11 @@ private:
   std::vector<std::unique_ptr<DemoParticles> > species;
   std::map<std::string, double> timings;
   bool profileActive = false;
+  int measuredSteps = 0;
+  int completedSteps = 0;
+  amrex::Long electricIterations = 0;
+  amrex::Long correctionIterations = 0;
+  int correctionWarnings = 0;
   amrex::Long expectedCount = 0;
   int failures = 0;
 };

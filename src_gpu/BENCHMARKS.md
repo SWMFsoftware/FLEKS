@@ -138,3 +138,148 @@ doubled the timestep (1.28 s, with the electric solve at 0.195 s instead of
 0.047 s): the host drives every Krylov iteration, so GPU timings on this
 shared machine are sensitive to CPU load. The numbers above are from a quiet
 period and were reproduced twice.
+
+## Spatial pair reuse and throughput timing — 2026-10-25
+
+Implemented the next performance plan with opt-in pair reuse, charge folding,
+bounded cell chunks, and batched CGS2. The timing harness now supports a full
+throughput window with configurable warmup and no per-phase timer barriers.
+`measure_performance.py` alternates trial order and records logs, diagnostics,
+configuration, source/executable hashes, hardware, affinity, CPU load, and
+median/spread in JSON. It rejects failed solves, diagnostic disagreement,
+and additional correction-limit warnings.
+
+On idle GPU 1 (RTX 4090), CPU affinity 8 with MPI binding disabled, the same
+64^3/100-ppc reference configuration was measured for six steps, excluding
+one warmup step. `diagnostic_interval=6`, `microbenchmarks=0`, and
+`benchmark_timing=throughput`; diagnostics are included in this window.
+Each case ran five times in alternating order. All cases used
+`response=cell deposit=cell`. GPU 0 had another user's workload, and host
+load was recorded; these are shared-host results, not isolated-machine results.
+
+| Additional flags | Median timestep (s) | Min–max (s) | Speedup |
+| --- | ---: | ---: | ---: |
+| None | 0.41661 | 0.41645–0.41801 | 1.000x |
+| `pair_symmetry=1` | 0.36040 | 0.36000–0.36111 | 1.156x |
+| `pair_symmetry=1 fold_charge=1` | 0.37508 | 0.37455–0.37531 | 1.111x |
+| `fused_push=1` | 0.41196 | 0.41191–0.41312 | 1.011x |
+
+Pair reuse reduces timestep time by **13.5%**, raising throughput from about
+125.8M to 145.5M particles/s. Physical diagnostics agree with the baseline.
+Every trial had the same measured solver work: 70 electric iterations,
+287 correction iterations, and six best-effort correction-limit warnings.
+The warning count is a property of this reference run and did not increase
+with the candidates. AMReX reported peak device-arena usage of about 8,551 MB
+for the baseline; this is arena usage, not total process/device memory.
+
+The first pair implementation assigned 36 active lanes out of 64 and showed
+no improvement (0.42257 versus 0.42064 s in a separate ten-step series).
+The final implementation keeps the second logical warp useful: its 32 lanes
+share particle accumulation for the last four unordered pairs, followed by
+shuffle reductions. It writes both ordered destinations without transposing
+the magnetized response tensor. Charge folding adds 12 KiB of shared memory
+and staging work; it is slower than pair reuse alone on this GPU.
+
+The ten-step exploratory series also found that chunk size 256 on the uniform
+reference added overhead, and an MPI-only CGS2 prototype was slower. The
+CGS2 implementation was subsequently revised to batch device-local projections
+as well. The discarded lane mapping and MPI-only prototype are not retained
+as additional runtime options. Do not attribute their measurements to the
+final implementations.
+
+Raw logs and structured results for the retained pair mapping are in
+`/tmp/fleks-performance-measure-revised/`; the exploratory series is in
+`/tmp/fleks-performance-measure-v2/`. The earlier 0.387 s stage-timed result
+used a different measurement series and excludes diagnostics; compare
+candidates within the alternating series above rather than treating those
+two baselines as equivalent.
+
+### Final combined settings and clustered cells
+
+After batching GPU-local CGS2 projections as well, a fresh alternating
+five-trial series with the same six-step protocol gave:
+
+| Additional flags | Median timestep (s) | Min–max (s) | Speedup |
+| --- | ---: | ---: | ---: |
+| None | 0.41599 | 0.41491–0.41631 | 1.000x |
+| `pair_symmetry=1 fused_push=1` | **0.35493** | 0.35391–0.35507 | **1.172x** |
+| `gmres_batched=1` | 0.42389 | 0.42290–0.42993 | 0.981x |
+| Pair reuse + fused push + batched GMRES | 0.36301 | 0.36155–0.37039 | 1.146x |
+
+Recommended flags for this workload are
+`response=cell deposit=cell pair_symmetry=1 fused_push=1`, with the other
+experimental options disabled. Timestep time fell **14.7%**, and throughput
+rose from about 126.0M to **147.7M particles/s**. Solver iteration and warning
+counts remained identical to the preceding table. Peak device-arena usage
+fell from 8,551 to 6,145 AMReX-reported MB, consistent with eliminating the
+six-double gathered-field scratch per particle. CGS2 adds about 180 reported
+MB for the packed basis. Batching removes synchronization but its extra
+packing, updates, and reductions still cost more here; retain it as an
+optional comparison for other workloads/transports.
+
+For `clustered=1 particles_per_cell=10` (5.24M particles), otherwise the same
+configuration and protocol, another five alternating trials measured:
+
+| Additional flags | Median timestep (s) | Min–max (s) |
+| --- | ---: | ---: |
+| None | 0.24425 | 0.24404–0.24429 |
+| `pair_symmetry=1` | 0.23792 | 0.23787–0.23840 |
+| `pair_symmetry=1 cell_chunk_size=256` | 0.23616 | 0.23614–0.23636 |
+
+Chunking added a small gain for clustered cells, unlike the uniform case.
+All clustered trials had 227 electric iterations, 300 correction iterations,
+and 15 correction-limit warnings; diagnostics matched. These are best-effort
+correction runs, not evidence that the scalar solve converged. Keep chunking
+explicit rather than selecting it automatically from this limited sample.
+
+Logs and JSON: `/tmp/fleks-performance-measure-final/` and
+`/tmp/fleks-performance-clustered/`. Single- and two-rank GPU checks use the
+one selected device; they validate MPI correctness, not two-GPU scaling.
+
+To repeat the final comparison after selecting an idle GPU and configuring
+the MPI environment from README.md:
+
+```bash
+python3 src_gpu/measure_performance.py --output-dir /tmp/fleks-perf-final \
+  --cases baseline pairs-fused batched combined --repeats 5 \
+  --steps 6 --warmup-steps 1
+```
+
+Add `--set clustered=1 particles_per_cell=10 --cases baseline pairs chunks`
+with a new output directory for the clustered comparison. Preserve the same
+GPU assignment, CPU affinity, and MPI binding policy across candidates.
+
+### Profiling and validation
+
+An Nsight Systems CUDA timeline for the recommended settings is saved as
+`/tmp/fleks-performance-profile.nsys-rep`, with kernel/API summaries in
+`/tmp/fleks-performance-profile-stats.csv`. The profiled, stage-synchronized
+run took 0.392 s/step; instrumentation makes it unsuitable as a replacement
+for the unprofiled throughput result. Its largest stages were center deposit
+(106 ms), electric solve (64 ms), correction plus migration (57 ms), response
+assembly (54 ms), and scalar solves (39 ms). These guide the next review.
+
+Across the entire trace, including initialization and the first step, the
+correction-deposit kernel used 22.4% of GPU kernel time, electric response
+matvec 15.0%, response assembly 12.3%, position correction 8.1%, and particle
+destination partitioning 7.0%. CUDA stream waits were 85.1% of CUDA API wall
+time; waits include GPU execution and must not be added to kernel time.
+Similarly, inclusive host bin-building scopes can absorb preceding GPU work;
+use the CUDA timeline rather than interpreting their wall time as sort cost.
+Neither this trace nor the throughput tests establishes an FP64 hardware
+counter diagnosis or useful two-GPU scaling. GPU 0 remained occupied by
+another user's workload, so cross-device scaling measurements were deferred.
+
+The final CUDA build passed all 45 cases in `validate_demo.py --mpi --physics
+--reference ...`, including magnetized pair reuse, folded/split deposits,
+fused push, difficult batched solves, timing-mode equivalence, and production
+operator/physics checks. Results: `/tmp/fleks-performance-validation-final/`.
+The CPU build passed the 45-case suite and 12 timing edge cases; refreshed
+final-solver checks also passed `mode=all`, a two-rank magnetized large-dt
+comparison, and the measurement-runner smoke test. CPU artifacts are under
+`/tmp/fleks-performance-cpu/`.
+
+Compute Sanitizer reported zero memory errors and zero race hazards for
+clustered cooperative kernels and again after the final device-batched
+projection change. Logs are `/tmp/fleks-performance-{memcheck,racecheck}.log`
+and `/tmp/fleks-performance-final-{memcheck,racecheck}.log`.

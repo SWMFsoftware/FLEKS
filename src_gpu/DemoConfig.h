@@ -19,6 +19,8 @@ struct DemoConfig {
   int nDivECorrection = 3;
   int productionGhost = 3;
   int sortInterval = 0;
+  int warmupSteps = 1;
+  int cellChunkSize = 0;
   amrex::Real dt = 0.01;
   amrex::Real theta = 0.51;
   amrex::Real massRatio = 25;
@@ -31,6 +33,11 @@ struct DemoConfig {
   bool fusedPush = false;
   bool bufferedResponse = false;
   bool clustered = false;
+  bool microbenchmarks = true;
+  bool pairSymmetry = false;
+  bool foldCharge = false;
+  bool batchedGmres = false;
+  std::string benchmarkTiming = "stages";
   std::string mode = "fields";
   // Mass-matrix assembly: atomic (per particle), cell (block-reduced per
   // cell, GPU), or buffered (serial per-cell thread buffers).

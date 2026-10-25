@@ -32,8 +32,8 @@ DemoFields::DemoFields(const DemoGrid& g, const DemoConfig& c)
       scalarRhs(g.ba, g.dm, 1, 1),
       centerAverage(g.ba, g.dm, 3, 1),
       alternativeDiv(g.ba, g.dm, 1, 1),
-      eSolver(g.nodeBa, g.dm, 3, c.gmresRestart, g.geom),
-      divSolver(g.ba, g.dm, 1, c.gmresRestart, g.geom) {
+      eSolver(g.nodeBa, g.dm, 3, c.gmresRestart, g.geom, c.batchedGmres),
+      divSolver(g.ba, g.dm, 1, c.gmresRestart, g.geom, c.batchedGmres) {
   owner = nodeE.OwnerMask(grid.geom.periodicity());
   nodeE.setVal(0);
   nodeEth.setVal(0);
@@ -54,18 +54,39 @@ void DemoFields::clear_response() {
 }
 void DemoFields::finish_response() {
   const auto period = grid.geom.periodicity();
-  jHat.SumBoundary(period);
-  jHat.OverrideSync(period);
+  {
+    BL_PROFILE("response.jHat.SumBoundary");
+    jHat.SumBoundary(period);
+  }
+  {
+    BL_PROFILE("response.jHat.OverrideSync");
+    jHat.OverrideSync(period);
+  }
   const auto dxi = grid.geom.InvCellSizeArray();
   jHat.mult(dxi[0] * dxi[1] * dxi[2], 0, 3, 0);
-  jHat.FillBoundary(period);
-  nodeMM.SumBoundary(period);
-  nodeMM.OverrideSync(period);
-  nodeMM.FillBoundary(period);
+  {
+    BL_PROFILE("response.jHat.FillBoundary");
+    jHat.FillBoundary(period);
+  }
+  {
+    BL_PROFILE("response.nodeMM.SumBoundary");
+    nodeMM.SumBoundary(period);
+  }
+  {
+    BL_PROFILE("response.nodeMM.OverrideSync");
+    nodeMM.OverrideSync(period);
+  }
+  {
+    BL_PROFILE("response.nodeMM.FillBoundary");
+    nodeMM.FillBoundary(period);
+  }
 }
-void DemoFields::curl_node_to_center(MultiFab& input, MultiFab& output) {
-  input.OverrideSync(grid.geom.periodicity());
-  input.FillBoundary(grid.geom.periodicity());
+void DemoFields::curl_node_to_center(MultiFab& input, MultiFab& output,
+                                     bool inputPrepared, bool fillOutput) {
+  if (!inputPrepared) {
+    input.OverrideSync(grid.geom.periodicity());
+    input.FillBoundary(grid.geom.periodicity());
+  }
   const auto invDx = grid.geom.InvCellSizeArray();
   for (MFIter mfi(output); mfi.isValid(); ++mfi) {
     const auto a = input.const_array(mfi);
@@ -75,10 +96,13 @@ void DemoFields::curl_node_to_center(MultiFab& input, MultiFab& output) {
                   b(i, j, k, c) = curl(a, i, j, k, c, invDx, true);
                 });
   }
-  output.FillBoundary(grid.geom.periodicity());
+  if (fillOutput)
+    output.FillBoundary(grid.geom.periodicity());
 }
-void DemoFields::curl_center_to_node(MultiFab& input, MultiFab& output) {
-  input.FillBoundary(grid.geom.periodicity());
+void DemoFields::curl_center_to_node(MultiFab& input, MultiFab& output,
+                                     bool inputPrepared, bool fillOutput) {
+  if (!inputPrepared)
+    input.FillBoundary(grid.geom.periodicity());
   const auto invDx = grid.geom.InvCellSizeArray();
   for (MFIter mfi(output); mfi.isValid(); ++mfi) {
     const auto a = input.const_array(mfi);
@@ -89,11 +113,15 @@ void DemoFields::curl_center_to_node(MultiFab& input, MultiFab& output) {
                 });
   }
   output.OverrideSync(grid.geom.periodicity());
-  output.FillBoundary(grid.geom.periodicity());
+  if (fillOutput)
+    output.FillBoundary(grid.geom.periodicity());
 }
-void DemoFields::divergence(MultiFab& input, MultiFab& output) {
-  input.OverrideSync(grid.geom.periodicity());
-  input.FillBoundary(grid.geom.periodicity());
+void DemoFields::divergence(MultiFab& input, MultiFab& output,
+                            bool inputPrepared, bool fillOutput) {
+  if (!inputPrepared) {
+    input.OverrideSync(grid.geom.periodicity());
+    input.FillBoundary(grid.geom.periodicity());
+  }
   const auto invDx = grid.geom.InvCellSizeArray();
   for (MFIter mfi(output); mfi.isValid(); ++mfi) {
     const auto a = input.const_array(mfi);
@@ -105,7 +133,8 @@ void DemoFields::divergence(MultiFab& input, MultiFab& output) {
                                derivative(a, i, j, k, 2, 2, invDx, true);
                 });
   }
-  output.FillBoundary(grid.geom.periodicity());
+  if (fillOutput)
+    output.FillBoundary(grid.geom.periodicity());
 }
 void DemoFields::refresh_node_b() {
   centerB.FillBoundary(grid.geom.periodicity());
@@ -131,8 +160,8 @@ void DemoFields::apply_e_operator(MultiFab& input, MultiFab& output) {
   // curl_node_to_center synchronizes input and fills its ghosts; the M*x
   // stencil below reads those ghosts, so keep this call first.
   curl_node_to_center(input, curlCenter);
-  curl_center_to_node(curlCenter, curlNode);
-  divergence(input, divE);
+  curl_center_to_node(curlCenter, curlNode, true, false);
+  divergence(input, divE, true, false);
   for (MFIter mfi(centerAverage); mfi.isValid(); ++mfi) {
     auto x = input.const_array(mfi);
     auto avg = centerAverage.array(mfi);
@@ -210,7 +239,7 @@ bool DemoFields::solve_e() {
   return true;
 }
 void DemoFields::advance_b() {
-  curl_node_to_center(nodeEth, curlCenter);
+  curl_node_to_center(nodeEth, curlCenter, false, false);
   MultiFab::Saxpy(centerB, -config.dt, curlCenter, 0, 0, 3, 0);
   refresh_node_b();
 }
@@ -480,6 +509,48 @@ int DemoFields::run_checks() {
                           std::sqrt(divSolver.dot(scalarRhs, scalarRhs))));
   phi.setVal(0);
   centerMM.setVal(0);
+  // A varying, nonsymmetric block operator exercises multiple Arnoldi
+  // columns and owner-masked batched projections, unlike a single Fourier
+  // eigenmode. Run the optional solver's check even with the default MGS.
+  {
+    DemoLinearSolver batchedSolver(grid.nodeBa, grid.dm, 3, 10, grid.geom,
+                                   true);
+    MultiFab exact(grid.nodeBa, grid.dm, 3, 0);
+    MultiFab answer(grid.nodeBa, grid.dm, 3, 1);
+    MultiFab forcing(grid.nodeBa, grid.dm, 3, 0);
+    for (MFIter mfi(exact); mfi.isValid(); ++mfi) {
+      const auto value = exact.array(mfi);
+      ParallelFor(mfi.validbox(), 3,
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                    value(i, j, k, c) =
+                        (c + 1) * std::cos(2 * pi * (i + j + k) / nc);
+                  });
+    }
+    auto nonnormal = [&](MultiFab& input, MultiFab& output) {
+      for (MFIter mfi(output); mfi.isValid(); ++mfi) {
+        const auto x = input.const_array(mfi);
+        const auto y = output.array(mfi);
+        ParallelFor(
+            mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              const Real d = 1 + .5 * std::sin(2 * pi * i / nc);
+              y(i, j, k, 0) = d * x(i, j, k, 0) + .5 * x(i, j, k, 1);
+              y(i, j, k, 1) = (d + .3) * x(i, j, k, 1) + .25 * x(i, j, k, 2);
+              y(i, j, k, 2) = (d + .6) * x(i, j, k, 2);
+            });
+      }
+      output.OverrideSync(grid.geom.periodicity());
+    };
+    nonnormal(exact, forcing);
+    answer.setVal(0);
+    const auto batchResult =
+        batchedSolver.solve(answer, forcing, nonnormal, 1.e-10, 200);
+    nonnormal(answer, exact);
+    MultiFab::Subtract(exact, forcing, 0, 0, 3, 0);
+    check("Batched CGS2 nonnormal true residual",
+          batchResult.converged ? std::sqrt(batchedSolver.dot(exact, exact))
+                                : Real(1),
+          1.e-10 * std::sqrt(batchedSolver.dot(forcing, forcing)));
+  }
   if (nc % 2 == 0) {
     centerB.setVal(0);
     for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {

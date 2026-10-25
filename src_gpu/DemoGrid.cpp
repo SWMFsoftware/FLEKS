@@ -26,7 +26,12 @@ DemoGrid::DemoGrid(const DemoConfig& config) {
               cells * (config.gmresRestart + 80));
     bytes += ba[box].numPts() * double(config.particlesPerCell) * 2 *
              (20 * sizeof(amrex::Real) + 32);
-    if (config.mode == "benchmark")
+    if (config.batchedGmres)
+      bytes += sizeof(amrex::Real) * (config.gmresRestart + 1) *
+               (3 * nodeBa[box].numPts() + ba[box].numPts());
+    if (config.cellChunkSize)
+      bytes += 2 * (amrex::grow(ba[box], 1).numPts() + 1) * sizeof(int);
+    if (config.mode == "benchmark" && config.microbenchmarks)
       bytes += nodes * 243 * sizeof(amrex::Real);
   }
   amrex::ParallelDescriptor::ReduceRealMax(bytes);

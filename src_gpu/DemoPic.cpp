@@ -34,7 +34,7 @@ int DemoPic::run() {
                         config.mode == "benchmark" || config.mode == "all")) {
     initialize();
     advance();
-    if (config.mode == "benchmark" && failures == 0)
+    if (config.mode == "benchmark")
       benchmark();
   }
   return failures;
@@ -117,6 +117,7 @@ void DemoPic::accumulate(DemoParticles& particles, const std::string& method) {
 
 void DemoPic::measure(const std::string& label,
                       const std::function<void()>& operation) {
+  BL_PROFILE(label);
   if (!profileActive) {
     operation();
     return;
@@ -132,9 +133,23 @@ void DemoPic::measure(const std::string& label,
 
 int DemoPic::advance() {
   report(0);
+  const bool throughput =
+      config.mode == "benchmark" && config.benchmarkTiming == "throughput";
+  bool windowActive = false;
+  double windowStart = 0, diagnosticElapsed = 0;
   for (int step = 1; step <= config.nStep && failures == 0; ++step) {
-    profileActive = config.mode == "benchmark" && step > 1;
-    Gpu::synchronize();
+    const bool measured =
+        config.mode == "benchmark" && step > config.warmupSteps;
+    profileActive = measured && !throughput;
+    if (throughput && measured && !windowActive) {
+      Gpu::synchronize();
+      windowStart = second();
+      windowActive = true;
+    }
+    const auto savedTimings =
+        profileActive ? timings : std::map<std::string, double>();
+    if (profileActive)
+      Gpu::synchronize();
     const double start = second();
     measure("matrix_assembly", [&] {
       fields.clear_response();
@@ -148,8 +163,12 @@ int DemoPic::advance() {
       Print() << "FAIL electric solve: true L2 residual=" << fields.lastResidual
               << "\n";
       ++failures;
+      if (profileActive)
+        timings = savedTimings;
       break;
     }
+    if (measured)
+      electricIterations += fields.lastIterations;
     if (!config.fusedPush)
       measure("particle_gather", [&] {
         for (auto& particles : species)
@@ -165,8 +184,13 @@ int DemoPic::advance() {
     measure("magnetic_advance", [&] { fields.advance_b(); });
     if (config.correctDivE) {
       for (int iteration = 0; iteration < config.nDivECorrection; ++iteration) {
-        measure("center_deposit", [&] { deposit_charge(true, config.deposit); });
+        measure("center_deposit",
+                [&] { deposit_charge(true, config.deposit); });
         measure("div_e_solve", [&] { solved = fields.solve_div_e(); });
+        if (measured) {
+          correctionIterations += fields.lastDivIterations;
+          correctionWarnings += !solved;
+        }
         // Production treats the correction as best effort: LinearSolver
         // stops at its iteration limit and the partial potential is applied.
         if (!solved)
@@ -179,18 +203,24 @@ int DemoPic::advance() {
         });
       }
     }
-    measure("final_charge_deposit", [&] { deposit_charge(false, config.deposit); });
+    measure("final_charge_deposit",
+            [&] { deposit_charge(false, config.deposit); });
     measure("moment_deposit", [&] { deposit_moments(config.deposit); });
     if (config.sortInterval > 0 && step % config.sortInterval == 0)
       measure("particle_sort", [&] {
         for (auto& particles : species)
           particles->sort_by_cell();
       });
-    Gpu::synchronize();
+    if (profileActive)
+      Gpu::synchronize();
     const double evolutionElapsed = second() - start;
     if (step % config.diagnosticInterval == 0 || step == config.nStep ||
-        failures)
+        failures) {
+      const double diagnosticStart = second();
       report(step);
+      if (throughput && measured)
+        diagnosticElapsed += second() - diagnosticStart;
+    }
     // The Gauss diagnostic above uses (1-rhoTheta)*rhoOld+rhoTheta*rhoNew.
     // Preserve the fresh half-stage charge only after evaluating it.
     const double historyStart = second();
@@ -202,6 +232,18 @@ int DemoPic::advance() {
       ParallelDescriptor::ReduceRealMax(elapsed);
       timings["timestep"] += elapsed;
     }
+    ++completedSteps;
+    if (measured)
+      ++measuredSteps;
+  }
+  if (windowActive) {
+    Gpu::synchronize();
+    // One collective at the end of the entire window; diagnostic time is
+    // included in total time, and its maximum is reported separately.
+    double elapsed[2] = { second() - windowStart, diagnosticElapsed };
+    ParallelDescriptor::ReduceRealMax(elapsed, 2);
+    timings["timestep"] = elapsed[0];
+    timings["diagnostics_included"] = elapsed[1];
   }
   return failures;
 }
@@ -244,23 +286,37 @@ void DemoPic::report(int step) {
 }
 
 void DemoPic::benchmark() {
-  const int measured = std::max(0, config.nStep - 1);
-  Print() << "BENCHMARK warmup_steps=1 measured_steps=" << measured
+  const int measured = measuredSteps;
+  Print() << "BENCHMARK warmup_steps=" << config.warmupSteps
+          << " measured_steps=" << measured
+          << " completed_steps=" << completedSteps
+          << " timing=" << config.benchmarkTiming << " diagnostics_included="
+          << (config.benchmarkTiming == "throughput")
+          << " aborted=" << (failures != 0)
+          << " electric_iterations=" << electricIterations
+          << " correction_iterations=" << correctionIterations
+          << " correction_warnings=" << correctionWarnings
           << " fused=" << config.fusedPush
           << " sort_interval=" << config.sortInterval
-          << " response=" << config.response
-          << " deposit=" << config.deposit
-          << " clustered=" << config.clustered << "\n";
+          << " response=" << config.response << " deposit=" << config.deposit
+          << " clustered=" << config.clustered
+          << " pair_symmetry=" << config.pairSymmetry
+          << " fold_charge=" << config.foldCharge
+          << " cell_chunk_size=" << config.cellChunkSize
+          << " gmres_batched=" << config.batchedGmres << "\n";
   for (const auto& entry : timings)
     Print() << "TIMING stage=" << entry.first
             << " seconds=" << entry.second / std::max(1, measured) << "\n";
-  if (measured && timings["timestep"] > 0)
+  if (failures == 0 && measured && timings["timestep"] > 0)
     Print() << "THROUGHPUT particles_per_second="
             << expectedCount * measured / timings["timestep"]
             << " cells_per_second="
             << double(config.nCell) * config.nCell * config.nCell * measured /
                    timings["timestep"]
             << "\n";
+
+  if (!config.microbenchmarks || failures)
+    return;
 
   // Compare communication volume for operator-specific and production widths.
   for (int width : { 1, config.productionGhost }) {
@@ -396,8 +452,8 @@ void DemoPic::benchmark() {
         continue;
       }
       rhoError = std::max(rhoError, relative_error(rhoAtomic, fields.rho, 1));
-      matrixError = std::max(matrixError,
-                             relative_error(mmAtomic, fields.centerMM, 27));
+      matrixError =
+          std::max(matrixError, relative_error(mmAtomic, fields.centerMM, 27));
       momentError = std::max(momentError,
                              relative_error(momentsAtomic, fields.moments, 10));
     }

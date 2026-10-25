@@ -77,6 +77,8 @@ private:
       gathered;
   // Persistent per-tile cell bins so the counting sort does not reallocate.
   std::map<std::pair<int, int>, amrex::DenseBins<ParticleType> > cellBins;
+  // Optional prefix sums scheduling bounded particle chunks per cell.
+  std::map<std::pair<int, int>, amrex::Gpu::DeviceVector<int> > cellTasks;
   // Half-cell-shifted bins for the cell-centered charge deposit.
   std::map<std::pair<int, int>, amrex::DenseBins<ParticleType> > centerBins;
 };

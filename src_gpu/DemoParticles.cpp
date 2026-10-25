@@ -6,6 +6,7 @@
 #include <AMReX_ParReduce.H>
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_Print.H>
+#include <AMReX_Scan.H>
 
 #include "DemoConfig.h"
 #include "DemoFields.h"
@@ -20,6 +21,80 @@ constexpr Real pi = 3.1415926535897932384626433832795;
 Real cell_volume(const DemoGrid& grid) {
   const auto dx = grid.geom.CellSizeArray();
   return dx[0] * dx[1] * dx[2];
+}
+// Map spatial pairs to lanes. In symmetry mode the final four pairs share
+// particle work across eight lane groups instead of leaving 28 lanes idle.
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE void node_pair(int t, bool symmetric,
+                                                   int& a, int& c) noexcept {
+  a = t >> 3;
+  c = t & 7;
+  if (symmetric) {
+    // Warp 0 owns 32 pairs. Warp 1 splits the particles for the final
+    // four pairs across eight lane groups, keeping every lane useful.
+    const int pair = t < 32 ? t : 32 + (t & 3);
+    a = 0;
+    c = pair;
+    while (c >= 8 - a && a < 7) {
+      c -= 8 - a;
+      ++a;
+    }
+    c += a;
+  }
+}
+
+#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE Real sum_pair_groups(Real value) noexcept {
+  // Called uniformly by all 32 lanes of the second logical warp. Only
+  // its first four lanes consume the result. Width=32 also works on HIP
+  // wave64 devices, where the upper half-wave handles these groups.
+  for (int delta = 16; delta >= 4; delta /= 2)
+    value += AMREX_HIP_OR_CUDA(__shfl_down(value, delta, 32),
+                               __shfl_down_sync(0xffffffff, value, delta, 32));
+  return value;
+}
+#endif
+
+// Optional dense-cell scheduling. The scan returns the task count to the
+// host (one synchronization per tile); keep it disabled unless shorter cell
+// loops repay that cost. Persistent offsets outlive asynchronous launches.
+int cell_tasks(int ncells, const int* offsets, int chunkSize,
+               Gpu::DeviceVector<int>& storage) {
+  if (!chunkSize)
+    return ncells;
+  storage.resize(ncells + 1);
+  auto* tasks = storage.data();
+  return Scan::PrefixSum<int>(
+      ncells + 1,
+      [=] AMREX_GPU_DEVICE(int i) noexcept {
+        return i ? (offsets[i] - offsets[i - 1]) / chunkSize +
+                       ((offsets[i] - offsets[i - 1]) % chunkSize != 0)
+                 : 0;
+      },
+      [=] AMREX_GPU_DEVICE(int i, int value) noexcept { tasks[i] = value; },
+      Scan::Type::inclusive);
+}
+
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE void cell_task_range(
+    int task, int ncells, const int* offsets, const int* tasks, int chunkSize,
+    int& cell, int& begin, int& end) noexcept {
+  cell = task;
+  if (chunkSize) {
+    // upper_bound skips empty cells, whose task offsets are repeated.
+    int low = 0, high = ncells;
+    while (low < high) {
+      const int mid = low + (high - low) / 2;
+      if (tasks[mid + 1] <= task)
+        low = mid + 1;
+      else
+        high = mid;
+    }
+    cell = low;
+    begin = offsets[cell] + (task - tasks[cell]) * chunkSize;
+    end = begin + amrex::min(chunkSize, offsets[cell + 1] - begin);
+  } else {
+    begin = offsets[cell];
+    end = offsets[cell + 1];
+  }
 }
 } // namespace
 
@@ -96,7 +171,10 @@ void DemoParticles::initialize(Real perturbation, GpuArray<Real, 3> drift) {
       p.rdata(iqp_) = qp;
     });
   }
-  Redistribute();
+  {
+    BL_PROFILE("particles.redistribute");
+    Redistribute();
+  }
 }
 
 void DemoParticles::drift_positions(Real dt) {
@@ -115,7 +193,10 @@ void DemoParticles::drift_positions(Real dt) {
     });
   }
   gatheredValid = false;
-  Redistribute();
+  {
+    BL_PROFILE("particles.redistribute");
+    Redistribute();
+  }
 }
 
 void DemoParticles::gather(const MultiFab& e, const MultiFab& b) {
@@ -179,7 +260,10 @@ void DemoParticles::push(Real dt, bool fused, const MultiFab* e,
     });
   }
   gatheredValid = false;
-  Redistribute();
+  {
+    BL_PROFILE("particles.redistribute");
+    Redistribute();
+  }
 }
 
 void DemoParticles::deposit(MultiFab& moments) {
@@ -328,7 +412,10 @@ void DemoParticles::correct_positions(const MultiFab& phi) {
     });
   }
   gatheredValid = false;
-  Redistribute();
+  {
+    BL_PROFILE("particles.redistribute");
+    Redistribute();
+  }
 }
 
 void DemoParticles::sort_by_cell() {
@@ -433,7 +520,10 @@ void DemoParticles::set_particles(
     }
   }
   Gpu::streamSynchronize();
-  Redistribute();
+  {
+    BL_PROFILE("particles.redistribute");
+    Redistribute();
+  }
 }
 
 namespace {
@@ -969,6 +1059,7 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
   // atomics per cell with distinct addresses inside each warp, instead of
   // 576 per particle with all lanes of a warp hitting the same addresses.
   constexpr int nThread = 64;
+  const bool symmetric = config.pairSymmetry;
   const auto lo = grid.geom.ProbLoArray();
   const auto invDx = grid.geom.InvCellSizeArray();
   const Real qdt2m = charge / mass * dt / 2, invVol = 1 / cell_volume(grid);
@@ -989,23 +1080,32 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
       int index[3];
       for (int d = 0; d < 3; ++d)
         index[d] = amrex::min(
-            big[d],
-            amrex::max(small[d], static_cast<int>(std::floor(
-                                     (p.pos(d) - lo[d]) * invDx[d]))));
+            big[d], amrex::max(small[d], static_cast<int>(std::floor(
+                                             (p.pos(d) - lo[d]) * invDx[d]))));
       return ((index[2] - small[2]) * length[1] + index[1] - small[1]) *
                  length[0] +
              index[0] - small[0];
     };
     auto& bins = cellBins[{ pti.index(), pti.LocalTileIndex() }];
-    bins.build(np, particles, ncells, cell_of);
+    {
+      BL_PROFILE("particles.cell_bins");
+      bins.build(np, particles, ncells, cell_of);
+    }
     const auto* perm = bins.permutationPtr();
     const auto* offsets = bins.offsetsPtr();
+    const int chunkSize = config.cellChunkSize;
+    auto& taskStorage = cellTasks[{ pti.index(), pti.LocalTileIndex() }];
+    const int ntasks = cell_tasks(ncells, offsets, chunkSize, taskStorage);
+    const int* tasks = chunkSize ? taskStorage.data() : nullptr;
     const auto ba = fields.nodeB.const_array(pti);
     const auto current = fields.jHat.array(pti);
     const auto mm = fields.nodeMM.array(pti);
-    amrex::launch<nThread>(ncells, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
-      const int cell = blockIdx.x, t = threadIdx.x;
-      const int begin = offsets[cell], end = offsets[cell + 1];
+    BL_PROFILE("particles.cell_kernel_launch");
+    amrex::launch<nThread>(ntasks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
+      const int t = threadIdx.x;
+      int cell, begin, end;
+      cell_task_range(blockIdx.x, ncells, offsets, tasks, chunkSize, cell,
+                      begin, end);
       if (begin == end) // uniform across the block: no barrier is skipped
         return;
       const int base[3] = { small[0] + cell % length[0],
@@ -1014,7 +1114,11 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
       __shared__ Real weight[nThread][8];
       __shared__ Real response[nThread][9];
       __shared__ Real jhat[nThread][3];
-      const int a = t >> 3, c = t & 7;
+      int a, c;
+      node_pair(t, symmetric, a, c);
+      const bool ownsPair = !symmetric || t < 36;
+      const int particleGroup = symmetric && t >= 32 ? (t - 32) / 4 : 0;
+      const int particleStride = symmetric && t >= 32 ? 8 : 1;
       Real acc[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }, jacc = 0;
       for (int chunk = begin; chunk < end; chunk += nThread) {
         const int n = amrex::min(nThread, end - chunk);
@@ -1048,7 +1152,7 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
           }
         }
         __syncthreads();
-        for (int ip = 0; ip < n; ++ip) {
+        for (int ip = particleGroup; ip < n; ip += particleStride) {
           const Real pair = weight[ip][a] * weight[ip][c];
           for (int d = 0; d < 9; ++d)
             acc[d] += pair * response[ip][d];
@@ -1057,13 +1161,27 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
         }
         __syncthreads();
       }
+      if (symmetric && t >= 32)
+        for (int d = 0; d < 9; ++d)
+          acc[d] = sum_pair_groups(acc[d]);
       const int i = base[0] + (a & 1), j = base[1] + ((a >> 1) & 1),
                 k = base[2] + (a >> 2);
       const int offset = ((c >> 2) - (a >> 2) + 1) * 81 +
                          (((c >> 1) & 1) - ((a >> 1) & 1) + 1) * 27 +
                          ((c & 1) - (a & 1) + 1) * 9;
-      for (int d = 0; d < 9; ++d)
-        Gpu::Atomic::AddNoRet(&mm(i, j, k)[offset + d], acc[d]);
+      if (ownsPair) {
+        for (int d = 0; d < 9; ++d)
+          Gpu::Atomic::AddNoRet(&mm(i, j, k)[offset + d], acc[d]);
+        if (symmetric && a != c) {
+          // Spatial pair symmetry does NOT transpose the magnetized tensor.
+          const int reverse = 234 - offset;
+          for (int d = 0; d < 9; ++d)
+            Gpu::Atomic::AddNoRet(&mm(base[0] + (c & 1),
+                                      base[1] + ((c >> 1) & 1),
+                                      base[2] + (c >> 2))[reverse + d],
+                                  acc[d]);
+        }
+      }
       if (t < 24) {
         const int node = t / 3;
         Gpu::Atomic::AddNoRet(&current(base[0] + (node & 1),
@@ -1094,10 +1212,12 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
   // The base index floor(u-0.5) spans [small-1, big], so the bins cover the
   // box plus one low ghost layer; SumBoundary folds that layer back.
   constexpr int nThread = 64;
+  const bool symmetric = config.pairSymmetry;
   const auto lo = grid.geom.ProbLoArray();
   const auto invDx = grid.geom.InvCellSizeArray();
   const Real invVol = 1 / cell_volume(grid);
   const bool makeMatrix = centerMatrix != nullptr;
+  const bool foldCharge = config.foldCharge;
   for (ParConstIterType pti(*this, 0); pti.isValid(); ++pti) {
     const int np = pti.numParticles();
     if (!np)
@@ -1106,83 +1226,119 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
     const IntVect small = box.smallEnd() - 1;
     const IntVect big = box.bigEnd();
     const IntVect length = big - small + 1;
-    const int nbins = length[0] * length[1] * length[2];
+    const int ncells = length[0] * length[1] * length[2];
     const auto* particles = pti.GetArrayOfStructs().data();
     auto cell_of = [=] AMREX_GPU_DEVICE(const ParticleType& p) noexcept {
       int index[3];
       for (int d = 0; d < 3; ++d)
         index[d] = amrex::min(
-            big[d],
-            amrex::max(small[d],
-                       static_cast<int>(std::floor(
-                           (p.pos(d) - lo[d]) * invDx[d] - Real(0.5)))));
+            big[d], amrex::max(small[d], static_cast<int>(std::floor(
+                                             (p.pos(d) - lo[d]) * invDx[d] -
+                                             Real(0.5)))));
       return ((index[2] - small[2]) * length[1] + index[1] - small[1]) *
                  length[0] +
              index[0] - small[0];
     };
     auto& bins = centerBins[{ pti.index(), pti.LocalTileIndex() }];
-    bins.build(np, particles, nbins, cell_of);
+    {
+      BL_PROFILE("particles.cell_bins");
+      bins.build(np, particles, ncells, cell_of);
+    }
     const auto* perm = bins.permutationPtr();
     const auto* offsets = bins.offsetsPtr();
+    const int chunkSize = config.cellChunkSize;
+    auto& taskStorage = cellTasks[{ pti.index(), pti.LocalTileIndex() }];
+    const int ntasks = cell_tasks(ncells, offsets, chunkSize, taskStorage);
+    const int* tasks = chunkSize ? taskStorage.data() : nullptr;
     const auto r = rho.array(pti);
     const auto mm = makeMatrix ? centerMatrix->array(pti) : Array4<Real>();
-    amrex::launch<nThread>(nbins, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
-      const int cell = blockIdx.x, t = threadIdx.x;
-      const int begin = offsets[cell], end = offsets[cell + 1];
-      if (begin == end) // uniform across the block: no barrier is skipped
-        return;
-      const int base[3] = { small[0] + cell % length[0],
-                            small[1] + (cell / length[0]) % length[1],
-                            small[2] + cell / (length[0] * length[1]) };
-      __shared__ Real weight[nThread][8];
-      __shared__ Real gradient[nThread][8][3];
-      __shared__ Real charge[nThread];
-      const int a = t >> 3, c = t & 7;
-      Real acc = 0, racc = 0;
-      for (int chunk = begin; chunk < end; chunk += nThread) {
-        const int n = amrex::min(nThread, end - chunk);
-        if (t < n) {
-          const auto& p = particles[perm[chunk + t]];
-          const Real q = p.id() > 0 ? p.rdata(iqp_) : 0;
-          Real f[3];
-          for (int d = 0; d < 3; ++d)
-            f[d] = (p.pos(d) - lo[d]) * invDx[d] - Real(0.5) - base[d];
-          for (int node = 0; node < 8; ++node) {
-            Real w[3];
-            for (int d = 0; d < 3; ++d)
-              w[d] = (node & (1 << d)) ? f[d] : 1 - f[d];
-            weight[t][node] = w[0] * w[1] * w[2];
-            for (int d = 0; d < 3; ++d)
-              gradient[t][node][d] = ((node & (1 << d)) ? 1 : -1) * invDx[d] *
-                                     w[(d + 1) % 3] * w[(d + 2) % 3];
+    BL_PROFILE("particles.cell_kernel_launch");
+    amrex::launch<nThread>(
+        ntasks, foldCharge ? nThread * 24 * sizeof(Real) : 0, Gpu::gpuStream(),
+        [=] AMREX_GPU_DEVICE() {
+          const int t = threadIdx.x;
+          int cell, begin, end;
+          cell_task_range(blockIdx.x, ncells, offsets, tasks, chunkSize, cell,
+                          begin, end);
+          if (begin == end) // uniform across the block: no barrier is skipped
+            return;
+          const int base[3] = { small[0] + cell % length[0],
+                                small[1] + (cell / length[0]) % length[1],
+                                small[2] + cell / (length[0] * length[1]) };
+          __shared__ Real weight[nThread][8];
+          __shared__ Real gradient[nThread][8][3];
+          Gpu::SharedMemory<Real> shared;
+          auto* weightedGradient =
+              reinterpret_cast<Real(*)[8][3]>(shared.dataPtr());
+          __shared__ Real charge[nThread];
+          int a, c;
+          node_pair(t, symmetric, a, c);
+          const bool ownsPair = !symmetric || t < 36;
+          const int particleGroup = symmetric && t >= 32 ? (t - 32) / 4 : 0;
+          const int particleStride = symmetric && t >= 32 ? 8 : 1;
+          Real acc = 0, racc = 0;
+          for (int chunk = begin; chunk < end; chunk += nThread) {
+            const int n = amrex::min(nThread, end - chunk);
+            if (t < n) {
+              const auto& p = particles[perm[chunk + t]];
+              const Real q = p.id() > 0 ? p.rdata(iqp_) : 0;
+              Real f[3];
+              for (int d = 0; d < 3; ++d)
+                f[d] = (p.pos(d) - lo[d]) * invDx[d] - Real(0.5) - base[d];
+              for (int node = 0; node < 8; ++node) {
+                Real w[3];
+                for (int d = 0; d < 3; ++d)
+                  w[d] = (node & (1 << d)) ? f[d] : 1 - f[d];
+                weight[t][node] = w[0] * w[1] * w[2];
+                for (int d = 0; d < 3; ++d) {
+                  const Real g = ((node & (1 << d)) ? 1 : -1) * invDx[d] *
+                                 w[(d + 1) % 3] * w[(d + 2) % 3];
+                  gradient[t][node][d] = g;
+                  if (foldCharge)
+                    weightedGradient[t][node][d] = std::abs(q * invVol) * g;
+                }
+              }
+              charge[t] = q * invVol;
+            }
+            __syncthreads();
+            for (int ip = particleGroup; ip < n; ip += particleStride) {
+              if (makeMatrix) {
+                if (foldCharge)
+                  acc += weightedGradient[ip][a][0] * gradient[ip][c][0] +
+                         weightedGradient[ip][a][1] * gradient[ip][c][1] +
+                         weightedGradient[ip][a][2] * gradient[ip][c][2];
+                else
+                  acc += std::abs(charge[ip]) *
+                         (gradient[ip][a][0] * gradient[ip][c][0] +
+                          gradient[ip][a][1] * gradient[ip][c][1] +
+                          gradient[ip][a][2] * gradient[ip][c][2]);
+              }
+              if (t < 8)
+                racc += charge[ip] * weight[ip][t];
+            }
+            __syncthreads();
           }
-          charge[t] = q * invVol;
-        }
-        __syncthreads();
-        for (int ip = 0; ip < n; ++ip) {
-          if (makeMatrix)
-            acc += std::abs(charge[ip]) *
-                   (gradient[ip][a][0] * gradient[ip][c][0] +
-                    gradient[ip][a][1] * gradient[ip][c][1] +
-                    gradient[ip][a][2] * gradient[ip][c][2]);
+          if (symmetric && t >= 32)
+            acc = sum_pair_groups(acc);
+          const int i = base[0] + (a & 1), j = base[1] + ((a >> 1) & 1),
+                    k = base[2] + (a >> 2);
+          if (makeMatrix && ownsPair) {
+            const int offset = ((c & 1) - (a & 1) + 1) * 9 +
+                               (((c >> 1) & 1) - ((a >> 1) & 1) + 1) * 3 +
+                               ((c >> 2) - (a >> 2) + 1);
+            Gpu::Atomic::AddNoRet(&mm(i, j, k, offset), acc);
+            if (symmetric && a != c)
+              Gpu::Atomic::AddNoRet(&mm(base[0] + (c & 1),
+                                        base[1] + ((c >> 1) & 1),
+                                        base[2] + (c >> 2), 26 - offset),
+                                    acc);
+          }
           if (t < 8)
-            racc += charge[ip] * weight[ip][t];
-        }
-        __syncthreads();
-      }
-      const int i = base[0] + (a & 1), j = base[1] + ((a >> 1) & 1),
-                k = base[2] + (a >> 2);
-      if (makeMatrix) {
-        const int offset = ((c & 1) - (a & 1) + 1) * 9 +
-                           (((c >> 1) & 1) - ((a >> 1) & 1) + 1) * 3 +
-                           ((c >> 2) - (a >> 2) + 1);
-        Gpu::Atomic::AddNoRet(&mm(i, j, k, offset), acc);
-      }
-      if (t < 8)
-        Gpu::Atomic::AddNoRet(&r(base[0] + (t & 1), base[1] + ((t >> 1) & 1),
-                                 base[2] + (t >> 2)),
-                              racc);
-    });
+            Gpu::Atomic::AddNoRet(&r(base[0] + (t & 1),
+                                     base[1] + ((t >> 1) & 1),
+                                     base[2] + (t >> 2)),
+                                  racc);
+        });
   }
 #else
   deposit_center_charge(rho, centerMatrix);
@@ -1213,21 +1369,30 @@ void DemoParticles::deposit_cell(MultiFab& moments) {
       int index[3];
       for (int d = 0; d < 3; ++d)
         index[d] = amrex::min(
-            big[d],
-            amrex::max(small[d], static_cast<int>(std::floor(
-                                     (p.pos(d) - lo[d]) * invDx[d]))));
+            big[d], amrex::max(small[d], static_cast<int>(std::floor(
+                                             (p.pos(d) - lo[d]) * invDx[d]))));
       return ((index[2] - small[2]) * length[1] + index[1] - small[1]) *
                  length[0] +
              index[0] - small[0];
     };
     auto& bins = cellBins[{ pti.index(), pti.LocalTileIndex() }];
-    bins.build(np, particles, ncells, cell_of);
+    {
+      BL_PROFILE("particles.cell_bins");
+      bins.build(np, particles, ncells, cell_of);
+    }
     const auto* perm = bins.permutationPtr();
     const auto* offsets = bins.offsetsPtr();
+    const int chunkSize = config.cellChunkSize;
+    auto& taskStorage = cellTasks[{ pti.index(), pti.LocalTileIndex() }];
+    const int ntasks = cell_tasks(ncells, offsets, chunkSize, taskStorage);
+    const int* tasks = chunkSize ? taskStorage.data() : nullptr;
     const auto out = moments.array(pti);
-    amrex::launch<nThread>(ncells, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
-      const int cell = blockIdx.x, t = threadIdx.x;
-      const int begin = offsets[cell], end = offsets[cell + 1];
+    BL_PROFILE("particles.cell_kernel_launch");
+    amrex::launch<nThread>(ntasks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
+      const int t = threadIdx.x;
+      int cell, begin, end;
+      cell_task_range(blockIdx.x, ncells, offsets, tasks, chunkSize, cell,
+                      begin, end);
       if (begin == end) // uniform across the block: no barrier is skipped
         return;
       const int base[3] = { small[0] + cell % length[0],
