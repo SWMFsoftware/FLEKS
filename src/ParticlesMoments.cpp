@@ -58,10 +58,13 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
   Real* const sc = scratch.data();
   const int* const perm = bins.perm();
   const int* const off = bins.offsets();
-  ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
-    Real m[nM];
-    for (int n = 0; n < nM; ++n)
-      m[n] = 0;
+  // Three threads per cell, one per power n of sz; each sum adds the
+  // particles of the cell in bin order.
+  ParallelFor(nBins * 3, [=] AMREX_GPU_DEVICE(int t) {
+    const int b = t / 3, n = t - b * 3;
+    Real m[9];
+    for (int kl = 0; kl < 9; ++kl)
+      m[kl] = 0;
     for (int i = off[b]; i < off[b + 1]; ++i) {
       RealVect dShift;
       Real q;
@@ -71,16 +74,15 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
       const Real px[3] = { 1, dShift[0], dShift[0] * dShift[0] };
       const Real py[3] = { 1, dShift[1], dShift[1] * dShift[1] };
       const Real pz[3] = { 1, sz, sz * sz };
-      for (int n = 0; n < 3; ++n)
-        for (int l = 0; l < 3; ++l) {
-          const Real wln = w * px[l] * pz[n];
-          for (int k = 0; k < 3; ++k)
-            m[(n * 3 + k) * 3 + l] += wln * py[k];
-        }
+      for (int l = 0; l < 3; ++l) {
+        const Real wln = w * px[l] * pz[n];
+        for (int k = 0; k < 3; ++k)
+          m[k * 3 + l] += wln * py[k];
+      }
     }
-    Real* const out = sc + static_cast<std::size_t>(b) * nM;
-    for (int n = 0; n < nM; ++n)
-      out[n] = m[n];
+    Real* const out = sc + static_cast<std::size_t>(b) * nM + n * 9;
+    for (int kl = 0; kl < 9; ++kl)
+      out[kl] = m[kl];
   });
 
   // 2. Every cell centre gathers the entries from the dual cells around it.
