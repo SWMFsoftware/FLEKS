@@ -116,6 +116,27 @@ struct NodeMMCommData {
   std::size_t localPts = 0; // size of the local snapshot buffer
   std::vector<std::vector<int> > box_to_loc_tags;
 
+  // Device tables of the local exchange, for one kernel launch per step
+  // (see Pic::sum_boundary_node_mm). A tag copies the box len from the
+  // local box srcLocal at slo to the local box dstLocal at dlo; its values
+  // are at bufStart ... in the snapshot buffer (Reals, nodes in x-fastest
+  // order, the components of a node together).
+  struct LocTagDev {
+    int srcLocal, dstLocal;
+    amrex::Dim3 slo, dlo, len;
+    amrex::Long bufStart;
+  };
+  amrex::Gpu::DeviceVector<LocTagDev> locTagDev;
+  amrex::Gpu::DeviceVector<amrex::Long> locTagStart; // bufStart, tag order
+  // Wave w adds the w-th tag of every destination box, so the tags of a box
+  // are added in order. waveTag holds the tags of wave w at
+  // waveBegin[w] ... waveBegin[w + 1] - 1, waveStart the position of each in
+  // the elements of its wave, waveElems the elements of the wave.
+  amrex::Gpu::DeviceVector<int> waveTag;
+  amrex::Gpu::DeviceVector<amrex::Long> waveStart;
+  std::vector<int> waveBegin;
+  std::vector<amrex::Long> waveElems;
+
   std::vector<PeerComm> sends;
   std::vector<PeerComm> recvs;
 
@@ -911,6 +932,10 @@ public:
   struct LinearSystemLayout {
     amrex::iMultiFab localIdx;
     amrex::Vector<int> nBoxUnknown; // per local box
+    // Device copies, per local box: the number of unknowns, and the number of
+    // unknowns of the boxes before it (one component). nUnknown: all boxes.
+    amrex::Gpu::DeviceVector<int> boxUnknown, boxStart;
+    int nUnknown = 0;
   };
   amrex::Vector<LinearSystemLayout> nodeLayout, centerLayout;
 

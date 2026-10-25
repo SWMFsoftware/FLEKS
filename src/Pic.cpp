@@ -995,6 +995,51 @@ void Pic::init_boundary_node_mm_comm(int iLev) {
         cd.box_to_loc_tags[localDst].push_back(i);
       }
     }
+
+    // The device tables of the fused local exchange.
+    std::vector<NodeMMCommData::LocTagDev> tagDev(n_loc);
+    std::vector<amrex::Long> tagStart(n_loc);
+    for (int i = 0; i < n_loc; ++i) {
+      const auto& tag = cd.loc_tags[i];
+      tagDev[i] = { nodeMM[iLev].localindex(tag.srcIndex),
+                    nodeMM[iLev].localindex(tag.dstIndex),
+                    amrex::lbound(tag.sbox),
+                    amrex::lbound(tag.dbox),
+                    amrex::length(tag.sbox),
+                    static_cast<amrex::Long>(tag.bufOffset) * nMMComponents };
+      tagStart[i] = tagDev[i].bufStart;
+    }
+    std::vector<int> waveTag;
+    std::vector<amrex::Long> waveStart;
+    cd.waveBegin.assign(1, 0);
+    cd.waveElems.clear();
+    for (int w = 0;; ++w) {
+      amrex::Long nElem = 0;
+      for (int b = 0; b < nLocalBoxes; ++b) {
+        const auto& tags = cd.box_to_loc_tags[b];
+        if (w < static_cast<int>(tags.size())) {
+          waveTag.push_back(tags[w]);
+          waveStart.push_back(nElem);
+          nElem += cd.loc_tags[tags[w]].sbox.numPts() * nMMComponents;
+        }
+      }
+      if (static_cast<int>(waveTag.size()) == cd.waveBegin.back())
+        break; // no box has a w-th tag
+      cd.waveBegin.push_back(static_cast<int>(waveTag.size()));
+      cd.waveElems.push_back(nElem);
+    }
+    cd.locTagDev.resize(n_loc);
+    cd.locTagStart.resize(n_loc);
+    cd.waveTag.resize(waveTag.size());
+    cd.waveStart.resize(waveStart.size());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, tagDev.begin(), tagDev.end(),
+                     cd.locTagDev.begin());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, tagStart.begin(), tagStart.end(),
+                     cd.locTagStart.begin());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, waveTag.begin(), waveTag.end(),
+                     cd.waveTag.begin());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, waveStart.begin(),
+                     waveStart.end(), cd.waveStart.begin());
   }
 
 #ifdef BL_USE_MPI
@@ -1097,30 +1142,62 @@ void Pic::sum_boundary_node_mm(int iLev) {
 #endif
 
   // 3. Snapshot local tags into a device buffer (Phase 1): a source region
-  // may also be a destination, so all sources are copied first.
+  // may also be a destination, so all sources are copied first. All the
+  // tags in one launch.
   const int n_loc = static_cast<int>(cd.loc_tags.size());
   // Plain Reals: a buffer of RealMM would be zeroed on allocation.
   amrex::Gpu::DeviceVector<amrex::Real> localBuf(cd.localPts * nMMComponents);
   amrex::Real* const local_buf = localBuf.data();
-  for (int i = 0; i < n_loc; ++i) {
-    const auto& tag = cd.loc_tags[i];
-    const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
-    pack_node_mm_box(src_arr, tag.sbox,
-                     local_buf + tag.bufOffset * nMMComponents);
-  }
+  if (n_loc > 0) {
+    auto const& mm = nodeMM[iLev].arrays();
+    const NodeMMCommData::LocTagDev* const tags = cd.locTagDev.data();
+    const amrex::Long* const tagStart = cd.locTagStart.data();
+    // The tag of element e of a list whose tags start at starts[0..n).
+    auto find_tag = [] AMREX_GPU_DEVICE(const amrex::Long* starts, int n,
+                                        amrex::Long e) {
+      int lo = 0, hi = n - 1;
+      while (lo < hi) {
+        const int mid = (lo + hi + 1) / 2;
+        if (starts[mid] <= e)
+          lo = mid;
+        else
+          hi = mid - 1;
+      }
+      return lo;
+    };
+    amrex::ParallelFor(
+        static_cast<amrex::Long>(cd.localPts) * nMMComponents,
+        [=] AMREX_GPU_DEVICE(amrex::Long e) {
+          const NodeMMCommData::LocTagDev& tg =
+              tags[find_tag(tagStart, n_loc, e)];
+          const amrex::Long el = e - tg.bufStart;
+          const int rowLen = tg.len.x * nMMComponents;
+          const int t = static_cast<int>(el % rowLen);
+          const int r = static_cast<int>(el / rowLen);
+          const int j = r % tg.len.y, k = r / tg.len.y;
+          local_buf[e] =
+              mm[tg.srcLocal](tg.slo.x, tg.slo.y + j, tg.slo.z + k).data[t];
+        });
 
-  // 4. Accumulate local tags into destination boxes (Phase 2)
-  const int nLocalBoxes = nodeMM[iLev].size();
-  for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
-    const auto& tag_indices = cd.box_to_loc_tags[localDst];
-    if (tag_indices.empty())
-      continue;
-
-    auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
-    for (int tag_idx : tag_indices) {
-      const auto& tag = cd.loc_tags[tag_idx];
-      accumulate_node_mm_box(local_buf + tag.bufOffset * nMMComponents,
-                             tag.dbox, dst_arr);
+    // 4. Accumulate local tags into destination boxes (Phase 2), one launch
+    // per wave: the tags of a box are added in the order of
+    // box_to_loc_tags, which keeps the result the same.
+    const int* const waveTag = cd.waveTag.data();
+    const amrex::Long* const waveStart = cd.waveStart.data();
+    for (int w = 0; w + 1 < static_cast<int>(cd.waveBegin.size()); ++w) {
+      const int b0 = cd.waveBegin[w];
+      const int nTag = cd.waveBegin[w + 1] - b0;
+      amrex::ParallelFor(cd.waveElems[w], [=] AMREX_GPU_DEVICE(amrex::Long e) {
+        const int q = find_tag(waveStart + b0, nTag, e);
+        const NodeMMCommData::LocTagDev& tg = tags[waveTag[b0 + q]];
+        const amrex::Long el = e - waveStart[b0 + q];
+        const int rowLen = tg.len.x * nMMComponents;
+        const int t = static_cast<int>(el % rowLen);
+        const int r = static_cast<int>(el / rowLen);
+        const int j = r % tg.len.y, k = r / tg.len.y;
+        mm[tg.dstLocal](tg.dlo.x, tg.dlo.y + j, tg.dlo.z + k).data[t] +=
+            local_buf[tg.bufStart + el];
+      });
     }
   }
 

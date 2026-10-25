@@ -679,6 +679,21 @@ const Pic::LinearSystemLayout& Pic::linear_system_layout(const MultiFab& MF,
         Scan::Type::exclusive, Scan::retSum);
   }
 
+  // The per-box counts and offsets for the fused conversion kernels.
+  const int nBox = layout.nBoxUnknown.size();
+  Vector<int> start(nBox, 0);
+  layout.nUnknown = 0;
+  for (int b = 0; b < nBox; ++b) {
+    start[b] = layout.nUnknown;
+    layout.nUnknown += layout.nBoxUnknown[b];
+  }
+  layout.boxUnknown.resize(nBox);
+  layout.boxStart.resize(nBox);
+  Gpu::copy(Gpu::hostToDevice, layout.nBoxUnknown.begin(),
+            layout.nBoxUnknown.end(), layout.boxUnknown.begin());
+  Gpu::copy(Gpu::hostToDevice, start.begin(), start.end(),
+            layout.boxStart.begin());
+
   return layout;
 }
 
@@ -691,22 +706,22 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 
   MF.setVal(0.0);
 
+  // All the boxes in one launch: the unknowns of box b start at
+  // nComp * boxStart[b] in the vector, component after component.
   const int nComp = MF.nComp();
-  int offset = 0;
-  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
-    const Array4<Real> arr = MF[mfi].array();
-    const Array4<int const> idx = layout.localIdx[mfi].const_array();
-    const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];
-    const double* const pBox = p + offset;
-
-    ParallelFor(mfi.validbox(), nComp,
-                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                  const int l = idx(i, j, k);
-                  if (l >= 0)
-                    arr(i, j, k, iVar) = pBox[iVar * nUnknown + l];
-                });
-    offset += nComp * nUnknown;
-  }
+  if (MF.local_size() == 0)
+    return;
+  auto const& arr = MF.arrays();
+  auto const& idx = layout.localIdx.const_arrays();
+  const int* const nUnknown = layout.boxUnknown.data();
+  const int* const start = layout.boxStart.data();
+  ParallelFor(MF, IntVect(0), nComp,
+              [=] AMREX_GPU_DEVICE(int b, int i, int j, int k, int iVar) {
+                const int l = idx[b](i, j, k);
+                if (l >= 0)
+                  arr[b](i, j, k, iVar) =
+                      p[nComp * start[b] + iVar * nUnknown[b] + l];
+              });
 }
 
 //==========================================================
@@ -716,22 +731,22 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
 
   const LinearSystemLayout& layout = linear_system_layout(MF, iLev);
 
+  // All the boxes in one launch (see convert_1d_to_3d).
   const int nComp = MF.nComp();
-  int offset = 0;
-  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
-    const Array4<Real const> arr = MF[mfi].const_array();
-    const Array4<int const> idx = layout.localIdx[mfi].const_array();
-    const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];
-    double* const pBox = p + offset;
-
-    ParallelFor(mfi.validbox(), nComp,
-                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                  const int l = idx(i, j, k);
+  if (MF.local_size() > 0) {
+    auto const& arr = MF.const_arrays();
+    auto const& idx = layout.localIdx.const_arrays();
+    const int* const nUnknown = layout.boxUnknown.data();
+    const int* const start = layout.boxStart.data();
+    ParallelFor(MF, IntVect(0), nComp,
+                [=] AMREX_GPU_DEVICE(int b, int i, int j, int k, int iVar) {
+                  const int l = idx[b](i, j, k);
                   if (l >= 0)
-                    pBox[iVar * nUnknown + l] = arr(i, j, k, iVar);
+                    p[nComp * start[b] + iVar * nUnknown[b] + l] =
+                        arr[b](i, j, k, iVar);
                 });
-    offset += nComp * nUnknown;
   }
+  const int offset = nComp * layout.nUnknown;
 
   // Explicitly zero trailing slots up to the solver dimension to prevent
   // uninitialized or stale memory from polluting GMRES Arnoldi inner products.
