@@ -1,5 +1,12 @@
 # GPU demo performance review and next-step plan
 
+> Historical. This review and its implementation (commit `422512c`) were
+> followed by a rewritten synchronization-free GMRES (now the default
+> `gmres_batched=1`, which supersedes the CGS2 description below), optional
+> single-precision cell sums, and the separable-moment div(E) deposit.
+> Development concluded on 2026-10-25; see `GPU_DEVELOPMENT_SUMMARY.md` for
+> the final state.
+
 Reviewed 2026-10-25. Scope: the current `src_gpu` coupled PIC timestep,
 including the already implemented `response=cell` and `deposit=cell` paths.
 The original review synthesized recorded measurements. Implementation and

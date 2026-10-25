@@ -1,6 +1,7 @@
 # FLEKS GPU PIC demo implementation plan
 
-Status: implemented and verified on local branch `gpu`. See `PROGRESS.md` for
+Status: implemented and verified on local branch `gpu`; development concluded
+on 2026-10-25 (final results in `GPU_DEVELOPMENT_SUMMARY.md`). See `PROGRESS.md` for
 completed stages and validation evidence, and `README.md` for runnable commands.
 
 ## Purpose and scope

@@ -191,3 +191,13 @@ implementation proceeds. The implementation plan remains the acceptance list.
   solver work. Validated with serial references, per-species atomic
   comparisons (uniform, clustered, chunked), coupled runs of both kernels,
   the CPU build, compute-sanitizer, and the full suite.
+
+## 2026-10-25 — development concluded
+
+- Final reference step on one RTX 4090: 0.262 s in double precision (4.1x
+  faster than the first GPU version, 5.8x faster than 64 CPU cores) and
+  0.237 s with `cell_precision=single` (4.5x and 6.4x).
+- A final profile ranked the remaining options (block-symmetric mass-matrix
+  storage, a cheaper position correction with fewer migrations, the second
+  GPU, fewer host synchronizations, fewer sorts); none were implemented.
+  They are recorded in `GPU_DEVELOPMENT_SUMMARY.md`.

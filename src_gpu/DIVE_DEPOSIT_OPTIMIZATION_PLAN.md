@@ -1,7 +1,7 @@
 # div(E) deposition optimization plan
 
 Status: phase 1 implemented (`center_kernel=moments`, now the default);
-phases 2 and 3 not started. See "Outcome" at the end.
+phases 2 and 3 not pursued because development concluded on 2026-10-25. See "Outcome" at the end.
 
 ## Goal
 

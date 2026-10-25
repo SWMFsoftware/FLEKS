@@ -1,4 +1,7 @@
-# Initial GPU measurements — 2026-10-24
+# GPU measurements — 2026-10-24 to 2026-10-25
+
+Sections are chronological; later sections supersede earlier numbers. The
+final state is summarized in `GPU_DEVELOPMENT_SUMMARY.md`.
 
 These are short exploratory measurements on NVIDIA GeForce RTX 4090 GPUs
 (24 GiB each), AMReX `45a1fc5e1e5a`, nvcc sm89, double precision, and host-staged

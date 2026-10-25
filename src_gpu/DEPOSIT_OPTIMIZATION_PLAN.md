@@ -3,6 +3,7 @@
 Status: phases 1 and 2 implemented (`deposit=cell`); phase 3 skipped by its
 own criterion. See "Outcome" at the end for measured results and where they
 differ from the expectations below.
+Development concluded on 2026-10-25.
 
 ## Goal
 

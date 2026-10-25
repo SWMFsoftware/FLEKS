@@ -3,6 +3,7 @@
 Status: phases 0, 1, 2, and 4 implemented; phase 3 not needed on one GPU.
 Batched CGS2 is now the default (`gmres_batched=1`). See "Outcome" at the
 end for measurements and differences from the expectations below.
+Development concluded on 2026-10-25.
 
 ## Goal
 

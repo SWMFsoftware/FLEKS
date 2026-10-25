@@ -10,10 +10,22 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for scope and acceptance,
 [PROGRESS.md](PROGRESS.md) for the implementation record,
 [FIELD_NOTES.md](FIELD_NOTES.md) for equations and solver findings, and
 [PARTICLE_NOTES.md](PARTICLE_NOTES.md) for particle conventions and benchmarks.
-Measured initial costs and their limits are recorded in
+Measured costs and their limits are recorded in
 [BENCHMARKS.md](BENCHMARKS.md).
-The current performance review and prioritized next steps are in
-[PERFORMANCE_PLAN.md](PERFORMANCE_PLAN.md).
+
+**Status: development concluded on 2026-10-25.** The final results (what each
+optimization did, its measured speedup, the GPU/CPU comparison, and the
+remaining options) are in
+[GPU_DEVELOPMENT_SUMMARY.md](GPU_DEVELOPMENT_SUMMARY.md). With
+`response=cell deposit=cell pair_symmetry=1 fused_push=1`, one RTX 4090 runs
+the 64^3, 100-particles-per-cell reference step in 0.262 s, 5.8x faster than
+all 64 cores of the host CPU. The optimization plans with measured outcomes
+are [DEPOSIT_OPTIMIZATION_PLAN.md](DEPOSIT_OPTIMIZATION_PLAN.md),
+[PERFORMANCE_PLAN.md](PERFORMANCE_PLAN.md),
+[DIVE_SOLVER_OPTIMIZATION_PLAN.md](DIVE_SOLVER_OPTIMIZATION_PLAN.md), and
+[DIVE_DEPOSIT_OPTIMIZATION_PLAN.md](DIVE_DEPOSIT_OPTIMIZATION_PLAN.md).
+[CPU_GPU_COMPARISON.md](CPU_GPU_COMPARISON.md) holds an earlier matched
+GPU/CPU phase study whose GPU numbers predate the last three optimizations.
 
 ## Build and run
 

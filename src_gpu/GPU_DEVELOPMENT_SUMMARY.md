@@ -4,6 +4,10 @@ This summarizes the GPU work on branch `gpu` over about 48 hours: what each
 change did and how much it sped up the code. Details live in the documents
 linked at the end.
 
+**Status: development concluded on 2026-10-25.** "Remaining bottlenecks and
+options" lists measured bottlenecks and options that were analyzed but not
+implemented.
+
 ## Result in one line
 
 One RTX 4090 now runs the reference semi-implicit PIC step in **0.262 s**
@@ -235,19 +239,55 @@ diagnostics match the reference paths to roundoff. The validation suite
 compute-sanitizer memcheck and racecheck are clean for the new kernels, and
 a CPU build of the same source passes all checks on four ranks.
 
-## Remaining bottlenecks and options
+## Remaining bottlenecks and options (not implemented)
 
-- The div(E) correction loop is half of the step (deposit, solve, and
-  position correction with particle migration, three passes each).
-- The div(E) deposit's sort (about 4 ms of each ~13 ms pass) is now its
-  largest remaining part; see `DIVE_DEPOSIT_OPTIMIZATION_PLAN.md`.
-- Particle migration after each correction pass (about 50 ms) is the
-  largest phase not yet optimized.
-- Opt-in options that change results and need a production decision:
-  `div_e_method=pcg` and `cell_precision=single`.
-- On A100/H100-class GPUs, FP64 runs at half the FP32 rate, so the
-  single-precision gain would largely disappear; FP64 tensor cores there
-  could run the per-cell matrix sums in full precision.
+A final Nsight Systems profile of the default double-precision step (262 ms,
+8 boxes) found:
+
+| Part | ms/step | Share | Limited by |
+| --- | ---: | ---: | --- |
+| div(E) position correction + migration, 3 passes | 50.3 | 19% | correction kernel (~0.67 ms per launch) and particle migration (`Redistribute`, ~0.4 ms per launch, 4 per step) |
+| Mass-matrix assembly | 50.7 | 19% | FP64 arithmetic |
+| Electric-field GMRES solve | 42.7 | 16% | memory traffic of the 243-coefficient operator |
+| div(E) charge + matrix deposit, 3 passes | 38.9 | 15% | kernel (~0.7 ms per launch) and sorting (~4 ms per pass) |
+| Particle push + migration | 24.3 | 9% | FP64 gather and push, migration |
+| Moment and final charge deposits | 29.3 | 11% | atomics and sorting |
+| Other | 25.7 | 10% | |
+
+The GPU was idle for about 7% of the step, from about 1,500 host
+synchronizations and 2,900 kernel launches per step.
+
+Options, in order of estimated payoff per effort (estimates, not
+measurements):
+
+1. **Store half of the mass matrix (exact).** The block node a stores for
+   neighbor c equals the block c stores for a, so 14 of the 27 neighbor
+   blocks (126 instead of 243 values) suffice. That roughly halves the
+   electric operator's memory traffic, the mass-matrix exchange, and the
+   assembly atomics: electric solve 42.7 -> ~30 ms, exchange 11.8 -> ~6 ms.
+2. **Cheaper div(E) position correction.** A separable gradient
+   interpolation could roughly halve the correction kernel, and migrating
+   once per step instead of after each pass (binning over the box plus one
+   ghost cell; each pass moves particles by at most 0.1 cell) removes two of
+   four migrations: 50 -> ~25-30 ms.
+3. **Second RTX 4090.** The code already runs on several MPI ranks; with
+   52M particles two GPUs might give 1.5-1.8x. Untested at this size
+   because the second GPU was in use by another job.
+4. **Fewer host synchronizations and launches** (~20 ms): fuse the remaining
+   synchronizing `MFIter` loops as was done for the div(E) solver, and
+   possibly capture the electric-solver iteration as a CUDA graph.
+5. **Fewer sorts** (~20 ms per step across five sorts): share sorts between
+   deposits that see the same positions, or re-sort particles occasionally.
+6. **Double-precision mass-matrix assembly.** The separable trick helps less
+   here (243 sums against 324 pair accumulators, about 1.3x); the opt-in
+   single-precision sums already give 2.0x.
+
+Options 1, 2, 4, and 5 together might bring one GPU to roughly 190-200 ms
+per step in double precision. Much of the remaining time is FP64-bound, so
+an A100/H100-class GPU (FP64 at half the FP32 rate) would speed it up
+without code changes; its FP64 tensor cores could also run the per-cell
+matrix sums. Opt-in options awaiting a production decision:
+`div_e_method=pcg` and `cell_precision=single`.
 
 ## Defaults and recommended flags
 
