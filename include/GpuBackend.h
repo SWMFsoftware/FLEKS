@@ -482,6 +482,35 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int find_deposit_tile(
   return lo;
 }
 
+// The bin of global particle g of a LevelBins: the bin of its cell in its
+// tile, or, when cellOf(t, ip, cell) leaves it out or the cell is outside
+// the tile, the rest bin of the tile (if the tiles have one) or nBin.
+template <class CellOf> struct LevelBinOf {
+  const DepositTile* tl;
+  int nTile, nBin;
+  bool hasRestBin;
+  CellOf cellOf;
+
+  AMREX_GPU_DEVICE int operator()(int g) const {
+    const int t = find_deposit_tile(
+        tl, nTile, g, [](const DepositTile& d) { return d.pStart; });
+    const int lenD[3] = { tl[t].len.x, tl[t].len.y, tl[t].len.z };
+    const int outside =
+        hasRestBin ? tl[t].bStart + lenD[0] * lenD[1] * lenD[2] : nBin;
+    amrex::IntVect c;
+    if (!cellOf(t, g - tl[t].pStart, c))
+      return outside;
+    const int ijk[3] = { AMREX_D_DECL(c[0] - tl[t].lo.x, c[1] - tl[t].lo.y,
+                                      c[2] - tl[t].lo.z) };
+    for (int d = 0; d < AMREX_SPACEDIM; ++d)
+      if (ijk[d] < 0 || ijk[d] >= lenD[d])
+        return outside;
+    return tl[t].bStart + ijk[0] +
+           lenD[0] * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
+                      lenD[1] * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
+  }
+};
+
 // The particles of all the tiles of a level, binned by cell, for a deposit
 // over all the tiles with one launch per step (deposit_level_to_nodes)
 // instead of one per tile. Tile t has np[t] particles and the cells of
@@ -496,7 +525,39 @@ public:
   template <int S = 2, class CellOf>
   void build(const std::vector<int>& np, const std::vector<amrex::Box>& cellBox,
              CellOf cellOf) {
+    if (setup<S>(np, cellBox, false) == 0)
+      return;
+    bins.build(nParticle, nBin, bin_function(cellOf));
+  }
+
+  // As build(), but a bin is ordered by the unique particle key idOf(t, ip)
+  // (see CellBins::build), and every tile has one more bin, after its cells,
+  // for the particles that are left out. So the particles of tile t are at
+  // the positions pStart[t] .. pStart[t] + np[t] - 1 of perm(), as a sort of
+  // the tile alone puts them (see Particles::sort_particles).
+  template <class CellOf, class IdOf>
+  void build_sorted(const std::vector<int>& np,
+                    const std::vector<amrex::Box>& cellBox, CellOf cellOf,
+                    IdOf idOf) {
+    if (setup<2>(np, cellBox, true) == 0)
+      return;
+    const DepositTile* const tl = tiles();
+    const int nT = nTile;
+    bins.build(nParticle, nBin, bin_function(cellOf),
+               [=] AMREX_GPU_DEVICE(int g) {
+                 const int t = find_deposit_tile(
+                     tl, nT, g, [](const DepositTile& d) { return d.pStart; });
+                 return idOf(t, g - tl[t].pStart);
+               });
+  }
+
+  // Implementation (public only because nvcc does not allow device lambdas in
+  // private member functions).
+  template <int S>
+  int setup(const std::vector<int>& np, const std::vector<amrex::Box>& cellBox,
+            bool withRestBin) {
     nTile = static_cast<int>(np.size());
+    hasRestBin = withRestBin;
     hTiles.assign(nTile, DepositTile{});
     nParticle = nBin = nNode = 0;
     for (int t = 0; t < nTile; ++t) {
@@ -512,32 +573,19 @@ public:
       d.nodeLo = amrex::lbound(nodeBox);
       d.nodeLen = amrex::length(nodeBox);
       nParticle += np[t];
-      nBin += static_cast<int>(cellBox[t].numPts());
+      nBin += static_cast<int>(cellBox[t].numPts()) + (withRestBin ? 1 : 0);
       nNode += static_cast<int>(nodeBox.numPts());
     }
     if (nParticle == 0)
-      return;
+      return 0;
     dTiles.resize(nTile);
     amrex::Gpu::copyAsync(amrex::Gpu::hostToDevice, hTiles.begin(),
                           hTiles.end(), dTiles.begin());
-    const DepositTile* const tl = tiles();
-    const int nT = nTile, nB = nBin;
-    bins.build(nParticle, nBin, [=] AMREX_GPU_DEVICE(int g) {
-      const int t = find_deposit_tile(
-          tl, nT, g, [](const DepositTile& d) { return d.pStart; });
-      amrex::IntVect c;
-      if (!cellOf(t, g - tl[t].pStart, c))
-        return nB;
-      const int ijk[3] = { AMREX_D_DECL(c[0] - tl[t].lo.x, c[1] - tl[t].lo.y,
-                                        c[2] - tl[t].lo.z) };
-      const int lenD[3] = { tl[t].len.x, tl[t].len.y, tl[t].len.z };
-      for (int d = 0; d < AMREX_SPACEDIM; ++d)
-        if (ijk[d] < 0 || ijk[d] >= lenD[d])
-          return nB;
-      return tl[t].bStart + ijk[0] +
-             lenD[0] * ((AMREX_SPACEDIM > 1 ? ijk[1] : 0) +
-                        lenD[1] * (AMREX_SPACEDIM > 2 ? ijk[2] : 0));
-    });
+    return nParticle;
+  }
+
+  template <class CellOf> LevelBinOf<CellOf> bin_function(CellOf cellOf) const {
+    return LevelBinOf<CellOf>{ tiles(), nTile, nBin, hasRestBin, cellOf };
   }
 
   int n_tiles() const { return nTile; }
@@ -557,6 +605,7 @@ public:
 
 private:
   int nTile = 0, nParticle = 0, nBin = 0, nNode = 0;
+  bool hasRestBin = false;
   std::vector<DepositTile> hTiles;
   amrex::Gpu::DeviceVector<DepositTile> dTiles;
   CellBins bins;

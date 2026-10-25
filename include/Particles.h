@@ -1329,45 +1329,61 @@ public:
     if (useCellTiles)
       return;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
+      // All the tiles of the level at once (see LevelBins::build_sorted): a
+      // tile's particles are ordered by (cell, particle key), as a sort of
+      // the tile alone orders them.
+      std::vector<int> nps;
+      std::vector<amrex::Box> boxes;
+      amrex::Vector<ParticleType*> ptrs;
       for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
         const int np = pti.numParticles();
         if (np < 2)
           continue;
-        ParticleType* const pData = pti.GetArrayOfStructs()().data();
-        const amrex::Box box = cell_status(iLev)[pti].box();
-        const amrex::Dim3 lo = amrex::lbound(box);
-        const amrex::Dim3 len = amrex::length(box);
-        const int nBins = static_cast<int>(box.numPts());
-        const auto ploLev = Geom(iLev).ProbLoArray();
-        const auto invDxLev = Geom(iLev).InvCellSizeArray();
-
-        CellBins bins;
-        bins.build(
-            np, nBins,
-            [=] AMREX_GPU_DEVICE(int ip) {
-              int ijk[3] = { 0, 0, 0 };
-              for (int d = 0; d < AMREX_SPACEDIM; ++d) {
-                ijk[d] = static_cast<int>(amrex::Math::floor(
-                    (pData[ip].pos(d) - ploLev[d]) * invDxLev[d]));
-              }
-              const int i = ijk[0] - lo.x, j = ijk[1] - lo.y, k = ijk[2] - lo.z;
-              if (i < 0 || i >= len.x || j < 0 || j >= len.y || k < 0 ||
-                  k >= len.z)
-                return nBins;
-              return i + len.x * (j + len.y * k);
-            },
-            [=] AMREX_GPU_DEVICE(int ip) { return particle_key(pData[ip]); });
-
-        amrex::Gpu::DeviceVector<ParticleType> sorted(np);
-        ParticleType* const out = sorted.data();
-        const int* const perm = bins.perm();
-        amrex::ParallelFor(
-            np, [=] AMREX_GPU_DEVICE(int i) { out[i] = pData[perm[i]]; });
-        amrex::Gpu::copyAsync(amrex::Gpu::deviceToDevice, sorted.begin(),
-                              sorted.end(), pData);
-        // sorted and the bins are freed at the end of the iteration.
-        sync_before_free();
+        nps.push_back(np);
+        boxes.push_back(cell_status(iLev)[pti].box());
+        ptrs.push_back(pti.GetArrayOfStructs()().data());
       }
+      if (ptrs.empty())
+        continue;
+      amrex::Gpu::AsyncArray<ParticleType*> ptrStore(ptrs.data(), ptrs.size());
+      ParticleType* const* const tileData = ptrStore.data();
+      const auto ploLev = Geom(iLev).ProbLoArray();
+      const auto invDxLev = Geom(iLev).InvCellSizeArray();
+
+      LevelBins lb;
+      lb.build_sorted(
+          nps, boxes,
+          [=] AMREX_GPU_DEVICE(int t, int ip, amrex::IntVect& cell) {
+            for (int d = 0; d < AMREX_SPACEDIM; ++d)
+              cell[d] = static_cast<int>(amrex::Math::floor(
+                  (tileData[t][ip].pos(d) - ploLev[d]) * invDxLev[d]));
+            return true;
+          },
+          [=] AMREX_GPU_DEVICE(int t, int ip) {
+            return particle_key(tileData[t][ip]);
+          });
+
+      const int nTotal = lb.n_particles(), nTile = lb.n_tiles();
+      const DepositTile* const tl = lb.tiles();
+      const int* const perm = lb.perm();
+      amrex::Gpu::DeviceVector<ParticleType> sorted(nTotal);
+      ParticleType* const out = sorted.data();
+      auto tile_of = [=] AMREX_GPU_DEVICE(int g) {
+        return find_deposit_tile(tl, nTile, g,
+                                 [](const DepositTile& d) { return d.pStart; });
+      };
+      amrex::ParallelFor(nTotal, [=] AMREX_GPU_DEVICE(int i) {
+        const int g = perm[i];
+        const int t = tile_of(g);
+        out[i] = tileData[t][g - tl[t].pStart];
+      });
+      // The particles of tile t are at the positions pStart[t] ... of perm.
+      amrex::ParallelFor(nTotal, [=] AMREX_GPU_DEVICE(int i) {
+        const int t = tile_of(i);
+        tileData[t][i - tl[t].pStart] = out[i];
+      });
+      // sorted and the bins are freed at the end of the iteration.
+      sync_before_free();
     }
   }
 
