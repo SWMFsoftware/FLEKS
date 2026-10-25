@@ -116,3 +116,16 @@ implementation proceeds. The implementation plan remains the acceptance list.
   cores. See BENCHMARKS.md.
 - div(E) solves that reach `div_e_max_iter` now warn instead of failing,
   matching production LinearSolver, which applies the partial potential.
+
+## 2026-10-25 — cell-reduced particle deposits
+
+- Implemented phases 1 and 2 of DEPOSIT_OPTIMIZATION_PLAN.md as
+  `deposit=cell`: block-reduced div(E) charge/correction-matrix deposit and
+  ten-moment deposit, with CPU fallback to the per-particle versions.
+- Validated against the serial references on one and two ranks, per species
+  against the atomic deposits in benchmark mode (uniform and clustered), and
+  in a coupled nonuniform div(E) run (`cell-deposit-matches-atomic`). Full
+  suite passed: 39 checks.
+- Reference case timestep 0.599 s -> 0.387 s; moment deposit 7.5x, div(E)
+  deposit 2.0x (now FP64-bound). The charge-only deposit stays per particle
+  because the cell version measured slower. Phase 3 skipped by its criterion.

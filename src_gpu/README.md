@@ -78,6 +78,7 @@ Its AMReX device arena starts at 64 MiB and grows as needed; override
 | `fused_push` | 0 | Fuse field gather with the particle push |
 | `response` | atomic | Mass-matrix assembly: `atomic` (per particle), `cell` (GPU block reduction per cell), or `buffered` |
 | `buffered_response` | 0 | Alias for `response=buffered` |
+| `deposit` | atomic | div(E) charge/matrix and moment deposits: `atomic` (per particle) or `cell` (GPU block reduction per cell); the charge-only deposit always stays per particle |
 | `sort_interval` | 0 | Additional periodic particle sorting; zero disables |
 | `clustered` | 0 | Compress quiet-start positions to test scatter contention |
 | `production_ghost` | 3 | Comparison width in the ghost-exchange benchmark |

@@ -38,6 +38,9 @@ DemoConfig::DemoConfig() {
     response = "buffered";
   if (response != "atomic" && response != "cell" && response != "buffered")
     amrex::Abort("response must be atomic, cell, or buffered");
+  pp.query("deposit", deposit);
+  if (deposit != "atomic" && deposit != "cell")
+    amrex::Abort("deposit must be atomic or cell");
   pp.query("clustered", clustered);
   pp.query("reference_prefix", referencePrefix);
   if (mode != "fields" && mode != "particles" && mode != "deposit" &&

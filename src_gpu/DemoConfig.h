@@ -35,6 +35,9 @@ struct DemoConfig {
   // Mass-matrix assembly: atomic (per particle), cell (block-reduced per
   // cell, GPU), or buffered (serial per-cell thread buffers).
   std::string response = "atomic";
+  // div(E) charge/matrix, final charge, and moment deposits: atomic (per
+  // particle) or cell (block-reduced per cell, GPU).
+  std::string deposit = "atomic";
   std::string initialCondition = "uniform";
   std::string referencePrefix;
 

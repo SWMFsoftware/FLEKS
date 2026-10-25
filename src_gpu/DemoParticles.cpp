@@ -745,6 +745,12 @@ int DemoParticles::run_checks(DemoFields& fields) {
   fields.moments.FillBoundary(grid.geom.periodicity());
   report("atomic ten-moment CIC scatter serial reference",
          compare_reference(fields.moments, moments, n) / invVol, tol);
+  fields.moments.setVal(0);
+  deposit_cell(fields.moments);
+  fields.moments.SumBoundary(grid.geom.periodicity());
+  fields.moments.FillBoundary(grid.geom.periodicity());
+  report("cell-reduced ten-moment CIC scatter serial reference",
+         compare_reference(fields.moments, moments, n) / invVol, tol);
 
   // Full nodal response reference for seven particles, including collisions
   // on the same nodes and deposits at periodic corners. The oblique B fills
@@ -844,6 +850,24 @@ int DemoParticles::run_checks(DemoFields& fields) {
   report("divE position-response matrix serial reference",
          compare_reference(fields.centerMM, centerMatrix, n) / (invVol * n * n),
          tol);
+  fields.rho.setVal(0);
+  fields.centerMM.setVal(0);
+  deposit_center_charge_cell(fields.rho, &fields.centerMM);
+  fields.rho.SumBoundary(grid.geom.periodicity());
+  fields.centerMM.SumBoundary(grid.geom.periodicity());
+  fields.rho.FillBoundary(grid.geom.periodicity());
+  fields.centerMM.FillBoundary(grid.geom.periodicity());
+  report("cell-reduced charge CIC serial reference",
+         compare_reference(fields.rho, rho, n) / invVol, tol);
+  report("cell-reduced divE position-response matrix serial reference",
+         compare_reference(fields.centerMM, centerMatrix, n) / (invVol * n * n),
+         tol);
+  fields.rho.setVal(0);
+  deposit_center_charge_cell(fields.rho);
+  fields.rho.SumBoundary(grid.geom.periodicity());
+  fields.rho.FillBoundary(grid.geom.periodicity());
+  report("cell-reduced charge-only CIC serial reference",
+         compare_reference(fields.rho, rho, n) / invVol, tol);
 
   // A spatially constant potential cannot change particle positions.
   fields.phi.setVal(.005);
@@ -1051,6 +1075,209 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
   }
 #else
   accumulate_response(fields, dt);
+#endif
+}
+
+void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
+                                               MultiFab* centerMatrix) {
+  // Charge alone is only 8 atomics per particle. Measured at 64^3 with 100
+  // particles per cell, binning plus staging cost more than they save
+  // (16.4 ms versus 13.0 ms), so the charge-only deposit stays per particle.
+  if (!centerMatrix) {
+    deposit_center_charge(rho);
+    return;
+  }
+#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
+  // Same strategy as accumulate_response_cell for the half-cell-shifted
+  // shape. One 64-thread block per center-shape base cell: thread t owns
+  // center pair (a, c) = (t/8, t%8) of the matrix; threads t<8 also own rho.
+  // The base index floor(u-0.5) spans [small-1, big], so the bins cover the
+  // box plus one low ghost layer; SumBoundary folds that layer back.
+  constexpr int nThread = 64;
+  const auto lo = grid.geom.ProbLoArray();
+  const auto invDx = grid.geom.InvCellSizeArray();
+  const Real invVol = 1 / cell_volume(grid);
+  const bool makeMatrix = centerMatrix != nullptr;
+  for (ParConstIterType pti(*this, 0); pti.isValid(); ++pti) {
+    const int np = pti.numParticles();
+    if (!np)
+      continue;
+    const auto box = pti.validbox();
+    const IntVect small = box.smallEnd() - 1;
+    const IntVect big = box.bigEnd();
+    const IntVect length = big - small + 1;
+    const int nbins = length[0] * length[1] * length[2];
+    const auto* particles = pti.GetArrayOfStructs().data();
+    auto cell_of = [=] AMREX_GPU_DEVICE(const ParticleType& p) noexcept {
+      int index[3];
+      for (int d = 0; d < 3; ++d)
+        index[d] = amrex::min(
+            big[d],
+            amrex::max(small[d],
+                       static_cast<int>(std::floor(
+                           (p.pos(d) - lo[d]) * invDx[d] - Real(0.5)))));
+      return ((index[2] - small[2]) * length[1] + index[1] - small[1]) *
+                 length[0] +
+             index[0] - small[0];
+    };
+    auto& bins = centerBins[{ pti.index(), pti.LocalTileIndex() }];
+    bins.build(np, particles, nbins, cell_of);
+    const auto* perm = bins.permutationPtr();
+    const auto* offsets = bins.offsetsPtr();
+    const auto r = rho.array(pti);
+    const auto mm = makeMatrix ? centerMatrix->array(pti) : Array4<Real>();
+    amrex::launch<nThread>(nbins, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
+      const int cell = blockIdx.x, t = threadIdx.x;
+      const int begin = offsets[cell], end = offsets[cell + 1];
+      if (begin == end) // uniform across the block: no barrier is skipped
+        return;
+      const int base[3] = { small[0] + cell % length[0],
+                            small[1] + (cell / length[0]) % length[1],
+                            small[2] + cell / (length[0] * length[1]) };
+      __shared__ Real weight[nThread][8];
+      __shared__ Real gradient[nThread][8][3];
+      __shared__ Real charge[nThread];
+      const int a = t >> 3, c = t & 7;
+      Real acc = 0, racc = 0;
+      for (int chunk = begin; chunk < end; chunk += nThread) {
+        const int n = amrex::min(nThread, end - chunk);
+        if (t < n) {
+          const auto& p = particles[perm[chunk + t]];
+          const Real q = p.id() > 0 ? p.rdata(iqp_) : 0;
+          Real f[3];
+          for (int d = 0; d < 3; ++d)
+            f[d] = (p.pos(d) - lo[d]) * invDx[d] - Real(0.5) - base[d];
+          for (int node = 0; node < 8; ++node) {
+            Real w[3];
+            for (int d = 0; d < 3; ++d)
+              w[d] = (node & (1 << d)) ? f[d] : 1 - f[d];
+            weight[t][node] = w[0] * w[1] * w[2];
+            for (int d = 0; d < 3; ++d)
+              gradient[t][node][d] = ((node & (1 << d)) ? 1 : -1) * invDx[d] *
+                                     w[(d + 1) % 3] * w[(d + 2) % 3];
+          }
+          charge[t] = q * invVol;
+        }
+        __syncthreads();
+        for (int ip = 0; ip < n; ++ip) {
+          if (makeMatrix)
+            acc += std::abs(charge[ip]) *
+                   (gradient[ip][a][0] * gradient[ip][c][0] +
+                    gradient[ip][a][1] * gradient[ip][c][1] +
+                    gradient[ip][a][2] * gradient[ip][c][2]);
+          if (t < 8)
+            racc += charge[ip] * weight[ip][t];
+        }
+        __syncthreads();
+      }
+      const int i = base[0] + (a & 1), j = base[1] + ((a >> 1) & 1),
+                k = base[2] + (a >> 2);
+      if (makeMatrix) {
+        const int offset = ((c & 1) - (a & 1) + 1) * 9 +
+                           (((c >> 1) & 1) - ((a >> 1) & 1) + 1) * 3 +
+                           ((c >> 2) - (a >> 2) + 1);
+        Gpu::Atomic::AddNoRet(&mm(i, j, k, offset), acc);
+      }
+      if (t < 8)
+        Gpu::Atomic::AddNoRet(&r(base[0] + (t & 1), base[1] + ((t >> 1) & 1),
+                                 base[2] + (t >> 2)),
+                              racc);
+    });
+  }
+#else
+  deposit_center_charge(rho, centerMatrix);
+#endif
+}
+
+void DemoParticles::deposit_cell(MultiFab& moments) {
+#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
+  // Nodal shape, binned like accumulate_response_cell. One 96-thread block
+  // per cell: thread t<80 owns node t/10 and moment t%10. All ten moments are
+  // charge weighted (q, q*u, q*u*u, ...), matching deposit().
+  AMREX_ALWAYS_ASSERT(moments.nComp() >= 10);
+  constexpr int nThread = 96, nMoment = 10;
+  const auto lo = grid.geom.ProbLoArray();
+  const auto invDx = grid.geom.InvCellSizeArray();
+  const Real invVol = 1 / cell_volume(grid);
+  for (ParConstIterType pti(*this, 0); pti.isValid(); ++pti) {
+    const int np = pti.numParticles();
+    if (!np)
+      continue;
+    const auto box = pti.validbox();
+    const auto small = box.smallEnd();
+    const auto big = box.bigEnd();
+    const auto length = box.length();
+    const int ncells = box.numPts();
+    const auto* particles = pti.GetArrayOfStructs().data();
+    auto cell_of = [=] AMREX_GPU_DEVICE(const ParticleType& p) noexcept {
+      int index[3];
+      for (int d = 0; d < 3; ++d)
+        index[d] = amrex::min(
+            big[d],
+            amrex::max(small[d], static_cast<int>(std::floor(
+                                     (p.pos(d) - lo[d]) * invDx[d]))));
+      return ((index[2] - small[2]) * length[1] + index[1] - small[1]) *
+                 length[0] +
+             index[0] - small[0];
+    };
+    auto& bins = cellBins[{ pti.index(), pti.LocalTileIndex() }];
+    bins.build(np, particles, ncells, cell_of);
+    const auto* perm = bins.permutationPtr();
+    const auto* offsets = bins.offsetsPtr();
+    const auto out = moments.array(pti);
+    amrex::launch<nThread>(ncells, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
+      const int cell = blockIdx.x, t = threadIdx.x;
+      const int begin = offsets[cell], end = offsets[cell + 1];
+      if (begin == end) // uniform across the block: no barrier is skipped
+        return;
+      const int base[3] = { small[0] + cell % length[0],
+                            small[1] + (cell / length[0]) % length[1],
+                            small[2] + cell / (length[0] * length[1]) };
+      __shared__ Real weight[nThread][8];
+      __shared__ Real value[nThread][nMoment];
+      const int node = t / nMoment, moment = t % nMoment;
+      Real acc = 0;
+      for (int chunk = begin; chunk < end; chunk += nThread) {
+        const int n = amrex::min(nThread, end - chunk);
+        if (t < n) {
+          const auto& p = particles[perm[chunk + t]];
+          const Real q = p.id() > 0 ? p.rdata(iqp_) * invVol : 0;
+          const Real u = p.rdata(0), v = p.rdata(1), w = p.rdata(2);
+          Real f[3];
+          for (int d = 0; d < 3; ++d)
+            f[d] = (p.pos(d) - lo[d]) * invDx[d] - base[d];
+          for (int a = 0; a < 8; ++a) {
+            Real product = 1;
+            for (int d = 0; d < 3; ++d)
+              product *= (a & (1 << d)) ? f[d] : 1 - f[d];
+            weight[t][a] = product;
+          }
+          value[t][0] = q;
+          value[t][1] = q * u;
+          value[t][2] = q * v;
+          value[t][3] = q * w;
+          value[t][4] = q * u * u;
+          value[t][5] = q * v * v;
+          value[t][6] = q * w * w;
+          value[t][7] = q * u * v;
+          value[t][8] = q * u * w;
+          value[t][9] = q * v * w;
+        }
+        __syncthreads();
+        if (t < 8 * nMoment)
+          for (int ip = 0; ip < n; ++ip)
+            acc += weight[ip][node] * value[ip][moment];
+        __syncthreads();
+      }
+      if (t < 8 * nMoment)
+        Gpu::Atomic::AddNoRet(&out(base[0] + (node & 1),
+                                   base[1] + ((node >> 1) & 1),
+                                   base[2] + (node >> 2), moment),
+                              acc);
+    });
+  }
+#else
+  deposit(moments);
 #endif
 }
 

@@ -51,6 +51,12 @@ public:
   int benchmark_layouts(const amrex::MultiFab& e, const amrex::MultiFab& b);
   void deposit_center_charge(amrex::MultiFab& rho,
                              amrex::MultiFab* centerMatrix = nullptr);
+  // GPU cell-reduced counterparts of deposit_center_charge and deposit, with
+  // the same results and caller contract. They fall back to the per-particle
+  // versions on CPUs.
+  void deposit_center_charge_cell(amrex::MultiFab& rho,
+                                  amrex::MultiFab* centerMatrix = nullptr);
+  void deposit_cell(amrex::MultiFab& moments);
   void correct_positions(const amrex::MultiFab& phi);
   void sort_by_cell();
   DemoParticleDiagnostics diagnostics() const;
@@ -71,5 +77,7 @@ private:
       gathered;
   // Persistent per-tile cell bins so the counting sort does not reallocate.
   std::map<std::pair<int, int>, amrex::DenseBins<ParticleType> > cellBins;
+  // Half-cell-shifted bins for the cell-centered charge deposit.
+  std::map<std::pair<int, int>, amrex::DenseBins<ParticleType> > centerBins;
 };
 #endif

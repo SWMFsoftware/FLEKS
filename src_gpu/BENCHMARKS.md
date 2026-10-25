@@ -112,3 +112,29 @@ therefore likely FP64-bound. Exploiting the symmetry of the pair weights
 this point, however, the divE charge/matrix deposit (0.22 s) and the moment
 deposit (0.12 s) cost more per step and would benefit from the same per-cell
 reduction.
+
+## Cell-reduced particle deposits — 2026-10-25
+
+`deposit=cell` applies the per-cell block reduction to the div(E)
+charge/correction-matrix deposit (`deposit_center_charge_cell`, bins over the
+half-cell-shifted base cells including one low ghost layer) and to the
+ten-moment deposit (`deposit_cell`). Same reference case as above, with
+`response=cell`, the process pinned to one idle core:
+
+| Stage | `deposit=atomic` (s) | `deposit=cell` (s) | Speedup |
+| --- | ---: | ---: | ---: |
+| div(E) charge + matrix, 3 passes | 0.219 | 0.111 | 2.0x |
+| Moment deposit | 0.122 | 0.016 | 7.5x |
+| Final charge deposit (per particle in both) | 0.013 | 0.013 | 1.0x |
+| **Timestep** | **0.599** | **0.387** | **1.55x** |
+
+Throughput is 135.5M particles per second, 5.6x the 32-core CPU run. The
+div(E) kernel is FP64-bound after the atomic reduction, and clustered
+particles do not benefit; `DEPOSIT_OPTIMIZATION_PLAN.md` ("Outcome") gives
+the profile and the remaining options.
+
+A competing 16-rank CPU job started during the first measurements and
+doubled the timestep (1.28 s, with the electric solve at 0.195 s instead of
+0.047 s): the host drives every Krylov iteration, so GPU timings on this
+shared machine are sensitive to CPU load. The numbers above are from a quiet
+period and were reproduced twice.

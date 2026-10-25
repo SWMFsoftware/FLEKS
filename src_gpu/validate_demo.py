@@ -219,6 +219,11 @@ class Suite:
                              diagnostics=True)
         compare_records(wave_box4, wave_cell, "cell-reduced mass matrix")
         print("PASS cell-response-matches-atomic", flush=True)
+        wave_deposit = self.run("langmuir-divE-cell-deposit",
+                                {**wave, "response": "cell", "deposit": "cell"},
+                                diagnostics=True)
+        compare_records(wave_box4, wave_deposit, "cell-reduced deposits")
+        print("PASS cell-deposit-matches-atomic", flush=True)
         if self.args.mpi:
             wave_mpi = self.run("langmuir-divE-mpi2", wave, ranks=2, diagnostics=True)
             compare_records(wave_box4, wave_mpi, "nonuniform MPI decomposition")

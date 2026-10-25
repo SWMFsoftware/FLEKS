@@ -60,9 +60,9 @@ void DemoPic::initialize() {
   // half drift from x^0 to x^(1/2); the uniform mode remains exactly neutral.
   for (auto& particles : species)
     particles->drift_positions(0.5 * config.dt);
-  deposit_charge(false);
+  deposit_charge(false, config.deposit);
   MultiFab::Copy(fields.rhoOld, fields.rho, 0, 0, 1, 1);
-  deposit_moments();
+  deposit_moments(config.deposit);
   expectedCount = 2 * Long(config.nCell) * config.nCell * config.nCell *
                   config.particlesPerCell;
   Print() << "STAGES x^(n+1/2),v^n,E^n,B^n -> response -> E^(n+theta) -> "
@@ -75,21 +75,29 @@ void DemoPic::initialize() {
           << " rho_theta=" << demo_field::rhoTheta << "\n";
 }
 
-void DemoPic::deposit_moments() {
+void DemoPic::deposit_moments(const std::string& method) {
   fields.moments.setVal(0);
-  for (auto& particles : species)
-    particles->deposit(fields.moments);
+  for (auto& particles : species) {
+    if (method == "cell")
+      particles->deposit_cell(fields.moments);
+    else
+      particles->deposit(fields.moments);
+  }
   fields.moments.SumBoundary(grid.geom.periodicity());
   fields.moments.FillBoundary(grid.geom.periodicity());
 }
 
-void DemoPic::deposit_charge(bool matrix) {
+void DemoPic::deposit_charge(bool matrix, const std::string& method) {
   fields.rho.setVal(0);
   if (matrix)
     fields.centerMM.setVal(0);
-  for (auto& particles : species)
-    particles->deposit_center_charge(fields.rho,
-                                     matrix ? &fields.centerMM : nullptr);
+  MultiFab* centerMatrix = matrix ? &fields.centerMM : nullptr;
+  for (auto& particles : species) {
+    if (method == "cell")
+      particles->deposit_center_charge_cell(fields.rho, centerMatrix);
+    else
+      particles->deposit_center_charge(fields.rho, centerMatrix);
+  }
   fields.rho.SumBoundary(grid.geom.periodicity());
   fields.rho.FillBoundary(grid.geom.periodicity());
   if (matrix) {
@@ -157,7 +165,7 @@ int DemoPic::advance() {
     measure("magnetic_advance", [&] { fields.advance_b(); });
     if (config.correctDivE) {
       for (int iteration = 0; iteration < config.nDivECorrection; ++iteration) {
-        measure("center_deposit", [&] { deposit_charge(true); });
+        measure("center_deposit", [&] { deposit_charge(true, config.deposit); });
         measure("div_e_solve", [&] { solved = fields.solve_div_e(); });
         // Production treats the correction as best effort: LinearSolver
         // stops at its iteration limit and the partial potential is applied.
@@ -171,8 +179,8 @@ int DemoPic::advance() {
         });
       }
     }
-    measure("final_charge_deposit", [&] { deposit_charge(false); });
-    measure("moment_deposit", [&] { deposit_moments(); });
+    measure("final_charge_deposit", [&] { deposit_charge(false, config.deposit); });
+    measure("moment_deposit", [&] { deposit_moments(config.deposit); });
     if (config.sortInterval > 0 && step % config.sortInterval == 0)
       measure("particle_sort", [&] {
         for (auto& particles : species)
@@ -241,6 +249,7 @@ void DemoPic::benchmark() {
           << " fused=" << config.fusedPush
           << " sort_interval=" << config.sortInterval
           << " response=" << config.response
+          << " deposit=" << config.deposit
           << " clustered=" << config.clustered << "\n";
   for (const auto& entry : timings)
     Print() << "TIMING stage=" << entry.first
@@ -326,6 +335,80 @@ void DemoPic::benchmark() {
     if (!(responseError < 1.e-10))
       ++failures;
   }
+
+  // Particle deposits: time each method for all species, including the
+  // counting sort and the boundary exchange.
+  MultiFab rhoAtomic(grid.ba, grid.dm, 1, 0), mmAtomic(grid.ba, grid.dm, 27, 0),
+      momentsAtomic(grid.nodeBa, grid.dm, 10, 0);
+  for (const std::string method : { "atomic", "cell" }) {
+    auto time_operation = [&](const std::function<void()>& operation) {
+      operation();
+      Gpu::synchronize();
+      const double start = second();
+      for (int iteration = 0; iteration < config.nIter; ++iteration)
+        operation();
+      Gpu::synchronize();
+      double elapsed = (second() - start) / config.nIter;
+      ParallelDescriptor::ReduceRealMax(elapsed);
+      return elapsed;
+    };
+    const double chargeOnly =
+        time_operation([&] { deposit_charge(false, method); });
+    const double chargeMatrix =
+        time_operation([&] { deposit_charge(true, method); });
+    const double moments = time_operation([&] { deposit_moments(method); });
+    Print() << "DEPOSIT layout=" << method << " charge_seconds=" << chargeOnly
+            << " charge_matrix_seconds=" << chargeMatrix
+            << " moment_seconds=" << moments << "\n";
+  }
+  // Compare per species: a neutral plasma nearly cancels the summed,
+  // charge-weighted fields, which would turn roundoff into large relative
+  // errors. Within one species every contribution has the same charge sign.
+  // Each error is relative to that field's maximum magnitude.
+  auto relative_error = [](MultiFab& reference, const MultiFab& value,
+                           int ncomp) {
+    const Real scale =
+        std::max(reference.norm0(0, ncomp, IntVect(0)), Real(1.e-300));
+    MultiFab::Subtract(reference, value, 0, 0, ncomp, 0);
+    return reference.norm0(0, ncomp, IntVect(0)) / scale;
+  };
+  const auto period = grid.geom.periodicity();
+  Real rhoError = 0, matrixError = 0, momentError = 0;
+  for (auto& particles : species) {
+    for (const std::string method : { "atomic", "cell" }) {
+      fields.rho.setVal(0);
+      fields.centerMM.setVal(0);
+      fields.moments.setVal(0);
+      if (method == "cell") {
+        particles->deposit_center_charge_cell(fields.rho, &fields.centerMM);
+        particles->deposit_cell(fields.moments);
+      } else {
+        particles->deposit_center_charge(fields.rho, &fields.centerMM);
+        particles->deposit(fields.moments);
+      }
+      fields.rho.SumBoundary(period);
+      fields.centerMM.SumBoundary(period);
+      fields.moments.SumBoundary(period);
+      if (method == "atomic") {
+        MultiFab::Copy(rhoAtomic, fields.rho, 0, 0, 1, 0);
+        MultiFab::Copy(mmAtomic, fields.centerMM, 0, 0, 27, 0);
+        MultiFab::Copy(momentsAtomic, fields.moments, 0, 0, 10, 0);
+        continue;
+      }
+      rhoError = std::max(rhoError, relative_error(rhoAtomic, fields.rho, 1));
+      matrixError = std::max(matrixError,
+                             relative_error(mmAtomic, fields.centerMM, 27));
+      momentError = std::max(momentError,
+                             relative_error(momentsAtomic, fields.moments, 10));
+    }
+  }
+  const Real depositError = std::max({ rhoError, matrixError, momentError });
+  Print() << (depositError < 1.e-12 ? "PASS" : "FAIL")
+          << " cell deposit per-species relative error=" << depositError
+          << " (rho=" << rhoError << " matrix=" << matrixError
+          << " moments=" << momentError << ")\n";
+  if (!(depositError < 1.e-12))
+    ++failures;
   for (MFIter mfi(components); mfi.isValid(); ++mfi) {
     const auto packed = components.array(mfi);
     const auto custom = fields.nodeMM.const_array(mfi);

@@ -17,8 +17,8 @@ public:
   explicit DemoPic(const DemoConfig& configIn);
   int run();
   void initialize();
-  void deposit_moments();
-  void deposit_charge(bool matrix);
+  void deposit_moments(const std::string& method);
+  void deposit_charge(bool matrix, const std::string& method);
   void report(int step);
   int advance();
   void benchmark();
