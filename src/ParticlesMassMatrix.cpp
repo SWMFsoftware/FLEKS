@@ -30,26 +30,25 @@ namespace {
 // The entries of the pairs (node, node + o) with o_z + 1 >= kpMin are filled:
 // kpMin = 1 for a single level (the kp = 0 half is mirrored afterwards),
 // kpMin = 0 for the AMR mass matrix, which stores all of them.
-template <class CellOf, class State>
-void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
-                                 const Array4<Real>& jArr,
-                                 const Array4<RealMM>& mmArr, CellOf cellOf,
-                                 State state, int kpMin = 1) {
+//
+// This is done for all the tiles of lb at once (see LevelBins):
+// state(t, ip, ...) gives the state of particle ip of tile t, jOf(t) and
+// mmOf(t) the Array4s of tile t.
+template <class State, class JOf, class MMOf>
+void deposit_level_mass_matrix(const LevelBins& lb, State state, JOf jOf,
+                               MMOf mmOf, int kpMin = 1) {
+  const int np = lb.n_particles();
   if (np == 0)
     return;
-  const Dim3 lo = lbound(cellBox);
-  const Dim3 len = length(cellBox);
-  const int nBins = static_cast<int>(cellBox.numPts());
-
-  CellBins bins;
-  bins.build_cells(np, cellBox, cellOf);
+  const int nBins = lb.n_bins(), nTile = lb.n_tiles();
+  const DepositTile* const tl = lb.tiles();
 
   // 1. The state of every binned particle, computed once and stored in bin
   // order: shift (3), node weights (8), alpha (9) and current (3).
   constexpr int nJ = 8 * 3, nS = 27 * 9, nAcc = nJ + nS;
   constexpr int nState = 3 + 8 + 9 + 3;
-  const int* const perm = bins.perm();
-  const int* const off = bins.offsets();
+  const int* const perm = lb.perm();
+  const int* const off = lb.offsets();
   Gpu::DeviceVector<Real> stateVec(static_cast<std::size_t>(np) * nState);
   Real* const st = stateVec.data();
   ParallelFor(np, [=] AMREX_GPU_DEVICE(int i) {
@@ -58,7 +57,10 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
     IntVect loIdx;
     RealVect dShift;
     Real coef[2][2][2], alpha[9], currents[3];
-    state(perm[i], loIdx, dShift, coef, alpha, currents);
+    const int g = perm[i];
+    const int t = find_deposit_tile(
+        tl, nTile, g, [](const DepositTile& d) { return d.pStart; });
+    state(t, g - tl[t].pStart, loIdx, dShift, coef, alpha, currents);
     Real* const s = st + static_cast<std::size_t>(i) * nState;
     for (int d = 0; d < 3; ++d)
       s[d] = dShift[d];
@@ -117,11 +119,18 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
       });
 
   // 3. Per node: gather jHat and the mass-matrix entries from the cells.
-  ParallelFor(surroundingNodes(cellBox), [=] AMREX_GPU_DEVICE(int i, int j,
-                                                              int k) {
+  // The node boxes of lb are the nodes of the cell boxes.
+  ParallelFor(lb.n_nodes(), [=] AMREX_GPU_DEVICE(int gNode) {
+    const int t = find_deposit_tile(
+        tl, nTile, gNode, [](const DepositTile& d) { return d.nodeStart; });
+    const DepositTile& dt = tl[t];
+    const int mNode = gNode - dt.nodeStart;
+    const int k = dt.nodeLo.z + mNode / (dt.nodeLen.x * dt.nodeLen.y);
+    const int j = dt.nodeLo.y + (mNode / dt.nodeLen.x) % dt.nodeLen.y;
+    const int i = dt.nodeLo.x + mNode % dt.nodeLen.x;
     const int node[3] = { i, j, k };
-    const int loC[3] = { lo.x, lo.y, lo.z };
-    const int lenC[3] = { len.x, len.y, len.z };
+    const int loC[3] = { dt.lo.x, dt.lo.y, dt.lo.z };
+    const int lenC[3] = { dt.len.x, dt.len.y, dt.len.z };
     // Polynomial of w_a w_b in s (coefficients of 1, s, s^2).
     auto poly = [](int a, int b, int m) -> Real {
       constexpr Real p00[3] = { 1, -2, 1 }, p01[3] = { 0, 1, -1 },
@@ -143,19 +152,21 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
           }
           if (!inside)
             continue;
-          const Real* const in = sc +
-                                 static_cast<std::size_t>(
-                                     c[0] + lenC[0] * (c[1] + lenC[1] * c[2])) *
-                                     nAcc +
-                                 ((kk * 2 + jj) * 2 + ii) * 3;
+          const Real* const in =
+              sc +
+              static_cast<std::size_t>(dt.bStart + c[0] +
+                                       lenC[0] * (c[1] + lenC[1] * c[2])) *
+                  nAcc +
+              ((kk * 2 + jj) * 2 + ii) * 3;
           for (int d = 0; d < 3; ++d)
             jSum[d] += in[d];
         }
+    const Array4<Real> jArr = jOf(t);
     for (int d = 0; d < 3; ++d)
       jArr(i, j, k, d) += jSum[d];
 
     // Mass matrix: the pairs (node, node + o), kp = o_z + 1 >= kpMin.
-    RealMM& data = mmArr(i, j, k);
+    RealMM& data = mmOf(t)(i, j, k);
     for (int kp = kpMin; kp < 3; ++kp)
       for (int jp = 0; jp < 3; ++jp)
         for (int ip = 0; ip < 3; ++ip) {
@@ -179,7 +190,7 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
                 const Real* const in =
                     sc +
                     static_cast<std::size_t>(
-                        c[0] + lenC[0] * (c[1] + lenC[1] * c[2])) *
+                        dt.bStart + c[0] + lenC[0] * (c[1] + lenC[1] * c[2])) *
                         nAcc +
                     nJ;
                 for (int n = 0; n < 3; ++n) {
@@ -211,6 +222,39 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
   sync_before_free();
 }
 
+// deposit_level_mass_matrix() for one tile: the cells of cellBox, cellOf and
+// state(ip, ...) for its particles, as in deposit_to_nodes_with().
+template <class CellOf, class State>
+void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
+                                 const Array4<Real>& jArr,
+                                 const Array4<RealMM>& mmArr, CellOf cellOf,
+                                 State state, int kpMin = 1) {
+  if (np == 0)
+    return;
+  LevelBins lb;
+  lb.build({ np }, { cellBox },
+           [=] AMREX_GPU_DEVICE(int, int ip, IntVect& cell) {
+             return cellOf(ip, cell);
+           });
+  deposit_level_mass_matrix(
+      lb,
+      [=] AMREX_GPU_DEVICE(int, int ip, IntVect& loIdx, RealVect& dShift,
+                           Real(&coef)[2][2][2], Real(&alpha)[9],
+                           Real(&currents)[3]) {
+        return state(ip, loIdx, dShift, coef, alpha, currents);
+      },
+      [=] AMREX_GPU_DEVICE(int) { return jArr; },
+      [=] AMREX_GPU_DEVICE(int) { return mmArr; }, kpMin);
+}
+
+// The data of a tile for the level mass-matrix deposit of calc_mass_matrix().
+template <class P> struct MassTile {
+  const P* p;
+  Array4<Real const> b, b0, u0;
+  Array4<Real> j;
+  Array4<RealMM> mm;
+};
+
 } // namespace
 
 // Whether the cell of particle p is next to a refined cell.
@@ -239,6 +283,107 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
   const auto invDxLev = Geom(iLev).InvCellSizeArray();
   const Real invVolLev = invVol[iLev];
 
+  const Dim3 lo = init_dim3(0);
+  const Dim3 hi = init_dim3(1);
+
+  // The state of particle ip of a tile that the mass matrix and jHat need:
+  // its interpolation stencil and weights, alpha and its current.
+  auto state_of = [=] AMREX_GPU_DEVICE(const MassTile<ParticleType>& tl, int ip,
+                                       IntVect& loIdx, RealVect& dShift,
+                                       Real(&coef)[2][2][2], Real(&alpha)[9],
+                                       Real(&currents)[3]) -> bool {
+    const ParticleType& p = tl.p[ip];
+    if (p.id() < 0)
+      return false;
+
+    const Real up = p.rdata(iup_);
+    const Real vp = p.rdata(ivp_);
+    const Real wp = p.rdata(iwp_);
+    const Real qp = p.rdata(iqp_);
+
+    //-----calculate interpolation coef begin-------------
+    find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), loIdx,
+                            dShift, coef);
+    //-----calculate interpolate coef end-------------
+
+    //----- Mass matrix calculation begin--------------
+    Real u0[3] = { 0, 0, 0 };
+    Real bp[3] = { 0, 0, 0 };
+
+    if (solveInCoMov && useB0) {
+      // The gyro frequency that enters the mass matrix is the one of the
+      // total field B1 + B0.
+      const Array4<Real const> fields[3] = { tl.b, tl.u0, tl.b0 };
+      Real b0[3] = { 0, 0, 0 };
+      Real* values[3] = { bp, u0, b0 };
+      interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+      bp[ix_] += b0[ix_];
+      bp[iy_] += b0[iy_];
+      bp[iz_] += b0[iz_];
+    } else if (solveInCoMov) {
+      const Array4<Real const> fields[2] = { tl.b, tl.u0 };
+      Real* values[2] = { bp, u0 };
+      interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+    } else if (useB0) {
+      const Array4<Real const> fields[2] = { tl.b, tl.b0 };
+      Real b0[3] = { 0, 0, 0 };
+      Real* values[2] = { bp, b0 };
+      interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
+      bp[ix_] += b0[ix_];
+      bp[iy_] += b0[iy_];
+      bp[iz_] += b0[iz_];
+    } else {
+      interpolate_vector_field(tl.b, loIdx, coef, lo, hi, bp);
+    }
+
+    const Real omx = qdto2mc * bp[ix_];
+    const Real omy = qdto2mc * bp[iy_];
+    const Real omz = qdto2mc * bp[iz_];
+
+    // end interpolation
+    const Real omx2 = omx * omx;
+    const Real omy2 = omy * omy;
+    const Real omz2 = omz * omz;
+    const Real omxomy = omx * omy;
+    const Real omxomz = omx * omz;
+    const Real omyomz = omy * omz;
+    const Real omsq = omx2 + omy2 + omz2;
+    const Real denom = 1.0 / (1.0 + omsq);
+
+    const Real c0 = denom * invVolLev * qp * qdto2mc;
+
+    alpha[0] = (1 + omx2) * c0;
+    alpha[1] = (omz + omxomy) * c0;
+    alpha[2] = (-omy + omxomz) * c0;
+    alpha[3] = (-omz + omxomy) * c0;
+    alpha[4] = (1 + omy2) * c0;
+    alpha[5] = (omx + omyomz) * c0;
+    alpha[6] = (omy + omxomz) * c0;
+    alpha[7] = (-omx + omyomz) * c0;
+    alpha[8] = (1 + omz2) * c0;
+
+    {
+      // jHat
+
+      const Real up1 = up - u0[0];
+      const Real vp1 = vp - u0[1];
+      const Real wp1 = wp - u0[2];
+
+      const Real udotOm1 = up1 * omx + vp1 * omy + wp1 * omz;
+
+      {
+        const Real coef1 = denom * qp;
+        currents[ix_] = (up1 + (vp1 * omz - wp1 * omy + udotOm1 * omx)) * coef1;
+        currents[iy_] = (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
+        currents[iz_] = (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
+      }
+    }
+    return true;
+  };
+
+  std::vector<int> nps;
+  std::vector<Box> cellBoxes;
+  Vector<MassTile<ParticleType> > tiles;
   for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
     Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
     const Array4<Real const> nodeB0Arr =
@@ -250,125 +395,24 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
     const ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
-    const Dim3 lo = init_dim3(0);
-    const Dim3 hi = init_dim3(1);
-
     const int np = pti.numParticles();
 
-    // The state of particle ip that the mass matrix and jHat need: its
-    // interpolation stencil and weights, alpha and its current.
+    const MassTile<ParticleType> tile{ pData, nodeBArr, nodeB0Arr,
+                                       u0Arr, jArr,     mmArr };
+    if (useCellBinDeposits && AMREX_SPACEDIM == 3) {
+      // GPU: all the tiles at once, after the loop.
+      nps.push_back(np);
+      cellBoxes.push_back(enclosedCells(nodeMM[pti].box()));
+      tiles.push_back(tile);
+      continue;
+    }
+
     auto particle_state =
         [=] AMREX_GPU_DEVICE(int ip, IntVect& loIdx, RealVect& dShift,
                              Real(&coef)[2][2][2], Real(&alpha)[9],
                              Real(&currents)[3]) -> bool {
-      const ParticleType& p = pData[ip];
-      if (p.id() < 0)
-        return false;
-
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
-
-      //-----calculate interpolation coef begin-------------
-      find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), loIdx,
-                              dShift, coef);
-      //-----calculate interpolate coef end-------------
-
-      //----- Mass matrix calculation begin--------------
-      Real u0[3] = { 0, 0, 0 };
-      Real bp[3] = { 0, 0, 0 };
-
-      if (solveInCoMov && useB0) {
-        // The gyro frequency that enters the mass matrix is the one of the
-        // total field B1 + B0.
-        const Array4<Real const> fields[3] = { nodeBArr, u0Arr, nodeB0Arr };
-        Real b0[3] = { 0, 0, 0 };
-        Real* values[3] = { bp, u0, b0 };
-        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-        bp[ix_] += b0[ix_];
-        bp[iy_] += b0[iy_];
-        bp[iz_] += b0[iz_];
-      } else if (solveInCoMov) {
-        const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
-        Real* values[2] = { bp, u0 };
-        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-      } else if (useB0) {
-        const Array4<Real const> fields[2] = { nodeBArr, nodeB0Arr };
-        Real b0[3] = { 0, 0, 0 };
-        Real* values[2] = { bp, b0 };
-        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-        bp[ix_] += b0[ix_];
-        bp[iy_] += b0[iy_];
-        bp[iz_] += b0[iz_];
-      } else {
-        interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
-      }
-
-      const Real omx = qdto2mc * bp[ix_];
-      const Real omy = qdto2mc * bp[iy_];
-      const Real omz = qdto2mc * bp[iz_];
-
-      // end interpolation
-      const Real omx2 = omx * omx;
-      const Real omy2 = omy * omy;
-      const Real omz2 = omz * omz;
-      const Real omxomy = omx * omy;
-      const Real omxomz = omx * omz;
-      const Real omyomz = omy * omz;
-      const Real omsq = omx2 + omy2 + omz2;
-      const Real denom = 1.0 / (1.0 + omsq);
-
-      const Real c0 = denom * invVolLev * qp * qdto2mc;
-
-      alpha[0] = (1 + omx2) * c0;
-      alpha[1] = (omz + omxomy) * c0;
-      alpha[2] = (-omy + omxomz) * c0;
-      alpha[3] = (-omz + omxomy) * c0;
-      alpha[4] = (1 + omy2) * c0;
-      alpha[5] = (omx + omyomz) * c0;
-      alpha[6] = (omy + omxomz) * c0;
-      alpha[7] = (-omx + omyomz) * c0;
-      alpha[8] = (1 + omz2) * c0;
-
-      {
-        // jHat
-
-        const Real up1 = up - u0[0];
-        const Real vp1 = vp - u0[1];
-        const Real wp1 = wp - u0[2];
-
-        const Real udotOm1 = up1 * omx + vp1 * omy + wp1 * omz;
-
-        {
-          const Real coef1 = denom * qp;
-          currents[ix_] =
-              (up1 + (vp1 * omz - wp1 * omy + udotOm1 * omx)) * coef1;
-          currents[iy_] =
-              (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
-          currents[iz_] =
-              (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
-        }
-      }
-      return true;
+      return state_of(tile, ip, loIdx, dShift, coef, alpha, currents);
     };
-
-    if (useCellBinDeposits && AMREX_SPACEDIM == 3) {
-      // GPU: deterministic per-cell sums (see deposit_mass_matrix_by_cell).
-      auto cellOf = [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
-        const ParticleType& p = pData[ip];
-        if (p.id() < 0)
-          return false;
-        RealVect dShift;
-        Real coef[2][2][2];
-        find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(), cell,
-                                dShift, coef);
-        return true;
-      };
-      deposit_mass_matrix_by_cell(np, enclosedCells(nodeMM[pti].box()), jArr,
-                                  mmArr, cellOf, particle_state);
-      continue;
-    }
 
     ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
       IntVect loIdx;
@@ -420,6 +464,35 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       //----- Mass matrix calculation end--------------
     });
+  }
+
+  if (!tiles.empty()) {
+    // GPU: deterministic per-cell sums of all the tiles at once (see
+    // deposit_level_mass_matrix).
+    Gpu::AsyncArray<MassTile<ParticleType> > tileStore(tiles.data(),
+                                                       tiles.size());
+    const MassTile<ParticleType>* const tile = tileStore.data();
+    LevelBins lb;
+    lb.build(nps, cellBoxes,
+             [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& cell) {
+               const ParticleType& p = tile[t].p[ip];
+               if (p.id() < 0)
+                 return false;
+               RealVect dShift;
+               Real coef[2][2][2];
+               find_node_interpolation(p.pos(), ploLev.data(), invDxLev.data(),
+                                       cell, dShift, coef);
+               return true;
+             });
+    deposit_level_mass_matrix(
+        lb,
+        [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& loIdx, RealVect& dShift,
+                             Real(&coef)[2][2][2], Real(&alpha)[9],
+                             Real(&currents)[3]) {
+          return state_of(tile[t], ip, loIdx, dShift, coef, alpha, currents);
+        },
+        [=] AMREX_GPU_DEVICE(int t) { return tile[t].j; },
+        [=] AMREX_GPU_DEVICE(int t) { return tile[t].mm; });
   }
 
 #if (AMREX_SPACEDIM != 2)
