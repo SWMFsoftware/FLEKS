@@ -1,6 +1,8 @@
 #ifndef _EXOSOURCE_H_
 #define _EXOSOURCE_H_
 
+#include <optional>
+
 #include "SourceInterface.h"
 
 class UserSource : public SourceInterface {
@@ -882,6 +884,22 @@ public:
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
+        std::optional<HostStaging<amrex::FArrayBox> > stageOther;
+        if (static_cast<const void*>(&other) !=
+                static_cast<const void*>(this) &&
+            iLev < other.n_lev() &&
+            !const_cast<FluidInterface&>(other).get_node_fluid(iLev).empty()) {
+          stageOther.emplace(
+              const_cast<FluidInterface&>(other).get_node_fluid(iLev),
+              /*writeBack=*/false);
+        }
+        HostStaging<amrex::FArrayBox> stageFluid(nodeFluid[iLev],
+                                                 /*writeBack=*/true);
+        std::optional<HostStaging<amrex::FArrayBox> > stageLoss;
+        if ((doRecomb || doChem) && has_loss_array(iLev)) {
+          stageLoss.emplace(nodeLossFluid[iLev], /*writeBack=*/true);
+        }
+
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
           const amrex::Real* dx = Geom(iLev).CellSize();
           const auto plo = Geom(iLev).ProbLo();
