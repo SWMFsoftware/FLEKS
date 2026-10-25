@@ -47,6 +47,9 @@ struct DemoConfig {
   // preconditioning), or pcg (Jacobi-preconditioned conjugate gradients).
   // The last two change the partial potential at the iteration limit.
   std::string divEMethod = "gmres";
+  // Per-cell matrix sums in the cell kernels (response and div(E) matrix):
+  // double, or single (float staging and accumulation, double global sums).
+  std::string cellPrecision = "double";
   std::string benchmarkTiming = "stages";
   std::string mode = "fields";
   // Mass-matrix assembly: atomic (per particle), cell (block-reduced per

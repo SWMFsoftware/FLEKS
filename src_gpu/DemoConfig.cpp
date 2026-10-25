@@ -31,6 +31,9 @@ DemoConfig::DemoConfig() {
   pp.query("gmres_batched", batchedGmres);
   pp.query("solver_sections", solverSections);
   pp.query("div_e_method", divEMethod);
+  pp.query("cell_precision", cellPrecision);
+  if (cellPrecision != "double" && cellPrecision != "single")
+    amrex::Abort("cell_precision must be double or single");
   if (divEMethod != "gmres" && divEMethod != "jacobi_gmres" &&
       divEMethod != "pcg")
     amrex::Abort("div_e_method must be gmres, jacobi_gmres, or pcg");

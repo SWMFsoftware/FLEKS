@@ -311,7 +311,9 @@ void DemoPic::benchmark() {
           << " pair_symmetry=" << config.pairSymmetry
           << " fold_charge=" << config.foldCharge
           << " cell_chunk_size=" << config.cellChunkSize
-          << " gmres_batched=" << config.batchedGmres << "\n";
+          << " gmres_batched=" << config.batchedGmres
+          << " div_e_method=" << config.divEMethod
+          << " cell_precision=" << config.cellPrecision << "\n";
   for (const auto& entry : timings)
     Print() << "TIMING stage=" << entry.first
             << " seconds=" << entry.second / std::max(1, measured) << "\n";
@@ -413,9 +415,16 @@ void DemoPic::benchmark() {
           return { error };
         });
     ParallelDescriptor::ReduceRealMax(responseError);
-    Print() << (responseError < 1.e-10 ? "PASS" : "FAIL") << " " << method
-            << " response matrix error=" << responseError << "\n";
-    if (!(responseError < 1.e-10))
+    // cell_precision=single sums each cell in float: allow 1e-6 of the
+    // largest response entry for the cell method.
+    const Real responseTolerance =
+        method == "cell" && config.cellPrecision == "single"
+            ? Real(1.e-6) * components.norm0(0, 243, IntVect(0))
+            : Real(1.e-10);
+    Print() << (responseError < responseTolerance ? "PASS" : "FAIL") << " "
+            << method << " response matrix error=" << responseError
+            << " (tol=" << responseTolerance << ")\n";
+    if (!(responseError < responseTolerance))
       ++failures;
   }
 
@@ -485,12 +494,17 @@ void DemoPic::benchmark() {
                              relative_error(momentsAtomic, fields.moments, 10));
     }
   }
-  const Real depositError = std::max({ rhoError, matrixError, momentError });
-  Print() << (depositError < 1.e-12 ? "PASS" : "FAIL")
-          << " cell deposit per-species relative error=" << depositError
-          << " (rho=" << rhoError << " matrix=" << matrixError
-          << " moments=" << momentError << ")\n";
-  if (!(depositError < 1.e-12))
+  // Charge and moments stay double precision; the correction matrix uses
+  // float per-cell sums with cell_precision=single.
+  const Real matrixTolerance =
+      config.cellPrecision == "single" ? Real(1.e-6) : Real(1.e-12);
+  const bool depositPass = std::max(rhoError, momentError) < 1.e-12 &&
+                           matrixError < matrixTolerance;
+  Print() << (depositPass ? "PASS" : "FAIL")
+          << " cell deposit per-species relative error (rho=" << rhoError
+          << " matrix=" << matrixError << " moments=" << momentError
+          << ", matrix tol=" << matrixTolerance << ")\n";
+  if (!depositPass)
     ++failures;
   for (MFIter mfi(components); mfi.isValid(); ++mfi) {
     const auto packed = components.array(mfi);

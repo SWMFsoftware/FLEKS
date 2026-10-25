@@ -58,6 +58,13 @@ outside a restrictive sandbox. Compilation alone is not GPU verification.
   optional `div_e_method=jacobi_gmres` and `pcg` change the applied correction
   and are required instead to reduce the nonuniform Gauss residual as much as
   GMRES does (`nonuniform-divE-reduction-<method>`).
+- `cell_precision=single` is checked against the serial references with a
+  tolerance of 2e-6 of the largest matrix entry (charge and jHat keep the
+  double-precision tolerance), against the atomic matrices in benchmark mode
+  within 1e-6, by the nonuniform div(E) reduction (`langmuir-divE-single`),
+  and, with `--physics`, by a separate theta=0.5 energy gate of 1e-7
+  (`plasma-frequency-energy-single`; measured 8.6e-9 versus 2.2e-15 in
+  double precision).
 - A div(E) solve that reaches `div_e_max_iter` prints `WARN` and the partial
   potential is applied, as in production `LinearSolver`; it is not a failure.
   An electric solve that does not converge still fails the run.

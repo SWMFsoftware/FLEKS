@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 #include <AMReX_Gpu.H>
 #include <AMReX_ParReduce.H>
@@ -17,6 +18,12 @@
 using namespace amrex;
 namespace {
 constexpr Real pi = 3.1415926535897932384626433832795;
+
+// True when the cell kernels stage and sum matrix terms below double
+// precision. A variable template, because nvcc rejects device lambdas that
+// first capture a local constexpr inside if constexpr.
+template <class T>
+constexpr bool is_mixed = !std::is_same<T, Real>::value;
 
 Real cell_volume(const DemoGrid& grid) {
   const auto dx = grid.geom.CellSizeArray();
@@ -43,7 +50,8 @@ AMREX_GPU_DEVICE AMREX_FORCE_INLINE void node_pair(int t, bool symmetric,
 }
 
 #if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-AMREX_GPU_DEVICE AMREX_FORCE_INLINE Real sum_pair_groups(Real value) noexcept {
+template <class T>
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE T sum_pair_groups(T value) noexcept {
   // Called uniformly by all 32 lanes of the second logical warp. Only
   // its first four lanes consume the result. Width=32 also works on HIP
   // wave64 devices, where the upper half-wave handles these groups.
@@ -901,12 +909,28 @@ int DemoParticles::run_checks(DemoFields& fields) {
   report("cell-buffered mass matrix serial reference",
          compare_matrix_reference(fields.nodeMM, matrix, n) / invVol, tol);
   fields.clear_response();
-  accumulate_response_cell(fields, .071);
+  accumulate_response_cell_impl<Real>(fields, .071);
   fields.finish_response();
   report("cell-reduced jHat serial reference",
          compare_reference(fields.jHat, current, n) / invVol, tol);
   report("cell-reduced mass matrix serial reference",
          compare_matrix_reference(fields.nodeMM, matrix, n) / invVol, tol);
+  // cell_precision=single rounds the staged terms and sums each cell in
+  // float: allow 2e-6 of the largest entry. jHat stays double precision.
+  auto largest = [](const std::vector<Real>& values) {
+    Real value = 0;
+    for (Real v : values)
+      value = std::max(value, std::abs(v));
+    return value;
+  };
+  fields.clear_response();
+  accumulate_response_cell_impl<float>(fields, .071);
+  fields.finish_response();
+  report("cell-reduced single-precision jHat serial reference",
+         compare_reference(fields.jHat, current, n) / invVol, tol);
+  report("cell-reduced single-precision mass matrix serial reference",
+         compare_matrix_reference(fields.nodeMM, matrix, n) / invVol,
+         Real(2.e-6) * largest(matrix) / invVol);
 
   fields.rho.setVal(0);
   fields.centerMM.setVal(0);
@@ -940,18 +964,28 @@ int DemoParticles::run_checks(DemoFields& fields) {
   report("divE position-response matrix serial reference",
          compare_reference(fields.centerMM, centerMatrix, n) / (invVol * n * n),
          tol);
-  fields.rho.setVal(0);
-  fields.centerMM.setVal(0);
-  deposit_center_charge_cell(fields.rho, &fields.centerMM);
-  fields.rho.SumBoundary(grid.geom.periodicity());
-  fields.centerMM.SumBoundary(grid.geom.periodicity());
-  fields.rho.FillBoundary(grid.geom.periodicity());
-  fields.centerMM.FillBoundary(grid.geom.periodicity());
-  report("cell-reduced charge CIC serial reference",
-         compare_reference(fields.rho, rho, n) / invVol, tol);
-  report("cell-reduced divE position-response matrix serial reference",
-         compare_reference(fields.centerMM, centerMatrix, n) / (invVol * n * n),
-         tol);
+  for (const bool single : { false, true }) {
+    fields.rho.setVal(0);
+    fields.centerMM.setVal(0);
+    if (single)
+      deposit_center_charge_cell_impl<float>(fields.rho, &fields.centerMM);
+    else
+      deposit_center_charge_cell_impl<Real>(fields.rho, &fields.centerMM);
+    fields.rho.SumBoundary(grid.geom.periodicity());
+    fields.centerMM.SumBoundary(grid.geom.periodicity());
+    fields.rho.FillBoundary(grid.geom.periodicity());
+    fields.centerMM.FillBoundary(grid.geom.periodicity());
+    // The charge density stays double precision in both modes.
+    report(single ? "cell-reduced single-precision charge CIC serial reference"
+                  : "cell-reduced charge CIC serial reference",
+           compare_reference(fields.rho, rho, n) / invVol, tol);
+    report(single ? "cell-reduced single-precision divE matrix serial reference"
+                  : "cell-reduced divE position-response matrix serial reference",
+           compare_reference(fields.centerMM, centerMatrix, n) /
+               (invVol * n * n),
+           single ? Real(2.e-6) * largest(centerMatrix) / (invVol * n * n)
+                  : tol);
+  }
   fields.rho.setVal(0);
   deposit_center_charge_cell(fields.rho);
   fields.rho.SumBoundary(grid.geom.periodicity());
@@ -1051,6 +1085,19 @@ void DemoParticles::accumulate_response_buffered(DemoFields& fields, Real dt) {
 }
 
 void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
+  if (config.cellPrecision == "single")
+    accumulate_response_cell_impl<float>(fields, dt);
+  else
+    accumulate_response_cell_impl<Real>(fields, dt);
+}
+
+// T is the type of the staged pair inputs and of the per-cell tensor sums.
+// With T = float (cell_precision=single) the 9-FMA pair loop, the dominant
+// FP64 cost on consumer GPUs, runs in single precision; each per-cell sum
+// is still added into the double-precision response. jHat cancels between
+// species, so its staging and accumulation stay in double in both modes.
+template <class T>
+void DemoParticles::accumulate_response_cell_impl(DemoFields& fields, Real dt) {
 #if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
   // One 64-thread block per cell. Thread t owns node pair (a, c) = (t/8, t%8)
   // and accumulates its 3x3 tensor in registers over every particle of the
@@ -1111,15 +1158,18 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
       const int base[3] = { small[0] + cell % length[0],
                             small[1] + (cell / length[0]) % length[1],
                             small[2] + cell / (length[0] * length[1]) };
-      __shared__ Real weight[nThread][8];
-      __shared__ Real response[nThread][9];
+      __shared__ T weight[nThread][8];
+      // Double-precision weights for jHat; allocated only in single mode.
+      __shared__ Real weightJ[is_mixed<T> ? nThread : 1][8];
+      __shared__ T response[nThread][9];
       __shared__ Real jhat[nThread][3];
       int a, c;
       node_pair(t, symmetric, a, c);
       const bool ownsPair = !symmetric || t < 36;
       const int particleGroup = symmetric && t >= 32 ? (t - 32) / 4 : 0;
       const int particleStride = symmetric && t >= 32 ? 8 : 1;
-      Real acc[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }, jacc = 0;
+      T acc[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+      Real jacc = 0;
       for (int chunk = begin; chunk < end; chunk += nThread) {
         const int n = amrex::min(nThread, end - chunk);
         if (t < n) {
@@ -1135,6 +1185,8 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
             for (int d = 0; d < 3; ++d)
               w *= bit[d] ? f[d] : 1 - f[d];
             weight[t][node] = valid ? w : 0;
+            if constexpr (is_mixed<T>)
+              weightJ[t][node] = valid ? w : 0;
             for (int d = 0; d < 3; ++d)
               b[d] += w * ba(base[0] + bit[0], base[1] + bit[1],
                              base[2] + bit[2], d);
@@ -1153,11 +1205,15 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
         }
         __syncthreads();
         for (int ip = particleGroup; ip < n; ip += particleStride) {
-          const Real pair = weight[ip][a] * weight[ip][c];
+          const T pair = weight[ip][a] * weight[ip][c];
           for (int d = 0; d < 9; ++d)
             acc[d] += pair * response[ip][d];
-          if (t < 24)
-            jacc += weight[ip][t / 3] * jhat[ip][t % 3];
+          if (t < 24) {
+            if constexpr (is_mixed<T>)
+              jacc += weightJ[ip][t / 3] * jhat[ip][t % 3];
+            else
+              jacc += weight[ip][t / 3] * jhat[ip][t % 3];
+          }
         }
         __syncthreads();
       }
@@ -1171,7 +1227,7 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
                          ((c & 1) - (a & 1) + 1) * 9;
       if (ownsPair) {
         for (int d = 0; d < 9; ++d)
-          Gpu::Atomic::AddNoRet(&mm(i, j, k)[offset + d], acc[d]);
+          Gpu::Atomic::AddNoRet(&mm(i, j, k)[offset + d], Real(acc[d]));
         if (symmetric && a != c) {
           // Spatial pair symmetry does NOT transpose the magnetized tensor.
           const int reverse = 234 - offset;
@@ -1179,7 +1235,7 @@ void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
             Gpu::Atomic::AddNoRet(&mm(base[0] + (c & 1),
                                       base[1] + ((c >> 1) & 1),
                                       base[2] + (c >> 2))[reverse + d],
-                                  acc[d]);
+                                  Real(acc[d]));
         }
       }
       if (t < 24) {
@@ -1205,6 +1261,18 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
     deposit_center_charge(rho);
     return;
   }
+  if (config.cellPrecision == "single")
+    deposit_center_charge_cell_impl<float>(rho, centerMatrix);
+  else
+    deposit_center_charge_cell_impl<Real>(rho, centerMatrix);
+}
+
+// T is the type of the staged gradients and of the per-cell matrix sums
+// (see accumulate_response_cell_impl). The charge density cancels between
+// species and stays in double precision in both modes.
+template <class T>
+void DemoParticles::deposit_center_charge_cell_impl(MultiFab& rho,
+                                                    MultiFab* centerMatrix) {
 #if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
   // Same strategy as accumulate_response_cell for the half-cell-shifted
   // shape. One 64-thread block per center-shape base cell: thread t owns
@@ -1254,7 +1322,7 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
     const auto mm = makeMatrix ? centerMatrix->array(pti) : Array4<Real>();
     BL_PROFILE("particles.cell_kernel_launch");
     amrex::launch<nThread>(
-        ntasks, foldCharge ? nThread * 24 * sizeof(Real) : 0, Gpu::gpuStream(),
+        ntasks, foldCharge ? nThread * 24 * sizeof(T) : 0, Gpu::gpuStream(),
         [=] AMREX_GPU_DEVICE() {
           const int t = threadIdx.x;
           int cell, begin, end;
@@ -1266,17 +1334,21 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
                                 small[1] + (cell / length[0]) % length[1],
                                 small[2] + cell / (length[0] * length[1]) };
           __shared__ Real weight[nThread][8];
-          __shared__ Real gradient[nThread][8][3];
+          __shared__ T gradient[nThread][8][3];
+          // Dynamic shared memory is declared as double and reinterpreted.
           Gpu::SharedMemory<Real> shared;
           auto* weightedGradient =
-              reinterpret_cast<Real(*)[8][3]>(shared.dataPtr());
+              reinterpret_cast<T(*)[8][3]>(shared.dataPtr());
           __shared__ Real charge[nThread];
+          // |q|/V for the matrix; allocated only in single mode.
+          __shared__ T magnitude[is_mixed<T> ? nThread : 1];
           int a, c;
           node_pair(t, symmetric, a, c);
           const bool ownsPair = !symmetric || t < 36;
           const int particleGroup = symmetric && t >= 32 ? (t - 32) / 4 : 0;
           const int particleStride = symmetric && t >= 32 ? 8 : 1;
-          Real acc = 0, racc = 0;
+          T acc = 0;
+          Real racc = 0;
           for (int chunk = begin; chunk < end; chunk += nThread) {
             const int n = amrex::min(nThread, end - chunk);
             if (t < n) {
@@ -1299,6 +1371,8 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
                 }
               }
               charge[t] = q * invVol;
+              if constexpr (is_mixed<T>)
+                magnitude[t] = std::abs(q * invVol);
             }
             __syncthreads();
             for (int ip = particleGroup; ip < n; ip += particleStride) {
@@ -1307,6 +1381,11 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
                   acc += weightedGradient[ip][a][0] * gradient[ip][c][0] +
                          weightedGradient[ip][a][1] * gradient[ip][c][1] +
                          weightedGradient[ip][a][2] * gradient[ip][c][2];
+                else if constexpr (is_mixed<T>)
+                  acc += magnitude[ip] *
+                         (gradient[ip][a][0] * gradient[ip][c][0] +
+                          gradient[ip][a][1] * gradient[ip][c][1] +
+                          gradient[ip][a][2] * gradient[ip][c][2]);
                 else
                   acc += std::abs(charge[ip]) *
                          (gradient[ip][a][0] * gradient[ip][c][0] +
@@ -1326,12 +1405,12 @@ void DemoParticles::deposit_center_charge_cell(MultiFab& rho,
             const int offset = ((c & 1) - (a & 1) + 1) * 9 +
                                (((c >> 1) & 1) - ((a >> 1) & 1) + 1) * 3 +
                                ((c >> 2) - (a >> 2) + 1);
-            Gpu::Atomic::AddNoRet(&mm(i, j, k, offset), acc);
+            Gpu::Atomic::AddNoRet(&mm(i, j, k, offset), Real(acc));
             if (symmetric && a != c)
               Gpu::Atomic::AddNoRet(&mm(base[0] + (c & 1),
                                         base[1] + ((c >> 1) & 1),
                                         base[2] + (c >> 2), 26 - offset),
-                                    acc);
+                                    Real(acc));
           }
           if (t < 8)
             Gpu::Atomic::AddNoRet(&r(base[0] + (t & 1),

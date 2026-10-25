@@ -294,10 +294,15 @@ class Suite:
         # Optional preconditioned correction solves change the partial
         # potential, so they cannot match the GMRES run; require the same
         # Gauss-residual reduction instead.
-        for method in ("jacobi_gmres", "pcg"):
+        variants = {method: {"div_e_method": method}
+                    for method in ("jacobi_gmres", "pcg")}
+        # Float per-cell matrix sums must not weaken the correction either.
+        variants["single"] = {"response": "cell", "deposit": "cell",
+                              "cell_precision": "single"}
+        for method, extra in variants.items():
             alternative = self.run(f"langmuir-divE-{method}",
-                                   {**nonuniform, "correct_div_e": 1,
-                                    "div_e_method": method}, diagnostics=True)
+                                   {**nonuniform, "correct_div_e": 1, **extra},
+                                   diagnostics=True)
             require(alternative[-1]["gauss"] <= 1e-6 * uncorrected[-1]["gauss"] + 1e-12,
                     f"{method} correction reduced the Gauss residual only from "
                     f"{uncorrected[-1]['gauss']} to {alternative[-1]['gauss']}")
@@ -350,6 +355,24 @@ class Suite:
                                  "omega_expected": expected, "omega_measured": measured,
                                  "relative_energy_drift": drift})
             print(f"PASS plasma-frequency-energy omega={measured:.8g}, drift={drift:.3g}")
+            # cell_precision=single sums the response matrix per cell in
+            # float, which breaks the exact matrix/push consistency behind
+            # theta=0.5 energy conservation at the 1e-8 level (measured
+            # drift 8.6e-9 versus 2.2e-15). Gate it separately.
+            single = self.run("plasma-theta05-single",
+                              {**physics, "response": "cell", "deposit": "cell",
+                               "cell_precision": "single"}, diagnostics=True)
+            single_measured = oscillation_frequency(single)
+            require(abs(single_measured / expected - 1) < 1e-3,
+                    f"Single-precision plasma frequency {single_measured} "
+                    f"differs from {expected} by >0.1%")
+            single_energies = [r["kinetic"] + r["field"] for r in single]
+            single_drift = max(abs(value / single_energies[0] - 1)
+                               for value in single_energies)
+            require(single_drift < 1e-7,
+                    f"Single-precision theta=0.5 energy drift {single_drift} "
+                    f"exceeds 1e-7")
+            print(f"PASS plasma-frequency-energy-single drift={single_drift:.3g}")
             half = self.run("plasma-half-dt", {**physics, "n_step": 1200, "dt": 0.005},
                             diagnostics=True)
             fine_frequency = oscillation_frequency(half)

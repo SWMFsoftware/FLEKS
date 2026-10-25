@@ -48,6 +48,13 @@ public:
   // node-pair tensors in a thread block, then issue 576 atomics per cell
   // rather than per particle. Falls back to accumulate_response on CPUs.
   void accumulate_response_cell(DemoFields& fields, amrex::Real dt);
+  // Precision-specific implementations, selected by cell_precision. Public
+  // only because nvcc forbids extended lambdas in non-public members.
+  template <class T>
+  void accumulate_response_cell_impl(DemoFields& fields, amrex::Real dt);
+  template <class T>
+  void deposit_center_charge_cell_impl(amrex::MultiFab& rho,
+                                       amrex::MultiFab* centerMatrix);
   int benchmark_layouts(const amrex::MultiFab& e, const amrex::MultiFab& b);
   void deposit_center_charge(amrex::MultiFab& rho,
                              amrex::MultiFab* centerMatrix = nullptr);

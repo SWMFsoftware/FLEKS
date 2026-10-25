@@ -164,3 +164,17 @@ implementation proceeds. The implementation plan remains the acceptance list.
   CGS2 is now the default; `gmres_batched=0` keeps MGS2.
 - Validated with unit checks, coupled runs on one and two ranks, the CPU
   build, compute-sanitizer memcheck and racecheck, and the full suite.
+
+## 2026-10-25 — single-precision cell matrix sums
+
+- Added opt-in `cell_precision=single`: the response and div(E) matrix
+  kernels stage pair inputs and sum each cell in float, then add into the
+  double-precision matrices. Charge, jHat, and moments stay double because
+  they cancel between species.
+- Reference case: response assembly 2.0x, correction deposit 1.36x, complete
+  step 15.9% shorter (0.332 -> 0.279 s, throughput mode on GPU 1) with
+  identical solver work.
+- theta=0.5 energy drift rises from 2.2e-15 to 8.6e-9; the default stays
+  double. Validation adds single-precision serial references, precision-aware
+  benchmark comparisons, a single-precision energy/frequency gate (1e-7), and
+  a single-precision nonuniform div(E) reduction check.

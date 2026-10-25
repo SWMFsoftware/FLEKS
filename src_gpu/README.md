@@ -89,6 +89,7 @@ Its AMReX device arena starts at 64 MiB and grows as needed; override
 | `gmres_batched` | 1 | Twice classical Gram–Schmidt with one host wait per Arnoldi step; 0 selects the reference twice modified Gram–Schmidt |
 | `solver_sections` | 0 | In `benchmark_timing=stages`, time solver sections (operator, orthogonalization, updates, residual); adds synchronization |
 | `div_e_method` | gmres | div(E) correction solve: `gmres` (production), `jacobi_gmres`, or `pcg`; the last two change the applied correction |
+| `cell_precision` | double | `single` stages and sums the response and div(E) correction matrices per cell in float (GPU cell kernels only); charge, jHat, and moments stay double. Faster on GPUs with slow FP64, but theta=0.5 energy drift rises from roundoff to about 1e-8 |
 | `fold_charge` | 0 | Experimental cell correction deposit staging of charge-weighted gradients |
 | `cell_chunk_size` | 0 | Experimental maximum particles per cell block; zero is unlimited, otherwise at least 64 |
 | `clustered` | 0 | Compress quiet-start positions to test scatter contention |

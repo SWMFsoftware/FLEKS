@@ -299,3 +299,64 @@ Host waits per scalar iteration fell from 43.8 to 1.10 with identical
 iteration counts and warnings. The scalar solve is now 2.0x faster than 64
 CPU cores. The earlier `gmres_batched=1` measurements above (0.981x) refer
 to the previous implementation.
+
+## Single-precision cell matrix sums — 2026-10-25
+
+`cell_precision=single` stages the pair inputs of the two matrix kernels in
+float and sums each cell's response tensor and correction-matrix entries in
+float; each per-cell sum is still added into the double-precision global
+matrix. Charge density, jHat, and moments cancel between species and stay in
+double precision. The RTX 4090 runs FP64 at 1/64 of its FP32 rate, and the
+pair loops were FP64-bound.
+
+Reference case, recommended flags, 8 boxes of 32^3, one MPI rank pinned to an
+idle core, three alternating trials per mode:
+
+| Stage (ms/step, stage mode, GPU 0) | Double | Single | Speedup |
+| --- | ---: | ---: | ---: |
+| Response matrix assembly | 50.56 | 25.24 | 2.00x |
+| div(E) charge + matrix, 3 passes | 95.80 | 70.53 | 1.36x |
+| All other stages | unchanged | unchanged | 1.00x |
+| **Stage-timed step** | **318.5** | **267.9** | **1.19x** |
+
+Throughput mode on GPU 1 (another user's job occupied GPU 0 during the
+first throughput series, which was discarded): 0.3321 s -> 0.2794 s per step
+(all trials within 0.0004 s), 157.9M -> 187.7M particles per second. GPU 1
+is about 3% slower than GPU 0 in absolute terms.
+
+The speedup is smaller than the up-to-5x estimated for these kernels before
+measuring: per-particle staging (CIC weights, the nodal-B gather, alpha,
+gradients), the double-precision charge and jHat sums, counting sorts, and
+the boundary exchanges still run in double precision or are not
+arithmetic-bound. Moving the staging arithmetic to float is the next
+candidate.
+
+Accuracy, double versus single:
+
+| Check | Double | Single |
+| --- | ---: | ---: |
+| Reference case: solver iterations and warnings | 70 / 287 / 6 | 70 / 287 / 6 |
+| Reference case: kinetic energy after 6 steps, relative difference | | 2.5e-9 |
+| Matrix entries versus double, relative to the largest | | about 1.3e-7 |
+| theta=0.5 energy drift, 600 steps | 2.2e-15 | 8.6e-9 |
+| Plasma-frequency error | 1.09e-4 | 1.09e-4 |
+| Nonuniform div(E) correction, final Gauss residual | 9.4e-15 | 7.9e-15 |
+| Large-dt maximum corrected Gauss residual | 7.5e-9 | 1.5e-8 |
+| Large-dt electric / last-pass div(E) iterations, 20 steps | 462 / 134 | 467 / 140 |
+
+Energy conservation at theta=0.5 depends on the mass matrix being exactly
+consistent with the particle push; float per-cell sums break that at the
+1e-8 level. The option therefore stays opt-in. On data-center GPUs with
+half-rate FP64 the arithmetic advantage largely disappears.
+
+Tensor cores (assessment, not measured): the RTX 4090 has 512
+fourth-generation Tensor Cores for FP16, BF16, TF32, FP8, INT8 and INT4, but
+none for FP64. Each cell's matrix sum is a small matrix product (about
+72 x 100 times 100 x 8 per species), so it could map to tensor-core
+multiply-accumulate, but TF32 and lower precisions carry about three decimal
+digits or fewer, far below the accuracy that already costs energy
+conservation in single precision; TF32 tensor throughput on this card equals
+plain FP32; and the per-cell products are too small to amortize data layout
+changes. The solver work is bandwidth-bound. FP64 tensor cores on A100/H100
+could run the same per-cell sums in full double precision and are the
+relevant target for data-center GPUs.
