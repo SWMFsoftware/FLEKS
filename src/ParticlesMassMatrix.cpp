@@ -44,45 +44,84 @@ void deposit_mass_matrix_by_cell(int np, const Box& cellBox,
   CellBins bins;
   bins.build_cells(np, cellBox, cellOf);
 
-  // 1. Per cell: the jHat contribution of its 8 nodes and the 27 x 9 moments.
+  // 1. The state of every binned particle, computed once and stored in bin
+  // order: shift (3), node weights (8), alpha (9) and current (3).
   constexpr int nJ = 8 * 3, nS = 27 * 9, nAcc = nJ + nS;
-  Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) * nAcc);
-  Real* const sc = scratch.data();
+  constexpr int nState = 3 + 8 + 9 + 3;
   const int* const perm = bins.perm();
   const int* const off = bins.offsets();
-  ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
-    Real acc[nAcc];
-    for (int n = 0; n < nAcc; ++n)
-      acc[n] = 0;
-    for (int i = off[b]; i < off[b + 1]; ++i) {
-      IntVect loIdx;
-      RealVect dShift;
-      Real coef[2][2][2], alpha[9], currents[3];
-      state(perm[i], loIdx, dShift, coef, alpha, currents);
-      for (int kk = 0; kk < 2; ++kk)
-        for (int jj = 0; jj < 2; ++jj)
-          for (int ii = 0; ii < 2; ++ii)
-            for (int d = 0; d < 3; ++d)
-              acc[((kk * 2 + jj) * 2 + ii) * 3 + d] +=
-                  coef[ii][jj][kk] * currents[d];
-      const Real sx[3] = { 1, dShift[0], dShift[0] * dShift[0] };
-      const Real sy[3] = { 1, dShift[1], dShift[1] * dShift[1] };
-      const Real sz[3] = { 1, dShift[2], dShift[2] * dShift[2] };
-      for (int n = 0; n < 3; ++n)
-        for (int m = 0; m < 3; ++m)
-          for (int l = 0; l < 3; ++l) {
-            const Real w = sx[l] * sy[m] * sz[n];
-            Real* const a = acc + nJ + ((n * 3 + m) * 3 + l) * 9;
-            for (int idx = 0; idx < 9; ++idx)
-              a[idx] += alpha[idx] * w;
-          }
-    }
-    Real* const out = sc + static_cast<std::size_t>(b) * nAcc;
-    for (int n = 0; n < nAcc; ++n)
-      out[n] = acc[n];
+  Gpu::DeviceVector<Real> stateVec(static_cast<std::size_t>(np) * nState);
+  Real* const st = stateVec.data();
+  ParallelFor(np, [=] AMREX_GPU_DEVICE(int i) {
+    if (i >= off[nBins])
+      return; // not in a bin
+    IntVect loIdx;
+    RealVect dShift;
+    Real coef[2][2][2], alpha[9], currents[3];
+    state(perm[i], loIdx, dShift, coef, alpha, currents);
+    Real* const s = st + static_cast<std::size_t>(i) * nState;
+    for (int d = 0; d < 3; ++d)
+      s[d] = dShift[d];
+    for (int kk = 0; kk < 2; ++kk)
+      for (int jj = 0; jj < 2; ++jj)
+        for (int ii = 0; ii < 2; ++ii)
+          s[3 + (kk * 2 + jj) * 2 + ii] = coef[ii][jj][kk];
+    for (int idx = 0; idx < 9; ++idx)
+      s[11 + idx] = alpha[idx];
+    for (int d = 0; d < 3; ++d)
+      s[20 + d] = currents[d];
   });
 
-  // 2. Per node: gather jHat and the mass-matrix entries from the cells.
+  // 2. Per cell: the jHat contribution of its 8 nodes and the 27 x 9
+  // moments, split over 12 threads per cell (9 alpha components, 3 current
+  // components), so that a thread keeps only a few sums in registers. Every
+  // sum adds the particles of the cell in bin order, as one thread per cell
+  // did, so the result is the same.
+  constexpr int nPart = 12;
+  Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) * nAcc);
+  Real* const sc = scratch.data();
+  ParallelFor(nBins * nPart, [=] AMREX_GPU_DEVICE(int t) {
+    const int b = t / nPart, part = t - b * nPart;
+    Real* const out = sc + static_cast<std::size_t>(b) * nAcc;
+    if (part < 9) {
+      // The 27 moments of alpha component idx.
+      const int idx = part;
+      Real acc[27];
+      for (int n = 0; n < 27; ++n)
+        acc[n] = 0;
+      for (int i = off[b]; i < off[b + 1]; ++i) {
+        const Real* const s = st + static_cast<std::size_t>(i) * nState;
+        const Real alpha = s[11 + idx];
+        const Real sx[3] = { 1, s[0], s[0] * s[0] };
+        const Real sy[3] = { 1, s[1], s[1] * s[1] };
+        const Real sz[3] = { 1, s[2], s[2] * s[2] };
+        for (int n = 0; n < 3; ++n)
+          for (int m = 0; m < 3; ++m)
+            for (int l = 0; l < 3; ++l) {
+              const Real w = sx[l] * sy[m] * sz[n];
+              acc[(n * 3 + m) * 3 + l] += alpha * w;
+            }
+      }
+      for (int n = 0; n < 27; ++n)
+        out[nJ + n * 9 + idx] = acc[n];
+    } else {
+      // Component d of the jHat contribution of the 8 nodes.
+      const int d = part - 9;
+      Real acc[8];
+      for (int c = 0; c < 8; ++c)
+        acc[c] = 0;
+      for (int i = off[b]; i < off[b + 1]; ++i) {
+        const Real* const s = st + static_cast<std::size_t>(i) * nState;
+        const Real current = s[20 + d];
+        for (int c = 0; c < 8; ++c)
+          acc[c] += s[3 + c] * current;
+      }
+      for (int c = 0; c < 8; ++c)
+        out[c * 3 + d] = acc[c];
+    }
+  });
+
+  // 3. Per node: gather jHat and the mass-matrix entries from the cells.
   ParallelFor(surroundingNodes(cellBox), [=] AMREX_GPU_DEVICE(int i, int j,
                                                               int k) {
     const int node[3] = { i, j, k };
