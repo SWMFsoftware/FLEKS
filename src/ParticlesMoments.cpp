@@ -58,32 +58,34 @@ void deposit_center_mm_by_cell(int np, const Box& cellBox,
   Real* const sc = scratch.data();
   const int* const perm = bins.perm();
   const int* const off = bins.offsets();
-  // Three threads per cell, one per power n of sz; each sum adds the
-  // particles of the cell in bin order.
-  ParallelFor(nBins * 3, [=] AMREX_GPU_DEVICE(int t) {
-    const int b = t / 3, n = t - b * 3;
-    Real m[9];
-    for (int kl = 0; kl < 9; ++kl)
-      m[kl] = 0;
-    for (int i = off[b]; i < off[b + 1]; ++i) {
-      RealVect dShift;
-      Real q;
-      stateOf(perm[i], dShift, q);
-      const Real w = amrex::Math::abs(q);
-      const Real sz = nDim > 2 ? dShift[nDim > 2 ? 2 : 0] : 0;
-      const Real px[3] = { 1, dShift[0], dShift[0] * dShift[0] };
-      const Real py[3] = { 1, dShift[1], dShift[1] * dShift[1] };
-      const Real pz[3] = { 1, sz, sz * sz };
-      for (int l = 0; l < 3; ++l) {
-        const Real wln = w * px[l] * pz[n];
-        for (int k = 0; k < 3; ++k)
-          m[k * 3 + l] += wln * py[k];
-      }
-    }
-    Real* const out = sc + static_cast<std::size_t>(b) * nM + n * 9;
-    for (int kl = 0; kl < 9; ++kl)
-      out[kl] = m[kl];
-  });
+  // Three parts per cell, one per power n of sz, each summed by a warp (see
+  // warp_sums).
+  warp_sums<9>(
+      nBins * 3,
+      [=] AMREX_GPU_DEVICE(int t, int& begin, int& end) {
+        const int b = t / 3;
+        begin = off[b];
+        end = off[b + 1];
+      },
+      [=] AMREX_GPU_DEVICE(int t, int i, Real* acc) {
+        const int n = t % 3;
+        RealVect dShift;
+        Real q;
+        stateOf(perm[i], dShift, q);
+        const Real w = amrex::Math::abs(q);
+        const Real sz = nDim > 2 ? dShift[nDim > 2 ? 2 : 0] : 0;
+        const Real px[3] = { 1, dShift[0], dShift[0] * dShift[0] };
+        const Real py[3] = { 1, dShift[1], dShift[1] * dShift[1] };
+        const Real pz[3] = { 1, sz, sz * sz };
+        for (int l = 0; l < 3; ++l) {
+          const Real wln = w * px[l] * pz[n];
+          for (int k = 0; k < 3; ++k)
+            acc[k * 3 + l] += wln * py[k];
+        }
+      },
+      [=] AMREX_GPU_DEVICE(int t, int kl, Real v) {
+        sc[static_cast<std::size_t>(t / 3) * nM + (t % 3) * 9 + kl] = v;
+      });
 
   // 2. Every cell centre gathers the entries from the dual cells around it.
   const Real h2[3] = { dx[0] * dx[0], dx[1] * dx[1],
