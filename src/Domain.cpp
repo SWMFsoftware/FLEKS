@@ -224,7 +224,7 @@ void Domain::update() {
   timing_func(funcName);
 
   // One GPU stream, no per-loop synchronization (see GpuBackend.h).
-  const StreamOrderedRegion streamOrdered;
+  [[maybe_unused]] const StreamOrderedRegion streamOrdered;
 
   bool doReport = tc->monitor.is_time_to();
 
