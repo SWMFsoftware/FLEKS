@@ -215,6 +215,10 @@ class Suite:
                              diagnostics=True)
         compare_records(wave_box4, wave_box8, "nonuniform box decomposition")
         print("PASS nonuniform-box-decomposition-invariance", flush=True)
+        wave_cell = self.run("langmuir-divE-cell-response", {**wave, "response": "cell"},
+                             diagnostics=True)
+        compare_records(wave_box4, wave_cell, "cell-reduced mass matrix")
+        print("PASS cell-response-matches-atomic", flush=True)
         if self.args.mpi:
             wave_mpi = self.run("langmuir-divE-mpi2", wave, ranks=2, diagnostics=True)
             compare_records(wave_box4, wave_mpi, "nonuniform MPI decomposition")

@@ -22,6 +22,7 @@ public:
   void report(int step);
   int advance();
   void benchmark();
+  void accumulate(DemoParticles& particles, const std::string& method);
   void measure(const std::string& label,
                const std::function<void()>& operation);
 

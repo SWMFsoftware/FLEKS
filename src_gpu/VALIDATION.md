@@ -47,6 +47,14 @@ outside a restrictive sandbox. Compilation alone is not GPU verification.
 - Repeat the box and MPI comparisons on a nonuniform longitudinal wave
   (`perturbation=0.01`) with div(E) correction enabled. The uniform case alone
   cannot detect stencil or seam errors.
+- Rerun that nonuniform case with `response=cell` and require its diagnostics
+  to match the per-particle atomic assembly. The `particles` mode also checks
+  the cell-reduced `jHat` and mass matrix against the independent serial
+  reference (oblique B, shared nodes, periodic corners), and `benchmark` mode
+  compares all three assembly methods entry by entry.
+- A div(E) solve that reaches `div_e_max_iter` prints `WARN` and the partial
+  potential is applied, as in production `LinearSolver`; it is not a failure.
+  An electric solve that does not converge still fails the run.
 - Exercise uniform plasma with div(E) correction enabled and disabled.
 - Run a nonuniform longitudinal perturbation with correction off/on and require
   the corrected Gauss residual to fall below `1e-6` times the uncorrected value

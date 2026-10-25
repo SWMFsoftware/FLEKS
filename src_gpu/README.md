@@ -76,7 +76,8 @@ Its AMReX device arena starts at 64 MiB and grows as needed; override
 | `div_e_max_iter` | 20 | Scalar solve iteration limit |
 | `diagnostic_interval` | 1 | DIAG output interval; always include initial/final states |
 | `fused_push` | 0 | Fuse field gather with the particle push |
-| `buffered_response` | 0 | Use cell-buffered response assembly, including sorting |
+| `response` | atomic | Mass-matrix assembly: `atomic` (per particle), `cell` (GPU block reduction per cell), or `buffered` |
+| `buffered_response` | 0 | Alias for `response=buffered` |
 | `sort_interval` | 0 | Additional periodic particle sorting; zero disables |
 | `clustered` | 0 | Compress quiet-start positions to test scatter contention |
 | `production_ghost` | 3 | Comparison width in the ghost-exchange benchmark |

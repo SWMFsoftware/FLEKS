@@ -33,6 +33,11 @@ DemoConfig::DemoConfig() {
   pp.query("correct_div_e", correctDivE);
   pp.query("fused_push", fusedPush);
   pp.query("buffered_response", bufferedResponse);
+  pp.query("response", response);
+  if (bufferedResponse)
+    response = "buffered";
+  if (response != "atomic" && response != "cell" && response != "buffered")
+    amrex::Abort("response must be atomic, cell, or buffered");
   pp.query("clustered", clustered);
   pp.query("reference_prefix", referencePrefix);
   if (mode != "fields" && mode != "particles" && mode != "deposit" &&

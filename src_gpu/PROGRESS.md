@@ -103,3 +103,16 @@ implementation proceeds. The implementation plan remains the acceptance list.
   for a spatially uniform state without div(E) correction. A nonuniform
   fixture with field dumps and correction enabled would require new
   production FLEKS runs.
+
+## 2026-10-24 — GPU-optimized mass-matrix assembly
+
+- Added `response=cell`: counting-sort bins plus one 64-thread block per cell
+  that reduces the 64 node-pair tensors and jHat in registers before 576
+  atomics per cell. Validated against the serial oblique-B reference, both
+  species, one and two ranks, and the atomic path in benchmark mode and in a
+  coupled nonuniform run (`validate_demo.py`).
+- 64^3 cells, 100 particles per cell on one RTX 4090: assembly 0.536 s ->
+  0.073 s (7.4x); timestep 1.064 s -> 0.603 s, now 3.6x faster than 32 CPU
+  cores. See BENCHMARKS.md.
+- div(E) solves that reach `div_e_max_iter` now warn instead of failing,
+  matching production LinearSolver, which applies the partial potential.

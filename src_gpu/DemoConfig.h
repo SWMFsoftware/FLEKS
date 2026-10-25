@@ -32,6 +32,9 @@ struct DemoConfig {
   bool bufferedResponse = false;
   bool clustered = false;
   std::string mode = "fields";
+  // Mass-matrix assembly: atomic (per particle), cell (block-reduced per
+  // cell, GPU), or buffered (serial per-cell thread buffers).
+  std::string response = "atomic";
   std::string initialCondition = "uniform";
   std::string referencePrefix;
 

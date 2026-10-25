@@ -72,3 +72,43 @@ Logs and structured results from this run are in
 The most useful next profiling target is custom matrix communication at larger
 per-box workloads, followed by cooperative buffering with bounded work per
 thread rather than a serial per-cell accumulation.
+
+## Cell-reduced mass-matrix assembly — 2026-10-24
+
+`response=cell` (`DemoParticles::accumulate_response_cell`) bins particles by
+cell with an AMReX `DenseBins` counting sort (an index permutation; particles
+are not moved) and launches one 64-thread block per cell. Thread `t` owns the
+node pair `(t/8, t%8)` and accumulates its 3x3 tensor in registers over every
+particle in the cell; particle weights, `alpha` and `jHat` terms are staged in
+shared memory in chunks of 64. Each cell then issues 576 atomics, with
+distinct addresses inside a warp, instead of 576 atomics per particle with
+all lanes of a warp hitting the same addresses. The CPU build falls back to
+the per-particle path.
+
+One RTX 4090, 64^3 cells, 100 particles per cell per species (52.4M
+particles), 8 boxes of 32^3, Langmuir wave, `b0=0.5`, `dt=0.1`, div(E)
+correction on, `solver_tolerance=1e-6`; steps 2-6 timed:
+
+| Assembly | Seconds per assembly | Timestep (s) | Particles/s |
+| --- | ---: | ---: | ---: |
+| `atomic` | 0.536 | 1.064 | 49.3M |
+| `cell` | 0.073 | 0.603 | 87.0M |
+| `buffered` | 0.672 | (not run) | |
+| 32 CPU cores, `atomic` | 0.443 | 2.163 | 24.2M |
+
+All three GPU assemblies agree entry by entry within 7e-17, and the coupled
+diagnostics after six steps match the atomic run to 2e-15. Clustered particles
+(`clustered=1`, 10 particles per cell, about 1,250 per occupied cell) remain
+favorable: 0.050 s for `cell` versus 0.112 s for `atomic`.
+
+Nsight Systems attributes about 0.5 ms per box and species to the counting
+sort and about 5.9 ms to the block kernel. Hardware counters are restricted to
+administrators on this host (`RmProfilingAdminOnly=1`), so Nsight Compute
+could not run. A simple throughput model (FP64 on this consumer GPU is 1/64 of
+FP32) estimates about 5 ms: roughly 3.6 ms for the ten FP64 instructions per
+particle and node pair, plus 1.5 ms of per-particle staging. The kernel is
+therefore likely FP64-bound. Exploiting the symmetry of the pair weights
+(36 unique pairs instead of 64) could remove about 40% of the pair work; at
+this point, however, the divE charge/matrix deposit (0.22 s) and the moment
+deposit (0.12 s) cost more per step and would benefit from the same per-cell
+reduction.

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <AMReX_AmrParticles.H>
+#include <AMReX_DenseBins.H>
 #include <AMReX_GpuContainers.H>
 #include <AMReX_MultiFab.H>
 
@@ -43,6 +44,10 @@ public:
   void deposit(amrex::MultiFab& moments);
   void accumulate_response(DemoFields& fields, amrex::Real dt);
   void accumulate_response_buffered(DemoFields& fields, amrex::Real dt);
+  // GPU-optimized: counting-sort particles by cell, reduce each cell's 64
+  // node-pair tensors in a thread block, then issue 576 atomics per cell
+  // rather than per particle. Falls back to accumulate_response on CPUs.
+  void accumulate_response_cell(DemoFields& fields, amrex::Real dt);
   int benchmark_layouts(const amrex::MultiFab& e, const amrex::MultiFab& b);
   void deposit_center_charge(amrex::MultiFab& rho,
                              amrex::MultiFab* centerMatrix = nullptr);
@@ -64,5 +69,7 @@ private:
   bool gatheredValid = false;
   std::map<std::pair<int, int>, amrex::Gpu::DeviceVector<amrex::Real> >
       gathered;
+  // Persistent per-tile cell bins so the counting sort does not reallocate.
+  std::map<std::pair<int, int>, amrex::DenseBins<ParticleType> > cellBins;
 };
 #endif

@@ -804,6 +804,13 @@ int DemoParticles::run_checks(DemoFields& fields) {
          compare_reference(fields.jHat, current, n) / invVol, tol);
   report("cell-buffered mass matrix serial reference",
          compare_matrix_reference(fields.nodeMM, matrix, n) / invVol, tol);
+  fields.clear_response();
+  accumulate_response_cell(fields, .071);
+  fields.finish_response();
+  report("cell-reduced jHat serial reference",
+         compare_reference(fields.jHat, current, n) / invVol, tol);
+  report("cell-reduced mass matrix serial reference",
+         compare_matrix_reference(fields.nodeMM, matrix, n) / invVol, tol);
 
   fields.rho.setVal(0);
   fields.centerMM.setVal(0);
@@ -927,6 +934,124 @@ void DemoParticles::accumulate_response_buffered(DemoFields& fields, Real dt) {
     // Range storage must remain alive until its kernel has finished.
     Gpu::streamSynchronize();
   }
+}
+
+void DemoParticles::accumulate_response_cell(DemoFields& fields, Real dt) {
+#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
+  // One 64-thread block per cell. Thread t owns node pair (a, c) = (t/8, t%8)
+  // and accumulates its 3x3 tensor in registers over every particle of the
+  // cell; threads t<24 also accumulate jHat for node t/3, component t%3.
+  // Particles are staged in shared memory in chunks of 64. The result is 576
+  // atomics per cell with distinct addresses inside each warp, instead of
+  // 576 per particle with all lanes of a warp hitting the same addresses.
+  constexpr int nThread = 64;
+  const auto lo = grid.geom.ProbLoArray();
+  const auto invDx = grid.geom.InvCellSizeArray();
+  const Real qdt2m = charge / mass * dt / 2, invVol = 1 / cell_volume(grid);
+  for (ParConstIterType pti(*this, 0); pti.isValid(); ++pti) {
+    const int np = pti.numParticles();
+    if (!np)
+      continue;
+    const auto box = pti.validbox();
+    const auto small = box.smallEnd();
+    const auto big = box.bigEnd();
+    const auto length = box.length();
+    const int ncells = box.numPts();
+    const auto* particles = pti.GetArrayOfStructs().data();
+    // Bin by the clamped floor cell. The block evaluates CIC fractions
+    // relative to the same cell, so a particle exactly on the upper box face
+    // (fraction 1 in the last cell) still gets exact weights.
+    auto cell_of = [=] AMREX_GPU_DEVICE(const ParticleType& p) noexcept {
+      int index[3];
+      for (int d = 0; d < 3; ++d)
+        index[d] = amrex::min(
+            big[d],
+            amrex::max(small[d], static_cast<int>(std::floor(
+                                     (p.pos(d) - lo[d]) * invDx[d]))));
+      return ((index[2] - small[2]) * length[1] + index[1] - small[1]) *
+                 length[0] +
+             index[0] - small[0];
+    };
+    auto& bins = cellBins[{ pti.index(), pti.LocalTileIndex() }];
+    bins.build(np, particles, ncells, cell_of);
+    const auto* perm = bins.permutationPtr();
+    const auto* offsets = bins.offsetsPtr();
+    const auto ba = fields.nodeB.const_array(pti);
+    const auto current = fields.jHat.array(pti);
+    const auto mm = fields.nodeMM.array(pti);
+    amrex::launch<nThread>(ncells, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
+      const int cell = blockIdx.x, t = threadIdx.x;
+      const int begin = offsets[cell], end = offsets[cell + 1];
+      if (begin == end) // uniform across the block: no barrier is skipped
+        return;
+      const int base[3] = { small[0] + cell % length[0],
+                            small[1] + (cell / length[0]) % length[1],
+                            small[2] + cell / (length[0] * length[1]) };
+      __shared__ Real weight[nThread][8];
+      __shared__ Real response[nThread][9];
+      __shared__ Real jhat[nThread][3];
+      const int a = t >> 3, c = t & 7;
+      Real acc[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }, jacc = 0;
+      for (int chunk = begin; chunk < end; chunk += nThread) {
+        const int n = amrex::min(nThread, end - chunk);
+        if (t < n) {
+          const auto& p = particles[perm[chunk + t]];
+          const bool valid = p.id() > 0;
+          Real f[3];
+          for (int d = 0; d < 3; ++d)
+            f[d] = (p.pos(d) - lo[d]) * invDx[d] - base[d];
+          Real b[3] = { 0, 0, 0 };
+          for (int node = 0; node < 8; ++node) {
+            const int bit[3] = { node & 1, (node >> 1) & 1, node >> 2 };
+            Real w = 1;
+            for (int d = 0; d < 3; ++d)
+              w *= bit[d] ? f[d] : 1 - f[d];
+            weight[t][node] = valid ? w : 0;
+            for (int d = 0; d < 3; ++d)
+              b[d] += w * ba(base[0] + bit[0], base[1] + bit[1],
+                             base[2] + bit[2], d);
+          }
+          Real alpha[9];
+          demo_particle::alpha(b, qdt2m, alpha);
+          const Real q = p.rdata(iqp_), factor = q * qdt2m * invVol;
+          for (int d = 0; d < 9; ++d)
+            response[t][d] = factor * alpha[d];
+          for (int d = 0; d < 3; ++d) {
+            Real value = 0;
+            for (int e = 0; e < 3; ++e)
+              value += alpha[3 * d + e] * p.rdata(e);
+            jhat[t][d] = q * value;
+          }
+        }
+        __syncthreads();
+        for (int ip = 0; ip < n; ++ip) {
+          const Real pair = weight[ip][a] * weight[ip][c];
+          for (int d = 0; d < 9; ++d)
+            acc[d] += pair * response[ip][d];
+          if (t < 24)
+            jacc += weight[ip][t / 3] * jhat[ip][t % 3];
+        }
+        __syncthreads();
+      }
+      const int i = base[0] + (a & 1), j = base[1] + ((a >> 1) & 1),
+                k = base[2] + (a >> 2);
+      const int offset = ((c >> 2) - (a >> 2) + 1) * 81 +
+                         (((c >> 1) & 1) - ((a >> 1) & 1) + 1) * 27 +
+                         ((c & 1) - (a & 1) + 1) * 9;
+      for (int d = 0; d < 9; ++d)
+        Gpu::Atomic::AddNoRet(&mm(i, j, k)[offset + d], acc[d]);
+      if (t < 24) {
+        const int node = t / 3;
+        Gpu::Atomic::AddNoRet(&current(base[0] + (node & 1),
+                                       base[1] + ((node >> 1) & 1),
+                                       base[2] + (node >> 2), t % 3),
+                              jacc);
+      }
+    });
+  }
+#else
+  accumulate_response(fields, dt);
+#endif
 }
 
 namespace {
