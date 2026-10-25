@@ -1,0 +1,114 @@
+name: GPU Build Check
+
+on:
+  push:
+    branches: [ "master", "feat/gpu-port" ]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'srcInterface/**'
+      - 'userfiles/**'
+      - 'Config.pl'
+      - 'Makefile'
+      - 'Makefile.*'
+      - '.github/workflows/gpu_build.yml'
+      - '.github/actions/**'
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'srcInterface/**'
+      - 'userfiles/**'
+      - 'Config.pl'
+      - 'Makefile'
+      - 'Makefile.*'
+      - '.github/workflows/gpu_build.yml'
+      - '.github/actions/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gpu-compile-check:
+    name: Compile with CUDA (nvcc)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout FLEKS (for local composite actions)
+        uses: actions/checkout@v6
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.22
+        with:
+          cuda: '12.4.1'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart-dev", "curand-dev", "cusparse-dev"]'
+
+      - name: Setup SWMF dependency tree
+        uses: ./.github/actions/setup-swmf
+        with:
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          amrex-cache-suffix: 3d-cuda-sm80
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'false'
+
+      - name: Compile FLEKS with CUDA (nvcc)
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Target sm_80 (A100) for fast single-arch compile during CI
+          echo "=== Configuring FLEKS with CUDA ==="
+          ./Config.pl -cuda=80 -amrex3d -lev=2 -u=Exo
+
+          echo "=== Compiling FLEKS EXE ==="
+          LOG="gpu_build.log"
+          set +e
+          make EXE -j$(nproc) > "$LOG" 2>&1
+          BUILD_STATUS=$?
+          set -e
+
+          if [ "$BUILD_STATUS" -ne 0 ]; then
+            echo "::error::FLEKS CUDA compilation failed."
+            cat "$LOG"
+            {
+              echo "### ❌ GPU Compile Check Failed"
+              echo ""
+              echo "Compilation with \`nvcc\` failed:"
+              echo '```'
+              tail -n 100 "$LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Surface any unexpected compiler warnings (excluding make directory noise and known nvlink notices)
+          WARN_PATTERN='(warning:|Warning:|[:][0-9]+[:][0-9]*: warning:)'
+          MAKE_NOISE_PATTERN='make(\[[0-9]+\])?: (warning: )?(jobserver unavailable|Entering directory|Leaving directory)|nvlink warning : Stack size'
+          grep -E -i "$WARN_PATTERN" "$LOG" | grep -E -iv "$MAKE_NOISE_PATTERN" > gpu_warnings.txt || true
+
+          if [ -s gpu_warnings.txt ]; then
+            echo "::warning::Compiler warnings detected during GPU build:"
+            cat gpu_warnings.txt
+            {
+              echo "### ⚠️ GPU Build Warnings"
+              echo ""
+              echo '```'
+              cat gpu_warnings.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "=== GPU Build Succeeded ==="
+          {
+            echo "### ✅ GPU Compile Check"
+            echo ""
+            echo "Successfully compiled FLEKS with CUDA support (\`nvcc\`, \`sm_80\`) against AMReX 3D."
+            echo "- Relocatable device code, lambda capture checks (\`--Werror ext-lambda-captures-this\`), and device linking passed."
+          } >> "$GITHUB_STEP_SUMMARY"
