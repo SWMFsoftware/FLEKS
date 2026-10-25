@@ -79,6 +79,14 @@ AMREX_GPU_HOST_DEVICE static bool particle_bc_no_injection(
 
 //==========================================================
 
+namespace {
+// The per-box part of the boundary injection rule.
+struct InjectionBox {
+  Box bx; // valid box
+  Array4<const int> status;
+};
+} // namespace
+
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   timing_func("Pts::inject_particles_at_boundary");
@@ -92,59 +100,59 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   // finest level.
   int iLev = 0;
 
-  for (MFIter mfi = MakeMFIter(iLev, stream_ordered_mfi()); mfi.isValid();
-       ++mfi) {
-    const Array4<const int> status = cell_status(iLev)[mfi].const_array();
-    const Box bx = mfi.validbox();
-    const IntVect bxLo = bx.smallEnd();
-    const IntVect bxHi = bx.bigEnd();
-
-    Box bxGst = bx;
-    for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++) {
-      bxGst.grow(iDim, nGstInject);
+  // Seed ghost cell from prescribed #INFLOW state if defined, else fall
+  // back to the fluid interface.
+  Vel inflowVel;
+  if (fi->get_inflow_defined()) {
+    const auto* iv = fi->get_inflow_vel(speciesID);
+    if (iv) {
+      inflowVel.tag = speciesID; // enable the userState override path
+      inflowVel.nDens = iv->nDens;
+      inflowVel.vth = iv->vth;
+      inflowVel.vx = iv->ux;
+      inflowVel.vy = iv->uy;
+      inflowVel.vz = iv->uz;
     }
-
-    // Seed ghost cell from prescribed #INFLOW state if defined, else fall
-    // back to the fluid interface.
-    Vel inflowVel;
-    if (fi->get_inflow_defined()) {
-      const auto* iv = fi->get_inflow_vel(speciesID);
-      if (iv) {
-        inflowVel.tag = speciesID; // enable the userState override path
-        inflowVel.nDens = iv->nDens;
-        inflowVel.vth = iv->vth;
-        inflowVel.vx = iv->ux;
-        inflowVel.vy = iv->uy;
-        inflowVel.vz = iv->uz;
-      }
-    }
-
-    int faceBC[3][2];
-    for (int d = 0; d < 3; ++d)
-      for (int side = 0; side < 2; ++side)
-        faceBC[d][side] = bc.face(d, side);
-
-    add_particles_cells(
-        iLev, mfi, bxGst,
-        [=] AMREX_GPU_HOST_DEVICE(const IntVect& ijk, IntVect&) {
-          IntVect ijksrc;
-          if (!do_inject_particles_for_this_cell(bx, status, ijk, ijksrc))
-            return false;
-          // A ghost cell can lie beyond more than one face (a corner); it is
-          // skipped when ANY of those faces must not carry a ghost-cell
-          // population -- see particle_bc_no_injection() above.
-          for (int d = 0; d < nDim; ++d) {
-            if (ijk[d] < bxLo[d] &&
-                particle_bc_no_injection(ParticleBC::Type(faceBC[d][0])))
-              return false;
-            if (ijk[d] > bxHi[d] &&
-                particle_bc_no_injection(ParticleBC::Type(faceBC[d][1])))
-              return false;
-          }
-          return true;
-        },
-        fi, true, inflowVel, -1);
   }
+
+  int faceBC[3][2];
+  for (int d = 0; d < 3; ++d)
+    for (int side = 0; side < 2; ++side)
+      faceBC[d][side] = bc.face(d, side);
+
+  Vector<SeedBox<InjectionBox> > boxes(cell_status(iLev).local_size());
+  for (MFIter mfi(cell_status(iLev), stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
+    const Box& bx = mfi.validbox();
+    Box bxGst = bx;
+    for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++)
+      bxGst.grow(iDim, nGstInject);
+    boxes[mfi.LocalIndex()] = {
+      bxGst, InjectionBox{ bx, cell_status(iLev)[mfi].const_array() }
+    };
+  }
+
+  add_particles_level(
+      iLev, boxes,
+      [=] AMREX_GPU_HOST_DEVICE(const InjectionBox& b, const IntVect& ijk,
+                                IntVect&) {
+        IntVect ijksrc;
+        if (!do_inject_particles_for_this_cell(b.bx, b.status, ijk, ijksrc))
+          return false;
+        // A ghost cell can lie beyond more than one face (a corner); it is
+        // skipped when ANY of those faces must not carry a ghost-cell
+        // population -- see particle_bc_no_injection() above.
+        for (int d = 0; d < nDim; ++d) {
+          if (ijk[d] < b.bx.smallEnd(d) &&
+              particle_bc_no_injection(ParticleBC::Type(faceBC[d][0])))
+            return false;
+          if (ijk[d] > b.bx.bigEnd(d) &&
+              particle_bc_no_injection(ParticleBC::Type(faceBC[d][1])))
+            return false;
+        }
+        return true;
+      },
+      fi, true, inflowVel, -1);
 }
 
 //==========================================================

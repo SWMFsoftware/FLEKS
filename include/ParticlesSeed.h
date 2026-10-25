@@ -333,6 +333,29 @@ struct ParticleIDBlock {
   }
 };
 
+// The cells to seed in a FAB, and the per-box data of the seeding rule (see
+// Particles::add_particles_level).
+template <class Data> struct SeedBox {
+  amrex::Box box;
+  Data data;
+};
+
+// A box of add_particles_level(): the seeder of its FAB, the per-box data of
+// the rule, and the box.
+template <class Data> struct SeedTask {
+  CellSeeder seeder;
+  Data data;
+  amrex::Dim3 lo, len;
+};
+
+// Where the particles of a box of add_particles_level() go: dst, with IDs
+// from ids; begin is the position of its first particle among all boxes.
+template <class ParticleType> struct SeedFill {
+  ParticleType* dst = nullptr;
+  ParticleIDBlock ids;
+  int begin = 0;
+};
+
 // Writes the particles of a cell, starting at dst, with IDs from the block
 // starting at the global index g0.
 template <class ParticleType, int NStructInt> struct SeedWriter {
@@ -544,6 +567,160 @@ void Particles<NStructReal, NStructInt>::add_particles_cells(
     // The kernel reads counts and offsets, which are freed on return.
     sync_before_free();
   }
+}
+
+// add_particles_cells() for every FAB of level iLev: the cells of
+// boxes[i].box for which rule(boxes[i].data, ijk, ppc) returns true, where i
+// is the local index of the FAB (MFIter::LocalIndex()). The data is the
+// per-box part of the rule (a trivially copyable value, e.g. the valid box
+// and an Array4). The particles, their IDs and their order are
+// those of add_particles_cells() called box by box in MFIter order, but a GPU
+// build counts, scans and fills the cells of all boxes with one launch each
+// and waits for the device once, to read the number of particles per box.
+// With one particle tile per cell (CPU) it calls add_particles_cells() box by
+// box.
+template <int NStructReal, int NStructInt>
+template <class Data, class Rule>
+void Particles<NStructReal, NStructInt>::add_particles_level(
+    int iLev, const amrex::Vector<SeedBox<Data> >& boxes, const Rule& rule,
+    const FluidInterface* interface, bool doVacuumLimit, const Vel& tpVel,
+    amrex::Real dt) {
+  using namespace amrex;
+
+  if (do_tiling) {
+    for (MFIter mfi = MakeMFIter(iLev, stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
+      const Data data = boxes[mfi.LocalIndex()].data;
+      add_particles_cells(
+          iLev, mfi, boxes[mfi.LocalIndex()].box,
+          [=] AMREX_GPU_HOST_DEVICE(const IntVect& ijk, IntVect& ppc) {
+            return rule(data, ijk, ppc);
+          },
+          interface, doVacuumLimit, tpVel, dt);
+    }
+    return;
+  }
+
+  // 1. The boxes, and the position of the first cell of each in the list of
+  // all cells.
+  using Task = SeedTask<Data>;
+  Vector<Task> tasks;
+  Vector<int> cellStart;
+  int nCell = 0;
+  for (MFIter mfi = MakeMFIter(iLev, stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
+    const Box& box = boxes[mfi.LocalIndex()].box;
+    if (box.isEmpty())
+      continue;
+    tasks.push_back(
+        { make_cell_seeder(iLev, mfi, interface, doVacuumLimit, tpVel, dt),
+          boxes[mfi.LocalIndex()].data, lbound(box), length(box) });
+    cellStart.push_back(nCell);
+    nCell += static_cast<int>(box.numPts());
+  }
+  if (nCell == 0)
+    return;
+  const int nTask = tasks.size();
+  cellStart.push_back(nCell);
+  Gpu::AsyncArray<Task> taskStore(tasks.data(), nTask);
+  Gpu::AsyncArray<int> startStore(cellStart.data(), nTask + 1);
+  const Task* const task = taskStore.data();
+  const int* const start = startStore.data();
+
+  // The box (task) and the cell of entry l of the list.
+  auto locate = [=] AMREX_GPU_DEVICE(int l, int& t, IntVect& ijk) {
+    int lo = 0, hi = nTask - 1;
+    while (lo < hi) {
+      const int mid = (lo + hi + 1) / 2;
+      if (start[mid] <= l)
+        lo = mid;
+      else
+        hi = mid - 1;
+    }
+    t = lo;
+    const Dim3 bLo = task[t].lo, bLen = task[t].len;
+    const int m = l - start[t];
+    const int k = m / (bLen.x * bLen.y);
+    const int j = (m - k * bLen.x * bLen.y) / bLen.x;
+    const int i = m - (k * bLen.y + j) * bLen.x;
+    ijk = IntVect(AMREX_D_DECL(bLo.x + i, bLo.y + j, bLo.z + k));
+  };
+
+  // 2. Count the particles of each cell.
+  Gpu::DeviceVector<int> counts(nCell);
+  int* const cnt = counts.data();
+  ParallelFor(nCell, [=] AMREX_GPU_DEVICE(int l) {
+    int t;
+    IntVect ijk;
+    locate(l, t, ijk);
+    IntVect ppc(0);
+    int n = 0;
+    if (rule(task[t].data, ijk, ppc)) {
+      SeedCounter counter;
+      task[t].seeder(ijk, ppc, counter);
+      n = counter.n;
+    }
+    cnt[l] = n;
+  });
+
+  // 3. Position of the first particle of each cell, in cell order, and of
+  // the first particle of each box (the last entry is the total).
+  Gpu::DeviceVector<int> offsets(nCell);
+  int* const off = offsets.data();
+  Scan::ExclusiveSum(nCell, cnt, off, Scan::noRetSum);
+  Gpu::DeviceVector<int> boxBeginVec(nTask + 1);
+  int* const boxBeginDev = boxBeginVec.data();
+  ParallelFor(nTask + 1, [=] AMREX_GPU_DEVICE(int t) {
+    boxBeginDev[t] =
+        (t < nTask) ? off[start[t]] : off[nCell - 1] + cnt[nCell - 1];
+  });
+  Vector<int> boxBegin(nTask + 1);
+  Gpu::copy(Gpu::deviceToHost, boxBeginVec.begin(), boxBeginVec.end(),
+            boxBegin.begin());
+  if (boxBegin[nTask] == 0)
+    return;
+
+  // 4. IDs and room in the tiles, box by box as add_particles_cells() does.
+  using Fill = SeedFill<ParticleType>;
+  Vector<Fill> fills(nTask);
+  int iTask = 0;
+  for (MFIter mfi = MakeMFIter(iLev, stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
+    const Box& box = boxes[mfi.LocalIndex()].box;
+    if (box.isEmpty())
+      continue;
+    Fill& f = fills[iTask];
+    const int n = boxBegin[iTask + 1] - boxBegin[iTask];
+    f.begin = boxBegin[iTask];
+    if (n > 0) {
+      f.ids = reserve_particle_ids(n);
+      ParticleTileType& tile = get_particle_tile(iLev, mfi, box.smallEnd());
+      const int nOld = tile.numParticles();
+      tile.resize(nOld + n);
+      f.dst = tile.GetArrayOfStructs()().data() + nOld;
+    }
+    ++iTask;
+  }
+  Gpu::AsyncArray<Fill> fillStore(fills.data(), nTask);
+  const Fill* const fill = fillStore.data();
+
+  // 5. Create the particles.
+  const int cpu = ParallelDescriptor::MyProc();
+  using Writer = SeedWriter<ParticleType, NStructInt>;
+  ParallelFor(nCell, [=] AMREX_GPU_DEVICE(int l) {
+    if (cnt[l] == 0)
+      return;
+    int t;
+    IntVect ijk;
+    locate(l, t, ijk);
+    IntVect ppc(0);
+    rule(task[t].data, ijk, ppc);
+    const int g = off[l] - fill[t].begin;
+    Writer writer{ fill[t].dst + g, fill[t].ids, g, cpu };
+    task[t].seeder(ijk, ppc, writer);
+  });
+  // The kernels read counts and offsets, which are freed on return.
+  sync_before_free();
 }
 
 #endif

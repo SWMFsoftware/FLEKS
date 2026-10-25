@@ -48,6 +48,7 @@ struct PID {
 };
 
 struct CellSeeder;
+template <class Data> struct SeedBox;
 struct ParticleIDBlock;
 class WaveBoundaryManager;
 
@@ -474,6 +475,11 @@ public:
                            const amrex::Box& box, const Rule& rule,
                            const FluidInterface* interface, bool doVacuumLimit,
                            const Vel& tpVel = Vel(), amrex::Real dt = -1);
+  template <class Data, class Rule>
+  void add_particles_level(int iLev, const amrex::Vector<SeedBox<Data> >& boxes,
+                           const Rule& rule, const FluidInterface* interface,
+                           bool doVacuumLimit, const Vel& tpVel = Vel(),
+                           amrex::Real dt = -1);
   CellSeeder make_cell_seeder(int iLev, const amrex::MFIter& mfi,
                               const FluidInterface* interface,
                               bool doVacuumLimit, const Vel& tpVel,
