@@ -349,6 +349,58 @@ private:
   amrex::Gpu::DeviceVector<int> keys, sortedKeys, index, sorted, offset;
 };
 
+// NSum sums for each of nItems items (e.g. a cell, or a part of the sums of
+// a cell): range(item, begin, end) gives the terms i = begin..end-1 of the
+// item, body(item, i, acc) adds term i to acc[0..NSum-1], and
+// store(item, n, value) receives sum n. A GPU build gives every item a warp:
+// lane L adds the terms begin + L, begin + L + 32, ..., and a fixed shuffle
+// tree adds the 32 partial sums, so the result depends only on the ranges
+// (the same from run to run) and long ranges are summed by 32 threads. A CPU
+// build adds the terms of an item in order.
+template <int NSum, class Range, class Body, class Store>
+void warp_sums(int nItems, Range range, Body body, Store store) {
+  using amrex::Real;
+  if (nItems <= 0)
+    return;
+#ifdef AMREX_USE_GPU
+  constexpr int nLane = 32, nWarpPerBlock = 4;
+  const int nBlock = (nItems + nWarpPerBlock - 1) / nWarpPerBlock;
+  amrex::launch<nLane * nWarpPerBlock>(
+      nBlock, amrex::Gpu::gpuStream(), [=] AMREX_GPU_DEVICE() {
+        const int lane = threadIdx.x % nLane;
+        const int item = blockIdx.x * nWarpPerBlock + threadIdx.x / nLane;
+        if (item >= nItems)
+          return; // the whole warp
+        int begin, end;
+        range(item, begin, end);
+        Real acc[NSum];
+        for (int n = 0; n < NSum; ++n)
+          acc[n] = 0;
+        for (int i = begin + lane; i < end; i += nLane)
+          body(item, i, acc);
+        for (int n = 0; n < NSum; ++n) {
+          Real v = acc[n];
+          for (int o = nLane / 2; o > 0; o /= 2)
+            v += __shfl_down_sync(0xffffffffu, v, o);
+          if (lane == 0)
+            store(item, n, v);
+        }
+      });
+#else
+  for (int item = 0; item < nItems; ++item) {
+    int begin, end;
+    range(item, begin, end);
+    Real acc[NSum];
+    for (int n = 0; n < NSum; ++n)
+      acc[n] = 0;
+    for (int i = begin; i < end; ++i)
+      body(item, i, acc);
+    for (int n = 0; n < NSum; ++n)
+      store(item, n, acc[n]);
+  }
+#endif
+}
+
 // Deposit particle quantities onto the S^D nodes (S = 2 by default) starting
 // at the cell of each particle:
 //   cellOf(ip, cell) -> bool   the cell (its lower node) of particle ip, or
@@ -418,29 +470,31 @@ void deposit_to_nodes_with(int np, const amrex::Box& cellBox, Add&& add,
   CellBins bins;
   bins.build_cells(np, cellBox, cellOf);
 
-  // 1. The sum of every cell, particle by particle in the bin order.
+  // 1. The sum of every cell, by a warp per cell (see warp_sums).
   constexpr int nAcc = S * S * nK * NComp;
   amrex::Gpu::DeviceVector<Real> scratch(static_cast<std::size_t>(nBins) *
                                          nAcc);
   Real* const sc = scratch.data();
   const int* const perm = bins.perm();
   const int* const off = bins.offsets();
-  amrex::ParallelFor(nBins, [=] AMREX_GPU_DEVICE(int b) {
-    Real acc[S][S][S][NComp];
-    for (int kk = 0; kk < S; ++kk)
-      for (int jj = 0; jj < S; ++jj)
-        for (int ii = 0; ii < S; ++ii)
-          for (int n = 0; n < NComp; ++n)
-            acc[ii][jj][kk][n] = 0;
-    for (int i = off[b]; i < off[b + 1]; ++i)
-      contrib(perm[i], acc);
-    Real* const out = sc + static_cast<std::size_t>(b) * nAcc;
-    for (int kk = 0; kk < nK; ++kk)
-      for (int jj = 0; jj < S; ++jj)
-        for (int ii = 0; ii < S; ++ii)
-          for (int n = 0; n < NComp; ++n)
-            out[((kk * S + jj) * S + ii) * NComp + n] = acc[ii][jj][kk][n];
-  });
+  using Acc = Real[S][S][S][NComp];
+  warp_sums<S * S * S * NComp>(
+      nBins,
+      [=] AMREX_GPU_DEVICE(int b, int& begin, int& end) {
+        begin = off[b];
+        end = off[b + 1];
+      },
+      [=] AMREX_GPU_DEVICE(int, int i, Real* acc) {
+        contrib(perm[i], *reinterpret_cast<Acc*>(acc));
+      },
+      [=] AMREX_GPU_DEVICE(int b, int m, Real v) {
+        // m = ((ii * S + jj) * S + kk) * NComp + n
+        const int n = m % NComp, kk = (m / NComp) % S,
+                  jj = (m / (NComp * S)) % S, ii = m / (NComp * S * S);
+        if (kk < nK)
+          sc[static_cast<std::size_t>(b) * nAcc +
+             ((kk * S + jj) * S + ii) * NComp + n] = v;
+      });
 
   // 2. Every node sums its cells.
   amrex::Box nodeBox = amrex::surroundingNodes(cellBox);
