@@ -86,7 +86,7 @@ def run_case(test_name, dt, nsub, nprocs=1, integrator="rk4-pc", time_max=4.0):
     os.makedirs(os.path.join(RUN_DIR, "PC", "restartOUT"), exist_ok=True)
 
     if test_name == "whistler":
-        param_file = os.path.join(REPO, "tests", "whistler", "PARAM.in.hybrid")
+        param_file = os.path.join(REPO, "tests", "whistler", "PARAM.in.rk4")
         plot_dt = "0.1"
     else:
         param_file = os.path.join(REPO, "tests", "iaw", "PARAM.in")
@@ -95,6 +95,7 @@ def run_case(test_name, dt, nsub, nprocs=1, integrator="rk4-pc", time_max=4.0):
     with open(param_file) as f:
         text = f.read()
 
+    text = _rewrite_param(text, "#TIMESTEPPING", {"dt": dt})
     if "#FIELDSUBCYCLE" in text:
         text = _rewrite_param(text, "#FIELDSUBCYCLE", {"nSubcycle": nsub})
     else:
@@ -106,7 +107,11 @@ def run_case(test_name, dt, nsub, nprocs=1, integrator="rk4-pc", time_max=4.0):
         text = _rewrite_param(text, "#PARTICLES", {"nParticle per cell in X": 20000})
 
     if integrator:
-        if "#FIELDSOLVER" in text:
+        if "#FIELDINTEGRATOR" in text:
+            text = _rewrite_param(
+                text, "#FIELDINTEGRATOR", {"fieldIntegrator": integrator}
+            )
+        elif "#FIELDSOLVER" in text:
             text = text.replace(
                 "#FIELDSOLVER",
                 f"#FIELDINTEGRATOR\n{integrator}                   fieldIntegrator\n\n#FIELDSOLVER",
