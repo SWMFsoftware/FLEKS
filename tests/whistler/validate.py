@@ -46,11 +46,19 @@ from _shared import hybrid as hybrid_helpers
 
 RUN_DIR = "run_test"
 MAX_GROWTH = 1.9
-# rk4, rk4_mc, rk4_hyper (24 s; default upwind with sensor, plain MC upwind,
-# hyper-resistivity alone): the seeded mode grows 1.3x with any of them; without
-# dissipation the ~3-cell grid mode grows unstably and the ion energy rises 95x.
+# rk4, rk4_mc, rk4_hyper, rk4_undamped, ssprk3_undamped (24 s; default upwind
+# with sensor, plain MC upwind, hyper-resistivity alone, or completely undamped
+# midpoint-hold subcycling): the seeded mode grows ~1.3x with any of them; with
+# the old linear secant ramp on moments across Faraday sub-steps, the ~3-cell
+# grid mode grows unstably when undamped and the ion energy rises ~95x.
 MAX_GROWTH_DAMPED = 1.5
-STABILITY_VARIANTS = ("_rk4", "_rk4_mc", "_rk4_hyper")
+STABILITY_VARIANTS = (
+    "_rk4",
+    "_rk4_mc",
+    "_rk4_hyper",
+    "_rk4_undamped",
+    "_ssprk3_undamped",
+)
 
 
 def set_run_dir(run_dir):
