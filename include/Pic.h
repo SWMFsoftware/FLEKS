@@ -453,7 +453,7 @@ private:
   int nSmoothMoments = 0;
   amrex::Real coefSmoothMoments = 0.5;
 
-  std::string fieldIntegrator = "rk4"; // B integrator
+  std::string fieldIntegrator = "ssprk3"; // B integrator
   bool useRK4 = false;
   bool usePredictorCorrector = false;
 

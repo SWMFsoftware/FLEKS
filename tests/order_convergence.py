@@ -17,8 +17,8 @@ evaluated via Richardson extrapolation:
 Effective temporal order p is reported (second order -> p ~ 2).
 
 Usage:
-    python3 tests/order_convergence.py                    # default: rk4-pc on whistler
-    python3 tests/order_convergence.py --integrator rk4   # legacy rk4
+    python3 tests/order_convergence.py                    # default: ssprk3 on whistler
+    python3 tests/order_convergence.py --integrator rk4   # rk4 single-pass
     python3 tests/order_convergence.py --test iaw         # acoustic wave test
     python3 tests/order_convergence.py --dt 0.02          # single dt diagnostics
 """
@@ -306,8 +306,8 @@ def main():
     ap.add_argument(
         "--integrator",
         type=str,
-        default="rk4-pc",
-        help="Field integrator (rk4-pc, rk4, ssprk3-pc, ssprk3)",
+        default="ssprk3",
+        help="Field integrator (ssprk3, rk4, ssprk3-pc, rk4-pc)",
     )
     ap.add_argument("--dt", type=float, default=None, help="Run a single dt (diagnostics)")
     ap.add_argument("--nproc", type=int, default=1, help="Number of MPI processes")

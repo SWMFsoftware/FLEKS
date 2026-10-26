@@ -312,9 +312,15 @@ Once $\mathbf{E}^{n+\theta}$ is obtained, the fields are advanced:
 \end{align}
 To maintain Gauss's law $\nabla \cdot \mathbf{E} = 4\pi \rho_c$, an optional div($\mathbf{E}$) cleaning step solves the Poisson equation $\nabla^2 \phi = \frac{1}{\theta}(\nabla \cdot \mathbf{E} - 4\pi \rho_c)$ and applies a localized particle position correction $\Delta \mathbf{x} \propto -\nabla \phi$ or electric field projection.
 
-\section{Upwind schemes and comoving frame solving}
+\section{Upwind schemes and comoving frame solving in the semi-implicit full-PIC solver}
 
-In simulations featuring high-speed plasma flows, shocks, and sharp boundary layers, standard central-difference discretizations can produce unphysical dispersion, numerical oscillations, and grid heating. FLEKS incorporates a comoving frame formulation and directional upwind artificial viscosity schemes for both the electric and magnetic fields. (Note: The schemes described in Section~\ref{sec:upwind_E} and Section~\ref{sec:upwind_B} apply to the full-PIC semi-implicit solver; the hybrid PIC solver employs the nodal Rusanov dissipation described in Section~\ref{sec:hybrid_upwind}.)
+In simulations featuring high-speed plasma flows, shocks, and sharp boundary layers, standard central-difference discretizations can produce unphysical dispersion, numerical oscillations, and grid heating. FLEKS incorporates a comoving frame formulation and directional upwind artificial viscosity schemes for both the electric and magnetic fields.
+
+\noindent\textbf{Distinction between solver upwind formulations:} FLEKS provides two distinct, non-overlapping upwind dissipation frameworks:
+\begin{enumerate}
+  \item \textbf{Semi-implicit full-PIC upwind schemes} (Sections~\ref{sec:upwind_E} and~\ref{sec:upwind_B}): Formulated for the implicit Maxwell equation solver. Directional Lax--Friedrichs artificial diffusion is added directly to the linear/non-linear implicit electric field operator and post-Faraday magnetic field correction based on the bulk plasma velocity $\mathbf{U}_0$ or the speed of light $c_{\max}$.
+  \item \textbf{Hybrid-PIC nodal Rusanov dissipation} (Section~\ref{sec:hybrid_upwind}): Formulated for the generalized Ohm's law. Directional wave dissipation $\mathbf{E}_{\text{upwind}} = \sum_d \frac{a_d}{2} \hat{\mathbf{e}}_d \times (\mathbf{B}^R_d - \mathbf{B}^L_d)$ is assembled on grid nodes from MUSCL face reconstructions using local fast-magnetosonic/whistler characteristic speeds. Because it enters through the electric field in Faraday's law, the discrete identity $\nabla \cdot (\nabla \times \mathbf{E}_{\text{upwind}}) \equiv 0$ guarantees machine-precision magnetic divergence preservation $\nabla \cdot \mathbf{B} = 0$.
+\end{enumerate}
 
 \subsection{Comoving frame field solving}
 
@@ -431,29 +437,52 @@ where $C_{\text{CFL,imag}} = 2.785$ ($2\sqrt{2} \approx 2.828$) for RK4 and $\sq
 
 The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centers. The generalized Ohm's law is therefore assembled at the nodes from the node-centered moments and the cell-centered $\mathbf{B}$ (with $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$ computed via the compact $1\,\Delta x$ cell-to-node curl), and the Faraday update advances the cell-centered $\mathbf{B}$ via the compact $1\,\Delta x$ node-to-cell curl; the node-centered $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values.
 
-\subsection{Time integration and subcycling of $\mathbf{B}$}
+\subsection{Time integration schemes for hybrid PIC}
+\label{sec:hybrid_timestepping}
 
-The magnetic field is advanced via Faraday's law:
-\begin{equation}
-\frac{\partial \mathbf{B}}{\partial t} = -\nabla\times\mathbf{E},
-\end{equation}
-using an explicit Runge--Kutta integrator. Two choices are provided:
+FLEKS provides four time-integration schemes for the hybrid PIC solver, selected via the \texttt{\#FIELDINTEGRATOR} command:
+\begin{enumerate}
+  \item \textbf{Single-pass leapfrog with SSPRK3} (\texttt{ssprk3}, default): 3-stage strong-stability-preserving third-order Runge--Kutta for Faraday subcycling; $25\%$ fewer RHS stage evaluations per sub-step than RK4 and TVD-compliant for upwind and hyperbolic terms.
+  \item \textbf{Single-pass leapfrog with RK4} (\texttt{rk4}): Classical 4-stage fourth-order Runge--Kutta; features a larger imaginary-axis stability limit ($2\sqrt{2} \approx 2.828$ vs.\ $\sqrt{3} \approx 1.732$ for SSPRK3), requiring $\sim 22\%$ fewer stage evaluations when limited strictly by Hall-whistler dispersion.
+  \item \textbf{Two-pass Predictor-Corrector with SSPRK3} (\texttt{ssprk3-pc}): Wraps SSPRK3 field subcycling and particle pushes in a two-stage predictor--corrector loop.
+  \item \textbf{Two-pass Predictor-Corrector with RK4} (\texttt{rk4-pc}): Wraps RK4 field subcycling and particle pushes in a two-stage predictor--corrector loop.
+\end{enumerate}
+
+\subsubsection{Single-pass leapfrog schemes (\texttt{ssprk3}, \texttt{rk4})}
+In the single-pass leapfrog schemes, the outer macro step requires only a single particle Boris push and a single field assembly per macro time step $\Delta t$, while achieving full second-order temporal accuracy ($\mathcal{O}(\Delta t^2)$):
 \begin{itemize}
-  \item \textbf{RK4 (default)}: Classical 4-stage fourth-order Runge--Kutta. Because RK4 has a larger imaginary-axis stability region per stage ($2\sqrt{2}/4 \approx 0.707$ vs.\ $\sqrt{3}/3 \approx 0.577$ for SSPRK3), it requires $\sim 60\%$ fewer subcycles ($\sim 18\%$ fewer RHS stage evaluations) when limited by the Hall-whistler CFL.
-  \item \textbf{SSPRK3}: 3-stage strong-stability-preserving third-order Runge--Kutta, costing $25\%$ fewer stage evaluations per sub-step at a fixed subcycle count and providing TVD properties for hyperbolic/upwind terms.
+  \item \textbf{Time staggering of particle velocities:} Fields $(\mathbf{E}^n, \mathbf{B}^n)$ and particle positions $\mathbf{x}^n$ reside at integer times $t^n$, while particle velocities $\mathbf{v}^{n-1/2}$ reside at half-integer times $t^{n-1/2}$.
+  On the first time step ($n = 0$), the Boris pusher kicks velocities over a half time step $\Delta t_v = \tfrac{1}{2}\Delta t$ from $\mathbf{v}^0$ to $\mathbf{v}^{1/2}$. On subsequent steps ($n \ge 1$), the velocity kick spans $\Delta t_v = \tfrac{1}{2}(\Delta t_{\text{prev}} + \Delta t)$ (which equals $\Delta t$ for constant time steps). Particle positions are drifted over a full $\Delta t$ using the midpoint velocity:
+  \begin{equation}
+  \mathbf{x}^{n+1} = \mathbf{x}^n + \Delta t\,\mathbf{v}^{n+1/2}.
+  \end{equation}
+  \item \textbf{Decoupled moment time interpolation:} After the particle push, ion moments are deposited onto the grid:
+  \begin{itemize}
+    \item \emph{Charge density $\rho_q$}: Deposited from particle positions $\mathbf{x}^{n+1}$ at integer time $t^{n+1}$ (into \texttt{nodePlasma}) while the previous deposit holds $\rho_q^n$ at $t^n$ (in \texttt{nodePlasmaPrev}). For any normalized sub-interval fraction $h_{\text{step}} \in [0, 1]$ of $[t^n, t^{n+1}]$, density is interpolated with convex weights:
+    \begin{equation}
+    \rho_q(h_{\text{step}}) = (1 - h_{\text{step}})\,\rho_q^n + h_{\text{step}}\,\rho_q^{n+1},
+    \end{equation}
+    which guarantees positivity ($\rho_q \ge 0$) throughout Faraday subcycling and avoids unphysical extrapolation.
+    \item \emph{Ion momentum $\mathbf{m} = \rho_q \mathbf{u}_i$}: Deposited from velocities $\mathbf{v}^{n+1/2}$ at $t^{n+1/2}$ ($h_{\text{step}} = 0.5$) into \texttt{nodePlasma} and $\mathbf{v}^{n-1/2}$ at $t^n - \tfrac{1}{2}\Delta t_{\text{prev}}$ in \texttt{nodePlasmaPrev}. During the subcycled Faraday update across $[t^n, t^{n+1}]$, $h_{\text{step}} = 0.5$ is held constant ($\mathbf{m} = \mathbf{m}^{n+1/2}$), providing midpoint second-order accuracy while eliminating the secant-ramp whistler instability at $\omega_w \Delta t \sim \pi$.
+  \end{itemize}
+  \item \textbf{Consistent initial smoothing:} At $t = 0$, moment and electric field smoothing (\texttt{\#SMOOTHMOMENTS}, \texttt{\#SMOOTE}) are evaluated identically to subsequent steps, ensuring that the initial half-step velocity kick $\mathbf{v}^0 \to \mathbf{v}^{1/2}$ uses a spatially consistent electric field.
 \end{itemize}
-Within one coarse particle time step $\Delta t$, $N_{\text{sub}}$ subcycles of step size $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$ are taken.
 
-To achieve second-order temporal accuracy in the standard leapfrog cycle (\texttt{rk4}, \texttt{ssprk3}), the ion moments are parameterized by the step fraction $h_{\text{step}} \in [0, 1]$ between the previous deposit $X^{n-1/2}$ and the current deposit $X^{n+1/2}$:
-\begin{equation}
-X(h_{\text{step}}) = \left(\tfrac{1}{2}-h_{\text{step}}\right) X^{n-1/2} + \left(\tfrac{1}{2}+h_{\text{step}}\right) X^{n+1/2}.
-\end{equation}
-During the Faraday sub-steps across $[t^n, t^{n+1}]$, $h_{\text{step}} = 0.5$ is held constant ($X = X^{n+1/2}$, already centered at the midpoint of $[t^n, t^{n+1}]$) to preserve second-order midpoint accuracy while avoiding secant-ramp whistler instabilities at $\omega_w \Delta t \sim \pi$; after the sub-stepping loop completes $\mathbf{B}^{n+1}$, the electric field $\mathbf{E}^{n+1}$ at $t^{n+1}$ is evaluated with $h_{\text{step}} = 1.0$ ($X^{n+1} = -\tfrac{1}{2}X^{n-1/2} + \tfrac{3}{2}X^{n+1/2}$).
+\subsubsection{Two-pass Predictor-Corrector schemes (\texttt{ssprk3-pc}, \texttt{rk4-pc})}
+The predictor--corrector schemes maintain unstaggered particle positions and velocities $(\mathbf{x}^n, \mathbf{v}^n)$ at integer times $t^n$:
+\begin{enumerate}
+  \item \emph{Predictor pass}: Particles are pushed from $(\mathbf{x}^n, \mathbf{v}^n)$ to trial positions and velocities $(\mathbf{x}^{*,n+1}, \mathbf{v}^{*,n+1})$ using $(\mathbf{E}^n, \mathbf{B}^n)$. Trial moments are deposited, and Faraday's law advances $\mathbf{B}^n \to \mathbf{B}^{*,n+1}$, yielding trial field $\mathbf{E}^{*,n+1}$.
+  \item \emph{Corrector pass}: The base particle state at $t^n$ is restored and pushed using time-centered fields $\mathbf{E}^{n+1/2} = \tfrac{1}{2}(\mathbf{E}^n + \mathbf{E}^{*,n+1})$ and $\mathbf{B}^{n+1/2} = \tfrac{1}{2}(\mathbf{B}^n + \mathbf{B}^{*,n+1})$ to final state $(\mathbf{x}^{n+1}, \mathbf{v}^{n+1})$. Faraday's law then performs a final advance $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the accepted moments.
+\end{enumerate}
+Both predictor--corrector schemes yield second-order accuracy and reduce absolute dispersion errors by $\sim 5\times$, but require two particle pushes and two field advance passes per macro time step.
 
-Optional predictor--corrector variants (\texttt{rk4-pc}, \texttt{ssprk3-pc}) wrap the particle push and Faraday subcycling in a two-pass cycle, linearly interpolating moments between integer levels $X^n$ and $X^{*,n+1}$ via $X(h_{\text{step}}) = (1 - h_{\text{step}}) X^n + h_{\text{step}} X^{*,n+1}$ and advancing particles in the corrector pass with the time-averaged electric field $\mathbf{E}^{n+1/2} = \tfrac{1}{2}(\mathbf{E}^n + \mathbf{E}^{*,n+1})$ and midpoint magnetic field $\mathbf{B}^{n+1/2}$.
-
-\subsection{Upwind (Rusanov) dissipation}
+\subsection{Upwind (Rusanov) dissipation in the hybrid solver}
 \label{sec:hybrid_upwind}
+
+\begin{quote}
+\small
+\textbf{Note on solver distinctions:} The scheme detailed here is the nodal Rusanov dissipation for the hybrid PIC solver (\texttt{\#HYBRIDUPWIND}), completely separate from the semi-implicit full-PIC upwind schemes described in Section~\ref{sec:upwind_E} and Section~\ref{sec:upwind_B}.
+\end{quote}
 
 Central-difference schemes applied to the generalized Ohm's law and Faraday's law are susceptible to odd--even grid-scale decoupling ($2\Delta x$ modes), macroparticle shot noise, and numerical oscillations across steep gradients or shocks. While hyper-resistivity can suppress short-wavelength noise, its explicit parabolic stability limit $\Delta t_{\text{sub}} \propto \Delta x^4 / \eta_h$ requires fine-tuned coefficients and can force severe subcycling on refined grids.
 
@@ -601,25 +630,24 @@ If this limit is exceeded, FLEKS issues a CFL warning and increases the subcycle
 
 \subsection{Algorithmic cycle and noise mitigation}
 
-The complete hybrid PIC time step proceeds through the following stages:
+The single-pass hybrid PIC time step proceeds through the following stages:
 \begin{enumerate}
-  \item \textbf{Particle Boris push:} Ions are advanced $\mathbf{v}^n \to \mathbf{v}^{n+1}$ using integer-step fields $\mathbf{E}^n, \mathbf{B}^n$; positions are updated as $\mathbf{x}^{n+1/2} = \mathbf{x}^{n-1/2} + \Delta t\,\mathbf{v}^n$.
+  \item \textbf{Particle Boris push:} Using integer-step fields $\mathbf{E}^n, \mathbf{B}^n$, particle velocities are advanced from $t^{n-1/2}$ to $t^{n+1/2}$ via Boris kick ($\Delta t_v = \tfrac{1}{2}\Delta t$ on step 0, $\Delta t$ on steps $n \ge 1$); positions are advanced over a full step $\Delta t$ using the midpoint velocity: $\mathbf{x}^{n+1} = \mathbf{x}^n + \Delta t\,\mathbf{v}^{n+1/2}$.
   \item \textbf{Kinetic source and boundary updates:} Particle boundary conditions, chemistry, charge exchange, and physical inflow flux injection are evaluated.
-  \item \textbf{Moment deposition:} Ion charge $\rho_q^{n+1/2}$ and mass momentum $(\rho\mathbf{u})_i^{n+1/2}$ are deposited on the node grid. A digital-filter smoothing can be applied to reduce particle noise.
-  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances the cell-centered $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments and stage electric fields (evaluating Ohm's law with the upwind dissipation $\mathbf{E}_{\text{upwind}}$ at intermediate stages); the node-centered $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
-  \item \textbf{Electric field assembly:} The node-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} (including $\mathbf{E}_{\text{upwind}}$) and stored for the subsequent Boris push.
+  \item \textbf{Moment deposition and smoothing:} Ion charge density $\rho_q^{n+1}$ (at integer time $t^{n+1}$) and mass momentum $(\rho\mathbf{u})_i^{n+1/2}$ (at half-integer time $t^{n+1/2}$) are deposited on the node grid. Digital-filter smoothing (\texttt{\#SMOOTHMOMENTS}) is applied to reduce particle noise.
+  \item \textbf{Electron pressure update:} If the electron pressure equation is active, $P_e$ is advanced across $\Delta t$ using the nodal electron velocity $\mathbf{u}_e = \mathbf{u}_i - \mathbf{J}/(e n_e)$.
+  \item \textbf{Faraday advance:} Subcycled explicit SSPRK3 (or RK4) advances the cell-centered $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments and stage electric fields (evaluating Ohm's law with the nodal Rusanov dissipation $\mathbf{E}_{\text{upwind}}$ at intermediate stages); the node-centered $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
+  \item \textbf{Electric field assembly:} The node-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} (including $\mathbf{E}_{\text{upwind}}$ and digital-filter smoothing \texttt{\#SMOOTE}) and stored for the subsequent Boris push.
 \end{enumerate}
 
 \subsection{Spatial and temporal accuracy}
 
 \begin{itemize}
   \item \textbf{Spatial accuracy:} The staggered cell-to-node and node-to-cell curl operators, cell-to-node field averaging, and ambipolar pressure gradient $\nabla P_e$ use compact $1\,\Delta x$ central differences that are second-order accurate in space ($\mathcal{O}(\Delta x^2)$) and preserve $\nabla\cdot\mathbf{B} = 0$ to machine precision. When optional TVD/MC upwinding (\texttt{\#HYBRIDUPWIND}) or hyper-resistivity (\texttt{\#HYPERRESISTIVITY}) is active, high-wavenumber grid-scale noise is selectively dissipated without degrading the second-order accuracy of resolved smooth waves.
-  \item \textbf{\texttt{rk4} vs.\ \texttt{ssprk3} temporal order:} Because Faraday's law is subcycled with $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$, the local truncation error of the Runge--Kutta field integrator ($\mathcal{O}(\Delta t_{\text{sub}}^4)$ for \texttt{rk4} vs.\ $\mathcal{O}(\Delta t_{\text{sub}}^3)$ for \texttt{ssprk3}) is negligible compared to the $\mathcal{O}(\Delta t^2)$ error of the outer Boris particle push and moment coupling. Consequently, \texttt{rk4} and \texttt{ssprk3} yield identical global second-order temporal convergence, and the choice between them is governed by stability limit and stage cost rather than temporal accuracy.
-  \item \textbf{Standard leapfrog (\texttt{rk4}, \texttt{ssprk3}) vs.\ predictor--corrector (\texttt{rk4-pc}, \texttt{ssprk3-pc}):}
-  \begin{itemize}
-    \item \emph{Electromagnetic and Hall-dominated waves (e.g., whistler and Alfv\'en modes):} Standard \texttt{rk4} and \texttt{ssprk3} achieve second-order temporal accuracy ($\mathcal{O}(\Delta t^2)$) without predictor--corrector iterations, owing to the initial $\mathbf{E}^0$ seeding at $t = 0$, the midpoint moment hold ($X^{n+1/2}$) during Faraday sub-stepping, and linear moment extrapolation to $t^{n+1}$. Enabling \texttt{-pc} retains second-order convergence while reducing absolute frequency dispersion errors by $\sim 5\times$ at roughly twice the computational cost per step.
-    \item \emph{Electrostatic and ambipolar-dominated waves ($\mathbf{E} = -\nabla P_e / \rho_q$, e.g., ion-acoustic modes):} In the standard single-pass cycle, the synchronous position update $\mathbf{x}^{n+1} = \mathbf{x}^n + \mathbf{v}^{n+1}\Delta t$ and direct density evaluation in $-\nabla P_e / \rho_q$ reduce electrostatic wave convergence to first order ($\mathcal{O}(\Delta t)$). The predictor--corrector schemes (\texttt{rk4-pc}, \texttt{ssprk3-pc}) restore second-order accuracy via trapezoidal particle drift $\mathbf{u}_{\text{drift}} = \tfrac{1}{2}(\mathbf{u}^n + \mathbf{u}^{n+1})$, midpoint field evaluation at $\mathbf{x}^{n+1/2} = \mathbf{x}^n + \tfrac{1}{2}\mathbf{u}^n\Delta t$, and the time-centered electric field $\mathbf{E}^{n+1/2} = \tfrac{1}{2}(\mathbf{E}^n + \mathbf{E}^{*,n+1})$.
-  \end{itemize}
+  \item \textbf{\texttt{ssprk3} vs.\ \texttt{rk4} temporal order:} Because Faraday's law is subcycled with $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$, the local truncation error of the Runge--Kutta field integrator ($\mathcal{O}(\Delta t_{\text{sub}}^3)$ for \texttt{ssprk3} vs.\ $\mathcal{O}(\Delta t_{\text{sub}}^4)$ for \texttt{rk4}) is negligible compared to the $\mathcal{O}(\Delta t^2)$ error of the outer Boris particle push and moment coupling. Consequently, \texttt{ssprk3} and \texttt{rk4} yield identical global second-order temporal convergence, and the choice between them is governed by stability limit and stage cost rather than temporal accuracy.
+  \item \textbf{Single-pass leapfrog (\texttt{ssprk3}, \texttt{rk4}) vs.\ predictor--corrector (\texttt{ssprk3-pc}, \texttt{rk4-pc}):}
+  With the staggered velocity kick ($\Delta t_v = \tfrac{1}{2}\Delta t$ on step 0 and $\Delta t$ thereafter), position drift $\Delta t_{\text{pos}} = \Delta t$, and decoupled density/momentum time-interpolation, both single-pass schemes achieve full second-order temporal convergence ($p \approx 2$) on both electromagnetic/Hall modes (whistler waves) and electrostatic/ambipolar modes (ion-acoustic waves) with only a single particle push and single field assembly per macro step.
+  The two-pass predictor--corrector schemes (\texttt{ssprk3-pc}, \texttt{rk4-pc}) use unstaggered particles at $t^n$ and time-centered fields $\mathbf{E}^{n+1/2}$, further reducing absolute frequency dispersion errors by $\sim 5\times$ at the cost of doubling the particle pushes and field solves per macro time step.
 \end{itemize}
 
 \subsection{Divergence-free magnetic field evolution with AMR}
