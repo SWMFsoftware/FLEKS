@@ -942,9 +942,10 @@ void Pic::particle_mover(int pushStage) {
   // dtVel and x by dt without modifying the mover signature.
   const bool useStaggeredHybridVel =
       (useHybridPIC && !usePredictorCorrector && pushStage == 0);
+  const Real dtPrevEff = (dtPrevHybrid > 0.0) ? dtPrevHybrid : dt;
   const Real dtVel =
       useStaggeredHybridVel
-          ? (isFirstHybridStep ? (0.5 * dt) : (0.5 * (dtPrevHybrid + dt)))
+          ? (isFirstHybridStep ? (0.5 * dt) : (0.5 * (dtPrevEff + dt)))
           : dt;
   const Real dtNextVel = useStaggeredHybridVel ? (2.0 * dt - dtVel) : dtnext;
 

@@ -649,6 +649,19 @@ void Pic::save_restart_data() {
       VisMF::Write(centerPeState[iLev],
                    restartDir + gridName + "_centerPeState" + lev_string(iLev));
     }
+    if (useHybridPIC) {
+      VisMF::Write(nodePlasmaPrev[nSpecies][iLev], restartDir + gridName +
+                                                       "_nodePlasmaPrev" +
+                                                       lev_string(iLev));
+    }
+  }
+
+  if (useHybridPIC && ParallelDescriptor::IOProcessor()) {
+    std::string stateFile = restartDir + gridName + "_hybrid_state.txt";
+    std::ofstream ofs(stateFile);
+    if (ofs.good()) {
+      ofs << (isFirstHybridStep ? 1 : 0) << " " << dtPrevHybrid << "\n";
+    }
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -739,6 +752,54 @@ void Pic::read_restart() {
   // div(E)-correction fields are full-PIC only.
   if (!useHybridPIC) {
     sum_to_center(false);
+  } else {
+    // Restore or initialize the hybrid staggering state and previous moments.
+    // Checkpointed velocities are already staggered at t^n - dt_prev/2, so a
+    // restarted run must advance them by dt (not dt/2) to preserve trajectory.
+    int haveHybridState = 0;
+    int isFirstInt = 0;
+    Real dtPrev = 0.0;
+    if (ParallelDescriptor::IOProcessor()) {
+      std::string stateFile = restartDir + gridName + "_hybrid_state.txt";
+      if (FileExists(stateFile)) {
+        std::ifstream ifs(stateFile);
+        if (ifs >> isFirstInt >> dtPrev) {
+          haveHybridState = 1;
+        }
+      }
+    }
+    ParallelDescriptor::Bcast(&haveHybridState, 1,
+                              ParallelDescriptor::IOProcessorNumber());
+    if (haveHybridState != 0) {
+      ParallelDescriptor::Bcast(&isFirstInt, 1,
+                                ParallelDescriptor::IOProcessorNumber());
+      ParallelDescriptor::Bcast(&dtPrev, 1,
+                                ParallelDescriptor::IOProcessorNumber());
+      isFirstHybridStep = (isFirstInt != 0);
+      dtPrevHybrid = dtPrev;
+    } else {
+      isFirstHybridStep = false;
+      dtPrevHybrid = tc ? tc->get_dt() : 0.0;
+    }
+
+    bool havePlasmaPrev = true;
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const std::string name =
+          restartDir + gridName + "_nodePlasmaPrev" + lev_string(iLev);
+      if (!FileExists(name) && !FileExists(name + "_H")) {
+        havePlasmaPrev = false;
+      }
+    }
+    if (havePlasmaPrev) {
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        VisMF::Read(nodePlasmaPrev[nSpecies][iLev], restartDir + gridName +
+                                                        "_nodePlasmaPrev" +
+                                                        lev_string(iLev));
+        nodePlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+    } else {
+      seed_first_hybrid_step();
+    }
   }
 
   // The default of doNeedFillNewCell is true. The PIC cells have been filled in

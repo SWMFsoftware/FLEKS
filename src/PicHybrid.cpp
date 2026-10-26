@@ -366,24 +366,62 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrFaceZ = arrFace[iz_];
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      Real rho = wCurRho * moments(i, j, k, iRho_);
-      Real mx = wCurM * moments(i, j, k, iMx_);
-      Real my = wCurM * moments(i, j, k, iMy_);
-      Real mz = wCurM * moments(i, j, k, iMz_);
+      const Real rhoCur = moments(i, j, k, iRho_);
+      const Real rhoPrev = usePrevMoments ? momentsPrev(i, j, k, iRho_) : 0.0;
+      Real rho = wCurRho * rhoCur;
       if (usePrevMoments) {
-        rho += wPrevRho * momentsPrev(i, j, k, iRho_);
-        mx += wPrevM * momentsPrev(i, j, k, iMx_);
-        my += wPrevM * momentsPrev(i, j, k, iMy_);
-        mz += wPrevM * momentsPrev(i, j, k, iMz_);
+        rho += wPrevRho * rhoPrev;
       }
-      Real ui = 0, vi = 0, wi = 0;
+      Real ui = 0.0, vi = 0.0, wi = 0.0;
       const Real invRhoEff =
-          (rho > 0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
+          (rho > 0.0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
 
-      if (rho > 0) {
-        ui = mx * invRhoEff;
-        vi = my * invRhoEff;
-        wi = mz * invRhoEff;
+      if (usePredictorCorrector) {
+        Real mx = wCurM * moments(i, j, k, iMx_);
+        Real my = wCurM * moments(i, j, k, iMy_);
+        Real mz = wCurM * moments(i, j, k, iMz_);
+        if (usePrevMoments) {
+          mx += wPrevM * momentsPrev(i, j, k, iMx_);
+          my += wPrevM * momentsPrev(i, j, k, iMy_);
+          mz += wPrevM * momentsPrev(i, j, k, iMz_);
+        }
+        if (rho > 0.0) {
+          ui = mx * invRhoEff;
+          vi = my * invRhoEff;
+          wi = mz * invRhoEff;
+        }
+      } else {
+        // Single-pass hybrid leapfrog:
+        // moments(iMx_) carries momentum deposited at post-drift positions
+        // x^{n+1} with half-step velocities v^{n+1/2}, i.e. rho_cur *
+        // u^{n+1/2}. momentsPrev(iMx_) carries rho_prev * u^{n-1/2} at
+        // positions x^n. Directly interpolating raw momentum and dividing by
+        // time-interpolated density gives u_i = U * rho_next / ((rho_prev +
+        // rho_next)/2) != U for nonuniform density advecting at uniform U,
+        // introducing an O(dt) error. Instead, reconstruct ion fluid velocity
+        // u_i at target time hstep:
+        Real uiCur = 0.0, viCur = 0.0, wiCur = 0.0;
+        if (rhoCur > 0.0) {
+          const Real invRhoCur = 1.0 / amrex::max(rhoCur, rhoMinOhm);
+          uiCur = moments(i, j, k, iMx_) * invRhoCur;
+          viCur = moments(i, j, k, iMy_) * invRhoCur;
+          wiCur = moments(i, j, k, iMz_) * invRhoCur;
+        }
+        ui = uiCur;
+        vi = viCur;
+        wi = wiCur;
+        if (usePrevMoments && wPrevM != 0.0) {
+          Real uiPrev = 0.0, viPrev = 0.0, wiPrev = 0.0;
+          if (rhoPrev > 0.0) {
+            const Real invRhoPrev = 1.0 / amrex::max(rhoPrev, rhoMinOhm);
+            uiPrev = momentsPrev(i, j, k, iMx_) * invRhoPrev;
+            viPrev = momentsPrev(i, j, k, iMy_) * invRhoPrev;
+            wiPrev = momentsPrev(i, j, k, iMz_) * invRhoPrev;
+          }
+          ui = wCurM * uiCur + wPrevM * uiPrev;
+          vi = wCurM * viCur + wPrevM * viPrev;
+          wi = wCurM * wiCur + wPrevM * wiPrev;
+        }
       }
 
       Real bx = arrB(i, j, k, ix_);
