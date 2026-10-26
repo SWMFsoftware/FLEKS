@@ -1407,6 +1407,9 @@ void Pic::sum_moments(bool updateDt) {
 
   if (useHybridPIC) {
     convert_and_sum_moments();
+    if (updateDt) {
+      smooth_moments();
+    }
   }
 
   if (updateDt) {
@@ -1459,7 +1462,7 @@ void Pic::sum_moments(bool updateDt) {
       calc_hybrid_dt_and_subcycle(dtNext, nSubNext, doReport);
       if (tc->get_cfl() > 0) {
         tc->set_next_dt(dtNext);
-        if (tc->get_dt() < 0) {
+        if (tc->get_dt() < 0 || dtNext < tc->get_dt()) {
           tc->set_dt(dtNext);
         }
       }

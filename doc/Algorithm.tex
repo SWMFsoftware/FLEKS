@@ -417,19 +417,19 @@ where:
   \end{equation}
   where $C_h$ is a dimensionless tuning parameter, typically $10^{-3}$--$10^{-2}$.
 \end{itemize}
-The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$. The explicit resistive and hyper-resistive diffusion terms must satisfy parabolic CFL stability bounds:
+The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$, using the staggered cell-to-node curl operator, whose composite curl-curl Nyquist wavenumber squared is $k_{\max}^2 = \max_d (4/\Delta x_d^2)$. The explicit resistive, hyper-resistive, and upwind (Section~\ref{sec:hybrid_upwind}) dissipative terms act together on the negative real axis and must satisfy the combined real-axis CFL stability bound:
 \begin{equation}
-\frac{\eta k_{\max}^2 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL}}, \qquad \frac{\eta_h k_{\max}^4 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL}},
+\left( \frac{\eta k_{\max}^2}{4\pi} + \frac{\eta_h k_{\max}^2 l_{\max}}{4\pi} + \Omega_{\text{upwind}} \right) \Delta t_{\text{sub}} \le C_{\text{CFL,real}},
 \end{equation}
-where $C_{\text{CFL}} = 2.785$ for RK4 and $2.513$ for SSPRK3. The upwind dissipation term satisfies the hyperbolic CFL criterion discussed in Section~\ref{sec:hybrid_upwind}.
-
-\subsection{Collocated field layout}
-
-The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centers. The generalized Ohm's law is therefore assembled at the nodes from the node-centered moments and the cell-centered $\mathbf{B}$, and the Faraday update advances the cell-centered $\mathbf{B}$; the node-centered $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values. The cell-centered field is differentiated with the compact $2\,\Delta x$ central-difference stencil
+where $l_{\max} = \sum_d (4/\Delta x_d^2)$ and $C_{\text{CFL,real}} = 2.785$ for RK4 and $2.513$ for SSPRK3 (with $\eta$ and $\eta_h$ combining both global and regional contributions), while the dispersive Hall-whistler wave satisfies the imaginary-axis stability bound:
 \begin{equation}
-(\nabla \times \mathbf{B})_{i,j,k} \propto \frac{\mathbf{B}_{i+1} - \mathbf{B}_{i-1}}{2\Delta x},
+\frac{k_{\max}^2 |\mathbf{B}|_{\max} \Delta t_{\text{sub}}}{4\pi \rho_{\text{eff}}} \le C_{\text{CFL,imag}},
 \end{equation}
-whose discrete Fourier kernel vanishes identically at the grid Nyquist mode ($k\Delta x = \pi$). This eliminates the grid-scale odd-even decoupling instability that would otherwise force heavy Hall sub-cycling.
+where $C_{\text{CFL,imag}} = 2.785$ ($2\sqrt{2} \approx 2.828$) for RK4 and $\sqrt{3} \approx 1.732$ for SSPRK3.
+
+\subsection{Staggered field layout}
+
+The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centers. The generalized Ohm's law is therefore assembled at the nodes from the node-centered moments and the cell-centered $\mathbf{B}$ (with $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$ computed via the compact $1\,\Delta x$ cell-to-node curl), and the Faraday update advances the cell-centered $\mathbf{B}$ via the compact $1\,\Delta x$ node-to-cell curl; the node-centered $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values.
 
 \subsection{Time integration and subcycling of $\mathbf{B}$}
 
@@ -439,15 +439,18 @@ The magnetic field is advanced via Faraday's law:
 \end{equation}
 using an explicit Runge--Kutta integrator. Two choices are provided:
 \begin{itemize}
-  \item \textbf{RK4}: Classical fourth-order Runge--Kutta. Because RK4 has a wide stability region along the imaginary axis (where Hall-whistler oscillations reside), a single subcycle per coarse step is often sufficient.
-  \item \textbf{SSPRK3}: Strong-stability-preserving third-order Runge--Kutta with time-centered intermediate stages.
+  \item \textbf{RK4 (default)}: Classical 4-stage fourth-order Runge--Kutta. Because RK4 has a larger imaginary-axis stability region per stage ($2\sqrt{2}/4 \approx 0.707$ vs.\ $\sqrt{3}/3 \approx 0.577$ for SSPRK3), it requires $\sim 60\%$ fewer subcycles ($\sim 18\%$ fewer RHS stage evaluations) when limited by the Hall-whistler CFL.
+  \item \textbf{SSPRK3}: 3-stage strong-stability-preserving third-order Runge--Kutta, costing $25\%$ fewer stage evaluations per sub-step at a fixed subcycle count and providing TVD properties for hyperbolic/upwind terms.
 \end{itemize}
 Within one coarse particle time step $\Delta t$, $N_{\text{sub}}$ subcycles of step size $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$ are taken.
 
-To achieve second-order temporal accuracy, the ion moments are linearly interpolated across each magnetic sub-step fraction $h_{\text{step}} \in [0, 1]$ between the previous deposit $X^{n-1/2}$ and the current deposit $X^{n+1/2}$:
+To achieve second-order temporal accuracy in the standard leapfrog cycle (\texttt{rk4}, \texttt{ssprk3}), the ion moments are parameterized by the step fraction $h_{\text{step}} \in [0, 1]$ between the previous deposit $X^{n-1/2}$ and the current deposit $X^{n+1/2}$:
 \begin{equation}
 X(h_{\text{step}}) = \left(\tfrac{1}{2}-h_{\text{step}}\right) X^{n-1/2} + \left(\tfrac{1}{2}+h_{\text{step}}\right) X^{n+1/2}.
 \end{equation}
+During the Faraday sub-steps across $[t^n, t^{n+1}]$, $h_{\text{step}} = 0.5$ is held constant ($X = X^{n+1/2}$, already centered at the midpoint of $[t^n, t^{n+1}]$) to preserve second-order midpoint accuracy while avoiding secant-ramp whistler instabilities at $\omega_w \Delta t \sim \pi$; after the sub-stepping loop completes $\mathbf{B}^{n+1}$, the electric field $\mathbf{E}^{n+1}$ at $t^{n+1}$ is evaluated with $h_{\text{step}} = 1.0$ ($X^{n+1} = -\tfrac{1}{2}X^{n-1/2} + \tfrac{3}{2}X^{n+1/2}$).
+
+Optional predictor--corrector variants (\texttt{rk4-pc}, \texttt{ssprk3-pc}) wrap the particle push and Faraday subcycling in a two-pass cycle, linearly interpolating moments between integer levels $X^n$ and $X^{*,n+1}$ via $X(h_{\text{step}}) = (1 - h_{\text{step}}) X^n + h_{\text{step}} X^{*,n+1}$ and advancing particles in the corrector pass with the time-averaged electric field $\mathbf{E}^{n+1/2} = \tfrac{1}{2}(\mathbf{E}^n + \mathbf{E}^{*,n+1})$ and midpoint magnetic field $\mathbf{B}^{n+1/2}$.
 
 \subsection{Upwind (Rusanov) dissipation}
 \label{sec:hybrid_upwind}
@@ -606,6 +609,18 @@ The complete hybrid PIC time step proceeds through the following stages:
   \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances the cell-centered $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments and stage electric fields (evaluating Ohm's law with the upwind dissipation $\mathbf{E}_{\text{upwind}}$ at intermediate stages); the node-centered $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
   \item \textbf{Electric field assembly:} The node-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} (including $\mathbf{E}_{\text{upwind}}$) and stored for the subsequent Boris push.
 \end{enumerate}
+
+\subsection{Spatial and temporal accuracy}
+
+\begin{itemize}
+  \item \textbf{Spatial accuracy:} The staggered cell-to-node and node-to-cell curl operators, cell-to-node field averaging, and ambipolar pressure gradient $\nabla P_e$ use compact $1\,\Delta x$ central differences that are second-order accurate in space ($\mathcal{O}(\Delta x^2)$) and preserve $\nabla\cdot\mathbf{B} = 0$ to machine precision. When optional TVD/MC upwinding (\texttt{\#HYBRIDUPWIND}) or hyper-resistivity (\texttt{\#HYPERRESISTIVITY}) is active, high-wavenumber grid-scale noise is selectively dissipated without degrading the second-order accuracy of resolved smooth waves.
+  \item \textbf{\texttt{rk4} vs.\ \texttt{ssprk3} temporal order:} Because Faraday's law is subcycled with $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$, the local truncation error of the Runge--Kutta field integrator ($\mathcal{O}(\Delta t_{\text{sub}}^4)$ for \texttt{rk4} vs.\ $\mathcal{O}(\Delta t_{\text{sub}}^3)$ for \texttt{ssprk3}) is negligible compared to the $\mathcal{O}(\Delta t^2)$ error of the outer Boris particle push and moment coupling. Consequently, \texttt{rk4} and \texttt{ssprk3} yield identical global second-order temporal convergence, and the choice between them is governed by stability limit and stage cost rather than temporal accuracy.
+  \item \textbf{Standard leapfrog (\texttt{rk4}, \texttt{ssprk3}) vs.\ predictor--corrector (\texttt{rk4-pc}, \texttt{ssprk3-pc}):}
+  \begin{itemize}
+    \item \emph{Electromagnetic and Hall-dominated waves (e.g., whistler and Alfv\'en modes):} Standard \texttt{rk4} and \texttt{ssprk3} achieve second-order temporal accuracy ($\mathcal{O}(\Delta t^2)$) without predictor--corrector iterations, owing to the initial $\mathbf{E}^0$ seeding at $t = 0$, the midpoint moment hold ($X^{n+1/2}$) during Faraday sub-stepping, and linear moment extrapolation to $t^{n+1}$. Enabling \texttt{-pc} retains second-order convergence while reducing absolute frequency dispersion errors by $\sim 5\times$ at roughly twice the computational cost per step.
+    \item \emph{Electrostatic and ambipolar-dominated waves ($\mathbf{E} = -\nabla P_e / \rho_q$, e.g., ion-acoustic modes):} In the standard single-pass cycle, the synchronous position update $\mathbf{x}^{n+1} = \mathbf{x}^n + \mathbf{v}^{n+1}\Delta t$ and direct density evaluation in $-\nabla P_e / \rho_q$ reduce electrostatic wave convergence to first order ($\mathcal{O}(\Delta t)$). The predictor--corrector schemes (\texttt{rk4-pc}, \texttt{ssprk3-pc}) restore second-order accuracy via trapezoidal particle drift $\mathbf{u}_{\text{drift}} = \tfrac{1}{2}(\mathbf{u}^n + \mathbf{u}^{n+1})$, midpoint field evaluation at $\mathbf{x}^{n+1/2} = \mathbf{x}^n + \tfrac{1}{2}\mathbf{u}^n\Delta t$, and the time-centered electric field $\mathbf{E}^{n+1/2} = \tfrac{1}{2}(\mathbf{E}^n + \mathbf{E}^{*,n+1})$.
+  \end{itemize}
+\end{itemize}
 
 \subsection{Divergence-free magnetic field evolution with AMR}
 
