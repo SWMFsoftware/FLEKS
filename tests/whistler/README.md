@@ -15,12 +15,15 @@ hybrid timestepping schemes, and the full resistive generalized Ohm's law:
 | **Resistive** | `PARAM.in.resistive` | Hybrid PIC (`rk4`) | Full Ohm's law with finite resistivity $\eta$ and $T_e$ |
 | **RK4-MC** | `PARAM.in.rk4_mc` | Hybrid PIC (`rk4`) | RK4 with plain MC upwind (`upwindSensorFloor = 1`), run to 24 s |
 | **RK4-hyper** | `PARAM.in.rk4_hyper` | Hybrid PIC (`rk4`) | RK4 with hyper-resistivity alone (upwind off), run to 24 s |
+| **RK4-undamped** | `PARAM.in.rk4_undamped` | Hybrid PIC (`rk4`) | RK4 with all dissipation disabled (`useHybridUpwind = F`, `etaHyperCh = 0`), run to 24 s |
+| **SSPRK3-undamped** | `PARAM.in.ssprk3_undamped` | Hybrid PIC (`ssprk3`) | SSPRK3 with all dissipation disabled (`useHybridUpwind = F`, `etaHyperCh = 0`), run to 24 s |
 
-`rk4`, `rk4_mc` and `rk4_hyper` run past the time the grid-scale mode of
-gotcha 4 needs to grow without dissipation, so each guards one dissipation
-scheme: the transverse amplitude must grow less than 1.5× (all three: 1.3×;
-without dissipation the ion energy rises 95×). The other hybrid variants use
-the default dissipation for 10 s.
+`rk4`, `rk4_mc`, `rk4_hyper`, `rk4_undamped` and `ssprk3_undamped` run to 24 s
+(~6 periods): the first three guard each dissipation scheme, while
+`rk4_undamped` and `ssprk3_undamped` guard the midpoint-hold moment schedule
+across Faraday sub-steps (`hstep = 0.5`), requiring the transverse amplitude to
+grow less than 1.5× even with all dissipation disabled. The other hybrid
+variants use the default dissipation for 10 s.
 
 All variants are seeded with the same x-aligned, transverse, circularly
 polarized **right-hand (whistler)** wave (`#TESTCASE HybridWave`,
@@ -110,8 +113,10 @@ python3 tests/validate_tests.py --test=whistler.rk4_pc       # Hybrid RK4-PC
 python3 tests/validate_tests.py --test=whistler.ssprk3       # Hybrid SSPRK3
 python3 tests/validate_tests.py --test=whistler.ssprk3_pc    # Hybrid SSPRK3-PC
 python3 tests/validate_tests.py --test=whistler.resistive    # Full generalized Ohm's law
-python3 tests/validate_tests.py --test=whistler.rk4_mc       # RK4 with plain MC upwind, 24 s
-python3 tests/validate_tests.py --test=whistler.rk4_hyper    # RK4 with hyper-resistivity alone, 24 s
+python3 tests/validate_tests.py --test=whistler.rk4_mc          # RK4 with plain MC upwind, 24 s
+python3 tests/validate_tests.py --test=whistler.rk4_hyper       # RK4 with hyper-resistivity alone, 24 s
+python3 tests/validate_tests.py --test=whistler.rk4_undamped    # RK4 undamped midpoint-hold regression, 24 s
+python3 tests/validate_tests.py --test=whistler.ssprk3_undamped # SSPRK3 undamped midpoint-hold regression, 24 s
 ```
 
 ### Dispersion-relation scan
