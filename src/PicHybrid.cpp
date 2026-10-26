@@ -2515,7 +2515,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
   for (const auto& cfg : regionalResistivityConfigs) {
     maxRegionalEta = amrex::max(maxRegionalEta, cfg.etaCode);
   }
-  const Real maxEta = amrex::max(etaResistivity, maxRegionalEta);
+  const Real maxEta = etaResistivity + maxRegionalEta;
 
   Real dtMacroMin = std::numeric_limits<Real>::max();
   Real dtSubMin = std::numeric_limits<Real>::max();
