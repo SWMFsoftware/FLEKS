@@ -413,11 +413,11 @@ where:
   \end{equation}
   where $C_h$ is a dimensionless tuning parameter, typically $10^{-3}$--$10^{-2}$.
 \end{itemize}
-The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$, using the staggered cell-to-node curl operator, whose composite curl-curl Nyquist wavenumber squared is $k_{\max}^2 = \max_d (4/\Delta x_d^2)$. The explicit resistive and hyper-resistive diffusion terms must satisfy real-axis parabolic CFL stability bounds:
+The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$, using the staggered cell-to-node curl operator, whose composite curl-curl Nyquist wavenumber squared is $k_{\max}^2 = \max_d (4/\Delta x_d^2)$. The explicit resistive, hyper-resistive, and upwind dissipative terms act together on the negative real axis and must satisfy the combined real-axis CFL stability bound:
 \begin{equation}
-\frac{\eta k_{\max}^2 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL,real}}, \qquad \frac{\eta_h k_{\max}^2 l_{\max} \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL,real}},
+\left( \frac{\eta k_{\max}^2}{4\pi} + \frac{\eta_h k_{\max}^2 l_{\max}}{4\pi} + \omega_{\text{upwind}} \right) \Delta t_{\text{sub}} \le C_{\text{CFL,real}},
 \end{equation}
-where $l_{\max} = \sum_d (4/\Delta x_d^2)$ and $C_{\text{CFL,real}} = 2.785$ for RK4 and $2.513$ for SSPRK3, while the dispersive Hall-whistler wave satisfies the imaginary-axis stability bound:
+where $l_{\max} = \sum_d (4/\Delta x_d^2)$ and $C_{\text{CFL,real}} = 2.785$ for RK4 and $2.513$ for SSPRK3 (with $\eta$ and $\eta_h$ combining both global and regional contributions), while the dispersive Hall-whistler wave satisfies the imaginary-axis stability bound:
 \begin{equation}
 \frac{k_{\max}^2 |\mathbf{B}|_{\max} \Delta t_{\text{sub}}}{4\pi \rho_{\text{eff}}} \le C_{\text{CFL,imag}},
 \end{equation}
