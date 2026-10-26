@@ -314,7 +314,7 @@ To maintain Gauss's law $\nabla \cdot \mathbf{E} = 4\pi \rho_c$, an optional div
 
 \section{Upwind schemes and comoving frame solving}
 
-In simulations featuring high-speed plasma flows, shocks, and sharp boundary layers, standard central-difference discretizations can produce unphysical dispersion, numerical oscillations, and grid heating. FLEKS incorporates a comoving frame formulation and directional upwind artificial viscosity schemes for both the electric and magnetic fields.
+In simulations featuring high-speed plasma flows, shocks, and sharp boundary layers, standard central-difference discretizations can produce unphysical dispersion, numerical oscillations, and grid heating. FLEKS incorporates a comoving frame formulation and directional upwind artificial viscosity schemes for both the electric and magnetic fields. (Note: The schemes described in Section~\ref{sec:upwind_E} and Section~\ref{sec:upwind_B} apply to the full-PIC semi-implicit solver; the hybrid PIC solver employs the nodal Rusanov dissipation described in Section~\ref{sec:hybrid_upwind}.)
 
 \subsection{Comoving frame field solving}
 
@@ -338,6 +338,7 @@ When plasmas possess large bulk drift velocities (such as in the supersonic sola
 \end{enumerate}
 
 \subsection{Upwind scheme for electric field}
+\label{sec:upwind_E}
 
 A directional Lax--Friedrichs artificial viscosity is added to the semi-implicit electric field equation to suppress numerical oscillations near shocks and steep gradients.
 
@@ -369,6 +370,7 @@ In the implicit electric field operator~\eqref{eq:esolve_operator}, this upwind 
 When the limiter coefficients $c_{R/L}$ are evaluated from the lagged field $\mathbf{E}^n$, the operator remains strictly linear and GMRES is used. When $c_{R/L}$ depends on the current iterate $\mathbf{E}$, the operator is non-linear and a matrix-free Newton--Krylov solver is applied instead.
 
 \subsection{Upwind scheme for magnetic field}
+\label{sec:upwind_B}
 
 A directional upwind diffusion correction is applied to the cell-centered magnetic field following the Faraday update. The correction applied to cell $i$ is:
 \begin{equation}
@@ -393,6 +395,7 @@ The electric field is assembled on the node grid from the node-centered ion flui
            + \eta\,\mathbf{J}
            + \frac{\mathbf{J} \times \mathbf{B}}{\rho_q}
            - \frac{\nabla P_e}{\rho_q}
+           + \mathbf{E}_{\text{upwind}}
            - \frac{\eta_h}{4\pi}\,\nabla \times (\nabla^2 \mathbf{B}),
 \label{eq:ohmslaw}
 \end{equation}
@@ -407,15 +410,16 @@ where:
     \item Adiabatic ($\gamma > 1$): $P_e = P_0 (\rho/\rho_0)^\gamma$, where $P_0 = \rho_0 T_e$.
   \end{itemize}
   A minimum density floor $\rho_{\min}$ is applied to the $1/\rho_q$ factors in the Hall and electron pressure terms to prevent unbounded contributions in near-vacuum cells.
+  \item $\mathbf{E}_{\text{upwind}}$ is the \emph{upwind (Rusanov) dissipation} term (Section~\ref{sec:hybrid_upwind}), enabled by default (\texttt{\#HYBRIDUPWIND}). It adds directional wave dissipation to suppress grid-scale oscillations while strictly preserving discrete $\nabla \cdot \mathbf{B} = 0$.
   \item $-(\eta_h/4\pi)\,\nabla\times(\nabla^2\mathbf{B})$ is the \emph{hyper-resistivity} term. Hyper-resistivity damps grid-scale PIC shot noise without introducing excessive dissipation at large scales. The coefficient $\eta_h$ can be set to scale with the grid resolution:
   \begin{equation}
   \eta_h = 4\pi C_h \frac{\Delta x_{\min}^4}{\Delta t_{\text{sub}}},
   \end{equation}
   where $C_h$ is a dimensionless tuning parameter, typically $10^{-3}$--$10^{-2}$.
 \end{itemize}
-The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$, using the staggered cell-to-node curl operator, whose composite curl-curl Nyquist wavenumber squared is $k_{\max}^2 = \max_d (4/\Delta x_d^2)$. The explicit resistive, hyper-resistive, and upwind dissipative terms act together on the negative real axis and must satisfy the combined real-axis CFL stability bound:
+The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$, using the staggered cell-to-node curl operator, whose composite curl-curl Nyquist wavenumber squared is $k_{\max}^2 = \max_d (4/\Delta x_d^2)$. The explicit resistive, hyper-resistive, and upwind (Section~\ref{sec:hybrid_upwind}) dissipative terms act together on the negative real axis and must satisfy the combined real-axis CFL stability bound:
 \begin{equation}
-\left( \frac{\eta k_{\max}^2}{4\pi} + \frac{\eta_h k_{\max}^2 l_{\max}}{4\pi} + \omega_{\text{upwind}} \right) \Delta t_{\text{sub}} \le C_{\text{CFL,real}},
+\left( \frac{\eta k_{\max}^2}{4\pi} + \frac{\eta_h k_{\max}^2 l_{\max}}{4\pi} + \Omega_{\text{upwind}} \right) \Delta t_{\text{sub}} \le C_{\text{CFL,real}},
 \end{equation}
 where $l_{\max} = \sum_d (4/\Delta x_d^2)$ and $C_{\text{CFL,real}} = 2.785$ for RK4 and $2.513$ for SSPRK3 (with $\eta$ and $\eta_h$ combining both global and regional contributions), while the dispersive Hall-whistler wave satisfies the imaginary-axis stability bound:
 \begin{equation}
@@ -448,6 +452,153 @@ During the Faraday sub-steps across $[t^n, t^{n+1}]$, $h_{\text{step}} = 0.5$ is
 
 Optional predictor--corrector variants (\texttt{rk4-pc}, \texttt{ssprk3-pc}) wrap the particle push and Faraday subcycling in a two-pass cycle, linearly interpolating moments between integer levels $X^n$ and $X^{*,n+1}$ via $X(h_{\text{step}}) = (1 - h_{\text{step}}) X^n + h_{\text{step}} X^{*,n+1}$ and advancing particles in the corrector pass with the time-averaged electric field $\mathbf{E}^{n+1/2} = \tfrac{1}{2}(\mathbf{E}^n + \mathbf{E}^{*,n+1})$ and midpoint magnetic field $\mathbf{B}^{n+1/2}$.
 
+\subsection{Upwind (Rusanov) dissipation}
+\label{sec:hybrid_upwind}
+
+Central-difference schemes applied to the generalized Ohm's law and Faraday's law are susceptible to odd--even grid-scale decoupling ($2\Delta x$ modes), macroparticle shot noise, and numerical oscillations across steep gradients or shocks. While hyper-resistivity can suppress short-wavelength noise, its explicit parabolic stability limit $\Delta t_{\text{sub}} \propto \Delta x^4 / \eta_h$ requires fine-tuned coefficients and can force severe subcycling on refined grids.
+
+To provide robust, scale-aware dissipation without parabolic time-step penalties, FLEKS implements a directional upwind (Rusanov / local Lax--Friedrichs) dissipation scheme (\texttt{\#HYBRIDUPWIND}), which is enabled by default in the hybrid solver.
+
+\subsubsection{Nodal Rusanov formulation and divergence preservation}
+
+In standard finite-volume magnetohydrodynamics, Rusanov dissipation diffuses cell-centered fluxes. If applied directly as an artificial diffusion on the cell-centered magnetic field (as in the full-PIC \texttt{\#UPWINDB} option), directional dissipation violates the solenoidal constraint $\nabla \cdot \mathbf{B} = 0$, requiring hyperbolic or elliptic divergence cleaning.
+
+In the hybrid PIC solver, FLEKS circumvents this limitation by injecting the dissipation directly into the node-centered electric field in Ohm's law:
+\begin{equation}
+\mathbf{E}_{\text{upwind}} = \sum_{d=1}^D \frac{a_d}{2}\, \hat{\mathbf{e}}_d \times \left(\mathbf{B}^R_d - \mathbf{B}^L_d\right),
+\label{eq:hybrid_upwind}
+\end{equation}
+where $\hat{\mathbf{e}}_d$ is the unit vector along spatial direction $d \in \{x, y, z\}$, $a_d$ is the directional characteristic signal speed, and $\mathbf{B}^L_d, \mathbf{B}^R_d$ are the reconstructed magnetic field states on the low and high sides of the node along direction $d$.
+
+When Faraday's law $\partial \mathbf{B}/\partial t = -\nabla \times \mathbf{E}$ is evaluated via the discrete node-to-cell curl $\operatorname{curl}_{\text{node}\to\text{center}}$, the contribution of $\mathbf{E}_{\text{upwind}}$ along direction $d$ becomes:
+\begin{equation}
+-\nabla \times \left[ \frac{a_d}{2}\, \hat{\mathbf{e}}_d \times \Delta\mathbf{B}_d \right], \qquad \Delta\mathbf{B}_d \equiv \mathbf{B}^R_d - \mathbf{B}^L_d.
+\end{equation}
+For example, along the $x$-direction ($d=x$, $\hat{\mathbf{e}}_x$):
+\begin{equation}
+\hat{\mathbf{e}}_x \times \Delta\mathbf{B}_x = -\Delta B_{x,z}\,\hat{\mathbf{e}}_y + \Delta B_{x,y}\,\hat{\mathbf{e}}_z,
+\end{equation}
+and taking the curl yields:
+\begin{align}
+(-\nabla \times \mathbf{E}_{\text{upwind}, x})_x &= 0, \\
+(-\nabla \times \mathbf{E}_{\text{upwind}, x})_y &= \partial_x E_{\text{upwind}, z} = \partial_x \left( \frac{a_x}{2}\,\Delta B_{x,y} \right), \\
+(-\nabla \times \mathbf{E}_{\text{upwind}, x})_z &= -\partial_x E_{\text{upwind}, y} = \partial_x \left( \frac{a_x}{2}\,\Delta B_{x,z} \right).
+\end{align}
+In a one-dimensional discrete stencil, the node-to-cell curl advances cell $j$ for each transverse component as:
+\begin{equation}
+\frac{\partial B_j}{\partial t} = \dots + \frac{a}{2\Delta x} \left( J_{j+1/2} - J_{j-1/2} \right),
+\end{equation}
+where $J_{j+1/2} = \mathbf{B}^R_{j+1/2} - \mathbf{B}^L_{j+1/2}$ is the jump across face $j+1/2$. This formulation guarantees three crucial properties:
+\begin{enumerate}
+  \item \textbf{Normal field invariance:} The longitudinal magnetic field component normal to the face ($\mathbf{B} \cdot \hat{\mathbf{e}}_d$) satisfies $\hat{\mathbf{e}}_d \times (\Delta B_d\,\hat{\mathbf{e}}_d) = 0$; hence, normal magnetic flux across cell interfaces is never diffused.
+  \item \textbf{Machine-precision divergence preservation:} Because $\mathbf{E}_{\text{upwind}}$ is added directly to the nodal electric field, the discrete identity
+  \begin{equation}
+  \operatorname{div}_{\text{center}}\left(\operatorname{curl}_{\text{node}\to\text{center}} \mathbf{E}\right) \equiv 0
+  \end{equation}
+  holds unconditionally on uniform grids and across AMR hierarchies (where the standard coarse--fine interface electric field synchronization applies to $\mathbf{E}_{\text{upwind}}$ without modification). The update preserves $\nabla \cdot \mathbf{B} = 0$ to machine precision without requiring any divergence cleaning.
+  \item \textbf{Intrinsic field preservation:} Jumps $\mathbf{B}^R_d - \mathbf{B}^L_d$ are reconstructed exclusively from the evolved magnetic field $\mathbf{B}$; static intrinsic dipole or background fields $\mathbf{B}_0$ are excluded, avoiding spurious diffusion of planetary dipoles.
+\end{enumerate}
+
+\subsubsection{MUSCL reconstruction and slope limiters}
+
+The cell-centered magnetic field $\mathbf{B}$ is reconstructed to interface states using a high-resolution MUSCL approach. Across the face between cells $i-1$ and $i$ along direction $d$:
+\begin{equation}
+\mathbf{B}^L_{i-1/2} = \mathbf{B}_{i-1} + \frac{1}{2}\mathbf{s}_{i-1}, \qquad \mathbf{B}^R_{i-1/2} = \mathbf{B}_i - \frac{1}{2}\mathbf{s}_i,
+\end{equation}
+where $\mathbf{s}_i$ is the limited slope vector in cell $i$. For each field component, denoting consecutive differences $\Delta_L = B_i - B_{i-1}$ and $\Delta_R = B_{i+1} - B_i$, FLEKS supports four slope limiters (\texttt{upwindLimiter}):
+\begin{itemize}
+  \item \texttt{upwind1} (first-order): $\mathbf{s}_i = 0$, giving an unattenuated first-order jump $\mathbf{B}^R - \mathbf{B}^L = B_i - B_{i-1}$.
+  \item \texttt{minmod}:
+  \begin{equation}
+  s = \operatorname{minmod}(\Delta_L, \Delta_R) = \begin{cases}
+  \min(\Delta_L, \Delta_R), & \Delta_L > 0 \text{ and } \Delta_R > 0, \\
+  \max(\Delta_L, \Delta_R), & \Delta_L < 0 \text{ and } \Delta_R < 0, \\
+  0, & \Delta_L \Delta_R \le 0.
+  \end{cases}
+  \end{equation}
+  \item \texttt{vanleer}:
+  \begin{equation}
+  s = \begin{cases}
+  \dfrac{2\Delta_L \Delta_R}{\Delta_L + \Delta_R}, & \Delta_L \Delta_R > 0, \\
+  0, & \Delta_L \Delta_R \le 0.
+  \end{cases}
+  \end{equation}
+  \item \texttt{mc} (monotonized central, default):
+  \begin{equation}
+  s = \begin{cases}
+  \operatorname{sgn}(\Delta_L)\min\left(2|\Delta_L|,\, 2|\Delta_R|,\, \frac{1}{2}|\Delta_L + \Delta_R|\right), & \Delta_L \Delta_R > 0, \\
+  0, & \Delta_L \Delta_R \le 0.
+  \end{cases}
+  \end{equation}
+\end{itemize}
+
+\paragraph{Transverse face averaging.}
+In 2D and 3D, nodes are surrounded by multiple cell faces perpendicular to direction $d$. To eliminate duplicate reconstructions and maintain identical stencil symmetry with $\operatorname{curl}_{\text{center}\to\text{node}}$, each face jump is computed once on the face grid and stored. The jump at node $(i,j,k)$ is then formed by averaging the surrounding face jumps along the transverse directions (over 2 faces in 2D, 4 faces in 3D):
+\begin{equation}
+\Delta\mathbf{B}_{d, \text{node}} = \frac{1}{2^{D-1}} \sum_{\text{transverse}} \Delta\mathbf{B}_{d, \text{face}}.
+\end{equation}
+
+\subsubsection{Characteristic signal speed}
+
+The directional propagation speed $a_d$ governing the Rusanov dissipation is:
+\begin{equation}
+a_d = |u_{e,d}| + c_{\text{fast}} + \alpha_w\,\frac{|\mathbf{B}|}{4\rho_{\text{eff}}\Delta x_d},
+\label{eq:hybrid_upwind_speed}
+\end{equation}
+where:
+\begin{itemize}
+  \item $\mathbf{u}_e = \mathbf{u}_i - \mathbf{J}/\rho_{\text{eff}}$ is the electron fluid velocity, accounting for Hall drift (reducing to ion bulk velocity $\mathbf{u}_i$ when the Hall term is disabled). Here $\rho_{\text{eff}} = \max(\rho, \rho_{\min})$ avoids singularities in depleted regions.
+  \item $c_{\text{fast}} = \sqrt{v_A^2 + c_{s,e}^2} = \sqrt{\frac{|\mathbf{B}|^2}{4\pi\rho_{\text{eff}}} + \gamma_e T_e}$ is the fast magnetosonic speed based on the local magnetic field and electron temperature ($c_{s,e}^2 = \gamma_e T_e$).
+  \item The final term represents the whistler wave phase speed at the grid cutoff wavenumber $k_{\max, d} = \pi / \Delta x_d$:
+  \begin{equation}
+  v_{\phi, w} = \frac{\omega_w}{k_{\max, d}} = \frac{k_{\max, d}|\mathbf{B}|}{4\pi\rho_{\text{eff}}} = \frac{\pi|\mathbf{B}|}{4\pi\rho_{\text{eff}}\Delta x_d} = \frac{|\mathbf{B}|}{4\rho_{\text{eff}}\Delta x_d},
+  \end{equation}
+  scaled by the dimensionless coefficient $\alpha_w = \texttt{upwindCoefWhistler}$ (default $0.0$).
+\end{itemize}
+Setting $\alpha_w = 0.0$ upwinds with the fluid advection and fast magnetosonic speed; $\alpha_w = 1.0$ yields the full Hall-MHD Rusanov speed. Because the whistler phase speed scales as $O(1/\Delta x)$, non-zero $\alpha_w$ introduces noticeable damping on resolved whistler modes ($7\%$ damping per radian at $\alpha_w = 1.0$ versus $0.2\%$ at $\alpha_w = 0.0$ for a mode resolved by 16 cells). The default $\alpha_w = 0.0$ provides stable dissipation of grid-scale noise across all standard hybrid tests without attenuating physical whistler waves.
+
+For code verification and testing, the characteristic speed can be overridden by a user-specified constant $a_d = \texttt{upwindFixedSpeed} > 0$.
+
+\subsubsection{Grid-scale smoothness sensor}
+
+Away from local extrema, second-order limited schemes (such as MC) damp Fourier modes as $O(\Delta x^3 k^4)$. Although significantly less diffusive than first-order upwinding ($O(\Delta x k^2)$), this damping may accumulate over long simulation durations on well-resolved physical waves.
+
+To restrict dissipation strictly to the grid scale without widening the stencil beyond the two ghost layers already present in the Faraday advance, FLEKS introduces a grid-scale smoothness sensor. Each component of the reconstructed face jump is modulated by a factor $\phi \in [\phi_{\text{floor}}, 1]$:
+\begin{equation}
+\widetilde{\Delta\mathbf{B}} = \phi\,\left(\mathbf{B}^R - \mathbf{B}^L\right), \qquad \phi = \min\left(1,\, \max\left(\phi_{\text{floor}},\, s\right)\right),
+\end{equation}
+where $\phi_{\text{floor}} = \texttt{upwindSensorFloor}$ (default $0.1$), and the sensor $s$ measures the normalized third spatial difference across the four adjacent cells $(i-2, i-1, i, i+1)$ spanning the face:
+\begin{equation}
+s = \frac{|B_{i+1} - 3B_i + 3B_{i-1} - B_{i-2}|}{|B_i - B_{i-1}| + |B_{i-1} - B_{i-2}| + |B_{i+1} - B_i|}.
+\end{equation}
+For a smooth resolved wave $B \propto e^{ikx}$, Taylor expansion gives:
+\begin{equation}
+s \approx \frac{(k\Delta x)^2}{4} \ll 1,
+\end{equation}
+causing $\phi$ to clamp to the floor $\phi_{\text{floor}} = 0.1$, which suppresses numerical damping on resolved waves by an order of magnitude (lowering damping on a 16-cell whistler from $0.2\%$ to $0.02\%$ per radian). At grid-scale Nyquist noise ($k\Delta x = \pi$, where $B_i \propto (-1)^i$) and near shock jumps, the third difference is $O(1)$, so $s \sim 4/3 > 1$, resulting in $\phi = 1$ and delivering full Rusanov dissipation. Setting $\phi_{\text{floor}} = 1.0$ disables the sensor.
+
+\subsubsection{Stability and CFL condition}
+
+The first-order upwind term damps the Nyquist mode ($k_d\Delta x_d = \pi$) at the real eigenvalue rate:
+\begin{equation}
+\gamma_d = \frac{2 a_d}{\Delta x_d}.
+\end{equation}
+The total dissipation rate across all active grid dimensions is:
+\begin{equation}
+\Omega_{\text{upwind}} = \sum_{d=1}^D \frac{2 a_d}{\Delta x_d}.
+\end{equation}
+Explicit Runge--Kutta stability along the negative real axis requires:
+\begin{equation}
+\Delta t_{\text{sub}}\,\Omega_{\text{upwind}} \le C_{\text{CFL}},
+\end{equation}
+where $C_{\text{CFL}} = 2.785$ for RK4 and $2.513$ for SSPRK3.
+
+FLEKS evaluates $\Omega_{\text{upwind}}$ during time-step and subcycle planning (\texttt{Pic::calc\_hybrid\_dt\_and\_subcycle}). Applying a safety factor ($c_{\text{safety}} = 0.85$), the subcycle time step is constrained by:
+\begin{equation}
+\Delta t_{\text{sub}} \le \frac{c_{\text{safety}} C_{\text{CFL}}}{\Omega_{\text{upwind}}}.
+\end{equation}
+If this limit is exceeded, FLEKS issues a CFL warning and increases the subcycle count $N_{\text{sub}}$ accordingly. Because $\Omega_{\text{upwind}}$ scales as $O(1/\Delta x)$ rather than the parabolic $O(1/\Delta x^4)$ of hyper-resistivity, the upwind dissipation permits significantly larger time steps on fine AMR meshes while robustly maintaining stability.
+
 \subsection{Algorithmic cycle and noise mitigation}
 
 The complete hybrid PIC time step proceeds through the following stages:
@@ -455,8 +606,8 @@ The complete hybrid PIC time step proceeds through the following stages:
   \item \textbf{Particle Boris push:} Ions are advanced $\mathbf{v}^n \to \mathbf{v}^{n+1}$ using integer-step fields $\mathbf{E}^n, \mathbf{B}^n$; positions are updated as $\mathbf{x}^{n+1/2} = \mathbf{x}^{n-1/2} + \Delta t\,\mathbf{v}^n$.
   \item \textbf{Kinetic source and boundary updates:} Particle boundary conditions, chemistry, charge exchange, and physical inflow flux injection are evaluated.
   \item \textbf{Moment deposition:} Ion charge $\rho_q^{n+1/2}$ and mass momentum $(\rho\mathbf{u})_i^{n+1/2}$ are deposited on the node grid. A digital-filter smoothing can be applied to reduce particle noise.
-  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances the cell-centered $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments; the node-centered $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
-  \item \textbf{Electric field assembly:} The node-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} and stored for the subsequent Boris push.
+  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances the cell-centered $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using the interpolated ion moments and stage electric fields (evaluating Ohm's law with the upwind dissipation $\mathbf{E}_{\text{upwind}}$ at intermediate stages); the node-centered $\mathbf{B}^{n+1}$ sampled by the pusher is obtained by averaging the surrounding cell values.
+  \item \textbf{Electric field assembly:} The node-centered $\mathbf{E}^{n+1}$ is computed from eq.~\eqref{eq:ohmslaw} (including $\mathbf{E}_{\text{upwind}}$) and stored for the subsequent Boris push.
 \end{enumerate}
 
 \subsection{Spatial and temporal accuracy}
