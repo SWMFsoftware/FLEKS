@@ -237,11 +237,17 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   }
 
   // Moment time-interpolation weights:
-  // For standard leapfrog: X(hstep) = (0.5-hstep)*X^{n-1/2} +
-  // (0.5+hstep)*X^{n+1/2}. For predictor-corrector: X(hstep) = (1.0-hstep)*X^n
-  // + hstep*X^{n+1}.
+  // For standard leapfrog, nodePlasma holds X^{n+1/2} (already at the temporal
+  // midpoint hstep = 0.5 of [t^n, t^{n+1}]) and nodePlasmaPrev holds X^{n-1/2}:
+  //   X(hstep) = (0.5 - hstep)*X^{n-1/2} + (0.5 + hstep)*X^{n+1/2}.
+  // Faraday sub-steps pass hstep = 0.5 (wPrev = 0, wCur = 1) to hold the
+  // midpoint moment constant across [t^n, t^{n+1}], avoiding the secant-ramp
+  // whistler instability at omega_w * dt ~ pi, while the final nodeE evaluation
+  // at t^{n+1} passes hstep = 1.0 (wPrev = -0.5, wCur = 1.5).
+  // For predictor-corrector: X(hstep) = (1.0 - hstep)*X^n + hstep*X^{n+1}.
   const Real wPrev = usePredictorCorrector ? (1.0 - hstep) : (0.5 - hstep);
   const Real wCur = usePredictorCorrector ? hstep : (0.5 + hstep);
+  const bool usePrevMoments = (wPrev != 0.0);
   const Real invFourPI = 1.0 / fourPI;
 
   // #HYBRIDUPWIND: directions with a single cell carry no jump.
@@ -267,8 +273,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real>& arrE = Eout[mfi].array();
     const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-    const Array4<Real const>& momentsPrev =
-        nodePlasmaPrev[nSpecies][iLev][mfi].array();
+    const Array4<Real const> momentsPrev =
+        usePrevMoments ? nodePlasmaPrev[nSpecies][iLev][mfi].array()
+                       : Array4<Real const>();
     const Array4<Real const> arrJ =
         needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
     const Array4<Real const> arrEambi = (electronTemperature > 0)
@@ -345,15 +352,16 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrFaceZ = arrFace[iz_];
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      const Real rhoPrev = momentsPrev(i, j, k, iRho_);
-      const Real rhoCur = moments(i, j, k, iRho_);
-      const Real rho = wPrev * rhoPrev + wCur * rhoCur;
-      const Real mx =
-          wPrev * momentsPrev(i, j, k, iMx_) + wCur * moments(i, j, k, iMx_);
-      const Real my =
-          wPrev * momentsPrev(i, j, k, iMy_) + wCur * moments(i, j, k, iMy_);
-      const Real mz =
-          wPrev * momentsPrev(i, j, k, iMz_) + wCur * moments(i, j, k, iMz_);
+      Real rho = wCur * moments(i, j, k, iRho_);
+      Real mx = wCur * moments(i, j, k, iMx_);
+      Real my = wCur * moments(i, j, k, iMy_);
+      Real mz = wCur * moments(i, j, k, iMz_);
+      if (usePrevMoments) {
+        rho += wPrev * momentsPrev(i, j, k, iRho_);
+        mx += wPrev * momentsPrev(i, j, k, iMx_);
+        my += wPrev * momentsPrev(i, j, k, iMy_);
+        mz += wPrev * momentsPrev(i, j, k, iMz_);
+      }
       Real ui = 0, vi = 0, wi = 0;
       const Real invRhoEff =
           (rho > 0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
@@ -2131,11 +2139,16 @@ void Pic::update_B_hybrid() {
   // as the valid cells.
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
     // Moment time-interpolation weights hstep for RK stages within the
-    // sub-step.
+    // sub-step. In standard leapfrog (!usePredictorCorrector), the freshly
+    // deposited moments J^{n+1/2} are already centered at the midpoint h = 0.5
+    // of [t^n, t^{n+1}]; holding hstep = 0.5 across the Faraday sub-steps
+    // preserves 2nd-order midpoint accuracy while eliminating the secant-ramp
+    // whistler instability at omega_w * dt ~ pi.
     const Real g = static_cast<Real>(subStep) * invSubcycle;
-    const Real hstepStart = g;
-    const Real hstepHalf = g + 0.5 * invSubcycle;
-    const Real hstepEnd = g + invSubcycle;
+    const Real hstepStart = usePredictorCorrector ? g : 0.5;
+    const Real hstepHalf =
+        usePredictorCorrector ? (g + 0.5 * invSubcycle) : 0.5;
+    const Real hstepEnd = usePredictorCorrector ? (g + invSubcycle) : 0.5;
 
     if (useRK4) {
       // Classical RK4 on dB/dt = -curl(E_Ohm(B)) across all levels.
