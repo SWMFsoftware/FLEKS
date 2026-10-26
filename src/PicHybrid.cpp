@@ -237,17 +237,31 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   }
 
   // Moment time-interpolation weights:
-  // For standard leapfrog, nodePlasma holds X^{n+1/2} (already at the temporal
-  // midpoint hstep = 0.5 of [t^n, t^{n+1}]) and nodePlasmaPrev holds X^{n-1/2}:
-  //   X(hstep) = (0.5 - hstep)*X^{n-1/2} + (0.5 + hstep)*X^{n+1/2}.
-  // Faraday sub-steps pass hstep = 0.5 (wPrev = 0, wCur = 1) to hold the
-  // midpoint moment constant across [t^n, t^{n+1}], avoiding the secant-ramp
-  // whistler instability at omega_w * dt ~ pi, while the final nodeE evaluation
-  // at t^{n+1} passes hstep = 1.0 (wPrev = -0.5, wCur = 1.5).
-  // For predictor-corrector: X(hstep) = (1.0 - hstep)*X^n + hstep*X^{n+1}.
-  const Real wPrev = usePredictorCorrector ? (1.0 - hstep) : (0.5 - hstep);
-  const Real wCur = usePredictorCorrector ? hstep : (0.5 + hstep);
-  const bool usePrevMoments = (wPrev != 0.0);
+  // - Charge density rho_q is deposited from particle positions x^{n+1} at
+  //   integer time t^{n+1} (in nodePlasma) and x^n at t^n (in nodePlasmaPrev),
+  //   so rho_q(hstep) = (1 - hstep)*rho_q^n + hstep*rho_q^{n+1} for both
+  //   single-pass and predictor-corrector modes (strictly convex for hstep in
+  //   [0, 1], preventing negative density extrapolation).
+  // - In single-pass mode (!usePredictorCorrector), ion momentum m = rho_q u_i
+  //   is deposited from velocities v^{n+1/2} at t^{n+1/2} (hstep = 0.5) in
+  //   nodePlasma and v^{n-1/2} at t^n - 0.5*dtPrev in nodePlasmaPrev (or v^0
+  //   at t^0 on the first step). The normalized step separation is dhM =
+  //   dtVel / dt, giving m(hstep) = ((0.5 - hstep)/dhM)*m^{prev} +
+  //   (1 - (0.5 - hstep)/dhM)*m^{n+1/2}. Faraday sub-steps pass hstep = 0.5
+  //   (wPrevM = 0, wCurM = 1) to hold the midpoint current constant across
+  //   [t^n, t^{n+1}], avoiding the secant-ramp whistler instability at
+  //   omega_w * dt ~ pi, while the final nodeE evaluation at t^{n+1} passes
+  //   hstep = 1.0.
+  const Real wPrevRho = 1.0 - hstep;
+  const Real wCurRho = hstep;
+  const Real dtCur = tc ? tc->get_dt() : 0.0;
+  const Real dhM = (isFirstHybridStep || dtPrevHybrid <= 0.0 || dtCur <= 0.0)
+                       ? 0.5
+                       : (0.5 * (dtPrevHybrid + dtCur) / dtCur);
+  const Real wPrevM =
+      usePredictorCorrector ? (1.0 - hstep) : ((0.5 - hstep) / dhM);
+  const Real wCurM = usePredictorCorrector ? hstep : (1.0 - wPrevM);
+  const bool usePrevMoments = (wPrevRho != 0.0 || wPrevM != 0.0);
   const Real invFourPI = 1.0 / fourPI;
 
   // #HYBRIDUPWIND: directions with a single cell carry no jump.
@@ -352,15 +366,15 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrFaceZ = arrFace[iz_];
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      Real rho = wCur * moments(i, j, k, iRho_);
-      Real mx = wCur * moments(i, j, k, iMx_);
-      Real my = wCur * moments(i, j, k, iMy_);
-      Real mz = wCur * moments(i, j, k, iMz_);
+      Real rho = wCurRho * moments(i, j, k, iRho_);
+      Real mx = wCurM * moments(i, j, k, iMx_);
+      Real my = wCurM * moments(i, j, k, iMy_);
+      Real mz = wCurM * moments(i, j, k, iMz_);
       if (usePrevMoments) {
-        rho += wPrev * momentsPrev(i, j, k, iRho_);
-        mx += wPrev * momentsPrev(i, j, k, iMx_);
-        my += wPrev * momentsPrev(i, j, k, iMy_);
-        mz += wPrev * momentsPrev(i, j, k, iMz_);
+        rho += wPrevRho * momentsPrev(i, j, k, iRho_);
+        mx += wPrevM * momentsPrev(i, j, k, iMx_);
+        my += wPrevM * momentsPrev(i, j, k, iMy_);
+        mz += wPrevM * momentsPrev(i, j, k, iMz_);
       }
       Real ui = 0, vi = 0, wi = 0;
       const Real invRhoEff =

@@ -63,6 +63,7 @@ void Pic::fill_new_cells() {
     fill_particles();
     sum_moments(true);
     if (useHybridPIC) {
+      smooth_moments();
       seed_first_hybrid_step();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         average_center_to_node(centerB[iLev], nodeB[iLev]);
@@ -83,6 +84,16 @@ void Pic::fill_new_cells() {
         if (iLev == 0) {
           apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
                          &Pic::get_node_E, iLev, false);
+        }
+      }
+      if (doSmoothE) {
+        for (int iLev = 0; iLev < n_lev(); ++iLev) {
+          nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+          smooth_E(nodeE[iLev], iLev);
+          if (iLev == 0) {
+            apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
+                           &Pic::get_node_E, iLev, false);
+          }
         }
       }
     }
@@ -918,8 +929,28 @@ void Pic::particle_mover(int pushStage) {
   const Vector<MultiFab>& nodeEpush =
       (useHybridPIC || useExplicitPIC) ? nodeE : nodeEth;
 
+  // In single-pass hybrid PIC (!usePredictorCorrector), fields (E^n, B^n) and
+  // particle positions x^n live at integer time t^n, while particle velocities
+  // v^{n-1/2} are staggered at half-integer time t^{n-1/2}.
+  // - Velocity kick (t^{n-1/2} -> t^{n+1/2}) spans dtVel = 0.5*(dtPrev + dt),
+  //   with dtPrev = 0 on the initial step (v^0 -> v^{1/2}, half-step kick).
+  // - Position drift (t^n -> t^{n+1}) spans a full dt using v^{n+1/2}.
+  // Since charged_particle_mover advances v over its `dt` argument and x over
+  // `dtLoc = 0.5 * (dt + dtNext)`, passing (dtVel, 2*dt - dtVel) advances v by
+  // dtVel and x by dt without modifying the mover signature.
+  const bool useStaggeredHybridVel =
+      (useHybridPIC && !usePredictorCorrector && pushStage == 0);
+  const Real dtVel =
+      useStaggeredHybridVel
+          ? (isFirstHybridStep ? (0.5 * dt) : (0.5 * (dtPrevHybrid + dt)))
+          : dt;
+  const Real dtNextVel = useStaggeredHybridVel ? (2.0 * dt - dtVel) : dtnext;
+
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtnext, pushStage);
+    const bool isCharged = (parts[i]->get_charge() != 0.0);
+    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg,
+                    (isCharged ? dtVel : dt), (isCharged ? dtNextVel : dtnext),
+                    pushStage);
   }
 
   for (int i : kineticSpecies_) {
@@ -1691,6 +1722,7 @@ void Pic::update(bool doReportIn) {
       smooth_moments();
       update_Pe_hybrid();
       update_B_hybrid();
+      dtPrevHybrid = tc->get_dt();
       isFirstHybridStep = false;
     } else {
       // 2nd-order Predictor-Corrector path.
@@ -1754,6 +1786,7 @@ void Pic::update(bool doReportIn) {
       smooth_moments();
       update_Pe_hybrid();
       update_B_hybrid();
+      dtPrevHybrid = tc->get_dt();
       isFirstHybridStep = false;
     }
   } else {
