@@ -63,7 +63,6 @@ void Pic::fill_new_cells() {
     fill_particles();
     sum_moments(true);
     if (useHybridPIC) {
-      smooth_moments();
       seed_first_hybrid_step();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         average_center_to_node(centerB[iLev], nodeB[iLev]);
