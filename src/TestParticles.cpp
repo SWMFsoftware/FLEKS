@@ -13,10 +13,9 @@ ParticlesInfo make_test_particles_info() {
   return info;
 }
 
-void compute_magnetic_drifts(Real mass, Real charge, bool isRelativistic,
-                             const Real bp[3], const Real vRec[3],
-                             const Real gradB[3][3], Real vGradB[3],
-                             Real vCurv[3]) {
+AMREX_GPU_HOST_DEVICE void compute_magnetic_drifts(
+    Real mass, Real charge, bool isRelativistic, const Real bp[3],
+    const Real vRec[3], const Real gradB[3][3], Real vGradB[3], Real vCurv[3]) {
   vGradB[0] = 0.0;
   vGradB[1] = 0.0;
   vGradB[2] = 0.0;
@@ -25,7 +24,7 @@ void compute_magnetic_drifts(Real mass, Real charge, bool isRelativistic,
   vCurv[2] = 0.0;
 
   const Real B2 = bp[0] * bp[0] + bp[1] * bp[1] + bp[2] * bp[2];
-  if (B2 <= 1e-30 || std::abs(charge) <= 1e-30)
+  if (B2 <= 1e-30 || amrex::Math::abs(charge) <= 1e-30)
     return;
 
   const Real invB = 1.0 / std::sqrt(B2);
@@ -35,7 +34,7 @@ void compute_magnetic_drifts(Real mass, Real charge, bool isRelativistic,
 
   const Real vpar = vRec[0] * bx + vRec[1] * by + vRec[2] * bz;
   const Real v2 = vRec[0] * vRec[0] + vRec[1] * vRec[1] + vRec[2] * vRec[2];
-  const Real vperp2 = std::max((Real)0.0, v2 - vpar * vpar);
+  const Real vperp2 = amrex::max((Real)0.0, v2 - vpar * vpar);
 
   Real mEff = mass;
   if (isRelativistic) {
@@ -76,11 +75,10 @@ void compute_magnetic_drifts(Real mass, Real charge, bool isRelativistic,
   vCurv[2] = coefCurv * b_cross_w_z;
 }
 
-inline void interpolate_jacobian_matrix(const Array4<const Real>& jacArr,
-                                        const IntVect& loIdx,
-                                        const Real coef[2][2][2],
-                                        const Dim3& lo, const Dim3& hi,
-                                        Real gradB[3][3]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_jacobian_matrix(
+    const Array4<const Real>& jacArr, const IntVect& loIdx,
+    const Real coef[2][2][2], const Dim3& lo, const Dim3& hi,
+    Real gradB[3][3]) {
   for (int k = lo.z; k <= hi.z; ++k)
     for (int j = lo.y; j <= hi.y; ++j)
       for (int i = lo.x; i <= hi.x; ++i) {
@@ -93,6 +91,94 @@ inline void interpolate_jacobian_matrix(const Array4<const Real>& jacArr,
           }
         }
       }
+}
+
+// The record point of a particle that moved from x with velocity u to
+// x + u^{n+1} dtStep: at tNextSave if dtSave > 0 (linear in time), else
+// dtElse after the start with the new velocity.
+AMREX_GPU_HOST_DEVICE void interpolate_record_trajectory(
+    const RecordParams& rp, Real xp, Real yp, Real zp, Real up, Real vp,
+    Real wp, Real unp1, Real vnp1, Real wnp1, Real dtStep, Real dtElse,
+    Real& tRec, Real& xRec, Real& yRec, Real& zRec, Real& uRec, Real& vRec,
+    Real& wRec) {
+  if (rp.dtSave > 0.0) {
+    tRec = rp.tNextSave;
+    Real theta = 1.0;
+    if (rp.dtSI > 0.0) {
+      theta = (rp.tNextSave - (rp.tNowSI - rp.dtSI)) / rp.dtSI;
+      theta = amrex::max((Real)0.0, amrex::min((Real)1.0, theta));
+    }
+    xRec = xp + theta * unp1 * dtStep;
+    yRec = yp + theta * vnp1 * dtStep;
+    zRec = zp + theta * wnp1 * dtStep;
+    uRec = (1.0 - theta) * up + theta * unp1;
+    vRec = (1.0 - theta) * vp + theta * vnp1;
+    wRec = (1.0 - theta) * wp + theta * wnp1;
+  } else {
+    xRec = xp + unp1 * dtElse;
+    yRec = yp + vnp1 * dtElse;
+    zRec = zp + wnp1 * dtElse;
+    uRec = unp1;
+    vRec = vnp1;
+    wRec = wnp1;
+  }
+}
+
+// Append a record to the particle's trajectory.
+template <class P>
+AMREX_GPU_HOST_DEVICE void save_particle_record(
+    const RecordParams& rp, P& p, Real tRec, Real xRec, Real yRec, Real zRec,
+    Real uRec, Real vRec, Real wRec, const Real* bp = nullptr,
+    const Real* ep = nullptr, const Real (*gradB)[3] = nullptr) {
+  using TP = TestParticles;
+  const int i0 =
+      nPicPartReal + ptRecordSize * p.idata(TestParticles::iRecordCount_);
+  p.rdata(i0 + TP::iTPt_) = tRec;
+  p.rdata(i0 + TP::iTPu_) = uRec;
+  p.rdata(i0 + TP::iTPv_) = vRec;
+  p.rdata(i0 + TP::iTPw_) = wRec;
+  p.rdata(i0 + TP::iTPx_) = xRec;
+  p.rdata(i0 + TP::iTPy_) = yRec;
+  p.rdata(i0 + TP::iTPz_) = zRec;
+
+  if (bp && ptRecordSize > TP::iTPBx_) {
+    p.rdata(i0 + TP::iTPBx_) = bp[ix_];
+    p.rdata(i0 + TP::iTPBy_) = bp[iy_];
+    p.rdata(i0 + TP::iTPBz_) = bp[iz_];
+  }
+
+  if (ep && ptRecordSize > TP::iTPEx_) {
+    p.rdata(i0 + TP::iTPEx_) = ep[ix_];
+    p.rdata(i0 + TP::iTPEy_) = ep[iy_];
+    p.rdata(i0 + TP::iTPEz_) = ep[iz_];
+  }
+
+  if (gradB && ptRecordSize > 13) {
+    if (ptRecordSize == 19) {
+      Real vRecArr[3] = { uRec, vRec, wRec };
+      Real vGradB[3], vCurv[3];
+      compute_magnetic_drifts(rp.mass, rp.charge, rp.isRelativistic, bp,
+                              vRecArr, gradB, vGradB, vCurv);
+      p.rdata(i0 + TP::iTPvGradBx_) = vGradB[0];
+      p.rdata(i0 + TP::iTPvGradBy_) = vGradB[1];
+      p.rdata(i0 + TP::iTPvGradBz_) = vGradB[2];
+      p.rdata(i0 + TP::iTPvCurvx_) = vCurv[0];
+      p.rdata(i0 + TP::iTPvCurvy_) = vCurv[1];
+      p.rdata(i0 + TP::iTPvCurvz_) = vCurv[2];
+    } else if (ptRecordSize == 22) {
+      p.rdata(i0 + TP::iTPdBxdx_) = gradB[0][0];
+      p.rdata(i0 + TP::iTPdBxdy_) = gradB[0][1];
+      p.rdata(i0 + TP::iTPdBxdz_) = gradB[0][2];
+      p.rdata(i0 + TP::iTPdBydx_) = gradB[1][0];
+      p.rdata(i0 + TP::iTPdBydy_) = gradB[1][1];
+      p.rdata(i0 + TP::iTPdBydz_) = gradB[1][2];
+      p.rdata(i0 + TP::iTPdBzdx_) = gradB[2][0];
+      p.rdata(i0 + TP::iTPdBzdy_) = gradB[2][1];
+      p.rdata(i0 + TP::iTPdBzdz_) = gradB[2][2];
+    }
+  }
+
+  p.idata(TestParticles::iRecordCount_)++;
 }
 
 } // namespace
@@ -113,87 +199,27 @@ TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
 }
 
 //==========================================================
-void TestParticles::interpolate_record_trajectory(
-    Real xp, Real yp, Real zp, Real up, Real vp, Real wp, Real unp1, Real vnp1,
-    Real wnp1, Real dtStep, Real dtElse, Real tNowSI, Real& tRec, Real& xRec,
-    Real& yRec, Real& zRec, Real& uRec, Real& vRec, Real& wRec) const {
-  if (dtSave > 0.0) {
-    tRec = tNextSave;
-    const Real dtSI = tc->get_dt_si();
-    Real theta = 1.0;
-    if (dtSI > 0.0) {
-      theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
-      theta = std::max((Real)0.0, std::min((Real)1.0, theta));
-    }
-    xRec = xp + theta * unp1 * dtStep;
-    yRec = yp + theta * vnp1 * dtStep;
-    zRec = zp + theta * wnp1 * dtStep;
-    uRec = (1.0 - theta) * up + theta * unp1;
-    vRec = (1.0 - theta) * vp + theta * vnp1;
-    wRec = (1.0 - theta) * wp + theta * wnp1;
-  } else {
-    xRec = xp + unp1 * dtElse;
-    yRec = yp + vnp1 * dtElse;
-    zRec = zp + wnp1 * dtElse;
-    uRec = unp1;
-    vRec = vnp1;
-    wRec = wnp1;
-  }
+RecordParams TestParticles::record_params(Real tNowSI) const {
+  RecordParams rp;
+  rp.dtSave = dtSave;
+  rp.tNextSave = tNextSave;
+  rp.dtSI = tc->get_dt_si();
+  rp.tNowSI = tNowSI;
+  rp.mass = mass;
+  rp.charge = charge;
+  rp.isRelativistic = isRelativistic;
+  return rp;
 }
 
 //==========================================================
-void TestParticles::save_particle_record(ParticleType& p, Real tRec, Real xRec,
-                                         Real yRec, Real zRec, Real uRec,
-                                         Real vRec, Real wRec, const Real* bp,
-                                         const Real* ep,
-                                         const Real (*gradB)[3]) {
-  const int i0 = record_var_index(p.idata(iRecordCount_));
-  p.rdata(i0 + iTPt_) = tRec;
-  p.rdata(i0 + iTPu_) = uRec;
-  p.rdata(i0 + iTPv_) = vRec;
-  p.rdata(i0 + iTPw_) = wRec;
-  p.rdata(i0 + iTPx_) = xRec;
-  p.rdata(i0 + iTPy_) = yRec;
-  p.rdata(i0 + iTPz_) = zRec;
-
-  if (bp && ptRecordSize > iTPBx_) {
-    p.rdata(i0 + iTPBx_) = bp[ix_];
-    p.rdata(i0 + iTPBy_) = bp[iy_];
-    p.rdata(i0 + iTPBz_) = bp[iz_];
-  }
-
-  if (ep && ptRecordSize > iTPEx_) {
-    p.rdata(i0 + iTPEx_) = ep[ix_];
-    p.rdata(i0 + iTPEy_) = ep[iy_];
-    p.rdata(i0 + iTPEz_) = ep[iz_];
-  }
-
-  if (gradB && ptRecordSize > 13) {
-    if (ptRecordSize == 19) {
-      Real vRecArr[3] = { uRec, vRec, wRec };
-      Real vGradB[3], vCurv[3];
-      compute_magnetic_drifts(mass, charge, isRelativistic, bp, vRecArr, gradB,
-                              vGradB, vCurv);
-      p.rdata(i0 + iTPvGradBx_) = vGradB[0];
-      p.rdata(i0 + iTPvGradBy_) = vGradB[1];
-      p.rdata(i0 + iTPvGradBz_) = vGradB[2];
-      p.rdata(i0 + iTPvCurvx_) = vCurv[0];
-      p.rdata(i0 + iTPvCurvy_) = vCurv[1];
-      p.rdata(i0 + iTPvCurvz_) = vCurv[2];
-    } else if (ptRecordSize == 22) {
-      p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
-      p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
-      p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
-      p.rdata(i0 + iTPdBydx_) = gradB[1][0];
-      p.rdata(i0 + iTPdBydy_) = gradB[1][1];
-      p.rdata(i0 + iTPdBydz_) = gradB[1][2];
-      p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
-      p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
-      p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
-    }
-  }
-
-  p.idata(iRecordCount_)++;
+void TestParticles::check_mover_error(const Gpu::DeviceVector<int>& flag) {
+  int error = 0;
+  Gpu::copy(Gpu::deviceToHost, flag.begin(), flag.end(), &error);
+  if (error == 1)
+    Abort("Error: there is not enough allocated memory to store the "
+          "particle record!!");
+  if (error == 2)
+    Abort("Error: particle speed is fast than light!");
 }
 
 //==========================================================
@@ -223,17 +249,28 @@ void TestParticles::move_and_save_charged_particles(
   int lastFab = -1;
   ActiveRegionBox ab;
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
-    const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
+  const RecordParams rp = record_params(tNowSI);
+  const ParticleBoundary pb = particle_boundary();
+  Real ploLoc[3] = { 0, 0, 0 }, invDxLoc[3] = { 0, 0, 0 };
+  for (int d = 0; d < nDim; ++d) {
+    ploLoc[d] = Geom(iLev).ProbLo(d);
+    invDxLoc[d] = Geom(iLev).InvCellSize(d);
+  }
+  const bool isRel = isRelativistic;
+  Gpu::DeviceVector<int> errorFlag(1, 0);
+  int* const error = errorFlag.data();
+
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
+    const Array4<Real const> nodeEArr = nodeEMF[pti].const_array();
+    const Array4<Real const> nodeBArr = nodeBMF[pti].const_array();
     const bool hasJacB = (nodeJacBMF != nullptr);
     const Array4<Real const> nodeJacBArr =
-        hasJacB ? (*nodeJacBMF)[pti].array() : Array4<Real const>{};
+        hasJacB ? (*nodeJacBMF)[pti].const_array() : Array4<Real const>{};
     // NOTE: nodeBMF is the *total* field: ParticleTracker::update_field() adds
     // the frozen intrinsic field B0 to its copy of pic.nodeB, so the gather
     // below needs no extra term.
 
-    auto& particles = pti.GetArrayOfStructs();
+    ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     if (pti.index() != lastFab) {
       lastFab = pti.index();
@@ -241,15 +278,16 @@ void TestParticles::move_and_save_charged_particles(
       ab = make_active_region_box(lb, pti.validbox(), bx);
     }
 
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Array4<int const> status = cell_status(iLev)[pti].const_array();
 
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
 
-    for (auto& p : particles) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      ParticleType& p = pData[ip];
       if (p.idata(iRecordCount_) >= nPTRecord) {
-        Abort("Error: there is not enough allocated memory to store the "
-              "particle record!!");
+        *error = 1; // not enough memory for the record
+        return;
       }
 
       Real up = p.rdata(iup_);
@@ -263,8 +301,7 @@ void TestParticles::move_and_save_charged_particles(
       IntVect loIdx;
       RealVect dShift;
       Real coef[2][2][2];
-      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
+      find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
       //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };
@@ -276,11 +313,12 @@ void TestParticles::move_and_save_charged_particles(
       Real gamma = 1;
       Real invGamma = 1. / gamma;
 
-      if (isRelativistic) {
+      if (isRel) {
         // Convert: vel -> gamma*vel
         const Real v2 = up * up + vp * vp + wp * wp;
         if (v2 > 1) {
-          Abort("Error: particle speed is fast than light!");
+          *error = 2; // faster than light
+          return;
         }
         invGamma = sqrt(1 - v2);
         gamma = 1 / invGamma;
@@ -294,7 +332,7 @@ void TestParticles::move_and_save_charged_particles(
       const Real vt = vp + qdto2mc * ep[iy_];
       const Real wt = wp + qdto2mc * ep[iz_];
 
-      if (isRelativistic) {
+      if (isRel) {
         const Real p2 = ut * ut + vt * vt + wt * wt;
         gamma = sqrt(1 + p2);
         invGamma = 1. / gamma;
@@ -315,7 +353,7 @@ void TestParticles::move_and_save_charged_particles(
       Real vnp1 = updatedVelocity[iy_];
       Real wnp1 = updatedVelocity[iz_];
 
-      if (isRelativistic) {
+      if (isRel) {
         // Convert: gamma*vel -> vel
         const Real p2 = unp1 * unp1 + vnp1 * vnp1 + wnp1 * wnp1;
         gamma = sqrt(1 + p2);
@@ -337,8 +375,8 @@ void TestParticles::move_and_save_charged_particles(
 
       if (doSave) {
         Real tRec, xRec, yRec, zRec, uRec, vRec, wRec;
-        interpolate_record_trajectory(xp, yp, zp, up, vp, wp, unp1, vnp1, wnp1,
-                                      dtLoc, 0.5 * dt, tNowSI, tRec, xRec, yRec,
+        interpolate_record_trajectory(rp, xp, yp, zp, up, vp, wp, unp1, vnp1,
+                                      wnp1, dtLoc, 0.5 * dt, tRec, xRec, yRec,
                                       zRec, uRec, vRec, wRec);
 
         Real gradB[3][3] = { { 0.0 } };
@@ -353,8 +391,7 @@ void TestParticles::move_and_save_charged_particles(
             // B_{i,j,k}
             // * (dW_i(x)/dx) * W_j(y) * W_k(z) dW_0/dx = -1/dx, dW_1/dx = 1/dx
             // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
-            const Real* invDx = Geom(iLev).InvCellSize();
-
+            const Real* invDx = invDxLoc;
             // B at 8 nodes
             Real b[3][2][2][2];
             for (int k = 0; k < 2; ++k)
@@ -409,16 +446,17 @@ void TestParticles::move_and_save_charged_particles(
           }
         }
 
-        save_particle_record(p, tRec, xRec, yRec, zRec, uRec, vRec, wRec, bp,
-                             ep, (ptRecordSize > 13) ? gradB : nullptr);
+        save_particle_record(rp, p, tRec, xRec, yRec, zRec, uRec, vRec, wRec,
+                             bp, ep, (ptRecordSize > 13) ? gradB : nullptr);
       }
       // Mark for deletion
-      if (is_outside_active_region(p, status, ab)) {
+      if (pb.is_outside_active_region(p, status, ab)) {
         p.id() = -1;
       }
-    } // for p
+    });
   } // for pti
 
+  check_mover_error(errorFlag);
   redistribute_particles();
 }
 
@@ -431,8 +469,13 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
   int lastFab = -1;
   ActiveRegionBox ab;
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    auto& particles = pti.GetArrayOfStructs();
+  const RecordParams rp = record_params(tNowSI);
+  const ParticleBoundary pb = particle_boundary();
+  Gpu::DeviceVector<int> errorFlag(1, 0);
+  int* const error = errorFlag.data();
+
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
+    ParticleType* const pData = pti.GetArrayOfStructs()().data();
 
     if (pti.index() != lastFab) {
       lastFab = pti.index();
@@ -440,12 +483,13 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
       ab = make_active_region_box(lb, pti.validbox(), bx);
     }
 
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Array4<int const> status = cell_status(iLev)[pti].const_array();
 
-    for (auto& p : particles) {
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      ParticleType& p = pData[ip];
       if (p.idata(iRecordCount_) >= nPTRecord) {
-        Abort("Error: there is not enough allocated memory to store the "
-              "particle record!!");
+        *error = 1; // not enough memory for the record
+        return;
       }
 
       Real up = p.rdata(iup_);
@@ -462,19 +506,20 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
 
       if (doSave) {
         Real tRec, xRec, yRec, zRec, uRec, vRec, wRec;
-        interpolate_record_trajectory(xp, yp, zp, up, vp, wp, up, vp, wp, dt,
-                                      dt, tNowSI, tRec, xRec, yRec, zRec, uRec,
+        interpolate_record_trajectory(rp, xp, yp, zp, up, vp, wp, up, vp, wp,
+                                      dt, dt, tRec, xRec, yRec, zRec, uRec,
                                       vRec, wRec);
-        save_particle_record(p, tRec, xRec, yRec, zRec, uRec, vRec, wRec);
+        save_particle_record(rp, p, tRec, xRec, yRec, zRec, uRec, vRec, wRec);
       }
 
       // Mark for deletion
-      if (is_outside_active_region(p, status, ab)) {
+      if (pb.is_outside_active_region(p, status, ab)) {
         p.id() = -1;
       }
-    }
+    });
   }
 
+  check_mover_error(errorFlag);
   redistribute_particles();
 }
 
@@ -547,39 +592,45 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
       continue;
 
     auto& particles = GetParticles(iLev)[index];
+    Vector<ParticleType> newParticles;
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
+    host_particles(const_cast<PicParticles::ParticleType*>(aosOther().data()),
+                   aosOther.numParticles(), /*writeBack=*/false,
+                   [&](const PicParticles::ParticleType* others, int nOther) {
+                     for (int iOther = 0; iOther < nOther; ++iOther) {
+                       const auto& pOther = others[iOther];
+                       PID id;
+                       id.cpu = pOther.cpu();
+                       id.id = pOther.id();
 
-    for (auto pOther : aosOther) {
-      PID id;
-      id.cpu = pOther.cpu();
-      id.id = pOther.id();
+                       auto it = std::lower_bound(vIDs.begin(), vIDs.end(), id);
 
-      auto it = std::lower_bound(vIDs.begin(), vIDs.end(), id);
+                       // This particle is on the test particle list. Generate a
+                       // new test particle.
+                       if (it != vIDs.end() && *it == id) {
+                         auto p = make_particle();
+                         p.cpu() = pOther.cpu();
+                         p.id() = pOther.id();
+                         p.pos(ix_) = pOther.pos(ix_);
+                         p.pos(iy_) = pOther.pos(iy_);
+                         if (nDim > 2)
+                           p.pos(iz_) = pOther.pos(iz_);
+                         p.rdata(iup_) = pOther.rdata(iup_);
+                         p.rdata(ivp_) = pOther.rdata(ivp_);
+                         p.rdata(iwp_) = pOther.rdata(iwp_);
+                         p.rdata(iqp_) = pOther.rdata(iqp_);
 
-      // This particle is on the test particle list. Generate a new test
-      // particle.
-      if (*it == id) {
-        auto p = make_particle();
-        p.cpu() = pOther.cpu();
-        p.id() = pOther.id();
-        p.pos(ix_) = pOther.pos(ix_);
-        p.pos(iy_) = pOther.pos(iy_);
-        if (nDim > 2)
-          p.pos(iz_) = pOther.pos(iz_);
-        p.rdata(iup_) = pOther.rdata(iup_);
-        p.rdata(ivp_) = pOther.rdata(ivp_);
-        p.rdata(iwp_) = pOther.rdata(iwp_);
-        p.rdata(iqp_) = pOther.rdata(iqp_);
+                         p.idata(iRecordCount_) = 0;
 
-        p.idata(iRecordCount_) = 0;
+                         newParticles.push_back(p);
 
-        particles.push_back(p);
-
-        // Remove this id from the test particle list later.
-        (*it).flag = false;
-      }
-    }
+                         // Remove this id from the test particle list later.
+                         (*it).flag = false;
+                       }
+                     }
+                   });
+    append_particles(particles, newParticles);
   }
 
   { // If a test particle has been generated on one proc, all procs should
@@ -759,104 +810,117 @@ void TestParticles::pack_particles_and_records(char* recordBuff, char* listBuff,
   unsigned long long int nByteCount = 0;
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      auto& particles = pti.GetArrayOfStructs();
-      for (auto& p : particles) {
-        int nRecord = p.idata(iRecordCount_);
-        int nBytePerPart =
-            3 * sizeof(int) + (1 + ptRecordSize * nRecord) * sizeof(float);
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
+      auto& aos = pti.GetArrayOfStructs();
+      host_particles(
+          aos().data(), aos.numParticles(), /*writeBack=*/true,
+          [&](ParticleType* particles, int nPart) {
+            for (int ip = 0; ip < nPart; ++ip) {
+              auto& p = particles[ip];
+              int nRecord = p.idata(iRecordCount_);
+              int nBytePerPart = 3 * sizeof(int) +
+                                 (1 + ptRecordSize * nRecord) * sizeof(float);
 
-        if (listBuff) {
-          int i2[2] = { p.cpu(), (int)p.id() };
-          memcpy(listBuff + iPartCount * listUnitSize, i2, 2 * sizeof(int));
-          unsigned long long tmp = nByteCount + shift;
-          memcpy(listBuff + iPartCount * listUnitSize + 2 * sizeof(int), &tmp,
-                 sizeof(unsigned long long));
-        }
+              if (listBuff) {
+                int i2[2] = { p.cpu(), (int)p.id() };
+                memcpy(listBuff + iPartCount * listUnitSize, i2,
+                       2 * sizeof(int));
+                unsigned long long tmp = nByteCount + shift;
+                memcpy(listBuff + iPartCount * listUnitSize + 2 * sizeof(int),
+                       &tmp, sizeof(unsigned long long));
+              }
 
-        if (recordBuff) {
-          int iCountLoc = 0;
-          int i3[3] = { p.cpu(), (int)p.id(), nRecord };
-          int sizeLoc = 3 * sizeof(int);
-          memcpy(recordBuff + nByteCount + iCountLoc, i3, sizeLoc);
-          iCountLoc += sizeLoc;
+              if (recordBuff) {
+                int iCountLoc = 0;
+                int i3[3] = { p.cpu(), (int)p.id(), nRecord };
+                int sizeLoc = 3 * sizeof(int);
+                memcpy(recordBuff + nByteCount + iCountLoc, i3, sizeLoc);
+                iCountLoc += sizeLoc;
 
-          sizeLoc = sizeof(float);
-          float weight = (float)(p.rdata(iqp_) / charge * mass * no2outM);
-          memcpy(recordBuff + nByteCount + iCountLoc, &weight, sizeLoc);
-          iCountLoc += sizeLoc;
+                sizeLoc = sizeof(float);
+                float weight = (float)(p.rdata(iqp_) / charge * mass * no2outM);
+                memcpy(recordBuff + nByteCount + iCountLoc, &weight, sizeLoc);
+                iCountLoc += sizeLoc;
 
-          sizeLoc = sizeof(float) * ptRecordSize;
-          for (int i = 0; i < nRecord; ++i) {
-            float recordData[ptRecordSize];
-            const int i0 = record_var_index(i);
+                sizeLoc = sizeof(float) * ptRecordSize;
+                for (int i = 0; i < nRecord; ++i) {
+                  float recordData[ptRecordSize];
+                  const int i0 = record_var_index(i);
 
-            recordData[iTPt_] = (float)p.rdata(i0 + iTPt_);
-            recordData[iTPx_] = (float)(p.rdata(i0 + iTPx_) * no2outL);
-            recordData[iTPy_] = (float)(p.rdata(i0 + iTPy_) * no2outL);
-            recordData[iTPz_] = (float)(p.rdata(i0 + iTPz_) * no2outL);
-            recordData[iTPu_] = (float)(p.rdata(i0 + iTPu_) * no2outV);
-            recordData[iTPv_] = (float)(p.rdata(i0 + iTPv_) * no2outV);
-            recordData[iTPw_] = (float)(p.rdata(i0 + iTPw_) * no2outV);
+                  recordData[iTPt_] = (float)p.rdata(i0 + iTPt_);
+                  recordData[iTPx_] = (float)(p.rdata(i0 + iTPx_) * no2outL);
+                  recordData[iTPy_] = (float)(p.rdata(i0 + iTPy_) * no2outL);
+                  recordData[iTPz_] = (float)(p.rdata(i0 + iTPz_) * no2outL);
+                  recordData[iTPu_] = (float)(p.rdata(i0 + iTPu_) * no2outV);
+                  recordData[iTPv_] = (float)(p.rdata(i0 + iTPv_) * no2outV);
+                  recordData[iTPw_] = (float)(p.rdata(i0 + iTPw_) * no2outV);
 
-            if (ptRecordSize > iTPBx_) {
-              recordData[iTPBx_] = (float)(p.rdata(i0 + iTPBx_) * no2outB);
-              recordData[iTPBy_] = (float)(p.rdata(i0 + iTPBy_) * no2outB);
-              recordData[iTPBz_] = (float)(p.rdata(i0 + iTPBz_) * no2outB);
+                  if (ptRecordSize > iTPBx_) {
+                    recordData[iTPBx_] =
+                        (float)(p.rdata(i0 + iTPBx_) * no2outB);
+                    recordData[iTPBy_] =
+                        (float)(p.rdata(i0 + iTPBy_) * no2outB);
+                    recordData[iTPBz_] =
+                        (float)(p.rdata(i0 + iTPBz_) * no2outB);
+                  }
+
+                  if (ptRecordSize > iTPEx_) {
+                    recordData[iTPEx_] =
+                        (float)(p.rdata(i0 + iTPEx_) * no2outE);
+                    recordData[iTPEy_] =
+                        (float)(p.rdata(i0 + iTPEy_) * no2outE);
+                    recordData[iTPEz_] =
+                        (float)(p.rdata(i0 + iTPEz_) * no2outE);
+                  }
+
+                  if (ptRecordSize == 19) {
+                    recordData[iTPvGradBx_] =
+                        (float)(p.rdata(i0 + iTPvGradBx_) * no2outV);
+                    recordData[iTPvGradBy_] =
+                        (float)(p.rdata(i0 + iTPvGradBy_) * no2outV);
+                    recordData[iTPvGradBz_] =
+                        (float)(p.rdata(i0 + iTPvGradBz_) * no2outV);
+                    recordData[iTPvCurvx_] =
+                        (float)(p.rdata(i0 + iTPvCurvx_) * no2outV);
+                    recordData[iTPvCurvy_] =
+                        (float)(p.rdata(i0 + iTPvCurvy_) * no2outV);
+                    recordData[iTPvCurvz_] =
+                        (float)(p.rdata(i0 + iTPvCurvz_) * no2outV);
+                  } else if (ptRecordSize == 22) {
+                    const Real no2outG = no2outB / no2outL;
+                    recordData[iTPdBxdx_] =
+                        (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
+                    recordData[iTPdBxdy_] =
+                        (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
+                    recordData[iTPdBxdz_] =
+                        (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
+                    recordData[iTPdBydx_] =
+                        (float)(p.rdata(i0 + iTPdBydx_) * no2outG);
+                    recordData[iTPdBydy_] =
+                        (float)(p.rdata(i0 + iTPdBydy_) * no2outG);
+                    recordData[iTPdBydz_] =
+                        (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
+                    recordData[iTPdBzdx_] =
+                        (float)(p.rdata(i0 + iTPdBzdx_) * no2outG);
+                    recordData[iTPdBzdy_] =
+                        (float)(p.rdata(i0 + iTPdBzdy_) * no2outG);
+                    recordData[iTPdBzdz_] =
+                        (float)(p.rdata(i0 + iTPdBzdz_) * no2outG);
+                  }
+
+                  memcpy(recordBuff + nByteCount + iCountLoc, recordData,
+                         sizeLoc);
+                  iCountLoc += sizeLoc;
+                }
+              }
+
+              // Reset record counter
+              p.idata(iRecordCount_) = 0;
+
+              iPartCount++;
+              nByteCount += nBytePerPart;
             }
-
-            if (ptRecordSize > iTPEx_) {
-              recordData[iTPEx_] = (float)(p.rdata(i0 + iTPEx_) * no2outE);
-              recordData[iTPEy_] = (float)(p.rdata(i0 + iTPEy_) * no2outE);
-              recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
-            }
-
-            if (ptRecordSize == 19) {
-              recordData[iTPvGradBx_] =
-                  (float)(p.rdata(i0 + iTPvGradBx_) * no2outV);
-              recordData[iTPvGradBy_] =
-                  (float)(p.rdata(i0 + iTPvGradBy_) * no2outV);
-              recordData[iTPvGradBz_] =
-                  (float)(p.rdata(i0 + iTPvGradBz_) * no2outV);
-              recordData[iTPvCurvx_] =
-                  (float)(p.rdata(i0 + iTPvCurvx_) * no2outV);
-              recordData[iTPvCurvy_] =
-                  (float)(p.rdata(i0 + iTPvCurvy_) * no2outV);
-              recordData[iTPvCurvz_] =
-                  (float)(p.rdata(i0 + iTPvCurvz_) * no2outV);
-            } else if (ptRecordSize == 22) {
-              const Real no2outG = no2outB / no2outL;
-              recordData[iTPdBxdx_] =
-                  (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
-              recordData[iTPdBxdy_] =
-                  (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
-              recordData[iTPdBxdz_] =
-                  (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
-              recordData[iTPdBydx_] =
-                  (float)(p.rdata(i0 + iTPdBydx_) * no2outG);
-              recordData[iTPdBydy_] =
-                  (float)(p.rdata(i0 + iTPdBydy_) * no2outG);
-              recordData[iTPdBydz_] =
-                  (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
-              recordData[iTPdBzdx_] =
-                  (float)(p.rdata(i0 + iTPdBzdx_) * no2outG);
-              recordData[iTPdBzdy_] =
-                  (float)(p.rdata(i0 + iTPdBzdy_) * no2outG);
-              recordData[iTPdBzdz_] =
-                  (float)(p.rdata(i0 + iTPdBzdz_) * no2outG);
-            }
-
-            memcpy(recordBuff + nByteCount + iCountLoc, recordData, sizeLoc);
-            iCountLoc += sizeLoc;
-          }
-        }
-
-        // Reset record counter
-        p.idata(iRecordCount_) = 0;
-
-        iPartCount++;
-        nByteCount += nBytePerPart;
-      }
+          });
     }
   }
 }
@@ -875,126 +939,138 @@ unsigned long long int TestParticles::loop_particles(
   constexpr int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      auto& particles = pti.GetArrayOfStructs();
-      for (auto& p : particles) {
-        int nRecord = p.idata(iRecordCount_);
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
+      auto& aos = pti.GetArrayOfStructs();
+      host_particles(
+          aos().data(), aos.numParticles(),
+          /*writeBack=*/doResetRecordCounter,
+          [&](ParticleType* particles, int nPart) {
+            for (int ip = 0; ip < nPart; ++ip) {
+              auto& p = particles[ip];
+              int nRecord = p.idata(iRecordCount_);
 
-        // int: cpu + id + nRecord
-        // Real: weight + ptRecordSize*nRecord
-        int nBytePerPart =
-            3 * sizeof(int) + (1 + ptRecordSize * nRecord) * sizeof(float);
+              // int: cpu + id + nRecord
+              // Real: weight + ptRecordSize*nRecord
+              int nBytePerPart = 3 * sizeof(int) +
+                                 (1 + ptRecordSize * nRecord) * sizeof(float);
 
-        if (doResetRecordCounter) {
-          p.idata(iRecordCount_) = 0;
-        }
+              if (doResetRecordCounter) {
+                p.idata(iRecordCount_) = 0;
+              }
 
-        if (doGetLoc) {
-          int i2[2];
-          i2[0] = p.cpu();
-          i2[1] = p.id();
-          memcpy(buff + iPartCount * listUnitSize, i2, 2 * sizeof(int));
+              if (doGetLoc) {
+                int i2[2];
+                i2[0] = p.cpu();
+                i2[1] = p.id();
+                memcpy(buff + iPartCount * listUnitSize, i2, 2 * sizeof(int));
 
-          unsigned long long tmp = nByteCount + shift;
-          memcpy(buff + iPartCount * listUnitSize + 2 * sizeof(int), &tmp,
-                 sizeof(unsigned long long));
-        }
+                unsigned long long tmp = nByteCount + shift;
+                memcpy(buff + iPartCount * listUnitSize + 2 * sizeof(int), &tmp,
+                       sizeof(unsigned long long));
+              }
 
-        if (doCopyData) {
-          int iCountLoc = 0, sizeLoc = 0;
-          int i3[3];
-          i3[0] = p.cpu();
-          i3[1] = p.id();
-          i3[2] = nRecord;
+              if (doCopyData) {
+                int iCountLoc = 0, sizeLoc = 0;
+                int i3[3];
+                i3[0] = p.cpu();
+                i3[1] = p.id();
+                i3[2] = nRecord;
 
-          // cpu + id + nRecord
-          sizeLoc = 3 * sizeof(int);
-          memcpy(buff + nByteCount + iCountLoc, i3, sizeLoc);
-          iCountLoc += sizeLoc;
+                // cpu + id + nRecord
+                sizeLoc = 3 * sizeof(int);
+                memcpy(buff + nByteCount + iCountLoc, i3, sizeLoc);
+                iCountLoc += sizeLoc;
 
-          // weight
-          sizeLoc = sizeof(float);
-          float weight = (float)(p.rdata(iqp_) / charge * mass * no2outM);
-          memcpy(buff + nByteCount + iCountLoc, &weight, sizeLoc);
-          iCountLoc += sizeLoc;
+                // weight
+                sizeLoc = sizeof(float);
+                float weight = (float)(p.rdata(iqp_) / charge * mass * no2outM);
+                memcpy(buff + nByteCount + iCountLoc, &weight, sizeLoc);
+                iCountLoc += sizeLoc;
 
-          sizeLoc = sizeof(float) * ptRecordSize;
-          for (int i = 0; i < nRecord; ++i) {
-            float recordData[ptRecordSize];
+                sizeLoc = sizeof(float) * ptRecordSize;
+                for (int i = 0; i < nRecord; ++i) {
+                  float recordData[ptRecordSize];
 
-            const int i0 = record_var_index(i);
+                  const int i0 = record_var_index(i);
 
-            // time is already in SI unit
-            recordData[iTPt_] = (float)p.rdata(i0 + iTPt_);
-            recordData[iTPx_] = (float)(p.rdata(i0 + iTPx_) * no2outL);
-            recordData[iTPy_] = (float)(p.rdata(i0 + iTPy_) * no2outL);
-            recordData[iTPz_] = (float)(p.rdata(i0 + iTPz_) * no2outL);
-            recordData[iTPu_] = (float)(p.rdata(i0 + iTPu_) * no2outV);
-            recordData[iTPv_] = (float)(p.rdata(i0 + iTPv_) * no2outV);
-            recordData[iTPw_] = (float)(p.rdata(i0 + iTPw_) * no2outV);
+                  // time is already in SI unit
+                  recordData[iTPt_] = (float)p.rdata(i0 + iTPt_);
+                  recordData[iTPx_] = (float)(p.rdata(i0 + iTPx_) * no2outL);
+                  recordData[iTPy_] = (float)(p.rdata(i0 + iTPy_) * no2outL);
+                  recordData[iTPz_] = (float)(p.rdata(i0 + iTPz_) * no2outL);
+                  recordData[iTPu_] = (float)(p.rdata(i0 + iTPu_) * no2outV);
+                  recordData[iTPv_] = (float)(p.rdata(i0 + iTPv_) * no2outV);
+                  recordData[iTPw_] = (float)(p.rdata(i0 + iTPw_) * no2outV);
 
-            if (ptRecordSize > iTPBx_) {
-              recordData[iTPBx_] = (float)(p.rdata(i0 + iTPBx_) * no2outB);
-              recordData[iTPBy_] = (float)(p.rdata(i0 + iTPBy_) * no2outB);
-              recordData[iTPBz_] = (float)(p.rdata(i0 + iTPBz_) * no2outB);
+                  if (ptRecordSize > iTPBx_) {
+                    recordData[iTPBx_] =
+                        (float)(p.rdata(i0 + iTPBx_) * no2outB);
+                    recordData[iTPBy_] =
+                        (float)(p.rdata(i0 + iTPBy_) * no2outB);
+                    recordData[iTPBz_] =
+                        (float)(p.rdata(i0 + iTPBz_) * no2outB);
+                  }
+
+                  if (ptRecordSize > iTPEx_) {
+                    recordData[iTPEx_] =
+                        (float)(p.rdata(i0 + iTPEx_) * no2outE);
+                    recordData[iTPEy_] =
+                        (float)(p.rdata(i0 + iTPEy_) * no2outE);
+                    recordData[iTPEz_] =
+                        (float)(p.rdata(i0 + iTPEz_) * no2outE);
+                  }
+
+                  if (ptRecordSize == 19) {
+                    recordData[iTPvGradBx_] =
+                        (float)(p.rdata(i0 + iTPvGradBx_) * no2outV);
+                    recordData[iTPvGradBy_] =
+                        (float)(p.rdata(i0 + iTPvGradBy_) * no2outV);
+                    recordData[iTPvGradBz_] =
+                        (float)(p.rdata(i0 + iTPvGradBz_) * no2outV);
+                    recordData[iTPvCurvx_] =
+                        (float)(p.rdata(i0 + iTPvCurvx_) * no2outV);
+                    recordData[iTPvCurvy_] =
+                        (float)(p.rdata(i0 + iTPvCurvy_) * no2outV);
+                    recordData[iTPvCurvz_] =
+                        (float)(p.rdata(i0 + iTPvCurvz_) * no2outV);
+                  } else if (ptRecordSize == 22) {
+                    Real no2outG = no2outB / no2outL;
+                    recordData[iTPdBxdx_] =
+                        (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
+                    recordData[iTPdBxdy_] =
+                        (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
+                    recordData[iTPdBxdz_] =
+                        (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
+                    recordData[iTPdBydx_] =
+                        (float)(p.rdata(i0 + iTPdBydx_) * no2outG);
+                    recordData[iTPdBydy_] =
+                        (float)(p.rdata(i0 + iTPdBydy_) * no2outG);
+                    recordData[iTPdBydz_] =
+                        (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
+                    recordData[iTPdBzdx_] =
+                        (float)(p.rdata(i0 + iTPdBzdx_) * no2outG);
+                    recordData[iTPdBzdy_] =
+                        (float)(p.rdata(i0 + iTPdBzdy_) * no2outG);
+                    recordData[iTPdBzdz_] =
+                        (float)(p.rdata(i0 + iTPdBzdz_) * no2outG);
+                  }
+
+                  memcpy(buff + nByteCount + iCountLoc, &recordData, sizeLoc);
+                  iCountLoc += sizeLoc;
+                }
+
+                if (nByteCount + iCountLoc > sizeLimit) {
+                  AllPrint() << "nByteCount = " << nByteCount
+                             << " iCountLoc = " << iCountLoc
+                             << " sizeLimit = " << sizeLimit << std::endl;
+                  Abort("Error: memory may leaked!!");
+                }
+              }
+
+              iPartCount++;
+              nByteCount += nBytePerPart;
             }
-
-            if (ptRecordSize > iTPEx_) {
-              recordData[iTPEx_] = (float)(p.rdata(i0 + iTPEx_) * no2outE);
-              recordData[iTPEy_] = (float)(p.rdata(i0 + iTPEy_) * no2outE);
-              recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
-            }
-
-            if (ptRecordSize == 19) {
-              recordData[iTPvGradBx_] =
-                  (float)(p.rdata(i0 + iTPvGradBx_) * no2outV);
-              recordData[iTPvGradBy_] =
-                  (float)(p.rdata(i0 + iTPvGradBy_) * no2outV);
-              recordData[iTPvGradBz_] =
-                  (float)(p.rdata(i0 + iTPvGradBz_) * no2outV);
-              recordData[iTPvCurvx_] =
-                  (float)(p.rdata(i0 + iTPvCurvx_) * no2outV);
-              recordData[iTPvCurvy_] =
-                  (float)(p.rdata(i0 + iTPvCurvy_) * no2outV);
-              recordData[iTPvCurvz_] =
-                  (float)(p.rdata(i0 + iTPvCurvz_) * no2outV);
-            } else if (ptRecordSize == 22) {
-              Real no2outG = no2outB / no2outL;
-              recordData[iTPdBxdx_] =
-                  (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
-              recordData[iTPdBxdy_] =
-                  (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
-              recordData[iTPdBxdz_] =
-                  (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
-              recordData[iTPdBydx_] =
-                  (float)(p.rdata(i0 + iTPdBydx_) * no2outG);
-              recordData[iTPdBydy_] =
-                  (float)(p.rdata(i0 + iTPdBydy_) * no2outG);
-              recordData[iTPdBydz_] =
-                  (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
-              recordData[iTPdBzdx_] =
-                  (float)(p.rdata(i0 + iTPdBzdx_) * no2outG);
-              recordData[iTPdBzdy_] =
-                  (float)(p.rdata(i0 + iTPdBzdy_) * no2outG);
-              recordData[iTPdBzdz_] =
-                  (float)(p.rdata(i0 + iTPdBzdz_) * no2outG);
-            }
-
-            memcpy(buff + nByteCount + iCountLoc, &recordData, sizeLoc);
-            iCountLoc += sizeLoc;
-          }
-
-          if (nByteCount + iCountLoc > sizeLimit) {
-            AllPrint() << "nByteCount = " << nByteCount
-                       << " iCountLoc = " << iCountLoc
-                       << " sizeLimit = " << sizeLimit << std::endl;
-            Abort("Error: memory may leaked!!");
-          }
-        }
-
-        iPartCount++;
-        nByteCount += nBytePerPart;
-      }
+          });
     }
   }
   return nByteCount;
@@ -1031,10 +1107,10 @@ void TestParticles::print_record_buffer(char* buffer,
 
 void TestParticles::reset_record_counter() {
   const int iLev = 0;
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    auto& particles = pti.GetArrayOfStructs();
-    for (auto& p : particles) {
-      p.idata(iRecordCount_) = 0;
-    }
+  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
+    ParticleType* const pData = pti.GetArrayOfStructs()().data();
+    ParallelFor(pti.numParticles(), [=] AMREX_GPU_DEVICE(int ip) {
+      pData[ip].idata(iRecordCount_) = 0;
+    });
   }
 }

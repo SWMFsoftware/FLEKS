@@ -3,6 +3,7 @@
 #include <AMReX.H>
 #include <AMReX_MultiFab.H>
 
+#include "GpuBackend.h"
 #include "Particles.h"
 #include "ReadParam.h"
 #include "WaveIC.h"
@@ -160,15 +161,16 @@ void WaveIC::read_param(ReadParam& param) {
   }
 }
 
-amrex::Real WaveIC::gaussWidthEffective() const {
+AMREX_GPU_HOST_DEVICE amrex::Real WaveICParams::gaussWidthEffective() const {
   if (gaussWidth_ > 0.0)
     return gaussWidth_;
   // L/4 default, only for the pulse preset (Lx is known only in set_fields).
   return (profile_ == AlfvenPulse && Lx_ > 0.0) ? 0.25 * Lx_ : 0.0;
 }
 
-void WaveIC::envelope(amrex::Real x, amrex::Real gw, amrex::Real& f,
-                      amrex::Real& g) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::envelope(amrex::Real x, amrex::Real gw,
+                                                  amrex::Real& f,
+                                                  amrex::Real& g) const {
   if (gw > 0.0) {
     const amrex::Real xi = (x - xCenter_) / gw;
     f = std::exp(-xi * xi);
@@ -190,10 +192,11 @@ void WaveIC::set_fields(PicICFields& fields) const {
     if (guideField_) {
       MFIter mfi(fields.node_B(iLev));
       if (mfi.isValid()) {
-        const Array4<Real const>& a = fields.node_B(iLev).array(mfi);
+        const Array4<Real const>& a = fields.node_B(iLev).const_array(mfi);
         const Box& b = mfi.validbox();
         const IntVect mid = (b.smallEnd() + b.bigEnd()) / 2;
-        Bx0 = a(mid, ix_);
+        // The field may live in device memory.
+        Gpu::dtoh_memcpy(&Bx0, a.ptr(mid, ix_), sizeof(Real));
       }
     }
     const amrex::Real B1 = frac_ * Bx0;
@@ -233,51 +236,50 @@ void WaveIC::set_fields(PicICFields& fields) const {
 
       const amrex::Real n0 = dir_[0], n1 = dir_[1];
 
-      if (seedE_ || seedB_) {
-        for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
-          FArrayBox& fabE = nodeE[mfi];
-          FArrayBox& fabB = nodeB[mfi];
-          const Box& box = mfi.fabbox();
-          const Array4<Real>& arrE = fabE.array();
-          const Array4<Real>& arrB = fabB.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * i;
-            const amrex::Real y = prob_lo[1] + dx[1] * j;
-            const amrex::Real z = (nDim > 2) ? prob_lo[2] + dx[2] * k : 0.0;
-            const amrex::Real phase = Kx * x + Ky * y + Kz * z;
-            const amrex::Real cphi = std::cos(phase);
-            const amrex::Real sphi = std::sin(phase);
-            if (seedE_) {
+      // Setup only: the fields are evaluated on the host (see host_fill).
+      auto node_phase = [&](int i, int j, int k) {
+        const amrex::Real x = prob_lo[0] + dx[0] * i;
+        const amrex::Real y = prob_lo[1] + dx[1] * j;
+        const amrex::Real z = (nDim > 2) ? prob_lo[2] + dx[2] * k : 0.0;
+        return Kx * x + Ky * y + Kz * z;
+      };
+      if (seedE_) {
+        host_fill(
+            nodeE, true,
+            [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrE) {
+              const amrex::Real phase = node_phase(i, j, k);
+              const amrex::Real cphi = std::cos(phase);
+              const amrex::Real sphi = std::sin(phase);
               arrE(i, j, k, ix_) = -n1 * sphi;
               arrE(i, j, k, iy_) = n0 * sphi;
               arrE(i, j, k, iz_) = -cphi;
-            }
-            if (seedB_) {
+            });
+      }
+      if (seedB_) {
+        host_fill(
+            nodeB, true,
+            [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrB) {
+              const amrex::Real phase = node_phase(i, j, k);
+              const amrex::Real cphi = std::cos(phase);
+              const amrex::Real sphi = std::sin(phase);
               arrB(i, j, k, ix_) = -n1 * cphi;
               arrB(i, j, k, iy_) = n0 * cphi;
               arrB(i, j, k, iz_) = sphi;
-            }
-          });
-        }
-      }
-      if (seedB_) {
-        for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
-          FArrayBox& fabcB = centerB[mfi];
-          const Box& box = mfi.fabbox();
-          const Array4<Real>& arrcB = fabcB.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-            const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
-            const amrex::Real z =
-                (nDim > 2) ? prob_lo[2] + dx[2] * (k + 0.5) : 0.0;
-            const amrex::Real phase = Kx * x + Ky * y + Kz * z;
-            const amrex::Real cphi = std::cos(phase);
-            const amrex::Real sphi = std::sin(phase);
-            arrcB(i, j, k, ix_) = -n1 * cphi;
-            arrcB(i, j, k, iy_) = n0 * cphi;
-            arrcB(i, j, k, iz_) = sphi;
-          });
-        }
+            });
+        host_fill(
+            centerB, true,
+            [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrcB) {
+              const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
+              const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
+              const amrex::Real z =
+                  (nDim > 2) ? prob_lo[2] + dx[2] * (k + 0.5) : 0.0;
+              const amrex::Real phase = Kx * x + Ky * y + Kz * z;
+              const amrex::Real cphi = std::cos(phase);
+              const amrex::Real sphi = std::sin(phase);
+              arrcB(i, j, k, ix_) = -n1 * cphi;
+              arrcB(i, j, k, iy_) = n0 * cphi;
+              arrcB(i, j, k, iz_) = sphi;
+            });
       }
     } else {
       // Transverse circularly-polarized wave or Gaussian pulse:
@@ -296,32 +298,27 @@ void WaveIC::set_fields(PicICFields& fields) const {
       if (seedB_) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
-        for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) {
-          FArrayBox& fab = nodeB[mfi];
-          const Box& box = mfi.fabbox();
-          const Array4<Real>& arrB = fab.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * i;
-            amrex::Real fy, gz;
-            envelope(x, gw, fy, gz);
-            arrB(i, j, k, ix_) = Bx0;
-            arrB(i, j, k, iy_) = B1 * fy;
-            arrB(i, j, k, iz_) = hand * B1 * gz;
-          });
-        }
-        for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
-          FArrayBox& fab = centerB[mfi];
-          const Box& box = mfi.fabbox();
-          const Array4<Real>& arrB = fab.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-            amrex::Real fy, gz;
-            envelope(x, gw, fy, gz);
-            arrB(i, j, k, ix_) = Bx0;
-            arrB(i, j, k, iy_) = B1 * fy;
-            arrB(i, j, k, iz_) = hand * B1 * gz;
-          });
-        }
+        // Setup only: envelope() is a host member (see host_fill).
+        host_fill(
+            nodeB, true,
+            [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrB) {
+              const amrex::Real x = prob_lo[0] + dx[0] * i;
+              amrex::Real fy, gz;
+              envelope(x, gw, fy, gz);
+              arrB(i, j, k, ix_) = Bx0;
+              arrB(i, j, k, iy_) = B1 * fy;
+              arrB(i, j, k, iz_) = hand * B1 * gz;
+            });
+        host_fill(
+            centerB, true,
+            [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrB) {
+              const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
+              amrex::Real fy, gz;
+              envelope(x, gw, fy, gz);
+              arrB(i, j, k, ix_) = Bx0;
+              arrB(i, j, k, iy_) = B1 * fy;
+              arrB(i, j, k, iz_) = hand * B1 * gz;
+            });
       }
 
       // Motional field E = -u x B of the transverse seed, with u the kick of
@@ -338,26 +335,24 @@ void WaveIC::set_fields(PicICFields& fields) const {
         } else {
           const amrex::Real amp = walenFactor_ * B1;
           nodeE.setVal(0.0);
-          for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
-            FArrayBox& fab = nodeE[mfi];
-            const Box& box = mfi.fabbox();
-            const Array4<Real>& arrE = fab.array();
-            ParallelFor(box, [&](int i, int j, int k) {
-              const amrex::Real x = prob_lo[0] + dx[0] * i;
-              amrex::Real fy, gz;
-              envelope(x, gw, fy, gz);
-              // u = (0, -amp*f, -hand*amp*g), B = (Bx0, B1*f, hand*B1*g).
-              const amrex::Real ux = 0.0;
-              const amrex::Real uy = -amp * fy;
-              const amrex::Real uz = -hand * amp * gz;
-              const amrex::Real bx = Bx0;
-              const amrex::Real by = B1 * fy;
-              const amrex::Real bz = hand * B1 * gz;
-              arrE(i, j, k, ix_) = uz * by - uy * bz;
-              arrE(i, j, k, iy_) = ux * bz - uz * bx;
-              arrE(i, j, k, iz_) = uy * bx - ux * by;
-            });
-          }
+          host_fill(nodeE, true,
+                    [&](const MFIter&, int i, int j, int k,
+                        Array4<Real> const& arrE) {
+                      const amrex::Real x = prob_lo[0] + dx[0] * i;
+                      amrex::Real fy, gz;
+                      envelope(x, gw, fy, gz);
+                      // u = (0, -amp*f, -hand*amp*g), B = (Bx0, B1*f,
+                      // hand*B1*g).
+                      const amrex::Real ux = 0.0;
+                      const amrex::Real uy = -amp * fy;
+                      const amrex::Real uz = -hand * amp * gz;
+                      const amrex::Real bx = Bx0;
+                      const amrex::Real by = B1 * fy;
+                      const amrex::Real bz = hand * B1 * gz;
+                      arrE(i, j, k, ix_) = uz * by - uy * bz;
+                      arrE(i, j, k, iy_) = ux * bz - uz * bx;
+                      arrE(i, j, k, iz_) = uy * bx - ux * by;
+                    });
         }
       }
     }
@@ -366,14 +361,15 @@ void WaveIC::set_fields(PicICFields& fields) const {
   fields.fill_boundary_E_B();
 }
 
-void WaveIC::modify_particle_weight(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::hook_weight(ParticleICState& s) const {
   if (!seedWeight_ || Lx_ <= 0.0)
     return;
   const amrex::Real factor = 1.0 + pert_ * std::sin(kx_ * s.x);
   s.q *= (factor > 0.0) ? factor : 0.0;
 }
 
-void WaveIC::modify_particle_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::hook_velocity(
+    ParticleICState& s) const {
   if (!velKick_)
     return;
   // Transverse velocity kick matching the seeded helicity:
@@ -388,7 +384,8 @@ void WaveIC::modify_particle_velocity(ParticleICState& s) const {
 
 // Bi-Maxwellian seeding: treat #UNIFORMSTATE T as T_par (parallel draw, x)
 // and inflate the two perpendicular draws by sqrt(T_perp/T_par).
-void WaveIC::modify_particle_thermal_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void WaveICParams::hook_thermal_velocity(
+    ParticleICState& s) const {
   if (anisoTPerpOverTPar_ <= 0.0)
     return;
   const amrex::Real scale = std::sqrt(anisoTPerpOverTPar_);

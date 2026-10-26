@@ -18,6 +18,7 @@
 #include <AMReX_VisMF.H>
 
 #include "Constants.h"
+#include "GpuBackend.h"
 #include "Grid.h"
 #include "GridAccess.h"
 #include "GridUtility.h"
@@ -54,7 +55,794 @@ private:
   void compute_var_conversions(const FluidInterface& fi);
 };
 
-class FluidInterfaceParameters {
+// The node-fluid data of one FAB and the geometry that locates a point in it.
+// Device-copyable, so a kernel can evaluate the fluid state (see
+// FluidStateParams). In a GPU build `fluid` points to device memory.
+struct FluidData {
+  amrex::Array4<amrex::Real const> fluid;
+  amrex::Real plo[3] = { 0, 0, 0 };
+  amrex::Real invDx[3] = { 0, 0, 0 };
+
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real value(
+      const amrex::IntVect& ijk, const int iVar) const {
+    return fluid(ijk, iVar);
+  }
+
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real value(
+      const amrex::RealVect& xyz, const int iVar) const {
+    return value_at_loc(fluid, plo, invDx, xyz, iVar);
+  }
+};
+
+// The parameters of the fluid state and the formulas that derive the plasma
+// state (densities, velocities, pressures, E, ...) from the node fluid. It is
+// a plain struct of POD members, so a kernel can capture a copy of it; the
+// formulas are written once, here, and are used both by the host accessors of
+// FluidInterface and by the kernels (see FluidInterface::fluid_view()).
+class FluidStateParams {
+protected:
+  static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
+
+  // Total number of ion/electron species exist in the fluid code.
+  int nIon = -1;
+
+  // These default flags are set for stand-alone PIC initialization
+  bool useMultiSpecies = false;
+  bool useMultiFluid = false;
+  bool useElectronFluid = true;
+  bool useAnisoP = false;
+  bool useMhdPe = false;
+  bool useHybridPIC = false;
+
+  KernelArray<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
+      iUy_I, iUz_I;
+
+  int iBx = -1, iBy = -1, iBz = -1;
+  int iEx = -1, iEy = -1, iEz = -1;
+  int iPe = -1;
+
+  //-------------------------------------------------------------------
+  int nS = 0;                 // number of particle species
+  KernelArray<double> MoMi_S; // masses for the particles species
+  KernelArray<double> QoQi_S; // charge for each particle species
+  //-------------------------------------------------------------------
+
+  // temperature ratio for electrons: PeRatio = Pe/Ptotal
+  double PeRatio = 0;
+
+  // Sum of masses of each particle species
+  double SumMass = 0, invSumMass = 0;
+
+  int iJx, iJy, iJz;
+
+  bool useResist = false;
+  double etaSI = 0, etaNO = 0;
+  int OhmU = OhmUe_;
+
+  bool initFromSWMF;
+
+public:
+  /** Get normal and perpendicular unit vectors relative to magnetic field */
+  AMREX_GPU_HOST_DEVICE static void calc_mag_base_vector(const amrex::Real Bx,
+                                                         const amrex::Real By,
+                                                         const amrex::Real Bz,
+                                                         Basis3x3& norm_DD) {
+    enum { Norm_ = 0, Perp1_ = 1, Perp2_ = 2, X_ = 0, Y_ = 1, Z_ = 2 };
+
+    amrex::Real inv = 1.0 / std::sqrt(Bx * Bx + By * By + Bz * Bz);
+    norm_DD[Norm_][X_] = Bx * inv;
+    norm_DD[Norm_][Y_] = By * inv;
+    norm_DD[Norm_][Z_] = Bz * inv;
+
+    if (norm_DD[Norm_][Z_] < 0.5) {
+      norm_DD[Perp1_][X_] = norm_DD[Norm_][Y_];
+      norm_DD[Perp1_][Y_] = -norm_DD[Norm_][X_];
+      norm_DD[Perp1_][Z_] = 0.0;
+    } else {
+      norm_DD[Perp1_][X_] = 0.0;
+      norm_DD[Perp1_][Y_] = norm_DD[Norm_][Z_];
+      norm_DD[Perp1_][Z_] = -norm_DD[Norm_][Y_];
+    }
+
+    inv = 1.0 / std::sqrt(norm_DD[Perp1_][X_] * norm_DD[Perp1_][X_] +
+                          norm_DD[Perp1_][Y_] * norm_DD[Perp1_][Y_] +
+                          norm_DD[Perp1_][Z_] * norm_DD[Perp1_][Z_]);
+    norm_DD[Perp1_][X_] *= inv;
+    norm_DD[Perp1_][Y_] *= inv;
+    norm_DD[Perp1_][Z_] *= inv;
+
+    // Perp2 = Norm x Perp1 (cross product of orthonormal unit vectors is
+    // already unit length)
+    norm_DD[Perp2_][X_] = norm_DD[Norm_][Y_] * norm_DD[Perp1_][Z_] -
+                          norm_DD[Norm_][Z_] * norm_DD[Perp1_][Y_];
+    norm_DD[Perp2_][Y_] = norm_DD[Norm_][Z_] * norm_DD[Perp1_][X_] -
+                          norm_DD[Norm_][X_] * norm_DD[Perp1_][Z_];
+    norm_DD[Perp2_][Z_] = norm_DD[Norm_][X_] * norm_DD[Perp1_][Y_] -
+                          norm_DD[Norm_][Y_] * norm_DD[Perp1_][X_];
+  }
+
+  // The fluid state at the node ijk (IntVect) or the location xyz (RealVect)
+  // of the FAB `d`.
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_pe(const FluidData& d,
+                                           const Type xyz) const {
+    if (iPe >= 0) {
+      return d.value(xyz, iPe);
+    } else if (!iP_I.empty() && iP_I[0] >= 0 && PeRatio > 0.0) {
+      return PeRatio * d.value(xyz, iP_I[0]);
+    }
+    return 0.0;
+  }
+
+  template <typename T>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_number_density(const FluidData& d,
+                                                       const T xyz,
+                                                       const int is) const {
+    amrex::Real Rho, NumDens;
+
+    if (!initFromSWMF && is < static_cast<int>(iRho_I.size())) {
+      Rho = d.value(xyz, iRho_I[is]);
+      return Rho / MoMi_S[is];
+    }
+
+    if (useHybridPIC) {
+      if (useMultiFluid || useMultiSpecies) {
+        if (is < static_cast<int>(iRho_I.size()) && iRho_I[is] >= 0) {
+          Rho = d.value(xyz, iRho_I[is]);
+          return (is < static_cast<int>(MoMi_S.size()) && MoMi_S[is] > 0.0)
+                     ? (Rho / MoMi_S[is])
+                     : Rho;
+        }
+      } else {
+        if (!iRho_I.empty() && iRho_I[0] >= 0) {
+          Rho = d.value(xyz, iRho_I[0]);
+          return (is < static_cast<int>(MoMi_S.size()) && MoMi_S[is] > 0.0)
+                     ? (Rho / MoMi_S[is])
+                     : Rho;
+        }
+      }
+      return 0.0;
+    }
+
+    if (useElectronFluid) {
+      Rho = d.value(xyz, iRho_I[is]);
+      NumDens = Rho / MoMi_S[is];
+    } else if (useMultiFluid || useMultiSpecies) {
+      if (is == 0) {
+        // Electron
+        NumDens = 0;
+        for (int iIon = 0; iIon < nIon; ++iIon) {
+          Rho = d.value(xyz, iRho_I[iIon]);
+          NumDens += Rho / MoMi_S[iIon + 1];
+        }
+      } else {
+        // Ion
+        Rho = d.value(xyz, iRho_I[is - 1]);
+        NumDens = Rho / MoMi_S[is];
+      }
+    } else {
+      // Electrons and iones have same density, ignoring is
+      Rho = d.value(xyz, iRho_I[0]);
+      NumDens = Rho * invSumMass;
+    }
+    return (NumDens);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_u(const FluidData& d, const Type xyz,
+                                          const int is,
+                                          const KernelArray<int>& iU_I,
+                                          const int iJ) const {
+
+    amrex::Real U, J, Rhoit, Qit, Rhot;
+
+    if (useHybridPIC) {
+      if (useMultiFluid) {
+        if (is < static_cast<int>(iU_I.size()) && iU_I[is] >= 0) {
+          return d.value(xyz, iU_I[is]);
+        }
+      } else {
+        if (!iU_I.empty() && iU_I[0] >= 0) {
+          return d.value(xyz, iU_I[0]);
+        }
+      }
+      return 0.0;
+    }
+
+    if (useElectronFluid) {
+      U = d.value(xyz, iU_I[is]);
+    } else if (useMultiFluid) {
+      if (is == 0) {
+        // Electron
+        /** Ue = (J - sum(ni*qi*Ui))/(ne*qe)
+               = J/(ne*qe) + sum(ni*Ui)/ne */
+        amrex::Real Ui, ni, ne;
+        J = d.value(xyz, iJ);
+        ne = get_number_density(d, xyz, 0);
+        U = J / (QoQi_S[0] * ne);
+
+        for (int iIon = 0; iIon < nIon; ++iIon) {
+          Ui = get_u(d, xyz, iIon + 1, iU_I, iJ);
+          ni = get_number_density(d, xyz, iIon + 1);
+          U += ni * Ui / ne;
+        }
+      } else {
+        // Ion
+        U = d.value(xyz, iU_I[is - 1]);
+      }
+    } else {
+      // Single fluid or multi-species.
+
+      // Ui = U_{MHD} - me/qe*J/Rho;
+      // where Rho is total density include electrons.
+      // Ue = U_{MHD} - Rhoit/Qit*J/Rho;
+      // where Rhoit = sum(ni*Mi), Qit = sum(ni*Qi).
+
+      double moq, Numi;
+      if (is == 0) {
+        Rhoit = 0;
+        Qit = 0;
+        for (int iIon = 0; iIon < nIon; ++iIon) {
+          Numi = get_number_density(d, xyz, iIon + 1);
+          Rhoit += Numi * MoMi_S[iIon + 1];
+          Qit += Numi * QoQi_S[iIon + 1];
+        }
+        moq = 0;
+        if (Qit != 0)
+          moq = Rhoit / Qit;
+      } else
+        moq = MoMi_S[0] / QoQi_S[0];
+
+      Rhot = 0;
+      for (int is0 = 0; is0 < nS; ++is0) {
+        Rhot += MoMi_S[is0] * get_number_density(d, xyz, is0);
+      }
+
+      U = d.value(xyz, iU_I[0]);
+      J = d.value(xyz, iJ);
+
+      if (Rhot != 0)
+        U -= moq * J / Rhot;
+    }
+    return U;
+  }
+
+  template <typename T>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_fluid_mass_density(const FluidData& d,
+                                                           const T xyz,
+                                                           const int is) const {
+    return d.value(xyz, iRho_I[is]);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_fluid_p(const FluidData& d,
+                                                const Type xyz,
+                                                const int is) const {
+    return d.value(xyz, iP_I[is]);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_fluid_uth(const FluidData& d,
+                                                  const Type xyz,
+                                                  const int is) const {
+    // 'uth' returned by this method is defined as: uth = sqrt(kT/m)
+    // PV = nkT
+    // kT/m = PV/(nm) = P/rho
+    // So, uth = sqrt(P/rho)
+    amrex::Real uth = 0, p, rho;
+    p = get_fluid_p(d, xyz, is);
+    rho = get_fluid_mass_density(d, xyz, is);
+    if (rho > 0)
+      uth = sqrt(p / rho);
+    return uth;
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_fluid_ux(const FluidData& d,
+                                                 const Type xyz,
+                                                 const int is) const {
+    return d.value(xyz, iUx_I[is]);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_fluid_uy(const FluidData& d,
+                                                 const Type xyz,
+                                                 const int is) const {
+    return d.value(xyz, iUy_I[is]);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_fluid_uz(const FluidData& d,
+                                                 const Type xyz,
+                                                 const int is) const {
+    return d.value(xyz, iUz_I[is]);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_ux(const FluidData& d, const Type xyz,
+                                           const int is) const {
+    return get_u(d, xyz, is, iUx_I, iJx);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_uy(const FluidData& d, const Type xyz,
+                                           const int is) const {
+    return get_u(d, xyz, is, iUy_I, iJy);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_uz(const FluidData& d, const Type xyz,
+                                           const int is) const {
+    return get_u(d, xyz, is, iUz_I, iJz);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_ppar(const FluidData& d, const Type xyz,
+                                             const int is) const {
+    amrex::Real P;
+    if (useMultiSpecies || useMultiFluid) {
+      amrex::Abort("get_ppar has not been implemented for "
+                   "multifluid/multispecies!");
+    }
+
+    if (useHybridPIC) {
+      if (useMhdPe) {
+        return d.value(xyz, iPpar_I[0]);
+      } else {
+        return d.value(xyz, iPpar_I[0]) * (1.0 - PeRatio);
+      }
+    }
+
+    if (useElectronFluid) {
+      P = d.value(xyz, iPpar_I[is]);
+    } else if (useMhdPe) {
+      if (is == 0)
+        P = d.value(xyz, iPe); // Electron
+      if (is == 1)
+        P = d.value(xyz, iPpar_I[0]); // Ion
+    } else {
+      P = d.value(xyz, iPpar_I[0]);
+      if (is == 0)
+        P *= PeRatio;
+      else if (is == 1)
+        P *= (1 - PeRatio);
+    }
+
+    return P;
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_p(const FluidData& d, const Type xyz,
+                                          const int is) const {
+    if (!initFromSWMF && is < static_cast<int>(iP_I.size())) {
+      return d.value(xyz, iP_I[is]);
+    }
+
+    if (useHybridPIC) {
+      if (useMultiFluid) {
+        if (is < static_cast<int>(iP_I.size()) && iP_I[is] >= 0) {
+          return d.value(xyz, iP_I[is]);
+        }
+        return 0.0;
+      } else {
+        amrex::Real pTotIon = 0.0;
+        if (!iP_I.empty() && iP_I[0] >= 0) {
+          pTotIon = d.value(xyz, iP_I[0]);
+          if (!useMhdPe) {
+            pTotIon *= (1.0 - PeRatio);
+          }
+        }
+        if (useMultiSpecies && nIon > 1) {
+          amrex::Real numTot = 0.0;
+          for (int iIon = 0; iIon < nIon; ++iIon) {
+            numTot += get_number_density(d, xyz, iIon);
+          }
+          if (numTot > 0.0) {
+            return pTotIon * (get_number_density(d, xyz, is) / numTot);
+          }
+        }
+        return pTotIon;
+      }
+    }
+
+    amrex::Real P = 0.0;
+
+    if (useElectronFluid) {
+      P = d.value(xyz, iP_I[is]);
+    } else if (useMultiFluid) {
+      // Multi-fluid.
+      if (is == 0)
+        P = d.value(xyz, iPe); // Electron
+      else
+        P = d.value(xyz, iP_I[is - 1]); // Ion
+    } else {
+      // Single-fluid and multi-species.
+      if (!useMhdPe) {
+        P = d.value(xyz, iP_I[0]);
+        if (is == 0)
+          P *= PeRatio;
+        else if (is > 0)
+          P *= (1 - PeRatio);
+      } else {
+        if (is == 0)
+          P = d.value(xyz, iPe); // Electron
+        else if (is > 0)
+          P = d.value(xyz, iP_I[0]); // Ion
+      }
+
+      // Split pressure among ions.
+      if (useMultiSpecies && is > 0) {
+        amrex::Real Numit;
+        Numit = 0; // Number of all ions.
+        for (int iIon = 0; iIon < nIon; ++iIon)
+          Numit += get_number_density(d, xyz, iIon + 1);
+
+        P *= get_number_density(d, xyz, is) / Numit;
+      }
+    }
+    return P;
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_pxx(const FluidData& d, const Type xyz,
+                                            const int is) const {
+    amrex::Real Pxx;
+    if (useAnisoP) {
+      amrex::Real Bx = d.value(xyz, iBx);
+      amrex::Real By = d.value(xyz, iBy);
+      amrex::Real Bz = d.value(xyz, iBz);
+      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
+
+      amrex::Real Ppar = get_ppar(d, xyz, is);
+      amrex::Real P = get_p(d, xyz, is);
+      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
+
+      Pxx = Pperp + (Ppar - Pperp) * Bx * Bx / Bt2;
+
+    } else {
+      Pxx = get_p(d, xyz, is);
+    }
+    const amrex::Real ux = get_ux(d, xyz, is);
+    return (QoQi_S[is] *
+            (Pxx / MoMi_S[is] + get_number_density(d, xyz, is) * ux * ux));
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_pyy(const FluidData& d, const Type xyz,
+                                            const int is) const {
+    amrex::Real Pyy;
+    if (useAnisoP) {
+      amrex::Real Bx = d.value(xyz, iBx);
+      amrex::Real By = d.value(xyz, iBy);
+      amrex::Real Bz = d.value(xyz, iBz);
+      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
+
+      amrex::Real Ppar = get_ppar(d, xyz, is);
+      amrex::Real P = get_p(d, xyz, is);
+      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
+
+      Pyy = Pperp + (Ppar - Pperp) * By * By / Bt2;
+
+    } else {
+      Pyy = get_p(d, xyz, is);
+    }
+    const amrex::Real uy = get_uy(d, xyz, is);
+    return (QoQi_S[is] *
+            (Pyy / MoMi_S[is] + get_number_density(d, xyz, is) * uy * uy));
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_pzz(const FluidData& d, const Type xyz,
+                                            const int is) const {
+    amrex::Real Pzz;
+    if (useAnisoP) {
+      amrex::Real Bx = d.value(xyz, iBx);
+      amrex::Real By = d.value(xyz, iBy);
+      amrex::Real Bz = d.value(xyz, iBz);
+      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
+
+      amrex::Real Ppar = get_ppar(d, xyz, is);
+      amrex::Real P = get_p(d, xyz, is);
+      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
+
+      Pzz = Pperp + (Ppar - Pperp) * Bz * Bz / Bt2;
+
+    } else {
+      Pzz = get_p(d, xyz, is);
+    }
+    const amrex::Real uz = get_uz(d, xyz, is);
+    return (QoQi_S[is] *
+            (Pzz / MoMi_S[is] + get_number_density(d, xyz, is) * uz * uz));
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_pxy(const FluidData& d, const Type xyz,
+                                            const int is) const {
+    amrex::Real Pxy = 0;
+    if (useAnisoP) {
+      amrex::Real Bx = d.value(xyz, iBx);
+      amrex::Real By = d.value(xyz, iBy);
+      amrex::Real Bz = d.value(xyz, iBz);
+      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
+
+      amrex::Real Ppar = get_ppar(d, xyz, is);
+      amrex::Real P = get_p(d, xyz, is);
+      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
+
+      Pxy = (Ppar - Pperp) * Bx * By / Bt2;
+    }
+
+    return QoQi_S[is] *
+           (Pxy / MoMi_S[is] + get_number_density(d, xyz, is) *
+                                   get_ux(d, xyz, is) * get_uy(d, xyz, is));
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_pxz(const FluidData& d, const Type xyz,
+                                            const int is) const {
+    amrex::Real Pxz = 0;
+    if (useAnisoP) {
+      amrex::Real Bx = d.value(xyz, iBx);
+      amrex::Real By = d.value(xyz, iBy);
+      amrex::Real Bz = d.value(xyz, iBz);
+      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
+
+      amrex::Real Ppar = get_ppar(d, xyz, is);
+      amrex::Real P = get_p(d, xyz, is);
+      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
+
+      Pxz = (Ppar - Pperp) * Bx * Bz / Bt2;
+    }
+
+    return QoQi_S[is] *
+           (Pxz / MoMi_S[is] + get_number_density(d, xyz, is) *
+                                   get_ux(d, xyz, is) * get_uz(d, xyz, is));
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_pyz(const FluidData& d, const Type xyz,
+                                            const int is) const {
+    amrex::Real Pyz = 0;
+    if (useAnisoP) {
+      amrex::Real Bx = d.value(xyz, iBx);
+      amrex::Real By = d.value(xyz, iBy);
+      amrex::Real Bz = d.value(xyz, iBz);
+      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
+
+      amrex::Real Ppar = get_ppar(d, xyz, is);
+      amrex::Real P = get_p(d, xyz, is);
+      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
+
+      Pyz = (Ppar - Pperp) * By * Bz / Bt2;
+    }
+
+    return QoQi_S[is] *
+           (Pyz / MoMi_S[is] + get_number_density(d, xyz, is) *
+                                   get_uy(d, xyz, is) * get_uz(d, xyz, is));
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_uth_iso(const FluidData& d,
+                                                const Type xyz,
+                                                const int is) const {
+    amrex::Real uth = 0, p, ni;
+    p = get_p(d, xyz, is);
+    ni = get_number_density(d, xyz, is);
+    if (ni > 0)
+      uth = sqrt(p / (ni * MoMi_S[is]));
+    return uth;
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE void set_particle_uth_iso(
+      const FluidData& d, const Type xyz, double* u, double* v, double* w,
+      const double rand1, const double rand2, const double rand3,
+      const double rand4, const int is, const double uthIn = -1) const {
+    double harvest, prob, theta, uth;
+
+    // u = X velocity
+    harvest = rand1;
+    prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
+    harvest = rand2;
+    theta = 2.0 * M_PI * harvest;
+    uth = (uthIn >= 0 ? uthIn : get_uth_iso(d, xyz, is));
+
+    (*u) = uth * prob * cos(theta);
+    // v = Y velocity
+    (*v) = uth * prob * sin(theta);
+    // w = Z velocity
+    harvest = rand3;
+    prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
+    harvest = rand4;
+    theta = 2.0 * M_PI * harvest;
+    (*w) = uth * prob * cos(theta);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE void set_particle_uth_aniso(
+      const FluidData& d, const Type xyz, double* u, double* v, double* w,
+      const double rand1, const double rand2, const double rand3,
+      const double rand4, const int is, const double uthParIn = -1,
+      const double uthPerpIn = -1) const {
+    amrex::Real Bx, By, Bz, P, Ppar, Pperp, Uthperp, Uthpar, Uthperp1, Uthperp2,
+        prob, theta;
+    Basis3x3 norm_DD;
+    // indices for the norm_DD matrix
+    enum { Norm_ = 0, Perp1_ = 1, Perp2_ = 2, X_ = 0, Y_ = 1, Z_ = 2 };
+
+    if (useMultiFluid || useMultiSpecies) {
+      amrex::Abort("setFluidanisoUth has not been implemented for "
+                   "multifluid/multispecies!");
+    }
+
+    // Get number density and B at the particle position
+    double ni = get_number_density(d, xyz, is);
+    Bx = d.value(xyz, iBx);
+    By = d.value(xyz, iBy);
+    Bz = d.value(xyz, iBz);
+
+    // Get Parallel and perpendicular pressure
+    Ppar = get_ppar(d, xyz, is);
+    P = get_p(d, xyz, is);
+    Pperp = 0.5 * (3.0 * P - Ppar);
+
+    // Get 3 unit vectors spanning the vector space (stack-allocated, zero heap)
+    calc_mag_base_vector(Bx, By, Bz, norm_DD);
+
+    // Get the thermal velocities
+    prob = sqrt(-2.0 * log(1.0 - .999999999 * rand1));
+    theta = 2.0 * M_PI * rand2;
+    Uthpar = uthParIn >= 0 ? uthParIn
+                           : sqrt(Ppar / (MoMi_S[is] * ni)) * prob * cos(theta);
+
+    prob = sqrt(-2.0 * log(1.0 - .999999999 * rand3));
+    theta = 2.0 * M_PI * rand4;
+    Uthperp =
+        uthPerpIn >= 0 ? uthPerpIn : sqrt(Pperp / (MoMi_S[is] * ni)) * prob;
+    Uthperp1 = Uthperp * cos(theta);
+    Uthperp2 = Uthperp * sin(theta);
+
+    // Set particle thermal velocity
+    (*u) = Uthpar * norm_DD[Norm_][X_] + Uthperp1 * norm_DD[Perp1_][X_] +
+           Uthperp2 * norm_DD[Perp2_][X_];
+    (*v) = Uthpar * norm_DD[Norm_][Y_] + Uthperp1 * norm_DD[Perp1_][Y_] +
+           Uthperp2 * norm_DD[Perp2_][Y_];
+    (*w) = Uthpar * norm_DD[Norm_][Z_] + Uthperp1 * norm_DD[Perp1_][Z_] +
+           Uthperp2 * norm_DD[Perp2_][Z_];
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_bx(const FluidData& d,
+                                           const Type xyz) const {
+    return d.value(xyz, iBx);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_by(const FluidData& d,
+                                           const Type xyz) const {
+    return d.value(xyz, iBy);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_bz(const FluidData& d,
+                                           const Type xyz) const {
+    return d.value(xyz, iBz);
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_ex(const FluidData& d,
+                                           const Type xyz) const {
+    amrex::Real Ex;
+    if (useElectronFluid) {
+      Ex = d.value(xyz, iEx);
+    } else {
+
+      amrex::Real uz = 0, uy = 0;
+
+      if (useHybridPIC) {
+        uz = get_uz(d, xyz, 0);
+        uy = get_uy(d, xyz, 0);
+      } else if (OhmU == OhmUe_) {
+        uz = get_uz(d, xyz, 0);
+        uy = get_uy(d, xyz, 0);
+      } else if (OhmU == OhmUi_) {
+        uz = get_uz(d, xyz, 1);
+        uy = get_uy(d, xyz, 1);
+      } else if (OhmU == OhmUMHD_) {
+        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
+        const amrex::Real r1 = 1 - r0;
+        uz = r0 * get_uz(d, xyz, 0) + r1 * get_uz(d, xyz, 1);
+        uy = r0 * get_uy(d, xyz, 0) + r1 * get_uy(d, xyz, 1);
+      }
+
+      Ex = uz * get_by(d, xyz) - uy * get_bz(d, xyz);
+
+      if (useResist) {
+        Ex += etaNO * d.value(xyz, iJx);
+      }
+    }
+    return Ex;
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_ey(const FluidData& d,
+                                           const Type xyz) const {
+    amrex::Real Ey;
+    if (useElectronFluid) {
+      Ey = d.value(xyz, iEy);
+    } else {
+
+      amrex::Real ux = 0, uz = 0;
+
+      if (useHybridPIC) {
+        uz = get_uz(d, xyz, 0);
+        ux = get_ux(d, xyz, 0);
+      } else if (OhmU == OhmUe_) {
+        uz = get_uz(d, xyz, 0);
+        ux = get_ux(d, xyz, 0);
+      } else if (OhmU == OhmUi_) {
+        uz = get_uz(d, xyz, 1);
+        ux = get_ux(d, xyz, 1);
+      } else if (OhmU == OhmUMHD_) {
+        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
+        const amrex::Real r1 = 1 - r0;
+        uz = r0 * get_uz(d, xyz, 0) + r1 * get_uz(d, xyz, 1);
+        ux = r0 * get_ux(d, xyz, 0) + r1 * get_ux(d, xyz, 1);
+      }
+
+      Ey = ux * get_bz(d, xyz) - uz * get_bx(d, xyz);
+
+      if (useResist) {
+        Ey += etaNO * d.value(xyz, iJy);
+      }
+    }
+
+    return Ey;
+  }
+
+  template <typename Type>
+  AMREX_GPU_HOST_DEVICE amrex::Real get_ez(const FluidData& d,
+                                           const Type xyz) const {
+    amrex::Real Ez;
+    if (useElectronFluid) {
+      Ez = d.value(xyz, iEz);
+    } else {
+
+      amrex::Real ux = 0, uy = 0;
+
+      if (useHybridPIC) {
+        ux = get_ux(d, xyz, 0);
+        uy = get_uy(d, xyz, 0);
+      } else if (OhmU == OhmUe_) {
+        ux = get_ux(d, xyz, 0);
+        uy = get_uy(d, xyz, 0);
+      } else if (OhmU == OhmUi_) {
+        ux = get_ux(d, xyz, 1);
+        uy = get_uy(d, xyz, 1);
+      } else if (OhmU == OhmUMHD_) {
+        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
+        const amrex::Real r1 = 1 - r0;
+        ux = r0 * get_ux(d, xyz, 0) + r1 * get_ux(d, xyz, 1);
+        uy = r0 * get_uy(d, xyz, 0) + r1 * get_uy(d, xyz, 1);
+      }
+
+      Ez = uy * get_bx(d, xyz) - ux * get_by(d, xyz);
+
+      if (useResist) {
+        Ez += etaNO * d.value(xyz, iJz);
+      }
+    }
+    return Ez;
+  }
+};
+
+// A copy of the fluid parameters together with the node fluid of one FAB:
+// everything a kernel needs to evaluate the fluid state.
+struct FluidView : public FluidStateParams {
+  FluidData d;
+};
+
+class FluidInterfaceParameters : public FluidStateParams {
 protected:
   FluidInterfaceParameters() = default;
   FluidInterfaceParameters(const FluidInterfaceParameters& fip) = default;
@@ -64,8 +852,6 @@ public:
       default;
 
 protected:
-  static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
-
   double tStartSI;
 
   int nCellPerPatch = 1;
@@ -85,40 +871,10 @@ protected:
   // Number of species at the MHD side. One 'species' only has its own density.
   int nSpeciesFluid = 0;
 
-  // Total number of ion/electron species exist in the fluid code.
-  int nIon = -1;
-
-  // These default flags are set for stand-alone PIC initialization
-  bool useMultiSpecies = false;
-  bool useMultiFluid = false;
-  bool useElectronFluid = true;
-  bool useAnisoP = false;
-  bool useMhdPe = false;
-  bool useHybridPIC = false;
-
-  amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
-      iUy_I, iUz_I;
-
-  int iBx = -1, iBy = -1, iBz = -1;
-  int iEx = -1, iEy = -1, iEz = -1;
-  int iPe = -1, iRhoTotal = -1, iLevSet = -1;
+  int iRhoTotal = -1, iLevSet = -1;
 
   // Variable names of nodeFluid.
   amrex::Vector<std::string> varNames;
-
-  //-------------------------------------------------------------------
-  int nS = 0;                   // number of particle species
-  amrex::Vector<double> MoMi_S; // masses for the particles species
-  amrex::Vector<double> QoQi_S; // charge for each particle species
-  //-------------------------------------------------------------------
-
-  // temperature ratio for electrons: PeRatio = Pe/Ptotal
-  double PeRatio = 0;
-
-  // Sum of masses of each particle species
-  double SumMass = 0, invSumMass = 0;
-
-  int iJx, iJy, iJz;
 
   // Normalization base scalars, read from SWMF iParam/norm or from
   // #NORMALIZATION/#SCALINGFACTOR/#PLANETRADIUS.
@@ -142,12 +898,6 @@ public:
   bool inflowDefined = false;
 
 protected:
-  bool useResist = false;
-  double etaSI = 0, etaNO = 0;
-  int OhmU = OhmUe_;
-
-  bool initFromSWMF;
-
   std::string restartOut = component + "/restartOUT/";
 
   // Exosphere neutral profile parameters
@@ -297,6 +1047,10 @@ public:
 
   void normalize_fluid_variables();
 
+  // Print the nodes where a fluid density is zero (see
+  // convert_moment_to_velocity).
+  void report_zero_density(int iLev, bool phyNodeOnly) const;
+
   void convert_moment_to_velocity(bool phyNodeOnly = false, bool doWarn = true);
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);
@@ -305,10 +1059,6 @@ public:
   void finalize_normalization(bool scalarOnly = false);
 
   void analyze_var_names(bool useNeutral = false);
-
-  /** Get normal and perpendicular unit vectors relative to magnetic field */
-  void calc_mag_base_vector(const amrex::Real Bx, const amrex::Real By,
-                            const amrex::Real Bz, Basis3x3& norm_DD) const;
 
   void calc_fluid_state(const double* dataPIC_I, double* dataFluid_I) const;
   void calc_fluid_state_hybrid(const double* dataPIC_I,
@@ -364,12 +1114,7 @@ public:
   template <typename Type>
   amrex::Real get_pe(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
-    if (iPe >= 0) {
-      return get_value(mfi, xyz, iPe, iLev);
-    } else if (!iP_I.empty() && iP_I[0] >= 0 && PeRatio > 0.0) {
-      return PeRatio * get_value(mfi, xyz, iP_I[0], iLev);
-    }
-    return 0.0;
+    return FluidStateParams::get_pe(fluid_data(mfi, iLev), xyz);
   }
 
   int get_fluid_dimension() const { return (nDimFluid); }
@@ -425,7 +1170,7 @@ public:
   void sum_boundary() {
     timing_func("FI::sum_boundary");
     for (int iLev = 0; iLev < n_lev(); ++iLev)
-      nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());
+      ::sum_boundary(nodeFluid[iLev], Geom(iLev).periodicity());
 
     for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
       sum_two_lev_interface_node(
@@ -549,474 +1294,173 @@ public:
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
   }
 
+  const amrex::MultiFab& get_center_b(const int iLev) const {
+    return centerB[iLev];
+  }
+
   amrex::Real get_center_b(const amrex::MFIter& mfi, const amrex::IntVect ijk,
                            const int iDir, const int iLev = 0) const {
     const auto& arr = centerB[iLev][mfi].array();
     return arr(ijk, iDir);
   }
 
+  // The node fluid of the FAB mfi of level iLev and its geometry.
+  // The node fluid of level iLev (e.g. to stage it on the host).
+  amrex::MultiFab& get_node_fluid(int iLev) { return nodeFluid[iLev]; }
+
+  FluidData fluid_data(const amrex::MFIter& mfi, const int iLev) const {
+    FluidData d;
+    d.fluid = nodeFluid[iLev].const_array(mfi);
+    for (int i = 0; i < AMREX_SPACEDIM; ++i) {
+      d.plo[i] = Geom(iLev).ProbLo(i);
+      d.invDx[i] = Geom(iLev).InvCellSize(i);
+    }
+    return d;
+  }
+
+  // Everything a kernel needs to evaluate the fluid state of the FAB mfi of
+  // level iLev. Capture it by value.
+  FluidView fluid_view(const amrex::MFIter& mfi, const int iLev) const {
+    FluidView v;
+    static_cast<FluidStateParams&>(v) =
+        static_cast<const FluidStateParams&>(*this);
+    v.d = fluid_data(mfi, iLev);
+    return v;
+  }
+
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::IntVect ijk,
                         const int iVar, const int iLev = 0) const {
-    const auto& arr = nodeFluid[iLev][mfi].array();
-    return arr(ijk, iVar);
+    return fluid_data(mfi, iLev).value(ijk, iVar);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::RealVect xyz,
                         const int iVar, const int iLev = 0) const {
-    return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
+    return fluid_data(mfi, iLev).value(xyz, iVar);
   }
 
+  // Host accessors of the fluid state. They read nodeFluid on the host, so
+  // a GPU build may only call them where nodeFluid is host accessible; kernels
+  // use fluid_view() and the FluidStateParams methods instead.
   template <typename T>
   amrex::Real get_number_density(const amrex::MFIter& mfi, const T xyz,
                                  const int is, const int iLev = 0) const {
-    amrex::Real Rho, NumDens;
-
-    if (!initFromSWMF && is < static_cast<int>(iRho_I.size())) {
-      Rho = get_value(mfi, xyz, iRho_I[is], iLev);
-      return Rho / MoMi_S[is];
-    }
-
-    if (useHybridPIC) {
-      if (useMultiFluid || useMultiSpecies) {
-        if (is < static_cast<int>(iRho_I.size()) && iRho_I[is] >= 0) {
-          Rho = get_value(mfi, xyz, iRho_I[is], iLev);
-          return (is < static_cast<int>(MoMi_S.size()) && MoMi_S[is] > 0.0)
-                     ? (Rho / MoMi_S[is])
-                     : Rho;
-        }
-      } else {
-        if (!iRho_I.empty() && iRho_I[0] >= 0) {
-          Rho = get_value(mfi, xyz, iRho_I[0], iLev);
-          return (is < static_cast<int>(MoMi_S.size()) && MoMi_S[is] > 0.0)
-                     ? (Rho / MoMi_S[is])
-                     : Rho;
-        }
-      }
-      return 0.0;
-    }
-
-    if (useElectronFluid) {
-      Rho = get_value(mfi, xyz, iRho_I[is], iLev);
-      NumDens = Rho / MoMi_S[is];
-    } else if (useMultiFluid || useMultiSpecies) {
-      if (is == 0) {
-        // Electron
-        NumDens = 0;
-        for (int iIon = 0; iIon < nIon; ++iIon) {
-          Rho = get_value(mfi, xyz, iRho_I[iIon], iLev);
-          NumDens += Rho / MoMi_S[iIon + 1];
-        }
-      } else {
-        // Ion
-        Rho = get_value(mfi, xyz, iRho_I[is - 1], iLev);
-        NumDens = Rho / MoMi_S[is];
-      }
-    } else {
-      // Electrons and iones have same density, ignoring is
-      Rho = get_value(mfi, xyz, iRho_I[0], iLev);
-      NumDens = Rho * invSumMass;
-    }
-    return (NumDens);
+    return FluidStateParams::get_number_density(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_u(const amrex::MFIter& mfi, const Type xyz, const int is,
-                    const amrex::Vector<int>& iU_I, const int iJ,
+                    const KernelArray<int>& iU_I, const int iJ,
                     const int iLev = 0) const {
-
-    amrex::Real U, J, Rhoit, Qit, Rhot;
-
-    if (useHybridPIC) {
-      if (useMultiFluid) {
-        if (is < static_cast<int>(iU_I.size()) && iU_I[is] >= 0) {
-          return get_value(mfi, xyz, iU_I[is], iLev);
-        }
-      } else {
-        if (!iU_I.empty() && iU_I[0] >= 0) {
-          return get_value(mfi, xyz, iU_I[0], iLev);
-        }
-      }
-      return 0.0;
-    }
-
-    if (useElectronFluid) {
-      U = get_value(mfi, xyz, iU_I[is], iLev);
-    } else if (useMultiFluid) {
-      if (is == 0) {
-        // Electron
-        /** Ue = (J - sum(ni*qi*Ui))/(ne*qe)
-               = J/(ne*qe) + sum(ni*Ui)/ne */
-        amrex::Real Ui, ni, ne;
-        J = get_value(mfi, xyz, iJ, iLev);
-        ne = get_number_density(mfi, xyz, 0, iLev);
-        U = J / (QoQi_S[0] * ne);
-
-        for (int iIon = 0; iIon < nIon; ++iIon) {
-          Ui = get_u(mfi, xyz, iIon + 1, iU_I, iJ, iLev);
-          ni = get_number_density(mfi, xyz, iIon + 1, iLev);
-          U += ni * Ui / ne;
-        }
-      } else {
-        // Ion
-        U = get_value(mfi, xyz, iU_I[is - 1], iLev);
-      }
-    } else {
-      // Single fluid or multi-species.
-
-      // Ui = U_{MHD} - me/qe*J/Rho;
-      // where Rho is total density include electrons.
-      // Ue = U_{MHD} - Rhoit/Qit*J/Rho;
-      // where Rhoit = sum(ni*Mi), Qit = sum(ni*Qi).
-
-      double moq, Numi;
-      if (is == 0) {
-        Rhoit = 0;
-        Qit = 0;
-        for (int iIon = 0; iIon < nIon; ++iIon) {
-          Numi = get_number_density(mfi, xyz, iIon + 1, iLev);
-          Rhoit += Numi * MoMi_S[iIon + 1];
-          Qit += Numi * QoQi_S[iIon + 1];
-        }
-        moq = 0;
-        if (Qit != 0)
-          moq = Rhoit / Qit;
-      } else
-        moq = MoMi_S[0] / QoQi_S[0];
-
-      Rhot = 0;
-      for (int is0 = 0; is0 < nS; ++is0) {
-        Rhot += MoMi_S[is0] * get_number_density(mfi, xyz, is0, iLev);
-      }
-
-      U = get_value(mfi, xyz, iU_I[0], iLev);
-      J = get_value(mfi, xyz, iJ, iLev);
-
-      if (Rhot != 0)
-        U -= moq * J / Rhot;
-    }
-    return U;
+    return FluidStateParams::get_u(fluid_data(mfi, iLev), xyz, is, iU_I, iJ);
   }
 
   template <typename T>
   amrex::Real get_fluid_mass_density(const amrex::MFIter& mfi, const T xyz,
                                      const int is, const int iLev = 0) const {
-    return get_value(mfi, xyz, iRho_I[is], iLev);
+    return FluidStateParams::get_fluid_mass_density(fluid_data(mfi, iLev), xyz,
+                                                    is);
   }
 
   template <typename Type>
   amrex::Real get_fluid_p(const amrex::MFIter& mfi, const Type xyz,
                           const int is, const int iLev = 0) const {
-    return get_value(mfi, xyz, iP_I[is], iLev);
+    return FluidStateParams::get_fluid_p(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uth(const amrex::MFIter& mfi, const Type xyz,
                             const int is, const int iLev = 0) const {
-    // 'uth' returned by this method is defined as: uth = sqrt(kT/m)
-    // PV = nkT
-    // kT/m = PV/(nm) = P/rho
-    // So, uth = sqrt(P/rho)
-    amrex::Real uth = 0, p, rho;
-    p = get_fluid_p(mfi, xyz, is, iLev);
-    rho = get_fluid_mass_density(mfi, xyz, is, iLev);
-    if (rho > 0)
-      uth = sqrt(p / rho);
-    return uth;
+    return FluidStateParams::get_fluid_uth(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_fluid_ux(const amrex::MFIter& mfi, const Type xyz,
                            const int is, const int iLev = 0) const {
-    return get_value(mfi, xyz, iUx_I[is], iLev);
+    return FluidStateParams::get_fluid_ux(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uy(const amrex::MFIter& mfi, const Type xyz,
                            const int is, const int iLev = 0) const {
-    return get_value(mfi, xyz, iUy_I[is], iLev);
+    return FluidStateParams::get_fluid_uy(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uz(const amrex::MFIter& mfi, const Type xyz,
                            const int is, const int iLev = 0) const {
-    return get_value(mfi, xyz, iUz_I[is], iLev);
+    return FluidStateParams::get_fluid_uz(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_ux(const amrex::MFIter& mfi, const Type xyz, const int is,
                      const int iLev = 0) const {
-    return get_u(mfi, xyz, is, iUx_I, iJx, iLev);
+    return FluidStateParams::get_ux(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_uy(const amrex::MFIter& mfi, const Type xyz, const int is,
                      const int iLev = 0) const {
-    return get_u(mfi, xyz, is, iUy_I, iJy, iLev);
+    return FluidStateParams::get_uy(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_uz(const amrex::MFIter& mfi, const Type xyz, const int is,
                      const int iLev = 0) const {
-    return get_u(mfi, xyz, is, iUz_I, iJz, iLev);
+    return FluidStateParams::get_uz(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_ppar(const amrex::MFIter& mfi, const Type xyz, const int is,
                        const int iLev = 0) const {
-    amrex::Real P;
-    if (useMultiSpecies || useMultiFluid) {
-      amrex::Abort("get_ppar has not been implemented for "
-                   "multifluid/multispecies!");
-    }
-
-    if (useHybridPIC) {
-      if (useMhdPe) {
-        return get_value(mfi, xyz, iPpar_I[0], iLev);
-      } else {
-        return get_value(mfi, xyz, iPpar_I[0], iLev) * (1.0 - PeRatio);
-      }
-    }
-
-    if (useElectronFluid) {
-      P = get_value(mfi, xyz, iPpar_I[is], iLev);
-    } else if (useMhdPe) {
-      if (is == 0)
-        P = get_value(mfi, xyz, iPe, iLev); // Electron
-      if (is == 1)
-        P = get_value(mfi, xyz, iPpar_I[0], iLev); // Ion
-    } else {
-      P = get_value(mfi, xyz, iPpar_I[0], iLev);
-      if (is == 0)
-        P *= PeRatio;
-      else if (is == 1)
-        P *= (1 - PeRatio);
-    }
-
-    return P;
+    return FluidStateParams::get_ppar(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_p(const amrex::MFIter& mfi, const Type xyz, const int is,
                     const int iLev = 0) const {
-    if (!initFromSWMF && is < static_cast<int>(iP_I.size())) {
-      return get_value(mfi, xyz, iP_I[is], iLev);
-    }
-
-    if (useHybridPIC) {
-      if (useMultiFluid) {
-        if (is < static_cast<int>(iP_I.size()) && iP_I[is] >= 0) {
-          return get_value(mfi, xyz, iP_I[is], iLev);
-        }
-        return 0.0;
-      } else {
-        amrex::Real pTotIon = 0.0;
-        if (!iP_I.empty() && iP_I[0] >= 0) {
-          pTotIon = get_value(mfi, xyz, iP_I[0], iLev);
-          if (!useMhdPe) {
-            pTotIon *= (1.0 - PeRatio);
-          }
-        }
-        if (useMultiSpecies && nIon > 1) {
-          amrex::Real numTot = 0.0;
-          for (int iIon = 0; iIon < nIon; ++iIon) {
-            numTot += get_number_density(mfi, xyz, iIon, iLev);
-          }
-          if (numTot > 0.0) {
-            return pTotIon * (get_number_density(mfi, xyz, is, iLev) / numTot);
-          }
-        }
-        return pTotIon;
-      }
-    }
-
-    amrex::Real P = 0.0;
-
-    if (useElectronFluid) {
-      P = get_value(mfi, xyz, iP_I[is], iLev);
-    } else if (useMultiFluid) {
-      // Multi-fluid.
-      if (is == 0)
-        P = get_value(mfi, xyz, iPe, iLev); // Electron
-      else
-        P = get_value(mfi, xyz, iP_I[is - 1], iLev); // Ion
-    } else {
-      // Single-fluid and multi-species.
-      if (!useMhdPe) {
-        P = get_value(mfi, xyz, iP_I[0], iLev);
-        if (is == 0)
-          P *= PeRatio;
-        else if (is > 0)
-          P *= (1 - PeRatio);
-      } else {
-        if (is == 0)
-          P = get_value(mfi, xyz, iPe, iLev); // Electron
-        else if (is > 0)
-          P = get_value(mfi, xyz, iP_I[0], iLev); // Ion
-      }
-
-      // Split pressure among ions.
-      if (useMultiSpecies && is > 0) {
-        amrex::Real Numit;
-        Numit = 0; // Number of all ions.
-        for (int iIon = 0; iIon < nIon; ++iIon)
-          Numit += get_number_density(mfi, xyz, iIon + 1, iLev);
-
-        P *= get_number_density(mfi, xyz, is, iLev) / Numit;
-      }
-    }
-    return P;
+    return FluidStateParams::get_p(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_pxx(const amrex::MFIter& mfi, const Type xyz, const int is,
                       const int iLev = 0) const {
-    amrex::Real Pxx;
-    if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
-      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
-      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
-
-      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
-      amrex::Real P = get_p(mfi, xyz, is, iLev);
-      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
-
-      Pxx = Pperp + (Ppar - Pperp) * Bx * Bx / Bt2;
-
-    } else {
-      Pxx = get_p(mfi, xyz, is, iLev);
-    }
-    const amrex::Real ux = get_ux(mfi, xyz, is, iLev);
-    return (QoQi_S[is] * (Pxx / MoMi_S[is] +
-                          get_number_density(mfi, xyz, is, iLev) * ux * ux));
+    return FluidStateParams::get_pxx(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_pyy(const amrex::MFIter& mfi, const Type xyz, const int is,
                       const int iLev = 0) const {
-    amrex::Real Pyy;
-    if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
-      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
-      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
-
-      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
-      amrex::Real P = get_p(mfi, xyz, is, iLev);
-      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
-
-      Pyy = Pperp + (Ppar - Pperp) * By * By / Bt2;
-
-    } else {
-      Pyy = get_p(mfi, xyz, is, iLev);
-    }
-    const amrex::Real uy = get_uy(mfi, xyz, is, iLev);
-    return (QoQi_S[is] * (Pyy / MoMi_S[is] +
-                          get_number_density(mfi, xyz, is, iLev) * uy * uy));
+    return FluidStateParams::get_pyy(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_pzz(const amrex::MFIter& mfi, const Type xyz, const int is,
                       const int iLev = 0) const {
-    amrex::Real Pzz;
-    if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
-      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
-      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
-
-      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
-      amrex::Real P = get_p(mfi, xyz, is, iLev);
-      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
-
-      Pzz = Pperp + (Ppar - Pperp) * Bz * Bz / Bt2;
-
-    } else {
-      Pzz = get_p(mfi, xyz, is, iLev);
-    }
-    const amrex::Real uz = get_uz(mfi, xyz, is, iLev);
-    return (QoQi_S[is] * (Pzz / MoMi_S[is] +
-                          get_number_density(mfi, xyz, is, iLev) * uz * uz));
+    return FluidStateParams::get_pzz(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_pxy(const amrex::MFIter& mfi, const Type xyz, const int is,
                       const int iLev = 0) const {
-    amrex::Real Pxy = 0;
-    if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
-      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
-      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
-
-      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
-      amrex::Real P = get_p(mfi, xyz, is, iLev);
-      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
-
-      Pxy = (Ppar - Pperp) * Bx * By / Bt2;
-    }
-
-    return QoQi_S[is] *
-           (Pxy / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
-                                   get_ux(mfi, xyz, is, iLev) *
-                                   get_uy(mfi, xyz, is, iLev));
+    return FluidStateParams::get_pxy(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_pxz(const amrex::MFIter& mfi, const Type xyz, const int is,
                       const int iLev = 0) const {
-    amrex::Real Pxz = 0;
-    if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
-      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
-      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
-
-      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
-      amrex::Real P = get_p(mfi, xyz, is, iLev);
-      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
-
-      Pxz = (Ppar - Pperp) * Bx * Bz / Bt2;
-    }
-
-    return QoQi_S[is] *
-           (Pxz / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
-                                   get_ux(mfi, xyz, is, iLev) *
-                                   get_uz(mfi, xyz, is, iLev));
+    return FluidStateParams::get_pxz(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_pyz(const amrex::MFIter& mfi, const Type xyz, const int is,
                       const int iLev = 0) const {
-    amrex::Real Pyz = 0;
-    if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
-      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
-      amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
-
-      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
-      amrex::Real P = get_p(mfi, xyz, is, iLev);
-      amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
-
-      Pyz = (Ppar - Pperp) * By * Bz / Bt2;
-    }
-
-    return QoQi_S[is] *
-           (Pyz / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
-                                   get_uy(mfi, xyz, is, iLev) *
-                                   get_uz(mfi, xyz, is, iLev));
+    return FluidStateParams::get_pyz(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
   amrex::Real get_uth_iso(const amrex::MFIter& mfi, const Type xyz,
                           const int is, const int iLev = 0) const {
-    amrex::Real uth = 0, p, ni;
-    p = get_p(mfi, xyz, is, iLev);
-    ni = get_number_density(mfi, xyz, is, iLev);
-    if (ni > 0)
-      uth = sqrt(p / (ni * MoMi_S[is]));
-    return uth;
+    return FluidStateParams::get_uth_iso(fluid_data(mfi, iLev), xyz, is);
   }
 
   template <typename Type>
@@ -1025,24 +1469,8 @@ public:
                             const double rand1, const double rand2,
                             const double rand3, const double rand4,
                             const int is, const double uthIn = -1) const {
-    double harvest, prob, theta, uth;
-
-    // u = X velocity
-    harvest = rand1;
-    prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
-    harvest = rand2;
-    theta = 2.0 * M_PI * harvest;
-    uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, xyz, is, iLev));
-
-    (*u) = uth * prob * cos(theta);
-    // v = Y velocity
-    (*v) = uth * prob * sin(theta);
-    // w = Z velocity
-    harvest = rand3;
-    prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
-    harvest = rand4;
-    theta = 2.0 * M_PI * harvest;
-    (*w) = uth * prob * cos(theta);
+    FluidStateParams::set_particle_uth_iso(fluid_data(mfi, iLev), xyz, u, v, w,
+                                           rand1, rand2, rand3, rand4, is, -1);
   }
 
   template <typename Type>
@@ -1052,196 +1480,45 @@ public:
                               const double rand3, const double rand4,
                               const int is, const double uthParIn = -1,
                               const double uthPerpIn = -1) const {
-    amrex::Real Bx, By, Bz, P, Ppar, Pperp, Uthperp, Uthpar, Uthperp1, Uthperp2,
-        prob, theta;
-    Basis3x3 norm_DD;
-    // indices for the norm_DD matrix
-    enum { Norm_ = 0, Perp1_ = 1, Perp2_ = 2, X_ = 0, Y_ = 1, Z_ = 2 };
-
-    if (useMultiFluid || useMultiSpecies) {
-      amrex::Abort("setFluidanisoUth has not been implemented for "
-                   "multifluid/multispecies!");
-    }
-
-    // Get number density and B at the particle position
-    double ni = get_number_density(mfi, xyz, is, iLev);
-    Bx = get_value(mfi, xyz, iBx, iLev);
-    By = get_value(mfi, xyz, iBy, iLev);
-    Bz = get_value(mfi, xyz, iBz, iLev);
-
-    // Get Parallel and perpendicular pressure
-    Ppar = get_ppar(mfi, xyz, is, iLev);
-    P = get_p(mfi, xyz, is, iLev);
-    Pperp = 0.5 * (3.0 * P - Ppar);
-
-    // Get 3 unit vectors spanning the vector space (stack-allocated, zero heap)
-    calc_mag_base_vector(Bx, By, Bz, norm_DD);
-
-    // Get the thermal velocities
-    prob = sqrt(-2.0 * log(1.0 - .999999999 * rand1));
-    theta = 2.0 * M_PI * rand2;
-    Uthpar = uthParIn >= 0 ? uthParIn
-                           : sqrt(Ppar / (MoMi_S[is] * ni)) * prob * cos(theta);
-
-    prob = sqrt(-2.0 * log(1.0 - .999999999 * rand3));
-    theta = 2.0 * M_PI * rand4;
-    Uthperp =
-        uthPerpIn >= 0 ? uthPerpIn : sqrt(Pperp / (MoMi_S[is] * ni)) * prob;
-    Uthperp1 = Uthperp * cos(theta);
-    Uthperp2 = Uthperp * sin(theta);
-
-    // Set particle thermal velocity
-    (*u) = Uthpar * norm_DD[Norm_][X_] + Uthperp1 * norm_DD[Perp1_][X_] +
-           Uthperp2 * norm_DD[Perp2_][X_];
-    (*v) = Uthpar * norm_DD[Norm_][Y_] + Uthperp1 * norm_DD[Perp1_][Y_] +
-           Uthperp2 * norm_DD[Perp2_][Y_];
-    (*w) = Uthpar * norm_DD[Norm_][Z_] + Uthperp1 * norm_DD[Perp1_][Z_] +
-           Uthperp2 * norm_DD[Perp2_][Z_];
+    FluidStateParams::set_particle_uth_aniso(fluid_data(mfi, iLev), xyz, u, v,
+                                             w, rand1, rand2, rand3, rand4, is,
+                                             -1, -1);
   }
 
   template <typename Type>
   amrex::Real get_bx(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
-    return get_value(mfi, xyz, iBx, iLev);
+    return FluidStateParams::get_bx(fluid_data(mfi, iLev), xyz);
   }
 
   template <typename Type>
   amrex::Real get_by(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
-    return get_value(mfi, xyz, iBy, iLev);
+    return FluidStateParams::get_by(fluid_data(mfi, iLev), xyz);
   }
 
   template <typename Type>
   amrex::Real get_bz(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
-    return get_value(mfi, xyz, iBz, iLev);
+    return FluidStateParams::get_bz(fluid_data(mfi, iLev), xyz);
   }
 
   template <typename Type>
   amrex::Real get_ex(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
-    amrex::Real Ex;
-    if (useElectronFluid) {
-      Ex = get_value(mfi, xyz, iEx, iLev);
-    } else {
-      const bool UseGradPe = false;
-
-      amrex::Real uz = 0, uy = 0;
-
-      if (useHybridPIC) {
-        uz = get_uz(mfi, xyz, 0, iLev);
-        uy = get_uy(mfi, xyz, 0, iLev);
-      } else if (OhmU == OhmUe_) {
-        uz = get_uz(mfi, xyz, 0, iLev);
-        uy = get_uy(mfi, xyz, 0, iLev);
-      } else if (OhmU == OhmUi_) {
-        uz = get_uz(mfi, xyz, 1, iLev);
-        uy = get_uy(mfi, xyz, 1, iLev);
-      } else if (OhmU == OhmUMHD_) {
-        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
-        const amrex::Real r1 = 1 - r0;
-        uz = r0 * get_uz(mfi, xyz, 0, iLev) + r1 * get_uz(mfi, xyz, 1, iLev);
-        uy = r0 * get_uy(mfi, xyz, 0, iLev) + r1 * get_uy(mfi, xyz, 1, iLev);
-      }
-
-      Ex = uz * get_by(mfi, xyz, iLev) - uy * get_bz(mfi, xyz, iLev);
-
-      if (UseGradPe) {
-        amrex::Real ne = get_number_density(mfi, xyz, 0, iLev);
-        amrex::Real gradpe = get_grad_pe_x(mfi, xyz, iLev);
-        Ex -= gradpe / fabs(QoQi_S[0] * ne);
-      }
-
-      if (useResist) {
-        Ex += etaNO * get_value(mfi, xyz, iJx, iLev);
-      }
-    }
-    return Ex;
+    return FluidStateParams::get_ex(fluid_data(mfi, iLev), xyz);
   }
 
   template <typename Type>
   amrex::Real get_ey(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
-    amrex::Real Ey;
-    if (useElectronFluid) {
-      Ey = get_value(mfi, xyz, iEy, iLev);
-    } else {
-      const bool UseGradPe = false;
-
-      amrex::Real ux = 0, uz = 0;
-
-      if (useHybridPIC) {
-        uz = get_uz(mfi, xyz, 0, iLev);
-        ux = get_ux(mfi, xyz, 0, iLev);
-      } else if (OhmU == OhmUe_) {
-        uz = get_uz(mfi, xyz, 0, iLev);
-        ux = get_ux(mfi, xyz, 0, iLev);
-      } else if (OhmU == OhmUi_) {
-        uz = get_uz(mfi, xyz, 1, iLev);
-        ux = get_ux(mfi, xyz, 1, iLev);
-      } else if (OhmU == OhmUMHD_) {
-        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
-        const amrex::Real r1 = 1 - r0;
-        uz = r0 * get_uz(mfi, xyz, 0, iLev) + r1 * get_uz(mfi, xyz, 1, iLev);
-        ux = r0 * get_ux(mfi, xyz, 0, iLev) + r1 * get_ux(mfi, xyz, 1, iLev);
-      }
-
-      Ey = ux * get_bz(mfi, xyz, iLev) - uz * get_bx(mfi, xyz, iLev);
-
-      if (UseGradPe) {
-        amrex::Real ne = get_number_density(mfi, xyz, 0, iLev);
-        amrex::Real gradpe = get_grad_pe_y(mfi, xyz, iLev);
-        Ey -= gradpe / fabs(QoQi_S[0] * ne);
-      }
-
-      if (useResist) {
-        Ey += etaNO * get_value(mfi, xyz, iJy, iLev);
-      }
-    }
-
-    return Ey;
+    return FluidStateParams::get_ey(fluid_data(mfi, iLev), xyz);
   }
 
   template <typename Type>
   amrex::Real get_ez(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
-    amrex::Real Ez;
-    if (useElectronFluid) {
-      Ez = get_value(mfi, xyz, iEz, iLev);
-    } else {
-      const bool UseGradPe = false;
-
-      amrex::Real ux = 0, uy = 0;
-
-      if (useHybridPIC) {
-        ux = get_ux(mfi, xyz, 0, iLev);
-        uy = get_uy(mfi, xyz, 0, iLev);
-      } else if (OhmU == OhmUe_) {
-        ux = get_ux(mfi, xyz, 0, iLev);
-        uy = get_uy(mfi, xyz, 0, iLev);
-      } else if (OhmU == OhmUi_) {
-        ux = get_ux(mfi, xyz, 1, iLev);
-        uy = get_uy(mfi, xyz, 1, iLev);
-      } else if (OhmU == OhmUMHD_) {
-        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
-        const amrex::Real r1 = 1 - r0;
-        ux = r0 * get_ux(mfi, xyz, 0, iLev) + r1 * get_ux(mfi, xyz, 1, iLev);
-        uy = r0 * get_uy(mfi, xyz, 0, iLev) + r1 * get_uy(mfi, xyz, 1, iLev);
-      }
-
-      Ez = uy * get_bx(mfi, xyz, iLev) - ux * get_by(mfi, xyz, iLev);
-
-      if (UseGradPe) {
-        amrex::Real ne = get_number_density(mfi, xyz, 0, iLev);
-        amrex::Real gradpe = get_grad_pe_z(mfi, xyz, iLev);
-        Ez -= gradpe / fabs(QoQi_S[0] * ne);
-      }
-
-      if (useResist) {
-        Ez += etaNO * get_value(mfi, xyz, iJz, iLev);
-      }
-    }
-    return Ez;
+    return FluidStateParams::get_ez(fluid_data(mfi, iLev), xyz);
   }
 
   // Calculate grad(pe) at node (x,y,z). If this node is at the boundary of

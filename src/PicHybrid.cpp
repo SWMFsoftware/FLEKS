@@ -267,8 +267,13 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           ? ((electronGamma > 0) ? electronGamma : 1.0) * electronTemperature
           : 0.0;
   const bool useHall = useHallTerm;
+  // Kernels must not read members (that would capture 'this').
+  const Real rhoMin = rhoMinOhm;
+  const Real etaGlobal = etaResistivity;
+  const bool hasEtaRegional = hasRegionalResistivity_;
+  const bool addAmbi = includeAmbi && electronTemperature > 0;
 
-  for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(Eout, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
     const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
@@ -363,8 +368,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         mz += wPrev * momentsPrev(i, j, k, iMz_);
       }
       Real ui = 0, vi = 0, wi = 0;
-      const Real invRhoEff =
-          (rho > 0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
+      const Real invRhoEff = (rho > 0) ? (1.0 / amrex::max(rho, rhoMin)) : 0.0;
 
       if (rho > 0) {
         ui = mx * invRhoEff;
@@ -390,8 +394,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       }
 
       // eta * J (global + regional resistivity)
-      Real etaTotal = etaResistivity;
-      if (hasRegionalResistivity_) {
+      Real etaTotal = etaGlobal;
+      if (hasEtaRegional) {
         etaTotal += arrEtaReg(i, j, k);
       }
       if (etaTotal > 0.0) {
@@ -402,14 +406,14 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
       // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
       // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
-      if (includeAmbi && electronTemperature > 0) {
+      if (addAmbi) {
         ex += arrEambi(i, j, k, ix_);
         ey += arrEambi(i, j, k, iy_);
         ez += arrEambi(i, j, k, iz_);
       }
 
       // Hall term: (J x B) / rho_q
-      if (rho > 0 && useHallTerm) {
+      if (rho > 0 && useHall) {
         Real hall_x = (jy * bz - jz * by) * invRhoEff;
         Real hall_y = (jz * bx - jx * bz) * invRhoEff;
         Real hall_z = (jx * by - jy * bx) * invRhoEff;
@@ -517,7 +521,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     if (!hasRegionalHyper_) {
       MultiFab::Saxpy(Eout, -fGlobal, nodeHyperE[iLev], 0, 0, nDim3, 0);
     } else {
-      for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(Eout, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& arrE = Eout[mfi].array();
         const Array4<Real const>& arrHyp = nodeHyperE[iLev][mfi].array();
@@ -598,7 +602,8 @@ void Pic::compute_ambipolar_E(int iLev) {
     const Real gamma = electronGamma;
     const Real Te = electronTemperature;
 
-    for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(centerPe[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
@@ -627,7 +632,9 @@ void Pic::compute_ambipolar_E(int iLev) {
                       Geom(iLev).InvCellSize());
 
   // Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
-  for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
+  const Real rhoMin = rhoMinOhm;
+  for (MFIter mfi(nodeEambi[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
@@ -635,7 +642,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = moments(i, j, k, iRho_);
       if (rho > 0) {
-        const Real invRhoEff = -1.0 / amrex::max(rho, rhoMinOhm);
+        const Real invRhoEff = -1.0 / amrex::max(rho, rhoMin);
         arrEambi(i, j, k, ix_) *= invRhoEff;
         arrEambi(i, j, k, iy_) *= invRhoEff;
         arrEambi(i, j, k, iz_) *= invRhoEff;
@@ -652,7 +659,8 @@ void Pic::compute_ambipolar_E(int iLev) {
   if (!Geom(iLev).isAllPeriodic()) {
     const BoundaryBounds bnd(Geom(iLev), nodeEambi[iLev].boxArray().ixType(),
                              &bcField);
-    for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeEambi[iLev], stream_ordered_mfi()); mfi.isValid();
+         ++mfi) {
       const Box& bxValid = mfi.validbox();
       Array4<Real> const& arr = nodeEambi[iLev][mfi].array();
       const Dim3 vLo = bxValid.smallEnd().dim3();
@@ -686,7 +694,8 @@ void Pic::compute_ambipolar_E(int iLev) {
   }
 
   if (is_fake_2d()) {
-    for (amrex::MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
+    for (amrex::MFIter mfi(nodeEambi[iLev], stream_ordered_mfi());
+         mfi.isValid(); ++mfi) {
       const auto& vbox = mfi.validbox();
       const auto& fbox = mfi.fabbox();
       auto arr = nodeEambi[iLev][mfi].array();
@@ -753,7 +762,7 @@ void Pic::smooth_moments() {
     if (!Geom(iLev).isAllPeriodic()) {
       const BoundaryBounds bnd(Geom(iLev), moments.boxArray().ixType(),
                                &bcField);
-      for (MFIter mfi(moments); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(moments, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& bxValid = mfi.validbox();
         Array4<Real> const& arr = moments[mfi].array();
         const Dim3 vLo = bxValid.smallEnd().dim3();
@@ -882,7 +891,7 @@ void Pic::apply_fake2d_k_clamp(MultiFab& mf) {
   if (!is_fake_2d())
     return;
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const auto& vbox = mfi.validbox();
     const auto& fbox = mfi.fabbox();
     auto arr = mf[mfi].array();
@@ -921,7 +930,8 @@ void Pic::init_electron_pressure(int iLev) {
   const Real gamma = electronGamma;
   const Real Te = electronTemperature;
 
-  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerPeState[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
@@ -959,7 +969,7 @@ void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
     const Real qomFactor = (fi && s < fi->get_nS() && fi->get_MoMi(s) > 0.0)
                                ? (fi->get_QoQi(s) / fi->get_MoMi(s))
                                : 1.0;
-    for (MFIter mfi(nodalRho); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodalRho, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = useGrownTile ? mfi.growntilebox() : mfi.validbox();
       const Array4<Real>& arrRho = nodalRho[mfi].array();
       const Array4<Real const>& moments = nodePlasma[s][iLev][mfi].array();
@@ -980,7 +990,8 @@ void Pic::compute_electron_temperature(int iLev) {
   const Real peMinLocal = peMin;
   const Real rhoFloor = rhoMinOhm;
 
-  for (MFIter mfi(centerPeTe[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerPeTe[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
     const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
@@ -1001,7 +1012,8 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
     return;
 
   // 1) Compute scalar ion pressure Pi = Tr(P_i)/3 at nodes in nodePeRho
-  for (MFIter mfi(nodePeRho[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodePeRho[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPiN = nodePeRho[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
@@ -1025,7 +1037,8 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
   const Real peMinLocal = peMin;
   const Real rhoFloor = rhoMinOhm;
 
-  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerPeState[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real const>& arrPi = centerPe[iLev][mfi].array();
@@ -1113,7 +1126,8 @@ void Pic::electron_velocity_at_nodes(int iLev) {
   const Real invFourPILocal = 1.0 / fourPI;
   const Real rhoFloor = rhoMinOhm;
 
-  for (MFIter mfi(nodePeVec[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodePeVec[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrUe = nodePeVec[iLev][mfi].array();
     const Array4<Real const>& arrMom = nodePlasma[nSpecies][iLev][mfi].array();
@@ -1161,7 +1175,8 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
   // cells away, so centerPeState needs both ghost layers.
   apply_centerPe_BC(iLev);
 
-  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(centerPeState[iLev], stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real>& arrPeNew = centerPe[iLev][mfi].array();
@@ -1180,8 +1195,10 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
         pe_dir_flux<iy_>(arrPe, arrUe, i, j, k, invDxY, limType, peMinLocal,
                          divFlux, divUe);
       }
-      if constexpr (nDim > 2) {
-        if (invDxZ > 0.0) {
+      // nvcc does not allow a device lambda to first capture a variable
+      // inside 'if constexpr', so invDxZ is tested outside of it.
+      if (invDxZ > 0.0) {
+        if constexpr (nDim > 2) {
           pe_dir_flux<iz_>(arrPe, arrUe, i, j, k, invDxZ, limType, peMinLocal,
                            divFlux, divUe);
         }
@@ -1225,6 +1242,13 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
   // |q/m| in units of e/m_p, so for the electron it is exactly m_p/m_e.
   const Real massRatioPe = std::abs(qomEl);
 
+  // Kernels must not read members (that would capture 'this').
+  const Real rhoMin = rhoMinOhm;
+  const Real peFloor = peMin;
+  const Real kappa0 = heatCondKappa0;
+  const Real fluxLimiter = heatFluxLimiter;
+  const Real bMin = fieldAlignedBMin;
+
   if (heatCondKappa0 > 0.0) {
     const bool isExplicit = (heatCondMethod == "subcycle");
     const int nPasses = isExplicit ? 1 : nCondIter;
@@ -1235,14 +1259,15 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
       pass++;
 
       if (pass > 1) {
-        for (MFIter mfi(centerPeTe[iLev]); mfi.isValid(); ++mfi) {
+        for (MFIter mfi(centerPeTe[iLev], stream_ordered_mfi()); mfi.isValid();
+             ++mfi) {
           const Box& box = mfi.validbox();
           const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
           const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
           const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
-            arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMin) / ne;
+            const Real ne = amrex::max(arrRho(i, j, k), rhoMin);
+            arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peFloor) / ne;
           });
         }
         apply_pe_zero_gradient_bc(iLev, centerPeTe[iLev]);
@@ -1254,7 +1279,8 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
       average_center_to_node(centerB[iLev], nodeBstage[iLev]);
       nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      for (MFIter mfi(nodePeVec[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(nodePeVec[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& arrQ = nodePeVec[iLev][mfi].array();
         const Array4<Real>& arrAux = nodePeAux[iLev][mfi].array();
@@ -1263,7 +1289,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
-          Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
+          Real kappa = (teN > 0.0) ? kappa0 * std::pow(teN, 2.5) : 0.0;
 
           // Unit vector along B, and a smooth weak-field weight: a field at
           // round-off level still has bmag > 0, but its direction is arbitrary,
@@ -1281,7 +1307,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
               bhat[ix_] = bx / bmag;
               bhat[iy_] = by / bmag;
               bhat[iz_] = bz / bmag;
-              fEff = fAlign * b2 / (b2 + fieldAlignedBMin * fieldAlignedBMin);
+              fEff = fAlign * b2 / (b2 + bMin * bMin);
             }
           }
 
@@ -1302,13 +1328,13 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 
           // Free-streaming saturation: |q| <= f * n_e * Te * v_th,e with
           // v_th,e = sqrt(Te * m_p/m_e) in code units.
-          if (heatFluxLimiter > 0.0) {
+          if (fluxLimiter > 0.0) {
             const Real qmag =
                 std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
             if (qmag > 0.0) {
-              const Real ne = amrex::max(arrRhoN(i, j, k), rhoMinOhm);
+              const Real ne = amrex::max(arrRhoN(i, j, k), rhoMin);
               const Real qsat =
-                  heatFluxLimiter * ne * teN * std::sqrt(teN * massRatioPe);
+                  fluxLimiter * ne * teN * std::sqrt(teN * massRatioPe);
               if (qmag > qsat) {
                 const Real scale = qsat / qmag;
                 for (int d = 0; d < 3; ++d)
@@ -1335,24 +1361,31 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
       bool useExplicitThisStep = isExplicit;
 
       if (isExplicit) {
-        Real maxDiffRate = 0.0;
-        for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+        ReduceOps<ReduceOpMax> reduceOp;
+        ReduceData<Real> reduceData(reduceOp);
+        for (MFIter mfi(centerPeState[iLev], stream_ordered_mfi());
+             mfi.isValid(); ++mfi) {
           const Box& box = mfi.validbox();
-          const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-          const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
-          Real localMaxRate = 0.0;
-          amrex::Loop(box, [&](int i, int j, int k) {
-            const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
-            Real lam =
-                (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
-            lam += (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
-            if (nDim > 2)
-              lam +=
-                  (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ * invDxZ;
-            localMaxRate = amrex::max(localMaxRate, gammaM1 * lam / ne);
-          });
-          maxDiffRate = amrex::max(maxDiffRate, localMaxRate);
+          const Array4<Real const> arrRho =
+              centerPeRho[iLev][mfi].const_array();
+          const Array4<Real const> arrK = nodePeAux[iLev][mfi].const_array();
+          reduceOp.eval(
+              box, reduceData,
+              [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<Real> {
+                const Real ne = amrex::max(arrRho(i, j, k), rhoMin);
+                Real lam =
+                    (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
+                lam +=
+                    (arrK(i, j + 1, k, 2) + arrK(i, j, k, 2)) * invDxY * invDxY;
+                if (nDim > 2)
+                  lam += (arrK(i, j, k + 1, 3) + arrK(i, j, k, 3)) * invDxZ *
+                         invDxZ;
+                return { gammaM1 * lam / ne };
+              });
         }
+        // The rates are non-negative, so 0 is a safe floor for an empty rank.
+        Real maxDiffRate =
+            amrex::max(Real(0), get<0>(reduceData.value(reduceOp)));
         amrex::ParallelDescriptor::ReduceRealMax(maxDiffRate);
 
         if (maxDiffRate > 0.0) {
@@ -1368,7 +1401,8 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
         }
       }
 
-      for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(centerPeState[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
         const Array4<Real const>& arrDivQ = centerPe[iLev][mfi].array();
@@ -1376,7 +1410,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
         const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
 
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-          const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
+          const Real ne = amrex::max(arrRho(i, j, k), rhoMin);
 
           Real lambda =
               (arrK(i + 1, j, k, 1) + arrK(i, j, k, 1)) * invDxX * invDxX;
@@ -1389,8 +1423,8 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
           const Real denom =
               useExplicitThisStep ? 1.0 : (1.0 + subDt * gammaM1 * lambda / ne);
 
-          arrPe(i, j, k) =
-              amrex::max(arrPe(i, j, k) + subDt * gammaM1 * src / denom, peMin);
+          arrPe(i, j, k) = amrex::max(
+              arrPe(i, j, k) + subDt * gammaM1 * src / denom, peFloor);
         });
       }
 
@@ -1451,7 +1485,7 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
 
   if (is_fake_2d()) {
     const int nComp = mfB.nComp();
-    for (amrex::MFIter mfi(mfB); mfi.isValid(); ++mfi) {
+    for (amrex::MFIter mfi(mfB, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const auto& vbox = mfi.validbox();
       const auto& fbox = mfi.fabbox();
       auto arr = mfB[mfi].array();
@@ -1526,7 +1560,7 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf) {
     fromFine.setVal(0.0);
     fromFine.ParallelCopy(crseOfFine, 0, 0, nDim3, IntVect(0), IntVect(0),
                           Geom(iLev - 1).periodicity());
-    for (MFIter mfi(crse); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(crse, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& e = crse[mfi].array();
       const auto& ef = fromFine[mfi].const_array();
@@ -1625,18 +1659,24 @@ void Pic::measure_covered_B_drift(int iLev) {
   average_down(centerB[iLev + 1], target, 0, nDim3, refRatio(iLev));
   MultiFab::Subtract(target, centerB[iLev], 0, 0, nDim3, 0);
 
-  Real drift = 0;
-  for (MFIter mfi(target); mfi.isValid(); ++mfi) {
+  ReduceOps<ReduceOpMax> reduceOp;
+  ReduceData<Real> reduceData(reduceOp);
+  for (MFIter mfi(target, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const auto& d = target[mfi].const_array();
-    const auto& st = cell_status(iLev)[mfi].const_array();
-    amrex::Loop(box, [&](int i, int j, int k) {
-      if (!bit::is_refined(st(i, j, k)))
-        return;
-      for (int iVar = 0; iVar < nDim3; ++iVar)
-        drift = amrex::max(drift, std::abs(d(i, j, k, iVar)));
-    });
+    const auto d = target[mfi].const_array();
+    const auto st = cell_status(iLev)[mfi].const_array();
+    reduceOp.eval(box, reduceData,
+                  [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<Real> {
+                    Real m = 0;
+                    if (bit::is_refined(st(i, j, k))) {
+                      for (int iVar = 0; iVar < nDim3; ++iVar)
+                        m = amrex::max(m, std::abs(d(i, j, k, iVar)));
+                    }
+                    return { m };
+                  });
   }
+  // The values are non-negative, so 0 is a safe floor for an empty rank.
+  Real drift = amrex::max(Real(0), get<0>(reduceData.value(reduceOp)));
   ParallelDescriptor::ReduceRealMax(drift);
   coveredBDrift[iLev] = drift;
 }
@@ -1707,7 +1747,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
   // Precompute inner-node mask once before CGLS: nodes surrounded by covered
   // cells are inner (1), others are boundary/outer (0).
   iMultiFab innerMask(s.boxArray(), s.DistributionMap(), 1, 0);
-  for (MFIter mfi(innerMask); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(innerMask, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const auto& mask = innerMask[mfi].array();
     const auto& st = cell_status(iLev)[mfi].const_array();
@@ -1726,7 +1766,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
   // This is the exact adjoint of apply_curl below.
   auto apply_curlT = [&]() {
     r.FillBoundary(period);
-    for (MFIter mfi(s); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(s, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& sa = s[mfi].array();
       const auto& d = r[mfi].const_array();
@@ -1791,7 +1831,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
       curl_node_to_center(p, q, Geom(iLev).InvCellSize());
       return;
     }
-    for (MFIter mfi(q); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(q, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& qa = q[mfi].array();
       const auto& pa = p[mfi].const_array();
@@ -1813,7 +1853,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
   // taking part in the relaxation stay zero, so the adjoint never drives their
   // potential components.
   r.setVal(0.0);
-  for (MFIter mfi(B); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(B, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const auto& d = r[mfi].array();
     const auto& b = B[mfi].const_array();
@@ -1872,33 +1912,44 @@ void Pic::report_divB_amr() {
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     if (divB[iLev].empty())
       continue;
-    Real maxIface = 0, maxCovered = 0, maxInterior = 0, maxDomain = 0;
     const bool hasFiner = iLev < finestLevel();
-    for (MFIter mfi(divB[iLev]); mfi.isValid(); ++mfi) {
+    const bool isFineLev = iLev > 0;
+    ReduceOps<ReduceOpMax, ReduceOpMax, ReduceOpMax, ReduceOpMax> reduceOp;
+    ReduceData<Real, Real, Real, Real> reduceData(reduceOp);
+    for (MFIter mfi(divB[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const auto& arr = divB[iLev][mfi].array();
-      const auto& status = cell_status(iLev)[mfi].array();
-      amrex::Loop(box, [&](int i, int j, int k) {
-        const int st = status(i, j, k);
-        const Real raw = arr(i, j, k, 0);
-        const Real v = std::isfinite(raw) ? std::abs(raw)
-                                          : std::numeric_limits<Real>::max();
-        // Cells on the physical domain boundary are set by the field BC, not
-        // by the update, so they are reported separately: leaving them in the
-        // interior bucket makes the solver's div(B) unreadable on decks with
-        // outflow faces.
-        if (bit::is_domain_edge(st)) {
-          maxDomain = amrex::max(maxDomain, v);
-        } else if (hasFiner && bit::is_refined(st)) {
-          maxCovered = amrex::max(maxCovered, v);
-        } else if ((iLev > 0 && bit::is_lev_edge(st)) ||
-                   (hasFiner && bit::is_refined_neighbour(st))) {
-          maxIface = amrex::max(maxIface, v);
-        } else {
-          maxInterior = amrex::max(maxInterior, v);
-        }
-      });
+      const auto arr = divB[iLev][mfi].const_array();
+      const auto status = cell_status(iLev)[mfi].const_array();
+      reduceOp.eval(box, reduceData,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k)
+                        -> GpuTuple<Real, Real, Real, Real> {
+                      const int st = status(i, j, k);
+                      const Real raw = arr(i, j, k, 0);
+                      const Real v = amrex::Math::isfinite(raw)
+                                         ? std::abs(raw)
+                                         : std::numeric_limits<Real>::max();
+                      // Cells on the physical domain boundary are set by the
+                      // field BC, not by the update, so they are reported
+                      // separately: leaving them in the interior bucket makes
+                      // the solver's div(B) unreadable on decks with outflow
+                      // faces. Order: interface, covered, interior, domain.
+                      if (bit::is_domain_edge(st)) {
+                        return { 0, 0, 0, v };
+                      } else if (hasFiner && bit::is_refined(st)) {
+                        return { 0, v, 0, 0 };
+                      } else if ((isFineLev && bit::is_lev_edge(st)) ||
+                                 (hasFiner && bit::is_refined_neighbour(st))) {
+                        return { v, 0, 0, 0 };
+                      }
+                      return { 0, 0, v, 0 };
+                    });
     }
+    // The values are non-negative, so 0 is a safe floor for an empty rank.
+    const auto maxima = reduceData.value(reduceOp);
+    Real maxIface = amrex::max(Real(0), get<0>(maxima));
+    Real maxCovered = amrex::max(Real(0), get<1>(maxima));
+    Real maxInterior = amrex::max(Real(0), get<2>(maxima));
+    Real maxDomain = amrex::max(Real(0), get<3>(maxima));
     ParallelDescriptor::ReduceRealMax(maxIface);
     ParallelDescriptor::ReduceRealMax(maxCovered);
     ParallelDescriptor::ReduceRealMax(maxInterior);
@@ -1919,20 +1970,27 @@ void Pic::report_divB_amr() {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], tmp, 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
           Geom(iLev), cell_status(iLev), *get_cell_interp());
-      for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
+      ReduceOps<ReduceOpMax> reduceOpG;
+      ReduceData<Real> reduceDataG(reduceOpG);
+      for (MFIter mfi(tmp, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box box = amrex::grow(mfi.validbox(), 1);
-        const auto& a = tmp[mfi].array();
-        const auto& b = centerB[iLev][mfi].array();
-        const auto& status = cell_status(iLev)[mfi].array();
-        amrex::Loop(box, [&](int i, int j, int k) {
-          const int st = status(i, j, k);
-          if (!bit::is_lev_boundary(st) || bit::is_domain_boundary(st))
-            return;
-          for (int iVar = 0; iVar < nDim3; ++iVar)
-            ghostDrift = amrex::max(
-                ghostDrift, std::abs(a(i, j, k, iVar) - b(i, j, k, iVar)));
-        });
+        const auto a = tmp[mfi].const_array();
+        const auto b = centerB[iLev][mfi].const_array();
+        const auto status = cell_status(iLev)[mfi].const_array();
+        reduceOpG.eval(
+            box, reduceDataG,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<Real> {
+              const int st = status(i, j, k);
+              Real m = 0;
+              if (bit::is_lev_boundary(st) && !bit::is_domain_boundary(st)) {
+                for (int iVar = 0; iVar < nDim3; ++iVar)
+                  m = amrex::max(m,
+                                 std::abs(a(i, j, k, iVar) - b(i, j, k, iVar)));
+              }
+              return { m };
+            });
       }
+      ghostDrift = amrex::max(Real(0), get<0>(reduceDataG.value(reduceOpG)));
       ParallelDescriptor::ReduceRealMax(ghostDrift);
     }
 

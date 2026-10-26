@@ -84,7 +84,7 @@ void Pic::smooth_explicit_current(Vector<MultiFab>& J) {
     if (!Geom(iLev).isAllPeriodic()) {
       const BoundaryBounds bnd(Geom(iLev), J[iLev].boxArray().ixType(),
                                &bcField);
-      for (MFIter mfi(J[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(J[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& bxValid = mfi.validbox();
         Array4<Real> const& arr = J[iLev][mfi].array();
         const Dim3 vLo = bxValid.smallEnd().dim3();

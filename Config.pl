@@ -51,6 +51,20 @@ if (not -f $config and not -f "../../$config"){
 }
 
 my $AmrexDir = "util/AMREX";
+
+# GPU (CUDA) build. -cuda[=ARCH] links FLEKS with a CUDA build of AMReX
+# (InstallDir<N>D_cuda, built on demand), -nocuda with the CPU build. Without
+# either flag the current choice is kept: it is the library InstallDir points to.
+my $NewCuda;
+my $CudaArch = "80,120"; # A100 and RTX 50xx (Blackwell)
+my $UseCuda = &amrex_uses_cuda("$AmrexDir/InstallDir");
+foreach (@Arguments){
+    if(/^-cuda(?:=(\S+))?$/i){ $NewCuda = 1; $CudaArch = $1 if defined $1; }
+    if(/^-nocuda$/i)        { $NewCuda = 0; }
+}
+@Arguments = grep { !/^-(no)?cuda(=\S+)?$/i } @Arguments;
+$UseCuda = $NewCuda if defined $NewCuda;
+
 if(-f $config){
     # Local FLEKS dependency tree. Turn on AMReX automatically, honoring
     # -amrex2d/-amrex3d or defaulting to the currently-linked library's dimension.
@@ -84,6 +98,9 @@ if(-f $config){
     }
 
     die "Error: AMReX does not exist!\n" unless -d $AmrexDir;
+
+    # share/Scripts/Config.pl has just linked InstallDir to the CPU library.
+    &link_cuda_amrex($AmrexDimArg) if $UseCuda;
 }else{
 
     my $IsInstall = 0;
@@ -281,6 +298,8 @@ sub show_settings{
     print "AMReX: nDim         = $AmrexDim \n";
     print "AMReX: nLevMax      = $nLevMax \n";
     print "AMReX: tiny profile = $AmrexTinyProfile \n";
+    print "AMReX: GPU          = " .
+        (&amrex_uses_cuda("$AmrexDir/InstallDir") ? "CUDA" : "none") . " \n";
     print "Test Particle info  = $TPInfo{$TPSave} \n";
     print "User Source         = " . &get_user_source_info . " \n";
 }
@@ -302,6 +321,39 @@ sub get_user_source_info{
     return "Unavailable (info not set in $UserSourceFile)";
 }
 ################################################################################
+sub amrex_uses_cuda{
+    # True if the AMReX installation in directory $_[0] was built with CUDA.
+    my $config = "$_[0]/include/AMReX_Config.H";
+    open(my $file, "<", $config) or return 0;
+    my $useCuda = 0;
+    while(<$file>){
+        $useCuda = 1 if /^#define\s+AMREX_USE_CUDA\s+1/;
+    }
+    close $file;
+    return $useCuda;
+}
+################################################################################
+sub link_cuda_amrex{
+    # Point util/AMREX/InstallDir to the CUDA build of AMReX, building it first
+    # if needed. Fast math is switched off so that the GPU and CPU builds give
+    # the same results to round-off.
+    my $nDim = substr($_[0], 0, 1);
+    my $InstallDir = "InstallDir${nDim}D_cuda";
+    if(not -e "$AmrexDir/$InstallDir/lib/libamrex.a"){
+        my $ccbin = $ENV{NVCC_CCBIN} || "g++";
+        # CUDA_ARCH is a space-separated list for AMReX.
+        (my $archList = $CudaArch) =~ s/,/ /g;
+        my $flags = "USE_CUDA=TRUE CUDA_ARCH=\"$archList\" USE_CUDA_FAST_MATH=FALSE ".
+            "NVCC_CCBIN=$ccbin DIM=$nDim AMREX_INSTALL_DIR=$InstallDir";
+        print "Building the CUDA AMReX library in $AmrexDir/$InstallDir\n";
+        system("cd $AmrexDir && make -j 8 $flags && make install $flags") == 0
+            or die "$ERROR could not build $AmrexDir/$InstallDir\n";
+    }
+    system("cd $AmrexDir && rm -f InstallDir && ln -s $InstallDir InstallDir") == 0
+        or die "$ERROR could not link $AmrexDir/InstallDir to $InstallDir\n";
+    print "Linking FLEKS with the CUDA AMReX library $InstallDir\n";
+}
+################################################################################
 sub print_help{
 
     print "
@@ -319,6 +371,15 @@ sub print_help{
 -amrex3d      Link with the 3D AMReX library (AMReX_SPACEDIM = 3). This is the default.
               AMReX is enabled automatically in the standalone FLEKS setup; by default the
               dimension of the currently-linked library is kept unless -amrex2d/-amrex3d is given.
+
+-cuda[=ARCH]  Build for NVIDIA GPUs: link with a CUDA build of AMReX in
+              util/AMREX/InstallDir<N>D_cuda, which is compiled on first use
+              for the compute capabilities ARCH, a comma-separated list
+              (default 80,120: A100 and RTX 50xx; H100 is 90). The CUDA
+              compiler's host compiler can be set with the NVCC_CCBIN
+              environment variable (default g++). The choice is kept by later
+              Config.pl calls until -nocuda is given.
+-nocuda       Link with the CPU build of AMReX.
 
 -u            Show available user source options.
 

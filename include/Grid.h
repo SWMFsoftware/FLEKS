@@ -10,6 +10,7 @@
 #include <AMReX_BoxArray.H>
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_GpuContainers.H>
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
@@ -25,8 +26,42 @@
 #include "Array1D.h"
 #include "BC.h"
 #include "Constants.h"
+#include "GpuBackend.h"
 #include "RefineRegions.h"
 #include "TimeCtr.h"
+
+// Device-copyable view of the active-domain ranges and the inner body. A
+// kernel captures it by value instead of calling Grid members, because the
+// Grid object lives in host memory.
+struct DomainView {
+  const amrex::RealBox* ranges = nullptr;
+  int nRanges = 0;
+  int activeDim = nDim;
+  bool useBody = false;
+  amrex::Real bodyCenter[3] = { 0.0, 0.0, 0.0 };
+  amrex::Real bodyRadius2 = 0.0;
+
+  AMREX_GPU_HOST_DEVICE bool is_inside_domain(const amrex::Real* loc) const {
+    for (int i = 0; i < nRanges; ++i) {
+      if (ranges[i].contains(loc))
+        return true;
+    }
+    return false;
+  }
+
+  // See Grid::is_inside_body().
+  AMREX_GPU_HOST_DEVICE bool is_inside_body(const amrex::Real* loc) const {
+    if (!useBody)
+      return false;
+
+    amrex::Real r2 = 0;
+    for (int i = 0; i < activeDim; i++) {
+      const amrex::Real delta = loc[i] - bodyCenter[i];
+      r2 += delta * delta;
+    }
+    return r2 < bodyRadius2;
+  }
+};
 
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {
@@ -44,8 +79,9 @@ protected:
   // usually contains less boxes.
   amrex::BoxArray activeRegion;
 
-  // The range of activeRegion.
+  // The range of activeRegion, and its copy in device memory for DomainView.
   amrex::Vector<amrex::RealBox> activeDomainRanges;
+  amrex::Gpu::DeviceVector<amrex::RealBox> activeDomainRangesDevice;
 
   // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
@@ -201,6 +237,18 @@ public:
       SetBoxArray(iLev, grid->boxArray(iLev));
       SetDistributionMap(iLev, grid->DistributionMap(iLev));
     }
+  }
+
+  DomainView domain_view() const {
+    DomainView view;
+    view.ranges = activeDomainRangesDevice.data();
+    view.nRanges = static_cast<int>(activeDomainRangesDevice.size());
+    view.activeDim = get_dim();
+    view.useBody = useBody;
+    for (int i = 0; i < 3; ++i)
+      view.bodyCenter[i] = bodyCenter[i];
+    view.bodyRadius2 = bodyRadius2;
+    return view;
   }
 
   bool is_inside_domain(const amrex::Real* loc) const {
@@ -415,27 +463,23 @@ public:
                    << std::endl;
     const int maxRegionLevel =
         std::min(n_lev_max() - 2, static_cast<int>(refineRegions.size()) - 1);
-    for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
-      const auto tagArr = tags.array(mfi);
-      const auto lo = lbound(bx);
-      const auto hi = ubound(bx);
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            amrex::Real xyz[nDim];
-            Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+    // The regions are host objects (virtual is_inside), so the tagging runs
+    // on the host (see host_fill).
+    host_fill(tags, false,
+              [&](const amrex::MFIter&, int i, int j, int k,
+                  amrex::Array4<char> const& tagArr) {
+                amrex::Real xyz[nDim];
+                Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
 
-            // Loop through all levels from the finest to the current level.
-            // If a cell is required to be refined at lev=n (n>=iLev), this
-            // cell should be also refined at lev=iLev.
-            for (int il = maxRegionLevel; il >= iLev; il--)
-              if (refineRegions[il].is_inside(xyz)) {
-                tagArr(i, j, k) = amrex::TagBox::SET;
-                break;
-              }
-          }
-    }
+                // Loop through all levels from the finest to the current
+                // level. If a cell is required to be refined at lev=n
+                // (n>=iLev), this cell should be also refined at lev=iLev.
+                for (int il = maxRegionLevel; il >= iLev; il--)
+                  if (refineRegions[il].is_inside(xyz)) {
+                    tagArr(i, j, k) = amrex::TagBox::SET;
+                    break;
+                  }
+              });
   };
 
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {

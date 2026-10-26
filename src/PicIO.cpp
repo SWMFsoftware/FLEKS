@@ -140,16 +140,18 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                                (domBox.length(iy_) == 1),
                                (nDim > 2 && domBox.length(iz_) == 1) };
 
+  // The status is read point by point on the host.
+  ioCache.clear();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (iLevSave >= 0 && iLevSave != iLev) {
       continue;
     }
     const auto& geom = Geom(iLev);
     int iBlock = 0;
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeE[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      const auto& typeArr = node_status(iLev)[mfi].array();
+      const auto& typeArr = ioCache.array(node_status(iLev), mfi);
 
       auto lo = box.loVect3d();
       auto hi = box.hiVect3d();
@@ -298,6 +300,9 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
   long nPoint = pointList_II.size();
   int nVar = sVar_I.size();
 
+  // get_var() reads the fields point by point on the host.
+  ioCache.clear();
+
   long iPoint = 0;
 
   // The point list is enumerated over the node grid in find_output_list, so
@@ -307,7 +312,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     int iBlockCount = 0;
-    for (MFIter mfi(gridMF[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(gridMF[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       while (iPoint < nPoint) {
         IntVect ijk;
         for (int iDim = 0; iDim < nDim; iDim++) {
@@ -407,7 +412,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     if (!use_body() || !isValidMFI)
       return 0.0;
     const auto& stat = useNode ? node_status(iLev) : cell_status(iLev);
-    const auto& statusArr = stat[mfi].array();
+    const auto& statusArr = ioCache.array(stat, mfi);
     if (varLower == "bodyint" || varLower == "bodyintn")
       return bit::is_body_interior(statusArr(ijk)) ? 1.0 : 0.0;
     return (bit::is_body(statusArr(ijk)) &&
@@ -438,58 +443,58 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
-      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(nodeE[iLev], mfi);
       value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "Ey") {
-      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(nodeE[iLev], mfi);
       value = arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Ez") {
-      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(nodeE[iLev], mfi);
       value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "Bx") {
       // The plotted magnetic field is the total field B1 + B0.
-      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(nodeB[iLev], mfi);
       value = arr(ijk, ix_);
       if (hasB0)
-        value += nodeB0[iLev][mfi].array()(ijk, ix_);
+        value += ioCache.array(nodeB0[iLev], mfi)(ijk, ix_);
     } else if (var.substr(0, 2) == "By") {
-      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(nodeB[iLev], mfi);
       value = arr(ijk, iy_);
       if (hasB0)
-        value += nodeB0[iLev][mfi].array()(ijk, iy_);
+        value += ioCache.array(nodeB0[iLev], mfi)(ijk, iy_);
     } else if (var.substr(0, 2) == "Bz") {
-      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(nodeB[iLev], mfi);
       value = arr(ijk, iz_);
       if (hasB0)
-        value += nodeB0[iLev][mfi].array()(ijk, iz_);
+        value += ioCache.array(nodeB0[iLev], mfi)(ijk, iz_);
     } else if (var.substr(0, 3) == "B0x") {
       // The frozen intrinsic field alone, for checking the model.
-      value = hasB0 ? nodeB0[iLev][mfi].array()(ijk, ix_) : 0.0;
+      value = hasB0 ? ioCache.array(nodeB0[iLev], mfi)(ijk, ix_) : 0.0;
     } else if (var.substr(0, 3) == "B0y") {
-      value = hasB0 ? nodeB0[iLev][mfi].array()(ijk, iy_) : 0.0;
+      value = hasB0 ? ioCache.array(nodeB0[iLev], mfi)(ijk, iy_) : 0.0;
     } else if (var.substr(0, 3) == "B0z") {
-      value = hasB0 ? nodeB0[iLev][mfi].array()(ijk, iz_) : 0.0;
+      value = hasB0 ? ioCache.array(nodeB0[iLev], mfi)(ijk, iz_) : 0.0;
     } else if (var.substr(0, 5) == "jHatx") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(jHat[iLev], mfi);
       value = arr(ijk, ix_);
     } else if (var.substr(0, 5) == "jHaty") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(jHat[iLev], mfi);
       value = arr(ijk, iy_);
     } else if (var.substr(0, 5) == "jHatz") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(jHat[iLev], mfi);
       value = arr(ijk, iz_);
     } else if (var.substr(0, 3) == "nMM") {
       int ii = extract_int(var);
-      const Array4<RealMM const>& arr = nodeMM[iLev][mfi].array();
-      value = arr(ijk)[ii];
+      const Array4<Real const>& arr = ioCache.array(nodeMM[iLev], mfi);
+      value = arr(ijk, ii);
     } else if (var.substr(0, 5) == "dBxdt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(dBdt[iLev], mfi);
       value = arr(ijk, ix_);
     } else if (var.substr(0, 5) == "dBydt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(dBdt[iLev], mfi);
       value = arr(ijk, iy_);
     } else if (var.substr(0, 5) == "dBzdt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(dBdt[iLev], mfi);
       value = arr(ijk, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
@@ -528,7 +533,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           iVar = iNum_;
 
         const Array4<Real const>& arr =
-            plasma[extract_int(var)][iLev][mfi].array();
+            ioCache.array(plasma[extract_int(var)][iLev], mfi);
         value = arr(ijk, iVar);
 
         if (var.substr(0, 1) == "u") {
@@ -544,15 +549,15 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         const int iDir = (var.substr(0, 2) == "jx")   ? ix_
                          : (var.substr(0, 2) == "jy") ? iy_
                                                       : iz_;
-        const Array4<Real const>& arr = nodeJ[iLev][mfi].array();
+        const Array4<Real const>& arr = ioCache.array(nodeJ[iLev], mfi);
         value = arr(ijk, iDir) * (1.0 / fourPI);
       }
     } else if (var.substr(0, 4) == "mach") {
-      value = mMach[iLev][mfi].array()(ijk);
+      value = ioCache.array(mMach[iLev], mfi)(ijk);
     } else if (var.substr(0, 2) == "pS") {
       const auto& plasma = nodePlasma;
       const Array4<Real const>& arr =
-          plasma[extract_int(var)][iLev][mfi].array();
+          ioCache.array(plasma[extract_int(var)][iLev], mfi);
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
     } else if (var.substr(0, 2) == "Pe") {
       // Electron pressure actually used by the Ohm's law: the evolved state
@@ -560,58 +565,59 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       // centerPeState is only allocated when the equation is evolved.
       const MultiFab& peField =
           useElectronPressureEq ? centerPeState[iLev] : centerPe[iLev];
-      const Array4<Real const>& arr = peField[mfi].array();
+      const Array4<Real const>& arr = ioCache.array(peField, mfi);
       value = arr(ijk);
     } else if (var.substr(0, 2) == "Te") {
       // Electron temperature in code units; only meaningful when the electron
       // pressure equation is evolved. See the Te block in write_amrex_field().
       if (useElectronPressureEq) {
         const Real pe =
-            amrex::max(centerPeState[iLev][mfi].array()(ijk), peMin);
+            amrex::max(ioCache.array(centerPeState[iLev], mfi)(ijk), peMin);
         const Real ne =
-            amrex::max(centerPeRho[iLev][mfi].array()(ijk), rhoMinOhm);
+            amrex::max(ioCache.array(centerPeRho[iLev], mfi)(ijk), rhoMinOhm);
         value = pe / ne;
       } else {
         value = 0.0;
       }
     } else if (var.substr(0, 3) == "E0x") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(eBg[iLev], mfi);
       value = arr(ijk, ix_);
     } else if (var.substr(0, 3) == "E0y") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(eBg[iLev], mfi);
       value = arr(ijk, iy_);
     } else if (var.substr(0, 3) == "E0z") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(eBg[iLev], mfi);
       value = arr(ijk, iz_);
     } else if (var.substr(0, 3) == "u0x") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(uBg[iLev], mfi);
       value = arr(ijk, ix_);
     } else if (var.substr(0, 3) == "u0y") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(uBg[iLev], mfi);
       value = arr(ijk, iy_);
     } else if (var.substr(0, 3) == "u0z") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(uBg[iLev], mfi);
       value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "qc") {
-      const Array4<Real const>& arr = centerNetChargeN[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(centerNetChargeN[iLev], mfi);
       value = arr(ijk);
     } else if (var.substr(0, 5) == "divEc") {
-      const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(centerDivE[iLev], mfi);
       value = arr(ijk);
     } else if (var.substr(0, 5) == "divBc") {
       // Diagnostic: reads zero when it was never requested.
       if (iLev < centerDivB.size() && !centerDivB[iLev].empty()) {
-        const Array4<Real const>& arr = centerDivB[iLev][mfi].array();
+        const Array4<Real const>& arr = ioCache.array(centerDivB[iLev], mfi);
         value = arr(ijk);
       }
     } else if (var.substr(0, 4) == "divB") {
       // Allocated on demand in hybrid PIC: report zero when not requested.
       if (iLev < divB.size() && !divB[iLev].empty()) {
-        const Array4<Real const>& arr = divB[iLev][mfi].array();
+        const Array4<Real const>& arr = ioCache.array(divB[iLev], mfi);
         value = arr(ijk);
       }
     } else if (var.substr(0, 3) == "phi") {
-      const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
+      const Array4<Real const>& arr = ioCache.array(centerPhi[iLev], mfi);
       value = arr(ijk);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
@@ -1108,34 +1114,22 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       //--------------Coordinates-------------------------
       MultiFab xyz(out[iLev], make_alias, 0, 3);
 
-      for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.validbox();
-        const auto& cellArr = xyz[mfi].array();
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k) {
-          // Use the value returned from Geom instead of geomOut, and it will
-          // be converted to output unit just as other variables.
-          const Real z0 = (nDim > 2)
-                              ? (saveNode ? Geom(iLev).LoEdge(k, iz_)
-                                          : Geom(iLev).CellCenter(k, iz_))
-                              : 0.0;
-
-          for (int j = lo.y; j <= hi.y; ++j) {
-            const Real y0 = saveNode ? Geom(iLev).LoEdge(j, iy_)
-                                     : Geom(iLev).CellCenter(j, iy_);
-
-            for (int i = lo.x; i <= hi.x; ++i) {
-              const Real x0 = saveNode ? Geom(iLev).LoEdge(i, ix_)
-                                       : Geom(iLev).CellCenter(i, ix_);
-
-              cellArr(i, j, k, ix_) = x0;
-              cellArr(i, j, k, iy_) = y0;
-              cellArr(i, j, k, iz_) = z0;
-            }
-          }
-        }
+      // Geometry::LoEdge() (nodes) or CellCenter() (cells) of the level; they
+      // are converted to output unit just as other variables.
+      const auto plo = Geom(iLev).ProbLoArray();
+      const auto dx = Geom(iLev).CellSizeArray();
+      const Real shift = saveNode ? 0.0 : 0.5;
+      for (MFIter mfi(xyz, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
+        const Array4<Real> cellArr = xyz[mfi].array();
+        ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const int ijk[3] = { i, j, k };
+          Real x[3] = { 0, 0, 0 };
+          for (int d = 0; d < AMREX_SPACEDIM; ++d)
+            x[d] = (d < nDim) ? plo[d] + dx[d] * (shift + ijk[d]) : 0.0;
+          cellArr(i, j, k, ix_) = x[ix_];
+          cellArr(i, j, k, iy_) = x[iy_];
+          cellArr(i, j, k, iz_) = x[iz_];
+        });
       }
       iStart += 3;
       varNames.push_back("X");
@@ -1199,43 +1193,63 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         MultiFab uy(plasma, make_alias, iMy_, 1);
         MultiFab uz(plasma, make_alias, iMz_, 1);
 
-        for (MFIter mfi(plasma); mfi.isValid(); ++mfi) {
-          // Convert momentum to velocity;
-          const Box& box = mfi.validbox();
-          const Array4<Real>& plasmaArr = plasma[mfi].array();
-          const Array4<Real>& uxArr = ux[mfi].array();
-          const Array4<Real>& uyArr = uy[mfi].array();
-          const Array4<Real>& uzArr = uz[mfi].array();
+        // Convert momentum to velocity, and count the nodes with a zero
+        // density (outside the inner body, see #BODY, where there is no
+        // plasma).
+        const bool useBody = use_body();
+        ReduceOps<ReduceOpSum> reduceOp;
+        ReduceData<int> reduceData(reduceOp);
+        for (MFIter mfi(plasma, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
+          const Array4<Real> plasmaArr = plasma[mfi].array();
+          const Array4<Real> uxArr = ux[mfi].array();
+          const Array4<Real> uyArr = uy[mfi].array();
+          const Array4<Real> uzArr = uz[mfi].array();
+          const Array4<int const> statusArr =
+              node_status(iLev)[mfi].const_array();
 
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          // There is no plasma inside the inner body (see #BODY), so the
-          // zero-density diagnostic below must not fire there.
-          const Array4<int const>& statusArr = node_status(iLev)[mfi].array();
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                if (use_body() && bit::is_body(statusArr(i, j, k)))
-                  continue;
+          reduceOp.eval(
+              mfi.validbox(), reduceData,
+              [=] AMREX_GPU_DEVICE(int i, int j, int k) -> GpuTuple<int> {
+                if (useBody && bit::is_body(statusArr(i, j, k)))
+                  return { 0 };
 
                 const Real rho = plasmaArr(i, j, k, iRho_);
                 if (rho > 0) {
                   uxArr(i, j, k) = plasmaArr(i, j, k, iUx_) / rho;
                   uyArr(i, j, k) = plasmaArr(i, j, k, iUy_) / rho;
                   uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
-                } else {
-#ifdef _PC_COMPONENT_
-                  isDensityZero = true;
-                  zeroLev = iLev;
-                  zeroI = i;
-                  zeroJ = j;
-                  zeroK = k;
-#endif
+                  return { 0 };
                 }
-              }
+                return { 1 };
+              });
         }
+#ifdef _PC_COMPONENT_
+        if (!isDensityZero && get<0>(reduceData.value(reduceOp)) > 0) {
+          // Find the first such node for the error message below.
+          ioCache.clear();
+          for (MFIter mfi(plasma, stream_ordered_mfi());
+               mfi.isValid() && !isDensityZero; ++mfi) {
+            const auto plasmaArr = ioCache.array(plasma, mfi);
+            const auto statusArr = ioCache.array(node_status(iLev), mfi);
+            const Box& box = mfi.validbox();
+            const auto lo = lbound(box);
+            const auto hi = ubound(box);
+            for (int k = lo.z; k <= hi.z && !isDensityZero; ++k)
+              for (int j = lo.y; j <= hi.y && !isDensityZero; ++j)
+                for (int i = lo.x; i <= hi.x && !isDensityZero; ++i) {
+                  if (useBody && bit::is_body(statusArr(i, j, k)))
+                    continue;
+                  if (!(plasmaArr(i, j, k, iRho_) > 0)) {
+                    isDensityZero = true;
+                    zeroLev = iLev;
+                    zeroI = i;
+                    zeroJ = j;
+                    zeroK = k;
+                  }
+                }
+          }
+        }
+#endif
 
         MultiFab pl(plasma, make_alias, iRho_, nMoments);
         if (saveNode) {
@@ -1265,7 +1279,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       //-------------body mask---------------------
       const auto& status = saveNode ? node_status(iLev) : cell_status(iLev);
 
-      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(out[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& outArr = out[iLev][mfi].array();
         const Array4<int const>& statusArr = status[mfi].array();
@@ -1294,7 +1308,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       // only ever read here.
       const Real peMinOut = peMin;
       const Real rhoMinOut = rhoMinOhm;
-      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(out[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
         const Array4<Real>& outArr = out[iLev][mfi].array();
         const Array4<Real const>& peArr = centerPeState[iLev][mfi].array();

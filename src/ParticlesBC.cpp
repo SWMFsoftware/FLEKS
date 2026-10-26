@@ -5,6 +5,7 @@
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
+#include "ParticlesSeed.h"
 #include "SWMFInterface.h"
 #include "Timer.h"
 #include "Utility.h"
@@ -59,7 +60,8 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
 }
 
 //==========================================================
-static bool particle_bc_no_injection(const ParticleBC::Type type) {
+AMREX_GPU_HOST_DEVICE static bool particle_bc_no_injection(
+    const ParticleBC::Type type) {
   switch (type) {
     case ParticleBC::inflow:
     case ParticleBC::outflow:
@@ -77,6 +79,14 @@ static bool particle_bc_no_injection(const ParticleBC::Type type) {
 
 //==========================================================
 
+namespace {
+// The per-box part of the boundary injection rule.
+struct InjectionBox {
+  Box bx; // valid box
+  Array4<const int> status;
+};
+} // namespace
+
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   timing_func("Pts::inject_particles_at_boundary");
@@ -90,54 +100,59 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   // finest level.
   int iLev = 0;
 
-  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cell_status(iLev)[mfi].array();
-    const Box& bx = mfi.validbox();
-    const IntVect bxLo = bx.smallEnd();
-    const IntVect bxHi = bx.bigEnd();
-
-    Box bxGst = bx;
-    for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++) {
-      bxGst.grow(iDim, nGstInject);
+  // Seed ghost cell from prescribed #INFLOW state if defined, else fall
+  // back to the fluid interface.
+  Vel inflowVel;
+  if (fi->get_inflow_defined()) {
+    const auto* iv = fi->get_inflow_vel(speciesID);
+    if (iv) {
+      inflowVel.tag = speciesID; // enable the userState override path
+      inflowVel.nDens = iv->nDens;
+      inflowVel.vth = iv->vth;
+      inflowVel.vx = iv->ux;
+      inflowVel.vy = iv->uy;
+      inflowVel.vz = iv->uz;
     }
+  }
 
-    ParallelFor(bxGst, [&](int i, int j, int k) noexcept {
-      IntVect ijk = { AMREX_D_DECL(i, j, k) };
-      IntVect ijksrc;
-      if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
+  int faceBC[3][2];
+  for (int d = 0; d < 3; ++d)
+    for (int side = 0; side < 2; ++side)
+      faceBC[d][side] = bc.face(d, side);
+
+  Vector<SeedBox<InjectionBox> > boxes(cell_status(iLev).local_size());
+  for (MFIter mfi(cell_status(iLev), stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
+    const Box& bx = mfi.validbox();
+    Box bxGst = bx;
+    for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++)
+      bxGst.grow(iDim, nGstInject);
+    boxes[mfi.LocalIndex()] = {
+      bxGst, InjectionBox{ bx, cell_status(iLev)[mfi].const_array() }
+    };
+  }
+
+  add_particles_level(
+      iLev, boxes,
+      [=] AMREX_GPU_HOST_DEVICE(const InjectionBox& b, const IntVect& ijk,
+                                IntVect&) {
+        IntVect ijksrc;
+        if (!do_inject_particles_for_this_cell(b.bx, b.status, ijk, ijksrc))
+          return false;
         // A ghost cell can lie beyond more than one face (a corner); it is
         // skipped when ANY of those faces must not carry a ghost-cell
         // population -- see particle_bc_no_injection() above.
-        bool skip = false;
-        for (int d = 0; d < nDim && !skip; ++d) {
-          if (ijk[d] < bxLo[d])
-            skip = particle_bc_no_injection(
-                static_cast<ParticleBC::Type>(bc.face(d, 0)));
-          else if (ijk[d] > bxHi[d])
-            skip = particle_bc_no_injection(
-                static_cast<ParticleBC::Type>(bc.face(d, 1)));
+        for (int d = 0; d < nDim; ++d) {
+          if (ijk[d] < b.bx.smallEnd(d) &&
+              particle_bc_no_injection(ParticleBC::Type(faceBC[d][0])))
+            return false;
+          if (ijk[d] > b.bx.bigEnd(d) &&
+              particle_bc_no_injection(ParticleBC::Type(faceBC[d][1])))
+            return false;
         }
-        if (skip)
-          return;
-
-        // Seed ghost cell from prescribed #INFLOW state if defined, else fall
-        // back to the fluid interface.
-        Vel inflowVel;
-        if (fi->get_inflow_defined()) {
-          const auto* iv = fi->get_inflow_vel(speciesID);
-          if (iv) {
-            inflowVel.tag = speciesID; // enable the userState override path
-            inflowVel.nDens = iv->nDens;
-            inflowVel.vth = iv->vth;
-            inflowVel.vx = iv->ux;
-            inflowVel.vy = iv->uy;
-            inflowVel.vz = iv->uz;
-          }
-        }
-        add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), inflowVel, -1);
-      }
-    });
-  }
+        return true;
+      },
+      fi, true, inflowVel, -1);
 }
 
 //==========================================================
@@ -275,7 +290,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real* probHi = geom.ProbHi();
   const Real* cellSize = geom.CellSize();
 
-  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+  for (MFIter mfi = MakeMFIter(iLev, stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
 
@@ -421,48 +437,10 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   }
 }
 
-template <int NStructReal, int NStructInt>
-bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
-    const Box& bx, const Array4<const int>& status, const IntVect ijk,
-    IntVect& ijksrc) {
-
-  // This cell should be a boundary cell at least.
-  if (!bit::is_lev_boundary(status(ijk)))
-    return false;
-
-  for (int iloop = 1; iloop <= 3; iloop++) {
-    // iloop==1: loop through faces;
-    // iloop==2: loop through edges;
-    // iloop==3: loop through corners;
-    for (int di = -1; di <= 1; di++)
-      for (int dj = -1; dj <= 1; dj++)
-        for (int dk = -1; dk <= 1; dk++) {
-          const int sum = std::abs(di) + std::abs(dj) + std::abs(dk);
-          if (iloop != sum)
-            continue;
-
-          IntVect ijk1 = ijk + IntVect{ AMREX_D_DECL(di, dj, dk) };
-          if (!bit::is_lev_boundary(status(ijk1))) {
-            // The first neighbor cell that is NOT a boundary cell.
-            if (bx.contains(ijk1)) {
-              ijksrc = ijk1;
-              return true;
-            } else {
-              return false;
-            }
-          }
-        }
-  }
-  Abort("do_inject_particles_for_this_cell:something is wrong!");
-  return false; // to suppress compilation warning.
-}
-
 #define INSTANTIATE_PARTICLES_BC(T)                                            \
   template void T::inject_particles_at_boundary();                             \
   template void T::inject_flux_at_inflow_faces(Real);                          \
-  template void T::outflow_bc(const MFIter&, const IntVect, const IntVect);    \
-  template bool T::do_inject_particles_for_this_cell(                          \
-      const Box&, const Array4<const int>&, const IntVect, IntVect&);
+  template void T::outflow_bc(const MFIter&, const IntVect, const IntVect);
 
 INSTANTIATE_PARTICLES_BC(PicParticles)
 INSTANTIATE_PARTICLES_BC(PTParticles)

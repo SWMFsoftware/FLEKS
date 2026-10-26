@@ -172,6 +172,12 @@ public:
     return arr(ijk, iSp);
   }
 
+  /// The loss rates of the FAB mfi of level iLev (for kernels).
+  amrex::Array4<amrex::Real const> loss_array(const amrex::MFIter& mfi,
+                                              const int iLev = 0) const {
+    return nodeLossFluid[iLev].const_array(mfi);
+  }
+
   bool use_loss_source() const { return useRecombination || useChemistry; }
 
   /// Check whether nodeLossFluid is allocated and non-empty at iLev.

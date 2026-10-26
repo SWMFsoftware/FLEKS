@@ -13,6 +13,7 @@
 #include <AMReX_Geometry.H>
 #include <AMReX_MultiFab.H>
 
+#include "GpuBackend.h"
 #include "ReadParam.h"
 
 class FluidInterface;
@@ -112,5 +113,76 @@ public:
   bool siInput = true;
   amrex::Real maxAmplitude = 0.0; // 0 => amplitude guard disabled
 };
+
+// The velocity-kick components (iField == 2) of the wave boundary at one
+// time, in a form a kernel can capture by value. The time-only factors (the
+// envelope and the packet shape) are evaluated when the view is made; kick()
+// evaluates the rest with the same arithmetic as WaveBoundaryManager::value.
+struct WaveKickComp {
+  int profile = WaveComponent::kMono;
+  amrex::Real amplitude = 0.0;
+  amrex::Real k_vec[3] = { 0, 0, 0 };
+  amrex::Real frequency = 0.0;
+  amrex::Real phase = 0.0;
+  amrex::Real packet = 1.0; // packet shape exp(-tau^2) (kPacket)
+  amrex::Real env = 0.0;    // envelope
+  amrex::Real pol[3] = { 0, 0, 0 };
+  int sub0 = 0, nSub = 0;              // sub-components (kSpectral)
+  const WaveComponent* orig = nullptr; // for a custom (host) profile
+};
+
+struct WaveKickView {
+  KernelArray<WaveKickComp> comps;
+  KernelArray<WaveKickComp> subs; // mono sub-components of kSpectral comps
+
+  AMREX_GPU_HOST_DEVICE static amrex::Real mono(const WaveKickComp& c,
+                                                amrex::Real t,
+                                                const amrex::Real* pos) {
+    if (c.amplitude == 0.0)
+      return 0.0;
+    const amrex::Real kdotx =
+        c.k_vec[0] * pos[0] + c.k_vec[1] * pos[1] + c.k_vec[2] * pos[2];
+    const amrex::Real arg = kdotx - c.frequency * t + c.phase;
+    return c.amplitude * std::sin(arg);
+  }
+
+  // Add the velocity kick at position pos and time t (the time of the view).
+  AMREX_GPU_HOST_DEVICE void kick(const amrex::Real* pos, amrex::Real t,
+                                  amrex::Real& dvx, amrex::Real& dvy,
+                                  amrex::Real& dvz) const {
+    dvx = dvy = dvz = 0.0;
+    for (int i = 0; i < comps.size(); ++i) {
+      const WaveKickComp& c = comps[i];
+      if (c.env == 0.0)
+        continue;
+      amrex::Real val = 0.0;
+      if (c.profile == WaveComponent::kCustom) {
+        // A custom profile is a host function (rejected in a GPU run).
+        AMREX_IF_ON_HOST((if (c.orig && c.orig->custom) {
+          val = c.orig->custom(*c.orig, t, pos) * c.env;
+        }))
+      } else if (c.profile == WaveComponent::kSpectral) {
+        amrex::Real sum = 0.0;
+        for (int j = c.sub0; j < c.sub0 + c.nSub; ++j)
+          sum += mono(subs[j], t, pos);
+        val = sum * c.env;
+      } else if (c.profile == WaveComponent::kPacket) {
+        const amrex::Real carrier = mono(c, t, pos);
+        val = (carrier == 0.0 ? 0.0 : carrier * c.packet) * c.env;
+      } else {
+        val = mono(c, t, pos) * c.env;
+      }
+      if (val == 0.0)
+        continue;
+      dvx += val * c.pol[0];
+      dvy += val * c.pol[1];
+      dvz += val * c.pol[2];
+    }
+  }
+};
+
+// The velocity kick of `wave` at time t (empty if the wave BC is inactive).
+WaveKickView make_wave_kick_view(const WaveBoundaryManager& wave,
+                                 amrex::Real t);
 
 #endif // FLEKS_WAVEBC_H
