@@ -93,6 +93,9 @@ void Pic::fill_new_cells() {
             apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
                            &Pic::get_node_E, iLev, false);
           }
+          if (use_body()) {
+            apply_body_E_bc(nodeE[iLev], iLev);
+          }
         }
       }
     }
