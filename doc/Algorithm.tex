@@ -413,19 +413,19 @@ where:
   \end{equation}
   where $C_h$ is a dimensionless tuning parameter, typically $10^{-3}$--$10^{-2}$.
 \end{itemize}
-The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$. The explicit resistive and hyper-resistive diffusion terms must satisfy parabolic CFL stability bounds:
+The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$, using the staggered cell-to-node curl operator, whose composite curl-curl Nyquist wavenumber squared is $k_{\max}^2 = \max_d (4/\Delta x_d^2)$. The explicit resistive and hyper-resistive diffusion terms must satisfy real-axis parabolic CFL stability bounds:
 \begin{equation}
-\frac{\eta k_{\max}^2 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL}}, \qquad \frac{\eta_h k_{\max}^4 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL}},
+\frac{\eta k_{\max}^2 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL,real}}, \qquad \frac{\eta_h k_{\max}^2 l_{\max} \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL,real}},
 \end{equation}
-where $C_{\text{CFL}} = 2.785$ for RK4 and $2.513$ for SSPRK3.
-
-\subsection{Collocated field layout}
-
-The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centers. The generalized Ohm's law is therefore assembled at the nodes from the node-centered moments and the cell-centered $\mathbf{B}$, and the Faraday update advances the cell-centered $\mathbf{B}$; the node-centered $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values. The cell-centered field is differentiated with the compact $2\,\Delta x$ central-difference stencil
+where $l_{\max} = \sum_d (4/\Delta x_d^2)$ and $C_{\text{CFL,real}} = 2.785$ for RK4 and $2.513$ for SSPRK3, while the dispersive Hall-whistler wave satisfies the imaginary-axis stability bound:
 \begin{equation}
-(\nabla \times \mathbf{B})_{i,j,k} \propto \frac{\mathbf{B}_{i+1} - \mathbf{B}_{i-1}}{2\Delta x},
+\frac{k_{\max}^2 |\mathbf{B}|_{\max} \Delta t_{\text{sub}}}{4\pi \rho_{\text{eff}}} \le C_{\text{CFL,imag}},
 \end{equation}
-whose discrete Fourier kernel vanishes identically at the grid Nyquist mode ($k\Delta x = \pi$). This eliminates the grid-scale odd-even decoupling instability that would otherwise force heavy Hall sub-cycling.
+where $C_{\text{CFL,imag}} = 2.785$ ($2\sqrt{2} \approx 2.828$) for RK4 and $\sqrt{3} \approx 1.732$ for SSPRK3.
+
+\subsection{Staggered field layout}
+
+The hybrid solver uses the same grid layout as the full-PIC solver: the electric field $\mathbf{E}$, the current density $\mathbf{J}$, and the ion moments $\rho$, $\rho\mathbf{u}$ are stored on the node grid, while the magnetic field $\mathbf{B}$ and the scalar electron pressure $P_e$ are stored at cell centers. The generalized Ohm's law is therefore assembled at the nodes from the node-centered moments and the cell-centered $\mathbf{B}$ (with $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$ computed via the compact $1\,\Delta x$ cell-to-node curl), and the Faraday update advances the cell-centered $\mathbf{B}$ via the compact $1\,\Delta x$ node-to-cell curl; the node-centered $\mathbf{B}$ that the Boris push samples is recovered by averaging the surrounding cell values.
 
 \subsection{Time integration and subcycling of $\mathbf{B}$}
 
@@ -435,8 +435,8 @@ The magnetic field is advanced via Faraday's law:
 \end{equation}
 using an explicit Runge--Kutta integrator. Two choices are provided:
 \begin{itemize}
-  \item \textbf{RK4}: Classical fourth-order Runge--Kutta. Because RK4 has a wide stability region along the imaginary axis (where Hall-whistler oscillations reside), a single subcycle per coarse step is often sufficient.
-  \item \textbf{SSPRK3}: Strong-stability-preserving third-order Runge--Kutta with time-centered intermediate stages.
+  \item \textbf{RK4 (default)}: Classical 4-stage fourth-order Runge--Kutta. Because RK4 has a larger imaginary-axis stability region per stage ($2\sqrt{2}/4 \approx 0.707$ vs.\ $\sqrt{3}/3 \approx 0.577$ for SSPRK3), it requires $\sim 60\%$ fewer subcycles ($\sim 18\%$ fewer RHS stage evaluations) when limited by the Hall-whistler CFL.
+  \item \textbf{SSPRK3}: 3-stage strong-stability-preserving third-order Runge--Kutta, costing $25\%$ fewer stage evaluations per sub-step at a fixed subcycle count and providing TVD properties for hyperbolic/upwind terms.
 \end{itemize}
 Within one coarse particle time step $\Delta t$, $N_{\text{sub}}$ subcycles of step size $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$ are taken.
 

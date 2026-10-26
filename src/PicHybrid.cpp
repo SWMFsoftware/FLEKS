@@ -2010,7 +2010,11 @@ void Pic::update_B_hybrid() {
   }
 
   const Real dt = tc->get_dt();
-  const Real subDt = dt / nBSubcycle;
+  if (dt <= 0.0)
+    return;
+  if (nBSubcycle < 1)
+    nBSubcycle = 1;
+  Real subDt = dt / nBSubcycle;
 
   // Grid-mode hyper-resistivity: every level is damped at its own grid scale,
   // eta_h = 4*pi*C_h*dx_min^4/dt with the dx of that level. The damping rate
@@ -2033,9 +2037,24 @@ void Pic::update_B_hybrid() {
     update_regional_hyper_grid_mode(dt);
   }
 
-  // CFL stability check for explicit resistive, hyper-resistive, and whistler
-  // terms.
-  const Real cflLimit = useRK4 ? 2.785 : 2.513;
+  // CFL stability check for explicit resistive, hyper-resistive, upwind, and
+  // whistler terms. Real-axis dissipative terms (resistivity,
+  // hyper-resistivity, upwind) use the real-axis stability limit (2.785 for
+  // RK4, 2.513 for SSPRK3), while the oscillatory Hall whistler mode lies on
+  // the imaginary axis (2.785 for RK4, sqrt(3) ~ 1.732 for SSPRK3).
+  const Real cflLimitReal = useRK4 ? 2.785 : 2.513;
+  const Real cflLimitWhistler = useRK4 ? 2.785 : 1.732;
+  const Real fieldSafety = 0.85;
+  auto safe_ceil_int = [](Real val) -> int {
+    if (!std::isfinite(val) ||
+        val >= static_cast<Real>(std::numeric_limits<int>::max() / 2)) {
+      return std::numeric_limits<int>::max() / 2;
+    }
+    if (val <= 1.0)
+      return 1;
+    return static_cast<int>(std::ceil(val));
+  };
+
   Real maxRegionalEta = 0.0;
   for (const auto& cfg : regionalResistivityConfigs) {
     maxRegionalEta = amrex::max(maxRegionalEta, cfg.etaCode);
@@ -2054,6 +2073,11 @@ void Pic::update_B_hybrid() {
 
     const auto dx = Geom(iLev).CellSizeArray();
     const Box& domBox = Geom(iLev).Domain();
+    // Staggered curl-curl has multilinear Fourier symbol
+    // sum_d (4/dx_d^2) alpha_d prod_{d'!=d}(1 - alpha_{d'}) on alpha_d in
+    // [0,1], attaining its global maximum sMax = max_d (4/dx_d^2) on
+    // axis-aligned Nyquist modes (for any active dimension with nCellDim >= 2).
+    // The cell-centered Laplacian has maximum symbol lMax = sum_d (4/dx_d^2).
     Real sMax = 0.0, lMax = 0.0;
     for (int iDim = 0; iDim < nDim; ++iDim) {
       const int nCellDim = domBox.length(iDim);
@@ -2061,56 +2085,126 @@ void Pic::update_B_hybrid() {
         continue;
       const Real invDx2 = 1.0 / (dx[iDim] * dx[iDim]);
       lMax += 4.0 * invDx2;
-      if (nCellDim >= 3)
-        sMax += invDx2;
+      sMax = amrex::max(sMax, 4.0 * invDx2);
     }
-    const Real cflEta = (maxEta / fourPI) * sMax * subDt;
-    const Real cflHyper = (maxHyper / fourPI) * sMax * lMax * subDt;
-    if (cflEta > cflLimit)
-      amrex::Print()
-          << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
-          << " (> " << cflLimit << ", explicit diffusion may be unstable)\n";
-    if (cflHyper > cflLimit)
-      amrex::Print()
-          << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
-          << cflHyper << " (> " << cflLimit
-          << ", explicit 4th-order diffusion may be unstable)\n";
-
-    if (!useHallTerm && !useHybridUpwind)
-      continue;
 
     Real bMaxLev = 0.0;
-    const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
-    for (int d = 0; d < 3; ++d) {
-      bMaxLev = amrex::max(bMaxLev, bForCfl.norm0(d, 0, false));
+    Real rhoMinLev = 0.0;
+    Real rhoEff = 0.0;
+    if (useHallTerm || useHybridUpwind) {
+      const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
+      auto const& bArrays = bForCfl.const_arrays();
+      bMaxLev = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl,
+                          IntVect(0),
+                          [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
+                              noexcept -> GpuTuple<Real> {
+                                Array4<Real const> const& arr = bArrays[nb];
+                                Real b2 = arr(i, j, k, 0) * arr(i, j, k, 0) +
+                                          arr(i, j, k, 1) * arr(i, j, k, 1) +
+                                          arr(i, j, k, 2) * arr(i, j, k, 2);
+                                return sqrt(b2);
+                              });
+      ParallelDescriptor::ReduceRealMax(bMaxLev);
+
+      // assemble_ohm_E disables Hall and wave-speed upwind terms at nodes with
+      // rho <= 0 (vacuum, particle-free tests, or inside #BODY), so only
+      // positive-density nodes participate in the density floor.
+      auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
+      const int iRhoComp = iRho_;
+      Real rhoPosMin =
+          ParReduce(TypeList<ReduceOpMin>{}, TypeList<Real>{},
+                    nodePlasma[nSpecies][iLev], IntVect(0),
+                    [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                                         int k) noexcept -> GpuTuple<Real> {
+                      const Real r = rhoArrays[nb](i, j, k, iRhoComp);
+                      return (r > 0.0) ? r : std::numeric_limits<Real>::max();
+                    });
+      ParallelDescriptor::ReduceRealMin(rhoPosMin);
+      const bool hasPlasma = (rhoPosMin < std::numeric_limits<Real>::max());
+      rhoMinLev = hasPlasma ? rhoPosMin : 0.0;
+      rhoEff = hasPlasma
+                   ? amrex::max(rhoMinLev,
+                                amrex::max(rhoMinOhm, static_cast<Real>(1e-10)))
+                   : 0.0;
     }
-    const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
-    const Real rhoEff = amrex::max(rhoMinLev, rhoMinOhm);
+
+    const Real rateEtaDt = (maxEta / fourPI) * sMax * dt;
+    const Real rateHyperDt = (maxHyper / fourPI) * sMax * lMax * dt;
+    const Real rateUpwindDt =
+        useHybridUpwind ? upwind_max_rate(iLev, 0.0, bMaxLev, rhoEff) * dt
+                        : 0.0;
+    const Real rateWhistlerDt = (useHallTerm && rhoEff > 0.0)
+                                    ? (sMax * bMaxLev / (fourPI * rhoEff)) * dt
+                                    : 0.0;
+
+    // When auto-subcycling is enabled, immediately adapt nBSubcycle before the
+    // Faraday sub-step loop if the freshly deposited moments or updated fields
+    // would violate any CFL limit with the current nBSubcycle.
+    if (isAutoSubcycle) {
+      int nSubNeed = nBSubcycle;
+      if (rateEtaDt / nBSubcycle > cflLimitReal) {
+        nSubNeed = amrex::max(
+            nSubNeed, safe_ceil_int(rateEtaDt / (cflLimitReal * fieldSafety)));
+      }
+      if (rateHyperDt / nBSubcycle > cflLimitReal) {
+        nSubNeed =
+            amrex::max(nSubNeed, safe_ceil_int(rateHyperDt /
+                                               (cflLimitReal * fieldSafety)));
+      }
+      if (rateUpwindDt / nBSubcycle > cflLimitReal) {
+        nSubNeed =
+            amrex::max(nSubNeed, safe_ceil_int(rateUpwindDt /
+                                               (cflLimitReal * fieldSafety)));
+      }
+      if (rateWhistlerDt / nBSubcycle > cflLimitWhistler) {
+        nSubNeed = amrex::max(
+            nSubNeed,
+            safe_ceil_int(rateWhistlerDt / (cflLimitWhistler * fieldSafety)));
+      }
+      const int nSubClamped =
+          std::clamp(nSubNeed, nBSubcycleMin, nBSubcycleMax);
+      if (nSubClamped > nBSubcycle) {
+        nBSubcycle = nSubClamped;
+        nSubcycle = nSubClamped;
+        subcycleHoldCount = 0;
+        subDt = dt / nBSubcycle;
+      }
+    }
+
+    const Real cflEta = rateEtaDt / nBSubcycle;
+    const Real cflHyper = rateHyperDt / nBSubcycle;
+    if (cflEta > cflLimitReal)
+      amrex::Print()
+          << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
+          << " (> " << cflLimitReal
+          << ", explicit diffusion may be unstable)\n";
+    if (cflHyper > cflLimitReal)
+      amrex::Print()
+          << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
+          << cflHyper << " (> " << cflLimitReal
+          << ", explicit 4th-order diffusion may be unstable)\n";
 
     if (useHybridUpwind) {
-      // Wave speeds only: the bulk-flow part of a_d is not known here.
-      const Real cflUpwind =
-          upwind_max_rate(iLev, 0.0, bMaxLev, rhoEff) * subDt;
-      if (cflUpwind > cflLimit)
+      const Real cflUpwind = rateUpwindDt / nBSubcycle;
+      if (cflUpwind > cflLimitReal)
         amrex::Print() << "  [CFL warning] upwind dissipation: "
                           "sum_d 2*a_d/dx_d*dt_sub = "
-                       << cflUpwind << " (> " << cflLimit
+                       << cflUpwind << " (> " << cflLimitReal
                        << ", explicit upwind term may be unstable)\n";
     }
 
-    if (useHallTerm) {
-      const Real cflWhistler = (sMax * bMaxLev / (fourPI * rhoEff)) * subDt;
-      if (cflWhistler > cflLimit) {
-        const int nSubReq =
-            static_cast<int>(std::ceil(nBSubcycle * (cflWhistler / cflLimit)));
-        amrex::Print()
-            << "  [CFL warning] whistler wave: "
-               "(kmax^2*Bmax)/(4pi*rho_eff)*dt_sub = "
-            << cflWhistler << " (> " << cflLimit
-            << ", whistler wave is linearly unstable in RK4! rho_min="
-            << rhoMinLev << ", rho_eff=" << rhoEff << ", B_max=" << bMaxLev
-            << "). Recommend nBSubcycle >= " << nSubReq
-            << " or increasing rhoMinOhm.\n";
+    if (useHallTerm && rhoEff > 0.0) {
+      const Real cflWhistler = rateWhistlerDt / nBSubcycle;
+      if (cflWhistler > cflLimitWhistler) {
+        const int nSubReq = safe_ceil_int(rateWhistlerDt / cflLimitWhistler);
+        amrex::Print() << "  [CFL warning] whistler wave: "
+                          "(kmax^2*Bmax)/(4pi*rho_eff)*dt_sub = "
+                       << cflWhistler << " (> " << cflLimitWhistler
+                       << ", whistler wave is linearly unstable in "
+                       << fieldIntegrator << "! rho_min=" << rhoMinLev
+                       << ", rho_eff=" << rhoEff << ", B_max=" << bMaxLev
+                       << "). Recommend nBSubcycle >= " << nSubReq
+                       << " or increasing rhoMinOhm.\n";
       }
     }
   }
@@ -2404,11 +2498,28 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
   std::string nameFunc = "Pic::calc_hybrid_dt_and_subcycle";
   timing_func(nameFunc);
 
-  const Real cflLimit = useRK4 ? 2.785 : 2.513;
+  const Real cflLimitReal = useRK4 ? 2.785 : 2.513;
+  const Real cflLimitWhistler = useRK4 ? 2.785 : 1.732;
   const Real fieldSafety = 0.85;
+  auto safe_ceil_int = [](Real val) -> int {
+    if (!std::isfinite(val) ||
+        val >= static_cast<Real>(std::numeric_limits<int>::max() / 2)) {
+      return std::numeric_limits<int>::max() / 2;
+    }
+    if (val <= 1.0)
+      return 1;
+    return static_cast<int>(std::ceil(val));
+  };
+
+  Real maxRegionalEta = 0.0;
+  for (const auto& cfg : regionalResistivityConfigs) {
+    maxRegionalEta = amrex::max(maxRegionalEta, cfg.etaCode);
+  }
+  const Real maxEta = amrex::max(etaResistivity, maxRegionalEta);
 
   Real dtMacroMin = std::numeric_limits<Real>::max();
   Real dtSubMin = std::numeric_limits<Real>::max();
+  int nSubHyperGridMin = 1;
   std::string localMacroReason = "ion kinetics";
   std::string localSubReason = "field advance";
 
@@ -2510,19 +2621,33 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         continue;
       const Real invDx2 = 1.0 / (dx[iDim] * dx[iDim]);
       lMax += 4.0 * invDx2;
-      if (nCellDim >= 3)
-        sMax += invDx2;
+      sMax = amrex::max(sMax, 4.0 * invDx2);
     }
 
     if (sMax > 0.0) {
-      const Real rhoMinLev = nodePlasma[nSpecies][iLev].min(iRho_, 0, false);
-      const Real rhoEff = amrex::max(
-          rhoMinLev, amrex::max(rhoMinOhm, static_cast<Real>(1e-10)));
+      auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
+      const int iRhoComp = iRho_;
+      Real rhoPosMin =
+          ParReduce(TypeList<ReduceOpMin>{}, TypeList<Real>{},
+                    nodePlasma[nSpecies][iLev], IntVect(0),
+                    [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                                         int k) noexcept -> GpuTuple<Real> {
+                      const Real r = rhoArrays[nb](i, j, k, iRhoComp);
+                      return (r > 0.0) ? r : std::numeric_limits<Real>::max();
+                    });
+      ParallelDescriptor::ReduceRealMin(rhoPosMin);
+      const bool hasPlasma = (rhoPosMin < std::numeric_limits<Real>::max());
+      const Real rhoMinLev = hasPlasma ? rhoPosMin : 0.0;
+      const Real rhoEff =
+          hasPlasma
+              ? amrex::max(rhoMinLev,
+                           amrex::max(rhoMinOhm, static_cast<Real>(1e-10)))
+              : 0.0;
 
-      if (useHallTerm && bMaxLev > 0.0) {
+      if (useHallTerm && bMaxLev > 0.0 && rhoEff > 0.0) {
         const Real omegaWhistler = (sMax * bMaxLev) / (fourPI * rhoEff);
         if (omegaWhistler > 0.0) {
-          Real dtWhistler = (cflLimit * fieldSafety) / omegaWhistler;
+          Real dtWhistler = (cflLimitWhistler * fieldSafety) / omegaWhistler;
           if (dtWhistler < dtSubMin) {
             dtSubMin = dtWhistler;
             localSubReason = "whistler wave";
@@ -2541,7 +2666,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         }
         Real vFast = std::sqrt(vA * vA + cs * cs);
         if (vFast > 0.0) {
-          Real dtWave = (cflLimit * fieldSafety) * dxMin / vFast;
+          Real dtWave = (cflLimitReal * fieldSafety) * dxMin / vFast;
           if (dtWave < dtSubMin) {
             dtSubMin = dtWave;
             localSubReason =
@@ -2550,10 +2675,10 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         }
       }
 
-      if (etaResistivity > 0.0) {
-        const Real omegaEta = (etaResistivity / fourPI) * sMax;
+      if (maxEta > 0.0) {
+        const Real omegaEta = (maxEta / fourPI) * sMax;
         if (omegaEta > 0.0) {
-          Real dtEta = (cflLimit * fieldSafety) / omegaEta;
+          Real dtEta = (cflLimitReal * fieldSafety) / omegaEta;
           if (dtEta < dtSubMin) {
             dtSubMin = dtEta;
             localSubReason = "resistive diffusion";
@@ -2561,13 +2686,41 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         }
       }
 
-      if (etaHyperLev.size() > iLev && etaHyperLev[iLev] > 0.0 && lMax > 0.0) {
-        const Real omegaHyper = (etaHyperLev[iLev] / fourPI) * sMax * lMax;
-        if (omegaHyper > 0.0) {
-          Real dtHyper = (cflLimit * fieldSafety) / omegaHyper;
-          if (dtHyper < dtSubMin) {
-            dtSubMin = dtHyper;
-            localSubReason = "hyper-resistivity";
+      if (lMax > 0.0) {
+        // Physical ("si" mode) hyper-resistivity sets a physical time scale
+        // dtHyper; "grid" mode (eta_h = 4*pi*C_h*dx_min^4/dt) has dimensionless
+        // per-macro-step rate C_h*dx_min^4*sMax*lMax that directly constrains
+        // nSubcycle.
+        Real maxHyperSI = (etaHyperMode != "grid" &&
+                           iLev < static_cast<int>(etaHyperLev.size()))
+                              ? etaHyperLev[iLev]
+                              : 0.0;
+        Real maxHyperChGrid =
+            (etaHyperMode == "grid" && etaHyperCh > 0.0) ? etaHyperCh : 0.0;
+        for (const auto& cfg : regionalHyperResistivityConfigs) {
+          if (cfg.mode == "grid") {
+            maxHyperChGrid = amrex::max(maxHyperChGrid, cfg.ch);
+          } else if (iLev < static_cast<int>(cfg.etaLev.size())) {
+            maxHyperSI = amrex::max(maxHyperSI, cfg.etaLev[iLev]);
+          }
+        }
+        if (maxHyperSI > 0.0) {
+          const Real omegaHyper = (maxHyperSI / fourPI) * sMax * lMax;
+          if (omegaHyper > 0.0) {
+            Real dtHyper = (cflLimitReal * fieldSafety) / omegaHyper;
+            if (dtHyper < dtSubMin) {
+              dtSubMin = dtHyper;
+              localSubReason = "hyper-resistivity";
+            }
+          }
+        }
+        if (maxHyperChGrid > 0.0) {
+          const Real cflHyperMacro =
+              maxHyperChGrid * std::pow(dxMin, 4) * sMax * lMax;
+          const int nReqGrid =
+              safe_ceil_int(cflHyperMacro / (cflLimitReal * fieldSafety));
+          if (nReqGrid > nSubHyperGridMin) {
+            nSubHyperGridMin = nReqGrid;
           }
         }
       }
@@ -2576,7 +2729,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         const Real omegaUpwind =
             upwind_max_rate(iLev, uMaxLev, bMaxLev, rhoEff);
         if (omegaUpwind > 0.0) {
-          Real dtUpwind = (cflLimit * fieldSafety) / omegaUpwind;
+          Real dtUpwind = (cflLimitReal * fieldSafety) / omegaUpwind;
           if (dtUpwind < dtSubMin) {
             dtSubMin = dtUpwind;
             localSubReason = "upwind dissipation";
@@ -2598,8 +2751,12 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     }
     dtNext = dtFixed;
 
-    if (isAutoSubcycle && dtSubMin < std::numeric_limits<Real>::max()) {
-      int nSubReq = static_cast<int>(std::ceil(dtFixed / dtSubMin));
+    if (isAutoSubcycle &&
+        (dtSubMin < std::numeric_limits<Real>::max() || nSubHyperGridMin > 1)) {
+      int nSubReq = nSubHyperGridMin;
+      if (dtSubMin < std::numeric_limits<Real>::max()) {
+        nSubReq = amrex::max(nSubReq, safe_ceil_int(dtFixed / dtSubMin));
+      }
       nSubReq = std::clamp(nSubReq, nBSubcycleMin, nBSubcycleMax);
 
       if (nSubReq > nBSubcycle) {
@@ -2608,7 +2765,11 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         subcycleHoldCount = 0;
       } else if (nSubReq < nBSubcycle) {
         // Hysteresis with 15% safety buffer before decreasing
-        if (dtFixed / (nBSubcycle - 1) <= 0.85 * dtSubMin) {
+        const bool canDecreaseSub =
+            (dtSubMin == std::numeric_limits<Real>::max() ||
+             dtFixed / (nBSubcycle - 1) <= 0.85 * dtSubMin) &&
+            (nBSubcycle - 1 >= nSubHyperGridMin);
+        if (canDecreaseSub) {
           subcycleHoldCount++;
           if (subcycleHoldCount >= 3) {
             nSubNext = nBSubcycle - 1;
@@ -2649,15 +2810,19 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       }
       nSubNext = nBSubcycle;
     } else {
-      int nIdeal = (dtSubMin < std::numeric_limits<Real>::max())
-                       ? static_cast<int>(std::ceil(dtMacroTarget / dtSubMin))
-                       : 1;
-      Real dtTarget = dtMacroTarget;
+      Real dtOld = tc->get_dt();
+      Real dtTarget = (dtOld > 0.0) ? std::min(dtMacroTarget,
+                                               static_cast<Real>(1.10) * dtOld)
+                                    : dtMacroTarget;
+      int nIdeal = nSubHyperGridMin;
+      if (dtSubMin < std::numeric_limits<Real>::max()) {
+        nIdeal = amrex::max(nIdeal, safe_ceil_int(dtTarget / dtSubMin));
+      }
 
       if (nIdeal > nBSubcycleMax &&
           dtSubMin < std::numeric_limits<Real>::max()) {
         nSubNext = nBSubcycleMax;
-        dtTarget = nBSubcycleMax * dtSubMin;
+        dtTarget = std::min(dtTarget, nBSubcycleMax * dtSubMin);
         dtLimitingReason = localSubReason + " (capped at nBSubcycleMax)";
         subcycleHoldCount = 0;
       } else {
@@ -2667,7 +2832,11 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
           nSubNext = nTarget;
           subcycleHoldCount = 0;
         } else if (nTarget < nBSubcycle) {
-          if (dtTarget / (nBSubcycle - 1) <= 0.85 * dtSubMin) {
+          const bool canDecreaseSub =
+              (dtSubMin == std::numeric_limits<Real>::max() ||
+               dtTarget / (nBSubcycle - 1) <= 0.85 * dtSubMin) &&
+              (nBSubcycle - 1 >= nSubHyperGridMin);
+          if (canDecreaseSub) {
             subcycleHoldCount++;
             if (subcycleHoldCount >= 3) {
               nSubNext = nBSubcycle - 1;
@@ -2685,14 +2854,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         }
       }
 
-      Real dtOld = tc->get_dt();
-      if (dtOld > 0.0) {
-        // Allow stability limits to force an immediate drop; limit growth to
-        // 1.10x.
-        dtNext = std::min(dtTarget, static_cast<Real>(1.10) * dtOld);
-      } else {
-        dtNext = dtTarget;
-      }
+      dtNext = dtTarget;
     }
   }
 
