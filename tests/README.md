@@ -148,6 +148,15 @@ python3 tests/validate_tests.py --test beam
 python3 tests/validate_tests.py -n 2
 python3 tests/validate_tests.py --nprocs 2
 
+# Run tests concurrently across worker processes (-j / --jobs):
+python3 tests/validate_tests.py -j 4             # 4 concurrent test workers (serial tests)
+python3 tests/validate_tests.py -n 2 -j 2        # 2 concurrent tests, each with 2 MPI ranks (4 cores total)
+python3 tests/validate_tests.py -n 2 -j auto     # auto-detect core count: max(1, cpu_count // nprocs)
+
+# Partition tests across shards (e.g. for CI jobs):
+python3 tests/validate_tests.py --shard 1/2      # run shard 1 of 2
+python3 tests/validate_tests.py --shard 2/2      # run shard 2 of 2
+
 # Show detailed per-check diagnostics (energy numbers, ratios, etc.):
 python3 tests/validate_tests.py --verbose
 python3 tests/validate_tests.py -v

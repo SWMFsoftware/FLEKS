@@ -19,12 +19,16 @@ inputs:
   cache-key:
     description: 'Cache key prefix for the standalone FLEKS build.'
     required: true
+  jobs:
+    description: 'Number of concurrent test worker processes (-j flag).'
+    required: false
+    default: '2'
   serial-summary:
-    description: 'Filename for the serial test summary (relative to the tests dir).'
-    required: true
-    default: summary_serial.md
+    description: 'Deprecated: Serial run summary file (serial runs removed from CI).'
+    required: false
+    default: ''
   parallel-summary:
-    description: 'Filename for the parallel test summary (relative to the tests dir).'
+    description: 'Filename for the test summary (relative to the tests dir).'
     required: true
     default: summary_parallel.md
   summary-title:
@@ -96,36 +100,22 @@ runs:
         sudo apt-get install -y python3-numpy
         python3 -c "import numpy; print('numpy', numpy.__version__)"
 
-    - name: Run Standalone FLEKS Tests (Serial)
-      id: test-serial
+    - name: Run Standalone FLEKS Tests (Parallel, 2 Procs)
+      id: test-parallel
       working-directory: SWMF/PC/FLEKS/tests
       shell: bash
       run: |
         ldd ../bin/FLEKS.exe
-        python3 validate_tests.py --summary-file ${{ inputs.serial-summary }}
-
-    - name: Run Standalone FLEKS Tests (Parallel, 2 Procs)
-      id: test-parallel
-      if: always()
-      working-directory: SWMF/PC/FLEKS/tests
-      shell: bash
-      run: |
-        python3 validate_tests.py -n 2 --summary-file ${{ inputs.parallel-summary }}
+        python3 validate_tests.py -n 2 -j ${{ inputs.jobs }} --summary-file ${{ inputs.parallel-summary }}
 
     - name: Write Job Summary
       if: always()
       shell: bash
       run: |
         {
-          echo "### 🧪 ${{ inputs.summary-title }}"
+          echo "### 🧪 ${{ inputs.summary-title }} (Parallel, 2 Procs)"
           echo ""
-          if [ -f SWMF/PC/FLEKS/tests/${{ inputs.serial-summary }} ]; then
-            echo "#### Serial (1 proc)"
-            cat SWMF/PC/FLEKS/tests/${{ inputs.serial-summary }}
-            echo ""
-          fi
           if [ -f SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }} ]; then
-            echo "#### Parallel (2 procs)"
             cat SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }}
             echo ""
           fi
@@ -137,18 +127,44 @@ runs:
       with:
         script: |
           const fs = require('fs');
-          const serialPath = 'SWMF/PC/FLEKS/tests/${{ inputs.serial-summary }}';
           const parallelPath = 'SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }}';
           let body = '';
 
-          if (fs.existsSync(serialPath) || fs.existsSync(parallelPath)) {
+          if (fs.existsSync(parallelPath)) {
             body += '### 🧪 ${{ inputs.summary-title }}\n\n';
+            body += fs.readFileSync(parallelPath, 'utf8') + '\n';
+          }
 
-            if (fs.existsSync(serialPath)) {
-              body += fs.readFileSync(serialPath, 'utf8') + '\n';
-            }
-            if (fs.existsSync(parallelPath)) {
-              body += fs.readFileSync(parallelPath, 'utf8') + '\n';
+          if (body) {
+            // 1. List existing comments to find one matching our summary prefix
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const prComment = comments.find(comment =>
+              comment.body.includes('### 🧪 ${{ inputs.summary-title }}')
+            );
+
+            if (prComment) {
+              // 2. Update existing comment in place
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: prComment.id,
+                body: body
+              });
+              console.log('Successfully updated existing PR comment with correctness results.');
+            } else {
+              // 3. Create a new comment if none exists
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+              console.log('Successfully created new PR comment with correctness results.');
             }
           }
 
