@@ -351,7 +351,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-      // Find every active-region box that overlaps the coarsened version of this fab. 
+      // Find every active-region box that overlaps the coarsened version of
+      // this fab.
       const auto isects =
           activeRegion.intersections(amrex::coarsen(box, ratioToLev0));
       ParallelFor(box, [&](int i, int j, int k) noexcept {
