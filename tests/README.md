@@ -157,6 +157,9 @@ python3 tests/validate_tests.py -n 2 -j auto     # auto-detect core count: max(1
 python3 tests/validate_tests.py --shard 1/2      # run shard 1 of 2
 python3 tests/validate_tests.py --shard 2/2      # run shard 2 of 2
 
+# Output markdown results with custom path / heading:
+python3 tests/validate_tests.py --summary-file my_summary.md --summary-title "My Test Run"
+
 # Show detailed per-check diagnostics (energy numbers, ratios, etc.):
 python3 tests/validate_tests.py --verbose
 python3 tests/validate_tests.py -v

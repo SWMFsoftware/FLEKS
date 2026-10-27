@@ -1222,6 +1222,16 @@ def main():
             summary_file = os.path.abspath(arg[len("--summary-file="):])
             continue
 
+    # Parse --summary-title TITLE (custom heading for Markdown summary)
+    summary_title = "Standalone FLEKS Test Results"
+    for i, arg in enumerate(sys.argv):
+        if arg == "--summary-title" and i + 1 < len(sys.argv):
+            summary_title = sys.argv[i + 1]
+            continue
+        if arg.startswith("--summary-title="):
+            summary_title = arg[len("--summary-title="):]
+            continue
+
     # Parse --test NAME (select a specific test to run; default: run all)
     # Accepts both "--test=NAME" and "--test NAME" forms.
     selected_test = None
@@ -1383,7 +1393,8 @@ def main():
     # Write Markdown Summary to summary.md for CI / PR integration
     try:
         with open(summary_file, "w") as f:
-            f.write(f"### 🧪 Standalone FLEKS Test Results{shard_info}\n\n")
+            header_prefix = summary_title if summary_title.startswith("#") else f"### 🧪 {summary_title}"
+            f.write(f"{header_prefix}{shard_info}\n\n")
             f.write("| Test Name | Status | Time | Failure Reason / Details |\n")
             f.write("| :--- | :--- | :--- | :--- |\n")
             for item in results:

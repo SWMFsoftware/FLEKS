@@ -106,20 +106,15 @@ runs:
       shell: bash
       run: |
         ldd ../bin/FLEKS.exe
-        python3 validate_tests.py -n 2 -j ${{ inputs.jobs }} --summary-file ${{ inputs.parallel-summary }}
+        python3 validate_tests.py -n 2 -j ${{ inputs.jobs }} --summary-file ${{ inputs.parallel-summary }} --summary-title "${{ inputs.summary-title }}"
 
     - name: Write Job Summary
       if: always()
       shell: bash
       run: |
-        {
-          echo "### 🧪 ${{ inputs.summary-title }} (Parallel, 2 Procs)"
-          echo ""
-          if [ -f SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }} ]; then
-            cat SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }}
-            echo ""
-          fi
-        } >> $GITHUB_STEP_SUMMARY
+        if [ -f SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }} ]; then
+          cat SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }} >> $GITHUB_STEP_SUMMARY
+        fi
 
     - name: Post PR Comment
       if: always() && inputs.post-pr-comment == 'true' && github.event.pull_request && (github.event_name == 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -131,8 +126,7 @@ runs:
           let body = '';
 
           if (fs.existsSync(parallelPath)) {
-            body += '### 🧪 ${{ inputs.summary-title }}\n\n';
-            body += fs.readFileSync(parallelPath, 'utf8') + '\n';
+            body = fs.readFileSync(parallelPath, 'utf8') + '\n';
           }
 
           if (body) {
