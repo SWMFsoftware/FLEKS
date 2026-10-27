@@ -167,36 +167,3 @@ runs:
               console.log('Successfully created new PR comment with correctness results.');
             }
           }
-
-          if (body) {
-            // 1. List existing comments to find one matching our summary prefix
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const prComment = comments.find(comment =>
-              comment.body.includes('### 🧪 ${{ inputs.summary-title }}')
-            );
-
-            if (prComment) {
-              // 2. Update existing comment in place
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: prComment.id,
-                body: body
-              });
-              console.log('Successfully updated existing PR comment with correctness results.');
-            } else {
-              // 3. Create a new comment if none exists
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              });
-              console.log('Successfully created new PR comment with correctness results.');
-            }
-          }

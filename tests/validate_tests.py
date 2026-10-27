@@ -131,9 +131,12 @@ def prepare_run_dir(run_dir=None):
     if os.path.isfile("share/Scripts/PostProc.pl"):
         postproc_src = os.path.abspath("share/Scripts/PostProc.pl")
         pidl_src = os.path.abspath("share/Scripts/pIDL")
+    elif os.path.isfile("../../share/Scripts/PostProc.pl"):
+        postproc_src = os.path.abspath("../../share/Scripts/PostProc.pl")
+        pidl_src = os.path.abspath("../../share/Scripts/pIDL")
     else:
-        postproc_src = os.path.abspath("../../../share/Scripts/PostProc.pl")
-        pidl_src = os.path.abspath("../../../../share/Scripts/pIDL")
+        postproc_src = os.path.abspath("share/Scripts/PostProc.pl")
+        pidl_src = os.path.abspath("share/Scripts/pIDL")
 
     postidl_candidates = [
         os.path.abspath("bin/PostIDL.exe"),
@@ -1210,13 +1213,13 @@ def main():
             shard_str = sys.argv[i + 1]
 
     # Parse --summary-file PATH (custom output path for CI serial/parallel split)
-    summary_file = "tests/summary.md"
+    summary_file = None
     for i, arg in enumerate(sys.argv):
         if arg == "--summary-file" and i + 1 < len(sys.argv):
-            summary_file = sys.argv[i + 1]
+            summary_file = os.path.abspath(sys.argv[i + 1])
             continue
         if arg.startswith("--summary-file="):
-            summary_file = arg[len("--summary-file="):]
+            summary_file = os.path.abspath(arg[len("--summary-file="):])
             continue
 
     # Parse --test NAME (select a specific test to run; default: run all)
@@ -1250,6 +1253,9 @@ def main():
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
     logger.debug("Working directory set to: %s", os.getcwd())
+
+    if summary_file is None:
+        summary_file = os.path.abspath("tests/summary.md")
 
     _sync_shared_run_dir()
 
