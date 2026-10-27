@@ -517,19 +517,28 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
                                      bool doStoreLoc) {
   BL_PROFILE("AMReXDataContainer::loop_cell");
 
-  if (doStore) {
-    vars.clear();
-    if (nCell > 0) {
-      vars.reserve(nCell *
-                   (doStoreLoc ? 3 : (n_lev() > 0 ? mf[0].nComp() : 1)));
-    }
+  // The output size is needed to fill the output through a raw pointer. If the
+  // cells have not been counted yet, do it first.
+  if (doStore && nCell == 0) {
+    loop_cell(false, vars, false);
   }
 
   const bool needNumbering = !isCellNumbered;
+  const int nOut = doStoreLoc ? 3 : (n_lev() > 0 ? mf[0].nComp() : 1);
+
+  float* out = nullptr;
+  if (doStore) {
+    vars.resize(nCell * nOut);
+    out = vars.data();
+  }
+
   size_t iCount = 0;
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     const int ncomp = mf[iLev].nComp();
+    // The output was sized with the component number of level 0.
+    if (doStore && !doStoreLoc && ncomp != nOut)
+      Abort("Error: all levels must have the same number of components!");
     const auto& geom = Geom(iLev);
     const auto dx = geom.CellSize();
     const auto probLo = geom.ProbLo();
@@ -543,6 +552,11 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
+      // Component iVar of cell (i,j,k) is *(dataBase + iVar*dataStride).
+      const std::ptrdiff_t dataStride =
+          ncomp > 1 ? &data(lo.x, lo.y, lo.z, 1) - &data(lo.x, lo.y, lo.z, 0)
+                    : 0;
+
       for (int k = lo.z; k <= hi.z; ++k) {
 #if AMREX_SPACEDIM > 2
         const float z = static_cast<float>(probLo[iz_] + (k + 0.5) * dx[iz_]);
@@ -552,23 +566,27 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
         for (int j = lo.y; j <= hi.y; ++j) {
           const float y = static_cast<float>(probLo[iy_] + (j + 0.5) * dx[iy_]);
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (!bit::is_refined(status(i, j, k))) {
-              iCount++;
-              if (needNumbering) {
-                cell(i, j, k) = static_cast<Real>(iCount);
-              }
-              if (doStore) {
-                if (doStoreLoc) {
-                  const float x =
-                      static_cast<float>(probLo[ix_] + (i + 0.5) * dx[ix_]);
-                  vars.push_back(x);
-                  vars.push_back(y);
-                  vars.push_back(z);
-                } else {
-                  for (int iVar = 0; iVar < ncomp; iVar++)
-                    vars.push_back(static_cast<float>(data(i, j, k, iVar)));
-                }
-              }
+            if (bit::is_refined(status(i, j, k)))
+              continue;
+
+            iCount++;
+            if (needNumbering) {
+              cell(i, j, k) = static_cast<Real>(iCount);
+            }
+
+            if (!doStore)
+              continue;
+
+            if (doStoreLoc) {
+              out[0] = static_cast<float>(probLo[ix_] + (i + 0.5) * dx[ix_]);
+              out[1] = y;
+              out[2] = z;
+              out += 3;
+            } else {
+              const Real* src = &data(i, j, k, 0);
+              for (int iVar = 0; iVar < ncomp; iVar++)
+                out[iVar] = static_cast<float>(src[iVar * dataStride]);
+              out += ncomp;
             }
           }
         }
@@ -589,6 +607,7 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
     isCellNumbered = true;
   }
 
+  AMREX_ALWAYS_ASSERT(!doStore || iCount == nCell);
   nCell = iCount;
   return iCount;
 }
@@ -596,14 +615,20 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
 size_t AMReXDataContainer::loop_zone(bool doStore, Vector<size_t>& zones) {
   BL_PROFILE("AMReXDataContainer::loop_zone");
 
-  size_t iBrick = 0;
-
-  if (doStore) {
-    zones.clear();
-    if (nBrick > 0) {
-      zones.reserve(nBrick * 8);
-    }
+  // The output size is needed to fill the output through a raw pointer. If the
+  // zones have not been counted yet, do it first. Counting is cheap, and an
+  // exact size avoids the over-allocation of a growing vector.
+  if (doStore && nBrick == 0) {
+    loop_zone(false, zones);
   }
+
+  size_t* out = nullptr;
+  if (doStore) {
+    zones.resize(nBrick * 8);
+    out = zones.data();
+  }
+
+  size_t iBrick = 0;
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
@@ -619,42 +644,44 @@ size_t AMReXDataContainer::loop_zone(bool doStore, Vector<size_t>& zones) {
         for (int j = lo.y - 1; j <= hi.y; ++j) {
           for (int i = lo.x - 1; i <= hi.x; ++i) {
             const bool inValidBox = (i >= lo.x && j >= lo.y && k >= lo.z);
-            if ((iLev > 0 && bit::is_lev_boundary(status(i, j, k))) ||
-                (inValidBox && !bit::is_refined(status(i, j, k)))) {
-              bool isBrick = true;
+            if (!((iLev > 0 && bit::is_lev_boundary(status(i, j, k))) ||
+                  (inValidBox && !bit::is_refined(status(i, j, k)))))
+              continue;
 
-              for (int kk = k; kk <= k + 1 && isBrick; ++kk) {
-                for (int jj = j; jj <= j + 1 && isBrick; ++jj) {
-                  for (int ii = i; ii <= i + 1; ++ii) {
-                    if (cell(ii, jj, kk) == 0) {
-                      isBrick = false;
-                      break;
-                    }
-                  }
-                }
-              }
+            // The eight corners of the brick, in VTK hexahedron order.
+            const Real c0 = cell(i, j, k);
+            const Real c1 = cell(i + 1, j, k);
+            const Real c2 = cell(i + 1, j + 1, k);
+            const Real c3 = cell(i, j + 1, k);
+            const Real c4 = cell(i, j, k + 1);
+            const Real c5 = cell(i + 1, j, k + 1);
+            const Real c6 = cell(i + 1, j + 1, k + 1);
+            const Real c7 = cell(i, j + 1, k + 1);
 
-              if (isBrick) {
-                iBrick++;
-                if (doStore) {
-                  zones.push_back(static_cast<size_t>(cell(i, j, k)));
-                  zones.push_back(static_cast<size_t>(cell(i + 1, j, k)));
-                  zones.push_back(static_cast<size_t>(cell(i + 1, j + 1, k)));
-                  zones.push_back(static_cast<size_t>(cell(i, j + 1, k)));
-                  zones.push_back(static_cast<size_t>(cell(i, j, k + 1)));
-                  zones.push_back(static_cast<size_t>(cell(i + 1, j, k + 1)));
-                  zones.push_back(
-                      static_cast<size_t>(cell(i + 1, j + 1, k + 1)));
-                  zones.push_back(static_cast<size_t>(cell(i, j + 1, k + 1)));
-                }
-              }
-            }
+            if (c0 == 0 || c1 == 0 || c2 == 0 || c3 == 0 || c4 == 0 ||
+                c5 == 0 || c6 == 0 || c7 == 0)
+              continue;
+
+            iBrick++;
+            if (!doStore)
+              continue;
+
+            out[0] = static_cast<size_t>(c0);
+            out[1] = static_cast<size_t>(c1);
+            out[2] = static_cast<size_t>(c2);
+            out[3] = static_cast<size_t>(c3);
+            out[4] = static_cast<size_t>(c4);
+            out[5] = static_cast<size_t>(c5);
+            out[6] = static_cast<size_t>(c6);
+            out[7] = static_cast<size_t>(c7);
+            out += 8;
           }
         }
       }
     }
   }
 
+  AMREX_ALWAYS_ASSERT(!doStore || iBrick == nBrick);
   nBrick = iBrick;
   return iBrick;
 }

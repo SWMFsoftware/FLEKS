@@ -179,15 +179,23 @@ int main(int argc, char* argv[]) {
       continue;
     }
     try {
+      PhaseTimer timer("convert");
+      timer.phase("setup");
       Converter cv(filename, sType, dType, useCompression);
+      timer.phase("read");
       if (cv.read() == iFail) {
         std::cerr << "Error: reading file failed: " << filename << "\n";
         status = EXIT_FAILURE;
         continue;
       }
-      if (nSmooth > 0)
+      if (nSmooth > 0) {
+        timer.phase("smooth");
         cv.smooth(nSmooth);
-      if (cv.write() == iFail) {
+      }
+      timer.phase("write");
+      const int writeStatus = cv.write();
+      timer.stop();
+      if (writeStatus == iFail) {
         std::cerr << "Error: writing file failed: " << filename << "\n";
         status = EXIT_FAILURE;
         continue;

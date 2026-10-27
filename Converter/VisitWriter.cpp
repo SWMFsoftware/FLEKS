@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <vector>
 
 #include "VisitWriter.h"
 
@@ -20,6 +21,36 @@
 static FILE *fp = nullptr;
 static int useBinary = 0;
 static int numInColumn = 0;
+
+// Binary values are collected here and written in large chunks instead of
+// one fwrite() call per value.
+static std::vector<unsigned char> outBuf;
+static const size_t outBufSize = 1 << 20;
+
+static void flush_out_buf(void) {
+  if (!outBuf.empty()) {
+    fwrite(outBuf.data(), 1, outBuf.size(), fp);
+    outBuf.clear();
+  }
+}
+
+static void append_binary(const void *val) {
+  if (outBuf.capacity() < outBufSize)
+    outBuf.reserve(outBufSize);
+  const unsigned char *b = static_cast<const unsigned char *>(val);
+  // VTK binary data is big endian; the inputs are always 4 bytes long.
+  static const int one = 1;
+  if (*reinterpret_cast<const unsigned char *>(&one) != 0) {
+    outBuf.push_back(b[3]);
+    outBuf.push_back(b[2]);
+    outBuf.push_back(b[1]);
+    outBuf.push_back(b[0]);
+  } else {
+    outBuf.insert(outBuf.end(), b, b + 4);
+  }
+  if (outBuf.size() >= outBufSize)
+    flush_out_buf();
+}
 
 /* ****************************************************************************
  *  Function: end_line
@@ -59,6 +90,7 @@ static bool open_file(const char *filename, int binary) {
       full_filename.substr(full_filename.size() - 4) != ".vtk")
     full_filename += ".vtk";
   numInColumn = 0;
+  outBuf.clear();
   fp = fopen(full_filename.c_str(), binary ? "wb" : "w");
   return fp != nullptr;
 }
@@ -75,6 +107,7 @@ static bool open_file(const char *filename, int binary) {
  * ************************************************************************* */
 
 static bool close_file(void) {
+  flush_out_buf();
   if (useBinary && numInColumn != 0)
     fputc('\n', fp);
   end_line();
@@ -83,41 +116,6 @@ static bool close_file(void) {
   fp = nullptr;
   numInColumn = 0;
   return success && status == 0;
-}
-
-/* ****************************************************************************
- *  Function: force_big_endian
- *
- *  Purpose:
- *      Determines if the machine is little-endian.  If so, then, for binary
- *      data, it will force the data to be big-endian.
- *
- *  Note:       This assumes that all inputs are 4 bytes long.
- *
- *  Programmer: Hank Childs
- *  Creation:   September 3, 2004
- *
- * ************************************************************************* */
-
-static void force_big_endian(unsigned char *bytes) {
-  static int doneTest = 0;
-  static int shouldSwap = 0;
-  if (!doneTest) {
-    int tmp1 = 1;
-    unsigned char *tmp2 = (unsigned char *)&tmp1;
-    if (*tmp2 != 0)
-      shouldSwap = 1;
-    doneTest = 1;
-  }
-
-  if (shouldSwap & useBinary) {
-    unsigned char tmp = bytes[0];
-    bytes[0] = bytes[3];
-    bytes[3] = tmp;
-    tmp = bytes[1];
-    bytes[1] = bytes[2];
-    bytes[2] = tmp;
-  }
 }
 
 /* ****************************************************************************
@@ -132,6 +130,7 @@ static void force_big_endian(unsigned char *bytes) {
  * ************************************************************************* */
 
 static void write_string(const char *str) {
+  flush_out_buf();
   if (useBinary && numInColumn != 0) {
     fputc('\n', fp);
     numInColumn = 0;
@@ -152,6 +151,7 @@ static void write_string(const char *str) {
  * ************************************************************************* */
 
 static void new_section(void) {
+  flush_out_buf();
   if (useBinary && numInColumn != 0)
     fputc('\n', fp);
   else if (numInColumn != 0)
@@ -173,8 +173,7 @@ static void new_section(void) {
 
 static void write_int(int val) {
   if (useBinary) {
-    force_big_endian((unsigned char *)&val);
-    fwrite(&val, sizeof(int), 1, fp);
+    append_binary(&val);
     numInColumn = 1;
   } else {
     fprintf(fp, "%d ", val);
@@ -204,8 +203,7 @@ static void write_int(int val) {
 
 static void write_float(float val) {
   if (useBinary) {
-    force_big_endian((unsigned char *)&val);
-    fwrite(&val, sizeof(float), 1, fp);
+    append_binary(&val);
     numInColumn = 1;
   } else {
     fprintf(fp, "%20.12e ", val);

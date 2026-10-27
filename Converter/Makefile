@@ -44,7 +44,7 @@ CONVERTER: ${CONVERTEREXE}
 ${CONVERTEREXE}: ${OBJECTS} ${SHARED_OBJECTS}
 	mkdir -p ../bin
 	${LINK.f90} -o ${CONVERTEREXE} ${OBJECTS} ${SHARED_OBJECTS} \
-		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG} ${ZLIBLIB}
+		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG} ${ZLIBLIB} -pthread
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo

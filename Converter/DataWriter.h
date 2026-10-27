@@ -4,15 +4,79 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <charconv>
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <limits>
 #include <set>
+#include <utility>
 
 #include "DataContainer.h"
+#include "Parallel.h"
 #include "ZLibCompressor.h"
+
+// Floating-point std::to_chars needs GCC 11 (libstdc++) or LLVM 14 (libc++).
+#if defined(__cpp_lib_to_chars) ||                                             \
+    (defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE >= 11) ||                   \
+    (defined(_LIBCPP_VERSION) && _LIBCPP_VERSION >= 14000)
+#define CONVERTER_HAS_FLOAT_TO_CHARS 1
+#endif
+
+// Write v at p as printf("%.*g", digits, v) does, and return the end of the
+// text. At most 32 characters are written.
+inline char* format_float(char* p, float v, int digits) {
+#ifdef CONVERTER_HAS_FLOAT_TO_CHARS
+  return std::to_chars(p, p + 32, v, std::chars_format::general, digits).ptr;
+#else
+  return p + std::snprintf(p, 32, "%.*g", digits, static_cast<double>(v));
+#endif
+}
+
+// Prints the wall-clock time of consecutive phases of a task, e.g.
+// "[timing] TEC: write cells: 1.234 s". phase() ends the running phase and
+// starts the next one; the destructor ends the last one.
+class PhaseTimer {
+public:
+  explicit PhaseTimer(std::string taskIn) : task(std::move(taskIn)) {}
+
+  ~PhaseTimer() { end_phase(); }
+
+  void phase(const std::string& name) {
+    end_phase();
+    current = name;
+    start = std::chrono::steady_clock::now();
+  }
+
+  // End the running phase without starting a new one.
+  void stop() { end_phase(); }
+
+  PhaseTimer(const PhaseTimer&) = delete;
+  PhaseTimer& operator=(const PhaseTimer&) = delete;
+
+private:
+  void end_phase() {
+    if (current.empty())
+      return;
+    const std::chrono::duration<double> dt =
+        std::chrono::steady_clock::now() - start;
+    const auto oldFlags = std::cout.flags();
+    const auto oldPrecision = std::cout.precision(3);
+    std::cout << "[timing] " << task << ": " << current << ": " << std::fixed
+              << dt.count() << " s" << std::endl;
+    std::cout.precision(oldPrecision);
+    std::cout.flags(oldFlags);
+    current.clear();
+  }
+
+  std::string task;
+  std::string current;
+  std::chrono::steady_clock::time_point start;
+};
 
 class DataWriter {
 public:
@@ -106,19 +170,28 @@ public:
       return iFail;
     }
 
+    PhaseTimer timer("TEC");
+
+    timer.phase("count cells and zones");
     size_t nCell = dc->count_cell();
     size_t nBrick = dc->count_zone();
 
+    timer.phase("get cell data");
     amrex::Vector<float> vars;
-    vars.resize(nCell * dc->n_var());
     dc->get_cell(vars);
 
+    timer.phase("get zones");
     amrex::Vector<size_t> zones;
-
-    zones.resize(nBrick * zoneType.n_vertex());
-
     dc->get_zones(zones);
 
+    const int nVar = dc->n_var();
+    const int nVertex = zoneType.n_vertex();
+    if (vars.size() != nCell * nVar || zones.size() != nBrick * nVertex) {
+      std::cerr << "Error: inconsistent cell or zone data.\n";
+      return iFail;
+    }
+
+    timer.phase("write header");
     outFile.open(filename.c_str(), std::ofstream::out | std::ofstream::trunc);
     if (!outFile) {
       std::cerr << "Error: cannot open output: " << filename << "\n";
@@ -145,22 +218,69 @@ public:
             << ", F=FEPOINT, ET=" << zoneType.tec_string() << "\n";
     //-----------------------------------------
 
-    // Write cell data
-    for (size_t i = 0; i < nCell; ++i) {
-      for (int j = 0; j < dc->n_var(); ++j) {
-        outFile << vars[i * dc->n_var() + j] << " ";
+    // Format the numbers into text. format_float() gives the same text as the
+    // stream used for the header (%.9g), but is much faster. Blocks of rows
+    // are formatted by several threads and written in their original order.
+    constexpr int floatDigits = std::numeric_limits<float>::max_digits10;
+
+    // formatRow(i, p) writes row i at p and returns the new end pointer. A row
+    // of n numbers takes at most rowMax(n) characters.
+    auto rowMax = [](int n) { return 33 * static_cast<size_t>(n) + 1; };
+    auto write_rows = [&](size_t nRow, size_t rowBytes, auto&& formatRow) {
+      if (nRow == 0)
+        return;
+      // About 4 MiB of text per block bounds the buffer memory per thread.
+      constexpr size_t blockBytes = size_t(4) << 20;
+      const size_t rowsPerBlock =
+          std::min(nRow, std::max<size_t>(1, blockBytes / rowBytes));
+      const size_t nBlock = (nRow + rowsPerBlock - 1) / rowsPerBlock;
+      const size_t nThread = std::min(converter_num_threads(), nBlock);
+      std::vector<std::vector<char> > bufs(nThread);
+      std::vector<size_t> sizes(nThread);
+      for (auto& b : bufs)
+        b.resize(rowsPerBlock * rowBytes);
+
+      for (size_t first = 0; first < nBlock; first += nThread) {
+        const size_t nActive = std::min(nThread, nBlock - first);
+        run_parallel(nActive, [&](size_t t) {
+          const size_t iBegin = (first + t) * rowsPerBlock;
+          const size_t iEnd = std::min(nRow, iBegin + rowsPerBlock);
+          char* const begin = bufs[t].data();
+          char* p = begin;
+          for (size_t i = iBegin; i < iEnd; ++i)
+            p = formatRow(i, p);
+          sizes[t] = p - begin;
+        });
+        for (size_t t = 0; t < nActive; ++t)
+          outFile.write(bufs[t].data(), sizes[t]);
       }
-      outFile << "\n";
-    }
+    };
+
+    // Write cell data
+    timer.phase("write cells");
+    write_rows(nCell, rowMax(nVar), [&](size_t i, char* p) {
+      const float* row = vars.data() + i * nVar;
+      for (int j = 0; j < nVar; ++j) {
+        p = format_float(p, row[j], floatDigits);
+        *p++ = ' ';
+      }
+      *p++ = '\n';
+      return p;
+    });
 
     // Write zone data
-    for (size_t i = 0; i < nBrick; ++i) {
-      for (int j = 0; j < zoneType.n_vertex(); ++j) {
-        outFile << zones[i * zoneType.n_vertex() + j] << " ";
+    timer.phase("write zones");
+    write_rows(nBrick, rowMax(nVertex), [&](size_t i, char* p) {
+      const size_t* row = zones.data() + i * nVertex;
+      for (int j = 0; j < nVertex; ++j) {
+        p = std::to_chars(p, p + 32, row[j]).ptr;
+        *p++ = ' ';
       }
-      outFile << "\n";
-    }
+      *p++ = '\n';
+      return p;
+    });
 
+    timer.phase("close file");
     if (outFile.is_open()) {
       outFile.close();
     }
@@ -190,6 +310,9 @@ public:
       return iFail;
     zoneType.set_type(dc->zone_type());
 
+    PhaseTimer timer("VTK");
+
+    timer.phase("count cells and zones");
     size_t nCell = dc->count_cell();
     size_t nBrick = dc->count_zone();
     const int nVertex = zoneType.n_vertex();
@@ -200,29 +323,36 @@ public:
       return iFail;
     }
 
+    timer.phase("get cell data");
     amrex::Vector<float> vars;
-    vars.resize(nCell * dc->n_var());
     dc->get_cell(vars);
 
+    timer.phase("get locations");
     amrex::Vector<float> xyz;
-    // If nDim == 2, set the coordinates of the third dimension to 0.
-    xyz.resize(3 * nCell);
+    // If nDim == 2, the coordinates of the third dimension are 0.
     dc->get_loc(xyz);
     assert(xyz.size() == 3 * nCell);
 
     //=== Brick data ===
+    timer.phase("get zones");
     amrex::Vector<size_t> zones;
     amrex::Vector<int> bricksInt;
-    zones.resize(nBrick * zoneType.n_vertex());
     dc->get_zones(zones);
-    bricksInt.reserve(zones.size());
-    for (const auto index : zones) {
-      if (index == 0 || index > nCell) {
+    bricksInt.resize(zones.size());
+    {
+      bool isValid = true;
+      for (size_t n = 0; n < zones.size(); ++n) {
+        const size_t index = zones[n];
+        isValid &= (index != 0 && index <= nCell);
+        bricksInt[n] = static_cast<int>(index - 1);
+      }
+      if (!isValid) {
         std::cerr << "Error: invalid mesh connectivity.\n";
         return iFail;
       }
-      bricksInt.push_back(static_cast<int>(index - 1));
     }
+    // The size_t copy is no longer needed.
+    zones = amrex::Vector<size_t>();
     int* brickData = bricksInt.data();
     //===================
 
@@ -257,16 +387,25 @@ public:
       varnames[i] = varnameStorage[i].data();
     }
 
+    timer.phase("transpose variables");
+    const int nVarOut = dc->n_var();
     amrex::Vector<amrex::Vector<float> > valueStorage(
-        dc->n_var(), amrex::Vector<float>(nCell));
-    amrex::Vector<float*> v(dc->n_var());
-    for (int i = 0; i < dc->n_var(); ++i) {
+        nVarOut, amrex::Vector<float>(nCell));
+    amrex::Vector<float*> v(nVarOut);
+    for (int i = 0; i < nVarOut; ++i) {
       v[i] = valueStorage[i].data();
-      for (size_t j = 0; j < nCell; ++j) {
-        v[i][j] = vars[j * dc->n_var() + i];
+    }
+    // Walk the interleaved data once instead of once per variable.
+    for (size_t j = 0; j < nCell; ++j) {
+      const float* row = vars.data() + j * nVarOut;
+      for (int i = 0; i < nVarOut; ++i) {
+        v[i][j] = row[i];
       }
     }
+    // The interleaved copy is no longer needed.
+    vars = amrex::Vector<float>();
 
+    timer.phase("write file");
     if (!write_unstructured_mesh(
             filename.c_str(), saveBinary, static_cast<int>(nCell), xyz.data(),
             static_cast<int>(nBrick), brickType.data(), brickData, dc->n_var(),
@@ -317,6 +456,9 @@ public:
       return iFail;
     }
 
+    PhaseTimer timer("VTM");
+
+    timer.phase("count cells and zones");
     const size_t nCell = dc->count_cell();
     const size_t nBrick = dc->count_zone();
     const int nVertex = zoneType.n_vertex();
@@ -335,24 +477,30 @@ public:
     }
 
     // Points
+    timer.phase("get locations");
     amrex::Vector<float> xyz;
-    xyz.resize(3 * nCell);
     dc->get_loc(xyz);
     assert(xyz.size() == 3 * nCell);
 
     // Connectivity
+    timer.phase("get zones");
     amrex::Vector<size_t> zones;
-    zones.resize(nBrick * nVertex);
     dc->get_zones(zones);
-    amrex::Vector<int64_t> connectivity;
-    connectivity.reserve(zones.size());
-    for (const auto index : zones) {
-      if (index == 0 || index > nCell) {
+    amrex::Vector<int64_t> connectivity(zones.size());
+    {
+      bool isValid = true;
+      for (size_t n = 0; n < zones.size(); ++n) {
+        const size_t index = zones[n];
+        isValid &= (index != 0 && index <= nCell);
+        connectivity[n] = static_cast<int64_t>(index - 1);
+      }
+      if (!isValid) {
         std::cerr << "Error: invalid mesh connectivity.\n";
         return iFail;
       }
-      connectivity.push_back(static_cast<int64_t>(index - 1));
     }
+    // The size_t copy is no longer needed.
+    zones = amrex::Vector<size_t>();
 
     // Offsets and cell types
     amrex::Vector<int64_t> offsets(nBrick);
@@ -383,8 +531,8 @@ public:
       cleanNames[i] = name;
     }
 
+    timer.phase("get cell data");
     amrex::Vector<float> vars;
-    vars.resize(nCell * nVar);
     dc->get_cell(vars);
 
     // Determine machine endianness
@@ -415,6 +563,7 @@ public:
     std::vector<uint8_t> offsetsBuf;
     std::vector<uint8_t> typesBuf;
 
+    timer.phase(useCompression ? "compress" : "compute offsets");
     if (useCompression) {
       ZLibCompressor comp;
       varBuffers.resize(nVar);
@@ -481,6 +630,7 @@ public:
     }
 
     // 1. Write the .vtu Piece file
+    timer.phase("write piece file");
     std::ofstream vtu(pieceFilePath.string(),
                       std::ios::out | std::ios::binary | std::ios::trunc);
     if (!vtu) {
@@ -575,6 +725,7 @@ public:
     }
 
     // 2. Write the .vtm Manifest file
+    timer.phase("write manifest");
     std::ofstream vtm(filename.c_str(),
                       std::ofstream::out | std::ofstream::trunc);
     if (!vtm) {
