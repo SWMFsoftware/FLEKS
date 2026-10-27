@@ -772,10 +772,13 @@ public:
   }
 
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
-  // tallies; `reflect` mirrors.  Only acts at iLev == 0.
-  inline bool reflect_or_delete_particle(ParticleType& p,
-                                         amrex::Array4<int const> const& status,
-                                         const ActiveRegionBox& ab) {
+  // tallies; `reflect` mirrors; `ambipolar` gates absorption by local cell
+  // charge. Only acts at iLev == 0.
+  inline bool reflect_or_delete_particle(
+      ParticleType& p, amrex::Array4<int const> const& status,
+      const ActiveRegionBox& ab,
+      amrex::Array4<amrex::Real const> const& bodyQNet = {},
+      amrex::Array4<amrex::Real> const& bodyQNetInc = {}) {
     // The cell location is computed at most once and shared by the #BODY test
     // and the active-region test; a reflection moves the particle and
     // invalidates it (see `isLocateValid`).
@@ -785,8 +788,7 @@ public:
     int cellMask = 0;
     bool isLocateValid = false;
 
-    // Absorbing inner body (see #BODY).  The test uses the cell containing the
-    // particle, i.e. the same cell-based staircase as the field/moment mask.
+    // Absorbing, reflecting, or ambipolar inner body (see #BODY).
     if (grid != nullptr && grid->use_body()) {
       if (grid->bodyParticleBC == ParticleBC::reflect) {
         // Specular reflection on the smooth sphere: the test uses the exact
@@ -799,6 +801,55 @@ public:
         // The reflection moves the particle, so nothing may be cached here.
         if (grid->is_inside_body(xyz))
           reflect_particle_at_body(p);
+      } else if (grid->bodyParticleBC == ParticleBC::ambipolar) {
+        amrex::Real xyz[3] = { 0.0, 0.0, 0.0 };
+        for (int d = 0; d < nDim; ++d)
+          xyz[d] = p.pos(d);
+
+        if (grid->is_inside_body(xyz)) {
+          // Neutrals carry no electric charge; absorb freely without altering
+          // the charge budget.
+          if (charge == 0.0) {
+            body_absorb_tally(p.rdata(iqp_));
+            return true;
+          }
+
+          amrex::IntVect idx;
+          locate_particle_cell(p, ab, status, isInsideBox, idx, cellMask);
+          isLocateValid = true;
+
+          const amrex::Real absQ = std::abs(p.rdata(iqp_) * charge);
+          const bool isElectron = (charge < 0.0);
+
+          bool doAbsorb = false;
+          if (isInsideBox && bodyQNet && bodyQNetInc) {
+            const amrex::Real netQ = bodyQNet(idx) + bodyQNetInc(idx);
+            if (isElectron) {
+              // Electron absorbs only to neutralize previously absorbed ions in
+              // this cell
+              if (netQ >= 0.5 * absQ) {
+                bodyQNetInc(idx) -= absQ;
+                doAbsorb = true;
+              }
+            } else {
+              // Ion absorbs only if net unneutralized ion charge in this cell
+              // has not exceeded the cap
+              if (netQ < 1.0 * absQ) {
+                bodyQNetInc(idx) += absQ;
+                doAbsorb = true;
+              }
+            }
+          }
+
+          if (doAbsorb) {
+            body_absorb_tally(p.rdata(iqp_));
+            return true;
+          } else {
+            // Reflect specularly off the cylinder/sphere surface
+            reflect_particle_at_body(p);
+            isLocateValid = false;
+          }
+        }
       } else {
         locate_particle_cell(p, ab, status, isInsideBox, cellMask);
         isLocateValid = true;
@@ -898,8 +949,8 @@ public:
   // Tally a particle absorbed by the inner body (see #BODY).
   inline void body_absorb_tally(amrex::Real weight) {
     bodyAbsorbCount += 1.0;
-    bodyAbsorbCharge += weight * charge;
-    bodyAbsorbMass += weight * mass;
+    bodyAbsorbCharge += qomSign * weight * charge;
+    bodyAbsorbMass += qomSign * weight * mass;
   }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,

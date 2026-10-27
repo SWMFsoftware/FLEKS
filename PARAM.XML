@@ -1935,6 +1935,11 @@ particleBoundary:
             from the body center to the particle, the position is mirrored to
             r -> 2R - r and the velocity to v -> v - 2(v.n)n. The particle and
             its charge are kept, so nothing is tallied.
+  ambipolar - charge-gated ambipolar boundary: electrons are only absorbed to
+              neutralize ions absorbed in the local boundary cell, and excess ions
+              are reflected when the cell has no electron deficit. Particles that
+              are not absorbed are reflected specularly on the smooth surface,
+              maintaining ambipolar balance and preventing artificial charging.
 
 fieldBoundary (n is the radial direction from the body center). The conditions
 are applied on the one-cell-thick surface layer of the body; the interior

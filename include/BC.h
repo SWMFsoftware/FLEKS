@@ -110,7 +110,8 @@ enum Type {
   vacuum = 3,
   reflect = 4,
   absorb = 5,
-  inflow = 6
+  inflow = 6,
+  ambipolar = 7
 };
 
 const std::vector<bc_detail::Entry> &table();
