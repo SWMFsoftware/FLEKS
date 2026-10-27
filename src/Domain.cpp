@@ -1313,6 +1313,7 @@ void Domain::read_param() {
 
   if (pic) {
     pic->set_report_options(dnReportLB, doCompact);
+    pic->set_standalone(isStandalone);
     pic->post_process_param();
     // Autofill and validate periodic boundaries using gm.
     pic->apply_periodicity_autofill(grid->Geom(0));

@@ -513,6 +513,28 @@ private:
     hasInflowBC_ = bcField.has(FieldBC::inflow) || bcField.has(FieldBC::fixed);
   }
 
+  // Is any particle box face of any species of the given type?
+  bool has_particle_face(ParticleBC::Type type) const {
+    for (int i = 0; i < nSpecies; ++i)
+      for (int d = 0; d < nDim; ++d)
+        if (pInfo.pBCs[i].lo[d] == type || pInfo.pBCs[i].hi[d] == type)
+          return true;
+    return false;
+  }
+
+  // Standalone log diagnostics:
+  // - Mpart<i>: particles are created or removed (#SOURCE, #BODY, inflow or
+  //   open faces);
+  bool log_species_mass() const {
+    return source != nullptr || use_body() ||
+           has_particle_face(ParticleBC::inflow) ||
+           has_particle_face(ParticleBC::open);
+  }
+  // - mIn_/mOut_ per face: the particle budget of open faces.
+  bool log_face_budget() const { return has_particle_face(ParticleBC::open); }
+
+  bool isStandalone = false;
+
   // De-duplicated boundary-condition warnings
   std::set<std::string> bcWarnings_;
 
@@ -588,6 +610,7 @@ public:
   void set_body(const amrex::Real *center, const amrex::Real radius) {
     grid.set_body(center, radius);
   }
+  void set_standalone(bool in) { isStandalone = in; }
   ParticleBC::Type &body_particle_bc() { return grid.bodyParticleBC; }
   ParticleBC::Type body_particle_bc() const { return grid.bodyParticleBC; }
 

@@ -273,8 +273,8 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
         // boundary node.
         const bool doFold =
             (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow ||
-             faceBc == ParticleBC::outflow || faceBc == ParticleBC::vacuum ||
-             faceBc == ParticleBC::absorb);
+             ParticleBC::is_outflow(static_cast<ParticleBC::Type>(faceBc)) ||
+             faceBc == ParticleBC::vacuum || faceBc == ParticleBC::absorb);
         if (!doFold)
           continue;
 

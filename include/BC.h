@@ -110,10 +110,14 @@ enum Type {
   vacuum = 3,
   reflect = 4,
   absorb = 5,
-  inflow = 6
+  inflow = 6,
+  open = 7
 };
 
 const std::vector<bc_detail::Entry> &table();
+
+// Faces through which particles leave freely (deleted beyond the face).
+inline bool is_outflow(const Type t) { return t == outflow || t == open; }
 
 inline bool is_valid(const Type t) {
   for (const bc_detail::Entry &e : table()) {

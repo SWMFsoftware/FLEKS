@@ -2619,8 +2619,19 @@ This command defines the kinetic boundary conditions for all particle species.
   a mismatch is reported.
 * `coupled` (default) -- MHD-AEPIC: the ghost-cell population is re-seeded
   from the fluid / MHD state.
-* `outflow` (alias `open`) -- particles crossing the face are deleted; there
-  is no tally and no ghost-cell population (Hybrid-VPIC "open").
+* `outflow` -- particles crossing the face are deleted (vacuum sink); there
+  is no tally and no ghost-cell population.
+* `open` (legacy alias `outflowthermal`) -- kinetic open boundary with a
+  thermal re-entry flux: every face cell receives, per species, the inward
+  half-flux n vtherm g(vd) of the drifting Maxwellian of that species measured
+  one node layer inside the face (a zero-gradient open boundary). The normal
+  drift, averaged in time per face cell over about 10 steps, enters only with
+  its outward part beyond 0.05 vtherm, which reduces the re-entry of a sub-
+  or supersonic outflow; inflow belongs to `inflow` faces. With plain `outflow`,
+  a plasma at rest drains through the face at its one-sided thermal flux
+  n sigma/sqrt(2 pi), so the light species (e.g. kinetic electrons or protons
+  in multi-ion plasma) leave first and the boundary layer charges up; with
+  `open` each species maintains its density and temperature.
 * `vacuum` -- like `outflow`, and additionally asserts that nothing exists
   beyond the face; no tally.
 * `reflect` -- specular reflection: position and normal velocity are

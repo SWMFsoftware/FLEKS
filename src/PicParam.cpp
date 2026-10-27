@@ -613,7 +613,7 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
                          "match.");
 
         if (fType == FieldBC::conducting &&
-            (pType == ParticleBC::outflow || pType == ParticleBC::vacuum ||
+            (ParticleBC::is_outflow(pType) || pType == ParticleBC::vacuum ||
              pType == ParticleBC::absorb))
           add_bc_warning(what() + " is '" + ParticleBC::to_string(pType) +
                          "' on a 'conducting' wall: particles leave through "
