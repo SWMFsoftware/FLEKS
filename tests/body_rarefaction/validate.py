@@ -99,7 +99,7 @@ def analytical_density(r_vals, t, r_b=R_BODY, cs=CS, n0=None):
         if r <= r_b:
             n_analytic.append(0.0)
         elif r <= front:
-            val = n0 * math.exp(-1.0 - (r - r_b) / (cs * t))
+            val = n0 * math.exp(-1.0 + (r - r_b) / (cs * t))
             n_analytic.append(val)
         else:
             n_analytic.append(n0)
