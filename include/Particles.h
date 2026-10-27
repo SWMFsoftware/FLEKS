@@ -810,7 +810,7 @@ public:
           locate_particle_cell(p, ab, status, isInsideBox, idx, cellMask);
           isLocateValid = true;
 
-          const amrex::Real absQ = std::abs(p.rdata(iqp_));
+          const amrex::Real absQ = std::abs(p.rdata(iqp_) * charge);
           const bool isElectron =
               (charge < 0.0 || (charge == 0.0 && qomSign < 0));
 
