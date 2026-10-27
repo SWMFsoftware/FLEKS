@@ -14,27 +14,35 @@
 #include <iomanip>
 #include <limits>
 #include <set>
+#include <type_traits>
 #include <utility>
 
 #include "DataContainer.h"
 #include "Parallel.h"
 #include "ZLibCompressor.h"
 
-// Floating-point std::to_chars needs GCC 11 (libstdc++) or LLVM 14 (libc++).
-#if defined(__cpp_lib_to_chars) ||                                             \
-    (defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE >= 11) ||                   \
-    (defined(_LIBCPP_VERSION) && _LIBCPP_VERSION >= 14000)
-#define CONVERTER_HAS_FLOAT_TO_CHARS 1
-#endif
+// Whether std::to_chars(first, last, T, chars_format, precision) exists.
+// Library version checks are not enough: e.g. libstdc++ 11 hides the
+// floating-point overloads from compilers such as Intel icpc.
+template <typename T, typename = void>
+struct has_float_to_chars : std::false_type {};
+template <typename T>
+struct has_float_to_chars<
+    T, std::void_t<decltype(std::to_chars(
+           std::declval<char*>(), std::declval<char*>(), std::declval<T>(),
+           std::chars_format::general, 0))>> : std::true_type {};
+
+template <typename T> char* format_float_impl(char* p, T v, int digits) {
+  if constexpr (has_float_to_chars<T>::value)
+    return std::to_chars(p, p + 32, v, std::chars_format::general, digits).ptr;
+  else
+    return p + std::snprintf(p, 32, "%.*g", digits, static_cast<double>(v));
+}
 
 // Write v at p as printf("%.*g", digits, v) does, and return the end of the
 // text. At most 32 characters are written.
 inline char* format_float(char* p, float v, int digits) {
-#ifdef CONVERTER_HAS_FLOAT_TO_CHARS
-  return std::to_chars(p, p + 32, v, std::chars_format::general, digits).ptr;
-#else
-  return p + std::snprintf(p, 32, "%.*g", digits, static_cast<double>(v));
-#endif
+  return format_float_impl(p, v, digits);
 }
 
 // Write n bytes in pieces. A single write of 2 GiB or more fails on macOS
