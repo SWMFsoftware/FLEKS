@@ -28,11 +28,23 @@ def validate_log(pic_diags=None, test_name=None):
     if not d or len(d) < 50:
         return False, "missing or incomplete log"
 
+    required = {f"{kind}{iS}" for kind in ("Mpart", "Epart") for iS in (0, 1)}
+    required.update(
+        f"m{io}_{face}_S{iS}"
+        for io in ("In", "Out")
+        for face in ("xm", "xp", "ym", "yp")
+        for iS in (0, 1)
+    )
+    for index, entry in enumerate(d):
+        missing = required - entry.keys()
+        if missing:
+            return False, f"log row {index} is missing {', '.join(sorted(missing))}"
+
     reasons = []
 
     # 1. Check species mass preservation within 3%
     for iS in (0, 1):
-        key = f"Mpart{iS}" if f"Mpart{iS}" in d[0] else f"Epart{iS}"
+        key = f"Mpart{iS}"
         if key in d[0] and d[0][key] > 0:
             ratios = [e[key] / d[0][key] for e in d]
             worst = max(ratios, key=lambda r: abs(r - 1))
