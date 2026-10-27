@@ -37,6 +37,19 @@ inline char* format_float(char* p, float v, int digits) {
 #endif
 }
 
+// Write n bytes in pieces. A single write of 2 GiB or more fails on macOS
+// (write(2) rejects sizes above INT_MAX), which large meshes reach.
+inline void write_bytes(std::ostream& os, const void* data, uint64_t n) {
+  constexpr uint64_t maxChunk = uint64_t(1) << 30;
+  const char* p = static_cast<const char*>(data);
+  while (n > 0 && os) {
+    const uint64_t chunk = std::min(n, maxChunk);
+    os.write(p, static_cast<std::streamsize>(chunk));
+    p += chunk;
+    n -= chunk;
+  }
+}
+
 // Prints the wall-clock time of consecutive phases of a task, e.g.
 // "[timing] TEC: write cells: 1.234 s". phase() ends the running phase and
 // starts the next one; the destructor ends the last one.
@@ -681,21 +694,16 @@ public:
 
     if (useCompression) {
       for (int i = 0; i < nVar; ++i) {
-        vtu.write(reinterpret_cast<const char*>(varBuffers[i].data()),
-                  varBuffers[i].size());
+        write_bytes(vtu, varBuffers[i].data(), varBuffers[i].size());
       }
-      vtu.write(reinterpret_cast<const char*>(pointsBuf.data()),
-                pointsBuf.size());
-      vtu.write(reinterpret_cast<const char*>(connBuf.data()), connBuf.size());
-      vtu.write(reinterpret_cast<const char*>(offsetsBuf.data()),
-                offsetsBuf.size());
-      vtu.write(reinterpret_cast<const char*>(typesBuf.data()),
-                typesBuf.size());
+      write_bytes(vtu, pointsBuf.data(), pointsBuf.size());
+      write_bytes(vtu, connBuf.data(), connBuf.size());
+      write_bytes(vtu, offsetsBuf.data(), offsetsBuf.size());
+      write_bytes(vtu, typesBuf.data(), typesBuf.size());
     } else {
       auto write_block = [&](const void* data, uint64_t sizeInBytes) {
-        vtu.write(reinterpret_cast<const char*>(&sizeInBytes),
-                  sizeof(uint64_t));
-        vtu.write(reinterpret_cast<const char*>(data), sizeInBytes);
+        write_bytes(vtu, &sizeInBytes, sizeof(uint64_t));
+        write_bytes(vtu, data, sizeInBytes);
       };
 
       // Write PointData arrays
