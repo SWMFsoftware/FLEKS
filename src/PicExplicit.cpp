@@ -25,6 +25,10 @@ void Pic::push_and_deposit_explicit_current(int pushStage, Vector<MultiFab>& J,
   for (int iLev = 0; iLev < n_lev(); ++iLev)
     J[iLev].setVal(0.0);
 
+  if (!trialOnly) {
+    reset_body_net_charge_inc();
+  }
+
   for (int i : kineticSpecies_) {
     parts[i]->mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext, pushStage,
                     &nodeJ, trialOnly);
@@ -35,6 +39,7 @@ void Pic::push_and_deposit_explicit_current(int pushStage, Vector<MultiFab>& J,
   if (!trialOnly) {
     for (int i : kineticSpecies_)
       parts[i]->redistribute_particles();
+    accumulate_body_net_charge();
   }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {

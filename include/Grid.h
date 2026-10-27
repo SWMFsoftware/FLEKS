@@ -111,6 +111,7 @@ public:
     nodeStatus.resize(n_lev_max());
     cellCost.resize(n_lev_max());
     bodyNetCharge.resize(n_lev_max());
+    bodyNetChargeInc.resize(n_lev_max());
     refineRegionsStr.resize(n_lev_max());
     refineRegions.resize(n_lev_max());
     SetGridEff(0.7);
@@ -237,6 +238,8 @@ public:
   // Local net absorbed charge per boundary cell (used when bodyParticleBC ==
   // ambipolar).
   amrex::Vector<amrex::MultiFab> bodyNetCharge;
+  // Per-step net charge increments across blocks (summed via SumBoundary).
+  amrex::Vector<amrex::MultiFab> bodyNetChargeInc;
 
   amrex::MultiFab& body_net_charge(int iLev = 0) { return bodyNetCharge[iLev]; }
   const amrex::MultiFab& body_net_charge(int iLev = 0) const {
@@ -245,6 +248,17 @@ public:
   bool has_body_net_charge(int iLev = 0) const {
     return iLev < static_cast<int>(bodyNetCharge.size()) &&
            !bodyNetCharge[iLev].empty();
+  }
+
+  amrex::MultiFab& body_net_charge_inc(int iLev = 0) {
+    return bodyNetChargeInc[iLev];
+  }
+  const amrex::MultiFab& body_net_charge_inc(int iLev = 0) const {
+    return bodyNetChargeInc[iLev];
+  }
+  bool has_body_net_charge_inc(int iLev = 0) const {
+    return iLev < static_cast<int>(bodyNetChargeInc.size()) &&
+           !bodyNetChargeInc[iLev].empty();
   }
 
   amrex::Real get_body_radius() const { return bodyRadius; }

@@ -156,9 +156,14 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
     }
 
     const Array4<int const>& status = cell_status(iLev)[pti].array();
-    const Array4<Real> bodyQNet = (grid && grid->has_body_net_charge(iLev))
-                                      ? grid->body_net_charge(iLev)[pti].array()
-                                      : Array4<Real>();
+    const Array4<Real const> bodyQNet =
+        (grid && grid->has_body_net_charge(iLev))
+            ? grid->body_net_charge(iLev)[pti].array()
+            : Array4<Real const>();
+    const Array4<Real> bodyQNetInc =
+        (grid && grid->has_body_net_charge_inc(iLev))
+            ? grid->body_net_charge_inc(iLev)[pti].array()
+            : Array4<Real>();
 
     for (auto& p : particles) {
       if (p.id() < 0)
@@ -169,7 +174,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       }
 
       // Mark for deletion
-      if (reflect_or_delete_particle(p, status, ab, bodyQNet)) {
+      if (reflect_or_delete_particle(p, status, ab, bodyQNet, bodyQNetInc)) {
         p.id() = -1;
       }
     } // for p
@@ -234,9 +239,13 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real> jArr =
           currentMF ? (*currentMF)[iLev][pti].array() : Array4<Real>();
-      const Array4<Real> bodyQNet =
+      const Array4<Real const> bodyQNet =
           (grid && grid->has_body_net_charge(iLev))
               ? grid->body_net_charge(iLev)[pti].array()
+              : Array4<Real const>();
+      const Array4<Real> bodyQNetInc =
+          (grid && grid->has_body_net_charge_inc(iLev))
+              ? grid->body_net_charge_inc(iLev)[pti].array()
               : Array4<Real>();
       const Array4<Real const>& EArr = nodeE[iLev][pti].array();
       const Array4<Real const>& BArr = nodeB[iLev][pti].array();
@@ -371,7 +380,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.pos(iz_) = xNew[iz_];
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, ab, bodyQNet)) {
+        if (reflect_or_delete_particle(p, status, ab, bodyQNet, bodyQNetInc)) {
           p.id() = -1;
         }
       } // for p
@@ -409,9 +418,13 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
       }
 
       const Array4<int const>& status = cell_status(iLev)[pti].array();
-      const Array4<Real> bodyQNet =
+      const Array4<Real const> bodyQNet =
           (grid && grid->has_body_net_charge(iLev))
               ? grid->body_net_charge(iLev)[pti].array()
+              : Array4<Real const>();
+      const Array4<Real> bodyQNetInc =
+          (grid && grid->has_body_net_charge_inc(iLev))
+              ? grid->body_net_charge_inc(iLev)[pti].array()
               : Array4<Real>();
 
       for (auto& p : particles) {
@@ -430,7 +443,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         p.pos(iz_) = zp + wp * dt;
 
         // Apply boundary condition (absorb: delete; reflect: mirror).
-        if (reflect_or_delete_particle(p, status, ab, bodyQNet)) {
+        if (reflect_or_delete_particle(p, status, ab, bodyQNet, bodyQNetInc)) {
           p.id() = -1;
         }
       } // for p

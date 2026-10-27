@@ -777,7 +777,8 @@ public:
   inline bool reflect_or_delete_particle(
       ParticleType& p, amrex::Array4<int const> const& status,
       const ActiveRegionBox& ab,
-      amrex::Array4<amrex::Real> const& bodyQNet = {}) {
+      amrex::Array4<amrex::Real const> const& bodyQNet = {},
+      amrex::Array4<amrex::Real> const& bodyQNetInc = {}) {
     // The cell location is computed at most once and shared by the #BODY test
     // and the active-region test; a reflection moves the particle and
     // invalidates it (see `isLocateValid`).
@@ -806,29 +807,35 @@ public:
           xyz[d] = p.pos(d);
 
         if (grid->is_inside_body(xyz)) {
+          // Neutrals carry no electric charge; absorb freely without altering
+          // the charge budget.
+          if (charge == 0.0) {
+            body_absorb_tally(p.rdata(iqp_));
+            return true;
+          }
+
           amrex::IntVect idx;
           locate_particle_cell(p, ab, status, isInsideBox, idx, cellMask);
           isLocateValid = true;
 
           const amrex::Real absQ = std::abs(p.rdata(iqp_) * charge);
-          const bool isElectron =
-              (charge < 0.0 || (charge == 0.0 && qomSign < 0));
+          const bool isElectron = (charge < 0.0);
 
           bool doAbsorb = false;
-          if (isInsideBox && bodyQNet) {
-            amrex::Real& netQ = bodyQNet(idx);
+          if (isInsideBox && bodyQNet && bodyQNetInc) {
+            const amrex::Real netQ = bodyQNet(idx) + bodyQNetInc(idx);
             if (isElectron) {
               // Electron absorbs only to neutralize previously absorbed ions in
               // this cell
               if (netQ >= 0.5 * absQ) {
-                netQ -= absQ;
+                bodyQNetInc(idx) -= absQ;
                 doAbsorb = true;
               }
             } else {
               // Ion absorbs only if net unneutralized ion charge in this cell
               // has not exceeded the cap
               if (netQ < 1.0 * absQ) {
-                netQ += absQ;
+                bodyQNetInc(idx) += absQ;
                 doAbsorb = true;
               }
             }

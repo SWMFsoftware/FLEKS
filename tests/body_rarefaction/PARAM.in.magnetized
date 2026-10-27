@@ -3,7 +3,7 @@
 A uniform resting electron-ion plasma (mi/me = 25, Te = Ti) in a periodic box [-6, 6]^2
 surrounds an absorbing cylinder of radius R_B = 1.5 at the origin with guide field Bx.
 Magnetic parameters: B0 = 0.02 code units, v_A = 0.02 c, Omega_ci = 0.02, Omega_ce = 0.5.
-Larmor radii: rho_ce = 0.1 dx (sub-grid, magnetized), rho_ci = 5 dx (unmagnetized/large gyroradius).
+Larmor radii: rho_ce = 1 dx (0.1 d_i, magnetized), rho_ci = 5 dx (unmagnetized/large gyroradius).
 Tests polar cap (field-aligned) vs equatorial (cross-field) charge separation.
 
 #INITFROMSWMF

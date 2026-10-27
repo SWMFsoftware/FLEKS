@@ -3,7 +3,7 @@
 
 Assesses the inner body boundary condition against the analytical ambipolar
 rarefaction wave benchmark:
-  n(r, t) = n0 * exp(-1 - (r - R_B) / (c_s * t))   for R_B < r <= R_B + c_s * t
+  n(r, t) = n0 * exp(-1 + (r - R_B) / (c_s * t))   for R_B < r <= R_B + c_s * t
   u_r(R_B^+) = -c_s,  n(R_B^+) ~ n0 * exp(-1) ~ 0.37 * n0
 
 Variants:
@@ -154,13 +154,23 @@ def validate_plot(test_name=None):
 
     # 2. Compute radial profiles and report ambipolar status
     r_bins, mean_ni, mean_ne, mean_er = compute_radial_profiles(cols)
-    if mean_ni and mean_ne:
-        # Near boundary node index (first bin right outside R_B)
-        ni_bound = mean_ni[0]
-        ne_bound = mean_ne[0]
-        imbalance = abs(ni_bound - ne_bound) / N0
-        logger.debug("Boundary values: n_i = %.4f, n_e = %.4f, |ni - ne|/n0 = %.3f",
-                     ni_bound, ne_bound, imbalance)
+    if not mean_ni or not mean_ne:
+        return False, "radial density profiles could not be computed"
+    if any(math.isnan(v) or math.isinf(v) for v in mean_ni) or any(
+            math.isnan(v) or math.isinf(v) for v in mean_ne):
+        return False, "radial density profile contains NaN or Inf"
+
+    # Near boundary node index (first bin right outside R_B)
+    ni_bound = mean_ni[0]
+    ne_bound = mean_ne[0]
+    imbalance = abs(ni_bound - ne_bound) / N0
+    logger.debug("Boundary values: n_i = %.4f, n_e = %.4f, |ni - ne|/n0 = %.3f",
+                 ni_bound, ne_bound, imbalance)
+
+    if test_name and "ambipolar" in test_name:
+        if imbalance > 0.20:
+            return False, (f"exterior charge imbalance |ni - ne|/n0 = {imbalance:.3f} "
+                           f"exceeds tolerance 0.20 for ambipolar run")
 
     return True, "Passed"
 

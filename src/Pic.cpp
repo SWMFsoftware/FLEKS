@@ -883,10 +883,38 @@ void Pic::fill_source_particles() {
 }
 
 //==========================================================
+void Pic::reset_body_net_charge_inc() {
+  if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (grid.has_body_net_charge_inc(iLev)) {
+        grid.body_net_charge_inc(iLev).setVal(0.0);
+      }
+    }
+  }
+}
+
+//==========================================================
+void Pic::accumulate_body_net_charge() {
+  if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (grid.has_body_net_charge(iLev) &&
+          grid.has_body_net_charge_inc(iLev)) {
+        grid.body_net_charge_inc(iLev).SumBoundary(Geom(iLev).periodicity());
+        MultiFab::Add(grid.body_net_charge(iLev),
+                      grid.body_net_charge_inc(iLev), 0, 0, 1, 0);
+        grid.body_net_charge(iLev).FillBoundary(Geom(iLev).periodicity());
+      }
+    }
+  }
+}
+
+//==========================================================
 void Pic::update_part_loc_to_half_stage() {
   std::string nameFunc = "Pic::update_part_loc_to_half_stage";
 
   timing_func(nameFunc);
+
+  reset_body_net_charge_inc();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
@@ -896,6 +924,8 @@ void Pic::update_part_loc_to_half_stage() {
                                               tc->get_dt());
     }
   }
+
+  accumulate_body_net_charge();
 
   inject_particles_for_boundary_cells();
 }
@@ -949,6 +979,8 @@ void Pic::particle_mover(int pushStage) {
           : dt;
   const Real dtNextVel = useStaggeredHybridVel ? (2.0 * dt - dtVel) : dtnext;
 
+  reset_body_net_charge_inc();
+
   for (int i : kineticSpecies_) {
     const bool isCharged = (parts[i]->get_charge() != 0.0);
     parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg,
@@ -960,13 +992,7 @@ void Pic::particle_mover(int pushStage) {
     parts[i]->redistribute_particles();
   }
 
-  if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      if (grid.has_body_net_charge(iLev)) {
-        grid.body_net_charge(iLev).FillBoundary(Geom(iLev).periodicity());
-      }
-    }
-  }
+  accumulate_body_net_charge();
 }
 
 namespace {
