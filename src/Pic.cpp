@@ -959,6 +959,14 @@ void Pic::particle_mover(int pushStage) {
   for (int i : kineticSpecies_) {
     parts[i]->redistribute_particles();
   }
+
+  if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (grid.has_body_net_charge(iLev)) {
+        grid.body_net_charge(iLev).FillBoundary(Geom(iLev).periodicity());
+      }
+    }
+  }
 }
 
 namespace {

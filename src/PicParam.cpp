@@ -174,10 +174,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
     body_particle_bc() = ParticleBC::parse(particle);
     if (body_particle_bc() != ParticleBC::absorb &&
-        body_particle_bc() != ParticleBC::reflect)
+        body_particle_bc() != ParticleBC::reflect &&
+        body_particle_bc() != ParticleBC::ambipolar)
       Abort("Error: #BODYBOUNDARY particleBoundary '" + particle +
             "' is not supported for the inner body. Accepted values: "
-            "absorb, reflect.");
+            "absorb, reflect, ambipolar.");
 
     bodyFieldBC = BodyFieldBC::parse(field);
     bodyBoundarySet_ = true;

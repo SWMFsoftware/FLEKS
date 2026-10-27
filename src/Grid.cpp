@@ -271,6 +271,12 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
 
     distribute_FabArray(cellCost[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         0, false);
+
+    if (use_body() && bodyParticleBC == ParticleBC::ambipolar) {
+      distribute_FabArray(bodyNetCharge[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 1, nGst, false);
+      bodyNetCharge[iLev].setVal(0.0);
+    }
   }
 
   update_grid_status(cGridsOld);
