@@ -647,6 +647,12 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
               << "(it is not an independent constraint).\n";
   }
 
+  if (useExplicitPIC && has_particle_face(ParticleBC::open)) {
+    Abort("Error: particle boundary 'open' is not supported with explicit full "
+          "PIC (#FIELDSOLVER explicit); charge-conserving entry current "
+          "deposition is not implemented.");
+  }
+
   update_bc_flags();
 }
 
