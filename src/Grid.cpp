@@ -338,15 +338,34 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
     cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    // Find domain boundary cells
+    // Find domain boundary cells: level boundary cells whose centers are
+    // outside the active region. A cell center is never on a level-0 cell
+    // face, so it is inside a box of the active region if and only if its
+    // level-0 cell is. Testing that in index space, against only the active
+    // boxes that overlap this fab, is equivalent to is_inside_domain(), which
+    // loops over all boxes for every cell and is very slow for many boxes.
+    IntVect ratioToLev0(1);
+    for (int lev = 0; lev < iLev; ++lev)
+      ratioToLev0 *= ref_ratio[lev];
+
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+      // Find every active-region box that overlaps the coarsened version of this fab. 
+      const auto isects =
+          activeRegion.intersections(amrex::coarsen(box, ratioToLev0));
       ParallelFor(box, [&](int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(cellArr(i, j, k))) {
-          Real xyz[nDim];
-          Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
-          if (!is_inside_domain(xyz)) {
+          const IntVect iv0 =
+              amrex::coarsen(IntVect(AMREX_D_DECL(i, j, k)), ratioToLev0);
+          bool isInside = false;
+          for (const auto& isect : isects) {
+            if (isect.second.contains(iv0)) {
+              isInside = true;
+              break;
+            }
+          }
+          if (!isInside) {
             bit::set_domain_boundary(cellArr(i, j, k));
           }
         }
