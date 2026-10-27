@@ -787,12 +787,12 @@ Time integrator for field update in explicit full PIC and hybrid PIC:
   * leapfrog (default): Boris-Maxwell time-staggered leapfrog scheme.
   * pc (or rk2): 2nd-order Predictor-Corrector scheme.
 - Hybrid PIC (#FIELDSOLVER hybrid):
-  * rk4 (default): classic 4-stage 4th-order Runge-Kutta on B driven by generalized Ohm's law;
-    wider imaginary-axis whistler stability limit (2.785 vs 1.732 for ssprk3, i.e. ~22\% fewer
-    stage evaluations at the Hall-whistler stability boundary).
-  * ssprk3: 3-stage strong-stability-preserving 3rd-order Runge-Kutta (25\% cheaper per subcycle
+  * ssprk3 (default): 3-stage strong-stability-preserving 3rd-order Runge-Kutta (25\% cheaper per subcycle
     at a fixed nSubcycle and TVD for upwind/hyperbolic terms).
-  * rk4-pc / ssprk3-pc: Predictor-Corrector variant using RK4 / SSPRK3.
+  * rk4: classic 4-stage 4th-order Runge-Kutta on B driven by generalized Ohm's law; wider imaginary-axis
+    whistler stability limit (2.828 vs 1.732 for ssprk3, i.e. ~22\% fewer stage evaluations at the
+    Hall-whistler stability boundary).
+  * ssprk3-pc / rk4-pc: 2nd-order Predictor-Corrector variants using SSPRK3 / RK4.
 </command>
 
 <command name="PARTMODE" alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2" multiple="T">

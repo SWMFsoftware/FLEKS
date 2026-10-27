@@ -453,12 +453,15 @@ private:
   int nSmoothMoments = 0;
   amrex::Real coefSmoothMoments = 0.5;
 
-  std::string fieldIntegrator = "rk4"; // B integrator
+  std::string fieldIntegrator = "ssprk3"; // B integrator
   bool useRK4 = false;
   bool usePredictorCorrector = false;
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
+  // Previous macro dt in single-pass hybrid PIC so the Boris velocity kick
+  // spans dt_v = 0.5 * (dtPrevHybrid + dt) (0.5 * dt on the first step).
+  amrex::Real dtPrevHybrid = 0.0;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
