@@ -50,7 +50,7 @@ jobs:
         with:
           amrex-dim: 3d
           cache-key: fleks-standalone-v3
-          serial-summary: summary_serial.md
+          jobs: '2'
           parallel-summary: summary_parallel.md
           summary-title: Standalone FLEKS Test Results
           post-pr-comment: 'true'
@@ -79,7 +79,7 @@ jobs:
         with:
           amrex-dim: 2d
           cache-key: fleks-standalone-2d-v3
-          serial-summary: summary_2d_serial.md
+          jobs: '2'
           parallel-summary: summary_2d_parallel.md
           summary-title: Standalone FLEKS 2D AMReX Test Results
           post-pr-comment: 'false'

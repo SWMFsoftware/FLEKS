@@ -119,8 +119,9 @@ def ensure_postidl():
     return True
 
 
-def prepare_run_dir():
-    run_dir = RUN_DIR
+def prepare_run_dir(run_dir=None):
+    if run_dir is None:
+        run_dir = RUN_DIR
     os.makedirs(run_dir, exist_ok=True)
 
     ensure_postidl()
@@ -128,43 +129,48 @@ def prepare_run_dir():
     # PostProc.pl / pIDL live in share/Scripts/; the standalone layout keeps
     # "share" next to FLEKS root, the SWMF layout two levels up.
     if os.path.isfile("share/Scripts/PostProc.pl"):
-        postproc_target = "../share/Scripts/PostProc.pl"
-        pidl_target = "../../share/Scripts/pIDL"
+        postproc_src = os.path.abspath("share/Scripts/PostProc.pl")
+        pidl_src = os.path.abspath("share/Scripts/pIDL")
+    elif os.path.isfile("../../share/Scripts/PostProc.pl"):
+        postproc_src = os.path.abspath("../../share/Scripts/PostProc.pl")
+        pidl_src = os.path.abspath("../../share/Scripts/pIDL")
     else:
-        postproc_target = "../../../share/Scripts/PostProc.pl"
-        pidl_target = "../../../../share/Scripts/pIDL"
+        postproc_src = os.path.abspath("share/Scripts/PostProc.pl")
+        pidl_src = os.path.abspath("share/Scripts/pIDL")
 
     postidl_candidates = [
-        "bin/PostIDL.exe",          # standalone
-        "../../bin/PostIDL.exe",    # SWMF integrated
+        os.path.abspath("bin/PostIDL.exe"),
+        os.path.abspath("../../bin/PostIDL.exe"),
     ]
-    postidl_target = None
+    postidl_src = None
     for candidate in postidl_candidates:
         if os.path.isfile(candidate):
-            postidl_target = os.path.relpath(candidate, os.path.join(run_dir, "PC"))
+            postidl_src = candidate
             break
-    if postidl_target is None:
-        postidl_target = "../../bin/PostIDL.exe"
+    if postidl_src is None:
+        postidl_src = os.path.abspath("../../bin/PostIDL.exe")
 
-    safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
-    safe_symlink(postproc_target, os.path.join(run_dir, "PostProc.pl"))
+    fleks_src = os.path.abspath("bin/FLEKS.exe")
+    safe_symlink(os.path.relpath(fleks_src, run_dir), os.path.join(run_dir, "FLEKS.exe"))
+    safe_symlink(os.path.relpath(postproc_src, run_dir), os.path.join(run_dir, "PostProc.pl"))
 
     pc_dir = os.path.join(run_dir, "PC")
     os.makedirs(pc_dir, exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
 
-    safe_symlink(pidl_target, os.path.join(pc_dir, "pIDL"))
-    safe_symlink(postidl_target, os.path.join(pc_dir, "PostIDL.exe"))
+    safe_symlink(os.path.relpath(pidl_src, pc_dir), os.path.join(pc_dir, "pIDL"))
+    safe_symlink(os.path.relpath(postidl_src, pc_dir), os.path.join(pc_dir, "PostIDL.exe"))
 
 
-def cleanup_run_dir():
+def cleanup_run_dir(run_dir=None):
     """Remove simulation output files from run directory after each test.
 
     Deletes the contents of PC/plots/ and PC/restartOUT/ while keeping the
     directory structure and symlinks.
     """
-    run_dir = RUN_DIR
+    if run_dir is None:
+        run_dir = RUN_DIR
     for subdir in [os.path.join(run_dir, "PC", "plots"),
                    os.path.join(run_dir, "PC", "restartOUT")]:
         if os.path.isdir(subdir):
@@ -182,13 +188,15 @@ def cleanup_run_dir():
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
-def run_test(test_dir, nprocs=1, param_text=None):
+def run_test(test_dir, nprocs=1, param_text=None, run_dir=None):
+    if run_dir is None:
+        run_dir = RUN_DIR
     param_file = os.path.join(test_dir, "PARAM.in")
     logger.debug("Running test in %s...", test_dir)
-    prepare_run_dir()
-    cleanup_run_dir()
+    prepare_run_dir(run_dir)
+    cleanup_run_dir(run_dir)
 
-    postidl_link = os.path.join(RUN_DIR, "PC", "PostIDL.exe")
+    postidl_link = os.path.join(run_dir, "PC", "PostIDL.exe")
     if os.path.islink(postidl_link) and not os.path.exists(postidl_link):
         real = os.path.realpath(postidl_link)
         logger.warning("  [WARN] Broken symlink: %s -> %s", postidl_link, real)
@@ -196,15 +204,15 @@ def run_test(test_dir, nprocs=1, param_text=None):
                        "before running tests that check plot output (.out files).")
 
     if param_text is not None:
-        with open(RUN_DIR + "/PARAM.in", "w") as f:
+        with open(os.path.join(run_dir, "PARAM.in"), "w") as f:
             f.write(param_text)
     else:
         if os.path.isfile(param_file):
-            shutil.copy(param_file, RUN_DIR + "/PARAM.in")
+            shutil.copy(param_file, os.path.join(run_dir, "PARAM.in"))
         else:
             candidates = sorted(glob.glob(os.path.join(test_dir, "PARAM.in*")))
             if candidates:
-                shutil.copy(candidates[0], RUN_DIR + "/PARAM.in")
+                shutil.copy(candidates[0], os.path.join(run_dir, "PARAM.in"))
 
     # Copy the test's own data files (coefficient tables, lookup tables, ...)
     # into the run directory: the decks reference them by a relative name.
@@ -214,7 +222,7 @@ def run_test(test_dir, nprocs=1, param_text=None):
             continue
         src = os.path.join(test_dir, entry)
         if os.path.isfile(src):
-            shutil.copy(src, os.path.join(RUN_DIR, entry))
+            shutil.copy(src, os.path.join(run_dir, entry))
 
     if nprocs <= 1:
         cmd = ["./FLEKS.exe"]
@@ -223,14 +231,14 @@ def run_test(test_dir, nprocs=1, param_text=None):
         cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
         logger.debug("  Running with %d MPI processes...", nprocs)
 
-    result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run(cmd, cwd=run_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result.stdout = (result.stdout or b"").decode("utf-8", errors="replace")
     result.stderr = (result.stderr or b"").decode("utf-8", errors="replace")
     # Keep FLEKS's stdout on disk. Several per-cycle diagnostics (notably the
     # AMR div(B) report) are only printed to stdout, so validators that assert
     # on them need a file to read.
     try:
-        with open(os.path.join(RUN_DIR, "fleks_stdout.log"), "w",
+        with open(os.path.join(run_dir, "fleks_stdout.log"), "w",
                   encoding="utf-8", errors="replace") as _f:
             _f.write(result.stdout)
     except OSError:
@@ -243,7 +251,7 @@ def run_test(test_dir, nprocs=1, param_text=None):
         logger.error(result.stderr)
         return None, result.returncode
 
-    pp = subprocess.run(["./PostProc.pl", "-v"], cwd=RUN_DIR,
+    pp = subprocess.run(["./PostProc.pl", "-v"], cwd=run_dir,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     pp.stdout = (pp.stdout or b"").decode("utf-8", errors="replace")
     pp.stderr = (pp.stderr or b"").decode("utf-8", errors="replace")
@@ -258,33 +266,39 @@ def run_test(test_dir, nprocs=1, param_text=None):
 
 
 def run_and_validate(test_dir, display_name, validator, nprocs, results,
-                     param_text=None, base_name=None):
+                     param_text=None, base_name=None, run_dir=None):
     """Run one FLEKS test (optionally with a patched PARAM.in) and record the
-    outcome in *results* as (name, status, reason).  *validator* is the object
-    returned by load_validator() -- it exposes ``validate_log``, ``plot`` and
-    ``particle_tol`` -- or None for a generic completion check.
+    outcome in *results* as (name, status, reason, elapsed_seconds).  *validator*
+    is the object returned by load_validator() -- it exposes ``validate_log``,
+    ``plot`` and ``particle_tol`` -- or None for a generic completion check.
 
     Mirrors the former main-loop body so a single test can be run with several
     PARAM variants (used by the free-stream test)."""
+    import time
+    if run_dir is None:
+        run_dir = RUN_DIR
     if base_name is None:
         base_name = display_name
     logger.info("")
     logger.info("=" * 50)
     logger.info("Starting test: %s", display_name)
     logger.info("=" * 50)
+    t0 = time.time()
     try:
-        # Plot validators locate their output relative to RUN_DIR; keep the
+        # Plot validators locate their output relative to run_dir; keep the
         # per-test module in sync with it before anything is validated.
-        _sync_validator_run_dir(validator)
-        stdout, code = run_test(test_dir, nprocs=nprocs, param_text=param_text)
+        _sync_shared_run_dir(run_dir)
+        _sync_validator_run_dir(validator, run_dir)
+        stdout, code = run_test(test_dir, nprocs=nprocs, param_text=param_text, run_dir=run_dir)
+        dt = time.time() - t0
         if code != 0 or stdout is None:
-            logger.error("FAIL: %s execution failed with exit code %s",
-                         display_name, code)
-            results.append((display_name, "FAILED", f"Execution failed (code {code})"))
+            logger.error("FAIL: %s execution failed with exit code %s (%.2fs)",
+                         display_name, code, dt)
+            results.append((display_name, "FAILED", f"Execution failed (code {code})", dt))
             return
 
         # FLEKS's only diagnostic log is the PIC energy log.
-        pic_diags = read_pic_log(RUN_DIR)
+        pic_diags = read_pic_log(run_dir)
 
         val_res = False
         reason = "Validation skipped"
@@ -293,8 +307,8 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
             val_res, reason = validator.validate_log(pic_diags=pic_diags,
                                                      test_name=base_name)
             if not val_res:
-                logger.error("%s: FAILED (%s)", display_name, reason)
-                results.append((display_name, "FAILED", reason))
+                logger.error("%s: FAILED (%s) (%.2fs)", display_name, reason, dt)
+                results.append((display_name, "FAILED", reason, dt))
                 return
         else:
             logger.debug("Validating %s (generic check)...", display_name)
@@ -305,7 +319,7 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
         # Test-particle tracer log (log_pt_n*.log), validated when #PARTICLETRACKER T.
         if validator is not None and validator.particle_tol:
             has_pt = False
-            active_param = os.path.join(RUN_DIR, "PARAM.in")
+            active_param = os.path.join(run_dir, "PARAM.in")
             if os.path.isfile(active_param):
                 with open(active_param, "r", errors="ignore") as pf:
                     ptext = pf.read()
@@ -319,14 +333,14 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
                                 has_pt = True
                             break
             if has_pt:
-                pt_diags = read_pt_log(RUN_DIR)
+                pt_diags = read_pt_log(run_dir)
                 pt_res, pt_reason = validate_test_particles(
                     pt_diags, test_name=base_name, tol=validator.particle_tol)
                 if not pt_res:
-                    logger.error("%s: test-particle check failed (%s)",
-                                 display_name, pt_reason)
+                    logger.error("%s: test-particle check failed (%s) (%.2fs)",
+                                 display_name, pt_reason, dt)
                     results.append((display_name, "FAILED",
-                                    f"test-particle check failed: {pt_reason}"))
+                                    f"test-particle check failed: {pt_reason}", dt))
                     return
 
         # Validate output plotfiles.
@@ -335,27 +349,29 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
             plot_res, plot_reason = True, "Passed (no plot-file check)"
         else:
             plot_res, plot_reason = plot_validator(base_name)
+        dt = time.time() - t0
         if not plot_res:
-            logger.error("%s: plot check failed (%s)", display_name, plot_reason)
-            results.append((display_name, "FAILED", f"plot check failed: {plot_reason}"))
+            logger.error("%s: plot check failed (%s) (%.2fs)", display_name, plot_reason, dt)
+            results.append((display_name, "FAILED", f"plot check failed: {plot_reason}", dt))
         else:
-            logger.info("%s: PASSED", display_name)
-            results.append((display_name, "PASSED", "Passed"))
+            logger.info("%s: PASSED (%.2fs)", display_name, dt)
+            results.append((display_name, "PASSED", "Passed", dt))
 
     except ImportError as exc:
+        dt = time.time() - t0
         # A check that imports a third-party package (e.g. numpy) inside a
         # function only finds out here that it is missing.
         package = missing_dependency(exc)
         if package is None:
             raise
         logger.warning("SKIP: %s needs the Python package '%s', which is not "
-                       "installed.", display_name, package)
+                       "installed. (%.2fs)", display_name, package, dt)
         results.append((display_name, "SKIPPED",
-                        f"needs the Python package '{package}'"))
+                        f"needs the Python package '{package}'", dt))
 
     finally:
-        logger.debug("  Cleaning up run_test/ output for %s...", display_name)
-        cleanup_run_dir()
+        logger.debug("  Cleaning up output for %s...", display_name)
+        cleanup_run_dir(run_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -869,13 +885,23 @@ def load_validator(test_name):
     return v
 
 
-def _sync_shared_run_dir():
+def _sync_shared_run_dir(run_dir=None):
     """Push the current RUN_DIR into the shared helpers used by plot checks."""
-    import tests._shared.hybrid as _hyb
-    _hyb.set_run_dir(RUN_DIR)
+    if run_dir is None:
+        run_dir = RUN_DIR
+    try:
+        import tests._shared.hybrid as _hyb
+        _hyb.set_run_dir(run_dir)
+    except ImportError:
+        pass
+    try:
+        import tests._shared.run_dir as _rd
+        _rd.set_run_dir(run_dir)
+    except ImportError:
+        pass
 
 
-def _sync_validator_run_dir(validator):
+def _sync_validator_run_dir(validator, run_dir=None):
     """Push the current RUN_DIR into a per-test validator module.
 
     Modules that read plot output keep their own module-level ``RUN_DIR``
@@ -883,10 +909,12 @@ def _sync_validator_run_dir(validator):
     leave them pointing at the default ``run_test/`` and their plot check
     would silently find no frames and report "skipped" instead of validating.
     """
+    if run_dir is None:
+        run_dir = RUN_DIR
     module = getattr(validator, "module", None) if validator else None
     setter = getattr(module, "set_run_dir", None)
     if callable(setter):
-        setter(RUN_DIR)
+        setter(run_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -951,23 +979,26 @@ def is_expensive(name, variant_token, test_dir=None):
 
 
 def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
-                 include_expensive=False):
+                 include_expensive=False, run_dir=None):
     """Pre-flight check + run one test (or its PARAM variants) + record result.
 
     *variant_filter* (optional) is a PARAM suffix (without the leading dot, e.g.
     "hybrid") that restricts execution to that single variant of the test.  When
     None every non-expensive variant under *test_dir* runs (unless include_expensive=True).
     """
+    if run_dir is None:
+        run_dir = RUN_DIR
+
     ok, preflight_reason, skip = preflight_check(name)
     if not ok:
         if skip:
             # Dimension-mismatched test: skip silently, no detail needed.
-            results.append((name.upper(), "SKIPPED", ""))
+            results.append((name.upper(), "SKIPPED", "", 0.0))
         else:
             logger.warning("SKIP: %s cannot run with the configured build.", name.upper())
             logger.warning(preflight_reason)
             results.append((name.upper(), "FAILED",
-                            f"build misconfigured: {preflight_reason}"))
+                            f"build misconfigured: {preflight_reason}", 0.0))
         return
 
     missing_package = None
@@ -1058,7 +1089,7 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
                 "Error: no variant '%s' in test '%s'. Available variants: %s",
                 variant_filter, name, available)
             results.append((name.upper(), "FAILED",
-                            f"no variant '{variant_filter}'"))
+                            f"no variant '{variant_filter}'", 0.0))
             return
         variants = kept
         logger.debug("Restricted test '%s' to variant '%s'.", name,
@@ -1079,22 +1110,61 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None,
             logger.warning("SKIP: %s needs the Python package '%s', which is "
                            "not installed.", display_name, missing_package)
             results.append((display_name, "SKIPPED",
-                            f"needs the Python package '{missing_package}'"))
+                            f"needs the Python package '{missing_package}'", 0.0))
             continue
         with open(param_file) as _f:
             _param_text = _f.read()
         run_and_validate(test_dir, display_name, validator, nprocs, results,
-                         param_text=_param_text, base_name=base_name)
+                         param_text=_param_text, base_name=base_name, run_dir=run_dir)
+
+
+def set_worker_run_dir(run_dir):
+    """Mirror run_dir into runner globals and shared test helpers for a worker."""
+    global RUN_DIR
+    RUN_DIR = run_dir
+    _sync_shared_run_dir(run_dir)
+
+
+def _worker_execute_test(task):
+    """Worker task executed in a subprocess by ProcessPoolExecutor."""
+    test_idx, test_dir, name, nprocs, variant_filter, include_expensive, queue, verbose, base_run_dir = task
+    slot = queue.get()
+    worker_dir = f"{base_run_dir}_w{slot}"
+
+    # Configure worker-local logger to capture output without interleaving
+    import io
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    worker_logger = logging.getLogger()
+    worker_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+    worker_logger.handlers = [handler]
+
+    set_worker_run_dir(worker_dir)
+
+    res = []
+    try:
+        run_one_test(test_dir, name, nprocs, res, variant_filter=variant_filter,
+                     include_expensive=include_expensive, run_dir=worker_dir)
+    except Exception as e:
+        res.append((name.upper(), "FAILED", f"Worker execution error: {e}", 0.0))
+        import traceback
+        traceback.print_exc(file=log_stream)
+    finally:
+        cleanup_run_dir(worker_dir)
+        queue.put(slot)
+
+    return test_idx, res, log_stream.getvalue()
 
 
 def main():
     # Parse nprocs: -n N or --nprocs N
     nprocs = 1
     for i, arg in enumerate(sys.argv):
-        if arg in ("-n", "--nprocs"):
+        if arg in ("-n", "--nprocs") and i + 1 < len(sys.argv):
             try:
                 nprocs = int(sys.argv[i + 1])
-            except (IndexError, ValueError):
+            except ValueError:
                 logger.error("Error: %s requires an integer argument (number of MPI processes).", arg)
                 sys.exit(1)
             continue
@@ -1103,15 +1173,63 @@ def main():
         logger.error("Error: Number of processes must be >= 1.")
         sys.exit(1)
 
-    # Parse --summary-file PATH (custom output path for CI serial/parallel split)
-    summary_file = "tests/summary.md"
+    # Parse -j / --jobs: concurrent test execution
+    jobs = 1
     for i, arg in enumerate(sys.argv):
-        if arg == "--summary-file":
-            try:
-                summary_file = sys.argv[i + 1]
-            except IndexError:
-                logger.error("Error: --summary-file requires a path argument.")
-                sys.exit(1)
+        if arg.startswith("--jobs="):
+            val = arg[len("--jobs="):]
+            if val.lower() == "auto":
+                jobs = max(1, (os.cpu_count() or 1) // nprocs)
+            else:
+                try:
+                    jobs = int(val)
+                except ValueError:
+                    logger.error("Error: --jobs requires an integer or 'auto'.")
+                    sys.exit(1)
+        elif arg in ("-j", "--jobs"):
+            if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("-"):
+                val = sys.argv[i + 1]
+                if val.lower() == "auto":
+                    jobs = max(1, (os.cpu_count() or 1) // nprocs)
+                else:
+                    try:
+                        jobs = int(val)
+                    except ValueError:
+                        logger.error("Error: -j requires an integer or 'auto'.")
+                        sys.exit(1)
+            else:
+                jobs = max(1, (os.cpu_count() or 1) // nprocs)
+
+    if jobs < 1:
+        logger.error("Error: Number of jobs must be >= 1.")
+        sys.exit(1)
+
+    # Parse --shard K/N: partition tests across CI jobs
+    shard_str = None
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--shard="):
+            shard_str = arg[len("--shard="):]
+        elif arg == "--shard" and i + 1 < len(sys.argv):
+            shard_str = sys.argv[i + 1]
+
+    # Parse --summary-file PATH (custom output path for CI serial/parallel split)
+    summary_file = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--summary-file" and i + 1 < len(sys.argv):
+            summary_file = os.path.abspath(sys.argv[i + 1])
+            continue
+        if arg.startswith("--summary-file="):
+            summary_file = os.path.abspath(arg[len("--summary-file="):])
+            continue
+
+    # Parse --summary-title TITLE (custom heading for Markdown summary)
+    summary_title = "Standalone FLEKS Test Results"
+    for i, arg in enumerate(sys.argv):
+        if arg == "--summary-title" and i + 1 < len(sys.argv):
+            summary_title = sys.argv[i + 1]
+            continue
+        if arg.startswith("--summary-title="):
+            summary_title = arg[len("--summary-title="):]
             continue
 
     # Parse --test NAME (select a specific test to run; default: run all)
@@ -1121,20 +1239,15 @@ def main():
         if arg.startswith("--test="):
             selected_test = arg[len("--test="):]
             continue
-        if arg == "--test":
-            try:
-                selected_test = sys.argv[i + 1]
-            except IndexError:
-                logger.error("Error: --test requires a test name argument.")
-                sys.exit(1)
+        if arg == "--test" and i + 1 < len(sys.argv):
+            selected_test = sys.argv[i + 1]
             continue
-        if arg == "--run-dir":
+        if arg == "--run-dir" and i + 1 < len(sys.argv):
             global RUN_DIR
-            try:
-                RUN_DIR = sys.argv[i + 1]
-            except IndexError:
-                logger.error("Error: --run-dir requires a path argument.")
-                sys.exit(1)
+            RUN_DIR = sys.argv[i + 1]
+            continue
+        if arg.startswith("--run-dir="):
+            RUN_DIR = arg[len("--run-dir="):]
             continue
 
     # Parse --verbose / -v: show DEBUG diagnostics from each validator.
@@ -1151,6 +1264,9 @@ def main():
         sys.path.insert(0, repo_root)
     logger.debug("Working directory set to: %s", os.getcwd())
 
+    if summary_file is None:
+        summary_file = os.path.abspath("tests/summary.md")
+
     _sync_shared_run_dir()
 
     tests = discover_tests()
@@ -1159,10 +1275,6 @@ def main():
         sys.exit(1)
 
     # Filter to a single test if --test was given.
-    # `--test=NAME` selects every PARAM variant under tests/NAME/.  An optional
-    # `.suffix` selects ONE variant: `--test=shock.hybrid` runs only the
-    # `PARAM.in.hybrid` file in tests/shock/.  This lets a user target a specific
-    # solver variant (e.g. hybrid) without running its sibling variants.
     variant_filter = None
     if selected_test is not None:
         if "." in selected_test:
@@ -1178,27 +1290,94 @@ def main():
         tests = matching
         logger.debug("Selected test: %s", selected_test)
 
+    # Filter by --shard K/N if provided
+    shard_info = ""
+    if shard_str is not None:
+        try:
+            k_str, n_str = shard_str.split("/")
+            shard_k, shard_n = int(k_str), int(n_str)
+            if shard_k < 1 or shard_k > shard_n:
+                raise ValueError()
+        except ValueError:
+            logger.error("Error: --shard must be in format K/N (e.g. 1/2) with 1 <= K <= N.")
+            sys.exit(1)
+        tests = [t for idx, t in enumerate(tests) if idx % shard_n == (shard_k - 1)]
+        shard_info = f" (Shard {shard_k}/{shard_n})"
+        logger.info("Running shard %d/%d (%d tests selected)", shard_k, shard_n, len(tests))
+
     # Parse --all / --include-expensive: run every variant including expensive benchmarks.
     include_expensive = "--all" in sys.argv or "--include-expensive" in sys.argv
 
     results = []  # Collect results for summary table
 
-    for test_dir, name in tests:
-        run_one_test(test_dir, name, nprocs, results, variant_filter=variant_filter,
-                     include_expensive=include_expensive)
+    if jobs > 1 and len(tests) > 1:
+        logger.info("Running standalone tests concurrently with %d workers (nprocs=%d)...", jobs, nprocs)
+        ensure_postidl()
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        import shutil
+
+        manager = multiprocessing.Manager()
+        slot_queue = manager.Queue()
+        for s in range(jobs):
+            slot_queue.put(s)
+
+        HEAVY_TESTS = {
+            "shock", "whistler", "reconnection_amr", "reconnection",
+            "langmuir", "freestream", "body", "opticaldepth"
+        }
+
+        indexed_tests = list(enumerate(tests))
+        # Prioritize heavier tests first to maximize multi-core throughput
+        scheduled_tests = sorted(
+            indexed_tests,
+            key=lambda item: (0 if item[1][1] in HEAVY_TESTS else 1, item[0])
+        )
+
+        tasks = [
+            (idx, td, name, nprocs, variant_filter, include_expensive, slot_queue, verbose, RUN_DIR)
+            for idx, (td, name) in scheduled_tests
+        ]
+
+        collected_results = {}
+        with ProcessPoolExecutor(max_workers=jobs) as executor:
+            future_to_task = {executor.submit(_worker_execute_test, t): t[2] for t in tasks}
+            for future in as_completed(future_to_task):
+                test_idx, test_results, log_output = future.result()
+                if log_output.strip():
+                    print(log_output, end="", flush=True)
+                collected_results[test_idx] = test_results
+
+        # Flatten results in original deterministic order
+        for idx, _ in indexed_tests:
+            if idx in collected_results:
+                results.extend(collected_results[idx])
+
+        # Clean up worker directories
+        for s in range(jobs):
+            wdir = f"{RUN_DIR}_w{s}"
+            if os.path.exists(wdir):
+                shutil.rmtree(wdir, ignore_errors=True)
+    else:
+        for test_dir, name in tests:
+            run_one_test(test_dir, name, nprocs, results, variant_filter=variant_filter,
+                         include_expensive=include_expensive, run_dir=RUN_DIR)
 
     # ----------------------------------------------------
     # Print Summary Table
     # ----------------------------------------------------
     logger.info("")
     logger.info("=" * 80)
-    logger.info(" " * 32 + "TEST SUMMARY")
+    logger.info(" " * 32 + f"TEST SUMMARY{shard_info}")
     logger.info("=" * 80)
-    logger.info(" %-28s | %-8s | %s", "Test Name", "Status", "Failure Reason / Details")
+    logger.info(" %-28s | %-8s | %-8s | %s", "Test Name", "Status", "Time", "Failure Reason / Details")
     logger.info("-" * 80)
 
     all_passed = True
-    for name_str, status, reason in results:
+    for item in results:
+        name_str, status, reason = item[0], item[1], item[2]
+        dt = item[3] if len(item) > 3 else 0.0
+        time_display = f"{dt:.2f}s" if dt > 0 else "-"
         if status == "PASSED":
             status_display = "\033[92;1mPASSED\033[0m" if sys.stdout.isatty() else "PASSED"
         elif status == "SKIPPED":
@@ -1207,17 +1386,21 @@ def main():
             status_display = "\033[91;1mFAILED\033[0m" if sys.stdout.isatty() else "FAILED"
             all_passed = False
         reason_display = reason if status != "PASSED" else ""
-        logger.info(" %-28s | %-8s | %s", name_str, status_display, reason_display)
+        logger.info(" %-28s | %-8s | %-8s | %s", name_str, status_display, time_display, reason_display)
 
     logger.info("=" * 80)
 
     # Write Markdown Summary to summary.md for CI / PR integration
     try:
         with open(summary_file, "w") as f:
-            f.write("### 🧪 Standalone FLEKS Test Results\n\n")
-            f.write("| Test Name | Status | Failure Reason / Details |\n")
-            f.write("| :--- | :--- | :--- |\n")
-            for name_str, status, reason in results:
+            header_prefix = summary_title if summary_title.startswith("#") else f"### 🧪 {summary_title}"
+            f.write(f"{header_prefix}{shard_info}\n\n")
+            f.write("| Test Name | Status | Time | Failure Reason / Details |\n")
+            f.write("| :--- | :--- | :--- | :--- |\n")
+            for item in results:
+                name_str, status, reason = item[0], item[1], item[2]
+                dt = item[3] if len(item) > 3 else 0.0
+                time_md = f"{dt:.2f}s" if dt > 0 else "-"
                 if status == "PASSED":
                     status_md = "🟢 **PASSED**"
                 elif status == "SKIPPED":
@@ -1225,9 +1408,9 @@ def main():
                 else:
                     status_md = "🔴 **FAILED**"
                 reason_md = reason if status != "PASSED" else ""
-                f.write(f"| {name_str} | {status_md} | {reason_md} |\n")
+                f.write(f"| {name_str} | {status_md} | {time_md} | {reason_md} |\n")
     except Exception as e:
-        logger.warning("Warning: Could not write summary.md: %s", e)
+        logger.warning("Warning: Could not write summary file %s: %s", summary_file, e)
 
     if all_passed:
         if sys.stdout.isatty():
