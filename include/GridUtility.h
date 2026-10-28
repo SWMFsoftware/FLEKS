@@ -483,6 +483,60 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   return -1; // To suppress compiler warnings.
 }
 
+inline amrex::Real get_decay_at_loc(const amrex::MultiFab& mf,
+                                    const amrex::MFIter& mfi,
+                                    const amrex::Geometry& gm,
+                                    const amrex::RealVect xyz, const int iVar,
+                                    const amrex::Real dt) {
+  amrex::IntVect loIdx;
+  amrex::RealVect dx;
+  find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
+
+  amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
+
+  const auto& arr = mf.array(mfi);
+
+  auto decay = [dt](amrex::Real nu) {
+    return (nu > 0.0) ? std::exp(-nu * dt) : 1.0;
+  };
+
+  amrex::Real c000 =
+      decay(arr(loIdx[ix_], loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar));
+  amrex::Real c100 =
+      decay(arr(loIdx[ix_] + 1, loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar));
+  amrex::Real c010 =
+      decay(arr(loIdx[ix_], loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar));
+  amrex::Real c110 = decay(
+      arr(loIdx[ix_] + 1, loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar));
+  amrex::Real c001 =
+      nDim > 2 ? decay(arr(loIdx[ix_], loIdx[iy_], loIdx[iz_] + 1, iVar)) : 1.0;
+  amrex::Real c101 =
+      nDim > 2 ? decay(arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_] + 1, iVar))
+               : 1.0;
+  amrex::Real c011 =
+      nDim > 2 ? decay(arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar))
+               : 1.0;
+  amrex::Real c111 =
+      nDim > 2
+          ? decay(arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar))
+          : 1.0;
+
+  // Interpolate along x-axis
+  amrex::Real c00 = c000 * interpX[1] + c100 * interpX[0];
+  amrex::Real c01 = c010 * interpX[1] + c110 * interpX[0];
+  amrex::Real c10 = c001 * interpX[1] + c101 * interpX[0];
+  amrex::Real c11 = c011 * interpX[1] + c111 * interpX[0];
+
+  // Interpolate along y-axis
+  amrex::Real c0 = c00 * interpY[1] + c01 * interpY[0];
+  amrex::Real c1 = c10 * interpY[1] + c11 * interpY[0];
+
+  // Interpolate along z-axis
+  return c0 * interpZ[1] + c1 * interpZ[0];
+}
+
 inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
                       const amrex::MFIter& mfi, const amrex::Geometry& gm,
                       const amrex::RealVect xyz, const int iVar) {

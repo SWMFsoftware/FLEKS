@@ -552,20 +552,21 @@ void Particles<NStructReal, NStructInt>::apply_loss(
         for (int iDim = 0; iDim < nDim; ++iDim)
           xyz[iDim] = p.pos(iDim);
 
-        // Loss frequency of this species at the particle position.
-        const Real nu = source->get_loss_frequency(pti, xyz, speciesID, iLev);
-        if (nu <= 0.0)
+        // Survival factor over the step dt, interpolated from nodal
+        // exp(-nu*dt). This conservative discretization ensures exact balance
+        // between particle losses and stiff product sources
+        // (UserSource::set_source) even when reaction rates vary spatially.
+        const Real decay =
+            source->get_loss_decay(pti, xyz, speciesID, dt, iLev);
+        if (decay >= 1.0)
           continue;
 
-        // Exponential decay over the step: exact for a constant rate and
-        // stable however stiff the reaction is (nu*dt >> 1). The sign of the
-        // weight is preserved (ions positive, electrons negative).
-        const Real nuDt = nu * dt;
-        if (nuDt > maxLossNuDt) {
+        // Discard particles whose survival factor has dropped to zero (< 1e-21)
+        if (decay <= std::exp(-maxLossNuDt)) {
           p.id() = -1;
           continue;
         }
-        p.rdata(iqp_) *= std::exp(-nuDt);
+        p.rdata(iqp_) *= decay;
 
         // Reference particle: the ions of fi, as for the source weight floor.
         IntVect ijk;

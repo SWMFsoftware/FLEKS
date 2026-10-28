@@ -936,7 +936,24 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
         const Real zom = fi->get_QoQi(s) / fi->get_MoMi(s);
         MultiFab::Saxpy(nodeNe, zom, nodePlasma[s][iLev], iRho_, 0, 1, 0);
       }
+      // At body nodes, the moments are geometrically diluted by empty body
+      // cells. Rescale electron density before evaluating algebraic electron
+      // pressure closure so P_e ~ n_e^gamma is computed from the true physical
+      // density rather than diluted density, avoiding an f^(gamma-1) error.
+      if (use_body()) {
+        scale_by_body_outside_fraction(nodeNe, cell_status(iLev),
+                                       node_status(iLev), Geom(iLev).Domain(),
+                                       nDim, true);
+      }
       compute_node_electron_pressure(iLev, nodeNe, nodePe);
+      // For evolved electron pressure, nodePe is averaged from centerPeState
+      // across all cells (including zero inside body), so it is diluted by
+      // the outside fraction and requires rescaling.
+      if (use_body() && useElectronPressureEq && peStateInitialized_) {
+        scale_by_body_outside_fraction(nodePe, cell_status(iLev),
+                                       node_status(iLev), Geom(iLev).Domain(),
+                                       nDim, true);
+      }
     }
 
     for (MFIter mfi(stateMF); mfi.isValid(); ++mfi) {
@@ -1013,6 +1030,8 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
     // diluted.
     if (use_body()) {
       for (int s = 0; s < dst.get_nS() && s < nSpecies; s++) {
+        if (s == iE)
+          continue;
         for (const int iVar : { dst.get_iRho(s), dst.get_iP(s) }) {
           MultiFab alias(stateMF, amrex::make_alias, iVar, 1);
           scale_by_body_outside_fraction(alias, cell_status(iLev),

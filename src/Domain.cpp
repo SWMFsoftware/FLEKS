@@ -248,22 +248,19 @@ void Domain::update() {
             << " (s) ====" << std::endl;
   }
 
-  // Compute exosphere source terms every step in standalone mode.
-  // - Standalone: called here (no SWMF coupling).
-  // - GM-PC: called from set_state_var() at coupling intervals; fi is
-  //   unchanged between couplings, so skip here.
+  // Compute exosphere source terms.
+  // - Standalone: computed every step using the live kinetic plasma moments.
+  // - GM-PC: computed when GM supplies a new fluid state, and refreshed if
+  //   the PIC timestep changes between couplings so that stiff reaction
+  //   sources remain consistent with the exponential particle loss.
   // - OH-PT: not applicable; charge_exchange() handles source terms.
-  if (source && !initFromSWMF) {
-    // The rates that depend on the plasma (recombination, ion-neutral
-    // chemistry, electron impact, charge exchange) and the loss frequencies
-    // must see the plasma the particles carry now, not the #UNIFORMSTATE.
-    pic->fill_plasma_state(*plasmaState);
-    source->set_dt_si(tc->get_dt_si());
-    source->set_source(*plasmaState);
-    pic->mask_body_source(*source);
-    source->convert_moment_to_velocity(true, false);
-    source->fill_boundary();
-    source->fill_loss_boundary();
+  if (source && !stateOH) {
+    if (!initFromSWMF) {
+      pic->fill_plasma_state(*plasmaState);
+      refresh_source(*plasmaState);
+    } else if (source->get_dt_si() != tc->get_dt_si()) {
+      refresh_source(*fi);
+    }
   }
 
   pic->update(doReport);
@@ -570,14 +567,19 @@ void Domain::set_state_var(double *data, int *index,
     // Pic::charge_exchange() using OH-PT charge exchange physics, so
     // set_source must not be called here.
     if (source && !stateOH) {
-      source->set_dt_si(tc->get_dt_si());
-      source->set_source(*fi);
-      pic->mask_body_source(*source);
-      source->convert_moment_to_velocity(true, false);
-      source->fill_boundary();
-      source->fill_loss_boundary();
+      refresh_source(*fi);
     }
   }
+}
+
+//========================================================
+void Domain::refresh_source(const FluidInterface &state) {
+  source->set_dt_si(tc->get_dt_si());
+  source->set_source(state);
+  pic->mask_body_source(*source);
+  source->convert_moment_to_velocity(true, false);
+  source->fill_boundary();
+  source->fill_loss_boundary();
 }
 
 //========================================================

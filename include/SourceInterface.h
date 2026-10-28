@@ -96,6 +96,7 @@ public:
   };
 
   void set_dt_si(amrex::Real dt) { dtSI = dt; }
+  amrex::Real get_dt_si() const { return dtSI; }
 
   /// Radius [m] of the inner body (#BODY / #INNERBOUNDARY): no neutral reacts
   /// inside it.
@@ -188,6 +189,17 @@ public:
                                  const amrex::RealVect& xyz, const int iSp,
                                  const int iLev = 0) const {
     return get_value_at_loc(nodeLossFluid[iLev], mfi, Geom(iLev), xyz, iSp);
+  }
+
+  /// Survival factor of a particle of species iSp over timestep dt at position
+  /// xyz, multilinearly interpolated from the nodal decay factors exp(-nu*dt).
+  /// This conservative discretization ensures exact balance with the stiff
+  /// product source (UserSource::set_source) even when reaction rates vary
+  /// spatially.
+  amrex::Real get_loss_decay(const amrex::MFIter& mfi,
+                             const amrex::RealVect& xyz, const int iSp,
+                             const amrex::Real dt, const int iLev = 0) const {
+    return get_decay_at_loc(nodeLossFluid[iLev], mfi, Geom(iLev), xyz, iSp, dt);
   }
 
   amrex::MultiFab& get_node_loss_fluid(int iLev) { return nodeLossFluid[iLev]; }
