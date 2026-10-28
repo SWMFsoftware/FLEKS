@@ -383,7 +383,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 
                 if (nSource <= 0.0)
                   continue;
-                if (nSource / product(ppcCell) < wMin) {
+                const Real ppcSource =
+                    (ppcCell == 0) ? ppcRef : product(ppcCell);
+                if (nSource / ppcSource < wMin) {
                   ppcCell = IntVect(1);
                   if (nSource < wMin) {
                     set_random_seed(iLev, ijk, IntVect(919));
