@@ -296,7 +296,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     const Real minWeightRatio) {
   timing_func("Pts::add_particles_source");
 
-  // Weight floor (#SOURCEWEIGHTFLOOR): a source particle is not lighter than
+  // Weight floor (#SOURCEPARTICLES): a source particle is not lighter than
   // minWeightRatio times the weight of a particle of the reference plasma
   // (all ions of fi, i.e. #UNIFORMSTATE stand-alone). A cell whose whole
   // source of the step is below the floor gets one particle of the floor

@@ -415,8 +415,8 @@ private:
   amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
   bool adaptiveSourcePPC = false;
   // Lower limit of a source particle's weight relative to the reference plasma
-  // (#SOURCEWEIGHTFLOOR); 0 switches it off.
-  amrex::Real sourceMinWeightRatio = 0.0;
+  // (#SOURCEPARTICLES); 0 switches it off. Default is 1.0e-3.
+  amrex::Real sourceMinWeightRatio = 1.0e-3;
 
   // Is any particle box face of any species of the given type?
   bool has_particle_face(ParticleBC::Type type) const {

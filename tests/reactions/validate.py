@@ -9,7 +9,7 @@ Variants:
   with n_e = n_i, n(t) = n0/(1 + k n0 t), k = k0 (Tref/Te)^alpha.
 * ``cx``: #CHARGEEXCHANGE of a drifting H+ beam: H+ mass conserved and
   energy follows slowing-down u = u0/(1 + n sigma u0 t).
-* ``weightfloor``: photoionization below #SOURCEWEIGHTFLOOR; injected mass
+* ``weightfloor``: photoionization below #SOURCEPARTICLES minWeightRatio; injected mass
   is S V t on average.
 * ``chemistry``: multi-species Mars chemistry network (10 reactions, 4 ion
   species H+, O+, O2+, CO2+); verifies energy changes across species,

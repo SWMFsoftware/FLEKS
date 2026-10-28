@@ -265,10 +265,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("npcely", nSourcePPC[iy_]);
     if (nDim == 3)
       param.read_var("npcelz", nSourcePPC[iz_]);
-  } else if (command == "#SOURCEWEIGHTFLOOR") {
-    param.read_var("minWeightRatio", sourceMinWeightRatio);
-    if (sourceMinWeightRatio < 0)
-      Abort("Invalid #SOURCEWEIGHTFLOOR: minWeightRatio must be >= 0.");
+    double ratio = sourceMinWeightRatio;
+    if (param.read_optional("minWeightRatio", ratio) ||
+        param.read_optional("weightFloor", ratio) ||
+        param.read_optional("sourceWeightFloor", ratio)) {
+      if (ratio < 0.0)
+        Abort("Invalid #SOURCEPARTICLES: minWeightRatio must be >= 0.");
+      sourceMinWeightRatio = ratio;
+    }
   } else if (command == "#KINETICSOURCE") {
     param.read_var("kineticSource", kineticSource);
   } else if (command == "#ELECTRON") {

@@ -1482,18 +1482,31 @@ condition and ghost cells for a FLEKS region.
   <parameter name="nParticleX" type="integer" min="0" default="0"/>
   <parameter name="nParticleY" type="integer" min="0" default="0"/>
   <parameter name="nParticleZ" type="integer" min="0" default="0"/>
+  <parameter name="minWeightRatio" type="real" min="0" default="1.0e-3" required="F"/>
 
 #SOURCEPARTICLES
 1                  particles per cell in X 
 1                  particles per cell in Y 
 1                  particles per cell in Z 
+1.0e-3             minWeightRatio (optional, default 1.0e-3)
 
 #SOURCEPARTICLES_FLEKS1
 10                 particles per cell in X 
 10                 particles per cell in Y 
 1                  particles per cell in Z 
 
-The command sets particle number per cell for plasma sources.
+The command sets the particle number per cell for plasma sources, and optionally
+the weight floor ratio below which Russian roulette is used.
+
+minWeightRatio sets the lower limit of the weight of the source particles (#SOURCE),
+relative to the weight of a particle of the reference plasma: the number density
+of all ions of the fluid state (#UNIFORMSTATE in a stand-alone run, the MHD state
+in a coupled run) divided by the particles per cell of #PARTICLES. A cell whose
+source of one step is smaller than one particle of the floor weight gets a
+single particle of the floor weight with the probability source/floor, so the
+injected mass is conserved on average. Without the floor, an extended exosphere
+creates a particle in every cell and every step, most of them with negligible
+weight. The default is 1.0e-3; setting it to 0 switches the floor off.
 </command>
 
 <command name="ADAPTIVESOURCEPPC" alias="ADAPTIVESOURCEPPC_FLEKS0,ADAPTIVESOURCEPPC_FLEKS1,ADAPTIVESOURCEPPC_FLEKS2" multiple="T">
@@ -1504,24 +1517,6 @@ T                  useAdaptiveSourcePPC
 
 If it is true, the particle number per cell per step for the sources will 
 be reduced to as low as 1 if the source density is low.
-</command>
-
-
-<command name="SOURCEWEIGHTFLOOR" alias="SOURCEWEIGHTFLOOR_FLEKS0,SOURCEWEIGHTFLOOR_FLEKS1,SOURCEWEIGHTFLOOR_FLEKS2" multiple="T">
-  <parameter name="minWeightRatio" type="real" min="0" default="0"/>
-
-#SOURCEWEIGHTFLOOR
-1.0e-3             minWeightRatio
-
-Lower limit of the weight of the source particles (#SOURCE), relative to the
-weight of a particle of the reference plasma: the number density of all ions
-of the fluid state (#UNIFORMSTATE in a stand-alone run, the MHD state in a
-coupled run) divided by the particles per cell of #PARTICLES. A cell whose
-source of one step is smaller than one particle of the floor weight gets a
-single particle of the floor weight with the probability source/floor, so the
-injected mass is conserved on average. Without the floor, an extended
-exosphere creates a particle in every cell and every step, most of them with
-negligible weight. The default 0 switches the floor off.
 </command>
 
 <command name="SUPID" alias="SUPID_FLEKS0,SUPID_FLEKS1,SUPID_FLEKS2" multiple="T">

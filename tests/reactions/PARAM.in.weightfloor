@@ -1,5 +1,5 @@
 #DESCRIPTION
-Photoionization with the source-particle weight floor (SOURCEWEIGHTFLOOR).
+Photoionization with the source-particle weight floor (SOURCEPARTICLES).
 The source of one cell and step (1e-4 /cc) is 5x below the floor (5e-4 /cc), so
 a cell gets a floor-weight particle with probability 0.2. Analytic: the
 injected O+ mass is S*V*t on average (statistical error ~2%).
@@ -100,9 +100,6 @@ Exponential             typeProfile
 #PHOTOIONIZATION
 1.0e-6                  nuPhoto0 [1/s]  S = 1e3 m^-3/s = 1e-4 /cc per step
 
-#SOURCEWEIGHTFLOOR
-1.0e-2                  minWeightRatio  floor 5e-4 /cc > 1e-4 /cc per cell and step
-
 #SOURCE
 T                       useSource
 
@@ -119,6 +116,7 @@ T                       useFixedDt
 1                       npcelx
 1                       npcely
 1                       npcelz
+1.0e-2                  minWeightRatio  floor 5e-4 /cc > 1e-4 /cc per cell and step
 
 #MONITOR
 50                      dnReport
