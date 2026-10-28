@@ -354,6 +354,9 @@ protected:
   // boundary-transverse cell; the value is the not-yet-injected fractional
   // macroparticle count carried between steps.
   std::map<int64_t, amrex::Real> injectFluxAcc;
+  // Time average of the normal drift (in units of vtherm) of each
+  // open face cell, keyed by (iDim, side, global transverse index).
+  std::map<int64_t, amrex::Real> openFaceDrift;
 
   amrex::Vector<amrex::RealVect> plo, phi, dx, invDx;
   amrex::Vector<amrex::Real> invVol;
@@ -400,6 +403,10 @@ protected:
 
   // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
   amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
+  // Cumulative mass (positive, as total_moments) injected through and removed
+  // across each domain face (2*d + {0=lo,1=hi}), for the particle budget.
+  amrex::Real faceInMass[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real faceOutMass[6] = { 0, 0, 0, 0, 0, 0 };
   amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
   amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
 
@@ -409,6 +416,46 @@ protected:
   amrex::Real bodyAbsorbCount = 0;
   amrex::Real bodyAbsorbCharge = 0;
   amrex::Real bodyAbsorbMass = 0;
+
+  // The cumulative tallies and boundary histories above, saved with the
+  // particles by backup_particle_state() and rolled back if the trial push of
+  // a predictor-corrector step is discarded by restore_particle_state().
+  struct TallyState {
+    amrex::Real absorbCount[6], absorbCharge[6], absorbMass[6];
+    amrex::Real faceIn[6], faceOut[6];
+    amrex::Real bodyAbsorb[3];
+    std::map<int64_t, amrex::Real> fluxAcc, openDrift;
+  } tallyBackup;
+
+  void save_tallies(TallyState& t) const {
+    for (int f = 0; f < 6; ++f) {
+      t.absorbCount[f] = absorbTallyCount[f];
+      t.absorbCharge[f] = absorbTallyCharge[f];
+      t.absorbMass[f] = absorbTallyMass[f];
+      t.faceIn[f] = faceInMass[f];
+      t.faceOut[f] = faceOutMass[f];
+    }
+    t.bodyAbsorb[0] = bodyAbsorbCount;
+    t.bodyAbsorb[1] = bodyAbsorbCharge;
+    t.bodyAbsorb[2] = bodyAbsorbMass;
+    t.fluxAcc = injectFluxAcc;
+    t.openDrift = openFaceDrift;
+  }
+
+  void load_tallies(const TallyState& t) {
+    for (int f = 0; f < 6; ++f) {
+      absorbTallyCount[f] = t.absorbCount[f];
+      absorbTallyCharge[f] = t.absorbCharge[f];
+      absorbTallyMass[f] = t.absorbMass[f];
+      faceInMass[f] = t.faceIn[f];
+      faceOutMass[f] = t.faceOut[f];
+    }
+    bodyAbsorbCount = t.bodyAbsorb[0];
+    bodyAbsorbCharge = t.bodyAbsorb[1];
+    bodyAbsorbMass = t.bodyAbsorb[2];
+    injectFluxAcc = t.fluxAcc;
+    openFaceDrift = t.openDrift;
+  }
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
@@ -470,6 +517,14 @@ public:
   // and the number injected per step matches the analytic influx of the
   // prescribed #INFLOW state.
   void inject_flux_at_inflow_faces(amrex::Real dt);
+
+  // Open (ParticleBC::open) particle boundary
+  // At each physical boundary face cell of an open face, injects the inward
+  // half-flux of the local drifting Maxwellian measured one node layer inside
+  // the face (zero-gradient kinetic boundary). The normal drift is averaged
+  // in time per face cell and clamped to its outward part to prevent runaway.
+  void inject_flux_at_open_faces(amrex::Real dt,
+                                 const amrex::MultiFab& nodeMom);
 
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
@@ -555,11 +610,13 @@ public:
               this->GetParGDB());
     }
     backupContainer_->copyParticles(*this, true);
+    save_tallies(tallyBackup);
   }
 
   void restore_particle_state() {
     if (backupContainer_) {
       this->copyParticles(*backupContainer_, true);
+      load_tallies(tallyBackup);
     }
   }
 
@@ -888,15 +945,37 @@ public:
       }
     }
 
-    if (!isLocateValid)
-      return is_outside_active_region(p, status, ab);
+    const bool isOut = !isLocateValid
+                           ? is_outside_active_region(p, status, ab)
+                           : (isInsideBox ? bit::is_domain_boundary(cellMask)
+                                          : is_outside_active_region(p, ab));
+    if (isOut)
+      face_exit_tally(p);
+    return isOut;
+  }
 
-    return isInsideBox ? bit::is_domain_boundary(cellMask)
-                       : is_outside_active_region(p, ab);
+  // Tally the mass of a particle deleted beyond a domain face. A periodic
+  // direction is skipped: crossing it wraps, it is not a loss.
+  inline void face_exit_tally(const ParticleType& p) {
+    const amrex::Real* lo = Geom(0).ProbLo();
+    const amrex::Real* hi = Geom(0).ProbHi();
+    for (int d = 0; d < nDim; ++d) {
+      if (Geom(0).isPeriodic(d))
+        continue;
+      if (p.pos(d) < lo[d]) {
+        faceOutMass[2 * d] += qomSign * p.rdata(iqp_) * mass;
+        return;
+      }
+      if (p.pos(d) > hi[d]) {
+        faceOutMass[2 * d + 1] += qomSign * p.rdata(iqp_) * mass;
+        return;
+      }
+    }
   }
 
   // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
   inline void absorb_tally(int face, amrex::Real weight) {
+    faceOutMass[face] += qomSign * weight * mass;
     absorbTallyCount[face] += 1.0;
     absorbTallyCharge[face] += weight * charge;
     absorbTallyMass[face] += weight * mass;
@@ -1275,6 +1354,10 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
+
+  // Particle budget per face (2*d + {0=lo,1=hi}).
+  amrex::Real get_face_in_mass(int face) const { return faceInMass[face]; }
+  amrex::Real get_face_out_mass(int face) const { return faceOutMass[face]; }
 
   // Tallies for the particles absorbed by the inner body (see #BODY).
   amrex::Real get_body_absorb_count() const { return bodyAbsorbCount; }

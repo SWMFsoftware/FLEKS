@@ -403,7 +403,7 @@ AMR_TESTS = {
 AMREX3D_TESTS = {"lightwave", "wave_amr_3d"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
-AMREX2D_TESTS = {"photoionization", "body", "body_rarefaction"}
+AMREX2D_TESTS = {"photoionization", "body", "body_rarefaction", "openboundary"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {

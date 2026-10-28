@@ -614,7 +614,7 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
                          "match.");
 
         if (fType == FieldBC::conducting &&
-            (pType == ParticleBC::outflow || pType == ParticleBC::vacuum ||
+            (ParticleBC::is_outflow(pType) || pType == ParticleBC::vacuum ||
              pType == ParticleBC::absorb))
           add_bc_warning(what() + " is '" + ParticleBC::to_string(pType) +
                          "' on a 'conducting' wall: particles leave through "
@@ -646,6 +646,12 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
               << "conducting / wave field boundary constrains "
               << "B; for the Ohm's-law E it only closes the ghost ring "
               << "(it is not an independent constraint).\n";
+  }
+
+  if (useExplicitPIC && has_particle_face(ParticleBC::open)) {
+    Abort("Error: particle boundary 'open' is not supported with explicit full "
+          "PIC (#FIELDSOLVER explicit); charge-conserving entry current "
+          "deposition is not implemented.");
   }
 
   update_bc_flags();

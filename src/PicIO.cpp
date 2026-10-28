@@ -883,6 +883,9 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
   const int wCol = 24;
   const int wStep = 10;
+  const bool standaloneLog = isStandalone;
+  const bool logMass = standaloneLog && log_species_mass();
+  const bool logFaces = standaloneLog && log_face_budget();
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     if (picLogStream.is_open()) {
@@ -909,6 +912,22 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       picLogStream << "\t" << std::setw(wCol) << "nBodyAbsorb" << "\t"
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
+    }
+    if (logMass)
+      for (int i = 0; i < nSpecies; ++i) {
+        std::string sName = "Mpart" + std::to_string(i);
+        picLogStream << "\t" << std::setw(wCol) << sName;
+      }
+    if (logFaces) {
+      const char* fName[6] = { "xm", "xp", "ym", "yp", "zm", "zp" };
+      for (int i = 0; i < nSpecies; ++i)
+        for (int f = 0; f < 2 * nDim; ++f)
+          picLogStream << "\t" << std::setw(wCol)
+                       << std::string("mIn_") + fName[f] + "_S" +
+                              std::to_string(i)
+                       << "\t" << std::setw(wCol)
+                       << std::string("mOut_") + fName[f] + "_S" +
+                              std::to_string(i);
     }
     picLogStream << std::endl;
   }
@@ -938,6 +957,24 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           ParallelDescriptor::IOProcessorNumber());
     }
 
+    // Mass injected through / removed across each face, per species.
+    Vector<Real> faceBudget(12 * nSpecies, 0.0);
+    if (logFaces) {
+      for (int i = 0; i < nSpecies; ++i)
+        for (int f = 0; f < 6; ++f) {
+          faceBudget[i * 12 + 2 * f] = parts[i]->get_face_in_mass(f);
+          faceBudget[i * 12 + 2 * f + 1] = parts[i]->get_face_out_mass(f);
+        }
+      ParallelDescriptor::ReduceRealSum(
+          faceBudget.data(), faceBudget.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
+    Vector<Real> speciesMass(nSpecies, 0.0);
+    if (logMass)
+      for (int i = 0; i < nSpecies; ++i)
+        speciesMass[i] = parts[i]->total_moments()[0];
+
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
         picLogStream.open(logFile.c_str(), std::fstream::app);
@@ -957,6 +994,15 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
       }
+      if (logMass)
+        for (int i = 0; i < nSpecies; ++i)
+          picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
+      if (logFaces)
+        for (int i = 0; i < nSpecies; ++i)
+          for (int f = 0; f < 2 * nDim; ++f)
+            picLogStream << "\t" << std::setw(wCol)
+                         << faceBudget[i * 12 + 2 * f] << "\t"
+                         << std::setw(wCol) << faceBudget[i * 12 + 2 * f + 1];
       picLogStream << std::endl;
     }
   }
