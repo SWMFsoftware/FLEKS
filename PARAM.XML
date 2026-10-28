@@ -1506,22 +1506,6 @@ If it is true, the particle number per cell per step for the sources will
 be reduced to as low as 1 if the source density is low.
 </command>
 
-<command name="PHOTOCHEMICALBOUNDARY" alias="PHOTOCHEMICALBOUNDARY_FLEKS0,PHOTOCHEMICALBOUNDARY_FLEKS1,PHOTOCHEMICALBOUNDARY_FLEKS2" multiple="F">
-  <parameter name="radius" type="real" min="0" default="0"/>
-
-#PHOTOCHEMICALBOUNDARY
-3596000.0          radius [m]   200 km altitude at Mars
-
-Exosphere source (-u=Exo). Below this radius the ions are produced and
-lost in local photochemical equilibrium: the ionization there (photo and
-electron impact, #PHOTOIONIZATION, #ELECTRONIMPACT and the ionization
-reactions of #CHEMISTRY) is not injected into the plasma. The neutral
-densities that set the frequencies of the ion-neutral reactions and of the
-charge exchange keep the whole atmosphere. Use it when the grid cannot
-resolve the ionospheric layer: diluted over a cell, the ions recombine far
-too slowly (the loss scales with n\^2), so the full column production would
-pile up next to the body. The default 0 injects all the ionization.
-</command>
 
 <command name="SOURCEWEIGHTFLOOR" alias="SOURCEWEIGHTFLOOR_FLEKS0,SOURCEWEIGHTFLOOR_FLEKS1,SOURCEWEIGHTFLOOR_FLEKS2" multiple="T">
   <parameter name="minWeightRatio" type="real" min="0" default="0"/>
@@ -1959,18 +1943,24 @@ length unit is then one planetary radius.
 Only rank zero reads the file and the coefficients are then broadcast.
 </command>
 
-<command name="BODYBOUNDARY" alias="BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2" multiple="T">
+<command name="INNERBOUNDARY" alias="BODYBOUNDARY,BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2,INNERBOUNDARY_FLEKS0,INNERBOUNDARY_FLEKS1,INNERBOUNDARY_FLEKS2" multiple="T">
   <parameter name="particleBoundary" type="string" default="absorb"/>
   <parameter name="fieldBoundary" type="string" default="linetied"/>
+  <parameter name="typePhotochem" type="string" default="" required="F"/>
+  <parameter name="rPhotochem" type="real" default="0.0" if="$typePhotochem =~ /photochem/"/>
 
-#BODYBOUNDARY
+#INNERBOUNDARY
 absorb            particleBoundary
 linetied          fieldBoundary
+photochemical     typePhotochem (optional)
+3596000.0         rPhotochem [m] (optional radius, if typePhotochem is photochemical)
 
 This command selects the boundary condition on the surface of the inner body
-declared by #BODY. It has two parameters: the first one applies to the
-particles, the second one to the electromagnetic field. It is ignored (with a
-warning) if no #BODY is given. The defaults are 'absorb' and 'linetied'.
+declared by #BODY. (Alias: #BODYBOUNDARY). It applies boundary conditions to the
+particles and the electromagnetic field, and optionally configures the
+photochemical equilibrium boundary. It is ignored (with a warning) if no #BODY
+is given, unless the photochemical boundary is configured. The defaults are
+'absorb' and 'linetied'.
 
 particleBoundary:
 
@@ -1985,6 +1975,25 @@ particleBoundary:
               are reflected when the cell has no electron deficit. Particles that
               are not absorbed are reflected specularly on the smooth surface,
               maintaining ambipolar balance and preventing artificial charging.
+
+typePhotochem (optional):
+
+  photochemical - below this radius [m] the ions are produced and lost in
+                  local photochemical equilibrium: the ionization there (photo
+                  and electron impact, #PHOTOIONIZATION, #ELECTRONIMPACT, and
+                  the ionization reactions of #CHEMISTRY) is not injected into
+                  the plasma. The neutral densities that set the frequencies of
+                  the ion-neutral reactions and of charge exchange keep the
+                  whole atmosphere. Use it when the grid cannot resolve the
+                  ionospheric layer: diluted over a cell, the ions recombine
+                  far too slowly (the loss scales with n\^2), so the full column
+                  production would pile up next to the body. If rPhotochem is
+                  omitted or 0, defaults to the body/planet radius.
+
+rPhotochem (optional, read if typePhotochem is 'photochemical'):
+
+  Radius [m] of the photochemical equilibrium boundary (e.g. 3596000.0 for
+  200 km altitude at Mars). If omitted or 0, defaults to the body/planet radius.
 
 fieldBoundary (n is the radial direction from the body center). The conditions
 are applied on the one-cell-thick surface layer of the body; the interior

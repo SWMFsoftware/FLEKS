@@ -20,7 +20,7 @@ bool Domain::find_parameter_owner(const std::string &command,
   static const std::set<std::string> picCommands = {
     // Handled by Pic::read_param().
     "#ABSORB", "#ADAPTIVESOURCEPPC", "#AUTOSUBCYCLE", "#BFIELDBOXBOUNDARY",
-    "#BODY", "#BODYBOUNDARY", "#BSUBCYCLE", "#CMAXE", "#COMOVING",
+    "#BODY", "#BODYBOUNDARY", "#INNERBOUNDARY", "#BSUBCYCLE", "#CMAXE", "#COMOVING",
     "#CONSTANTPPV", "#CRUSTALFIELD", "#DIPOLE", "#DISCRETIZATION",
     "#DISCRETIZE", "#DIVB", "#DIVE", "#EFIELDSOLVER", "#ELECTRON",
     "#ELECTRONADVECTION", "#ELECTRONCOLLISION", "#ELECTRONCONDUCTION",
@@ -180,6 +180,13 @@ void Domain::init(double time, const int iDomain,
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
     pic->set_fluid_source(source.get());
     source->set_inner_radius_si(pic->get_body_radius_si());
+    if (pic->use_photochem_boundary()) {
+      amrex::Real rPhoto = pic->get_photochem_radius_si();
+      if (rPhoto <= 0.0) {
+        rPhoto = std::max(pic->get_body_radius_si(), fi->get_rPlanet_SI());
+      }
+      source->set_photochem_radius_si(rPhoto);
+    }
   }
 
   // Copy-constructed after read_param so that it carries fi's final layout.

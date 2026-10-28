@@ -97,8 +97,15 @@ public:
 
   void set_dt_si(amrex::Real dt) { dtSI = dt; }
 
-  /// Radius [m] of the inner body (#BODY): no neutral reacts inside it.
+  /// Radius [m] of the inner body (#BODY / #INNERBOUNDARY): no neutral reacts
+  /// inside it.
   virtual void set_inner_radius_si(amrex::Real r) { amrex::ignore_unused(r); }
+
+  /// Radius [m] of the photochemical equilibrium boundary (#INNERBOUNDARY
+  /// photochemical).
+  virtual void set_photochem_radius_si(amrex::Real r) {
+    amrex::ignore_unused(r);
+  }
 
   virtual void set_source(const FluidInterface& other) {
     if (!useFluidSource)

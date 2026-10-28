@@ -248,7 +248,7 @@ public:
   // plus the fraction of the dual cell outside the inner body. The profiles
   // are static, so the averages are computed once per grid.
   amrex::Real innerRadiusSI = 0.0; // radius of the inner body [m]
-  // #PHOTOCHEMICALBOUNDARY: below this radius [m] the ions are produced and
+  // #INNERBOUNDARY photochemical: below this radius [m] the ions are produced and
   // lost in local photochemical equilibrium, so the ionization there does not
   // feed the plasma (0: no such boundary).
   amrex::Real photochemRadiusSI = 0.0;
@@ -260,6 +260,12 @@ public:
 
   void set_inner_radius_si(amrex::Real r) override {
     innerRadiusSI = r;
+    neuAvg.clear();
+    neuAvgGrids.clear();
+  }
+
+  void set_photochem_radius_si(amrex::Real r) override {
+    photochemRadiusSI = r;
     neuAvg.clear();
     neuAvgGrids.clear();
   }
@@ -746,6 +752,8 @@ public:
       if (photochemRadiusSI < 0)
         amrex::Abort(printPrefix +
                      "Error: #PHOTOCHEMICALBOUNDARY radius must be >= 0.");
+      amrex::Print() << "  Warning: #PHOTOCHEMICALBOUNDARY is deprecated; "
+                     << "use #INNERBOUNDARY with the 'photochemical' keyword instead.\n";
       neuAvg.clear();
       neuAvgGrids.clear();
     } else if (command == "#CHEMISTRY") {

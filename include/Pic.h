@@ -502,10 +502,14 @@ private:
   bool hasAbsorbBC_ = false;
   bool hasInflowBC_ = false;
 
-  // Field condition on the surface of the inner body (#BODYBOUNDARY); the
-  // particle condition lives in Grid.
+  // Field condition on the surface of the inner body (#BODYBOUNDARY /
+  // #INNERBOUNDARY); the particle condition lives in Grid.
   BodyFieldBC::Type bodyFieldBC = BodyFieldBC::linetied;
   bool bodyBoundarySet_ = false;
+
+  // Photochemical equilibrium boundary (#INNERBOUNDARY photochemical) [m].
+  amrex::Real photochemRadiusSI_ = 0.0;
+  bool usePhotochemBoundary_ = false;
 
   bool is_body_linetied() const {
     return use_body() && bodyFieldBC == BodyFieldBC::linetied;
@@ -879,6 +883,13 @@ public:
   // Radius of the inner body [m], 0 without one.
   amrex::Real get_body_radius_si() const {
     return use_body() ? get_body_radius() * fi->get_No2SiL() : 0.0;
+  }
+
+  amrex::Real get_photochem_radius_si() const { return photochemRadiusSI_; }
+  bool use_photochem_boundary() const { return usePhotochemBoundary_; }
+  void set_photochem_boundary(bool use, amrex::Real r = 0.0) {
+    usePhotochemBoundary_ = use;
+    photochemRadiusSI_ = r;
   }
 
   void inject_particles_for_new_cells() {
