@@ -1482,7 +1482,6 @@ condition and ghost cells for a FLEKS region.
   <parameter name="nParticleX" type="integer" min="0" default="0"/>
   <parameter name="nParticleY" type="integer" min="0" default="0"/>
   <parameter name="nParticleZ" type="integer" min="0" default="0"/>
-  <parameter name="minWeightRatio" type="real" min="0" default="1.0e-3" required="F"/>
 
 #SOURCEPARTICLES
 1                  particles per cell in X 
@@ -1941,8 +1940,6 @@ Only rank zero reads the file and the coefficients are then broadcast.
 <command name="INNERBOUNDARY" alias="BODYBOUNDARY,BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2,INNERBOUNDARY_FLEKS0,INNERBOUNDARY_FLEKS1,INNERBOUNDARY_FLEKS2" multiple="T">
   <parameter name="particleBoundary" type="string" default="absorb"/>
   <parameter name="fieldBoundary" type="string" default="linetied"/>
-  <parameter name="typePhotochem" type="string" default="" required="F"/>
-  <parameter name="rPhotochem" type="real" default="0.0" if="$typePhotochem =~ /photochem/"/>
 
 #INNERBOUNDARY
 absorb            particleBoundary
