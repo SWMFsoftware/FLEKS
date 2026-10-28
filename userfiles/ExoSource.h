@@ -21,7 +21,6 @@ public:
     commands.push_back("#OPTICALDEPTH");
     commands.push_back("#RECOMBINATION");
     commands.push_back("#CHEMISTRY");
-    commands.push_back("#PHOTOCHEMICALBOUNDARY");
   }
 
   // ---- Species <-> nodeFluid slot mapping ----
@@ -747,15 +746,6 @@ public:
         param.read_var("tempExponent", recombTempExp[i]);
         param.read_var("refTemp", recombRefTemp[i]);
       }
-    } else if (command == "#PHOTOCHEMICALBOUNDARY") {
-      param.read_var("radius", photochemRadiusSI);
-      if (photochemRadiusSI < 0)
-        amrex::Abort(printPrefix +
-                     "Error: #PHOTOCHEMICALBOUNDARY radius must be >= 0.");
-      amrex::Print() << "  Warning: #PHOTOCHEMICALBOUNDARY is deprecated; "
-                     << "use #INNERBOUNDARY with the 'photochemical' keyword instead.\n";
-      neuAvg.clear();
-      neuAvgGrids.clear();
     } else if (command == "#CHEMISTRY") {
       useChemistry = true;
       int nRxns;
