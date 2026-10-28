@@ -28,12 +28,12 @@ bool Domain::find_parameter_owner(const std::string &command,
     "#FIELDBOXBOUNDARY", "#FIELDINTEGRATOR", "#FIELDSUBCYCLE", "#FIXEDUMAX",
     "#FORCEFREEIC", "#GEMIC", "#HALLTERM", "#HYBRIDUPWIND", "#HYPERRESISTIVITY",
     "#INFLOW", "#KINETICSOURCE", "#LAGGEDLIMITER", "#MAXCHARGEEXCHANGERATE",
-    "#MEMORY", "#MERGELIGHT", "#MINIMUMDENSITY", "#OHION",
+    "#MEMORY", "#MERGELIGHT", "#MINIMUMDENSITY", "#MINPARTICLESPERCELL", "#OHION",
     "#PARTICLEBOXBOUNDARY", "#PARTICLELEVRATIO", "#PARTICLES", "#PARTMODE",
     "#PIC", "#PRESPLITTING", "#RANDOMPARTICLESLOCATION",
     "#REGIONHYPERRESISTIVITY", "#REGIONRESISTIVITY", "#RESAMPLING",
     "#RESISTIVITY", "#SELECTPARTICLE", "#SMOOTHE", "#SMOOTHJ", "#SMOOTHMOMENTS",
-    "#SOURCEPARTICLES", "#SUPID", "#TESTCASE", "#UPWINDB", "#UPWINDE",
+    "#SOURCEPARTICLES", "#SOURCEWEIGHTFLOOR", "#SUPID", "#TESTCASE", "#UPWINDB", "#UPWINDE",
     "#VACUUM", "#WAVEBC", "#WAVEIC"
   };
   // clang-format on
@@ -179,7 +179,13 @@ void Domain::init(double time, const int iDomain,
   } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
     pic->set_fluid_source(source.get());
+    source->set_inner_radius_si(pic->get_body_radius_si());
   }
+
+  // Copy-constructed after read_param so that it carries fi's final layout.
+  if (source && !initFromSWMF)
+    plasmaState = std::make_unique<FluidInterface>(*grid, *fi, gridID,
+                                                   "picPlasmaState", PICFluid);
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -241,7 +247,13 @@ void Domain::update() {
   //   unchanged between couplings, so skip here.
   // - OH-PT: not applicable; charge_exchange() handles source terms.
   if (source && !initFromSWMF) {
-    source->set_source(*fi);
+    // The rates that depend on the plasma (recombination, ion-neutral
+    // chemistry, electron impact, charge exchange) and the loss frequencies
+    // must see the plasma the particles carry now, not the #UNIFORMSTATE.
+    pic->fill_plasma_state(*plasmaState);
+    source->set_dt_si(tc->get_dt_si());
+    source->set_source(*plasmaState);
+    pic->mask_body_source(*source);
     source->convert_moment_to_velocity(true, false);
     source->fill_boundary();
     source->fill_loss_boundary();
@@ -361,6 +373,9 @@ void Domain::load_balance() {
   if (source)
     source->post_regrid();
 
+  if (plasmaState)
+    plasmaState->post_regrid();
+
   if (stateOH)
     stateOH->post_regrid();
 
@@ -436,6 +451,10 @@ void Domain::regrid() {
 
   if (source) {
     source->post_regrid();
+  }
+
+  if (plasmaState) {
+    plasmaState->post_regrid();
   }
 
   if (stateOH) {
@@ -544,7 +563,9 @@ void Domain::set_state_var(double *data, int *index,
     // Pic::charge_exchange() using OH-PT charge exchange physics, so
     // set_source must not be called here.
     if (source && !stateOH) {
+      source->set_dt_si(tc->get_dt_si());
       source->set_source(*fi);
+      pic->mask_body_source(*source);
       source->convert_moment_to_velocity(true, false);
       source->fill_boundary();
       source->fill_loss_boundary();
@@ -636,6 +657,8 @@ void Domain::read_restart() {
 
   if (source)
     source->post_regrid();
+  if (plasmaState)
+    plasmaState->post_regrid();
   if (stateOH)
     stateOH->post_regrid();
   if (sourcePT2OH)
@@ -1313,6 +1336,7 @@ void Domain::read_param() {
 
   if (pic) {
     pic->set_report_options(dnReportLB, doCompact);
+    pic->set_standalone(isStandalone);
     pic->post_process_param();
     // Autofill and validate periodic boundaries using gm.
     pic->apply_periodicity_autofill(grid->Geom(0));

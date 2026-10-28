@@ -1,0 +1,125 @@
+#DESCRIPTION
+Charge exchange H+ + H -> H + H+ (CHARGEEXCHANGE) with a drifting H+ beam.
+The ion loses its charge with the frequency n_N*sigma*|u| and a new ion appears
+at the neutral velocity. Analytic: the H+ mass is constant, the bulk speed is
+u = u0/(1 + n_N*sigma*u0*t), no electron is created.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+100.0                   xMin  [code units: 1 = lNormSI = 100 km; x ~ 1e7 m]
+106.4                   xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]
+1.0e5                   uNormSI   [m/s]
+
+#PLANETRADIUS
+1.0                     radius [m]  the exosphere is evaluated far outside it
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature [eV]
+1.0                     electronGamma
+5.0                     electronDensity0
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+2                       nSpecies
+0.0625                  mass        Species 0: fluid electron slot
+-1.0                    charge
+1.0                     mass        Species 1: H+
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: electrons (ux = 0 on purpose)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [/cc]   Species 1: H+ drifting along B
+100.0                   ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1000.0                  T [K]
+5e-09                   bx [T]      along the drift: no motional E
+0                       by [T]
+0                       bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#EXOSPHERE
+Exponential             typeProfile
+1                       nComponent
+1.0e15                  n0 [m^-3]   uniform: H0 >> domain size
+1.0e15                  H0 [m]
+1000.0                  T0 [K]     temperature of the new ions
+0.0                     k0
+
+#CHARGEEXCHANGE
+1                       nIonSpecies
+1.5e-17                 sigmaCX [cm^2]  n_N*sigma*u0 = 0.15 /s
+
+#SOURCE
+T                       useSource
+
+#TIMESTEPPING
+T                       useFixedDt
+0.05                     dt [s]
+
+#PARTICLES
+500                     npcelx
+1                       npcely
+1                       npcelz
+
+#SOURCEPARTICLES
+50                       npcelx
+1                       npcely
+1                       npcelz
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+-1                      MaxIter
+10.0                     TimeMax [s]

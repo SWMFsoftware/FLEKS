@@ -877,7 +877,8 @@ void Pic::fill_source_particles() {
   if (source) {
     for (int i : kineticSpecies_) {
       parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
-                                     doSelectRegion, adaptiveSourcePPC);
+                                     doSelectRegion, adaptiveSourcePPC,
+                                     sourceMinWeightRatio);
     }
   }
 }
@@ -905,6 +906,136 @@ void Pic::accumulate_body_net_charge() {
         grid.body_net_charge(iLev).FillBoundary(Geom(iLev).periodicity());
       }
     }
+  }
+}
+
+//==========================================================
+void Pic::fill_plasma_state(FluidInterface& dst) {
+  timing_func("Pic::fill_plasma_state");
+
+  if (is_grid_empty() || !usePIC)
+    return;
+
+  const int nS = dst.get_nS();
+  const int iE = useHybridPIC ? iElectron_ : -1;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab& stateMF = dst.get_node_fluid(iLev);
+    AMREX_ALWAYS_ASSERT(stateMF.boxArray() == nodePlasma[0][iLev].boxArray() &&
+                        stateMF.DistributionMap() ==
+                            nodePlasma[0][iLev].DistributionMap());
+
+    // Hybrid fluid electron: n_e = sum(Z_i n_i) from the ion moments.
+    MultiFab nodeNe, nodePe;
+    if (iE >= 0) {
+      nodeNe.define(nodePlasma[nSpecies][iLev].boxArray(),
+                    nodePlasma[nSpecies][iLev].DistributionMap(), 1, 0);
+      nodePe.define(nodeNe.boxArray(), nodeNe.DistributionMap(), 1, 0);
+      nodeNe.setVal(0.0);
+      for (int s : kineticSpecies_) {
+        const Real zom = fi->get_QoQi(s) / fi->get_MoMi(s);
+        MultiFab::Saxpy(nodeNe, zom, nodePlasma[s][iLev], iRho_, 0, 1, 0);
+      }
+      compute_node_electron_pressure(iLev, nodeNe, nodePe);
+    }
+
+    for (MFIter mfi(stateMF); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& state = stateMF[mfi].array();
+
+      for (int s = 0; s < nS && s < nSpecies; s++) {
+        const int iRho = dst.get_iRho(s), iUx = dst.get_iUx(s),
+                  iUy = dst.get_iUy(s), iUz = dst.get_iUz(s),
+                  iP = dst.get_iP(s);
+
+        if (s == iE) {
+          const Real massE = fi->get_MoMi(s);
+          const Array4<Real const>& ne = nodeNe[mfi].const_array();
+          const Array4<Real const>& pe = nodePe[mfi].const_array();
+          // Charge-weighted ion velocity, the electron velocity without the
+          // Hall current. Accumulated below from the per-species momenta.
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            state(i, j, k, iRho) = massE * ne(i, j, k);
+            state(i, j, k, iUx) = 0.0;
+            state(i, j, k, iUy) = 0.0;
+            state(i, j, k, iUz) = 0.0;
+            state(i, j, k, iP) = (ne(i, j, k) > 0.0) ? pe(i, j, k) : 0.0;
+          });
+          for (int si : kineticSpecies_) {
+            const Real zom = fi->get_QoQi(si) / fi->get_MoMi(si);
+            const Array4<Real const>& mom = nodePlasma[si][iLev][mfi].array();
+            ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+              const Real n = ne(i, j, k);
+              if (n > 0.0) {
+                state(i, j, k, iUx) += zom * mom(i, j, k, iMx_) / n;
+                state(i, j, k, iUy) += zom * mom(i, j, k, iMy_) / n;
+                state(i, j, k, iUz) += zom * mom(i, j, k, iMz_) / n;
+              }
+            });
+          }
+          continue;
+        }
+
+        const Array4<Real const>& mom = nodePlasma[s][iLev][mfi].array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real rho = mom(i, j, k, iRho_);
+          if (rho > 0.0) {
+            const Real invRho = 1.0 / rho;
+            state(i, j, k, iRho) = rho;
+            state(i, j, k, iUx) = mom(i, j, k, iMx_) * invRho;
+            state(i, j, k, iUy) = mom(i, j, k, iMy_) * invRho;
+            state(i, j, k, iUz) = mom(i, j, k, iMz_) * invRho;
+            // nodePlasma holds the thermal pressure tensor (see
+            // convert_to_fluid_moments); the scalar pressure is its trace/3.
+            // With few particles at a node, the second moment minus rho*u^2
+            // can come out negative: clamp it.
+            state(i, j, k, iP) =
+                amrex::max(0.0, (mom(i, j, k, iPxx_) + mom(i, j, k, iPyy_) +
+                                 mom(i, j, k, iPzz_)) /
+                                    3.0);
+          } else {
+            state(i, j, k, iRho) = 0.0;
+            state(i, j, k, iUx) = 0.0;
+            state(i, j, k, iUy) = 0.0;
+            state(i, j, k, iUz) = 0.0;
+            state(i, j, k, iP) = 0.0;
+          }
+        });
+      }
+    }
+
+    stateMF.FillBoundary(Geom(iLev).periodicity());
+
+    // The moments of the body nodes are diluted by the empty body cells (the
+    // other surface nodes were rescaled in sum_moments()): rescale them as
+    // well, so that the state is the density of the plasma next to the
+    // surface. Only the densities and the pressures: the velocities are not
+    // diluted.
+    if (use_body()) {
+      for (int s = 0; s < dst.get_nS() && s < nSpecies; s++) {
+        for (const int iVar : { dst.get_iRho(s), dst.get_iP(s) }) {
+          MultiFab alias(stateMF, amrex::make_alias, iVar, 1);
+          scale_by_body_outside_fraction(alias, cell_status(iLev),
+                                         node_status(iLev), Geom(iLev).Domain(),
+                                         nDim, true);
+        }
+      }
+    }
+  }
+}
+
+//==========================================================
+void Pic::mask_body_source(SourceInterface& src) {
+  if (!use_body() || is_grid_empty())
+    return;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    // The production of a node is the average over its dual cell outside the
+    // body (UserSource), but only the plasma cells around the node receive
+    // particles: scale it up by the inverse outside fraction. The loss
+    // frequencies are intensive and stay as they are.
+    scale_by_body_outside_fraction(src.get_node_fluid(iLev), cell_status(iLev),
+                                   node_status(iLev), Geom(iLev).Domain(), nDim,
+                                   false);
   }
 }
 
@@ -1689,7 +1820,7 @@ void Pic::finish_particle_push() {
   // pre-injection.
   if (usePIC) {
     const Real dt = tc->get_dt();
-    for (int i = 0; i < nSpecies; ++i) {
+    for (int i : kineticSpecies_) {
       parts[i]->inject_flux_at_inflow_faces(dt);
     }
   }

@@ -1,0 +1,120 @@
+#DESCRIPTION
+Dissociative recombination O2+ + e -> O + O in a hybrid plasma (n_e = n_i).
+k(Te) = 0.2 cm^3/s at the closure temperature Te = 0.8617 eV = 1e4 K, k*n0*T = 2.
+Analytic: n(t) = n0/(1 + k*n0*t). n_e and Te must come from the hybrid
+electron closure, not from UNIFORMSTATE.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+100.0                   xMin  [code units: 1 = lNormSI = 100 km; x ~ 1e7 m]
+106.4                   xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]
+1.0e5                   uNormSI   [m/s]
+
+#PLANETRADIUS
+1.0                     radius [m]  the exosphere is evaluated far outside it
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.8617                     electronTemperature [eV]
+1.0                     electronGamma
+5.0                     electronDensity0
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+2                       nSpecies
+0.0625                  mass        Species 0: fluid electron slot
+-1.0                    charge
+32.0                    mass        Species 1: O2+
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: electrons
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [/cc]   Species 1: O2+
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5e-09                   bx [T]      along the drift: no motional E
+0                       by [T]
+0                       bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#RECOMBINATION
+1                       nReactions
+1                       ionSpecies    O2+
+0.4                     rateCoef      [cm^3/s] k = 0.4*(2500/Te)^0.5 = 0.2 at Te = 1e4 K
+0.5                     tempExponent
+2500.0                  refTemp       [K]
+
+#SOURCE
+T                       useSource
+
+#TIMESTEPPING
+T                       useFixedDt
+0.05                     dt [s]
+
+#PARTICLES
+500                     npcelx
+1                       npcely
+1                       npcelz
+
+#SOURCEPARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax [s]

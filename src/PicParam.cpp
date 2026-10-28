@@ -206,6 +206,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("isParticleLocationRandom", pInfo.isParticleLocationRandom);
   } else if (command == "#CONSTANTPPV") {
     param.read_var("isPPVconstant", pInfo.isPPVconstant);
+  } else if (command == "#MINPARTICLESPERCELL") {
+    param.read_var("minPPCPerDim", pInfo.minPPCPerDim);
+    if (pInfo.minPPCPerDim < 1)
+      Abort("Invalid #MINPARTICLESPERCELL: minPPCPerDim must be >= 1.");
   } else if (command == "#PRESPLITTING") {
     param.read_var("doPreSplitting", pInfo.doPreSplitting);
   } else if (command == "#DIVE") {
@@ -231,6 +235,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("npcely", nSourcePPC[iy_]);
     if (nDim == 3)
       param.read_var("npcelz", nSourcePPC[iz_]);
+  } else if (command == "#SOURCEWEIGHTFLOOR") {
+    param.read_var("minWeightRatio", sourceMinWeightRatio);
+    if (sourceMinWeightRatio < 0)
+      Abort("Invalid #SOURCEWEIGHTFLOOR: minWeightRatio must be >= 0.");
   } else if (command == "#KINETICSOURCE") {
     param.read_var("kineticSource", kineticSource);
   } else if (command == "#ELECTRON") {
@@ -873,14 +881,16 @@ void Pic::post_process_param() {
                      : FieldSolverMode::GMRES;
 
   // Classify species: in semi-implicit full PIC, negative charge -> implicit
-  // electron. In explicit full PIC and hybrid PIC, all particle species are
-  // kinetic.
+  // In hybrid PIC, only the ions carry particles. Any remaining
+  // negative-charge species is only a fluid-electron slot (e.g. the species 0
+  // that the #CHEMISTRY / #RECOMBINATION source terms require): it never gets
+  // particles, is never pushed and does not enter the ion charge density.
+  // The charge comes from fi because the particle containers do not exist yet
+  // when the parameters are post-processed.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
-    // Guard: parts may not be fully populated yet.
-    if (!useHybridPIC && !useExplicitPIC && i < (int)parts.size() && parts[i] &&
-        parts[i]->get_charge() < 0) {
+    if (useHybridPIC && fi->get_species_charge(i) < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
     } else {

@@ -119,6 +119,11 @@ public:
 
   std::unique_ptr<SourceInterface> source;
 
+  // Stand-alone runs only: the plasma state of the PIC particles, refreshed
+  // every step, from which the source terms take their plasma-dependent rates
+  // (fi is the frozen #UNIFORMSTATE there and must not be used).
+  std::unique_ptr<FluidInterface> plasmaState;
+
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.
   std::unique_ptr<OHInterface> stateOH;

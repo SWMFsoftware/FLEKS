@@ -1,0 +1,121 @@
+#DESCRIPTION
+Dissociative recombination O2+ + e -> O + O in a full (semi-implicit) PIC plasma
+with kinetic electrons, n_e = n_i = 5 /cc. k(Te) = 0.4*(2500/Te)^0.5 = 0.2 cm^3/s
+at Te = 1e4 K, k*n0*T = 2. Analytic: n(t) = n0/(1 + k*n0*t) for both the ions and
+the electrons. n_e and Te must be taken from the particles, not UNIFORMSTATE.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-9.0e3                  xMin   [code units: 1 unit = lNormSI = 1000 m]
+ 9.0e3                  xMax
+-1.0e-3                 yMin   [one cell: the invariant direction]
+ 1.0e-3                 yMax
+-1.0e-3                 zMin
+ 1.0e-3                 zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#PLASMA
+2                       nSpecies
+0.01                    mass        Species 0: electron
+-1.0                    charge
+32.0                    mass        Species 1: O2+
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: electron (n_e = n_O2)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [/cc]   Species 1: O2+
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0e-9                  bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#SOURCE
+T                       useSource
+
+#PLANETRADIUS
+3.0e6                   radius        Mars-like planet radius
+
+#RECOMBINATION
+1                       nReactions
+1                       ionSpecies    O2+ (species 1)
+0.4                     rateCoef      [cm^3/s]
+0.5                     tempExponent
+2500.0                  refTemp       [K]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.05                    dt
+
+#NORMALIZATION
+1000.0                  lNormSI
+1.0e6                   uNormSI
+
+#MONITOR
+1                       dnReport
+
+#PARTICLES
+200                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+T                       solvePartInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterTheta
+
+#UPWINDB
+T                       doSmoothB
+1                       theta
+
+#SMOOTHJ
+T
+1
+0.5
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#DIVE
+T
+1
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax
