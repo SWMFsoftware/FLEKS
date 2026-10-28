@@ -389,8 +389,8 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
 # user source (-u=Exo); with the default empty source they compile and run but
 # no ionization source term is applied, so the physics checks fail.
 EXO_SOURCE_TESTS = {
-    "chargeexchange", "photoionization", "electronimpact",
-    "recombination", "chemistry", "reactions", "photoproduction",
+    "reactions",
+    "exosphere",
 }
 
 # Tests that require AMR (nLevMax >= 2).
@@ -400,14 +400,13 @@ AMR_TESTS = {
 }
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
-AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "photoproduction"}
+AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "exosphere"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
-AMREX2D_TESTS = {"photoionization", "body", "body_rarefaction"}
+AMREX2D_TESTS = {"body", "body_rarefaction"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
-    "chemistry",
     "reactions",
 }
 
@@ -1325,7 +1324,7 @@ def main():
 
         HEAVY_TESTS = {
             "shock", "whistler", "reconnection_amr", "reconnection",
-            "langmuir", "freestream", "body", "opticaldepth"
+            "langmuir", "freestream", "body", "exosphere"
         }
 
         indexed_tests = list(enumerate(tests))
