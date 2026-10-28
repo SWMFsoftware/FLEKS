@@ -2626,7 +2626,7 @@ This command defines the kinetic boundary conditions for all particle species.
   from the fluid / MHD state.
 * `outflow` -- particles crossing the face are deleted (vacuum sink); there
   is no tally and no ghost-cell population.
-* `open` (legacy alias `outflowthermal`) -- kinetic open boundary with a
+* `open` -- kinetic open boundary with a
   thermal re-entry flux: every face cell receives, per species, the inward
   half-flux n vtherm g(vd) of the drifting Maxwellian of that species measured
   one node layer inside the face (a zero-gradient open boundary). The normal
