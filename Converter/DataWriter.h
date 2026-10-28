@@ -14,27 +14,48 @@
 #include <iomanip>
 #include <limits>
 #include <set>
+#include <type_traits>
 #include <utility>
 
 #include "DataContainer.h"
 #include "Parallel.h"
 #include "ZLibCompressor.h"
 
-// Floating-point std::to_chars needs GCC 11 (libstdc++) or LLVM 14 (libc++).
-#if defined(__cpp_lib_to_chars) ||                                             \
-    (defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE >= 11) ||                   \
-    (defined(_LIBCPP_VERSION) && _LIBCPP_VERSION >= 14000)
-#define CONVERTER_HAS_FLOAT_TO_CHARS 1
-#endif
+// Whether std::to_chars(first, last, T, chars_format, precision) exists.
+// Library version checks are not enough: e.g. libstdc++ 11 hides the
+// floating-point overloads from compilers such as Intel icpc.
+template <typename T, typename = void>
+struct has_float_to_chars : std::false_type {};
+template <typename T>
+struct has_float_to_chars<
+    T, std::void_t<decltype(std::to_chars(
+           std::declval<char*>(), std::declval<char*>(), std::declval<T>(),
+           std::chars_format::general, 0))>> : std::true_type {};
+
+template <typename T> char* format_float_impl(char* p, T v, int digits) {
+  if constexpr (has_float_to_chars<T>::value)
+    return std::to_chars(p, p + 32, v, std::chars_format::general, digits).ptr;
+  else
+    return p + std::snprintf(p, 32, "%.*g", digits, static_cast<double>(v));
+}
 
 // Write v at p as printf("%.*g", digits, v) does, and return the end of the
 // text. At most 32 characters are written.
 inline char* format_float(char* p, float v, int digits) {
-#ifdef CONVERTER_HAS_FLOAT_TO_CHARS
-  return std::to_chars(p, p + 32, v, std::chars_format::general, digits).ptr;
-#else
-  return p + std::snprintf(p, 32, "%.*g", digits, static_cast<double>(v));
-#endif
+  return format_float_impl(p, v, digits);
+}
+
+// Write n bytes in pieces. A single write of 2 GiB or more fails on macOS
+// (write(2) rejects sizes above INT_MAX), which large meshes reach.
+inline void write_bytes(std::ostream& os, const void* data, uint64_t n) {
+  constexpr uint64_t maxChunk = uint64_t(1) << 30;
+  const char* p = static_cast<const char*>(data);
+  while (n > 0 && os) {
+    const uint64_t chunk = std::min(n, maxChunk);
+    os.write(p, static_cast<std::streamsize>(chunk));
+    p += chunk;
+    n -= chunk;
+  }
 }
 
 // Prints the wall-clock time of consecutive phases of a task, e.g.
@@ -681,21 +702,16 @@ public:
 
     if (useCompression) {
       for (int i = 0; i < nVar; ++i) {
-        vtu.write(reinterpret_cast<const char*>(varBuffers[i].data()),
-                  varBuffers[i].size());
+        write_bytes(vtu, varBuffers[i].data(), varBuffers[i].size());
       }
-      vtu.write(reinterpret_cast<const char*>(pointsBuf.data()),
-                pointsBuf.size());
-      vtu.write(reinterpret_cast<const char*>(connBuf.data()), connBuf.size());
-      vtu.write(reinterpret_cast<const char*>(offsetsBuf.data()),
-                offsetsBuf.size());
-      vtu.write(reinterpret_cast<const char*>(typesBuf.data()),
-                typesBuf.size());
+      write_bytes(vtu, pointsBuf.data(), pointsBuf.size());
+      write_bytes(vtu, connBuf.data(), connBuf.size());
+      write_bytes(vtu, offsetsBuf.data(), offsetsBuf.size());
+      write_bytes(vtu, typesBuf.data(), typesBuf.size());
     } else {
       auto write_block = [&](const void* data, uint64_t sizeInBytes) {
-        vtu.write(reinterpret_cast<const char*>(&sizeInBytes),
-                  sizeof(uint64_t));
-        vtu.write(reinterpret_cast<const char*>(data), sizeInBytes);
+        write_bytes(vtu, &sizeInBytes, sizeof(uint64_t));
+        write_bytes(vtu, data, sizeInBytes);
       };
 
       // Write PointData arrays

@@ -1,0 +1,146 @@
+#DESCRIPTION
+2D Cylindrical Expansion-into-Vacuum (Rarefaction) Benchmark: Config 2 (Magnetized, B0 = B0 x_hat).
+A uniform resting electron-ion plasma (mi/me = 25, Te = Ti) in a periodic box [-6, 6]^2
+surrounds an absorbing cylinder of radius R_B = 1.5 at the origin with guide field Bx.
+Magnetic parameters: B0 = 0.02 code units, v_A = 0.02 c, Omega_ci = 0.02, Omega_ce = 0.5.
+Larmor radii: rho_ce = 1 dx (0.1 d_i, magnetized), rho_ci = 5 dx (unmagnetized/large gyroradius).
+Tests polar cap (field-aligned) vs equatorial (cross-field) charge separation.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-6.0                    xMin   [code units; 12 d_i]
+ 6.0                    xMax
+-6.0                    yMin
+ 6.0                    yMax
+-0.05                   zMin   one cell: invariant z direction
+ 0.05                   zMax
+
+#NCELL
+120                     nCellX  dx = 0.1 d_i
+120                     nCellY  dy = 0.1 d_i
+1                       nCellZ
+
+#MAXBLOCKSIZE
+20                      maxBlockSizeX
+20                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI [m]    c_code = 1, tNorm = 1 s, d_i ~ 1 code unit
+1.0e5                   uNormSI [m/s]
+
+#BODY
+sphere                  type
+1.5                     radius [code units; 15 dx]
+0.0                     center x
+0.0                     center y
+0.0                     center z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+linetied                fieldBoundary
+
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#EFIELDSOLVER
+1.0e-8                  tol
+30                      nIter
+
+#DISCRETIZATION
+0.5                     theta
+0.0                     coefDiff
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+
+#SMOOTHJ
+T                       doSmoothJ
+1                       nSmoothJ
+0.5                     coefSmoothJ
+
+#PLASMA
+2                       nS
+1.0                     mass           Species 0: ions
+1.0                     charge
+0.04                    mass           Species 1: electrons (mi/me = 25)
+-1.0                    charge
+
+#UNIFORMSTATE
+5.185219                rho [/cc]      Species 0: ions (omega_pi = 1, d_i = 1)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+121.1475                T [K]          vth_i = 0.01 c
+5.185219                rho [/cc]      Species 1: electrons (n_e = n_i)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+121.1475                T [K]          vth_e = 0.05 c, Te = Ti
+2.087937e-10            bx [T]         B0 = 0.02 code units (v_A = 0.02 c, Omega_ci = 0.02)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#FIELDBOXBOUNDARY
+periodic                x-
+periodic                x+
+periodic                y-
+periodic                y+
+periodic                z-
+periodic                z+
+
+#PARTICLEBOXBOUNDARY
+periodic                x-
+periodic                x+
+periodic                y-
+periodic                y+
+periodic                z-
+periodic                z+
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt             c*dt/dx = 0.2
+
+#PARTICLES
+4                       npcelx         16 particles per cell per species
+4                       npcely
+1                       npcelz
+
+#MONITOR
+10                      dnReport
+10                      dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+-1                      dn
+1.0                     dt
+1                       dx
+body bodySurf rhoS0 rhoS1 Ex Ey Ez Bx By Bz divB   plotVar
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax        100 steps

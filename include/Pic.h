@@ -1138,6 +1138,9 @@ public:
   // Dispatch the electric-field condition selected by #BODYBOUNDARY.
   void apply_body_E_bc(amrex::MultiFab &mf, const int iLev);
 
+  void reset_body_net_charge_inc();
+  void accumulate_body_net_charge();
+
   // Inject wave source into boundary ghost cells (iField: 0 = B, 1 = E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                         const int iStart, const int nComp, const int iLev,

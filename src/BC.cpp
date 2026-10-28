@@ -20,6 +20,7 @@ const std::vector<bc_detail::Entry>& ParticleBC::table() {
     { "vacume", ParticleBC::vacuum, Legacy::silent },
     { "reflect", ParticleBC::reflect, Legacy::none },
     { "absorb", ParticleBC::absorb, Legacy::none },
+    { "ambipolar", ParticleBC::ambipolar, Legacy::none },
     { "inflow", ParticleBC::inflow, Legacy::none },
     // Field-domain spellings the old shared enum silently accepted.
     { "conducting", ParticleBC::reflect, Legacy::deprecated },

@@ -174,10 +174,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
     body_particle_bc() = ParticleBC::parse(particle);
     if (body_particle_bc() != ParticleBC::absorb &&
-        body_particle_bc() != ParticleBC::reflect)
+        body_particle_bc() != ParticleBC::reflect &&
+        body_particle_bc() != ParticleBC::ambipolar)
       Abort("Error: #BODYBOUNDARY particleBoundary '" + particle +
             "' is not supported for the inner body. Accepted values: "
-            "absorb, reflect.");
+            "absorb, reflect, ambipolar.");
 
     bodyFieldBC = BodyFieldBC::parse(field);
     bodyBoundarySet_ = true;
@@ -764,6 +765,24 @@ void Pic::post_process_param() {
   if (use_body()) {
     if (get_body_radius() <= 0)
       Abort("Invalid #BODY: radius must be positive.");
+
+    if (body_particle_bc() == ParticleBC::ambipolar) {
+      if (useHybridPIC)
+        Abort("Invalid #BODYBOUNDARY: particleBoundary 'ambipolar' requires "
+              "kinetic electrons and is not supported with #HYBRIDPIC.");
+      bool hasNegativeSpecies = false;
+      if (fi) {
+        for (int i = 0; i < nSpecies; ++i) {
+          if (fi->get_species_charge(i) < 0.0) {
+            hasNegativeSpecies = true;
+            break;
+          }
+        }
+      }
+      if (!hasNegativeSpecies)
+        Abort("Invalid #BODYBOUNDARY: particleBoundary 'ambipolar' requires at "
+              "least one kinetic species with negative charge (electrons).");
+    }
 
     if (n_lev_max() > 1 && has_refinement_regions())
       Print() << "  Warning: #BODY has not been verified with AMR "

@@ -654,6 +654,11 @@ void Pic::save_restart_data() {
                                                        "_nodePlasmaPrev" +
                                                        lev_string(iLev));
     }
+    if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar &&
+        grid.has_body_net_charge(iLev)) {
+      VisMF::Write(grid.body_net_charge(iLev),
+                   restartDir + gridName + "_bodyNetCharge" + lev_string(iLev));
+    }
   }
 
   if (useHybridPIC && ParallelDescriptor::IOProcessor()) {
@@ -747,6 +752,26 @@ void Pic::read_restart() {
   }
   particlesInitialized = true;
   inject_particles_for_boundary_cells();
+
+  if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
+    bool haveCharge = true;
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const std::string name =
+          restartDir + gridName + "_bodyNetCharge" + lev_string(iLev);
+      if (!FileExists(name) && !FileExists(name + "_H"))
+        haveCharge = false;
+    }
+    if (haveCharge) {
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        if (grid.has_body_net_charge(iLev)) {
+          VisMF::Read(grid.body_net_charge(iLev), restartDir + gridName +
+                                                      "_bodyNetCharge" +
+                                                      lev_string(iLev));
+          grid.body_net_charge(iLev).FillBoundary(Geom(iLev).periodicity());
+        }
+      }
+    }
+  }
 
   sum_moments();
   // div(E)-correction fields are full-PIC only.
