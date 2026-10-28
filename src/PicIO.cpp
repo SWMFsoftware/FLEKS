@@ -888,6 +888,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   // format of their SWMF reference solutions.
   const bool standaloneLog = isStandalone;
   const bool logMass = standaloneLog && log_species_mass();
+  const bool logFaces = standaloneLog && log_face_budget();
   const bool logCount = standaloneLog && log_particle_count();
   const bool logBodyQ = standaloneLog && use_body();
 
@@ -924,6 +925,17 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         std::string sName = "Mpart" + std::to_string(i);
         picLogStream << "\t" << std::setw(wCol) << sName;
       }
+    if (logFaces) {
+      const char* fName[6] = { "xm", "xp", "ym", "yp", "zm", "zp" };
+      for (int i = 0; i < nSpecies; ++i)
+        for (int f = 0; f < 2 * nDim; ++f)
+          picLogStream << "\t" << std::setw(wCol)
+                       << std::string("mIn_") + fName[f] + "_S" +
+                              std::to_string(i)
+                       << "\t" << std::setw(wCol)
+                       << std::string("mOut_") + fName[f] + "_S" +
+                              std::to_string(i);
+    }
     // Number of macroparticles of all species and levels (memory, resampling).
     if (logCount)
       picLogStream << "\t" << std::setw(wCol) << "nParticles";
@@ -968,6 +980,19 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           ParallelDescriptor::IOProcessorNumber());
     }
 
+    // Mass injected through / removed across each face, per species.
+    Vector<Real> faceBudget(12 * nSpecies, 0.0);
+    if (logFaces) {
+      for (int i = 0; i < nSpecies; ++i)
+        for (int f = 0; f < 6; ++f) {
+          faceBudget[i * 12 + 2 * f] = parts[i]->get_face_in_mass(f);
+          faceBudget[i * 12 + 2 * f + 1] = parts[i]->get_face_out_mass(f);
+        }
+      ParallelDescriptor::ReduceRealSum(
+          faceBudget.data(), faceBudget.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
     // total_moments() reduces to the IO processor itself.
     Vector<Real> speciesMass(nSpecies, 0.0);
     if (logMass)
@@ -1000,6 +1025,12 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       if (logMass)
         for (int i = 0; i < nSpecies; ++i)
           picLogStream << "\t" << std::setw(wCol) << speciesMass[i];
+      if (logFaces)
+        for (int i = 0; i < nSpecies; ++i)
+          for (int f = 0; f < 2 * nDim; ++f)
+            picLogStream << "\t" << std::setw(wCol)
+                         << faceBudget[i * 12 + 2 * f] << "\t"
+                         << std::setw(wCol) << faceBudget[i * 12 + 2 * f + 1];
       if (logCount)
         picLogStream << "\t" << std::setw(wCol)
                      << static_cast<Real>(nParticles);

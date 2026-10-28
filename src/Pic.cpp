@@ -1822,6 +1822,10 @@ void Pic::finish_particle_push() {
     const Real dt = tc->get_dt();
     for (int i : kineticSpecies_) {
       parts[i]->inject_flux_at_inflow_faces(dt);
+      if (!nodePlasma.empty() && i < static_cast<int>(nodePlasma.size()) &&
+          !nodePlasma[i].empty()) {
+        parts[i]->inject_flux_at_open_faces(dt, nodePlasma[i][0]);
+      }
     }
   }
 }

@@ -418,28 +418,6 @@ private:
   // (#SOURCEPARTICLES); 0 switches it off. Default is 1.0e-3.
   amrex::Real sourceMinWeightRatio = 1.0e-3;
 
-  // Is any particle box face of any species of the given type?
-  bool has_particle_face(ParticleBC::Type type) const {
-    for (int i = 0; i < nSpecies; ++i)
-      for (int d = 0; d < nDim; ++d)
-        if (pInfo.pBCs[i].lo[d] == type || pInfo.pBCs[i].hi[d] == type)
-          return true;
-    return false;
-  }
-
-  // Standalone log diagnostics, each written only when the commands it
-  // diagnoses are used:
-  // - Mpart<i>: particles are created or removed (#SOURCE, #BODY, inflow
-  // faces);
-  bool log_species_mass() const {
-    return source != nullptr || use_body() ||
-           has_particle_face(ParticleBC::inflow);
-  }
-  // - nParticles: the macroparticle count is managed (#CONSTANTPPV,
-  //   #PRESPLITTING, source particles);
-  bool log_particle_count() const {
-    return pInfo.isPPVconstant || pInfo.doPreSplitting || source != nullptr;
-  }
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;
@@ -541,6 +519,31 @@ private:
     hasConductingBC_ = bcField.has(FieldBC::conducting);
     hasAbsorbBC_ = bcField.has(FieldBC::absorb);
     hasInflowBC_ = bcField.has(FieldBC::inflow) || bcField.has(FieldBC::fixed);
+  }
+
+  // Is any particle box face of any species of the given type?
+  bool has_particle_face(ParticleBC::Type type) const {
+    for (int i = 0; i < nSpecies; ++i)
+      for (int d = 0; d < nDim; ++d)
+        if (pInfo.pBCs[i].lo[d] == type || pInfo.pBCs[i].hi[d] == type)
+          return true;
+    return false;
+  }
+
+  // Standalone log diagnostics:
+  // - Mpart<i>: particles are created or removed (#SOURCE, #BODY, inflow or
+  //   open faces);
+  bool log_species_mass() const {
+    return source != nullptr || use_body() ||
+           has_particle_face(ParticleBC::inflow) ||
+           has_particle_face(ParticleBC::open);
+  }
+  // - mIn_/mOut_ per face: the particle budget of open faces.
+  bool log_face_budget() const { return has_particle_face(ParticleBC::open); }
+  // - nParticles: the macroparticle count is managed (#CONSTANTPPV,
+  //   #PRESPLITTING, source particles);
+  bool log_particle_count() const {
+    return pInfo.isPPVconstant || pInfo.doPreSplitting || source != nullptr;
   }
 
   // De-duplicated boundary-condition warnings
