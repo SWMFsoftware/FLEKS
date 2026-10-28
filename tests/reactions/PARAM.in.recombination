@@ -1,5 +1,8 @@
 #DESCRIPTION
-Recombination Loss Test: O2+ + e- -> O + O with uniform plasma
+Dissociative recombination O2+ + e -> O + O in a full (semi-implicit) PIC plasma
+with kinetic electrons, n_e = n_i = 5 /cc. k(Te) = 0.4*(2500/Te)^0.5 = 0.2 cm^3/s
+at Te = 1e4 K, k*n0*T = 2. Analytic: n(t) = n0/(1 + k*n0*t) for both the ions and
+the electrons. n_e and Te must be taken from the particles, not UNIFORMSTATE.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -31,26 +34,19 @@ T                       isPeriodicZ
 T                       solveEM
 
 #PLASMA
-3                       nSpecies
+2                       nSpecies
 0.01                    mass        Species 0: electron
 -1.0                    charge
-1.0                     mass        Species 1: H+ (background, does not recombine)
-1.0                     charge
-32.0                    mass        Species 2: O2+ (recombines with e-)
+32.0                    mass        Species 1: O2+
 1.0                     charge
 
 #UNIFORMSTATE
-5.15625                 rho [/cc]   Species 0: electron (quasi-neutral: ne = n_H + n_O2)
+5.0                     rho [/cc]   Species 0: electron (n_e = n_O2)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.0                     rho [/cc]   Species 1: H+ background (n_H = 5 /cc)
-0.0                     ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-10000.0                 T [K]
-0.15625                 rho [/cc]   Species 2: O2+ (will decrease due to recombination)
+5.0                     rho [/cc]   Species 1: O2+
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -70,14 +66,14 @@ T                       useSource
 
 #RECOMBINATION
 1                       nReactions
-2                       ionSpecies    O2+ (species 2)
-7.38e-3                 rateCoef      [cm^3/s] inflated 1e5x for short test
-0.0                     tempExponent  0 = no T dependence (avoids UNIFORMSTATE Te bug)
-1200.0                  refTemp       T_ref [K] (unused when tempExponent=0)
+1                       ionSpecies    O2+ (species 1)
+0.4                     rateCoef      [cm^3/s]
+0.5                     tempExponent
+2500.0                  refTemp       [K]
 
 #TIMESTEPPING
 T                       useFixedDt
-0.1                     dt
+0.05                    dt
 
 #NORMALIZATION
 1000.0                  lNormSI
@@ -87,7 +83,7 @@ T                       useFixedDt
 1                       dnReport
 
 #PARTICLES
-4                       nParticle per cell in X
+200                     nParticle per cell in X
 1                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
@@ -116,14 +112,10 @@ T
 T
 1
 
-#SAVEPLOT
-1                       nPlot
-z=0 var ascii planet    plotString
--1                      dn
-1.0                     dt
-1                       dx
-rhoS0 rhoS2             NameVars
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
 
 #STOP
-20                      MaxIter
-1.0                     TimeMax
+-1                      MaxIter
+2.0                     TimeMax

@@ -77,6 +77,9 @@ public:
 
   bool isParticleLocationRandom = true;
   bool isPPVconstant = false;
+  // #CONSTANTPPV: lower limit of the particles per cell and dimension on the
+  // refined levels (1 = the plain constant particles per volume).
+  int minPPCPerDim = 1;
   bool doPreSplitting = false;
 
   bool fastMerge = false;
@@ -503,11 +506,13 @@ public:
   int n_lev_max() const { return maxLevel() + 1; }
 
   void add_particles_domain(bool fillAll = false);
-  void add_particles_cell(const int iLev, const amrex::MFIter& mfi,
-                          const amrex::IntVect ijk,
-                          const FluidInterface* interface, bool doVacuumLimit,
-                          amrex::IntVect ppc = amrex::IntVect(),
-                          const Vel& tpVel = Vel(), amrex::Real dt = -1);
+  // Returns the number of particles added.
+  int add_particles_cell(const int iLev, const amrex::MFIter& mfi,
+                         const amrex::IntVect ijk,
+                         const FluidInterface* interface, bool doVacuumLimit,
+                         amrex::IntVect ppc = amrex::IntVect(),
+                         const Vel& tpVel = Vel(), amrex::Real dt = -1,
+                         amrex::Real weightScale = 1.0);
   void inject_particles_at_boundary();
 
   // Inflow (ParticleBC::inflow) particle boundary
@@ -531,7 +536,8 @@ public:
                             amrex::Real dt = -1,
                             amrex::IntVect ppc = amrex::IntVect(),
                             const bool doSelectRegion = false,
-                            const bool adaptivePPC = false);
+                            const bool adaptivePPC = false,
+                            const amrex::Real minWeightRatio = 0.0);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.

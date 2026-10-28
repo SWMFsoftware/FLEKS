@@ -153,6 +153,9 @@ protected:
   // Exosphere neutral profile parameters
   std::string exosphereType = "None";
   int nExoComponent = 0;
+  // Profile of each component: exosphereType, or with typeProfile "Mixed"
+  // the typeComponent read for each component.
+  amrex::Vector<std::string> exoTypeC;
   amrex::Vector<double> exoN0;
   amrex::Vector<double> exoH0;
   amrex::Vector<double> exoT0;
@@ -353,6 +356,16 @@ public:
 
   bool get_useMhdPe() const { return useMhdPe; }
   int get_iPe() const { return iPe; }
+
+  // Slots of species `is` in nodeFluid. Only meaningful for a stand-alone
+  // state (one rho/u/p group per species, see post_process_param).
+  int get_iRho(int is) const { return iRho_I[is]; }
+  int get_iUx(int is) const { return iUx_I[is]; }
+  int get_iUy(int is) const { return iUy_I[is]; }
+  int get_iUz(int is) const { return iUz_I[is]; }
+  int get_iP(int is) const { return iP_I[is]; }
+
+  amrex::MultiFab& get_node_fluid(int iLev) { return nodeFluid[iLev]; }
 
   double get_MoMi(int is) const {
     return (is >= 0 && is < static_cast<int>(MoMi_S.size())) ? MoMi_S[is] : 1.0;
@@ -625,6 +638,15 @@ public:
                     const int iLev = 0) const {
 
     amrex::Real U, J, Rhoit, Qit, Rhot;
+
+    // A stand-alone state (#UNIFORMSTATE layout, also used by the PIC plasma
+    // state and the source terms) stores one velocity per species, as
+    // get_number_density() and get_p() assume. The hybrid branch below
+    // describes the single-fluid MHD layout of a coupled run instead.
+    if (!initFromSWMF && useElectronFluid &&
+        is < static_cast<int>(iU_I.size()) && iU_I[is] >= 0) {
+      return get_value(mfi, xyz, iU_I[is], iLev);
+    }
 
     if (useHybridPIC) {
       if (useMultiFluid) {
@@ -1014,7 +1036,8 @@ public:
     amrex::Real uth = 0, p, ni;
     p = get_p(mfi, xyz, is, iLev);
     ni = get_number_density(mfi, xyz, is, iLev);
-    if (ni > 0)
+    // A node pressure from few particles can come out slightly negative.
+    if (ni > 0 && p > 0)
       uth = sqrt(p / (ni * MoMi_S[is]));
     return uth;
   }

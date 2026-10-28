@@ -167,7 +167,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     for (int i = 0; i < nDim; i++)
       Print() << (i > 0 ? ", " : "") << get_body_center()[i];
     Print() << ") [code units]\n";
-  } else if (command == "#BODYBOUNDARY") {
+  } else if (command == "#BODYBOUNDARY" || command == "#INNERBOUNDARY") {
     std::string particle, field;
     param.read_var("particleBoundary", particle);
     param.read_var("fieldBoundary", field);
@@ -176,16 +176,46 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (body_particle_bc() != ParticleBC::absorb &&
         body_particle_bc() != ParticleBC::reflect &&
         body_particle_bc() != ParticleBC::ambipolar)
-      Abort("Error: #BODYBOUNDARY particleBoundary '" + particle +
+      Abort("Error: " + command + " particleBoundary '" + particle +
             "' is not supported for the inner body. Accepted values: "
             "absorb, reflect, ambipolar.");
 
     bodyFieldBC = BodyFieldBC::parse(field);
     bodyBoundarySet_ = true;
 
+    // Optional photochemical boundary keyword at the end
+    std::string photochemStr;
+    bool hasPhotochem = false;
+    if (param.read_optional("typePhotochem", photochemStr) ||
+        param.read_optional("photochemical", photochemStr) ||
+        param.read_optional("photochem", photochemStr) ||
+        param.read_optional("typeBoundary", photochemStr)) {
+      hasPhotochem =
+          (photochemStr == "photochemical" || photochemStr == "photochem" ||
+           photochemStr == "T" || photochemStr == "true");
+    }
+    double rPhoto = 0.0;
+    if (param.read_optional("rPhotochem", rPhoto) ||
+        param.read_optional("radius", rPhoto) ||
+        param.read_optional("radiusPhotochem", rPhoto) ||
+        param.read_optional("photochemRadius", rPhoto)) {
+      hasPhotochem = true;
+      photochemRadiusSI_ = rPhoto;
+    }
+    if (hasPhotochem) {
+      usePhotochemBoundary_ = true;
+      if (photochemRadiusSI_ <= 0.0 && rPhoto > 0.0) {
+        photochemRadiusSI_ = rPhoto;
+      }
+    }
+
     Print() << "  inner body BC: particles = "
             << ParticleBC::to_string(body_particle_bc())
-            << ", fields = " << BodyFieldBC::to_string(bodyFieldBC) << "\n";
+            << ", fields = " << BodyFieldBC::to_string(bodyFieldBC);
+    if (usePhotochemBoundary_) {
+      Print() << ", photochemical = " << photochemRadiusSI_ << " [m]";
+    }
+    Print() << "\n";
   } else if (command == "#REGIONRESISTIVITY") {
     RegionalResistivityConfig cfg;
     param.read_var("region", cfg.regionStr);
@@ -206,6 +236,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("isParticleLocationRandom", pInfo.isParticleLocationRandom);
   } else if (command == "#CONSTANTPPV") {
     param.read_var("isPPVconstant", pInfo.isPPVconstant);
+  } else if (command == "#MINPARTICLESPERCELL") {
+    param.read_var("minPPCPerDim", pInfo.minPPCPerDim);
+    if (pInfo.minPPCPerDim < 1)
+      Abort("Invalid #MINPARTICLESPERCELL: minPPCPerDim must be >= 1.");
   } else if (command == "#PRESPLITTING") {
     param.read_var("doPreSplitting", pInfo.doPreSplitting);
   } else if (command == "#DIVE") {
@@ -231,6 +265,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("npcely", nSourcePPC[iy_]);
     if (nDim == 3)
       param.read_var("npcelz", nSourcePPC[iz_]);
+    double ratio = sourceMinWeightRatio;
+    if (param.read_optional("minWeightRatio", ratio) ||
+        param.read_optional("weightFloor", ratio) ||
+        param.read_optional("sourceWeightFloor", ratio)) {
+      if (ratio < 0.0)
+        Abort("Invalid #SOURCEPARTICLES: minWeightRatio must be >= 0.");
+      sourceMinWeightRatio = ratio;
+    }
   } else if (command == "#KINETICSOURCE") {
     param.read_var("kineticSource", kineticSource);
   } else if (command == "#ELECTRON") {
@@ -805,9 +847,16 @@ void Pic::post_process_param() {
               "simulation domain.");
     }
   } else if (bodyBoundarySet_) {
-    // #BODYBOUNDARY only has a meaning together with #BODY.
-    Print() << "  Warning: #BODYBOUNDARY is ignored because no #BODY is "
-            << "defined.\n";
+    // #BODYBOUNDARY / #INNERBOUNDARY particle and field conditions require
+    // #BODY.
+    if (!usePhotochemBoundary_) {
+      Print() << "  Warning: #INNERBOUNDARY is ignored because no #BODY is "
+              << "defined.\n";
+    } else {
+      Print() << "  Warning: #INNERBOUNDARY particle and field conditions are "
+              << "ignored because no #BODY is defined (photochemical boundary "
+                 "remains active).\n";
+    }
     body_particle_bc() = ParticleBC::absorb;
     bodyFieldBC = BodyFieldBC::linetied;
     bodyBoundarySet_ = false;
@@ -879,14 +928,16 @@ void Pic::post_process_param() {
                      : FieldSolverMode::GMRES;
 
   // Classify species: in semi-implicit full PIC, negative charge -> implicit
-  // electron. In explicit full PIC and hybrid PIC, all particle species are
-  // kinetic.
+  // In hybrid PIC, only the ions carry particles. Any remaining
+  // negative-charge species is only a fluid-electron slot (e.g. the species 0
+  // that the #CHEMISTRY / #RECOMBINATION source terms require): it never gets
+  // particles, is never pushed and does not enter the ion charge density.
+  // The charge comes from fi because the particle containers do not exist yet
+  // when the parameters are post-processed.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
-    // Guard: parts may not be fully populated yet.
-    if (!useHybridPIC && !useExplicitPIC && i < (int)parts.size() && parts[i] &&
-        parts[i]->get_charge() < 0) {
+    if (useHybridPIC && fi->get_species_charge(i) < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
     } else {

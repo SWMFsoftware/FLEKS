@@ -20,7 +20,7 @@ bool Domain::find_parameter_owner(const std::string &command,
   static const std::set<std::string> picCommands = {
     // Handled by Pic::read_param().
     "#ABSORB", "#ADAPTIVESOURCEPPC", "#AUTOSUBCYCLE", "#BFIELDBOXBOUNDARY",
-    "#BODY", "#BODYBOUNDARY", "#BSUBCYCLE", "#CMAXE", "#COMOVING",
+    "#BODY", "#BODYBOUNDARY", "#INNERBOUNDARY", "#BSUBCYCLE", "#CMAXE", "#COMOVING",
     "#CONSTANTPPV", "#CRUSTALFIELD", "#DIPOLE", "#DISCRETIZATION",
     "#DISCRETIZE", "#DIVB", "#DIVE", "#EFIELDSOLVER", "#ELECTRON",
     "#ELECTRONADVECTION", "#ELECTRONCOLLISION", "#ELECTRONCONDUCTION",
@@ -28,7 +28,7 @@ bool Domain::find_parameter_owner(const std::string &command,
     "#FIELDBOXBOUNDARY", "#FIELDINTEGRATOR", "#FIELDSUBCYCLE", "#FIXEDUMAX",
     "#FORCEFREEIC", "#GEMIC", "#HALLTERM", "#HYBRIDUPWIND", "#HYPERRESISTIVITY",
     "#INFLOW", "#KINETICSOURCE", "#LAGGEDLIMITER", "#MAXCHARGEEXCHANGERATE",
-    "#MEMORY", "#MERGELIGHT", "#MINIMUMDENSITY", "#OHION",
+    "#MEMORY", "#MERGELIGHT", "#MINIMUMDENSITY", "#MINPARTICLESPERCELL", "#OHION",
     "#PARTICLEBOXBOUNDARY", "#PARTICLELEVRATIO", "#PARTICLES", "#PARTMODE",
     "#PIC", "#PRESPLITTING", "#RANDOMPARTICLESLOCATION",
     "#REGIONHYPERRESISTIVITY", "#REGIONRESISTIVITY", "#RESAMPLING",
@@ -179,7 +179,20 @@ void Domain::init(double time, const int iDomain,
   } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
     pic->set_fluid_source(source.get());
+    source->set_inner_radius_si(pic->get_body_radius_si());
+    if (pic->use_photochem_boundary()) {
+      amrex::Real rPhoto = pic->get_photochem_radius_si();
+      if (rPhoto <= 0.0) {
+        rPhoto = std::max(pic->get_body_radius_si(), fi->get_rPlanet_SI());
+      }
+      source->set_photochem_radius_si(rPhoto);
+    }
   }
+
+  // Copy-constructed after read_param so that it carries fi's final layout.
+  if (source && !initFromSWMF)
+    plasmaState = std::make_unique<FluidInterface>(*grid, *fi, gridID,
+                                                   "picPlasmaState", PICFluid);
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -235,16 +248,19 @@ void Domain::update() {
             << " (s) ====" << std::endl;
   }
 
-  // Compute exosphere source terms every step in standalone mode.
-  // - Standalone: called here (no SWMF coupling).
-  // - GM-PC: called from set_state_var() at coupling intervals; fi is
-  //   unchanged between couplings, so skip here.
+  // Compute exosphere source terms.
+  // - Standalone: computed every step using the live kinetic plasma moments.
+  // - GM-PC: computed when GM supplies a new fluid state, and refreshed if
+  //   the PIC timestep changes between couplings so that stiff reaction
+  //   sources remain consistent with the exponential particle loss.
   // - OH-PT: not applicable; charge_exchange() handles source terms.
-  if (source && !initFromSWMF) {
-    source->set_source(*fi);
-    source->convert_moment_to_velocity(true, false);
-    source->fill_boundary();
-    source->fill_loss_boundary();
+  if (source && !stateOH) {
+    if (!initFromSWMF) {
+      pic->fill_plasma_state(*plasmaState);
+      refresh_source(*plasmaState);
+    } else if (source->get_dt_si() != tc->get_dt_si()) {
+      refresh_source(*fi);
+    }
   }
 
   pic->update(doReport);
@@ -361,6 +377,9 @@ void Domain::load_balance() {
   if (source)
     source->post_regrid();
 
+  if (plasmaState)
+    plasmaState->post_regrid();
+
   if (stateOH)
     stateOH->post_regrid();
 
@@ -436,6 +455,10 @@ void Domain::regrid() {
 
   if (source) {
     source->post_regrid();
+  }
+
+  if (plasmaState) {
+    plasmaState->post_regrid();
   }
 
   if (stateOH) {
@@ -544,12 +567,19 @@ void Domain::set_state_var(double *data, int *index,
     // Pic::charge_exchange() using OH-PT charge exchange physics, so
     // set_source must not be called here.
     if (source && !stateOH) {
-      source->set_source(*fi);
-      source->convert_moment_to_velocity(true, false);
-      source->fill_boundary();
-      source->fill_loss_boundary();
+      refresh_source(*fi);
     }
   }
+}
+
+//========================================================
+void Domain::refresh_source(const FluidInterface &state) {
+  source->set_dt_si(tc->get_dt_si());
+  source->set_source(state);
+  pic->mask_body_source(*source);
+  source->convert_moment_to_velocity(true, false);
+  source->fill_boundary();
+  source->fill_loss_boundary();
 }
 
 //========================================================
@@ -636,6 +666,8 @@ void Domain::read_restart() {
 
   if (source)
     source->post_regrid();
+  if (plasmaState)
+    plasmaState->post_regrid();
   if (stateOH)
     stateOH->post_regrid();
   if (sourcePT2OH)

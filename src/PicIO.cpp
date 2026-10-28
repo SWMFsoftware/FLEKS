@@ -883,9 +883,14 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
   const int wCol = 24;
   const int wStep = 10;
+  // The diagnostics below (particle budget) exist in standalone runs only,
+  // and only for the commands they diagnose: the coupled runs keep the log
+  // format of their SWMF reference solutions.
   const bool standaloneLog = isStandalone;
   const bool logMass = standaloneLog && log_species_mass();
   const bool logFaces = standaloneLog && log_face_budget();
+  const bool logCount = standaloneLog && log_particle_count();
+  const bool logBodyQ = standaloneLog && use_body();
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     if (picLogStream.is_open()) {
@@ -913,6 +918,8 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
     }
+    // Total mass of the particles of each species (code units), e.g. to
+    // check the source and loss terms against their analytic rates.
     if (logMass)
       for (int i = 0; i < nSpecies; ++i) {
         std::string sName = "Mpart" + std::to_string(i);
@@ -929,6 +936,13 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                        << std::string("mOut_") + fName[f] + "_S" +
                               std::to_string(i);
     }
+    // Number of macroparticles of all species and levels (memory, resampling).
+    if (logCount)
+      picLogStream << "\t" << std::setw(wCol) << "nParticles";
+    // Cumulative signed charge absorbed by the body, per species.
+    if (logBodyQ)
+      for (int i = 0; i < nSpecies; ++i)
+        picLogStream << "\t" << std::setw(wCol) << "qBodyS" + std::to_string(i);
     picLogStream << std::endl;
   }
 
@@ -957,6 +971,15 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           ParallelDescriptor::IOProcessorNumber());
     }
 
+    Vector<Real> speciesBodyQ(nSpecies, 0.0);
+    if (logBodyQ) {
+      for (int i = 0; i < nSpecies; ++i)
+        speciesBodyQ[i] = parts[i]->get_body_absorb_charge();
+      ParallelDescriptor::ReduceRealSum(
+          speciesBodyQ.data(), speciesBodyQ.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
     // Mass injected through / removed across each face, per species.
     Vector<Real> faceBudget(12 * nSpecies, 0.0);
     if (logFaces) {
@@ -970,10 +993,15 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           ParallelDescriptor::IOProcessorNumber());
     }
 
+    // total_moments() reduces to the IO processor itself.
     Vector<Real> speciesMass(nSpecies, 0.0);
     if (logMass)
       for (int i = 0; i < nSpecies; ++i)
         speciesMass[i] = parts[i]->total_moments()[0];
+    Long nParticles = 0;
+    if (logCount)
+      for (int i = 0; i < nSpecies; ++i)
+        nParticles += parts[i]->TotalNumberOfParticles(true, false);
 
     if (ParallelDescriptor::IOProcessor()) {
       if (!picLogStream.is_open()) {
@@ -1003,6 +1031,12 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
             picLogStream << "\t" << std::setw(wCol)
                          << faceBudget[i * 12 + 2 * f] << "\t"
                          << std::setw(wCol) << faceBudget[i * 12 + 2 * f + 1];
+      if (logCount)
+        picLogStream << "\t" << std::setw(wCol)
+                     << static_cast<Real>(nParticles);
+      if (logBodyQ)
+        for (int i = 0; i < nSpecies; ++i)
+          picLogStream << "\t" << std::setw(wCol) << speciesBodyQ[i];
       picLogStream << std::endl;
     }
   }

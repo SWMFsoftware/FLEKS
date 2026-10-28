@@ -495,13 +495,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 }
 
 //==========================================================
-// Apply chemical loss (recombination, etc.) by proportionally
-// reducing particle weights.  For each cell, reads the ion loss
-// rate from source->nodeLossFluid and the existing ion mass density
-// from fi, then reduces every particle's weight by the fraction
-//   fraction = min(lossRate * dt / rhoExisting, 1.0).
-// In hybrid PIC mode, only ion species (charge > 0) have particles;
-// in full PIC mode, electron particle weights are also reduced proportionally.
+// Apply chemical loss (recombination, charge exchange, ion-neutral
+// chemistry) by reducing the particle weights. The loss frequency nu of the
+// species (source->nodeLossFluid, computed from the plasma state by
+// UserSource::set_source) is interpolated to every particle, whose weight is
+// multiplied by exp(-nu*dt). In hybrid PIC only the ions have particles; in
+// full PIC the electron weights are reduced the same way.
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::apply_loss(
@@ -522,50 +521,70 @@ void Particles<NStructReal, NStructInt>::apply_loss(
     if (!source->has_loss_array(iLev))
       continue;
 
-    const Real* plo = Geom(iLev).ProbLo();
-    const Real* inv_dx = Geom(iLev).InvCellSize();
+    // Beyond this nu*dt the remaining weight (< 1e-21) is discarded.
+    constexpr Real maxLossNuDt = 50.0;
+    // A particle that decays over many steps never reaches maxLossNuDt in a
+    // single one: below this fraction of the weight of a reference particle
+    // it plays Russian roulette (survives with probability w/wMin at weight
+    // wMin), which keeps the mass on average and the weights from underflow
+    // (a denormal density turns the bulk velocity M/rho into inf).
+    constexpr Real minLossWeightRatio = 1e-6;
+    const Real vol = dx[iLev].product();
+    const Real ppcBase = product(nPartPerCell);
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
       const int np = particles.numParticles();
       if (np == 0)
         continue;
+      const Box tbx = pti.tilebox();
+      set_random_seed(iLev, tbx.smallEnd(), IntVect(313));
+      const auto tppc = isTargetPPCDefined && !isFake2D
+                            ? target_PPC(iLev)[pti].const_array()
+                            : Array4<int const>();
 
       for (int ip = 0; ip < np; ++ip) {
         ParticleType& p = particles[ip];
         if (p.id() < 0)
           continue;
 
-        // Find the cell index for this particle.
-        IntVect ijk;
-        for (int iDim = 0; iDim < nDim; ++iDim) {
-          ijk[iDim] = static_cast<int>(
-              std::floor((p.pos(iDim) - plo[iDim]) * inv_dx[iDim]));
-        }
+        RealVect xyz;
+        for (int iDim = 0; iDim < nDim; ++iDim)
+          xyz[iDim] = p.pos(iDim);
 
-        // Existing mass density (normalized) from the plasma state.
-        Real rhoExisting =
-            fi->get_fluid_mass_density(pti, ijk, speciesID, iLev);
-        if (rhoExisting <= 0.0)
+        // Survival factor over the step dt, interpolated from nodal
+        // exp(-nu*dt). This conservative discretization ensures exact balance
+        // between particle losses and stiff product sources
+        // (UserSource::set_source) even when reaction rates vary spatially.
+        const Real decay =
+            source->get_loss_decay(pti, xyz, speciesID, dt, iLev);
+        if (decay >= 1.0)
           continue;
 
-        // Loss rate (normalized mass-density rate) from nodeLossFluid.
-        Real lossRate = source->get_loss_value(pti, ijk, speciesID, iLev);
-        if (lossRate <= 0.0)
-          continue;
-
-        // Fraction of mass to remove in this step.
-        Real fraction = lossRate * dt / rhoExisting;
-        if (fraction > 1.0)
-          fraction = 1.0;
-        if (fraction <= 0.0)
-          continue;
-
-        // Reduce particle weight proportionally.  The sign is preserved
-        // (ions have positive weight, electrons negative).
-        p.rdata(iqp_) *= (1.0 - fraction);
-        if (fraction >= 1.0) {
+        // Discard particles whose survival factor has dropped to zero (< 1e-21)
+        if (decay <= std::exp(-maxLossNuDt)) {
           p.id() = -1;
+          continue;
+        }
+        p.rdata(iqp_) *= decay;
+
+        // Reference particle: the ions of fi, as for the source weight floor.
+        IntVect ijk;
+        for (int iDim = 0; iDim < nDim; ++iDim)
+          ijk[iDim] =
+              fastfloor((xyz[iDim] - plo[iLev][iDim]) * invDx[iLev][iDim]);
+        Real nRef = 0;
+        for (int iS = 0; iS < fi->get_nS(); iS++)
+          if (fi->get_species_charge(iS) > 0)
+            nRef += fi->get_number_density(pti, xyz, iS, iLev);
+        const Real ppc = tppc ? static_cast<Real>(tppc(ijk)) : ppcBase;
+        const Real wMin = minLossWeightRatio * nRef * vol / ppc;
+        const Real w = std::abs(p.rdata(iqp_));
+        if (w < wMin) {
+          if (randNum() * wMin < w)
+            p.rdata(iqp_) *= wMin / w;
+          else
+            p.id() = -1;
         }
       }
     }

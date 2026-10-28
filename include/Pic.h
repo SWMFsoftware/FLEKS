@@ -414,6 +414,10 @@ private:
   // Particle Per Cell (PPC) of source particles.
   amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
   bool adaptiveSourcePPC = false;
+  // Lower limit of a source particle's weight relative to the reference plasma
+  // (#SOURCEPARTICLES); 0 switches it off. Default is 1.0e-3.
+  amrex::Real sourceMinWeightRatio = 1.0e-3;
+
   bool kineticSource = false;
   amrex::Real maxExchangeRatio = 0;
   amrex::Real maxExchangeRatioLimit = 1;
@@ -476,10 +480,14 @@ private:
   bool hasAbsorbBC_ = false;
   bool hasInflowBC_ = false;
 
-  // Field condition on the surface of the inner body (#BODYBOUNDARY); the
-  // particle condition lives in Grid.
+  // Field condition on the surface of the inner body (#BODYBOUNDARY /
+  // #INNERBOUNDARY); the particle condition lives in Grid.
   BodyFieldBC::Type bodyFieldBC = BodyFieldBC::linetied;
   bool bodyBoundarySet_ = false;
+
+  // Photochemical equilibrium boundary (#INNERBOUNDARY photochemical) [m].
+  amrex::Real photochemRadiusSI_ = 0.0;
+  bool usePhotochemBoundary_ = false;
 
   bool is_body_linetied() const {
     return use_body() && bodyFieldBC == BodyFieldBC::linetied;
@@ -532,8 +540,11 @@ private:
   }
   // - mIn_/mOut_ per face: the particle budget of open faces.
   bool log_face_budget() const { return has_particle_face(ParticleBC::open); }
-
-  bool isStandalone = false;
+  // - nParticles: the macroparticle count is managed (#CONSTANTPPV,
+  //   #PRESPLITTING, source particles);
+  bool log_particle_count() const {
+    return pInfo.isPPVconstant || pInfo.doPreSplitting || source != nullptr;
+  }
 
   // De-duplicated boundary-condition warnings
   std::set<std::string> bcWarnings_;
@@ -583,6 +594,8 @@ private:
   // Report options from #MONITOR, set by Domain.
   bool doCompact = true;
   int dnReportLB = 100;
+  // Stand-alone run (not coupled through the SWMF), set by Domain.
+  bool isStandalone = false;
   amrex::Real maxCFL = 0.0;
   int dnMemory = -1;
 
@@ -610,7 +623,6 @@ public:
   void set_body(const amrex::Real *center, const amrex::Real radius) {
     grid.set_body(center, radius);
   }
-  void set_standalone(bool in) { isStandalone = in; }
   ParticleBC::Type &body_particle_bc() { return grid.bodyParticleBC; }
   ParticleBC::Type body_particle_bc() const { return grid.bodyParticleBC; }
 
@@ -748,6 +760,7 @@ public:
     dnReportLB = dnReportLBIn;
     doCompact = doCompactIn;
   }
+  void set_standalone(bool isStandaloneIn) { isStandalone = isStandaloneIn; }
   bool is_implicit_pic() const {
     return fieldSolverMode == PicSolverMode::Implicit;
   }
@@ -860,12 +873,34 @@ public:
 
   void fill_source_particles();
 
+  // Populate a FluidInterface state with the particle fluid moments
+  // (density, velocity, pressure) and the hybrid electron state, so that
+  // source terms (recombination, chemistry, charge exchange) can evaluate
+  // their rates against the current plasma.
+  void fill_plasma_state(FluidInterface &dst);
+
+  // Scale the production of a UserSource by the inverse outside-body fraction
+  // of the cells around each node.
+  void mask_body_source(SourceInterface &src);
+
+  // Radius of the inner body [m], 0 without one.
+  amrex::Real get_body_radius_si() const {
+    return use_body() ? get_body_radius() * fi->get_No2SiL() : 0.0;
+  }
+
+  amrex::Real get_photochem_radius_si() const { return photochemRadiusSI_; }
+  bool use_photochem_boundary() const { return usePhotochemBoundary_; }
+  void set_photochem_boundary(bool use, amrex::Real r = 0.0) {
+    usePhotochemBoundary_ = use;
+    photochemRadiusSI_ = r;
+  }
+
   void inject_particles_for_new_cells() {
     if (!usePIC)
       return;
 
-    for (auto &pts : parts) {
-      pts->add_particles_domain(!particlesInitialized);
+    for (int i : kineticSpecies_) {
+      parts[i]->add_particles_domain(!particlesInitialized);
     }
   }
 
@@ -873,8 +908,8 @@ public:
     if (!usePIC)
       return;
 
-    for (auto &pts : parts) {
-      pts->inject_particles_at_boundary();
+    for (int i : kineticSpecies_) {
+      parts[i]->inject_particles_at_boundary();
     }
   }
 
@@ -1013,6 +1048,8 @@ public:
   // coarse-fine interface nodes, which compute_ambipolar_E needs.
   void compute_electron_density(int iLev, amrex::MultiFab &nodalRho,
                                 amrex::MultiFab &cellRho, bool useGrownTile);
+  void compute_node_electron_pressure(int iLev, const amrex::MultiFab &nodeNe,
+                                      amrex::MultiFab &nodePe);
   // Te = Pe/n_e at the cell centers, as conductivity scratch for the solver.
   void compute_electron_temperature(int iLev);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
@@ -1283,7 +1320,9 @@ public:
           if (pInfo.isPPVconstant) {
             int tmp = 1;
             for (int i = 0; i < nDim; i++) {
-              tmp *= (pInfo.nPartPerCell[i] / pow(refRatioMax, iLev));
+              const int n = static_cast<int>(pInfo.nPartPerCell[i] /
+                                             pow(refRatioMax, iLev));
+              tmp *= std::max(n, pInfo.minPPCPerDim);
             }
             ppcArr(ijk, 0) = tmp;
           } else {

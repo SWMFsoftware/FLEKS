@@ -99,11 +99,12 @@ public:
       return optScaleHeight[iC];
     if (r <= 0.0)
       return 0.0;
-    if (exosphereType == "Exponential")
+    const std::string& type = exoTypeC[iC];
+    if (type == "Exponential")
       return (exoH0[iC] > 0.0 ? exoH0[iC] : 0.0);
-    if (exosphereType == "Chamberlain")
+    if (type == "Chamberlain")
       return (exoH0[iC] > 0.0 ? r * r / exoH0[iC] : 0.0);
-    if (exosphereType == "Power-Law")
+    if (type == "Power-Law")
       return (exoK0[iC] > 0.0 ? r / exoK0[iC] : 0.0);
     return 0.0;
   }
@@ -124,6 +125,27 @@ public:
       if (h <= 0.0)
         continue;
       tau += get_exosphere_component_density(r, iC) * sigma * h;
+    }
+    return tau;
+  }
+
+  // Optical depth along a ray that grazes the planet at the tangent radius p
+  // [m]: the Chapman grazing-incidence column sum_c sigma_c n_c(p) H_c
+  // sqrt(2 pi p / H_c), all of which lies between the Sun and a point behind
+  // the terminator plane.
+  amrex::Real grazing_optical_depth(amrex::Real p) const {
+    amrex::Real tau = 0.0;
+    for (int iC = 0; iC < nExoComponent; ++iC) {
+      const amrex::Real sigma = (iC < static_cast<int>(optCrossSection.size()))
+                                    ? optCrossSection[iC]
+                                    : 0.0;
+      if (sigma <= 0.0)
+        continue;
+      const amrex::Real h = exosphere_scale_height(p, iC);
+      if (h <= 0.0)
+        continue;
+      tau += get_exosphere_component_density(p, iC) * sigma * h *
+             std::sqrt(2.0 * M_PI * p / h);
     }
     return tau;
   }
@@ -166,6 +188,8 @@ public:
   amrex::Real photo_attenuation(const amrex::Real xyz[3], amrex::Real r) const {
     if (!useOpticalDepth)
       return is_in_shadow(xyz[0], xyz[1], xyz[2]) ? 0.0 : 1.0;
+    if (is_in_shadow(xyz[0], xyz[1], xyz[2]))
+      return optMinProduction;
 
     const amrex::Real r_safe = std::max(r, 1.0e-3);
     const amrex::Real proj = xyz[0] * optSolarDir[0] + xyz[1] * optSolarDir[1] +
@@ -193,41 +217,288 @@ public:
       return std::max(exp(-tauV * chap), optMinProduction);
     }
 
-    const amrex::Real tauV = vertical_optical_depth(r, -1);
-    const amrex::Real tau = std::max(tauV, optTauFloor) / mu;
-    if (tau >= optTauCutoff || proj <= 0.0)
+    amrex::Real tau;
+    if (proj <= 0.0) {
+      // Behind the terminator plane (BATSRUS: dark). That holds for the
+      // thermosphere, but a corona extends to several planetary radii: only
+      // the geometric shadow of the planet (radius from #SHADOWCYLINDER,
+      // otherwise #PLANETRADIUS) is dark, and elsewhere the solar ray grazes
+      // the planet at the tangent radius p.
+      const amrex::Real p = std::sqrt(std::max(r * r - proj * proj, 0.0));
+      const amrex::Real rShadow =
+          useShadowCylinder ? shadowCylinderRadius : get_rPlanet_SI();
+      if (p <= rShadow)
+        return optMinProduction;
+      tau = std::max(grazing_optical_depth(p), optTauFloor);
+    } else {
+      tau = std::max(vertical_optical_depth(r, -1), optTauFloor) / mu;
+    }
+    if (tau >= optTauCutoff)
       return optMinProduction;
     return std::max(exp(-tau), optMinProduction);
+  }
+
+  // ---- Dual-cell averages of the neutral exosphere ----
+  // The neutral profiles vary on the scale height (6.5 km for CO2 at Mars),
+  // far below the cell size, so a value sampled at a node aliases with the
+  // grid: the total production would depend on where the nodes happen to
+  // fall. Every node instead carries the average over its dual cell (the
+  // cell of size dx centered on the node) of n_c and of n_c * attenuation,
+  // plus the fraction of the dual cell outside the inner body. The profiles
+  // are static, so the averages are computed once per grid.
+  amrex::Real innerRadiusSI = 0.0; // radius of the inner body [m]
+  // #INNERBOUNDARY photochemical: below this radius [m] the ions are produced and
+  // lost in local photochemical equilibrium, so the ionization there does not
+  // feed the plasma (0: no such boundary).
+  amrex::Real photochemRadiusSI = 0.0;
+  // Per node: [ext_c, extProdAtt_c, extProd_c, frac], see
+  // build_neutral_average().
+  amrex::Vector<amrex::MultiFab> neuAvg;
+  amrex::Vector<amrex::BoxArray> neuAvgGrids;
+  static constexpr int maxCubeDepth = 8;
+
+  void set_inner_radius_si(amrex::Real r) override {
+    innerRadiusSI = r;
+    neuAvg.clear();
+    neuAvgGrids.clear();
+  }
+
+  void set_photochem_radius_si(amrex::Real r) override {
+    photochemRadiusSI = r;
+    neuAvg.clear();
+    neuAvgGrids.clear();
+  }
+
+  // Scale height [m] of the steepest component that is not negligible
+  // anywhere in the radial range [rMin, rMax]; a large value if none is.
+  amrex::Real steepest_scale_height(amrex::Real rMin) const {
+    amrex::Real hMin = 1e300;
+    const amrex::Real rRef = std::max(rMin, get_rPlanet_SI());
+    for (int iC = 0; iC < nExoComponent; ++iC) {
+      const amrex::Real n = get_exosphere_component_density(rRef, iC);
+      if (n <= 1e-20 * std::max(exoN0[iC], 1e-300))
+        continue;
+      const amrex::Real h = exosphere_scale_height(rRef, iC);
+      if (h > 0.0)
+        hMin = std::min(hMin, h);
+    }
+    return hMin;
+  }
+
+  // Integrate n_c and n_c * attenuation over the box centered at c with
+  // sizes h (SI, h[d] = 0 for an inactive dimension), and the volume of the
+  // box outside rCut. Boxes that straddle rCut or are coarse compared to the
+  // local scale height are split; a leaf uses the exact box average of a
+  // planar exponential, prod_d sinh(a_d)/a_d with a_d = h_d n_d / (2 H).
+  void integrate_cube(const amrex::Real c[3], const amrex::Real h[3], int depth,
+                      amrex::Real rCut, amrex::Real* sumN, amrex::Real* sumNA,
+                      amrex::Real& vOut) const {
+    const amrex::Real r = std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+    const amrex::Real halfDiag =
+        0.5 * std::sqrt(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]);
+    amrex::Real vol = 1.0;
+    for (int d = 0; d < 3; ++d)
+      if (h[d] > 0)
+        vol *= h[d];
+    if (r + halfDiag <= rCut)
+      return;
+
+    const bool straddle = r - halfDiag < rCut;
+    const amrex::Real hMax = std::max({ h[0], h[1], h[2] });
+    const amrex::Real hScale = steepest_scale_height(r - halfDiag);
+    // A straddling box is split until it is fine compared to the scale
+    // height (its density is evaluated just above rCut), any other box until
+    // the planar-exponential average applies.
+    const bool split =
+        straddle ? hMax > 0.5 * hScale && hScale < 1e299 : hMax > 2.0 * hScale;
+    if (split && depth < maxCubeDepth) {
+      for (int ic = 0; ic < 8; ++ic) {
+        amrex::Real cc[3], hh[3];
+        bool skip = false;
+        for (int d = 0; d < 3; ++d) {
+          const int sgn = ((ic >> d) & 1) ? 1 : -1;
+          if (h[d] > 0) {
+            hh[d] = 0.5 * h[d];
+            cc[d] = c[d] + sgn * 0.25 * h[d];
+          } else {
+            if (sgn > 0)
+              skip = true;
+            hh[d] = 0.0;
+            cc[d] = c[d];
+          }
+        }
+        if (!skip)
+          integrate_cube(cc, hh, depth + 1, rCut, sumN, sumNA, vOut);
+      }
+      return;
+    }
+
+    // Leaf: the part outside rCut, estimated on a 4^nDim sub-grid when the
+    // box straddles it.
+    amrex::Real fOut = 1.0;
+    if (straddle) {
+      int nIn = 0, nTot = 0;
+      for (int a = 0; a < 4; ++a)
+        for (int b = 0; b < 4; ++b)
+          for (int e = 0; e < 4; ++e) {
+            const amrex::Real off[3] = { (a + 0.5) / 4 - 0.5,
+                                         (b + 0.5) / 4 - 0.5,
+                                         (e + 0.5) / 4 - 0.5 };
+            amrex::Real q2 = 0;
+            for (int d = 0; d < 3; ++d) {
+              const amrex::Real x = c[d] + off[d] * h[d];
+              q2 += x * x;
+            }
+            nTot++;
+            if (q2 > rCut * rCut)
+              nIn++;
+          }
+      fOut = amrex::Real(nIn) / nTot;
+    }
+    if (fOut <= 0)
+      return;
+    vOut += fOut * vol;
+
+    // Evaluate at the leaf center, or for a straddling leaf just above rCut.
+    amrex::Real ce[3] = { c[0], c[1], c[2] };
+    amrex::Real re = r;
+    if (straddle && r > 0) {
+      const amrex::Real rE = std::max(r, rCut + 0.25 * halfDiag);
+      for (int d = 0; d < 3; ++d)
+        ce[d] = c[d] * rE / r;
+      re = rE;
+    }
+    if (re <= 0)
+      return;
+    const amrex::Real att = photo_attenuation(ce, re);
+    for (int iC = 0; iC < nExoComponent; ++iC) {
+      amrex::Real n = get_exosphere_component_density(re, iC);
+      if (n <= 0)
+        continue;
+      const amrex::Real hC = exosphere_scale_height(re, iC);
+      if (hC > 0 && !straddle) {
+        for (int d = 0; d < 3; ++d) {
+          const amrex::Real a = 0.5 * h[d] * std::abs(ce[d] / re) / hC;
+          if (a > 1e-6)
+            n *= std::sinh(a) / a;
+        }
+      }
+      sumN[iC] += n * fOut * vol;
+      sumNA[iC] += n * att * fOut * vol;
+    }
+  }
+
+  // Fill neuAvg[iLev] for the nodes of nodeFluid[iLev].
+  void build_neutral_average(int iLev) {
+    timing_func("UserSource::build_neutral_average");
+    const int nC = nExoComponent;
+    if (static_cast<int>(neuAvg.size()) < n_lev_max()) {
+      neuAvg.resize(n_lev_max());
+      neuAvgGrids.resize(n_lev_max());
+    }
+    neuAvg[iLev].define(nodeFluid[iLev].boxArray(),
+                        nodeFluid[iLev].DistributionMap(), 3 * nC + 1, 0);
+    neuAvgGrids[iLev] = nodeFluid[iLev].boxArray();
+
+    const amrex::Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
+    const amrex::Real no2SiL = get_No2SiL();
+    const amrex::Real* dx = Geom(iLev).CellSize();
+    const auto plo = Geom(iLev).ProbLo();
+    const int nDimF = get_fluid_dimension();
+    const amrex::Real rCut = std::max(innerRadiusSI, get_rPlanet_SI());
+    const amrex::Real rProd = std::max(rCut, photochemRadiusSI);
+    amrex::Real hBox[3] = { 0, 0, 0 };
+    for (int d = 0; d < nDimF; ++d)
+      hBox[d] = dx[d] * no2SiL;
+    amrex::Real vBox = 1.0;
+    for (int d = 0; d < nDimF; ++d)
+      vBox *= hBox[d];
+    std::vector<amrex::Real> sumN(nC), sumNA(nC), prodN(nC), prodNA(nC);
+
+    for (amrex::MFIter mfi(neuAvg[iLev]); mfi.isValid(); ++mfi) {
+      auto arr = neuAvg[iLev][mfi].array();
+      const auto lo = lbound(mfi.validbox());
+      const auto hi = ubound(mfi.validbox());
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            amrex::IntVect idx = { AMREX_D_DECL(i, j, k) };
+            for (int iDim = 0; iDim < nDim; iDim++)
+              if (Geom(iLev).isPeriodic(iDim))
+                idx[iDim] = shift_periodic_index(idx[iDim], gbx.smallEnd(iDim),
+                                                 gbx.bigEnd(iDim));
+            amrex::Real c[3] = { 0, 0, 0 };
+            for (int d = 0; d < nDimF; ++d)
+              c[d] = (idx[d] * dx[d] + plo[d]) * no2SiL;
+            std::fill(sumN.begin(), sumN.end(), 0.0);
+            std::fill(sumNA.begin(), sumNA.end(), 0.0);
+            amrex::Real vOut = 0;
+            // The plasma volume is cut at the body only: without a body the
+            // neutral-free region below #PLANETRADIUS still holds plasma.
+            integrate_cube(c, hBox, 0, rCut, sumN.data(), sumNA.data(), vOut);
+            amrex::Real vPlasma = vOut;
+            if (innerRadiusSI <= 0) {
+              vPlasma = vBox;
+            } else if (rCut > innerRadiusSI) {
+              // Body below #PLANETRADIUS: the plasma volume is outside the
+              // body, not outside the neutral atmosphere.
+              std::vector<amrex::Real> dN(nC), dNA(nC);
+              vPlasma = 0;
+              integrate_cube(c, hBox, 0, innerRadiusSI, dN.data(), dNA.data(),
+                             vPlasma);
+            }
+            // The ionization that feeds the plasma: above the
+            // photochemical boundary only.
+            if (rProd > rCut) {
+              std::fill(prodN.begin(), prodN.end(), 0.0);
+              std::fill(prodNA.begin(), prodNA.end(), 0.0);
+              amrex::Real vDummy = 0;
+              integrate_cube(c, hBox, 0, rProd, prodN.data(), prodNA.data(),
+                             vDummy);
+            } else {
+              prodN = sumN;
+              prodNA = sumNA;
+            }
+            for (int iC = 0; iC < nC; ++iC) {
+              arr(i, j, k, iC) = sumN[iC] / vBox;
+              arr(i, j, k, nC + iC) = prodNA[iC] / vBox;
+              arr(i, j, k, 2 * nC + iC) = prodN[iC] / vBox;
+            }
+            arr(i, j, k, 3 * nC) = vPlasma / vBox;
+          }
+    }
+  }
+
+  // Make sure the neutral averages match the current grid of every level.
+  // The averages are expensive (minutes on a refined grid), so a load
+  // balance, which only moves the boxes between processors, copies them.
+  void update_neutral_average() {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (nodeFluid[iLev].empty())
+        continue;
+      const bool cached =
+          iLev < static_cast<int>(neuAvg.size()) && !neuAvg[iLev].empty();
+      if (cached && neuAvgGrids[iLev] == nodeFluid[iLev].boxArray()) {
+        if (neuAvg[iLev].DistributionMap() !=
+            nodeFluid[iLev].DistributionMap()) {
+          amrex::MultiFab moved(nodeFluid[iLev].boxArray(),
+                                nodeFluid[iLev].DistributionMap(),
+                                neuAvg[iLev].nComp(), 0);
+          moved.ParallelCopy(neuAvg[iLev]);
+          neuAvg[iLev] = std::move(moved);
+        }
+        continue;
+      }
+      build_neutral_average(iLev);
+    }
   }
 
   // ---- Exosphere density profiles ----
 
   amrex::Real get_exosphere_density(amrex::Real r) const override {
-    if (exosphereType == "None")
-      return 0.0;
-    if (r < get_rPlanet_SI())
-      return 0.0;
-
     amrex::Real sum = 0.0;
-    if (exosphereType == "Exponential") {
-      for (int i = 0; i < nExoComponent; ++i) {
-        if (exoH0[i] > 0.0) {
-          sum += exoN0[i] * exp(-(r - get_rPlanet_SI()) / exoH0[i]);
-        }
-      }
-    } else if (exosphereType == "Power-Law") {
-      for (int i = 0; i < nExoComponent; ++i) {
-        if (r > 0.0) {
-          sum += exoN0[i] * pow(get_rPlanet_SI() / r, exoK0[i]);
-        }
-      }
-    } else if (exosphereType == "Chamberlain") {
-      for (int i = 0; i < nExoComponent; ++i) {
-        if (get_rPlanet_SI() > 0.0 && r > 0.0) {
-          sum += exoN0[i] * exp(-exoH0[i] * (1.0 / get_rPlanet_SI() - 1.0 / r));
-        }
-      }
-    }
+    for (int i = 0; i < nExoComponent; ++i)
+      sum += get_exosphere_component_density(r, i);
     return sum;
   }
 
@@ -240,15 +511,16 @@ public:
     if (r < get_rPlanet_SI())
       return 0.0;
 
-    if (exosphereType == "Exponential") {
+    const std::string& type = exoTypeC[iC];
+    if (type == "Exponential") {
       if (exoH0[iC] > 0.0) {
         return exoN0[iC] * exp(-(r - get_rPlanet_SI()) / exoH0[iC]);
       }
-    } else if (exosphereType == "Power-Law") {
+    } else if (type == "Power-Law") {
       if (r > 0.0) {
         return exoN0[iC] * pow(get_rPlanet_SI() / r, exoK0[iC]);
       }
-    } else if (exosphereType == "Chamberlain") {
+    } else if (type == "Chamberlain") {
       if (get_rPlanet_SI() > 0.0 && r > 0.0) {
         return exoN0[iC] * exp(-exoH0[iC] * (1.0 / get_rPlanet_SI() - 1.0 / r));
       }
@@ -310,23 +582,46 @@ public:
     return ne_SI * sigma_v;
   }
 
-  // Charge-exchange frequency [s^-1] for neutral component iC with ion iSp.
-  amrex::Real charge_exchange_rate(const FluidInterface& other,
-                                   const amrex::MFIter& mfi,
-                                   const amrex::IntVect& idx, int iLev, int iSp,
-                                   int iC) const {
-    int iIon = iSp - 1;
-    amrex::Real ni = other.get_number_density(mfi, idx, iSp, iLev);
-    amrex::Real ux_i = other.get_ux(mfi, idx, iSp, iLev);
-    amrex::Real uy_i = other.get_uy(mfi, idx, iSp, iLev);
-    amrex::Real uz_i = other.get_uz(mfi, idx, iSp, iLev);
-    amrex::Real u_mag_SI =
-        sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) * get_unorm_si();
-    if (ni <= 0.0 || u_mag_SI <= 0.0)
+  // Number density [m^-3] of species iSp in the plasma state `other`, read
+  // from its own density slot (0 if it has none).
+  amrex::Real species_number_density_si(const FluidInterface& other,
+                                        const amrex::MFIter& mfi,
+                                        const amrex::IntVect& idx, int iLev,
+                                        int iSp) const {
+    const int iRho = node_rho_slot(iSp);
+    if (iRho < 0)
       return 0.0;
-    amrex::Real ni_SI = ni / (get_Si2NoRho() * cProtonMassSI);
-    amrex::Real sigma = cxSigma[iC * nCXIonSpecies + iIon];
-    return ni_SI * sigma * 1e-4 * u_mag_SI;
+    const amrex::Real rho = other.get_value(mfi, idx, iRho, iLev);
+    if (rho <= 0.0)
+      return 0.0;
+    return rho / get_species_mass(iSp) / (get_Si2NoRho() * cProtonMassSI);
+  }
+
+  // Charge-exchange rate coefficient sigma*|u_i| [m^3/s] of ion iSp with
+  // neutral component iC (#CHARGEEXCHANGE). The ion loses its charge with the
+  // frequency n_n*sigma*|u_i| and a new ion of component iC appears at the
+  // neutral velocity and temperature; no electron is created or lost.
+  amrex::Real cx_sigma_v(const FluidInterface& other, const amrex::MFIter& mfi,
+                         const amrex::IntVect& idx, int iLev, int iSp,
+                         int iC) const {
+    const int iIon = iSp - 1;
+    const amrex::Real ux_i = other.get_ux(mfi, idx, iSp, iLev);
+    const amrex::Real uy_i = other.get_uy(mfi, idx, iSp, iLev);
+    const amrex::Real uz_i = other.get_uz(mfi, idx, iSp, iLev);
+    const amrex::Real u_mag_SI =
+        sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) * get_unorm_si();
+    // [cm^2] -> [m^2]
+    return cxSigma[iC * nCXIonSpecies + iIon] * 1e-4 * u_mag_SI;
+  }
+
+  // Fraction of the linear-rate loss nu*dt that an exponential decay over dt
+  // really removes, (1 - exp(-nu dt))/(nu dt). The products of a reaction are
+  // scaled with it so that they carry exactly the mass the reactant particles
+  // lose in apply_loss(), also for stiff rates (nu*dt >> 1).
+  static amrex::Real stiff_factor(amrex::Real nuDt) {
+    if (nuDt < 1e-8)
+      return 1.0;
+    return -std::expm1(-nuDt) / nuDt;
   }
 
   //-------------------------------------------------------------------
@@ -667,7 +962,13 @@ public:
           "(negative charge). Got Q/Qi[0] = " + std::to_string(QoQi_S[0]) +
           ". Reorder #PLASMA so the electron is first.");
     }
-    if (nExoComponent > nS - 1) {
+    // #PHOTOIONIZATION, #ELECTRONIMPACT and #CHARGEEXCHANGE turn component iC
+    // into ion species iC + 1. #CHEMISTRY names the product of every reaction
+    // explicitly, so any number of components may feed the same ion (e.g. the
+    // cold and the hot oxygen corona).
+    const bool mapsComponentToIon =
+        usePhotoIonization || useElectronImpact || useChargeExchange;
+    if (mapsComponentToIon && nExoComponent > nS - 1) {
       amrex::Abort(printPrefix + "Error: #EXOSPHERE nComponent (" +
                    std::to_string(nExoComponent) +
                    ") exceeds the number of ion species (" +
@@ -694,174 +995,91 @@ public:
     }
   }
 
-  // Reaction frequency [s^-1] for a chemistry reaction.
-  amrex::Real chem_reaction_rate(const ChemistryReaction& rxn,
-                                 const amrex::Real xyz[3], amrex::Real r_val,
-                                 amrex::Real ne, amrex::Real Te_eV,
-                                 amrex::Real attenuation = -1.0) const {
-    if (rxn.rateType == 1) {
-      if (attenuation >= 0.0) {
-        return rxn.rateCoef * attenuation;
-      }
-      if (r_val <= 0.0)
-        return 0.0;
-      return rxn.rateCoef * photo_attenuation(xyz, r_val);
-    }
-
-    // Thermal rate coefficient k(Te) [cm^3/s] -> [m^3/s]
-    amrex::Real k_si = rxn.rateCoef * 1e-6;
+  // Thermal rate coefficient k(Te) [m^3/s] of a chemistry reaction.
+  amrex::Real chem_rate_coef(const ChemistryReaction& rxn,
+                             amrex::Real Te_eV) const {
+    amrex::Real k_si = rxn.rateCoef * 1e-6; // [cm^3/s] -> [m^3/s]
     if (rxn.tempExp != 0.0 && Te_eV > 0.0) {
-      amrex::Real Te_K = Te_eV * cUnitChargeSI / cBoltzmannSI;
+      const amrex::Real Te_K = Te_eV * cUnitChargeSI / cBoltzmannSI;
       k_si *= pow(rxn.refTemp / Te_K, rxn.tempExp);
     }
+    return k_si;
+  }
 
-    if (rxn.neutralComp >= 0) {
-      amrex::Real n_neutral =
-          get_exosphere_component_density(r_val, rxn.neutralComp);
-      return k_si * n_neutral;
-    }
-
-    return k_si * ne / (get_Si2NoRho() * cProtonMassSI);
+  // Reaction frequency [1/s] of one reactant ion: the photo rate with the
+  // attenuation att, or k(Te) times the neutral density nNeu [m^-3] or, for a
+  // reaction without neutral, the electron density neSI [m^-3].
+  amrex::Real chem_frequency(const ChemistryReaction& rxn, amrex::Real nNeu,
+                             amrex::Real att, amrex::Real neSI,
+                             amrex::Real Te_eV) const {
+    if (rxn.rateType == 1)
+      return rxn.rateCoef * att;
+    return chem_rate_coef(rxn, Te_eV) * (rxn.neutralComp >= 0 ? nNeu : neSI);
   }
 
   //-------------------------------------------------------------------
-  // Apply chemistry reaction source term to accumulators.
-  void chem_apply_source(const ChemistryReaction& rxn, amrex::Real rate,
+  // Add the products of a chemistry reaction. sRate [m^-3 s^-1] is the number
+  // of reactions per volume and time (already averaged over the dual cell).
+  void chem_apply_source(const ChemistryReaction& rxn, amrex::Real sRate,
                          const FluidInterface& other, const amrex::MFIter& mfi,
                          const amrex::IntVect& idx, int iLev, int nIonS,
-                         amrex::Real r_val, std::vector<amrex::Real>& srcRho,
+                         std::vector<amrex::Real>& srcRho,
                          std::vector<amrex::Real>& srcP,
                          std::vector<amrex::Real>& srcRhoUx,
                          std::vector<amrex::Real>& srcRhoUy,
                          std::vector<amrex::Real>& srcRhoUz) const {
-    if (rxn.productIon <= 0 || rxn.productIon > nIonS)
+    if (rxn.productIon <= 0 || rxn.productIon > nIonS || sRate <= 0)
       return;
 
-    int iSpProd = rxn.productIon;
-    amrex::Real mass_prod = get_species_mass(iSpProd);
+    const int iSpProd = rxn.productIon;
+    const amrex::Real mass_prod = get_species_mass(iSpProd);
+    const amrex::Real srcRho_si = sRate * mass_prod * cProtonMassSI;
+    srcRho[iSpProd] += srcRho_si;
 
     if (rxn.reactantIon > 0 && rxn.reactantIon <= nIonS) {
-      // Cross-species CX: product inherits reactant velocity and temperature.
-      int iSpReac = rxn.reactantIon;
-      const int iRhoReac = node_rho_slot(iSpReac);
-      if (iRhoReac < 0)
-        return;
-      amrex::Real rho_reac_norm = other.get_value(mfi, idx, iRhoReac, iLev);
-      if (rho_reac_norm <= 0.0)
-        return;
-
-      amrex::Real mass_reac = get_species_mass(iSpReac);
-      amrex::Real n_reac_norm = rho_reac_norm / mass_reac;
-      amrex::Real n_reac_si = n_reac_norm / (get_Si2NoRho() * cProtonMassSI);
-
-      amrex::Real srcRho_si = rate * n_reac_si * mass_prod * cProtonMassSI;
-      srcRho[iSpProd] += srcRho_si;
-
-      amrex::Real ux_reac = other.get_ux(mfi, idx, iSpReac, iLev);
-      amrex::Real uy_reac = other.get_uy(mfi, idx, iSpReac, iLev);
-      amrex::Real uz_reac = other.get_uz(mfi, idx, iSpReac, iLev);
-      srcRhoUx[iSpProd] += srcRho_si * ux_reac;
-      srcRhoUy[iSpProd] += srcRho_si * uy_reac;
-      srcRhoUz[iSpProd] += srcRho_si * uz_reac;
-
-      // get_p() applies the (1 - PeRatio) ion share and the multi-species
-      // number-density split, i.e. it returns the pressure of species
-      // iSpReac itself instead of the total pressure.
-      amrex::Real p_reac_norm = other.get_p(mfi, idx, iSpReac, iLev);
-      amrex::Real p_reac_si = p_reac_norm / get_Si2NoP();
-      srcP[iSpProd] += rate * p_reac_si;
+      // Ion-neutral reaction: the product inherits the velocity and the
+      // temperature of the reactant.
+      const int iSpReac = rxn.reactantIon;
+      srcRhoUx[iSpProd] += srcRho_si * other.get_ux(mfi, idx, iSpReac, iLev);
+      srcRhoUy[iSpProd] += srcRho_si * other.get_uy(mfi, idx, iSpReac, iLev);
+      srcRhoUz[iSpProd] += srcRho_si * other.get_uz(mfi, idx, iSpReac, iLev);
+      // get_p() returns the pressure of species iSpReac itself (it applies
+      // the PeRatio share and the multi-species split).
+      const amrex::Real nReac =
+          species_number_density_si(other, mfi, idx, iLev, iSpReac);
+      if (nReac > 0) {
+        const amrex::Real p_reac_si = amrex::max(
+            0.0, other.get_p(mfi, idx, iSpReac, iLev) / get_Si2NoP());
+        srcP[iSpProd] += sRate * p_reac_si / nReac;
+      }
     } else {
-      // Photoionization: source from neutral at rest (zero velocity).
-      amrex::Real n_neutral =
-          get_exosphere_component_density(r_val, rxn.neutralComp);
-      amrex::Real S_n = n_neutral * rate;
-      srcRho[iSpProd] += S_n * mass_prod * cProtonMassSI;
-      if (rxn.neutralComp < nExoComponent) {
-        srcP[iSpProd] += S_n * cBoltzmannSI * exoT0[rxn.neutralComp];
-      }
-
-      // Co-create neutralizing electrons in full-PIC mode.
+      // Ionization of a neutral at rest: a new ion-electron pair at the
+      // neutral temperature.
+      const amrex::Real kT =
+          (rxn.neutralComp >= 0 && rxn.neutralComp < nExoComponent)
+              ? cBoltzmannSI * exoT0[rxn.neutralComp]
+              : 0.0;
+      srcP[iSpProd] += sRate * kT;
       if (nS > 0 && get_species_charge(0) < 0) {
-        amrex::Real mass_e = get_species_mass(0);
-        srcRho[0] += S_n * mass_e * cProtonMassSI;
-        if (rxn.neutralComp < nExoComponent) {
-          srcP[0] += S_n * cBoltzmannSI * exoT0[rxn.neutralComp];
-        }
+        srcRho[0] += sRate * get_species_mass(0) * cProtonMassSI;
+        srcP[0] += sRate * kT;
       }
     }
   }
 
-  // Apply chemistry reaction loss term to loss array.
-  void chem_apply_loss(const ChemistryReaction& rxn, amrex::Real rate,
-                       const FluidInterface& other, const amrex::MFIter& mfi,
-                       const amrex::IntVect& idx, int iLev, int nIonS, int i,
-                       int j, int k,
-                       amrex::Array4<amrex::Real>& lossArr) const {
-    if (rxn.reactantIon <= 0 || rxn.reactantIon > nIonS)
-      return;
-
-    int iSpReac = rxn.reactantIon;
-    const int iRhoReac = node_rho_slot(iSpReac);
-    if (iRhoReac < 0)
-      return;
-    amrex::Real rho_reac_norm = other.get_value(mfi, idx, iRhoReac, iLev);
-    if (rho_reac_norm <= 0.0)
-      return;
-
-    amrex::Real lossRho_norm = rate * rho_reac_norm / get_Si2NoT();
-    if (lossRho_norm > 0.0) {
-      lossArr(i, j, k, iSpReac) += lossRho_norm;
-
-      if (rxn.productIon == 0 && nS > 0 && get_species_charge(0) < 0) {
-        amrex::Real mass_reac = get_species_mass(iSpReac);
-        amrex::Real mass_e = get_species_mass(0);
-        lossArr(i, j, k, 0) += lossRho_norm * (mass_e / mass_reac);
-      }
+  // Recombination rate coefficient k(Te) [m^3/s] of #RECOMBINATION entry iR.
+  amrex::Real recombination_coef(int iR, amrex::Real Te_eV) const {
+    amrex::Real k_si = recombRate0[iR] * 1e-6;
+    if (Te_eV > 0.0 && recombTempExp[iR] != 0.0) {
+      const amrex::Real Te_K = Te_eV * cUnitChargeSI / cBoltzmannSI;
+      k_si *= pow(recombRefTemp[iR] / Te_K, recombTempExp[iR]);
     }
-  }
-
-  // Apply #RECOMBINATION loss terms.
-  void apply_recombination_loss(const FluidInterface& other,
-                                const amrex::MFIter& mfi,
-                                const amrex::IntVect& idx, int iLev, int nIonS,
-                                amrex::Real ne, amrex::Real Te_eV, int i, int j,
-                                int k,
-                                amrex::Array4<amrex::Real>& lossArr) const {
-    for (int iR = 0; iR < static_cast<int>(recombIonIndex.size()); ++iR) {
-      int iSp = recombIonIndex[iR];
-      if (iSp < 1 || iSp > nIonS)
-        continue;
-
-      amrex::Real k_si = recombRate0[iR] * 1e-6;
-      if (Te_eV > 0.0 && recombTempExp[iR] != 0.0) {
-        amrex::Real Te_K = Te_eV * cUnitChargeSI / cBoltzmannSI;
-        k_si *= pow(recombRefTemp[iR] / Te_K, recombTempExp[iR]);
-      }
-
-      const int iRhoIon = node_rho_slot(iSp);
-      if (iRhoIon < 0)
-        continue;
-      amrex::Real rho_ion_norm = other.get_value(mfi, idx, iRhoIon, iLev);
-      if (rho_ion_norm <= 0.0)
-        continue;
-
-      amrex::Real lossRho_norm =
-          k_si * ne * rho_ion_norm /
-          (get_Si2NoRho() * cProtonMassSI * get_Si2NoT());
-      if (lossRho_norm > 0.0) {
-        lossArr(i, j, k, iSp) += lossRho_norm;
-
-        if (nS > 0 && get_species_charge(0) < 0) {
-          amrex::Real mass_ion = get_species_mass(iSp);
-          amrex::Real mass_e = get_species_mass(0);
-          lossArr(i, j, k, 0) += lossRho_norm * (mass_e / mass_ion);
-        }
-      }
-    }
+    return k_si;
   }
 
   // Set nodeFluid from plasma-state-dependent ionization processes.
   void set_source(const FluidInterface& other) override {
+    timing_func("UserSource::set_source");
     set_node_fluid(other);
     set_node_loss_fluid_to_zero();
 
@@ -872,28 +1090,29 @@ public:
     const bool doCX = useChargeExchange;
     const bool doRecomb = useRecombination;
     const bool doChem = useChemistry;
+    const bool doLoss = use_loss_source();
 
     const amrex::Real rhoNormPerT = get_Si2NoRho() / get_Si2NoT();
     const amrex::Real pNormPerT = get_Si2NoP() / get_Si2NoT();
     // [m] per FLEKS length unit: 1 for a stand-alone run (the grid is then
     // given in metres) and one planetary radius for a GM-coupled run.
-    const amrex::Real no2SiL = get_No2SiL();
     const int nIonS = nS - 1;
+    const int nC = nExoComponent;
+
+    update_neutral_average();
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
-          const amrex::Real* dx = Geom(iLev).CellSize();
-          const auto plo = Geom(iLev).ProbLo();
-
           const amrex::Box& box = mfi.validbox();
           const auto lo = lbound(box);
           const auto hi = ubound(box);
 
           const amrex::Array4<amrex::Real>& arr = nodeFluid[iLev][mfi].array();
+          const auto neu = neuAvg[iLev][mfi].const_array();
 
           amrex::Array4<amrex::Real> lossArr;
-          if (doRecomb || doChem) {
+          if (doLoss) {
             lossArr = nodeLossFluid[iLev][mfi].array();
           }
 
@@ -903,6 +1122,11 @@ public:
           std::vector<amrex::Real> srcRhoUx(nIonS + 1, 0.0);
           std::vector<amrex::Real> srcRhoUy(nIonS + 1, 0.0);
           std::vector<amrex::Real> srcRhoUz(nIonS + 1, 0.0);
+          // Loss frequency [1/s] of each species, the part of it that also
+          // removes an electron (recombination), and the stiff factor.
+          std::vector<amrex::Real> nuLoss(nIonS + 1, 0.0);
+          std::vector<amrex::Real> nuRecomb(nIonS + 1, 0.0);
+          std::vector<amrex::Real> stiff(nIonS + 1, 1.0);
 
           for (int k = lo.z; k <= hi.z; ++k)
             for (int j = lo.y; j <= hi.y; ++j)
@@ -914,27 +1138,28 @@ public:
                         idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
                   }
                 }
-                // Geom() coordinates are in FLEKS code units, which for a
-                // GM-coupled run are the normalized lengths of the fluid
-                // component (1 = one planetary radius).  The exosphere
-                // profile, the scale heights, the EUV cross sections and the
-                // shadow cylinder radius are all in SI, so convert here.
-                amrex::Real xyz[3] = { 0, 0, 0 };
-                for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
-                  xyz[iDim] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2SiL;
-                }
-
-                amrex::Real r_val = 0.0;
-                for (int d = 0; d < 3; ++d) {
-                  r_val += xyz[d] * xyz[d];
-                }
-                r_val = sqrt(r_val);
-
-                // Fraction of the unattenuated EUV flux reaching this point:
-                // the #SHADOWCYLINDER mask by default, exp(-tau/mu) with
-                // #OPTICALDEPTH.
-                const amrex::Real photoAttenuation =
-                    (r_val > 0.0) ? photo_attenuation(xyz, r_val) : 0.0;
+                // Neutral exosphere of the node, averaged over its dual cell
+                // (see build_neutral_average): ext = <n_c>, extAtt =
+                // <n_c * attenuation>, frac = plasma (outside-body) volume
+                // fraction. Productions per volume use the dual-cell averages,
+                // the frequency of a reactant ion the density in the plasma
+                // part, nBar = ext / frac.
+                // extProd/extProdAtt: the same above the photochemical
+                // boundary, for the ionization that feeds the plasma.
+                const amrex::Real frac = neu(i, j, k, 3 * nC);
+                auto ext = [&](int iC) { return neu(i, j, k, iC); };
+                auto extProdAtt = [&](int iC) { return neu(i, j, k, nC + iC); };
+                auto extProd = [&](int iC) {
+                  return neu(i, j, k, 2 * nC + iC);
+                };
+                auto nBar = [&](int iC) {
+                  return frac > 0 ? ext(iC) / frac : 0.0;
+                };
+                // Mean attenuation of the ionizing flux for the photo
+                // frequency of an ion (rare; no photochemical cut needed).
+                auto attBar = [&](int iC) {
+                  return extProd(iC) > 0 ? extProdAtt(iC) / extProd(iC) : 0.0;
+                };
 
                 amrex::Real ne = 0, pe = 0, Te_eV = 0;
                 bool plasmaFetched = false;
@@ -952,55 +1177,131 @@ public:
                 std::fill(srcRhoUx.begin(), srcRhoUx.end(), 0.0);
                 std::fill(srcRhoUy.begin(), srcRhoUy.end(), 0.0);
                 std::fill(srcRhoUz.begin(), srcRhoUz.end(), 0.0);
+                std::fill(nuLoss.begin(), nuLoss.end(), 0.0);
+                std::fill(nuRecomb.begin(), nuRecomb.end(), 0.0);
 
-                // Exosphere-based ionization sources.
+                // ---- Loss frequencies of the ions [1/s] ----
+                // They are computed first because the products of a reaction
+                // are scaled with the stiff factor of their reactant.
+                if (doCX) {
+                  for (int iC = 0; iC < nExoComponent; ++iC) {
+                    const amrex::Real nn = nBar(iC);
+                    if (nn <= 0.0)
+                      continue;
+                    for (int iSpCX = 1; iSpCX <= nIonS; ++iSpCX)
+                      nuLoss[iSpCX] +=
+                          nn * cx_sigma_v(other, mfi, idx, iLev, iSpCX, iC);
+                  }
+                }
+
+                if (doRecomb) {
+                  fetch_electron_plasma();
+                  const amrex::Real neSI =
+                      ne / (get_Si2NoRho() * cProtonMassSI);
+                  for (int iR = 0; iR < static_cast<int>(recombIonIndex.size());
+                       ++iR) {
+                    const int iSp = recombIonIndex[iR];
+                    if (iSp < 1 || iSp > nIonS)
+                      continue;
+                    const amrex::Real nu = recombination_coef(iR, Te_eV) * neSI;
+                    nuLoss[iSp] += nu;
+                    nuRecomb[iSp] += nu;
+                  }
+                }
+
+                if (doChem) {
+                  fetch_electron_plasma();
+                  const amrex::Real neSI =
+                      ne / (get_Si2NoRho() * cProtonMassSI);
+                  for (const auto& rxn : chemReactions) {
+                    if (rxn.reactantIon <= 0 || rxn.reactantIon > nIonS)
+                      continue;
+                    const int iC = rxn.neutralComp;
+                    const amrex::Real rate =
+                        chem_frequency(rxn, iC >= 0 ? nBar(iC) : 0.0,
+                                       iC >= 0 ? attBar(iC) : 1.0, neSI, Te_eV);
+                    if (rate <= 0.0)
+                      continue;
+                    nuLoss[rxn.reactantIon] += rate;
+                    if (rxn.productIon == 0)
+                      nuRecomb[rxn.reactantIon] += rate;
+                  }
+                }
+
+                for (int iSp = 1; iSp <= nIonS; ++iSp)
+                  stiff[iSp] = stiff_factor(nuLoss[iSp] * dtSI);
+
+                // ---- Exosphere-based ionization sources ----
                 for (int iC = 0; iC < nExoComponent; ++iC) {
                   const int iSp = iC + 1;
                   if (iSp > nIonS)
                     break;
 
-                  amrex::Real dens_i =
-                      get_exosphere_component_density(r_val, iC);
+                  const amrex::Real dens_i = ext(iC);
+                  if (dens_i <= 0.0)
+                    continue;
 
-                  amrex::Real nu_tot = 0.0;
+                  // Ionization: a new ion-electron pair [m^-3 s^-1].
+                  amrex::Real S_ion = 0.0;
                   if (doPhoto)
-                    nu_tot += photoNu0[iC] * photoAttenuation;
+                    S_ion += photoNu0[iC] * extProdAtt(iC);
                   if (doImpact) {
                     fetch_electron_plasma();
-                    nu_tot += impact_ionization_rate(ne, Te_eV, iC);
+                    S_ion +=
+                        impact_ionization_rate(ne, Te_eV, iC) * extProd(iC);
                   }
+
+                  // Charge exchange: every ion that loses its charge to a
+                  // neutral of component iC leaves a new ion iSp behind.
+                  amrex::Real S_cx = 0.0;
                   if (doCX) {
                     for (int iSpCX = 1; iSpCX <= nIonS; ++iSpCX) {
-                      nu_tot += charge_exchange_rate(other, mfi, idx, iLev,
-                                                     iSpCX, iC);
+                      const amrex::Real ni = species_number_density_si(
+                          other, mfi, idx, iLev, iSpCX);
+                      if (ni > 0.0)
+                        S_cx += dens_i * ni * stiff[iSpCX] *
+                                cx_sigma_v(other, mfi, idx, iLev, iSpCX, iC);
                     }
                   }
 
-                  amrex::Real S_n = dens_i * nu_tot;
+                  const amrex::Real S_n = S_ion + S_cx;
                   amrex::Real mass_amu = get_species_mass(iSp);
                   srcRho[iSp] += S_n * mass_amu * cProtonMassSI;
                   srcP[iSp] += S_n * cBoltzmannSI * exoT0[iC];
 
                   // Co-create neutralizing electrons in full-PIC mode.
-                  if (nS > 0 && get_species_charge(0) < 0) {
+                  if (S_ion > 0 && nS > 0 && get_species_charge(0) < 0) {
                     amrex::Real mass_e = get_species_mass(0);
-                    srcRho[0] += S_n * mass_e * cProtonMassSI;
-                    srcP[0] += S_n * cBoltzmannSI * exoT0[iC];
+                    srcRho[0] += S_ion * mass_e * cProtonMassSI;
+                    srcP[0] += S_ion * cBoltzmannSI * exoT0[iC];
                   }
                 }
 
                 // Chemistry sources.
                 if (doChem) {
                   fetch_electron_plasma();
-                  for (int iR = 0; iR < static_cast<int>(chemReactions.size());
-                       ++iR) {
-                    const auto& rxn = chemReactions[iR];
-                    amrex::Real rate = chem_reaction_rate(
-                        rxn, xyz, r_val, ne, Te_eV, photoAttenuation);
-                    if (rate <= 0.0)
-                      continue;
-                    chem_apply_source(rxn, rate, other, mfi, idx, iLev, nIonS,
-                                      r_val, srcRho, srcP, srcRhoUx, srcRhoUy,
+                  const amrex::Real neSI =
+                      ne / (get_Si2NoRho() * cProtonMassSI);
+                  for (const auto& rxn : chemReactions) {
+                    const int iC = rxn.neutralComp;
+                    amrex::Real sRate = 0.0; // reactions [m^-3 s^-1]
+                    if (rxn.reactantIon > 0 && rxn.reactantIon <= nIonS) {
+                      // Ion reactant: its frequency in the plasma part of the
+                      // dual cell, the stiff fraction that really reacts.
+                      const amrex::Real nReac = species_number_density_si(
+                          other, mfi, idx, iLev, rxn.reactantIon);
+                      sRate = chem_frequency(rxn, iC >= 0 ? nBar(iC) : 0.0,
+                                             iC >= 0 ? attBar(iC) : 1.0, neSI,
+                                             Te_eV) *
+                              stiff[rxn.reactantIon] * nReac * frac;
+                    } else if (iC >= 0) {
+                      // Ionization of the neutral: photo or by the electrons.
+                      sRate = rxn.rateType == 1 ? rxn.rateCoef * extProdAtt(iC)
+                                                : chem_rate_coef(rxn, Te_eV) *
+                                                      neSI * extProd(iC);
+                    }
+                    chem_apply_source(rxn, sRate, other, mfi, idx, iLev, nIonS,
+                                      srcRho, srcP, srcRhoUx, srcRhoUy,
                                       srcRhoUz);
                   }
                 }
@@ -1083,24 +1384,41 @@ public:
                 if (useMhdPe && iPe > 0 && srcP[0] > 0)
                   arr(i, j, k, iPe) = srcP[0] * pNormPerT;
 
-                // Loss terms.
-                if (doRecomb) {
-                  fetch_electron_plasma();
-                  apply_recombination_loss(other, mfi, idx, iLev, nIonS, ne,
-                                           Te_eV, i, j, k, lossArr);
-                }
-
-                if (doChem) {
-                  fetch_electron_plasma();
-                  for (int iR = 0; iR < static_cast<int>(chemReactions.size());
-                       ++iR) {
-                    const auto& rxn = chemReactions[iR];
-                    amrex::Real rate = chem_reaction_rate(
-                        rxn, xyz, r_val, ne, Te_eV, photoAttenuation);
-                    if (rate <= 0.0)
-                      continue;
-                    chem_apply_loss(rxn, rate, other, mfi, idx, iLev, nIonS, i,
-                                    j, k, lossArr);
+                // ---- Loss frequencies [code units of 1/time] ----
+                // apply_loss() multiplies every particle weight by
+                // exp(-nu*dt), so the stored value must be a frequency, not
+                // a mass-density rate: it does not depend on how much plasma
+                // the state `other` happens to hold at this node.
+                if (doLoss) {
+                  // Electron-ion recombinations per m^3 and s, with the ion
+                  // losses of one step folded in by the stiff factor.
+                  amrex::Real recombSI = 0.0;
+                  for (int iSp = 1; iSp <= nIonS; ++iSp) {
+                    lossArr(i, j, k, iSp) = nuLoss[iSp] / get_Si2NoT();
+                    if (nuRecomb[iSp] > 0.0) {
+                      const amrex::Real ni =
+                          species_number_density_si(other, mfi, idx, iLev, iSp);
+                      recombSI += ni * nuRecomb[iSp] * stiff[iSp];
+                    }
+                  }
+                  // A kinetic electron species loses as many electrons as
+                  // the ions recombine with, i.e. the frequency nu_e with
+                  // n_e*(1 - exp(-nu_e*dt)) = recombSI*dt.
+                  if (has_electron_species() && recombSI > 0.0) {
+                    fetch_electron_plasma();
+                    const amrex::Real neSI =
+                        ne / (get_Si2NoRho() * cProtonMassSI);
+                    amrex::Real nuE = 0.0;
+                    if (neSI > 0.0) {
+                      if (dtSI > 0.0) {
+                        const amrex::Real frac =
+                            std::min(recombSI * dtSI / neSI, 1.0 - 1e-12);
+                        nuE = -std::log1p(-frac) / dtSI;
+                      } else {
+                        nuE = recombSI / neSI;
+                      }
+                    }
+                    lossArr(i, j, k, 0) = nuE / get_Si2NoT();
                   }
                 }
               } // for k

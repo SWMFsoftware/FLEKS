@@ -32,11 +32,10 @@ imports another's code. Code shared by several tests lives in `tests/_shared/`.
 | Single-cell Hall | `singlecell/` | 1-cell periodic; curl B = 0 ⇒ Hall term exactly 0 |
 | Zero-current wave | `zerocurrent/` | No particles (J = 0); Hall term vanishes |
 | Hyper-resistivity | `hyper_resistivity/` | 4th-order `-eta_h ∇²J` Ohm term (smoke test) |
-| Photoionization | `photoionization/` | Chamberlain profile, photoionization |
-| Electron impact | `electronimpact/` | Voronov-1997 impact rate |
-| Charge exchange | `chargeexchange/` | Constant cross-section CX with solar-wind ions |
-| Chemistry | `chemistry/` | Chemical loss / source network |
-| Recombination | `recombination/` | Recombination loss |
+| Exosphere | `exosphere/` | Neutral exosphere models (Chamberlain, Chapman, exponential) & photoproduction |
+| Reactions | `reactions/` | Reaction networks (charge exchange, recombination, electron impact, chemistry) |
+| Open BC | `openboundary/` | Open particle boundary with thermal re-entry flux |
+| Outflow BC | `bc_outflow/` | Vacuum sink particle outflow |
 | Reflecting BC | `bc_reflecting/` | Specular reflecting particle wall |
 | Absorbing BC | `bc_absorb/` | Grouped: EM-pulse absorber + particle absorber |
 | Inflow BC | `bc_inflow/` | `#INFLOW`-driven inflow face |

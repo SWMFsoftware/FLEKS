@@ -852,6 +852,17 @@ If isPPVconstant is true then particles per volume is constant across all refine
 otherwise particles per cell is constant.
 </command>
 
+<command name="MINPARTICLESPERCELL" alias="MINPARTICLESPERCELL_FLEKS0,MINPARTICLESPERCELL_FLEKS1,MINPARTICLESPERCELL_FLEKS2" multiple="T">
+  <parameter name="minPPCPerDim" type="integer" min="1" default="1"/>
+
+#MINPARTICLESPERCELL
+2                   minPPCPerDim
+
+Lower limit of the particles per cell and dimension on the refined levels with
+#CONSTANTPPV (default 1, which also keeps the deep levels from getting no particles at
+all), so that they keep a few particles per cell.
+</command>
+
 <command name="PRESPLITTING" alias="PRESPLITTING_FLEKS0,PRESPLITTING_FLEKS1,PRESPLITTING_FLEKS2" multiple="T">
   <parameter name="doPreSplitting" type="logical" default="F"/>
 
@@ -1476,13 +1487,25 @@ condition and ghost cells for a FLEKS region.
 1                  particles per cell in X 
 1                  particles per cell in Y 
 1                  particles per cell in Z 
+1.0e-3             minWeightRatio (optional, default 1.0e-3)
 
 #SOURCEPARTICLES_FLEKS1
 10                 particles per cell in X 
 10                 particles per cell in Y 
 1                  particles per cell in Z 
 
-The command sets particle number per cell for plasma sources.
+The command sets the particle number per cell for plasma sources, and optionally
+the weight floor ratio below which Russian roulette is used.
+
+minWeightRatio sets the lower limit of the weight of the source particles (#SOURCE),
+relative to the weight of a particle of the reference plasma: the number density
+of all ions of the fluid state (#UNIFORMSTATE in a stand-alone run, the MHD state
+in a coupled run) divided by the particles per cell of #PARTICLES. A cell whose
+source of one step is smaller than one particle of the floor weight gets a
+single particle of the floor weight with the probability source/floor, so the
+injected mass is conserved on average. Without the floor, an extended exosphere
+creates a particle in every cell and every step, most of them with negligible
+weight. The default is 1.0e-3; setting it to 0 switches the floor off.
 </command>
 
 <command name="ADAPTIVESOURCEPPC" alias="ADAPTIVESOURCEPPC_FLEKS0,ADAPTIVESOURCEPPC_FLEKS1,ADAPTIVESOURCEPPC_FLEKS2" multiple="T">
@@ -1914,18 +1937,22 @@ length unit is then one planetary radius.
 Only rank zero reads the file and the coefficients are then broadcast.
 </command>
 
-<command name="BODYBOUNDARY" alias="BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2" multiple="T">
+<command name="INNERBOUNDARY" alias="BODYBOUNDARY,BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2,INNERBOUNDARY_FLEKS0,INNERBOUNDARY_FLEKS1,INNERBOUNDARY_FLEKS2" multiple="T">
   <parameter name="particleBoundary" type="string" default="absorb"/>
   <parameter name="fieldBoundary" type="string" default="linetied"/>
 
-#BODYBOUNDARY
+#INNERBOUNDARY
 absorb            particleBoundary
 linetied          fieldBoundary
+photochemical     typePhotochem (optional)
+3596000.0         rPhotochem [m] (optional radius, if typePhotochem is photochemical)
 
 This command selects the boundary condition on the surface of the inner body
-declared by #BODY. It has two parameters: the first one applies to the
-particles, the second one to the electromagnetic field. It is ignored (with a
-warning) if no #BODY is given. The defaults are 'absorb' and 'linetied'.
+declared by #BODY. (Alias: #BODYBOUNDARY). It applies boundary conditions to the
+particles and the electromagnetic field, and optionally configures the
+photochemical equilibrium boundary. It is ignored (with a warning) if no #BODY
+is given, unless the photochemical boundary is configured. The defaults are
+'absorb' and 'linetied'.
 
 particleBoundary:
 
@@ -1940,6 +1967,25 @@ particleBoundary:
               are reflected when the cell has no electron deficit. Particles that
               are not absorbed are reflected specularly on the smooth surface,
               maintaining ambipolar balance and preventing artificial charging.
+
+typePhotochem (optional):
+
+  photochemical - below this radius [m] the ions are produced and lost in
+                  local photochemical equilibrium: the ionization there (photo
+                  and electron impact, #PHOTOIONIZATION, #ELECTRONIMPACT, and
+                  the ionization reactions of #CHEMISTRY) is not injected into
+                  the plasma. The neutral densities that set the frequencies of
+                  the ion-neutral reactions and of charge exchange keep the
+                  whole atmosphere. Use it when the grid cannot resolve the
+                  ionospheric layer: diluted over a cell, the ions recombine
+                  far too slowly (the loss scales with n\^2), so the full column
+                  production would pile up next to the body. If rPhotochem is
+                  omitted or 0, defaults to the body/planet radius.
+
+rPhotochem (optional, read if typePhotochem is 'photochemical'):
+
+  Radius [m] of the photochemical equilibrium boundary (e.g. 3596000.0 for
+  200 km altitude at Mars). If omitted or 0, defaults to the body/planet radius.
 
 fieldBoundary (n is the radial direction from the body center). The conditions
 are applied on the one-cell-thick surface layer of the body; the interior
@@ -2048,6 +2094,7 @@ accepted: rename it to #PLANETRADIUS in existing input decks.
 <command name="EXOSPHERE" alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2" multiple="T">
   <parameter name="typeProfile" type="string"/>
   <parameter name="nComponent" type="integer"/>
+  <parameter name="typeComponent" type="string" if="$typeProfile eq 'Mixed'"/>
   <parameter name="n0" type="real"/>
   <parameter name="H0" type="real"/>
   <parameter name="T0" type="real"/>
@@ -2062,7 +2109,26 @@ Exponential      typeProfile
 0.0              k0
 
 This command configures the static exospheric neutral density profile.
-The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
+The typeProfile can be "Exponential", "Power-Law", "Chamberlain" or "Mixed".
+With "Mixed" each component starts with its own typeComponent (one of the
+other three), e.g. a cold exponential thermosphere next to a hot Chamberlain
+hydrogen corona:
+
+\begin{verbatim}
+Mixed            typeProfile
+2                nComponent
+Exponential      typeComponent
+8.5e15           n0
+13340            H0
+134.0            T0
+0.0              k0
+Chamberlain      typeComponent
+1.0e11           n0
+25965e3          H0
+6500.0           T0
+0.0              k0
+\end{verbatim}
+
 The coefficients n0, H0, T0, k0 are specified as multi-component arrays
 for each neutral species. The total neutral density at radius $r$ (measured
 from the planet center, with $r \geq r_{planet}$) is the sum over all
@@ -2204,7 +2270,15 @@ while the point is on the dayside and $\tau/\mu$ stays below tauCutoff, and
 $$
   A = A_{min}
 $$
-otherwise, with $\tau$ floored at tauFloor.
+otherwise, with $\tau$ floored at tauFloor. Behind the terminator plane the
+point is dark ($A = A_{min}$) only in the geometric shadow of the planet, a
+cylinder of the #SHADOWCYLINDER radius (otherwise #PLANETRADIUS) around the
+anti-solar axis. Elsewhere the solar ray grazes the planet at the tangent
+radius $p$ (the distance from that axis) and crosses the column
+$\tau = \sum_c \sigma_c n_c(p) H_c(p) \sqrt{2\pi p/H_c(p)}$, so a corona
+that extends to several planetary radii stays sunlit on the nightside while the
+thermosphere there is dark. With #SHADOWCYLINDER, a point in the cylinder is
+dark in every branch.
 
 With chapmanFunction = T only the component named by chapmanComponent
 contributes to $\tau$, which is then multiplied by the Chapman function

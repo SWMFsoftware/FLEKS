@@ -1,0 +1,132 @@
+#DESCRIPTION
+Photoionization with the source-particle weight floor (SOURCEPARTICLES).
+The source of one cell and step (1e-4 /cc) is 5x below the floor (5e-4 /cc), so
+a cell gets a floor-weight particle with probability 0.2. Analytic: the
+injected O+ mass is S*V*t on average (statistical error ~2%).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+100.0                   xMin  [code units: 1 = lNormSI = 100 km; x ~ 1e7 m]
+106.4                   xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]
+1.0e5                   uNormSI   [m/s]
+
+#PLANETRADIUS
+1.0                     radius [m]  the exosphere is evaluated far outside it
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature [eV]
+1.0                     electronGamma
+5.0                     electronDensity0
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+3                       nSpecies
+0.0625                  mass        Species 0: fluid electron slot
+-1.0                    charge
+16.0                    mass        Species 1: O+ (photoion)
+1.0                     charge
+1.0                     mass        Species 2: H+ background (sets the reference weight)
+1.0                     charge
+
+#UNIFORMSTATE
+5.01                    rho [/cc]   Species 0: electrons
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+0.01                    rho [/cc]   Species 1: O+ seed
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1000.0                  T [K]
+5.0                     rho [/cc]   Species 2: H+
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5e-09                   bx [T]      along the drift: no motional E
+0                       by [T]
+0                       bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#EXOSPHERE
+Exponential             typeProfile
+1                       nComponent
+1.0e9                  n0 [m^-3]   uniform: H0 >> domain size
+1.0e15                  H0 [m]
+1000.0                  T0 [K]     temperature of the new ions
+0.0                     k0
+
+#PHOTOIONIZATION
+1.0e-6                  nuPhoto0 [1/s]  S = 1e3 m^-3/s = 1e-4 /cc per step
+
+#SOURCE
+T                       useSource
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt [s]
+
+#PARTICLES
+100                     npcelx
+1                       npcely
+1                       npcelz
+
+#SOURCEPARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+1.0e-2                  minWeightRatio  floor 5e-4 /cc > 1e-4 /cc per cell and step
+
+#MONITOR
+50                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#STOP
+-1                      MaxIter
+20.0                     TimeMax [s]
