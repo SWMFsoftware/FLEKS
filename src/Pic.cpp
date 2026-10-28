@@ -1059,6 +1059,172 @@ void Pic::mask_body_source(SourceInterface& src) {
 }
 
 //==========================================================
+bool Pic::shell_weights_up_to_date(const ShellWeights& sw) {
+  if ((int)sw.weight.size() != n_lev() ||
+      (int)sw.grids.size() != n_lev() ||
+      (int)sw.dms.size() != n_lev())
+    return false;
+  bool upToDate = true;
+  for (int iLev = 0; iLev < n_lev(); iLev++)
+    upToDate = upToDate &&
+               sw.grids[iLev] == cell_status(iLev).boxArray() &&
+               sw.dms[iLev] == cell_status(iLev).DistributionMap();
+  return upToDate;
+}
+
+//==========================================================
+void Pic::build_shell_weights(
+    ShellWeights& sw, Real radiusSI,
+    const std::function<Real(const Real*, Real)>& profile,
+    const std::string& name) {
+  timing_func("Pic::build_shell_weights");
+
+  sw.weight.clear();
+  sw.weight.resize(n_lev());
+  sw.grids.resize(n_lev());
+  sw.dms.resize(n_lev());
+
+  const Real R = radiusSI * fi->get_Si2NoL();
+  const Real* c = get_body_center();
+  // Area of the sphere in a cell: the volume of a thin shell |r - R| < h/2
+  // inside the cell, divided by h, sampled on a stratified nSub^3 grid.
+  constexpr int nSub = 24;
+  constexpr Real hRel = 0.2;
+
+  Real total = 0;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto& cs = cell_status(iLev);
+    sw.grids[iLev] = cs.boxArray();
+    sw.dms[iLev] = cs.DistributionMap();
+    sw.weight[iLev].define(cs.boxArray(), cs.DistributionMap(), 1, 0);
+    sw.weight[iLev].setVal(0.0);
+
+    const auto& dxl = Geom(iLev).CellSize();
+    const auto& plol = Geom(iLev).ProbLo();
+    const Real dxMax = std::max({ AMREX_D_DECL(dxl[0], dxl[1], dxl[2]) });
+    const Real h = hRel * dxMax;
+    const Real dV = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) /
+                    (nSub * nSub * (nDim > 2 ? nSub : 1));
+
+    for (MFIter mfi(sw.weight[iLev]); mfi.isValid(); ++mfi) {
+      const auto& status = cs[mfi].const_array();
+      const auto& w = sw.weight[iLev][mfi].array();
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const int st = status(i, j, k);
+            if (bit::is_body(st) || bit::is_refined(st))
+              continue;
+            const int ijk[3] = { i, j, k };
+            Real xc[3] = { 0, 0, 0 };
+            for (int iDim = 0; iDim < nDim; iDim++)
+              xc[iDim] = (ijk[iDim] + 0.5) * dxl[iDim] + plol[iDim] - c[iDim];
+            const Real rc =
+                std::sqrt(xc[0] * xc[0] + xc[1] * xc[1] + xc[2] * xc[2]);
+            if (std::abs(rc - R) > 0.9 * dxMax + h)
+              continue;
+
+            int nHit = 0;
+            const int nk = nDim > 2 ? nSub : 1;
+            for (int kk = 0; kk < nk; kk++)
+              for (int jj = 0; jj < nSub; jj++)
+                for (int ii = 0; ii < nSub; ii++) {
+                  const int sub[3] = { ii, jj, kk };
+                  Real x[3] = { 0, 0, 0 };
+                  for (int iDim = 0; iDim < nDim; iDim++)
+                    x[iDim] = xc[iDim] +
+                              ((sub[iDim] + 0.5) / nSub - 0.5) * dxl[iDim];
+                  const Real r =
+                      std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+                  if (std::abs(r - R) < 0.5 * h)
+                    nHit++;
+                }
+            if (nHit == 0)
+              continue;
+            const Real area = nHit * dV / h;
+
+            w(i, j, k) = area * profile(xc, rc);
+            total += w(i, j, k);
+          }
+    }
+  }
+
+  ParallelDescriptor::ReduceRealSum(total);
+  if (total <= 0) {
+    Print() << "Warning: " << name
+            << ": the sphere crosses no plasma cell; nothing is injected.\n";
+    sw.weight.clear();
+    return;
+  }
+  for (int iLev = 0; iLev < n_lev(); iLev++)
+    sw.weight[iLev].mult(1.0 / total);
+  Print() << "  " << name
+          << " weights rebuilt, sphere area in plasma cells / 4 pi R^2 "
+             "(profile-weighted) = "
+          << total / (4 * M_PI * R * R) << "\n";
+}
+
+//==========================================================
+void Pic::build_emission_weights() {
+  auto& ie = ionoEmission;
+  if (!ie.use || shell_weights_up_to_date(ie.shell))
+    return;
+  const Real* sd = ie.solarDir;
+  const Real noon = ie.noon, night = ie.night;
+  auto profile_factor = [noon, night, sd](const Real* x, Real rc) {
+    const Real cosSza =
+        rc > 0 ? (x[0] * sd[0] + x[1] * sd[1] + x[2] * sd[2]) / rc : 1.0;
+    return cosSza > 0 ? noon + (night - noon) * (1 - cosSza)
+                      : night;
+  };
+  build_shell_weights(ie.shell, ie.radiusSI, profile_factor,
+                      "#IONOSPHEREEMISSION");
+}
+
+//==========================================================
+void Pic::inject_ionosphere_emission() {
+  const auto& ie = ionoEmission;
+  if (!ie.use || !usePIC || is_grid_empty())
+    return;
+  timing_func("Pic::inject_ionosphere_emission");
+
+  build_emission_weights();
+  if ((int)ie.shell.weight.size() != n_lev())
+    return;
+
+  // rate [#/s] * dt [s] * weight / V [m^3] -> n [/m^3] -> code units.
+  const Real dtSI = tc->get_dt_si();
+  const Real l3 = std::pow(fi->get_No2SiL(), 3);
+  const Real nFactor = cProtonMassSI * fi->get_Si2NoRho();
+
+  // Charge of all the ions injected in one step [#/s].
+  Real ionCharge = 0;
+  for (int iS = 0; iS < nSpecies; iS++)
+    if (fi->get_species_charge(iS) > 0)
+      ionCharge += fi->get_species_charge(iS) * ie.rateSI[iS];
+
+  for (int i : kineticSpecies_) {
+    const Real charge = parts[i]->get_charge();
+    // In full PIC a kinetic electron gets the total ion charge.
+    Real rate = charge < 0 ? ionCharge / std::abs(charge) : ie.rateSI[i];
+    if (rate <= 0)
+      continue;
+    Vector<MultiFab> nAdd(n_lev());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const auto& w = ie.shell.weight[iLev];
+      const Real volSI = get_cell_volume(iLev) * l3;
+      nAdd[iLev].define(w.boxArray(), w.DistributionMap(), 1, 0);
+      MultiFab::Copy(nAdd[iLev], w, 0, 0, 1, 0);
+      nAdd[iLev].mult(rate * dtSI / volSI * nFactor);
+    }
+    parts[i]->inject_emission_shell(nAdd, ie.vth[i], ie.nPPC, get_body_center());
+  }
+}
+
+//==========================================================
 void Pic::update_part_loc_to_half_stage() {
   std::string nameFunc = "Pic::update_part_loc_to_half_stage";
 
@@ -1833,6 +1999,9 @@ void Pic::finish_particle_push() {
   }
 
   inject_particles_for_boundary_cells();
+
+  // Ionospheric emission shell (#IONOSPHEREEMISSION).
+  inject_ionosphere_emission();
 
   // Inject incoming flux at physical inflow faces before the moment deposit.
   // Kept outside inject_particles_for_boundary_cells to avoid t=0

@@ -400,7 +400,7 @@ AMR_TESTS = {
 }
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
-AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "exosphere"}
+AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "exosphere", "ionosphereemission"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
 AMREX2D_TESTS = {"body", "body_rarefaction", "openboundary"}

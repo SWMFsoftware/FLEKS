@@ -419,6 +419,10 @@ protected:
   amrex::Real bodyAbsorbCount = 0;
   amrex::Real bodyAbsorbCharge = 0;
   amrex::Real bodyAbsorbMass = 0;
+  // Cumulative number / mass of the particles injected at the body
+  // (#IONOSPHEREEMISSION).
+  amrex::Real bodyInjectCount = 0;
+  amrex::Real bodyInjectMass = 0;
 
   // The cumulative tallies and boundary histories above, saved with the
   // particles by backup_particle_state() and rolled back if the trial push of
@@ -426,7 +430,7 @@ protected:
   struct TallyState {
     amrex::Real absorbCount[6], absorbCharge[6], absorbMass[6];
     amrex::Real faceIn[6], faceOut[6];
-    amrex::Real bodyAbsorb[3];
+    amrex::Real bodyAbsorb[3], bodyInject[2];
     std::map<int64_t, amrex::Real> fluxAcc, openDrift;
   } tallyBackup;
 
@@ -441,6 +445,8 @@ protected:
     t.bodyAbsorb[0] = bodyAbsorbCount;
     t.bodyAbsorb[1] = bodyAbsorbCharge;
     t.bodyAbsorb[2] = bodyAbsorbMass;
+    t.bodyInject[0] = bodyInjectCount;
+    t.bodyInject[1] = bodyInjectMass;
     t.fluxAcc = injectFluxAcc;
     t.openDrift = openFaceDrift;
   }
@@ -456,6 +462,8 @@ protected:
     bodyAbsorbCount = t.bodyAbsorb[0];
     bodyAbsorbCharge = t.bodyAbsorb[1];
     bodyAbsorbMass = t.bodyAbsorb[2];
+    bodyInjectCount = t.bodyInject[0];
+    bodyInjectMass = t.bodyInject[1];
     injectFluxAcc = t.fluxAcc;
     openFaceDrift = t.openDrift;
   }
@@ -530,6 +538,15 @@ public:
   // in time per face cell and clamped to its outward part to prevent runaway.
   void inject_flux_at_open_faces(amrex::Real dt,
                                  const amrex::MultiFab& nodeMom);
+
+  // Ionospheric emission shell (#IONOSPHEREEMISSION): add nPPC particles of
+  // this species to every cell where nAdd (cell-centered, code-unit number
+  // density added this step) is positive, uniformly in the cell, with a
+  // Maxwellian of thermal speed vth whose radial component (from `center`)
+  // is flipped outward, as the IonosphereInjector of rhybrid does.
+  void inject_emission_shell(const amrex::Vector<amrex::MultiFab>& nAdd,
+                             amrex::Real vth, int nPPC,
+                             const amrex::Real* center);
 
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
@@ -1369,6 +1386,8 @@ public:
   amrex::Real get_body_absorb_count() const { return bodyAbsorbCount; }
   amrex::Real get_body_absorb_charge() const { return bodyAbsorbCharge; }
   amrex::Real get_body_absorb_mass() const { return bodyAbsorbMass; }
+  amrex::Real get_body_inject_count() const { return bodyInjectCount; }
+  amrex::Real get_body_inject_mass() const { return bodyInjectMass; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

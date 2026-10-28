@@ -516,11 +516,77 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
   }
 }
 
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::inject_emission_shell(
+    const Vector<MultiFab>& nAdd, Real vth, int nPPC, const Real* center) {
+  timing_func("Pts::inject_emission_shell");
+
+  if (nPPC <= 0)
+    return;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const Real vol = dx[iLev].product();
+    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const auto add = nAdd[iLev][mfi].const_array();
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const Real n = add(i, j, k);
+            if (n <= 0)
+              continue;
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            set_random_seed(iLev, ijk, IntVect(271));
+            ParticleTileType& tile = get_particle_tile(iLev, mfi, ijk);
+            const Real q = qomSign * n * vol / nPPC;
+            for (int ip = 0; ip < nPPC; ip++) {
+              auto p = make_particle();
+              set_ids(p);
+              Real r[3] = { 0, 0, 0 };
+              for (int iDim = 0; iDim < nDim; iDim++) {
+                p.pos(iDim) = (ijk[iDim] + randNum()) * dx[iLev][iDim] +
+                              plo[iLev][iDim];
+                r[iDim] = p.pos(iDim) - center[iDim];
+              }
+              Real v[3];
+              for (int iDir = 0; iDir < 3; iDir += 2) {
+                const Real prob =
+                    std::sqrt(-2.0 * std::log(1.0 - .999999999 * randNum()));
+                const Real theta = 2.0 * M_PI * randNum();
+                v[iDir] = vth * prob * std::cos(theta);
+                if (iDir == 0)
+                  v[1] = vth * prob * std::sin(theta);
+              }
+              // Outward half-Maxwellian: the emitted ions move away from the
+              // planet (rhybrid IonosphereInjector).
+              if (v[0] * r[0] + v[1] * r[1] + v[2] * r[2] < 0)
+                for (auto& vi : v)
+                  vi = -vi;
+              p.rdata(iup_) = v[0];
+              p.rdata(ivp_) = v[1];
+              p.rdata(iwp_) = v[2];
+              p.rdata(iqp_) = q;
+              if (NStructInt > iRecordCount_)
+                p.idata(iRecordCount_) = 0;
+              tile.push_back(p);
+            }
+            bodyInjectCount += nPPC;
+            bodyInjectMass += n * vol * mass;
+          }
+    }
+  }
+}
+
 #define INSTANTIATE_PARTICLES_INIT(T)                                          \
   template void T::add_particles_domain(bool);                                 \
   template int T::add_particles_cell(const int, const MFIter&, const IntVect,  \
                                      const FluidInterface*, bool, IntVect,     \
                                      const Vel&, Real, Real);                  \
+  template void T::inject_emission_shell(const Vector<MultiFab>&, Real, int,  \
+                                         const Real*);                         \
   template void T::add_particles_source(                                       \
       const FluidInterface*, const FluidInterface* const, Real, IntVect,       \
       const bool, const bool, const Real);                                     \
