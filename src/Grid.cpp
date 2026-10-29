@@ -114,7 +114,7 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
 void Grid::load_balance(const Grid* other, bool doSplitLevs) {
 
   if (other) {
-    regrid(other->get_base_grid(), other, true);
+    regrid(other, true);
   } else {
     Vector<DistributionMapping> dmap = calc_balanced_maps(doSplitLevs);
 
@@ -131,26 +131,49 @@ void Grid::load_balance(const Grid* other, bool doSplitLevs) {
 }
 
 //==========================================================
-void Grid::regrid(const BoxArray& region, const Grid* const grid,
-                  bool doLoadBalance) {
+void Grid::regrid(const BoxArray& region) {
+  std::string nameFunc = "Grid::regrid_base";
+  BL_PROFILE(nameFunc);
+
+  // The base boxes can be identical while new refinement tags require a
+  // different fine hierarchy. isNewGrid also forces first initialization.
+  if (region == activeRegion && !isNewGrid && !refineRegions.is_modified())
+    return;
+
+  cGridsOld = cGrids;
+  activeRegion = region;
+
+  isGridEmpty = activeRegion.empty();
+
+  if (isGridEmpty) {
+    cGrids.clear();
+    cGrids.push_back(BoxArray());
+  } else {
+    // This method will call MakeNewLevelFromScratch() and
+    // PostProcessBaseGrids()
+    InitFromScratch(0.0);
+  }
+
+  finish_regrid();
+}
+
+void Grid::regrid(const Grid* const grid, bool doLoadBalance) {
+  if (!grid)
+    return;
+
   std::string nameFunc = "Grid::regrid_base";
   BL_PROFILE(nameFunc);
 
   if (!doLoadBalance) {
+    refineRegionsStr = grid->refineRegionsStr;
+    refineRegions = grid->refineRegions;
+    SetGridEff(grid->gridEff());
 
-    if (grid) {
-      refineRegionsStr = grid->refineRegionsStr;
-      refineRegions = grid->refineRegions;
-      SetGridEff(grid->gridEff());
-    }
-
-    // The base boxes can be identical while new refinement tags require a
-    // different fine hierarchy. isNewGrid also forces first initialization.
+    const BoxArray& region = grid->get_base_grid();
     if (region == activeRegion && !isNewGrid && !refineRegions.is_modified())
       return;
 
     cGridsOld = cGrids;
-
     activeRegion = region;
   } else {
     // Load balancing changes ownership, not the cells in the hierarchy.
@@ -164,18 +187,12 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
     cGrids.clear();
     cGrids.push_back(BoxArray());
   } else {
-    if (grid) {
-      // Q: Why is it required to set distribution map (inside init_grid())?
-      // A: fi and pic should have the same grids and distribution maps.
-      // However, it seems AMReX is too smart that it will try to load balance
-      // the box arrays so that the distribution maps can be different even
-      // the grid is the same. So we need to set the distribution map here.
-      set_ba_and_dm(grid);
-    } else {
-      // This method will call MakeNewLevelFromScratch() and
-      // PostProcessBaseGrids()
-      InitFromScratch(0.0);
-    }
+    // Q: Why is it required to set distribution map (inside init_grid())?
+    // A: fi and pic should have the same grids and distribution maps.
+    // However, it seems AMReX is too smart that it will try to load balance
+    // the box arrays so that the distribution maps can be different even
+    // the grid is the same. So we need to set the distribution map here.
+    set_ba_and_dm(grid);
   }
 
   finish_regrid();
@@ -695,17 +712,16 @@ void Grid::write_mf(Vector<MultiFab>& mf, int nlev, std::string st,
     nlev = nlev + 1;
   }
   Vector<const MultiFab*> tMF;
+  tMF.reserve(nlev);
   for (int i = 0; i < nlev; ++i) {
     tMF.push_back(&mf[i]);
   }
-  Vector<int> tmpVint;
   if (var.empty()) {
+    var.reserve(mf[0].nComp());
     for (int i = 0; i < mf[0].nComp(); ++i) {
       var.push_back(std::to_string(i + 1));
     }
   }
-  for (int i = 0; i <= nlev; ++i) {
-    tmpVint.push_back(0);
-  }
+  Vector<int> tmpVint(nlev + 1, 0);
   WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint, ref_ratio);
 }

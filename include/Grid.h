@@ -133,7 +133,12 @@ public:
 
   const amrex::AmrInfo& get_amr_info() const { return gridAmrInfo; }
 
-  amrex::BoxArray get_base_grid() const { return activeRegion; }
+  amrex::BoxArray get_base_grid() const {
+    if (activeRegion.empty() && n_lev() > 0) {
+      return boxArray(0);
+    }
+    return activeRegion;
+  }
 
   bool is_grid_empty() const { return isGridEmpty; }
 
@@ -182,11 +187,9 @@ public:
   amrex::Vector<amrex::DistributionMapping> calc_balanced_maps(
       bool doSplitLevs = false);
 
-  void regrid(const amrex::BoxArray& region) { regrid(region, nullptr); }
+  void regrid(const amrex::BoxArray& region);
 
-  // TODO: Maybe the first argument 'region' can be removed? --Yuxi
-  void regrid(const amrex::BoxArray& region, const Grid* const grid,
-              bool doLoadBalance = false);
+  void regrid(const Grid* const grid, bool doLoadBalance = false);
 
   // Restore a saved hierarchy while retaining the pre-restore layout for
   // new-cell classification. No second simulation Grid is constructed.
