@@ -4,6 +4,7 @@ import sys
 import time
 import re
 import os
+import shutil
 from amrex2tec import amrex2tec
 from clean_dat import clean_dat
 
@@ -47,7 +48,10 @@ def amrex2vtk(datPath):
 
     tecPath = amrex2tec(datPath)
     vtkPath = tec2vtk(tecPath)
-    os.system("rm -rf "+tecPath)
+    if os.path.isfile(tecPath) or os.path.islink(tecPath):
+        os.remove(tecPath)
+    elif os.path.isdir(tecPath):
+        shutil.rmtree(tecPath)
 
     tEnd = time.time()
     print("amrex2vtk conversion takes {0} s".format(tEnd-tStart), flush=True)

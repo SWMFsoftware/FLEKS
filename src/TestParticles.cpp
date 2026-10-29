@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <AMReX_Utility.H>
 
 #include "TestParticles.h"
@@ -602,13 +604,9 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
     }
   }
 
-  // After move, vIDs is empty.
-  std::vector<PID> tmp = std::move(vIDs);
-
-  for (auto t : tmp) {
-    if (t.flag)
-      vIDs.push_back(t);
-  }
+  vIDs.erase(std::remove_if(vIDs.begin(), vIDs.end(),
+                            [](const PID& t) { return !t.flag; }),
+             vIDs.end());
 }
 
 //======================================================================

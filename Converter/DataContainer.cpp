@@ -508,7 +508,7 @@ int AMReXDataContainer::read() {
   }
   grid.SetFinestLevel(n_lev() - 1);
 
-  regrid(grid.boxArray(0), &grid);
+  regrid(&grid);
 
   return iSuccess;
 }
