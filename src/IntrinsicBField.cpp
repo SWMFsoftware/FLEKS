@@ -83,12 +83,14 @@ void IntrinsicBField::read_coefficients() {
       for (int m = 1; m <= iRow; ++m) {
         if (!(inFile >> nn >> mm >> val))
           break;
-        if (nn >= 1 && nn < n && mm >= 0 && mm < n)
-          c[nn * n + mm] = val;
+        const int absM_c = std::abs(mm);
+        if (nn >= 1 && nn < n && absM_c >= 0 && absM_c < n)
+          c[nn * n + absM_c] = val;
         if (!(inFile >> nn >> mm >> val))
           break;
-        if (nn >= 1 && nn < n && mm >= 0 && mm < n)
-          d[nn * n + mm] = val;
+        const int absM_d = std::abs(mm);
+        if (nn >= 1 && nn < n && absM_d >= 0 && absM_d < n)
+          d[nn * n + absM_d] = val;
       }
       ++nRead;
     }
@@ -204,6 +206,14 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z, Real b[3]) const {
   if (r <= 0.0)
     return;
 
+  // Spherical harmonics are only physically valid in the source-free region
+  // outside the planet (r >= rPlanet). Inside the inner body (r < rPlanet),
+  // (rPlanet / r)^(n+2) diverges rapidly (e.g. 10^40 for nMax=60 as r -> 0).
+  // Clamp evaluation radius to rPlanet to prevent unphysical numerical blowup
+  // inside the dead core.
+  const Real rEff =
+      (rPlanetCode_ > 0.0) ? std::max(r, static_cast<Real>(rPlanetCode_)) : r;
+
   // Colatitude and longitude of the point; theta is in [0, pi] so xtsin >= 0.
   const Real xtcos = zc / r;
   const Real xtsin = std::sqrt(std::max(0.0, 1.0 - xtcos * xtcos));
@@ -229,7 +239,7 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z, Real b[3]) const {
     xpsin[im] = std::sin(im * phi);
   }
 
-  const Real invR = 1.0 / r;
+  const Real invR = 1.0 / rEff;
   aorn[0] = 1.0;
   for (int k = 1; k <= NN + 2; ++k)
     aorn[k] = invR * aorn[k - 1];

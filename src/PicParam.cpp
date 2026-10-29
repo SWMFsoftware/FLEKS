@@ -845,7 +845,7 @@ void Pic::post_process_param() {
               "kinetic electrons and is not supported with #HYBRIDPIC.");
       bool hasNegativeSpecies = false;
       if (fi) {
-        for (int i = 0; i < nSpecies; ++i) {
+        for (int i = 0; i < fi->get_nS(); ++i) {
           if (fi->get_species_charge(i) < 0.0) {
             hasNegativeSpecies = true;
             break;
