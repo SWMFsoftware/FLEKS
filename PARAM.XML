@@ -1518,6 +1518,48 @@ If it is true, the particle number per cell per step for the sources will
 be reduced to as low as 1 if the source density is low.
 </command>
 
+<command name="IONOSPHEREEMISSION" alias="IONOSPHEREEMISSION_FLEKS0,IONOSPHEREEMISSION_FLEKS1,IONOSPHEREEMISSION_FLEKS2" multiple="F">
+  <parameter name="radius" type="real" min="0" default="0"/>
+  <parameter name="solarDirX" type="real" default="1.0"/>
+  <parameter name="solarDirY" type="real" default="0.0"/>
+  <parameter name="solarDirZ" type="real" default="0.0"/>
+  <parameter name="noon" type="real" min="0" default="1.0"/>
+  <parameter name="night" type="real" min="0" default="0.1"/>
+  <parameter name="particlesPerCell" type="integer" min="1" default="8"/>
+  <for from="1" to="$nS">
+    <parameter name="totalRate" type="real" min="0" default="0"/>
+    <parameter name="T" type="real" min="0" default="0"/>
+  </for>
+
+#IONOSPHEREEMISSION
+3790000.0          radius [m]   emission sphere around the body center
+1.0                solarDirX    unit vector toward the Sun
+0.0                solarDirY
+0.0                solarDirZ
+1.0                noon
+0.1                night
+8                  particlesPerCell
+0.0                totalRate [1/s]  Species 0: electron (charge of the ions, ignored)
+20000.0            T [K]
+2.0e25             totalRate [1/s]  Species 1: O2+
+20000.0            T [K]
+
+Ionospheric emission shell, after the IonosphereInjector of the hybrid code
+rhybrid. Every step each species is injected into the plasma cells (not body,
+not refined) crossed by the sphere of the given radius [m], with the total
+rate [1/s] of the species distributed over those cells in proportion to the
+area of the sphere inside each cell times the profile
+a = noon + (night - noon)(1 - cos SZA) on the dayside and a = night on the
+nightside. The particles are placed uniformly in the cell, particlesPerCell per
+cell and step, with an outward half-Maxwellian velocity of temperature T. One
+block per species in #PLASMA order. A kinetic electron species always gets the
+charge of the injected ions (its totalRate is ignored), at its own T. The
+injection is counted in the nBodyInject and mBodyInject log columns. Requires
+#PLASMA first. Use it with an absorbing body just below the sphere and a
+photochemical boundary (configured in #INNERBOUNDARY) at the same radius, so that
+the ionosphere below is represented only by the emission.
+</command>
+
 <command name="SUPID" alias="SUPID_FLEKS0,SUPID_FLEKS1,SUPID_FLEKS2" multiple="T">
    <parameter name="nSpecies" type="integer" min="0" max="15" default="0" />
     <for from="1" to="$nSpecies">

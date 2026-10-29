@@ -345,6 +345,37 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#ADAPTIVESOURCEPPC") {
     param.read_var("adaptiveSourcePPC", adaptiveSourcePPC);
+  } else if (command == "#IONOSPHEREEMISSION") {
+    auto& ie = ionoEmission;
+    ie.use = true;
+    ie.shell.clear();
+    param.read_var("radius", ie.radiusSI);
+    param.read_var("solarDirX", ie.solarDir[0]);
+    param.read_var("solarDirY", ie.solarDir[1]);
+    param.read_var("solarDirZ", ie.solarDir[2]);
+    param.read_var("noon", ie.noon);
+    param.read_var("night", ie.night);
+    param.read_var("particlesPerCell", ie.nPPC);
+    const Real norm = std::sqrt(ie.solarDir[0] * ie.solarDir[0] +
+                                ie.solarDir[1] * ie.solarDir[1] +
+                                ie.solarDir[2] * ie.solarDir[2]);
+    if (ie.radiusSI <= 0 || norm <= 0 || ie.nPPC < 1)
+      Abort("Invalid #IONOSPHEREEMISSION: radius, the solar direction and "
+            "particlesPerCell must be positive.");
+    for (auto& d : ie.solarDir)
+      d /= norm;
+    const int nS = fi->get_nS();
+    if (nS <= 0)
+      Abort("Error: #IONOSPHEREEMISSION has one block per species and must "
+            "come after #PLASMA.");
+    ie.rateSI.assign(nS, 0.0);
+    ie.tempSI.assign(nS, 0.0);
+    for (int iS = 0; iS < nS; iS++) {
+      param.read_var("totalRate", ie.rateSI[iS]);
+      param.read_var("T", ie.tempSI[iS]);
+      if (ie.rateSI[iS] < 0 || ie.tempSI[iS] < 0)
+        Abort("Invalid #IONOSPHEREEMISSION: totalRate and T must be >= 0.");
+    }
   } else if (command == "#MERGELIGHT") {
     param.read_var("mergeLight", pInfo.mergeLight);
     if (pInfo.mergeLight) {
@@ -1053,6 +1084,30 @@ void Pic::finalize_units_conversion() {
   convert_electron_collision();
   convert_inflow_state();
   convert_intrinsic_B();
+  convert_ionosphere_emission();
+}
+
+//==========================================================
+void Pic::convert_ionosphere_emission() {
+  auto& ie = ionoEmission;
+  if (!ie.use)
+    return;
+  const double unormSI = fi->get_unorm_si();
+  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
+  const int nS = fi->get_nS();
+  ie.vth.assign(nS, 0.0);
+  Print() << "  #IONOSPHEREEMISSION: r = " << ie.radiusSI / 1e3
+          << " km, profile noon/night = " << ie.noon << "/" << ie.night
+          << ", " << ie.nPPC << " particles per cell and step\n";
+  for (int iS = 0; iS < nS; iS++) {
+    const double mass = fi->get_species_mass(iS);
+    ie.vth[iS] = mass > 0 ? std::sqrt(ie.tempSI[iS] * tFactor / mass) : 0.0;
+    const bool isElectron = fi->get_species_charge(iS) < 0;
+    Print() << "    species " << iS << ": "
+            << (isElectron ? std::string("the charge of the injected ions")
+                           : std::to_string(ie.rateSI[iS]) + " /s")
+            << ", T = " << ie.tempSI[iS] << " K\n";
+  }
 }
 
 //==========================================================

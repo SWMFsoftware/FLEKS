@@ -918,6 +918,10 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
                    << std::setw(wCol) << "qBodyAbsorb" << "\t"
                    << std::setw(wCol) << "mBodyAbsorb";
     }
+    if (ionoEmission.use) {
+      picLogStream << "\t" << std::setw(wCol) << "nBodyInject" << "\t"
+                   << std::setw(wCol) << "mBodyInject";
+    }
     // Total mass of the particles of each species (code units), e.g. to
     // check the source and loss terms against their analytic rates.
     if (logMass)
@@ -971,6 +975,19 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
           ParallelDescriptor::IOProcessorNumber());
     }
 
+    // Cumulative number / mass of the particles injected at the body
+    // (#IONOSPHEREEMISSION), summed over all species and all MPI ranks.
+    Vector<Real> bodyInject(2, 0.0);
+    if (ionoEmission.use) {
+      for (auto& part : parts) {
+        bodyInject[0] += part->get_body_inject_count();
+        bodyInject[1] += part->get_body_inject_mass();
+      }
+      ParallelDescriptor::ReduceRealSum(
+          bodyInject.data(), bodyInject.size(),
+          ParallelDescriptor::IOProcessorNumber());
+    }
+
     Vector<Real> speciesBodyQ(nSpecies, 0.0);
     if (logBodyQ) {
       for (int i = 0; i < nSpecies; ++i)
@@ -1021,6 +1038,10 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
         picLogStream << "\t" << std::setw(wCol) << bodyAbsorb[0] << "\t"
                      << std::setw(wCol) << bodyAbsorb[1] << "\t"
                      << std::setw(wCol) << bodyAbsorb[2];
+      }
+      if (ionoEmission.use) {
+        picLogStream << "\t" << std::setw(wCol) << bodyInject[0] << "\t"
+                     << std::setw(wCol) << bodyInject[1];
       }
       if (logMass)
         for (int i = 0; i < nSpecies; ++i)

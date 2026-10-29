@@ -489,6 +489,48 @@ private:
   amrex::Real photochemRadiusSI_ = 0.0;
   bool usePhotochemBoundary_ = false;
 
+  // Weights of the plasma cells crossed by a sphere around the body center:
+  // area of the sphere in the cell times a profile, normalized to 1 over all
+  // levels and ranks. Cached per grid.
+  struct ShellWeights {
+    amrex::Vector<amrex::MultiFab> weight;
+    amrex::Vector<amrex::BoxArray> grids;
+    amrex::Vector<amrex::DistributionMapping> dms;
+    ShellWeights() = default;
+    ShellWeights(const ShellWeights&) = delete;
+    ShellWeights& operator=(const ShellWeights&) = delete;
+    ShellWeights(ShellWeights&&) = default;
+    ShellWeights& operator=(ShellWeights&&) = default;
+
+    void clear() {
+      weight.clear();
+      grids.clear();
+      dms.clear();
+    }
+  };
+  bool shell_weights_up_to_date(const ShellWeights& sw);
+  void build_shell_weights(
+      ShellWeights& sw, amrex::Real radiusSI,
+      const std::function<amrex::Real(const amrex::Real*, amrex::Real)>& profile,
+      const std::string& name);
+
+  // Ionospheric emission shell (#IONOSPHEREEMISSION), after the
+  // IonosphereInjector of the hybrid code rhybrid.
+  struct IonosphereEmission {
+    bool use = false;
+    amrex::Real radiusSI = 0;
+    amrex::Real solarDir[3] = { 1.0, 0.0, 0.0 };
+    amrex::Real noon = 1.0, night = 0.1;
+    int nPPC = 8;
+    amrex::Vector<amrex::Real> rateSI, tempSI;
+    // Code units / caches.
+    amrex::Vector<amrex::Real> vth;
+    ShellWeights shell; // area * profile
+  } ionoEmission;
+
+  void build_emission_weights();
+  void inject_ionosphere_emission();
+
   bool is_body_linetied() const {
     return use_body() && bodyFieldBC == BodyFieldBC::linetied;
   }
@@ -534,7 +576,7 @@ private:
   // - Mpart<i>: particles are created or removed (#SOURCE, #BODY, inflow or
   //   open faces);
   bool log_species_mass() const {
-    return source != nullptr || use_body() ||
+    return source != nullptr || use_body() || ionoEmission.use ||
            has_particle_face(ParticleBC::inflow) ||
            has_particle_face(ParticleBC::open);
   }
@@ -838,6 +880,7 @@ public:
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
   void convert_intrinsic_B();
+  void convert_ionosphere_emission();
   // Fill the frozen B0 arrays (nodeB0 / centerB0) from the analytic field.
   void fill_intrinsic_B();
   // Regional resistivity / hyper-resistivity setup and update methods.
