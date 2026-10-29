@@ -545,7 +545,8 @@ public:
   // Maxwellian of thermal speed vth whose radial component (from `center`)
   // is flipped outward, as the IonosphereInjector of rhybrid does.
   // When kinetic electrons are provided, creates co-located, charge-balanced
-  // electron particles at the exact same positions to preserve local Gauss's law.
+  // electron particles at the exact same positions to preserve local Gauss's
+  // law.
   void inject_emission_shell(
       const amrex::Vector<amrex::MultiFab>& nAdd, amrex::Real vth, int nPPC,
       const amrex::Real* center,

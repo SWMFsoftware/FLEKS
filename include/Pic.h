@@ -497,10 +497,10 @@ private:
     amrex::Vector<amrex::BoxArray> grids;
     amrex::Vector<amrex::DistributionMapping> dms;
     ShellWeights() = default;
-    ShellWeights(const ShellWeights&) = delete;
-    ShellWeights& operator=(const ShellWeights&) = delete;
-    ShellWeights(ShellWeights&&) = default;
-    ShellWeights& operator=(ShellWeights&&) = default;
+    ShellWeights(const ShellWeights &) = delete;
+    ShellWeights &operator=(const ShellWeights &) = delete;
+    ShellWeights(ShellWeights &&) = default;
+    ShellWeights &operator=(ShellWeights &&) = default;
 
     void clear() {
       weight.clear();
@@ -508,11 +508,12 @@ private:
       dms.clear();
     }
   };
-  bool shell_weights_up_to_date(const ShellWeights& sw);
+  bool shell_weights_up_to_date(const ShellWeights &sw);
   void build_shell_weights(
-      ShellWeights& sw, amrex::Real radiusSI,
-      const std::function<amrex::Real(const amrex::Real*, amrex::Real)>& profile,
-      const std::string& name);
+      ShellWeights &sw, amrex::Real radiusSI,
+      const std::function<amrex::Real(const amrex::Real *, amrex::Real)>
+          &profile,
+      const std::string &name);
 
   // Ionospheric emission shell (#IONOSPHEREEMISSION), after the
   // IonosphereInjector of the hybrid code rhybrid.

@@ -1060,14 +1060,12 @@ void Pic::mask_body_source(SourceInterface& src) {
 
 //==========================================================
 bool Pic::shell_weights_up_to_date(const ShellWeights& sw) {
-  if ((int)sw.weight.size() != n_lev() ||
-      (int)sw.grids.size() != n_lev() ||
+  if ((int)sw.weight.size() != n_lev() || (int)sw.grids.size() != n_lev() ||
       (int)sw.dms.size() != n_lev())
     return false;
   bool upToDate = true;
   for (int iLev = 0; iLev < n_lev(); iLev++)
-    upToDate = upToDate &&
-               sw.grids[iLev] == cell_status(iLev).boxArray() &&
+    upToDate = upToDate && sw.grids[iLev] == cell_status(iLev).boxArray() &&
                sw.dms[iLev] == cell_status(iLev).DistributionMap();
   return upToDate;
 }
@@ -1135,8 +1133,8 @@ void Pic::build_shell_weights(
                   const int sub[3] = { ii, jj, kk };
                   Real x[3] = { 0, 0, 0 };
                   for (int iDim = 0; iDim < nDim; iDim++)
-                    x[iDim] = xc[iDim] +
-                              ((sub[iDim] + 0.5) / nSub - 0.5) * dxl[iDim];
+                    x[iDim] =
+                        xc[iDim] + ((sub[iDim] + 0.5) / nSub - 0.5) * dxl[iDim];
                   const Real r =
                       std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
                   if (std::abs(r - R) < 0.5 * h)
@@ -1191,8 +1189,7 @@ void Pic::build_emission_weights() {
   auto profile_factor = [noon, night, sd](const Real* x, Real rc) {
     const Real cosSza =
         rc > 0 ? (x[0] * sd[0] + x[1] * sd[1] + x[2] * sd[2]) / rc : 1.0;
-    return cosSza > 0 ? noon + (night - noon) * (1 - cosSza)
-                      : night;
+    return cosSza > 0 ? noon + (night - noon) * (1 - cosSza) : night;
   };
   build_shell_weights(ie.shell, ie.radiusSI, profile_factor,
                       "#IONOSPHEREEMISSION");
@@ -1240,7 +1237,8 @@ void Pic::inject_ionosphere_emission() {
       elePtrs[ieIdx] = parts[e].get();
       eleVth[ieIdx] = ie.vth[e];
       if (sumElecRate > 0.0)
-        eleFrac[ieIdx] = (ie.rateSI[e] * std::abs(parts[e]->get_charge())) / sumElecRate;
+        eleFrac[ieIdx] =
+            (ie.rateSI[e] * std::abs(parts[e]->get_charge())) / sumElecRate;
       else
         eleFrac[ieIdx] = 1.0 / static_cast<Real>(iElec.size());
     }
@@ -1262,7 +1260,7 @@ void Pic::inject_ionosphere_emission() {
       nAdd[iLev].mult(rate * dtSI / volSI * nFactor);
     }
     parts[i]->inject_emission_shell(nAdd, ie.vth[i], ie.nPPC, get_body_center(),
-                                   elePtrs, eleVth, eleFrac);
+                                    elePtrs, eleVth, eleFrac);
   }
 }
 

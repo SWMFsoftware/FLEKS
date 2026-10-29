@@ -551,7 +551,8 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
             if (hasElectrons) {
               eleTiles.resize(electrons.size());
               for (size_t ie = 0; ie < electrons.size(); ++ie) {
-                eleTiles[ie] = &electrons[ie]->get_particle_tile(iLev, mfi, ijk);
+                eleTiles[ie] =
+                    &electrons[ie]->get_particle_tile(iLev, mfi, ijk);
                 electrons[ie]->set_random_seed(iLev, ijk, IntVect(271));
               }
             }
@@ -561,8 +562,8 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
               set_ids(p);
               Real r[3] = { 0, 0, 0 };
               for (int iDim = 0; iDim < nDim; iDim++) {
-                p.pos(iDim) = (ijk[iDim] + randNum()) * dx[iLev][iDim] +
-                              plo[iLev][iDim];
+                p.pos(iDim) =
+                    (ijk[iDim] + randNum()) * dx[iLev][iDim] + plo[iLev][iDim];
                 r[iDim] = p.pos(iDim) - center[iDim];
               }
               Real v[3];
@@ -588,7 +589,8 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
               tile.push_back(p);
 
               // Co-located electron creation: identical position and exact
-              // opposite charge fraction to preserve local Gauss's law (rho = 0).
+              // opposite charge fraction to preserve local Gauss's law (rho =
+              // 0).
               if (hasElectrons) {
                 for (size_t ie = 0; ie < electrons.size(); ++ie) {
                   auto* ele = electrons[ie];
@@ -636,9 +638,8 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
                                      const FluidInterface*, bool, IntVect,     \
                                      const Vel&, Real, Real);                  \
   template void T::inject_emission_shell(                                      \
-      const Vector<MultiFab>&, Real, int, const Real*,                         \
-      const std::vector<T*>&, const std::vector<Real>&,                        \
-      const std::vector<Real>&);                                               \
+      const Vector<MultiFab>&, Real, int, const Real*, const std::vector<T*>&, \
+      const std::vector<Real>&, const std::vector<Real>&);                     \
   template void T::add_particles_source(                                       \
       const FluidInterface*, const FluidInterface* const, Real, IntVect,       \
       const bool, const bool, const Real);                                     \

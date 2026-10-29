@@ -1097,8 +1097,8 @@ void Pic::convert_ionosphere_emission() {
   const int nS = fi->get_nS();
   ie.vth.assign(nS, 0.0);
   Print() << "  #IONOSPHEREEMISSION: r = " << ie.radiusSI / 1e3
-          << " km, profile noon/night = " << ie.noon << "/" << ie.night
-          << ", " << ie.nPPC << " particles per cell and step\n";
+          << " km, profile noon/night = " << ie.noon << "/" << ie.night << ", "
+          << ie.nPPC << " particles per cell and step\n";
   for (int iS = 0; iS < nS; iS++) {
     const double mass = fi->get_species_mass(iS);
     ie.vth[iS] = mass > 0 ? std::sqrt(ie.tempSI[iS] * tFactor / mass) : 0.0;
