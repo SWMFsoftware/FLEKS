@@ -501,6 +501,12 @@ private:
     ShellWeights& operator=(const ShellWeights&) = delete;
     ShellWeights(ShellWeights&&) = default;
     ShellWeights& operator=(ShellWeights&&) = default;
+
+    void clear() {
+      weight.clear();
+      grids.clear();
+      dms.clear();
+    }
   };
   bool shell_weights_up_to_date(const ShellWeights& sw);
   void build_shell_weights(

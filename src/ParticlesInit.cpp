@@ -519,11 +519,15 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_emission_shell(
-    const Vector<MultiFab>& nAdd, Real vth, int nPPC, const Real* center) {
+    const Vector<MultiFab>& nAdd, Real vth, int nPPC, const Real* center,
+    const std::vector<Particles<NStructReal, NStructInt>*>& electrons,
+    const std::vector<Real>& elecVth, const std::vector<Real>& elecFrac) {
   timing_func("Pts::inject_emission_shell");
 
   if (nPPC <= 0)
     return;
+
+  const bool hasElectrons = !electrons.empty();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const Real vol = dx[iLev].product();
@@ -541,7 +545,17 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
             IntVect ijk = { AMREX_D_DECL(i, j, k) };
             set_random_seed(iLev, ijk, IntVect(271));
             ParticleTileType& tile = get_particle_tile(iLev, mfi, ijk);
-            const Real q = qomSign * n * vol / nPPC;
+            const Real q = qomSign * n * vol / nPPC * charge;
+
+            std::vector<ParticleTileType*> eleTiles;
+            if (hasElectrons) {
+              eleTiles.resize(electrons.size());
+              for (size_t ie = 0; ie < electrons.size(); ++ie) {
+                eleTiles[ie] = &electrons[ie]->get_particle_tile(iLev, mfi, ijk);
+                electrons[ie]->set_random_seed(iLev, ijk, IntVect(271));
+              }
+            }
+
             for (int ip = 0; ip < nPPC; ip++) {
               auto p = make_particle();
               set_ids(p);
@@ -572,6 +586,42 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
               if (NStructInt > iRecordCount_)
                 p.idata(iRecordCount_) = 0;
               tile.push_back(p);
+
+              // Co-located electron creation: identical position and exact
+              // opposite charge fraction to preserve local Gauss's law (rho = 0).
+              if (hasElectrons) {
+                for (size_t ie = 0; ie < electrons.size(); ++ie) {
+                  auto* ele = electrons[ie];
+                  auto pe = ele->make_particle();
+                  ele->set_ids(pe);
+                  for (int iDim = 0; iDim < nDim; iDim++)
+                    pe.pos(iDim) = p.pos(iDim);
+                  Real ve[3];
+                  for (int iDir = 0; iDir < 3; iDir += 2) {
+                    const Real prob = std::sqrt(
+                        -2.0 * std::log(1.0 - .999999999 * ele->randNum()));
+                    const Real theta = 2.0 * M_PI * ele->randNum();
+                    ve[iDir] = elecVth[ie] * prob * std::cos(theta);
+                    if (iDir == 0)
+                      ve[1] = elecVth[ie] * prob * std::sin(theta);
+                  }
+                  if (ve[0] * r[0] + ve[1] * r[1] + ve[2] * r[2] < 0)
+                    for (auto& vi : ve)
+                      vi = -vi;
+                  pe.rdata(iup_) = ve[0];
+                  pe.rdata(ivp_) = ve[1];
+                  pe.rdata(iwp_) = ve[2];
+                  pe.rdata(iqp_) = -elecFrac[ie] * q;
+                  if (NStructInt > iRecordCount_)
+                    pe.idata(iRecordCount_) = 0;
+                  eleTiles[ie]->push_back(pe);
+
+                  ele->bodyInjectCount += 1;
+                  ele->bodyInjectMass +=
+                      (elecFrac[ie] * charge / std::abs(ele->get_charge())) *
+                      (n * vol / nPPC) * ele->get_mass();
+                }
+              }
             }
             bodyInjectCount += nPPC;
             bodyInjectMass += n * vol * mass;
@@ -585,8 +635,10 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
   template int T::add_particles_cell(const int, const MFIter&, const IntVect,  \
                                      const FluidInterface*, bool, IntVect,     \
                                      const Vel&, Real, Real);                  \
-  template void T::inject_emission_shell(const Vector<MultiFab>&, Real, int,  \
-                                         const Real*);                         \
+  template void T::inject_emission_shell(                                      \
+      const Vector<MultiFab>&, Real, int, const Real*,                         \
+      const std::vector<T*>&, const std::vector<Real>&,                        \
+      const std::vector<Real>&);                                               \
   template void T::add_particles_source(                                       \
       const FluidInterface*, const FluidInterface* const, Real, IntVect,       \
       const bool, const bool, const Real);                                     \

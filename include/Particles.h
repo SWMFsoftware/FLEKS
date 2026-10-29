@@ -544,9 +544,14 @@ public:
   // density added this step) is positive, uniformly in the cell, with a
   // Maxwellian of thermal speed vth whose radial component (from `center`)
   // is flipped outward, as the IonosphereInjector of rhybrid does.
-  void inject_emission_shell(const amrex::Vector<amrex::MultiFab>& nAdd,
-                             amrex::Real vth, int nPPC,
-                             const amrex::Real* center);
+  // When kinetic electrons are provided, creates co-located, charge-balanced
+  // electron particles at the exact same positions to preserve local Gauss's law.
+  void inject_emission_shell(
+      const amrex::Vector<amrex::MultiFab>& nAdd, amrex::Real vth, int nPPC,
+      const amrex::Real* center,
+      const std::vector<Particles<NStructReal, NStructInt>*>& electrons = {},
+      const std::vector<amrex::Real>& elecVth = {},
+      const std::vector<amrex::Real>& elecFrac = {});
 
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,

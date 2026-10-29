@@ -348,6 +348,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#IONOSPHEREEMISSION") {
     auto& ie = ionoEmission;
     ie.use = true;
+    ie.shell.clear();
     param.read_var("radius", ie.radiusSI);
     param.read_var("solarDirX", ie.solarDir[0]);
     param.read_var("solarDirY", ie.solarDir[1]);

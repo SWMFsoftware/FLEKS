@@ -1156,7 +1156,8 @@ void Pic::build_shell_weights(
   if (total <= 0) {
     Print() << "Warning: " << name
             << ": the sphere crosses no plasma cell; nothing is injected.\n";
-    sw.weight.clear();
+    // Keep zero-valued weights for this mesh so shell_weights_up_to_date()
+    // remains true and the geometry scan is not repeated every step.
     return;
   }
   for (int iLev = 0; iLev < n_lev(); iLev++)
@@ -1172,6 +1173,19 @@ void Pic::build_emission_weights() {
   auto& ie = ionoEmission;
   if (!ie.use || shell_weights_up_to_date(ie.shell))
     return;
+  if (ie.noon == 0.0 && ie.night == 0.0) {
+    ie.shell.weight.resize(n_lev());
+    ie.shell.grids.resize(n_lev());
+    ie.shell.dms.resize(n_lev());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const auto& cs = cell_status(iLev);
+      ie.shell.grids[iLev] = cs.boxArray();
+      ie.shell.dms[iLev] = cs.DistributionMap();
+      ie.shell.weight[iLev].define(cs.boxArray(), cs.DistributionMap(), 1, 0);
+      ie.shell.weight[iLev].setVal(0.0);
+    }
+    return;
+  }
   const Real* sd = ie.solarDir;
   const Real noon = ie.noon, night = ie.night;
   auto profile_factor = [noon, night, sd](const Real* x, Real rc) {
@@ -1195,23 +1209,50 @@ void Pic::inject_ionosphere_emission() {
   if ((int)ie.shell.weight.size() != n_lev())
     return;
 
+  // Separate kinetic ions and kinetic electrons.
+  std::vector<int> iIon, iElec;
+  for (int i : kineticSpecies_) {
+    if (parts[i]->get_charge() > 0 && ie.rateSI[i] > 0)
+      iIon.push_back(i);
+    else if (parts[i]->get_charge() < 0)
+      iElec.push_back(i);
+  }
+
+  if (iIon.empty())
+    return;
+
+  // Prepare electron balancing if kinetic electrons exist (full PIC).
+  // Distribute the balancing ion charge across electron populations.
+  std::vector<PicParticles*> elePtrs;
+  std::vector<Real> eleVth;
+  std::vector<Real> eleFrac;
+  if (!iElec.empty()) {
+    Real sumElecRate = 0.0;
+    for (int e : iElec) {
+      if (ie.rateSI[e] > 0.0)
+        sumElecRate += ie.rateSI[e] * std::abs(parts[e]->get_charge());
+    }
+    elePtrs.resize(iElec.size());
+    eleVth.resize(iElec.size());
+    eleFrac.resize(iElec.size());
+    for (size_t ieIdx = 0; ieIdx < iElec.size(); ++ieIdx) {
+      int e = iElec[ieIdx];
+      elePtrs[ieIdx] = parts[e].get();
+      eleVth[ieIdx] = ie.vth[e];
+      if (sumElecRate > 0.0)
+        eleFrac[ieIdx] = (ie.rateSI[e] * std::abs(parts[e]->get_charge())) / sumElecRate;
+      else
+        eleFrac[ieIdx] = 1.0 / static_cast<Real>(iElec.size());
+    }
+  }
+
   // rate [#/s] * dt [s] * weight / V [m^3] -> n [/m^3] -> code units.
   const Real dtSI = tc->get_dt_si();
   const Real l3 = std::pow(fi->get_No2SiL(), 3);
   const Real nFactor = cProtonMassSI * fi->get_Si2NoRho();
 
-  // Charge of all the ions injected in one step [#/s].
-  Real ionCharge = 0;
-  for (int iS = 0; iS < nSpecies; iS++)
-    if (fi->get_species_charge(iS) > 0)
-      ionCharge += fi->get_species_charge(iS) * ie.rateSI[iS];
-
-  for (int i : kineticSpecies_) {
-    const Real charge = parts[i]->get_charge();
-    // In full PIC a kinetic electron gets the total ion charge.
-    Real rate = charge < 0 ? ionCharge / std::abs(charge) : ie.rateSI[i];
-    if (rate <= 0)
-      continue;
+  for (int i : iIon) {
+    const Real rate = ie.rateSI[i];
     Vector<MultiFab> nAdd(n_lev());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const auto& w = ie.shell.weight[iLev];
@@ -1220,7 +1261,8 @@ void Pic::inject_ionosphere_emission() {
       MultiFab::Copy(nAdd[iLev], w, 0, 0, 1, 0);
       nAdd[iLev].mult(rate * dtSI / volSI * nFactor);
     }
-    parts[i]->inject_emission_shell(nAdd, ie.vth[i], ie.nPPC, get_body_center());
+    parts[i]->inject_emission_shell(nAdd, ie.vth[i], ie.nPPC, get_body_center(),
+                                   elePtrs, eleVth, eleFrac);
   }
 }
 
