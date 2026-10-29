@@ -849,7 +849,11 @@ Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 F                   isPPVconstant 
 
 If isPPVconstant is true then particles per volume is constant across all refinement levels,
-otherwise particles per cell is constant.
+otherwise particles per cell is constant. With a constant particles per volume the
+particles per cell and dimension are divided by the refinement ratio on every level
+(integer division), down to the lower limit of #MINPARTICLESPERCELL. The particles that
+move into a finer cell are then heavier than its target weight: use #RESAMPLING with
+maxWeightRatio > 1 to split them.
 </command>
 
 <command name="MINPARTICLESPERCELL" alias="MINPARTICLESPERCELL_FLEKS0,MINPARTICLESPERCELL_FLEKS1,MINPARTICLESPERCELL_FLEKS2" multiple="T">

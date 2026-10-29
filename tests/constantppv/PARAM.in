@@ -1,0 +1,142 @@
+#DESCRIPTION
+Constant particles per volume on a 2-level 3D AMR grid (CONSTANTPPV with
+minPPCPerDim, RESAMPLING): a uniform thermal plasma must keep its particle
+number; the split/merge goals are the targets of every level.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-8.0                    xMin
+ 8.0                    xMax
+-8.0                    yMin
+ 8.0                    yMax
+-8.0                    zMin
+ 8.0                    zMax
+
+#NCELL
+16                      nCellX
+16                      nCellY
+16                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+periodic
+periodic
+periodic
+periodic
+periodic
+periodic
+
+#PARTICLEBOXBOUNDARY
+periodic
+periodic
+periodic
+periodic
+periodic
+periodic
+
+#FIELDSOLVER
+implicit
+
+#PLASMA
+2                       nSpecies
+1.0                     mass
+1.0                     charge
+0.04                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+1.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+116045.0                T [K]
+1.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+116045.0                T [K]
+0.0                     bx [T]
+0.0                     by [T]
+1.0e-9                  bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#PARTICLES
+4                       nParticle per cell in X   64 ppc on level 0
+4                       nParticle per cell in Y
+4                       nParticle per cell in Z
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+5                       dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii planet  plotString
+-1                      dnSavePlot
+0.2                     dtSavePlot
+-1                      dxSavePlot
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     ratioDivC2C
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#REGION
+center_box              name
+box                     shape
+-4.0                    min
+ 4.0                    max
+-4.0                    min
+ 4.0                    max
+-4.0                    min
+ 4.0                    max
+
+#REFINEREGION
+0                       iLev
++center_box             regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#CONSTANTPPV
+T                       isPPVconstant   8 ppc on level 1
+
+#MINPARTICLESPERCELL
+2                       minPPCPerDim
+
+#RESAMPLING
+T                       doReSampling
+0.8                     splittingLimit
+1.5                     mergingLimit
+4.0                     maxWeightRatio
+
+#STOP
+20                      MaxIter
+-1.0                    TimeMax
