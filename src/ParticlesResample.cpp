@@ -48,7 +48,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
         avg = totalMass / target;
         // Pre-splitting spreads the fragments over the cell; with #CONSTANTPPV
         // they stay close (a large shift can leave the domain).
-        dl = isPPVconstant
+        dl = (isPPVconstant && !isFake2D)
                  ? 0.1 * Geom(iLev).CellSize()[ix_] /
                        std::max(1.0, std::cbrt(static_cast<Real>(target)))
                  : 4.0 * Geom(iLev).CellSize()[ix_] /
@@ -429,7 +429,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             dl = dl / refMax;
           }
         }
-      } else if (isPPVconstant && isTargetPPCDefined) {
+      } else if (isPPVconstant && isTargetPPCDefined && !isFake2D) {
         // #CONSTANTPPV: the goal is the target of this level, not the
         // particles per cell of the base grid (that would split the refined
         // levels back up to the base number in a few steps).

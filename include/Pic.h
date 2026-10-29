@@ -1361,7 +1361,7 @@ public:
         const auto &status = cell_status(iLev)[mfi].array();
         amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
           amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          if (pInfo.isPPVconstant) {
+          if (pInfo.isPPVconstant && !is_fake_2d()) {
             int tmp = 1;
             for (int i = 0; i < nDim; i++) {
               const int n = static_cast<int>(pInfo.nPartPerCell[i] /

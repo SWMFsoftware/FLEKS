@@ -751,6 +751,16 @@ void Pic::read_restart() {
                           gridName + "_particles" + std::to_string(iPart));
   }
   particlesInitialized = true;
+
+  if (usePIC &&
+      (pInfo.doPreSplitting || (pInfo.isPPVconstant && !is_fake_2d()))) {
+    SetTargetPPC(2);
+    isTargetPPCDefined = true;
+    for (int i = 0; i < nSpecies; i++) {
+      parts[i]->set_is_target_ppc_defined(isTargetPPCDefined);
+    }
+  }
+
   inject_particles_for_boundary_cells();
 
   if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
