@@ -396,11 +396,13 @@ EXO_SOURCE_TESTS = {
 # Tests that require AMR (nLevMax >= 2).
 AMR_TESTS = {
     "amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr",
-    "wave_amr_3d",
+    "wave_amr_3d", "constantppv",
 }
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
-AMREX3D_TESTS = {"lightwave", "wave_amr_3d", "exosphere", "ionosphereemission"}
+AMREX3D_TESTS = {
+    "lightwave", "wave_amr_3d", "exosphere", "ionosphereemission", "constantppv"
+}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
 AMREX2D_TESTS = {"body", "body_rarefaction", "openboundary"}

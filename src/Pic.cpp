@@ -1295,12 +1295,18 @@ void Pic::re_sampling() {
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
       if (maxWeightRatio > 1) {
+        // With #CONSTANTPPV (or pre-splitting) the reference weight is that
+        // of the level target. The cell average would not do: the light
+        // source particles of a cell next to the body lower it, and the
+        // ordinary particles are then split again and again.
         parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral(),
-                               pInfo.doPreSplitting);
+                               pInfo.doPreSplitting || pInfo.isPPVconstant);
       }
       parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral(),
                       pInfo.doPreSplitting);
-      parts[i]->merge(reSamplingHighLimit, pInfo.doPreSplitting);
+      // With #CONSTANTPPV the merging goal is the target of every level.
+      parts[i]->merge(reSamplingHighLimit,
+                      pInfo.doPreSplitting || pInfo.isPPVconstant);
     }
   }
 }
