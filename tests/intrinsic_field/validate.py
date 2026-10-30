@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validator for the intrinsic-magnetic-field tests (tests/intrinsic_field/).
 
-Four variants are discovered from this directory:
+Six variants are discovered from this directory:
 
   - PARAM.in.body         -> "intrinsic_field_body"           dipole + #BODY
   - PARAM.in.body_conducting -> "intrinsic_field_body_conducting"
@@ -9,6 +9,9 @@ Four variants are discovered from this directory:
                             made tangential, so B1 = -B0.n n-hat on the shell
   - PARAM.in.crustal      -> "intrinsic_field_crustal"        g10-only file
   - PARAM.in.crustal_nm2  -> "intrinsic_field_crustal_nm2"    BATSRUS layout, many g/h
+  - PARAM.in.crustal_nm2_signed -> "intrinsic_field_crustal_nm2_signed"
+                            same field, but the h rows carry negative orders
+                            (the layout of the real Morschhauser file)
   - PARAM.in.dipole_crustal -> "intrinsic_field_dipole_crustal"
 
 There is no bare "dipole only" deck: in practice a planetary dipole never runs
@@ -52,6 +55,12 @@ HYBRID_U_OUT = (100.0, 0.0, 0.0)
 
 R_MIN = 0.6            # skip the dipole singularity at the origin
 R_MAX = 3.5            # and the periodic seam far outside
+# The crustal harmonics are only valid outside the planet: IntrinsicBField
+# clamps the radius used in the amplitude (rPlanet/r)^(n+2) to rEff =
+# max(r, #PLANETRADIUS) (1 code unit in these decks) while the direction
+# (theta, phi) keeps using the true position. The references below do the
+# same, and the interior (r < rPlanet) and exterior are checked separately.
+R_PLANET = 1.0
 R_BODY = 1.0           # #BODY radius in the decks, in planetary radii
 ANALYTIC_TOL = 1e-6    # median relative error against the analytic dipole
 STATIC_TOL = 1e-6      # B0 must not change between frames
@@ -122,11 +131,12 @@ def _schmidt_rnm(n_max):
     return build
 
 
-def crustal_b0(coeffs, x, y, z=0.0):
+def crustal_b0(coeffs, x, y, z=0.0, r_planet=R_PLANET):
     """Independent evaluation of the crustal field in nT.
 
     *coeffs* is {(n, m): (g, h)} with the reference radius folded in (a = 1),
-    exactly the convention of the BATSRUS files and of the test data.
+    exactly the convention of the BATSRUS files and of the test data. The
+    amplitude uses max(r, r_planet), the direction the true position.
     """
     n_max = max(n for n, _ in coeffs) + 1
     r = math.sqrt(x * x + y * y + z * z)
@@ -139,7 +149,8 @@ def crustal_b0(coeffs, x, y, z=0.0):
     build = _schmidt_rnm(n_max + 2)
     rn = build(ct, st)
 
-    arr = 1.0 / r
+    # Amplitude radius clamped to the planet; angles use the true position.
+    arr = 1.0 / max(r, r_planet)
     aorn = [1.0]
     for n in range(1, n_max + 3):
         aorn.append(arr * aorn[-1])
@@ -349,7 +360,8 @@ def validate_plot(test_name):
         return False, (f"The total field is not B0 (max |B - B0| = {worst:.3e} "
                        f"nT > {TOTAL_TOL:g} * {b0max:.3e} nT)")
 
-    if test_name in ("intrinsic_field_crustal", "intrinsic_field_crustal_nm2"):
+    if test_name in ("intrinsic_field_crustal", "intrinsic_field_crustal_nm2",
+                     "intrinsic_field_crustal_nm2_signed"):
         return _check_crustal(cols, rows, test_name)
     if test_name == "intrinsic_field_dipole_crustal":
         return _check_superposition(cols, rows)
@@ -560,93 +572,87 @@ def _check_crustal(cols, rows, test_name):
     coeffs, axial_only = _crustal_coeffs_for(test_name)
 
     if axial_only:
-        # Closed form, independent of the derivative convention:
-        # Br = 2 g10 cos(theta) / r^3 and Btheta = C g10 sin(theta) / r^3 with
-        # one constant C, so Bphi must vanish and Br must match exactly.
-        worst_br = 0.0
-        ratios = []
+        # Closed form, independent of the derivative convention. With the
+        # amplitude radius ra = max(r, rPlanet) (the direction still uses the
+        # true position): Br = 2 g10 cos(theta) / ra^3 and
+        # Btheta = +g10 sin(theta) / ra^3, Bphi = 0. The interior
+        # (r < rPlanet, where ra = rPlanet) and exterior are checked apart.
+        for region, inside in (("interior", True), ("exterior", False)):
+            worst_br, worst_bth, n_pts = 0.0, 0.0, 0
+            for i, _ in enumerate(rows):
+                x, y, z = _xyz(cols, i)
+                r = math.sqrt(x * x + y * y + z * z)
+                if r < R_MIN or r > R_MAX or (r < R_PLANET) != inside:
+                    continue
+                ra = max(r, R_PLANET)
+                ct = z / r
+                st = math.sqrt(max(0.0, 1.0 - ct * ct))
+                ph = math.atan2(y, x)
+                rh = (x / r, y / r, z / r)
+                th = (ct * math.cos(ph), ct * math.sin(ph), -st)
+                bs = _field(cols, "B0", i)
+                br_sim = sum(bs[k] * rh[k] for k in range(3))
+                bth_sim = sum(bs[k] * th[k] for k in range(3))
+                br = 2.0 * 100.0 * ct / ra ** 3
+                bth = 100.0 * st / ra ** 3
+                worst_br = max(worst_br, abs(br_sim - br) / (
+                    abs(br) if abs(br) > 1e-12 else 1.0))
+                worst_bth = max(worst_bth, abs(bth_sim - bth) / (
+                    abs(bth) if abs(bth) > 1e-12 else 1.0))
+                n_pts += 1
+            if n_pts == 0:
+                return False, f"No usable {region} point in the comparison band"
+            logger.debug("    crustal g10 %s: n=%d, max rel err Br = %.3e, "
+                         "Btheta = %.3e", region, n_pts, worst_br, worst_bth)
+            if worst_br > ANALYTIC_TOL or worst_bth > ANALYTIC_TOL:
+                return False, (f"The g10-only crustal field ({region}) is not "
+                               f"the axial dipole with the clamped amplitude "
+                               f"radius (Br err {worst_br:.3e}, Btheta err "
+                               f"{worst_bth:.3e})")
+        return True, ("Passed (axial-dipole crustal field, interior and "
+                      "exterior, clamped amplitude radius)")
+
+    # General case: compare with the independent Python evaluation, which
+    # clamps the amplitude radius like the code; interior and exterior apart.
+    return _compare_regions(
+        cols, rows, lambda x, y, z: crustal_b0(coeffs, x, y, z),
+        CRUSTAL_TOL, "crustal field")
+
+
+def _compare_regions(cols, rows, reference, tol, label):
+    """Median relative error of B0 against *reference*, per region."""
+    msgs = []
+    for region, inside in (("interior", True), ("exterior", False)):
+        errs = []
         for i, _ in enumerate(rows):
-            rr = _radius(cols, i)
-            if rr < R_MIN or rr > R_MAX:
-                continue
             x, y, z = _xyz(cols, i)
             r = math.sqrt(x * x + y * y + z * z)
-            ct = z / r
-            st = math.sqrt(max(0.0, 1.0 - ct * ct))
-            ph = math.atan2(y, x)
-            br = 2.0 * 100.0 * ct / r ** 3
-            # radial component of the simulated field
-            rh = (x / r, y / r, z / r)
-            bs = _field(cols, "B0", i)
-            br_sim = sum(bs[k] * rh[k] for k in range(3))
-            worst_br = max(worst_br, abs(br_sim - br) /
-                           (abs(br) if abs(br) > 1e-12 else 1.0))
-            # theta component: B - Br r^hat, projected on theta^hat
-            bth_sim = sum((bs[k] - br * rh[k]) *
-                          (ct * math.cos(ph) if k == 0 else
-                           ct * math.cos(ph) if k == 1 else -st)
-                          for k in range(3))
-            expect = -100.0 * st / r ** 3
-            if abs(expect) > 1e-9:
-                ratios.append(bth_sim / expect)
-        if worst_br > ANALYTIC_TOL:
-            return False, (f"The g10-only crustal field is not Br = "
-                           f"2 g10 cos(theta)/r^3 (max rel err {worst_br:.3e})")
-        if ratios:
-            c = sum(ratios) / len(ratios)
-            spread = max(abs(v / c - 1.0) for v in ratios)
-            logger.debug("    crustal g10: Btheta coefficient = %.6f, "
-                         "spread = %.3e", c, spread)
-            if spread > 1e-6:
-                return False, ("Btheta is not proportional to sin(theta)/r^3 "
-                               f"(spread {spread:.3e})")
-        return True, ("Passed (axial-dipole crustal field, Br exact, "
-                      "Btheta self-consistent)")
-
-    # General case: compare with the independent Python evaluation.
-    errs = []
-    for i, _ in enumerate(rows):
-        rr = _radius(cols, i)
-        if rr < R_MIN or rr > R_MAX:
-            continue
-        x, y, z = _xyz(cols, i)
-        ban = crustal_b0(coeffs, x, y, z)
-        scale = max(_mag(ban), 1e-12)
-        errs.append(_mag(tuple(_field(cols, "B0", i)[k] - ban[k]
-                               for k in range(3))) / scale)
-    if not errs:
-        return False, "No usable point in the comparison band"
-    errs.sort()
-    med = errs[len(errs) // 2]
-    logger.debug("    crustal: n=%d median rel err = %.3e, max = %.3e",
-                 len(errs), med, errs[-1])
-    if med > CRUSTAL_TOL:
-        return False, (f"B0 does not match the independent spherical-harmonic "
-                       f"evaluation (median rel err = {med:.3e})")
-    return True, f"Passed (crustal field, median rel err {med:.1e})"
+            if r < R_MIN or r > R_MAX or (r < R_PLANET) != inside:
+                continue
+            ban = reference(x, y, z)
+            scale = max(_mag(ban), 1e-12)
+            errs.append(_mag(tuple(_field(cols, "B0", i)[k] - ban[k]
+                                   for k in range(3))) / scale)
+        if not errs:
+            return False, f"No usable {region} point in the comparison band"
+        errs.sort()
+        med = errs[len(errs) // 2]
+        logger.debug("    %s %s: n=%d median rel err = %.3e, max = %.3e",
+                     label, region, len(errs), med, errs[-1])
+        if med > tol:
+            return False, (f"B0 ({region}) does not match the independent "
+                           f"evaluation of the {label} (median rel err = "
+                           f"{med:.3e})")
+        msgs.append(f"{region} {med:.1e}")
+    return True, f"Passed ({label}, median rel err: {', '.join(msgs)})"
 
 
 def _check_superposition(cols, rows, first_cols=None):
     """Dipole + crustal must be the sum of the two individual fields."""
-    errs = []
-    for i, _ in enumerate(rows):
-        rr = _radius(cols, i)
-        if rr < R_MIN or rr > R_MAX:
-            continue
-        x, y, z = _xyz(cols, i)
+    def reference(x, y, z):
         bd = dipole_b0(x, y, z)
         bc = crustal_b0(CRUSTAL_NM2, x, y, z)
-        ban = tuple(bd[k] + bc[k] for k in range(3))
-        scale = max(_mag(ban), 1e-12)
-        errs.append(_mag(tuple(_field(cols, "B0", i)[k] - ban[k]
-                               for k in range(3))) / scale)
-    if not errs:
-        return False, "No usable point in the comparison band"
-    errs.sort()
-    med = errs[len(errs) // 2]
-    logger.debug("    superposition: n=%d median rel err = %.3e", len(errs),
-                 med)
-    if med > ANALYTIC_TOL:
-        return False, (f"The dipole + crustal sum is wrong (median rel err = "
-                       f"{med:.3e})")
-    return True, f"Passed (dipole + crustal superposition, rel err {med:.1e})"
+        return tuple(bd[k] + bc[k] for k in range(3))
+
+    return _compare_regions(cols, rows, reference, ANALYTIC_TOL,
+                            "dipole + crustal superposition")
