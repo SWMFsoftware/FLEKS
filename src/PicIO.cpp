@@ -1534,9 +1534,37 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (saveNode)
     filename += "_node";
 
-  if (!baOut.empty() && n_lev() == 1) {
-    // TODO: make it works for multi-lev and node-centered in the future.
-    distribute_FabArray(out[0], baOut, DistributionMapping(baOut));
+  if (!baOut.empty()) {
+    const BoxArray baOutCell =
+        baOut.ixType().cellCentered()
+            ? baOut
+            : amrex::convert(baOut, IndexType::TheCellType());
+    IntVect ratio = IntVect::TheUnitVector();
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      BoxArray baLev;
+      if (iLev == 0) {
+        baLev = baOutCell;
+      } else {
+        ratio *= refRatio(iLev - 1);
+        BoxArray baRefined = amrex::refine(baOutCell, ratio);
+        BoxList bl;
+        for (int i = 0; i < boxArray(iLev).size(); ++i) {
+          const Box& bx = boxArray(iLev)[i];
+          if (baRefined.intersects(bx)) {
+            bl.push_back(bx);
+          }
+        }
+        baLev.define(bl);
+      }
+
+      if (saveNode) {
+        baLev = amrex::convert(baLev, amrex::IntVect::TheNodeVector());
+      }
+
+      DistributionMapping dm =
+          baLev.empty() ? DistributionMapping() : DistributionMapping(baLev);
+      distribute_FabArray(out[iLev], baLev, dm);
+    }
   }
 
   Vector<const MultiFab*> mf(n_lev());
