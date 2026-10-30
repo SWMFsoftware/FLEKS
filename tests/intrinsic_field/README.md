@@ -25,9 +25,10 @@ to the total) shows up immediately.
 | Variant | File | Physics | Validation |
 |---------|------|---------|------------|
 | `intrinsic_field_body` | `PARAM.in.body` | Dipole: 100 nT on the reference sphere `r = 1`, axis along `+x`, i.e. *in* the `z = 0` plane the plot writes; plus an absorbing `#BODY` (radius 1, `absorb` + `linetied`); `B1 = 0` | Median relative error against the analytic dipole `< 1e-6`; `\|B0\| r^3` constant; `\|B0\| = 100 nT` at the magnetic equator on `r = 1`; `B0` non-zero and unchanged inside the body mask, `\|E\| = 0` there; only `Eb` checked in the log (absorbed particles leave the domain) |
-| `intrinsic_field_crustal` | `PARAM.in.crustal` | Crustal field `crustal_nm1.txt`, `nMax = 3`, only `g(1,0) = 100 nT` non-zero | Closed-form axial dipole: `Br = 2 g10 cos(theta)/r^3` exact, `Btheta ∝ sin(theta)/r^3`, no `Bphi` |
-| `intrinsic_field_crustal_nm2` | `PARAM.in.crustal_nm2` | Crustal field `crustal_nm2.txt`, `nMax = 3`, several degrees with both `g` and `h` | Matches an independent Schmidt semi-normalized evaluation in `validate.py` (median relative error `< 1e-8`) |
-| `intrinsic_field_dipole_crustal` | `PARAM.in.dipole_crustal` | Dipole + crustal field together | Linear superposition: `B0` equals the sum of the dipole-only and crustal-only fields (median relative error `< 1e-6`) |
+| `intrinsic_field_crustal` | `PARAM.in.crustal` | Crustal field `crustal_nm1.txt`, `nMax = 3`, only `g(1,0) = 100 nT` non-zero | Closed-form axial dipole with the clamped amplitude radius `ra = max(r, rPlanet)`: `Br = 2 g10 cos(theta)/ra^3`, `Btheta = +g10 sin(theta)/ra^3`, no `Bphi`; interior (`r < rPlanet`) and exterior checked separately |
+| `intrinsic_field_crustal_nm2` | `PARAM.in.crustal_nm2` | Crustal field `crustal_nm2.txt`, `nMax = 3`, several degrees with both `g` and `h` | Matches an independent Schmidt semi-normalized evaluation in `validate.py` (clamped amplitude radius, true direction; median relative error `< 1e-8`, interior and exterior separately). The `h` rows use positive orders (`2 1 3.5`) |
+| `intrinsic_field_crustal_nm2_signed` | `PARAM.in.crustal_nm2_signed` | Same field from `crustal_nm2_signed.txt`, whose `h` rows carry negative orders (`2 -1 3.5`), the layout of the real Morschhauser file | Same reference as `crustal_nm2`; would fail if negative orders were dropped (the `h(2,1)` sine term would vanish) |
+| `intrinsic_field_dipole_crustal` | `PARAM.in.dipole_crustal` | Dipole + crustal field together | Linear superposition: `B0` equals the sum of the dipole-only and crustal-only fields (median relative error `< 1e-6`, interior and exterior) |
 
 There is deliberately no bare "dipole only" deck: a planetary dipole never runs
 alone, it always comes with an inner body, so the body deck carries the
