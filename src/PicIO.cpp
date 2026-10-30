@@ -1201,10 +1201,10 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   Grid gridIO(geomOut[0], get_amr_info(), get_n_ghost(), -gridID);
 
-  if (isCut && n_lev() == 1) {
-    // TODO: This is a temporary solution. The current implementation is
-    // 'correct' but occupies too much disk space for AMR grids.
-    gridIO.regrid(baIO);
+  Vector<BoxArray> baIO_levels;
+  if (isCut) {
+    baIO_levels = get_cut_box_arrays(baIO);
+    gridIO.set_ba_and_dm(baIO_levels);
   } else {
     gridIO.set_ba_and_dm(&grid);
   }
@@ -1214,7 +1214,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   // Saving field/coordinates information. It is required by yt for unknown
   // reasons.
-  write_amrex_field(pw, timeNow, iCycle, "E B", dirName, baIO);
+  write_amrex_field(pw, timeNow, iCycle, "E B", dirName, baIO_levels);
 
   particlesOut.WritePlotFile(dirName, "particles", writeRealComp, writeIntComp,
                              realCompNames, intCompNames);
@@ -1238,16 +1238,64 @@ void Pic::set_IO_geom(Vector<Geometry>& geomIO, const PlotWriter& pw) {
   }
 }
 
+Vector<BoxArray> Pic::get_cut_box_arrays(const BoxArray& baOut0) const {
+  Vector<BoxArray> baLev(n_lev());
+  if (baOut0.empty()) {
+    return baLev;
+  }
+
+  const BoxArray baOutCell =
+      baOut0.ixType().cellCentered()
+          ? baOut0
+          : amrex::convert(baOut0, IndexType::TheCellType());
+  IntVect ratio = IntVect::TheUnitVector();
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (iLev == 0) {
+      baLev[iLev] = baOutCell;
+    } else {
+      ratio *= refRatio(iLev - 1);
+      BoxArray baRefined = amrex::refine(baOutCell, ratio);
+      BoxList bl;
+      for (int i = 0; i < boxArray(iLev).size(); ++i) {
+        const Box& bx = boxArray(iLev)[i];
+        if (baRefined.intersects(bx)) {
+          bl.push_back(bx);
+        }
+      }
+      baLev[iLev].define(bl);
+    }
+  }
+
+  while (baLev.size() > 1 && baLev.back().empty()) {
+    baLev.pop_back();
+  }
+
+  return baLev;
+}
+
 //==========================================================
 void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                             int const iCycle, const std::string plotVars,
                             const std::string filenameIn,
                             const BoxArray baOut) {
+  write_amrex_field(pw, timeNow, iCycle, plotVars, filenameIn,
+                    baOut.empty() ? Vector<BoxArray>{}
+                                  : get_cut_box_arrays(baOut));
+}
+
+//==========================================================
+void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
+                            int const iCycle, const std::string plotVars,
+                            const std::string filenameIn,
+                            const Vector<BoxArray>& baOutLevels) {
 
   // Save node-centered or cell-centered data. AMReX IO and most visualization
   // tools expect cell-centered data. So the node-centered output looks strange
   // in most visualization tools and it is only useful for debugging.
   const bool saveNode = pw.save_node();
+
+  const int nLevOut =
+      baOutLevels.empty() ? n_lev() : static_cast<int>(baOutLevels.size());
 
   Vector<Geometry> geomOut(n_lev());
 
@@ -1284,13 +1332,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // document says some visualization tools assumes the AMReX format outputs
   // are cell-centered.
 
-  Vector<MultiFab> out(n_lev());
+  Vector<MultiFab> out(nLevOut);
   Vector<std::string> varNames;
 #ifdef _PC_COMPONENT_
   bool isDensityZero = false;
   int zeroI, zeroJ, zeroK, zeroLev;
 #endif
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  for (int iLev = 0; iLev < nLevOut; iLev++) {
     if (saveNode) {
       out[iLev].define(node_box_array(iLev), DistributionMap(iLev), nVarOut, 0);
     } else {
@@ -1534,30 +1582,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (saveNode)
     filename += "_node";
 
-  if (!baOut.empty()) {
-    const BoxArray baOutCell =
-        baOut.ixType().cellCentered()
-            ? baOut
-            : amrex::convert(baOut, IndexType::TheCellType());
-    IntVect ratio = IntVect::TheUnitVector();
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      BoxArray baLev;
-      if (iLev == 0) {
-        baLev = baOutCell;
-      } else {
-        ratio *= refRatio(iLev - 1);
-        BoxArray baRefined = amrex::refine(baOutCell, ratio);
-        BoxList bl;
-        for (int i = 0; i < boxArray(iLev).size(); ++i) {
-          const Box& bx = boxArray(iLev)[i];
-          if (baRefined.intersects(bx)) {
-            bl.push_back(bx);
-          }
-        }
-        baLev.define(bl);
-      }
-
-      if (saveNode) {
+  if (!baOutLevels.empty()) {
+    for (int iLev = 0; iLev < nLevOut; ++iLev) {
+      BoxArray baLev = baOutLevels[iLev];
+      if (saveNode && !baLev.empty()) {
         baLev = amrex::convert(baLev, amrex::IntVect::TheNodeVector());
       }
 
@@ -1567,21 +1595,21 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     }
   }
 
-  Vector<const MultiFab*> mf(n_lev());
-  Vector<int> steps(n_lev());
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  Vector<const MultiFab*> mf(nLevOut);
+  Vector<int> steps(nLevOut);
+  for (int iLev = 0; iLev < nLevOut; iLev++) {
     mf[iLev] = &out[iLev];
     steps[iLev] = iCycle;
   }
 
   if (pw.is_amrex_format()) {
 
-    WriteMultiLevelPlotfile(filename, n_lev(), mf, varNames, geomOut, timeNow,
+    WriteMultiLevelPlotfile(filename, nLevOut, mf, varNames, geomOut, timeNow,
                             steps, refRatio());
 
   } else if (pw.is_hdf5_format()) {
 #ifdef _USE_HDF5_
-    WriteMultiLevelPlotfileHDF5(filename, n_lev(), mf, varNames, geomOut,
+    WriteMultiLevelPlotfileHDF5(filename, nLevOut, mf, varNames, geomOut,
                                 timeNow, steps, refRatio());
 #else
     Abort("Error: HDF5 is not enabled. Please recompile AMREX+FLEKS with HDF5 "

@@ -208,6 +208,34 @@ public:
     }
   }
 
+  void set_ba_and_dm(const amrex::Vector<amrex::BoxArray>& baIn) {
+    SetFinestLevel(static_cast<int>(baIn.size()) - 1);
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      SetBoxArray(iLev, baIn[iLev]);
+      amrex::DistributionMapping dm =
+          baIn[iLev].empty() ? amrex::DistributionMapping()
+                             : amrex::DistributionMapping(baIn[iLev]);
+      SetDistributionMap(iLev, dm);
+    }
+    for (int iLev = n_lev(); iLev < n_lev_max(); iLev++) {
+      ClearBoxArray(iLev);
+      ClearDistributionMap(iLev);
+    }
+  }
+
+  void set_ba_and_dm(const amrex::Vector<amrex::BoxArray>& baIn,
+                     const amrex::Vector<amrex::DistributionMapping>& dmIn) {
+    SetFinestLevel(static_cast<int>(baIn.size()) - 1);
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      SetBoxArray(iLev, baIn[iLev]);
+      SetDistributionMap(iLev, dmIn[iLev]);
+    }
+    for (int iLev = n_lev(); iLev < n_lev_max(); iLev++) {
+      ClearBoxArray(iLev);
+      ClearDistributionMap(iLev);
+    }
+  }
+
   bool is_inside_domain(const amrex::Real* loc) const {
     for (const auto& rb : activeDomainRanges) {
       if (rb.contains(loc))
