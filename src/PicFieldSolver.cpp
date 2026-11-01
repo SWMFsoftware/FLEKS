@@ -20,10 +20,15 @@ void Pic::update_E() {
     update_E_impl();
   }
   if (finestLevel() > 0) {
-    sync_emf_at_interface(nodeE);
-    fill_ghost_emf_from_coarse(nodeE);
-    sync_emf_at_interface(nodeEth);
-    fill_ghost_emf_from_coarse(nodeEth);
+    if (useHybridPIC) {
+      sync_emf_at_interface(nodeE);
+      fill_ghost_emf_from_coarse(nodeE);
+      sync_emf_at_interface(nodeEth);
+      fill_ghost_emf_from_coarse(nodeEth);
+    } else {
+      fill_interface_and_ghost_emf_from_coarse(nodeE);
+      fill_interface_and_ghost_emf_from_coarse(nodeEth);
+    }
   }
 }
 
@@ -818,10 +823,15 @@ void Pic::update_B() {
   timing_func(nameFunc);
 
   if (finestLevel() > 0) {
-    sync_emf_at_interface(nodeEth);
-    fill_ghost_emf_from_coarse(nodeEth);
-    sync_emf_at_interface(nodeE);
-    fill_ghost_emf_from_coarse(nodeE);
+    if (useHybridPIC) {
+      sync_emf_at_interface(nodeEth);
+      fill_ghost_emf_from_coarse(nodeEth);
+      sync_emf_at_interface(nodeE);
+      fill_ghost_emf_from_coarse(nodeE);
+    } else {
+      fill_interface_and_ghost_emf_from_coarse(nodeEth);
+      fill_interface_and_ghost_emf_from_coarse(nodeE);
+    }
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -844,7 +854,7 @@ void Pic::update_B() {
   }
 
   // Divergence-free relaxation of covered coarse B toward fine average
-  if (finestLevel() > 0) {
+  if (useHybridPIC && finestLevel() > 0) {
     for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
       relax_covered_B_to_fine(iLev);
     }
@@ -936,6 +946,12 @@ void Pic::solve_hyp_phi(int iLev) {
 
   hypPhi[iLev].FillBoundary(Geom(iLev).periodicity());
 
+  if (iLev > 0) {
+    fill_fine_lev_bny_from_coarse(
+        hypPhi[iLev - 1], hypPhi[iLev], 0, 1, refRatio(iLev - 1),
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+  }
+
   apply_BC(cell_status(iLev), hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
            iLev);
 }
@@ -1024,12 +1040,7 @@ void Pic::correct_B(int iLev) {
         auto is_face_blocked = [&](int ni, int nj, int nk, int ci, int cj,
                                    int ck) {
           const int nStat = status(ni, nj, nk);
-          const int cStat = status(ci, cj, ck);
           if (bit::is_domain_boundary(nStat))
-            return true;
-          if (bit::is_lev_boundary(nStat))
-            return true;
-          if (bit::is_refined(nStat) != bit::is_refined(cStat))
             return true;
           return false;
         };

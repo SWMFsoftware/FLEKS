@@ -2110,7 +2110,7 @@ void Pic::update(bool doReportIn) {
     advance_explicit_full_pic();
   } else if (solveEM) {
     advance_particles_and_sources(0);
-    if (projectDownEmFields) {
+    if (useHybridPIC && projectDownEmFields) {
       project_down_E();
     }
     update_B();

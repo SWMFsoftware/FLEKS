@@ -1679,6 +1679,24 @@ void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
   }
 }
 
+void Pic::fill_interface_and_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
+  BL_PROFILE("Pic::fill_interface_and_ghost_emf_from_coarse");
+  for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
+    fill_fine_lev_edge_from_coarse(
+        nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, refRatio(iLev - 1),
+        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    fill_fine_lev_bny_from_coarse(
+        nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, refRatio(iLev - 1),
+        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
+                   iLev, false);
+    if (use_body()) {
+      apply_body_E_bc(nodeEmf[iLev], iLev);
+    }
+  }
+}
+
 //==========================================================
 // kStage[iLev][iK] = curl(E_Ohm(Bin)) on all levels. E is assembled on
 // every level first, then synchronized across the coarse-fine interfaces, and
