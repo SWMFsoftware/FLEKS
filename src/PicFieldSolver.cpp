@@ -19,6 +19,12 @@ void Pic::update_E() {
   } else {
     update_E_impl();
   }
+  if (finestLevel() > 0) {
+    sync_emf_at_interface(nodeE);
+    fill_ghost_emf_from_coarse(nodeE);
+    sync_emf_at_interface(nodeEth);
+    fill_ghost_emf_from_coarse(nodeEth);
+  }
 }
 
 //==========================================================
@@ -811,6 +817,13 @@ void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
 
+  if (finestLevel() > 0) {
+    sync_emf_at_interface(nodeEth);
+    fill_ghost_emf_from_coarse(nodeEth);
+    sync_emf_at_interface(nodeE);
+    fill_ghost_emf_from_coarse(nodeE);
+  }
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (centerDB[iLev].empty()) {
       distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
@@ -829,23 +842,17 @@ void Pic::update_B() {
 
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
-  if (projectDownEmFields && finestLevel() > 0) {
-    for (int iLev = finestLevel(); iLev > 0; iLev--) {
-      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, refRatio(0));
+
+  // Divergence-free relaxation of covered coarse B toward fine average
+  if (finestLevel() > 0) {
+    for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
+      relax_covered_B_to_fine(iLev);
     }
   }
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    if (iLev == 0) {
-      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                     &Pic::get_center_B, iLev, true);
 
-    } else {
-      fill_fine_lev_bny_from_coarse(
-          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          *get_cell_interp());
-    }
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    apply_centerB_BC(iLev);
+
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
@@ -890,6 +897,18 @@ void Pic::update_B() {
       project_body_B(centerB[iLev], iLev);
       project_body_B(nodeB[iLev], iLev);
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
+  if (need_divB() && finestLevel() > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(
+          divB[iLev - 1], divB[iLev], 0, divB[iLev].nComp(), refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          centerDivB[iLev - 1], centerDivB[iLev], 0, centerDivB[iLev].nComp(),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
     }
   }
 }
@@ -999,99 +1018,97 @@ void Pic::correct_B(int iLev) {
       };
 
       ParallelFor(box, [&](int i, int j, int k) {
-        bool doDiffusion;
         Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
         Real ul, ur;
 
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
+        auto is_face_blocked = [&](int ni, int nj, int nk, int ci, int cj,
+                                   int ck) {
+          const int nStat = status(ni, nj, nk);
+          const int cStat = status(ci, cj, ck);
+          if (bit::is_domain_boundary(nStat))
+            return true;
+          if (bit::is_lev_boundary(nStat))
+            return true;
+          if (bit::is_refined(nStat) != bit::is_refined(cStat))
+            return true;
+          return false;
+        };
 
         // Flux along  x
         for (int iDir = 0; iDir < nDim; iDir++) {
           get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
         }
 
-        ul = lu[ix_];
-        ur = ru[ix_];
-        doDiffusion = true;
-        if ((ul > 0 && bit::is_domain_boundary(status(i - 1, j, k))) ||
-            (ur < 0 && bit::is_domain_boundary(status(i + 1, j, k)))) {
-          doDiffusion = false;
-        }
+        ul = fabs(lu[ix_]);
+        ur = fabs(ru[ix_]);
+        ul = min(ul, 0.5 / coef[ix_]);
+        ur = min(ur, 0.5 / coef[ix_]);
+        const bool blockLx = is_face_blocked(i - 1, j, k, i, j, k);
+        const bool blockRx = is_face_blocked(i + 1, j, k, i, j, k);
 
-        if (doDiffusion) {
-          ul = fabs(ul);
-          ur = fabs(ur);
-          for (int iVar = 0; iVar < nDim3; iVar++) {
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real fluxR = 0.0;
+          if (!blockRx) {
             Real cR = limiter_theta(limiterThetaB, cB(i - 1, j, k, iVar),
                                     cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
+            fluxR = cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar));
+          }
+          Real fluxL = 0.0;
+          if (!blockLx) {
             Real cL = limiter_theta(limiterThetaB, cB(i - 2, j, k, iVar),
                                     cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
-            ul = min(ul, 0.5 / coef[ix_]);
-            ur = min(ur, 0.5 / coef[ix_]);
-            dB(i, j, k, iVar) +=
-                (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
-                 cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
-                coef[ix_];
+            fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar));
           }
+          dB(i, j, k, iVar) += (fluxR - fluxL) * coef[ix_];
         }
 
         // Flux along y
-        ul = lu[iy_];
-        ur = ru[iy_];
-        doDiffusion = true;
-        if ((ul > 0 && bit::is_domain_boundary(status(i, j - 1, k))) ||
-            (ur < 0 && bit::is_domain_boundary(status(i, j + 1, k)))) {
-          doDiffusion = false;
-        }
+        ul = fabs(lu[iy_]);
+        ur = fabs(ru[iy_]);
+        ul = min(ul, 0.5 / coef[iy_]);
+        ur = min(ur, 0.5 / coef[iy_]);
+        const bool blockLy = is_face_blocked(i, j - 1, k, i, j, k);
+        const bool blockRy = is_face_blocked(i, j + 1, k, i, j, k);
 
-        if (doDiffusion) {
-          ul = fabs(ul);
-          ur = fabs(ur);
-
-          for (int iVar = 0; iVar < nDim3; iVar++) {
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real fluxR = 0.0;
+          if (!blockRy) {
             Real cR = limiter_theta(limiterThetaB, cB(i, j - 1, k, iVar),
                                     cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
+            fluxR = cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar));
+          }
+          Real fluxL = 0.0;
+          if (!blockLy) {
             Real cL = limiter_theta(limiterThetaB, cB(i, j - 2, k, iVar),
                                     cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
-            ul = min(ul, 0.5 / coef[iy_]);
-            ur = min(ur, 0.5 / coef[iy_]);
-
-            dB(i, j, k, iVar) +=
-                (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
-                 cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
-                coef[iy_];
+            fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar));
           }
+          dB(i, j, k, iVar) += (fluxR - fluxL) * coef[iy_];
         }
 
         if (nDim > 2 && !isFake2D) {
-
           // Flux along z
-          ul = lu[iz_];
-          ur = ru[iz_];
+          ul = fabs(lu[iz_]);
+          ur = fabs(ru[iz_]);
+          ul = min(ul, 0.5 / coef[iz_]);
+          ur = min(ur, 0.5 / coef[iz_]);
+          const bool blockLz = is_face_blocked(i, j, k - 1, i, j, k);
+          const bool blockRz = is_face_blocked(i, j, k + 1, i, j, k);
 
-          doDiffusion = true;
-          if ((ul > 0 && bit::is_domain_boundary(status(i, j, k - 1))) ||
-              (ur < 0 && bit::is_domain_boundary(status(i, j, k + 1)))) {
-            doDiffusion = false;
-          }
-
-          if (doDiffusion) {
-            ul = fabs(ul);
-            ur = fabs(ur);
-
-            for (int iVar = 0; iVar < nDim3; iVar++) {
+          for (int iVar = 0; iVar < nDim3; iVar++) {
+            Real fluxR = 0.0;
+            if (!blockRz) {
               Real cR = limiter_theta(limiterThetaB, cB(i, j, k - 1, iVar),
                                       cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
+              fluxR = cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar));
+            }
+            Real fluxL = 0.0;
+            if (!blockLz) {
               Real cL = limiter_theta(limiterThetaB, cB(i, j, k - 2, iVar),
                                       cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
-              ul = min(ul, 0.5 / coef[iz_]);
-              ur = min(ur, 0.5 / coef[iz_]);
-
-              dB(i, j, k, iVar) +=
-                  (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
-                   cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
-                  coef[iz_];
+              fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar));
             }
+            dB(i, j, k, iVar) += (fluxR - fluxL) * coef[iz_];
           }
         }
       });

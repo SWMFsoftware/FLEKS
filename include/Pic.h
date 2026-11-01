@@ -724,7 +724,7 @@ public:
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
-    if (useHybridPIC && n_lev_max() > 1) {
+    if (n_lev_max() > 1) {
       relaxTarget.resize(n_lev_max());
       relaxResidual.resize(n_lev_max());
       relaxCurl.resize(n_lev_max());
