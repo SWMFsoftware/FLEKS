@@ -8,6 +8,7 @@
 
 #include "GridUtility.h"
 #include "Pic.h"
+#include "PicUpwind.h"
 #include "Timer.h"
 
 using namespace amrex;
@@ -43,27 +44,6 @@ ue_at(const Array4<Real const>& arrUe, const int i, const int j, const int k,
   } else {
     return arrUe(i, j, k + off, DIR);
   }
-}
-
-// MUSCL slope limiter for the Pe advection and the #HYBRIDUPWIND B
-// reconstruction.
-// limType: 0 = upwind1, 1 = minmod, 2 = van leer, 3 = monotonized central (mc).
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real pe_slope(const int limType,
-                                                       const Real dL,
-                                                       const Real dR) noexcept {
-  if (limType == 0 || dL * dR <= 0.0)
-    return 0.0;
-  if (limType == 1) { // minmod
-    return (dL > 0.0) ? amrex::min(dL, dR) : amrex::max(dL, dR);
-  } else if (limType == 2) { // van leer
-    return 2.0 * dL * dR / (dL + dR);
-  } else if (limType == 3) { // mc
-    const Real c = 0.5 * (dL + dR);
-    const Real s = (dL > 0.0) ? 1.0 : -1.0;
-    return s * amrex::min(2.0 * std::abs(dL),
-                          amrex::min(2.0 * std::abs(dR), std::abs(c)));
-  }
-  return 0.0;
 }
 
 // Add one direction's contribution to div(u_e Pe) and div(u_e). The caller
@@ -117,83 +97,6 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
   divUe += (uHi - uLo) * invDx;
 }
 
-// Limited jump phi * (B^R - B^L) of component iVar of the MUSCL-reconstructed
-// cell-centered B across the low face of cell (i,j,k) along DIR, i.e. between
-// the cells at offsets -1 and 0, from the cached cell slopes (below). The
-// upwind term at a node averages this over the 2 (2D) or 4 (3D) faces around
-// the node in the transverse directions, the same cells curl_center_to_node
-// averages over; computing each face once and averaging avoids reconstructing
-// it again for every node that shares it.
-template <int DIR>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
-upwind_face_jump(const Array4<Real const>& arrB,
-                 const Array4<Real const>& slope, const int i, const int j,
-                 const int k, const int iVar, const Real sensorFloor) noexcept {
-  constexpr int di = (DIR == ix_) ? 1 : 0;
-  constexpr int dj = (DIR == iy_) ? 1 : 0;
-  constexpr int dk = (DIR == iz_) ? 1 : 0;
-  const Real bM1 = arrB(i - di, j - dj, k - dk, iVar);
-  const Real b0 = arrB(i, j, k, iVar);
-  const Real bL = bM1 + 0.5 * slope(i - di, j - dj, k - dk, iVar);
-  const Real bR = b0 - 0.5 * slope(i, j, k, iVar);
-  Real phi = 1.0;
-  if (sensorFloor < 1.0) {
-    // Grid-scale sensor s = |third difference| / sum|first differences|:
-    // ~ (k dx)^2 for smooth modes, O(1) for 2-3 cell noise and jumps.
-    const Real bM2 = arrB(i - 2 * di, j - 2 * dj, k - 2 * dk, iVar);
-    const Real bP1 = arrB(i + di, j + dj, k + dk, iVar);
-    const Real dM = bM1 - bM2, d0 = b0 - bM1, dP = bP1 - b0;
-    const Real den = std::abs(dM) + std::abs(d0) + std::abs(dP);
-    const Real s = (den > 0.0) ? std::abs(dP - 2.0 * d0 + dM) / den : 0.0;
-    phi = amrex::min(1.0, amrex::max(sensorFloor, s));
-  }
-  return phi * (bR - bL);
-}
-
-// Limited MUSCL slope of component iVar of the cell-centered B in cell (i,j,k)
-// along DIR. Each cell's slope serves the faces on both of its sides, so it is
-// computed once per direction instead of once per face.
-template <int DIR>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
-upwind_cell_slope(const Array4<Real const>& arrB, const int i, const int j,
-                  const int k, const int iVar, const int limType) noexcept {
-  constexpr int di = (DIR == ix_) ? 1 : 0;
-  constexpr int dj = (DIR == iy_) ? 1 : 0;
-  constexpr int dk = (DIR == iz_) ? 1 : 0;
-  const Real bM1 = arrB(i - di, j - dj, k - dk, iVar);
-  const Real b0 = arrB(i, j, k, iVar);
-  const Real bP1 = arrB(i + di, j + dj, k + dk, iVar);
-  return pe_slope(limType, b0 - bM1, bP1 - b0);
-}
-
-// Average of the face jumps around node (i,j,k) along DIR (see above).
-template <int DIR>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_node_jump(
-    const Array4<Real const>& faceJump, const int i, const int j, const int k,
-    Real jump[nDim3]) noexcept {
-  constexpr int t1 = (DIR == ix_) ? iy_ : ix_;
-  constexpr int t2 = (DIR == iz_) ? iy_ : iz_;
-  const int o2Min = (nDim > 2 || t2 != iz_) ? -1 : 0;
-
-  for (int iVar = 0; iVar < nDim3; ++iVar)
-    jump[iVar] = 0.0;
-
-  int nCell = 0;
-  for (int o1 = -1; o1 <= 0; ++o1) {
-    for (int o2 = o2Min; o2 <= 0; ++o2) {
-      int c[nDim3] = { i, j, k };
-      c[t1] += o1;
-      c[t2] += o2;
-      for (int iVar = 0; iVar < nDim3; ++iVar)
-        jump[iVar] += faceJump(c[ix_], c[iy_], c[iz_], iVar);
-      ++nCell;
-    }
-  }
-
-  const Real invN = 1.0 / nCell;
-  for (int iVar = 0; iVar < nDim3; ++iVar)
-    jump[iVar] *= invN;
-}
 
 // Algebraic polytropic electron closure the evolved equation starts from:
 //   Pe = P0 * (rho/rho0)^gamma,  or Pe = Te*rho when gamma == 1.
@@ -1671,6 +1574,7 @@ void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
     fill_fine_lev_bny_from_coarse(
         nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, refRatio(iLev - 1),
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
                    iLev, false);
     if (use_body()) {
@@ -1688,6 +1592,7 @@ void Pic::fill_interface_and_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
     fill_fine_lev_bny_from_coarse(
         nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, refRatio(iLev - 1),
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
                    iLev, false);

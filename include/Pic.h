@@ -265,6 +265,7 @@ private:
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
+  amrex::Vector<amrex::MultiFab> nodeEmf;
   amrex::Vector<amrex::MultiFab> nodeB;
   // div(B) diagnostics, both cell-centred: divB is div of the nodal field,
   // the quantity the cleaning acts on, centerDivB is div of the cell-centred
@@ -439,6 +440,7 @@ private:
   amrex::Real limiterThetaE = 0;
   amrex::Real cMaxE = -1;
   bool useUpwindB = false;
+  bool useCurlUpwindB = false;
   amrex::Real limiterThetaB = 0;
   // Override upwind velocity in correct_B(). 0 = use plasma background
   // velocity.
@@ -710,6 +712,7 @@ public:
     dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
+    nodeEmf.resize(n_lev_max());
     divB.resize(n_lev_max());
     hypPhi.resize(n_lev_max());
     centerLapB.resize(n_lev_max());
@@ -1026,7 +1029,7 @@ public:
   // leaving coarse E untouched.
   void fill_interface_and_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
-  int faraday_ngrow(int iLev) const { return (useHybridPIC && iLev > 0) ? 1 : 0; }
+  int faraday_ngrow(int iLev) const { return (iLev > 0) ? 1 : 0; }
   // True when Bz does not enter div(B), i.e. when the grid has no z extent:
   // either a true-2D AMReX build or a 3D build with a single cell in z
   // (fake 2D, where the two z node planes coincide).  `nDim` is the
@@ -1101,6 +1104,8 @@ public:
   //-------------Electric field solver end-------------
 
   void update_B();
+
+  void add_curl_upwind_E(amrex::MultiFab& nodeEmf, int iLev);
 
   void correct_B(int iLev);
 

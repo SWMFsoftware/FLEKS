@@ -209,7 +209,7 @@ def _fine_iface_divb(test_name=None):
     the check. For the force-free, GEM-like and lobe variants max |B| must
     also stay within BMAX_GROWTH of its first value.
     """
-    required = test_name is None or test_name.endswith("hybrid")
+    required = test_name is None or test_name.endswith("hybrid") or "implicit" in (test_name or "")
     check_bmax = _variant(test_name) in ("forcefree", "gem", "lobe")
     bmax0 = None
     path = os.path.join(RUN_DIR, "fleks_stdout.log")

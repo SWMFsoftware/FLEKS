@@ -138,6 +138,10 @@ box                     shape
 #CONSTANTPPV
 F                       isPPVconstant
 
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
 #STOP
 20                      MaxIter
 -1.0                    TimeMax

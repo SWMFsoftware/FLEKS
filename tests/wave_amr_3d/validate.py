@@ -132,8 +132,7 @@ def validate_divb(run_dir=None):
 
     lines = [ln.strip() for ln in content.splitlines() if "divB-AMR" in ln]
     if not lines:
-        logger.debug("  [INFO] No divB-AMR lines found in %s (Full PIC); skipping div(B) check.", rd)
-        return True, "No divB-AMR lines found (Full PIC)"
+        return False, f"No divB-AMR lines found in {stdout_path} (#DIVB alwaysComputeDivB missing?)"
 
     max_divb_seen = 0.0
     for ln in lines:

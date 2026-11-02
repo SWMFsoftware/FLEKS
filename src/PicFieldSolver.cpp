@@ -8,6 +8,7 @@
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"
+#include "PicUpwind.h"
 #include "Timer.h"
 
 using namespace amrex;
@@ -41,18 +42,7 @@ void Pic::update_E_expl() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    // Physical boundary conditions apply at the base domain; fine-level
-    // boundaries instead take their values from the coarser level.
-    if (iLev == 0) {
-      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                     &Pic::get_center_B, iLev, true);
-    } else {
-      fill_fine_lev_bny_from_coarse(
-          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          *get_cell_interp());
-    }
+    apply_centerB_BC(iLev);
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -593,21 +583,15 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab& temp2Node = solverRhsNode2[iLev];
   temp2Node.setVal(0.0);
 
-  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  apply_centerB_BC(iLev);
+
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
   // The same base-versus-fine distinction applies to both B layouts used by
   // the implicit field solve after a regrid.
   if (iLev == 0) {
-    apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                   &Pic::get_center_B, iLev, true);
     apply_field_bc(node_status(iLev), nodeB[iLev], 0, nodeB[iLev].nComp(),
                    &Pic::get_node_B, iLev, true);
   } else {
-    fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
-                                  centerB[iLev - 1].nComp(), refRatio(iLev - 1),
-                                  Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-                                  *get_cell_interp());
-
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                   nodeB[iLev - 1].nComp(), refRatio(iLev - 1),
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
@@ -834,13 +818,43 @@ void Pic::update_B() {
     }
   }
 
+  // When curl-form upwind is active in the full-PIC solver, compute the upwind
+  // dissipation as an effective EMF on nodes: E_upwind = sum_d (a_d/2) e_d x jump(B).
+  // Faraday's curl update then advances B strictly divergence-free.
+  const bool doCurlUpwind = useUpwindB && useCurlUpwindB && !useHybridPIC;
+  if (doCurlUpwind) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (nodeEmf[iLev].empty()) {
+        distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
+      }
+      MultiFab::Copy(nodeEmf[iLev], nodeEth[iLev], 0, 0, nDim3,
+                     nodeEth[iLev].nGrow());
+      add_curl_upwind_E(nodeEmf[iLev], iLev);
+      nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
+      nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(node_status(0), nodeEmf[0], 0, nDim3, &Pic::get_node_E,
+                       0, false);
+        if (use_body()) {
+          apply_body_E_bc(nodeEmf[0], 0);
+        }
+      }
+    }
+    if (finestLevel() > 0) {
+      fill_interface_and_ghost_emf_from_coarse(nodeEmf);
+    }
+  }
+
+  Vector<MultiFab>& faradayEmf = doCurlUpwind ? nodeEmf : nodeEth;
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (centerDB[iLev].empty()) {
       distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
                           nDim3, get_n_ghost());
     }
     MultiFab& dB = centerDB[iLev];
-    curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+    curl_node_to_center(faradayEmf[iLev], dB, Geom(iLev).InvCellSize());
 
     // The interior of the body is a cavity: Faraday's law does not change the
     // magnetic field there, so B keeps its initial value.
@@ -921,6 +935,10 @@ void Pic::update_B() {
           cell_bilinear_interp);
     }
   }
+
+  if (need_divB() && n_lev() > 1 && doReport) {
+    report_divB_amr();
+  }
 }
 
 //==========================================================
@@ -950,10 +968,163 @@ void Pic::solve_hyp_phi(int iLev) {
     fill_fine_lev_bny_from_coarse(
         hypPhi[iLev - 1], hypPhi[iLev], 0, 1, refRatio(iLev - 1),
         Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+    const Real scale =
+        pow(Geom(iLev).CellSize()[ix_] / Geom(iLev - 1).CellSize()[ix_], 2);
+    for (MFIter mfi(hypPhi[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.fabbox();
+      const auto& phi = hypPhi[iLev][mfi].array();
+      const auto& st = cell_status(iLev)[mfi].const_array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (bit::is_lev_boundary(st(i, j, k))) {
+          phi(i, j, k) *= scale;
+        }
+      });
+    }
   }
 
   apply_BC(cell_status(iLev), hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
            iLev);
+}
+
+//==========================================================
+void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
+  std::string nameFunc = "Pic::add_curl_upwind_E";
+  timing_func(nameFunc);
+
+  if (!useUpwindB || !useCurlUpwindB)
+    return;
+
+  GpuArray<int, nDim3> upwindDir = { 0, 0, 0 };
+  GpuArray<Real, nDim3> invDxUp = { 0.0, 0.0, 0.0 };
+  for (int iDim = 0; iDim < nDim; ++iDim) {
+    upwindDir[iDim] = (Geom(iLev).Domain().length(iDim) > 1) ? 1 : 0;
+    invDxUp[iDim] = Geom(iLev).InvCellSize(iDim);
+  }
+
+  // Map limiterThetaB to limType: 0 = upwind1, 1 = minmod, 3 = mc
+  int limTypeUp = 1;
+  if (limiterThetaB <= 0.0) {
+    limTypeUp = 0;
+  } else if (limiterThetaB <= 1.0) {
+    limTypeUp = 1;
+  } else {
+    limTypeUp = 3;
+  }
+
+  const Real sensorFloorUp = 1.0;
+  const Real fixedSpeedUp = fixedUpwindVel;
+  const Real dt = tc->get_dt();
+  const bool isFake2D = is_fake_2d();
+
+  for (MFIter mfi(nodeEmfLev); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrE = nodeEmfLev[mfi].array();
+    const Array4<Real const>& arrBin = centerB[iLev][mfi].const_array();
+    const Array4<Real const>& arrU = uBg[iLev][mfi].const_array();
+    const Array4<Real const>& arrNodeB = nodeB[iLev][mfi].const_array();
+    const Array4<Real const>& arrMoments =
+        nodePlasma[nSpecies][iLev][mfi].const_array();
+
+    FArrayBox faceJump[nDim3];
+    Array4<Real const> arrFace[nDim3];
+    FArrayBox slopeFab;
+    for (int iDir = 0; iDir < nDim; ++iDir) {
+      if (!upwindDir[iDir])
+        continue;
+      Box faceBox(box.smallEnd(), box.bigEnd());
+      for (int t = 0; t < nDim; ++t) {
+        if (t != iDir)
+          faceBox.growLo(t, 1);
+      }
+      Box slopeBox = faceBox;
+      slopeBox.growLo(iDir, 1);
+      slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
+      faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
+      const Array4<Real>& arrS = slopeFab.array();
+      const Array4<Real const>& arrSc = slopeFab.const_array();
+      const Array4<Real>& arrF = faceJump[iDir].array();
+
+      if (iDir == ix_) {
+        ParallelFor(slopeBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
+                          arrBin, i, j, k, iVar, limTypeUp);
+                    });
+        ParallelFor(faceBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                    });
+      } else if (iDir == iy_) {
+        ParallelFor(slopeBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
+                          arrBin, i, j, k, iVar, limTypeUp);
+                    });
+        ParallelFor(faceBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                    });
+      } else {
+        ParallelFor(slopeBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
+                          arrBin, i, j, k, iVar, limTypeUp);
+                    });
+        ParallelFor(faceBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                    });
+      }
+      arrFace[iDir] = faceJump[iDir].const_array();
+    }
+
+    const Array4<Real const> arrFaceX = arrFace[ix_];
+    const Array4<Real const> arrFaceY = arrFace[iy_];
+    const Array4<Real const> arrFaceZ = arrFace[iz_];
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      Real jump[nDim3];
+      for (int iDir = 0; iDir < nDim; ++iDir) {
+        if (!upwindDir[iDir])
+          continue;
+        if (iDir == iz_ && isFake2D)
+          continue;
+
+        if (iDir == ix_) {
+          upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
+        } else if (iDir == iy_) {
+          upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
+        } else {
+          upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
+        }
+
+        Real a = 0.0;
+        if (fixedSpeedUp > 0.0) {
+          a = fixedSpeedUp;
+        } else {
+          a = std::abs(arrU(i, j, k, iDir));
+        }
+
+        const Real maxA = 1.0 / (dt * invDxUp[iDir]);
+        a = amrex::min(a, maxA);
+        const Real halfA = 0.5 * a;
+
+        if (iDir == ix_) {
+          arrE(i, j, k, iy_) -= halfA * jump[iz_];
+          arrE(i, j, k, iz_) += halfA * jump[iy_];
+        } else if (iDir == iy_) {
+          arrE(i, j, k, ix_) += halfA * jump[iz_];
+          arrE(i, j, k, iz_) -= halfA * jump[ix_];
+        } else {
+          arrE(i, j, k, ix_) -= halfA * jump[iy_];
+          arrE(i, j, k, iy_) += halfA * jump[ix_];
+        }
+      }
+    });
+  }
 }
 
 //==========================================================
@@ -966,8 +1137,9 @@ void Pic::correct_B(int iLev) {
   }
 
   // The upwind diffusion needs uBg, which only the full-PIC solver allocates,
-  // so #UPWINDB stays a full-PIC-only option.
-  const bool doUpwind = useUpwindB && !useHybridPIC;
+  // so #UPWINDB stays a full-PIC-only option. When curl-form upwind is active,
+  // upwind dissipation is already applied inside Faraday's law.
+  const bool doUpwind = useUpwindB && !useHybridPIC && !useCurlUpwindB;
   if (!doUpwind && !useHyperbolicCleaning) {
     return;
   }
