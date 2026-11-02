@@ -320,13 +320,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
         useCurlUpwindB = true;
       }
     } else {
-      useCurlUpwindB = true; // default to divergence-free curl form
+      useCurlUpwindB = false; // default to original legacy scalar upwind
     }
     if (useUpwindB) {
       // Divergence-free curl upwind does not need hyperbolic cleaning;
       // legacy scalar diffusion requires hyperbolic cleaning.
       useHyperbolicCleaning = !useCurlUpwindB;
-      alwaysComputeDivB = true;
+      if (useCurlUpwindB)
+        alwaysComputeDivB = true;
     }
   } else if (command == "#FIXEDUMAX") {
     param.read_optional("fixedUMax", fixedUMax);

@@ -1025,9 +1025,6 @@ void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
     const Array4<Real>& arrE = nodeEmfLev[mfi].array();
     const Array4<Real const>& arrBin = centerB[iLev][mfi].const_array();
     const Array4<Real const>& arrU = uBg[iLev][mfi].const_array();
-    const Array4<Real const>& arrNodeB = nodeB[iLev][mfi].const_array();
-    const Array4<Real const>& arrMoments =
-        nodePlasma[nSpecies][iLev][mfi].const_array();
 
     FArrayBox faceJump[nDim3];
     Array4<Real const> arrFace[nDim3];
