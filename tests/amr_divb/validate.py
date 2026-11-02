@@ -40,7 +40,9 @@ NHEADER = 5
 
 _DIVB_LINE_RE = re.compile(r"divB-AMR\s+n=(\d+)\s+(.*)")
 _LEVEL_BUCKET_RE = re.compile(
-    r"L(\d+)\s+if(?:/cv)?/in=([0-9.eE+-]+)/(?:([0-9.eE+-]+)/)?([0-9.eE+-]+)/dom=([0-9.eE+-]+)"
+    r"L(\d+)\s+if(?:/cv)?/in=([0-9.eE+-]+|inf|nan)/"
+    r"(?:([0-9.eE+-]+|inf|nan)/)?([0-9.eE+-]+|inf|nan)/"
+    r"dom=([0-9.eE+-]+|inf|nan)"
 )
 
 
