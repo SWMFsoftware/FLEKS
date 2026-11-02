@@ -29,6 +29,10 @@ void Pic::update_E() {
     } else {
       fill_interface_and_ghost_emf_from_coarse(nodeE);
       fill_interface_and_ghost_emf_from_coarse(nodeEth);
+      for (int iLev = 1; iLev < n_lev(); ++iLev) {
+        div_node_to_center(nodeE[iLev], centerDivE[iLev],
+                           Geom(iLev).InvCellSize());
+      }
     }
   }
 }
