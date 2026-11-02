@@ -161,7 +161,7 @@ def validate_divb(run_dir=None, test_name=None):
     return True, f"div(B) verified: max={max_divb_seen:.2e}"
 
 
-def validate_plot(run_dir=None, test_name=None):
+def validate_plot(test_name=None, run_dir=RUN_DIR):
     """Validate fluid .out spatial profile."""
     is_scalar_variant = test_name and "scalar" in test_name
     is_uniform_variant = test_name and "uniform" in test_name
@@ -180,9 +180,14 @@ def validate_plot(run_dir=None, test_name=None):
     y = frame.get("y")
     div = frame.get("divB")
     bmag = frame.get("B")
+    if bmag is None and "Bx" in frame:
+        bx = frame.get("Bx", 0.0)
+        by = frame.get("By", 0.0)
+        bz = frame.get("Bz", 0.0)
+        bmag = np.sqrt(bx * bx + by * by + bz * bz)
 
     if x is None or y is None or div is None or bmag is None:
-        return False, "Missing required columns (x, y, divB, B) in plot frame"
+        return False, "Missing required columns (x, y, divB, B/Bx) in plot frame"
 
     r = np.maximum(np.abs(x), np.abs(y)) / CUBE_HALF
     h = np.where(r < 1.0, DX_FINE, DX_COARSE)
@@ -207,11 +212,11 @@ def validate(run_dir=None, test_name=None, pic_diags=None, **kwargs):
         if not ok:
             return False, msg
 
-    ok, msg = validate_divb(run_dir, test_name)
+    ok, msg = validate_divb(run_dir=run_dir, test_name=test_name)
     if not ok:
         return False, msg
 
-    ok, msg = validate_plot(run_dir, test_name)
+    ok, msg = validate_plot(test_name=test_name, run_dir=run_dir)
     if not ok:
         return False, msg
 

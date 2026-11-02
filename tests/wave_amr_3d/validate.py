@@ -75,7 +75,10 @@ def _load_frame(path):
 
 
 def validate_log(pic_diags=None, test_name=None):
-    """Energy-log validation."""
+    """Energy and divergence log validation."""
+    ok, msg = validate_divb(run_dir=RUN_DIR)
+    if not ok:
+        return False, msg
     logger.debug("Validating 3D AMR pulse energy log...")
     if not pic_diags or len(pic_diags) < 2:
         return False, f"Insufficient log entries (expected >=2, got {len(pic_diags) if pic_diags else 0})"
@@ -160,7 +163,7 @@ def validate_divb(run_dir=None):
     return True, f"div(B) verified: max={max_divb_seen:.2e}"
 
 
-def validate_plot(run_dir=None):
+def validate_plot(test_name=None, run_dir=RUN_DIR):
     """Validate fluid .out spatial profile."""
     rd = run_dir or RUN_DIR
     plots_dir = os.path.join(rd, "PC", "plots")
@@ -195,11 +198,11 @@ def validate(run_dir=None, test_name=None, pic_diags=None, **kwargs):
         if not ok:
             return False, msg
 
-    ok, msg = validate_divb(run_dir)
+    ok, msg = validate_divb(run_dir=run_dir)
     if not ok:
         return False, msg
 
-    ok, msg = validate_plot(run_dir)
+    ok, msg = validate_plot(test_name=test_name, run_dir=run_dir)
     if not ok:
         return False, msg
 

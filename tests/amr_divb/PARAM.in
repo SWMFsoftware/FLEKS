@@ -123,7 +123,7 @@ T                       doCorrectDivE
 
 #SAVEPLOT
 1                       nPlot
-z=0 var real4 planet    plotString
+z=0 var ascii planet    plotString
 -1                      dnSavePlot
 1.0                     dtSavePlot
 -1                      dxSavePlot

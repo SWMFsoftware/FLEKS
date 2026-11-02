@@ -987,7 +987,7 @@ void Pic::solve_hyp_phi(int iLev) {
   }
 
   apply_BC(cell_status(iLev), hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
-           iLev);
+           iLev, nullptr, iLev > 0);
 }
 
 //==========================================================

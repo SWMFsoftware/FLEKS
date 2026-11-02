@@ -1176,7 +1176,8 @@ public:
   // Generic fill: zero-gradient copy on open faces, or values from `func`.
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                 const int iStart, const int nComp, GETVALUE func,
-                const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
+                const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr,
+                bool skipCoarseFineGhosts = false);
 
   // The linear, homogeneous part of the electric-field BC (no prescribed
   // values): what a correction to E, such as the GMRES vector, must obey.

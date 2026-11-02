@@ -252,7 +252,8 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
 //==========================================================
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
                    const int nComp, GETVALUE func, const int iLev,
-                   const BoxBC<FieldBC::Type>* bc) {
+                   const BoxBC<FieldBC::Type>* bc,
+                   bool skipCoarseFineGhosts) {
   if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
     return;
 
@@ -267,7 +268,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
     if (func != nullptr) {
-      fill_ext_dir(status, mf, iStart, nComp, func, iLev, bc);
+      fill_ext_dir(status, mf, iStart, nComp, func, iLev, bc,
+                   skipCoarseFineGhosts);
     }
   } else if (func == nullptr) {
     // Float / extrapolation BC on physical and embedded level boundaries:
@@ -289,46 +291,58 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
     // 2. Extrapolate from nearest valid neighbor for embedded active-region
-    // boundaries, and on a refined level also into the coarse-fine interface
-    // ghosts, which nothing else fills for these fields (the hyperbolic-
-    // cleaning potential is advanced with a level-dependent speed, so the
-    // coarse value does not fit there). activeRegion is in level-0 index
-    // space, so the whole-fab test below only means something on level 0; on
-    // a refined level it skipped an arbitrary subset of the fabs.
+    // boundaries. When skipCoarseFineGhosts is true, coarse-fine interface
+    // ghosts (which lie inside the active region) are preserved.
     const BoxArray ba =
-        get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
+        skipCoarseFineGhosts
+            ? get_level_active_ba(active_region_ref(), mf, Geom(iLev), Geom(0),
+                                  nDim, iz_)
+            : get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim,
+                                     iz_);
+    const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
+    const Geometry& geom = Geom(iLev);
+
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
-      if (iLev > 0 || !ba.contains(bxFab)) {
-        Array4<Real> const& arr = mf[mfi].array();
-        const Array4<const int>& statusArr = status[mfi].array();
-        Box box = bxValid;
-        box.grow(1);
-        ParallelFor(box, [&](int i, int j, int k) {
-          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-            bool isNeiFound = false;
-            const int kmin = (nDim > 2) ? -1 : 0;
-            const int kmax = (nDim > 2) ? 1 : 0;
-            for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
-              for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
-                for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
-                  if (!bit::is_lev_boundary(
-                          statusArr(i + ii, j + jj, k + kk, 0))) {
-                    isNeiFound = true;
-                    for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
-                      arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
-                    }
+      if (skipCoarseFineGhosts && ba.contains(bxFab))
+        continue;
+      if (!skipCoarseFineGhosts && iLev == 0 && ba.contains(bxFab))
+        continue;
+
+      Array4<Real> const& arr = mf[mfi].array();
+      const Array4<const int>& statusArr = status[mfi].array();
+      Box box = bxValid;
+      box.grow(1);
+      ParallelFor(box, [&](int i, int j, int k) {
+        if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
+          if (skipCoarseFineGhosts &&
+              !is_outside_active(ba, geom, bnd, nDim,
+                                 IntVect(AMREX_D_DECL(i, j, k)))) {
+            return;
+          }
+          bool isNeiFound = false;
+          const int kmin = (nDim > 2) ? -1 : 0;
+          const int kmax = (nDim > 2) ? 1 : 0;
+          for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
+            for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
+              for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
+                if (!bit::is_lev_boundary(
+                        statusArr(i + ii, j + jj, k + kk, 0))) {
+                  isNeiFound = true;
+                  for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
+                    arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
                   }
                 }
               }
             }
           }
-        });
-      }
+        }
+      });
     }
   } else {
-    fill_ext_dir(status, mf, iStart, nComp, func, iLev, nullptr);
+    fill_ext_dir(status, mf, iStart, nComp, func, iLev, nullptr,
+                 skipCoarseFineGhosts);
   }
 }
 
