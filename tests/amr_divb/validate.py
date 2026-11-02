@@ -125,14 +125,16 @@ def validate_divb(run_dir=None, test_name=None):
             break
 
     if not stdout_path:
-        return True, "No stdout log found"
+        return False, "No stdout log found"
 
     with open(stdout_path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
 
     lines = [ln.strip() for ln in content.splitlines() if "divB-AMR" in ln]
     if not lines:
-        return True, "No divB-AMR lines found (single level or not reported)"
+        if test_name and "uniform" in test_name:
+            return True, "Single-level run; div(B) is checked in plot output"
+        return False, "No divB-AMR lines found for the AMR run"
 
     max_divb_seen = 0.0
     for ln in lines:
