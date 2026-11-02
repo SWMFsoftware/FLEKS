@@ -1,0 +1,126 @@
+#DESCRIPTION
+30s waves
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-32e3                    xMin
+ 32e3                    xMax
+-32                    yMin
+ 32                    yMax
+-32                    zMin
+ 32                    zMax
+
+#NCELL
+2000                    nCellX
+2                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+100                      maxBlockSizeX
+16                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+implicit
+
+#PLASMA
+2                       nSpecies
+0.01                    mass        Species 0: electron
+-1.0                    charge
+1.0                     mass        Species 1: H+
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: electron (quasi-neutral)
+0.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+72500.0                 T [K]
+5.0                     rho [/cc]   Species 1: H+
+0.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+72500.0                 T [K]
+5.0e-9                  bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+Beam
+1                       iSpecies
+0.01                    ratio
+0.48                    vel
+0.0                     vel
+0.0                     vel
+
+#TIMESTEPPING
+F                       useFixedDt
+0.2                     cfl
+
+#NORMALIZATION
+1000.0                  lNormSI
+2.0e6                   uNormSI
+
+#MONITOR
+1                       dnReport
+
+#PARTICLES
+10                     nParticle per cell in X
+10                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+T                       solvePartInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterTheta
+
+#UPWINDB
+T                       doSmoothB
+1                       theta
+
+#SMOOTHJ
+T
+1
+0.5
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#DIVE
+T
+1
+
+#SAVEPLOT
+3			nPlotFile
+z=0 var real4 planet		StringPlot
+-1			DnSavePlot
+1			DtSavePlot
+0			DxSavePlot
+{fluid} ppcS0 ppcS1
+3d particles1 amrex planet        plotString
+-1                                dn
+10                                dt
+1                                 dx
+3d particles0 amrex planet        plotString
+-1                                dn
+30                                dt
+1                                 dx
+
+
+#STOP
+-1                      MaxIter
+121                     TimeMax   ~0.008 ion gyroperiods (short growth window)
