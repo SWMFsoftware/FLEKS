@@ -73,7 +73,10 @@ def _load_frame(path):
 
 
 def validate_log(pic_diags=None, test_name=None):
-    """Energy log validation."""
+    """Energy and divergence log validation."""
+    ok, msg = validate_divb(test_name=test_name)
+    if not ok:
+        return False, msg
     if not pic_diags or len(pic_diags) < 2:
         return False, f"Insufficient log entries (expected >=2, got {len(pic_diags) if pic_diags else 0})"
 
