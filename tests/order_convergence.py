@@ -354,6 +354,8 @@ def _fit_standing_wave_freq(ts, ys):
             break
 
     A, omega, gamma, phi0 = (float(v) for v in p)
+    r = y_arr - A * np.exp(-gamma * t_arr) * np.cos(omega * t_arr + phi0)
+    rms = float(np.sqrt(np.mean(r * r)))
     amp = abs(A)
     reason = ""
     if amp <= 0.0:
