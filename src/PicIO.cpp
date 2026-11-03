@@ -1255,14 +1255,7 @@ Vector<BoxArray> Pic::get_cut_box_arrays(const BoxArray& baOut0) const {
     } else {
       ratio *= refRatio(iLev - 1);
       BoxArray baRefined = amrex::refine(baOutCell, ratio);
-      BoxList bl;
-      for (int i = 0; i < boxArray(iLev).size(); ++i) {
-        const Box& bx = boxArray(iLev)[i];
-        if (baRefined.intersects(bx)) {
-          bl.push_back(bx);
-        }
-      }
-      baLev[iLev].define(bl);
+      baLev[iLev] = amrex::intersect(boxArray(iLev), baRefined);
     }
   }
 
