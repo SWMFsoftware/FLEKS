@@ -591,7 +591,10 @@ def _validate_waves_plot(test_name):
     if not out_files:
         return False, "No .out files found in plots directory (PostProc.pl not run?)"
 
-    frames = [f for f in (_read_waves_frame(p) for p in out_files) if f]
+    frames = [_read_waves_frame(p) for p in out_files]
+    for path, frame in zip(out_files, frames):
+        if frame is None:
+            return False, f"Unreadable waves frame: {os.path.basename(path)}"
     if len(frames) < 3:
         return False, (f"expected >= 3 readable frames with Bx/By/Bz, "
                        f"found {len(frames)} of {len(out_files)}")
