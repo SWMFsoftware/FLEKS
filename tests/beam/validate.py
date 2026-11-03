@@ -136,14 +136,16 @@ def validate_log(pic_diags=None, test_name=None):
             return False, (f"Expected >= 2 energy log entries, "
                            f"got {len(pic_diags) if pic_diags else 0}")
         first, last = pic_diags[0], pic_diags[-1]
-        for key in ("Etot", "Eb"):
-            if not (math.isfinite(first.get(key, 0.0)) and
-                    math.isfinite(last.get(key, 0.0))):
-                return False, f"Non-finite {key} in the energy log (NaN/Inf)"
-        eb0, eb1 = first.get("Eb", 0.0), last.get("Eb", 0.0)
-        if eb0 > 0.0 and not (0.5 * eb0 <= eb1 <= 2.0 * eb0):
-            return False, (f"Magnetic energy out of bounds: Eb {eb0:.4e} -> "
-                           f"{eb1:.4e} (factor > 2)")
+        eb0 = first.get("Eb", float("nan"))
+        for entry in pic_diags:
+            for key in ("Etot", "Eb"):
+                if not math.isfinite(entry.get(key, float("nan"))):
+                    return False, f"Non-finite {key} in the energy log (NaN/Inf)"
+            eb = entry["Eb"]
+            if eb0 > 0.0 and not (0.5 * eb0 <= eb <= 2.0 * eb0):
+                return False, (f"Magnetic energy out of bounds: Eb {eb0:.4e} -> "
+                               f"{eb:.4e} (factor > 2)")
+        eb1 = last["Eb"]
         logger.debug("    [WAVES] Energy log: Etot %.4e -> %.4e, Eb %.4e -> %.4e",
                      first.get("Etot", 0.0), last.get("Etot", 0.0), eb0, eb1)
         return True, "Passed (energy log finite, Eb steady)"
