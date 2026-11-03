@@ -667,15 +667,15 @@ def _validate_waves_plot(test_name):
                            f"{s['bx_spread']:.3e} nT at t={s['t']:.3f} "
                            f"(tol {WAVES_BX_SPREAD_TOL:.0e} relative)")
 
-    rho_key = "rho1" if "rho1" in last else ("rho0" if "rho0" in last else None)
-    if rho_key is not None:
-        rho_mean = float(last[rho_key].mean())
-        if not math.isfinite(rho_mean) or \
-                abs(rho_mean - WAVES_ION_DENSITY_AMU_CC) > \
-                WAVES_DENSITY_TOL * WAVES_ION_DENSITY_AMU_CC:
-            return False, (f"{rho_key.upper()} does not round-trip: "
-                           f"{rho_mean:.4f} amu/cc vs input "
-                           f"{WAVES_ION_DENSITY_AMU_CC:.1f} amu/cc")
+    if "rho1" not in last:
+        return False, "Required ion-density column rhoS1 is missing from the final frame"
+    rho_mean = float(last["rho1"].mean())
+    if not math.isfinite(rho_mean) or \
+            abs(rho_mean - WAVES_ION_DENSITY_AMU_CC) > \
+            WAVES_DENSITY_TOL * WAVES_ION_DENSITY_AMU_CC:
+        return False, (f"RHOS1 does not round-trip: "
+                       f"{rho_mean:.4f} amu/cc vs input "
+                       f"{WAVES_ION_DENSITY_AMU_CC:.1f} amu/cc")
 
     msg = (f"waves: peak max|B_perp|/|Bx| = {amp_ratio:.2e} at t="
            f"{max(stats, key=lambda s: s['amp'])['t']:.2f}, final rms "
