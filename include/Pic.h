@@ -1030,11 +1030,14 @@ public:
   void sync_emf_at_interface(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Fill the fine-level ghost nodes of E from the coarse E.
   void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
-  // One-way: fill fine-level interface edge nodes AND ghost nodes from coarse E,
-  // leaving coarse E untouched.
-  void fill_interface_and_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // One-way: fill fine-level interface edge nodes AND ghost nodes from coarse
+  // E, leaving coarse E untouched.
+  void fill_interface_and_ghost_emf_from_coarse(
+      amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
-  int faraday_ngrow(int iLev) const { return ((useHybridPIC || useCurlUpwindB) && iLev > 0) ? 1 : 0; }
+  int faraday_ngrow(int iLev) const {
+    return ((useHybridPIC || useCurlUpwindB) && iLev > 0) ? 1 : 0;
+  }
   // True when Bz does not enter div(B), i.e. when the grid has no z extent:
   // either a true-2D AMReX build or a 3D build with a single cell in z
   // (fake 2D, where the two z node planes coincide).  `nDim` is the
@@ -1110,7 +1113,7 @@ public:
 
   void update_B();
 
-  void add_curl_upwind_E(amrex::MultiFab& nodeEmf, int iLev);
+  void add_curl_upwind_E(amrex::MultiFab &nodeEmf, int iLev);
 
   void correct_B(int iLev);
 

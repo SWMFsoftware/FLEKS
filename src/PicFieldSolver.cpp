@@ -849,14 +849,15 @@ void Pic::update_B() {
   }
 
   // When curl-form upwind is active in the full-PIC solver, compute the upwind
-  // dissipation as an effective EMF on nodes: E_upwind = sum_d (a_d/2) e_d x jump(B).
-  // Faraday's curl update then advances B strictly divergence-free.
+  // dissipation as an effective EMF on nodes: E_upwind = sum_d (a_d/2) e_d x
+  // jump(B). Faraday's curl update then advances B strictly divergence-free.
   const bool doCurlUpwind = useUpwindB && useCurlUpwindB && !useHybridPIC;
   if (doCurlUpwind) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (nodeEmf[iLev].empty()) {
         distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
-                            DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
+                            DistributionMap(iLev), 3, get_n_ghost(), false,
+                            0.0);
       }
       MultiFab::Copy(nodeEmf[iLev], nodeEth[iLev], 0, 0, nDim3,
                      nodeEth[iLev].nGrow());
@@ -914,8 +915,8 @@ void Pic::update_B() {
     } else {
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
-        apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                       &Pic::get_center_B, iLev, true);
+        apply_field_bc(cell_status(iLev), centerB[iLev], 0,
+                       centerB[iLev].nComp(), &Pic::get_center_B, iLev, true);
       } else {
         fill_fine_lev_bny_from_coarse(
             centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),

@@ -263,7 +263,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // Allocate it only for coarse levels with an active fine level. Using
     // n_lev_max() here would allocate the AMR-only buffers in single-level
     // runs that merely allow AMR, which needlessly regresses memory use.
-    if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0 && iLev < finestLevel()) {
+    if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0 &&
+        iLev < finestLevel()) {
       distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
                           DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
       distribute_FabArray(relaxResidual[iLev], boxArray(iLev),

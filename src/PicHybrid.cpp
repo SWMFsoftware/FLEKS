@@ -97,7 +97,6 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void pe_dir_flux(
   divUe += (uHi - uLo) * invDx;
 }
 
-
 // Algebraic polytropic electron closure the evolved equation starts from:
 //   Pe = P0 * (rho/rho0)^gamma,  or Pe = Te*rho when gamma == 1.
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real

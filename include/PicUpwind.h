@@ -1,19 +1,19 @@
 #ifndef _PIC_UPWIND_H_
 #define _PIC_UPWIND_H_
 
+#include <cmath>
+
 #include <AMReX_Array.H>
 #include <AMReX_Array4.H>
 #include <AMReX_REAL.H>
-#include <cmath>
 
 #include "Constants.h"
 
 // MUSCL slope limiter for the Pe advection and the #HYBRIDUPWIND / #UPWINDB B
 // reconstruction.
 // limType: 0 = upwind1, 1 = minmod, 2 = van leer, 3 = monotonized central (mc).
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real
-pe_slope(const int limType, const amrex::Real dL,
-         const amrex::Real dR) noexcept {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real pe_slope(
+    const int limType, const amrex::Real dL, const amrex::Real dR) noexcept {
   if (limType == 0 || dL * dR <= 0.0)
     return 0.0;
   if (limType == 1) { // minmod
@@ -37,11 +37,10 @@ pe_slope(const int limType, const amrex::Real dL,
 // averages over; computing each face once and averaging avoids reconstructing
 // it again for every node that shares it.
 template <int DIR>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real
-upwind_face_jump(const amrex::Array4<amrex::Real const>& arrB,
-                 const amrex::Array4<amrex::Real const>& slope, const int i,
-                 const int j, const int k, const int iVar,
-                 const amrex::Real sensorFloor) noexcept {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real upwind_face_jump(
+    const amrex::Array4<amrex::Real const>& arrB,
+    const amrex::Array4<amrex::Real const>& slope, const int i, const int j,
+    const int k, const int iVar, const amrex::Real sensorFloor) noexcept {
   constexpr int di = (DIR == ix_) ? 1 : 0;
   constexpr int dj = (DIR == iy_) ? 1 : 0;
   constexpr int dk = (DIR == iz_) ? 1 : 0;
@@ -57,7 +56,8 @@ upwind_face_jump(const amrex::Array4<amrex::Real const>& arrB,
     const amrex::Real bP1 = arrB(i + di, j + dj, k + dk, iVar);
     const amrex::Real dM = bM1 - bM2, d0 = b0 - bM1, dP = bP1 - b0;
     const amrex::Real den = std::abs(dM) + std::abs(d0) + std::abs(dP);
-    const amrex::Real s = (den > 0.0) ? std::abs(dP - 2.0 * d0 + dM) / den : 0.0;
+    const amrex::Real s =
+        (den > 0.0) ? std::abs(dP - 2.0 * d0 + dM) / den : 0.0;
     phi = amrex::min(1.0, amrex::max(sensorFloor, s));
   }
   return phi * (bR - bL);
@@ -67,10 +67,9 @@ upwind_face_jump(const amrex::Array4<amrex::Real const>& arrB,
 // along DIR. Each cell's slope serves the faces on both of its sides, so it is
 // computed once per direction instead of once per face.
 template <int DIR>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real
-upwind_cell_slope(const amrex::Array4<amrex::Real const>& arrB, const int i,
-                  const int j, const int k, const int iVar,
-                  const int limType) noexcept {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real upwind_cell_slope(
+    const amrex::Array4<amrex::Real const>& arrB, const int i, const int j,
+    const int k, const int iVar, const int limType) noexcept {
   constexpr int di = (DIR == ix_) ? 1 : 0;
   constexpr int dj = (DIR == iy_) ? 1 : 0;
   constexpr int dk = (DIR == iz_) ? 1 : 0;

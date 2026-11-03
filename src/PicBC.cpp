@@ -253,8 +253,7 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
 //==========================================================
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
                    const int nComp, GETVALUE func, const int iLev,
-                   const BoxBC<FieldBC::Type>* bc,
-                   bool skipCoarseFineGhosts) {
+                   const BoxBC<FieldBC::Type>* bc, bool skipCoarseFineGhosts) {
   if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
     return;
 
