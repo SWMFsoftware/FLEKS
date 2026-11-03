@@ -132,8 +132,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // The relaxation workspace is needed only on coarse levels with an active
   // fine level. The active-level loop below cannot release a workspace on a
   // level that disappeared during coarsening, so clear those slots explicitly.
-  if (!relaxTarget.empty()) {
-    for (int iLev = finestLevel(); iLev < n_lev_max(); ++iLev) {
+  if (useHybridPIC && !relaxTarget.empty()) {
+    for (int iLev = std::max(0, finestLevel()); iLev < n_lev_max(); ++iLev) {
       relaxTarget[iLev].clear();
       relaxResidual[iLev].clear();
       relaxCurl[iLev].clear();
