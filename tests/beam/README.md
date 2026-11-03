@@ -32,8 +32,9 @@ box-limited one (see `_check_beam_transverse_wave`):
   `#SMOOTHJ`, `#DIVE` and `#COMOVING` enabled.
 - The initial transverse field is exactly zero, so the wave is driven purely by
   the instability: `max|B_perp|` rises to about $5\%$ of the $5$ nT guide field
-  by $t \approx 2$ (code time) and then stays saturated, with its power in
-  modes $n = 130$-$440$ ($\ge 80\%$ below $n = N/4$).
+  by $t \approx 2$ (code time) and then stays saturated, with its power in the
+  x modes $n = 65$-$220$ ($86$-$94\%$ below $n = N/4$). Because the deck is
+  uniform in y, the two y rows of the cut hold the same profile.
 - `TimeMax = 4` covers the growth phase plus two saturated units. The deck used
   to run to $t = 121$ (about 22 min on 2 MPI ranks); raising `TimeMax` restores
   that late-time study, which is a research run, not a CI test.
@@ -45,13 +46,31 @@ velocity `MeanVx` is conserved within 1%, and that transverse `By`/`Bz`
 waves grow from noise (power concentrated in low-order box-compatible modes). The hybrid variant additionally runs the shared hybrid energy checks.
 
 The waves variant saturates (so the generic monotonic-growth check does not
-apply) and is validated by `_validate_waves_plot` instead: the first frame must
-be exactly field free, the wave must reach at least $1\%$ of the guide field
-with at least $40\%$ of its power below $n = N/4$ (a coherent mode, not
-grid-scale noise), the amplitude must stay below $20\%$ of the guide field and
-must not collapse in the last frame, $B_x$ must stay uniform to $10^{-4}$
-relative, and the ion density must round-trip to the `#UNIFORMSTATE` value.
-The energy log is also guarded for finiteness and a steady `Eb`.
+apply) and is validated by `_validate_waves_plot` instead:
+
+- every frame must be readable and carry `rhoS1` (the H+ density; `rhoS0` is the
+  electron density and is not an acceptable substitute), the frames must all
+  have the same grid shape, and there must be at least three of them, so a
+  truncated or otherwise unusable snapshot cannot be silently dropped and
+  replaced by an earlier one;
+- the first frame must be exactly field free, and `|B_perp|` must reach at
+  least $1\%$ of the guide field but stay below $20\%$ (no runaway) and not
+  collapse in the last frame;
+- the spectrum is taken along $x$ row by row and averaged over the rows, so the
+  mode numbers are the box modes of a single profile ($n = 1$ is the box
+  fundamental) rather than the repetition of the y rows. At least
+  $70\%$ of the power must sit below $n = N/4$; spatial white noise puts $50\%$
+  there, so the cutoff is calibrated against the noise baseline instead of
+  being satisfied by it;
+- the components must agree between the y rows to $5\%$ of the wave amplitude:
+  the deck is uniform in y, so a field that flips sign between the rows is
+  transverse grid-scale noise even though its magnitude matches;
+- $B_x$ must stay uniform to $10^{-4}$ relative and equal to the input value,
+  and the `rhoS1` column must round-trip to the `#UNIFORMSTATE` density.
+
+`validate_log` guards every entry of the energy log (not just the first and
+last) for finite `Etot`/`Eb` and for an `Eb` that stays within a factor of two
+of its initial value.
 
 ## Running
 
