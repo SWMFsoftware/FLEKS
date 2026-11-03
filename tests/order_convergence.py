@@ -424,7 +424,8 @@ def measure_acoustic_freq():
     fit = _fit_standing_wave_freq(ts, ys)
     if not fit["valid"]:
         sys.stderr.write("  fit rejected (%s), keeping zero-crossing omega\n" % fit["reason"])
-    return {"omega_code": fit["omega"], "field": last_rho, "fit": fit}
+    omega = fit["omega"] if fit["valid"] else fit["omega_init"]
+    return {"omega_code": omega, "field": last_rho, "fit": fit}
 
 
 def main():
