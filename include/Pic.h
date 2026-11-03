@@ -1154,8 +1154,15 @@ public:
                          const std::string plotVars = "X E B plasma",
                          const std::string filenameIn = std::string(),
                          const amrex::BoxArray baOut = amrex::BoxArray());
+  void write_amrex_field(const PlotWriter &pw, double const timeNow,
+                         int const iCycle, const std::string plotVars,
+                         const std::string filenameIn,
+                         const amrex::Vector<amrex::BoxArray> &baOutLevels);
   void write_amrex_particle(const PlotWriter &pw, double const timeNow,
                             int const iCycle);
+
+  amrex::Vector<amrex::BoxArray> get_cut_box_arrays(
+      const amrex::BoxArray &baOut0) const;
 
   void set_IO_geom(amrex::Vector<amrex::Geometry> &geomIO,
                    const PlotWriter &pw);
