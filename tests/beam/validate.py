@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Validator for the beam instability test (tests/beam).
 
-The runner exercises the directory twice -- full PIC (PARAM.in, base_name
-"beam") and hybrid PIC (PARAM.in.hybrid, base_name "beam_hybrid").
+The runner exercises the directory once per PARAM.in variant:
 
-The primary validation for BOTH variants is the FFT-based transverse-wave check
-on plot output (`_check_beam_transverse_wave`).  The hybrid variant additionally
-runs the shared hybrid-family energy-log checks (`validate_hybrid`) to guard
-against NaN / field blow-up.  The beam tracks test particles, so a particle-log
-check is enabled via `PARTICLE_TOL`.
+  * ``PARAM.in``                       -> base_name "beam"
+  * ``PARAM.in.implicit``              -> "beam_implicit"
+  * ``PARAM.in.explicit``              -> "beam_explicit"
+  * ``PARAM.in.hybrid``                -> "beam_hybrid"
+  * ``PARAM.in.implicit.30s.waves``    -> "beam_implicit_30s_waves"
+
+The primary validation is the FFT-based transverse-wave check on plot output.
+The short full-PIC and hybrid variants share `_check_beam_transverse_wave`; the
+waves variant is a long-thin-box run whose wave saturates during the run, so it
+uses `_validate_waves_plot` instead.  The hybrid variant additionally runs the
+shared hybrid-family energy-log checks (`validate_hybrid`) to guard against NaN
+/ field blow-up.  The beam tracks test particles, so a particle-log check is
+enabled via `PARTICLE_TOL`.
 """
 import glob
 import logging
@@ -33,13 +40,50 @@ PARTICLE_TOL = {
     "min_velocity_change": 0.01,
 }
 
+# PARAM.in.implicit.30s.waves: the long-thin-box semi-implicit variant.  The
+# runner turns the PARAM suffix ".implicit.30s.waves" into the base name
+# "beam_implicit_30s_waves", so this token selects that variant's checks.
+WAVES_VARIANT = "30s_waves"
+
+# Thresholds for the waves variant, measured on the deck as committed
+# (2000x2 cells, 100 ppc, cfl 0.2, TimeMax = 4, ~166 cycles, 2 MPI ranks
+# -> ~55 s).  max|B_perp| rises from exactly 0 at t = 0 to 0.19 nT at
+# t = 0.5, peaks at 0.27 nT (5.4% of the 5 nT guide field) at t = 2, then
+# decays slowly to 0.21 nT; >= 80% of the transverse power sits below
+# n = N/4; Bx stays exactly 5 nT with zero spread; the H+ density
+# round-trips to 5.0 amu/cc.  The bounds below keep a factor of ~3-5 margin.
+WAVES_MIN_AMPLITUDE = 1.0e-2   # peak max|B_perp| / |Bx| (measured 5.4e-2)
+WAVES_MAX_AMPLITUDE = 2.0e-1   # blow-up guard (measured 5.4e-2)
+WAVES_MIN_LOW_MODE_FRACTION = 0.4   # power in n <= N/4 (measured 0.82)
+WAVES_MIN_LATE_FRACTION = 0.5  # final rms / peak rms (measured 1.02)
+WAVES_BX_SPREAD_TOL = 1.0e-4   # (max - min) / mean of |Bx| (measured 0)
+WAVES_DENSITY_TOL = 0.05       # rhoS1 round-trip, relative
+
+# Input values of the deck, used as the reference for the round-trip checks.
+WAVES_GUIDE_FIELD_NT = 5.0     # #UNIFORMSTATE bx
+WAVES_ION_DENSITY_AMU_CC = 5.0  # #UNIFORMSTATE rho of H+
+
+
+def _dft_amp(data):
+    """Single-sided DFT amplitude spectrum (pure-Python fallback for numpy)."""
+    nn = len(data)
+    out = []
+    for k in range(nn // 2 + 1):
+        re = sum(data[j] * math.cos(2 * math.pi * k * j / nn)
+                 for j in range(nn))
+        im = -sum(data[j] * math.sin(2 * math.pi * k * j / nn)
+                  for j in range(nn))
+        out.append(math.hypot(re, im))
+    return out
+
 
 def validate_log(pic_diags=None, test_name=None):
     """Energy-log validation for the beam test.
 
     The hybrid variant (test_name ends with "hybrid") runs the shared hybrid
-    energy checks to catch NaN / field blow-up; the full-PIC variant performs no
-    log-file check here (validation is the plot-output FFT).
+    energy checks to catch NaN / field blow-up; the full-PIC variants perform no
+    log-file check here beyond a finiteness guard (their validation is the
+    plot-output FFT).
     """
     if test_name and test_name.endswith("hybrid"):
         return validate_hybrid(pic_diags=pic_diags, test_name=test_name)
@@ -82,6 +126,27 @@ def validate_log(pic_diags=None, test_name=None):
         logger.debug("    [EXPLICIT] Kinetic ion check: Epart1 %.4e -> %.4e", ep1_start, ep1_end)
         logger.debug("    [EXPLICIT] #SMOOTHJ execution verified.")
         return True, "Passed (kinetic electrons and ions active, #SMOOTHJ verified)"
+
+    if test_name and WAVES_VARIANT in test_name:
+        # Cheap early guard: a blown-up implicit solve shows up in the energy
+        # log at the first report (dnReport = 1), well before the plot frames
+        # are post-processed, so this turns a coarse "plot check failed" into
+        # a specific message.
+        if not pic_diags or len(pic_diags) < 2:
+            return False, (f"Expected >= 2 energy log entries, "
+                           f"got {len(pic_diags) if pic_diags else 0}")
+        first, last = pic_diags[0], pic_diags[-1]
+        for key in ("Etot", "Eb"):
+            if not (math.isfinite(first.get(key, 0.0)) and
+                    math.isfinite(last.get(key, 0.0))):
+                return False, f"Non-finite {key} in the energy log (NaN/Inf)"
+        eb0, eb1 = first.get("Eb", 0.0), last.get("Eb", 0.0)
+        if eb0 > 0.0 and not (0.5 * eb0 <= eb1 <= 2.0 * eb0):
+            return False, (f"Magnetic energy out of bounds: Eb {eb0:.4e} -> "
+                           f"{eb1:.4e} (factor > 2)")
+        logger.debug("    [WAVES] Energy log: Etot %.4e -> %.4e, Eb %.4e -> %.4e",
+                     first.get("Etot", 0.0), last.get("Etot", 0.0), eb0, eb1)
+        return True, "Passed (energy log finite, Eb steady)"
 
     logger.debug("Validating Beam Instability Test...")
     logger.debug("  [INFO] Beam diagnostic checks rely on plot output (FFT).")
@@ -204,17 +269,6 @@ def _check_beam_transverse_wave():
     # FFT By and Bz separately (preserving sign/oscillation), then combine
     # the per-mode amplitudes.  Using |B_perp| directly would introduce
     # spurious harmonics from the magnitude operation.
-    def _dft_amp(data):
-        nn = len(data)
-        out = []
-        for k in range(nn // 2 + 1):
-            re = sum(data[j] * math.cos(2 * math.pi * k * j / nn)
-                     for j in range(nn))
-            im = -sum(data[j] * math.sin(2 * math.pi * k * j / nn)
-                      for j in range(nn))
-            out.append(math.hypot(re, im))
-        return out
-
     try:
         import numpy as np
         fy = np.abs(np.fft.rfft(by))
@@ -465,11 +519,180 @@ def _validate_instability_plot(test_name):
     return True, msg
 
 
+def _read_waves_frame(path):
+    """Read one ``.out`` frame of the waves variant.
+
+    Returns a dict with the frame time and NumPy arrays of the plotted
+    columns, or None when the file is not a readable ASCII frame.
+    """
+    with open(path, "r", encoding="latin-1") as f:
+        lines = f.readlines()
+    if len(lines) < 6:
+        return None
+    vidx = {v.upper(): i for i, v in enumerate(lines[4].split())}
+    for need in ("BX", "BY", "BZ"):
+        if need not in vidx:
+            return None
+    try:
+        t = float(lines[1].split()[1])
+    except (ValueError, IndexError):
+        return None
+
+    rows = []
+    for line in lines[5:]:
+        cols = line.split()
+        if len(cols) <= max(vidx["BX"], vidx["BY"], vidx["BZ"]):
+            continue
+        try:
+            rows.append([float(c) for c in cols])
+        except ValueError:
+            continue
+    if len(rows) < 4:
+        return None
+
+    import numpy as np
+    data = np.asarray(rows, dtype=float)
+    frame = {"t": t, "n": data.shape[0],
+             "bx": data[:, vidx["BX"]],
+             "by": data[:, vidx["BY"]],
+             "bz": data[:, vidx["BZ"]]}
+    for name, key in (("RHOS1", "rho1"), ("RHOS0", "rho0")):
+        if name in vidx:
+            frame[key] = data[:, vidx[name]]
+    return frame
+
+
+def _validate_waves_plot(test_name):
+    """Validation for the long-thin-box semi-implicit waves variant.
+
+    The deck starts with an exactly zero transverse field on a uniform warm
+    beam plasma, so the run exercises the whole chain (implicit E solve,
+    upwind E, smoothed B/J, comoving frame) on a wave that grows from
+    numerical noise and then saturates.  The generic monotonic-growth check
+    of `_check_beam_transverse_wave` cannot be used here -- the wave
+    saturates by t ~ 2 and decays slowly afterwards -- so the checks are:
+
+      1. the initial frame really has no transverse field;
+      2. the wave reaches the saturated level (>= 1% of the guide field) with
+         its power in box-compatible low-order modes, i.e. a coherent
+         instability rather than grid-scale noise;
+      3. the amplitude stays bounded (no runaway) and the wave does not
+         collapse at the end of the run;
+      4. the guide field stays uniform and the ion density round-trips to
+         the #UNIFORMSTATE value (a broken rho unit or a corrupted
+         compressional field shows up here).
+
+    Returns (passed: bool, reason: str).
+    """
+    import numpy as np
+
+    plots_dir = os.path.join(_run_dir.RUN_DIR, "PC", "plots")
+    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
+    if not out_files:
+        return False, "No .out files found in plots directory (PostProc.pl not run?)"
+
+    frames = [f for f in (_read_waves_frame(p) for p in out_files) if f]
+    if len(frames) < 3:
+        return False, (f"expected >= 3 readable frames with Bx/By/Bz, "
+                       f"found {len(frames)} of {len(out_files)}")
+
+    for f in frames:
+        for key in ("bx", "by", "bz"):
+            if not np.all(np.isfinite(f[key])):
+                return False, f"non-finite {key.upper()} in frame t={f['t']:.3f}"
+
+    stats = []
+    for f in frames:
+        bperp = np.hypot(f["by"], f["bz"])
+        stats.append({
+            "t": f["t"],
+            "bx_mean": float(f["bx"].mean()),
+            "bx_spread": float(f["bx"].max() - f["bx"].min()),
+            "amp": float(bperp.max()),
+            "rms": float(np.sqrt((bperp * bperp).mean())),
+        })
+        logger.debug("    [WAVES] t=%7.3f  Bx=%9.5f  max|B_perp|=%10.4e  rms=%10.4e",
+                     f["t"], stats[-1]["bx_mean"], stats[-1]["amp"],
+                     stats[-1]["rms"])
+
+    bx = abs(stats[-1]["bx_mean"])
+    if bx <= 0.0:
+        return False, "guide field Bx is zero or negative in the output"
+
+    peak = max(s["amp"] for s in stats)
+    peak_rms = max(s["rms"] for s in stats)
+    final_rms = stats[-1]["rms"]
+    amp_ratio = peak / bx
+
+    # 1. The initial state must be field-free in the transverse plane.
+    if stats[0]["amp"] > 1e-6 * bx:
+        return False, (f"initial transverse field not zero: "
+                       f"max|B_perp| = {stats[0]['amp']:.3e} nT at t={stats[0]['t']:.3f}")
+
+    # 2. The instability must reach a coherent, box-compatible mode.
+    if amp_ratio < WAVES_MIN_AMPLITUDE:
+        return False, (f"transverse wave did not reach saturation: "
+                       f"peak max|B_perp|/|Bx| = {amp_ratio:.2e} < {WAVES_MIN_AMPLITUDE:.0e}")
+
+    last = frames[-1]
+    amps = np.hypot(np.abs(np.fft.rfft(last["by"])),
+                    np.abs(np.fft.rfft(last["bz"])))
+    power = float(np.sum(amps[1:] ** 2))
+    if power <= 0.0:
+        return False, "no non-DC transverse wave power in the final frame"
+    n_low = last["n"] // 4
+    low_frac = float(np.sum(amps[1:n_low + 1] ** 2)) / power
+    if low_frac < WAVES_MIN_LOW_MODE_FRACTION:
+        return False, (f"transverse power not in low-order modes: low_frac = "
+                       f"{low_frac:.2f} < {WAVES_MIN_LOW_MODE_FRACTION:.1f} "
+                       f"(grid-scale noise instead of a wave)")
+    n_dom = int(np.argmax(amps[1:])) + 1
+
+    # 3. Bounded (no runaway) and no late collapse.
+    if amp_ratio > WAVES_MAX_AMPLITUDE:
+        return False, (f"transverse field blew up: peak max|B_perp|/|Bx| = "
+                       f"{amp_ratio:.2e} > {WAVES_MAX_AMPLITUDE:.0e}")
+    if peak_rms > 0.0 and final_rms < WAVES_MIN_LATE_FRACTION * peak_rms:
+        return False, (f"transverse wave collapsed at the end of the run: "
+                       f"final rms = {final_rms:.3e} < "
+                       f"{WAVES_MIN_LATE_FRACTION:.1f} x peak rms = {peak_rms:.3e}")
+
+    # 4. Guide field uniform and unchanged; ion density round-trip.
+    for s in stats:
+        if abs(s["bx_mean"] - WAVES_GUIDE_FIELD_NT) > 0.02 * WAVES_GUIDE_FIELD_NT:
+            return False, (f"guide field drifted: Bx = {s['bx_mean']:.5f} nT at "
+                           f"t={s['t']:.3f} (input {WAVES_GUIDE_FIELD_NT:.3f} nT)")
+        if s["bx_spread"] > WAVES_BX_SPREAD_TOL * abs(s["bx_mean"]):
+            return False, (f"compressional field appeared: spread(Bx) = "
+                           f"{s['bx_spread']:.3e} nT at t={s['t']:.3f} "
+                           f"(tol {WAVES_BX_SPREAD_TOL:.0e} relative)")
+
+    rho_key = "rho1" if "rho1" in last else ("rho0" if "rho0" in last else None)
+    if rho_key is not None:
+        rho_mean = float(last[rho_key].mean())
+        if not math.isfinite(rho_mean) or \
+                abs(rho_mean - WAVES_ION_DENSITY_AMU_CC) > \
+                WAVES_DENSITY_TOL * WAVES_ION_DENSITY_AMU_CC:
+            return False, (f"{rho_key.upper()} does not round-trip: "
+                           f"{rho_mean:.4f} amu/cc vs input "
+                           f"{WAVES_ION_DENSITY_AMU_CC:.1f} amu/cc")
+
+    msg = (f"waves: peak max|B_perp|/|Bx| = {amp_ratio:.2e} at t="
+           f"{max(stats, key=lambda s: s['amp'])['t']:.2f}, final rms "
+           f"{final_rms:.2e} ({final_rms / peak_rms if peak_rms else 0:.2f}x peak), "
+           f"dominant mode n={n_dom}, low-mode power {low_frac:.1%}, "
+           f"Bx uniform, rho round-trip OK, {len(frames)} frames")
+    logger.debug("    [WAVES] %s", msg)
+    return True, msg
+
+
 def validate_plot(test_name):
     """Plot-output check: FFT-based transverse-wave resonant-wavenumber check."""
     logger.debug("  --- Validating Output Files (FFT transverse wave) ---")
     if "instability" in test_name:
         return _validate_instability_plot(test_name)
+    if WAVES_VARIANT in (test_name or ""):
+        return _validate_waves_plot(test_name)
     result, reason = _check_beam_transverse_wave()
     if result:
         logger.debug("    [FFT] Beam transverse-wave resonance check: VERIFIED")
