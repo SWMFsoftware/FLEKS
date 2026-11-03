@@ -820,11 +820,16 @@ public:
     return fieldSolverMode != PicSolverMode::None;
   }
 
-  // Returns the cell-centered coarse-to-fine interpolater to use:
-  // CellConservativeLinear (lincc_interp, 2nd-order conservative with slope
-  // limiting) preserves cell-average magnetic flux across refinement boundaries.
+  // Returns the cell-centered coarse-to-fine interpolater to use.  For the
+  // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
+  // 2nd-order conservative with slope limiting) for higher accuracy at
+  // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
+  // (cell_bilinear_interp).
   amrex::Interpolater *get_cell_interp() const {
-    return static_cast<amrex::Interpolater *>(&amrex::lincc_interp);
+    return (useHybridPIC || useCurlUpwindB)
+               ? static_cast<amrex::Interpolater *>(&amrex::lincc_interp)
+               : static_cast<amrex::Interpolater *>(
+                     &amrex::cell_bilinear_interp);
   }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
@@ -1029,7 +1034,7 @@ public:
   // leaving coarse E untouched.
   void fill_interface_and_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
-  int faraday_ngrow(int iLev) const { return (iLev > 0) ? 1 : 0; }
+  int faraday_ngrow(int iLev) const { return ((useHybridPIC || useCurlUpwindB) && iLev > 0) ? 1 : 0; }
   // True when Bz does not enter div(B), i.e. when the grid has no z extent:
   // either a true-2D AMReX build or a 3D build with a single cell in z
   // (fake 2D, where the two z node planes coincide).  `nDim` is the

@@ -132,7 +132,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // The relaxation workspace is needed only on coarse levels with an active
   // fine level. The active-level loop below cannot release a workspace on a
   // level that disappeared during coarsening, so clear those slots explicitly.
-  if (useHybridPIC && !relaxTarget.empty()) {
+  if ((useHybridPIC || useCurlUpwindB) && !relaxTarget.empty()) {
     for (int iLev = std::max(0, finestLevel()); iLev < n_lev_max(); ++iLev) {
       relaxTarget[iLev].clear();
       relaxResidual[iLev].clear();
@@ -200,7 +200,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
                           nDim3, get_n_ghost(), doMoveData);
 
-      if (projectDownEmFields) {
+      if (!useCurlUpwindB && projectDownEmFields) {
         distribute_FabArray(projectScratchMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 0, doMoveData);
       }
@@ -263,7 +263,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // Allocate it only for coarse levels with an active fine level. Using
     // n_lev_max() here would allocate the AMR-only buffers in single-level
     // runs that merely allow AMR, which needlessly regresses memory use.
-    if (useHybridPIC && finestLevel() > 0 && iLev < finestLevel()) {
+    if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0 && iLev < finestLevel()) {
       distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
                           DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
       distribute_FabArray(relaxResidual[iLev], boxArray(iLev),
@@ -2116,7 +2116,7 @@ void Pic::update(bool doReportIn) {
     advance_explicit_full_pic();
   } else if (solveEM) {
     advance_particles_and_sources(0);
-    if (useHybridPIC && projectDownEmFields) {
+    if (!useCurlUpwindB && projectDownEmFields) {
       project_down_E();
     }
     update_B();

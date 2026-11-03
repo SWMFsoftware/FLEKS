@@ -92,11 +92,12 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
   // Fill external Dirichlet (coupled / fixed) faces from func if provided:
-  // On a refined level, coarse-fine ghosts are filled from the coarse level
-  // (or Faraday-advanced for the first B layer), so the prescribed outer state
-  // must stay out of them.
+  // Hybrid PIC fills (or, for the first B layer, Faraday-advances) the
+  // coarse-fine ghosts of a refined level itself, so the prescribed state must
+  // stay out of them. The full-PIC solver still relies on this fill there.
   if (func != nullptr) {
-    fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField, true);
+    fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField,
+                 useHybridPIC || useCurlUpwindB);
   }
 
   // Node-centered conducting wall requires zeroing boundary wall nodes

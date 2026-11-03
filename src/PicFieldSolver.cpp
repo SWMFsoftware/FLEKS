@@ -26,7 +26,7 @@ void Pic::update_E() {
       fill_ghost_emf_from_coarse(nodeE);
       sync_emf_at_interface(nodeEth);
       fill_ghost_emf_from_coarse(nodeEth);
-    } else {
+    } else if (useCurlUpwindB) {
       fill_interface_and_ghost_emf_from_coarse(nodeE);
       fill_interface_and_ghost_emf_from_coarse(nodeEth);
       for (int iLev = 1; iLev < n_lev(); ++iLev) {
@@ -46,7 +46,20 @@ void Pic::update_E_expl() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
-    apply_centerB_BC(iLev);
+    if (useHybridPIC || useCurlUpwindB) {
+      apply_centerB_BC(iLev);
+    } else {
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(cell_status(iLev), centerB[iLev], 0,
+                       centerB[iLev].nComp(), &Pic::get_center_B, iLev, true);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+            refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+            *get_cell_interp());
+      }
+    }
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -587,7 +600,20 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab& temp2Node = solverRhsNode2[iLev];
   temp2Node.setVal(0.0);
 
-  apply_centerB_BC(iLev);
+  if (useHybridPIC || useCurlUpwindB) {
+    apply_centerB_BC(iLev);
+  } else {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
+                     &Pic::get_center_B, iLev, true);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          *get_cell_interp());
+    }
+  }
 
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
   // The same base-versus-fine distinction applies to both B layouts used by
@@ -816,7 +842,7 @@ void Pic::update_B() {
       fill_ghost_emf_from_coarse(nodeEth);
       sync_emf_at_interface(nodeE);
       fill_ghost_emf_from_coarse(nodeE);
-    } else {
+    } else if (useCurlUpwindB) {
       fill_interface_and_ghost_emf_from_coarse(nodeEth);
       fill_interface_and_ghost_emf_from_coarse(nodeE);
     }
@@ -872,14 +898,31 @@ void Pic::update_B() {
   }
 
   // Divergence-free relaxation of covered coarse B toward fine average
-  if (useHybridPIC && finestLevel() > 0) {
+  if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0) {
     for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
       relax_covered_B_to_fine(iLev);
+    }
+  } else if (projectDownEmFields && finestLevel() > 0) {
+    for (int iLev = finestLevel(); iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, refRatio(0));
     }
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    apply_centerB_BC(iLev);
+    if (useHybridPIC || useCurlUpwindB) {
+      apply_centerB_BC(iLev);
+    } else {
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
+                       &Pic::get_center_B, iLev, true);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+            refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+            *get_cell_interp());
+      }
+    }
 
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());

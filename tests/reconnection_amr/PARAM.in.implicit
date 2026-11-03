@@ -146,15 +146,6 @@ box                     shape
 #CONSTANTPPV
 F                       isPPVconstant   (per-cell particle count; PC static AMR)
 
-#UPWINDB
-T                       useUpwindB
-1                       limiterThetaB
-curl                    typeUpwindB
-
-#DIVB
-F                       useHyperbolicCleaning
-T                       alwaysComputeDivB
-
 #STOP
 -1                      MaxIter
 3.0                     TimeMax   ~0.5 ion gyroperiod (reconnection onset)
