@@ -10,7 +10,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 
 | Test                  | Dir                   | Description                                                  | Readme |
 |-----------------------|-----------------------|--------------------------------------------------------------|--------|
-| Beam instability      | `beam/`               | 1D ion-beam cyclotron instability; energy conservation        | [README](beam/README.md) |
+| Beam instability      | `beam/`               | 1D ion-beam cyclotron instability; energy conservation; one long-thin-box 2D semi-implicit variant (~55 s) | [README](beam/README.md) |
 | Photoionization       | `photoionization/`    | Chamberlain neutral atmosphere with photoionization           | [README](photoionization/README.md) |
 | Electron impact       | `electronimpact/`     | Voronov 1997 electron-impact ionization of hot electrons      | [README](electronimpact/README.md) |
 | Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |

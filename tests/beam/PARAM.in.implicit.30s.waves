@@ -1,5 +1,5 @@
 #DESCRIPTION
-30s waves
+Ion beam-beam instability in a long thin box, semi-implicit full PIC
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -105,22 +105,14 @@ T
 1
 
 #SAVEPLOT
-3			nPlotFile
-z=0 var real4 planet		StringPlot
+1			nPlotFile
+z=0 var ascii planet		StringPlot
 -1			DnSavePlot
-1			DtSavePlot
+0.5			DtSavePlot
 0			DxSavePlot
-{fluid} ppcS0 ppcS1
-3d particles1 amrex planet        plotString
--1                                dn
-10                                dt
-1                                 dx
-3d particles0 amrex planet        plotString
--1                                dn
-30                                dt
-1                                 dx
+rhoS0 rhoS1 Bx By Bz
 
 
 #STOP
 -1                      MaxIter
-121                     TimeMax   ~0.008 ion gyroperiods (short growth window)
+4                       TimeMax   waves: growth t<1, saturation t~2
