@@ -311,10 +311,24 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#UPWINDB") {
     param.read_var("useUpwindB", useUpwindB);
     param.read_var("theta", limiterThetaB);
-    if (useUpwindB) {
-      useHyperbolicCleaning = true;
-    }
     param.read_optional("fixedUpwindVel", fixedUpwindVel);
+    std::string typeUpwindB;
+    if (param.read_optional("typeUpwindB", typeUpwindB)) {
+      if (typeUpwindB == "scalar" || typeUpwindB == "SCALAR") {
+        useCurlUpwindB = false;
+      } else if (typeUpwindB == "curl" || typeUpwindB == "CURL") {
+        useCurlUpwindB = true;
+      }
+    } else {
+      useCurlUpwindB = false; // default to original legacy scalar upwind
+    }
+    if (useUpwindB) {
+      // Divergence-free curl upwind does not need hyperbolic cleaning;
+      // legacy scalar diffusion requires hyperbolic cleaning.
+      useHyperbolicCleaning = !useCurlUpwindB;
+      if (useCurlUpwindB)
+        alwaysComputeDivB = true;
+    }
   } else if (command == "#FIXEDUMAX") {
     param.read_optional("fixedUMax", fixedUMax);
   } else if (command == "#DIVB") {

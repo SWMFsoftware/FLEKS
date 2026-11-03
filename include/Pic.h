@@ -265,6 +265,7 @@ private:
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
+  amrex::Vector<amrex::MultiFab> nodeEmf;
   amrex::Vector<amrex::MultiFab> nodeB;
   // div(B) diagnostics, both cell-centred: divB is div of the nodal field,
   // the quantity the cleaning acts on, centerDivB is div of the cell-centred
@@ -439,6 +440,7 @@ private:
   amrex::Real limiterThetaE = 0;
   amrex::Real cMaxE = -1;
   bool useUpwindB = false;
+  bool useCurlUpwindB = false;
   amrex::Real limiterThetaB = 0;
   // Override upwind velocity in correct_B(). 0 = use plasma background
   // velocity.
@@ -710,6 +712,7 @@ public:
     dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
+    nodeEmf.resize(n_lev_max());
     divB.resize(n_lev_max());
     hypPhi.resize(n_lev_max());
     centerLapB.resize(n_lev_max());
@@ -724,7 +727,7 @@ public:
     nodeRhoTemp.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
-    if (useHybridPIC && n_lev_max() > 1) {
+    if (n_lev_max() > 1) {
       relaxTarget.resize(n_lev_max());
       relaxResidual.resize(n_lev_max());
       relaxCurl.resize(n_lev_max());
@@ -823,7 +826,7 @@ public:
   // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
   // (cell_bilinear_interp).
   amrex::Interpolater *get_cell_interp() const {
-    return useHybridPIC
+    return (useHybridPIC || useCurlUpwindB)
                ? static_cast<amrex::Interpolater *>(&amrex::lincc_interp)
                : static_cast<amrex::Interpolater *>(
                      &amrex::cell_bilinear_interp);
@@ -1027,8 +1030,11 @@ public:
   void sync_emf_at_interface(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Fill the fine-level ghost nodes of E from the coarse E.
   void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  // One-way: fill fine-level interface edge nodes AND ghost nodes from coarse E,
+  // leaving coarse E untouched.
+  void fill_interface_and_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
-  int faraday_ngrow(int iLev) const { return (iLev > 0) ? 1 : 0; }
+  int faraday_ngrow(int iLev) const { return ((useHybridPIC || useCurlUpwindB) && iLev > 0) ? 1 : 0; }
   // True when Bz does not enter div(B), i.e. when the grid has no z extent:
   // either a true-2D AMReX build or a 3D build with a single cell in z
   // (fake 2D, where the two z node planes coincide).  `nDim` is the
@@ -1103,6 +1109,8 @@ public:
   //-------------Electric field solver end-------------
 
   void update_B();
+
+  void add_curl_upwind_E(amrex::MultiFab& nodeEmf, int iLev);
 
   void correct_B(int iLev);
 
@@ -1180,7 +1188,8 @@ public:
   // Generic fill: zero-gradient copy on open faces, or values from `func`.
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                 const int iStart, const int nComp, GETVALUE func,
-                const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
+                const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr,
+                bool skipCoarseFineGhosts = false);
 
   // The linear, homogeneous part of the electric-field BC (no prescribed
   // values): what a correction to E, such as the GMRES vector, must obey.

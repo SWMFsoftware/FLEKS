@@ -132,8 +132,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // The relaxation workspace is needed only on coarse levels with an active
   // fine level. The active-level loop below cannot release a workspace on a
   // level that disappeared during coarsening, so clear those slots explicitly.
-  if (useHybridPIC && !relaxTarget.empty()) {
-    for (int iLev = finestLevel(); iLev < n_lev_max(); ++iLev) {
+  if ((useHybridPIC || useCurlUpwindB) && !relaxTarget.empty()) {
+    for (int iLev = std::max(0, finestLevel()); iLev < n_lev_max(); ++iLev) {
       relaxTarget[iLev].clear();
       relaxResidual[iLev].clear();
       relaxCurl[iLev].clear();
@@ -170,6 +170,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // introduced by AMR before the next field solve.
     distribute_FabArray(nodeEth[iLev], node_box_array(iLev),
                         DistributionMap(iLev), 3, get_n_ghost(), true, 0.0);
+    if (useUpwindB && useCurlUpwindB && !useHybridPIC) {
+      distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
+    } else {
+      nodeEmf[iLev].clear();
+    }
 
     bool doMoveData = false;
     // div(E)/div(B) correction and implicit E-solver arrays (full-PIC only).
@@ -194,7 +200,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
                           nDim3, get_n_ghost(), doMoveData);
 
-      if (projectDownEmFields) {
+      if (!useCurlUpwindB && projectDownEmFields) {
         distribute_FabArray(projectScratchMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 0, doMoveData);
       }
@@ -252,6 +258,24 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             doMoveData);
       }
     }
+
+    // Workspace for the divergence-free relaxation of the covered coarse B.
+    // Allocate it only for coarse levels with an active fine level. Using
+    // n_lev_max() here would allocate the AMR-only buffers in single-level
+    // runs that merely allow AMR, which needlessly regresses memory use.
+    if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0 && iLev < finestLevel()) {
+      distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
+                          DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+      distribute_FabArray(relaxResidual[iLev], boxArray(iLev),
+                          DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
+      distribute_FabArray(relaxCurl[iLev], boxArray(iLev),
+                          DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+      distribute_FabArray(relaxCurlT[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+      distribute_FabArray(relaxDir[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
+    }
+
     if (useHybridPIC) {
       // Previous-step moments for the Ohm's-law interpolation.
       if (nodePlasmaPrev.empty()) {
@@ -280,23 +304,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
       distribute_FabArray(centerBstar[iLev], boxArray(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
-
-      // Workspace for the divergence-free relaxation of the covered coarse B.
-      // Allocate it only for coarse levels with an active fine level. Using
-      // n_lev_max() here would allocate the AMR-only buffers in single-level
-      // runs that merely allow AMR, which needlessly regresses memory use.
-      if (finestLevel() > 0 && iLev < finestLevel()) {
-        distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
-                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-        distribute_FabArray(relaxResidual[iLev], boxArray(iLev),
-                            DistributionMap(iLev), nDim3, 1, doMoveData, 0.0);
-        distribute_FabArray(relaxCurl[iLev], boxArray(iLev),
-                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-        distribute_FabArray(relaxCurlT[iLev], node_box_array(iLev),
-                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-        distribute_FabArray(relaxDir[iLev], node_box_array(iLev),
-                            DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
-      }
 
       // Staggered hybrid solver fields.
       distribute_FabArray(nodeEstage[iLev], node_box_array(iLev),
@@ -2109,7 +2116,7 @@ void Pic::update(bool doReportIn) {
     advance_explicit_full_pic();
   } else if (solveEM) {
     advance_particles_and_sources(0);
-    if (projectDownEmFields) {
+    if (!useCurlUpwindB && projectDownEmFields) {
       project_down_E();
     }
     update_B();

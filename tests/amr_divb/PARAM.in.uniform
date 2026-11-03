@@ -1,0 +1,145 @@
+#DESCRIPTION
+Uniform mesh div(B) preservation test: curl-form upwind on a single-level grid.
+Verifies machine-zero div(B) and identical physical evolution without AMR.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-2.0                    xMin
+ 2.0                    xMax
+-2.0                    yMin
+ 2.0                    yMax
+-2.0                    zMin
+ 2.0                    zMax
+
+#NCELL
+16                      nCellX
+16                      nCellY
+16                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#PLANETRADIUS
+3496000.0               radius [m]
+
+#NORMALIZATION
+3396000.0               lNormSI
+3000000.0               uNormSI
+
+#PLASMA
+2                       nSpecies
+0.0625                  mass        Species 0: electron
+-1.0                    charge
+1.0                     mass        Species 1: H+
+1.0                     charge
+
+#UNIFORMSTATE
+1.0                     rho [/cc]   Species 0: electron
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+1.0                     rho [/cc]   Species 1: H+
+-300.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+60000.0                 T [K]
+1.06e-9                 bx [T]      45 deg to the flow
+1.06e-9                 by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+3.18e-4                 ez [V/m]    = -u x B
+
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#FIELDSOLVER
+implicit
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+curl                    typeUpwindB
+
+#SMOOTHJ
+T                       doSmoothJ
+1                       nSmoothJ
+0.5                     coefSmoothJ
+
+#DIVE
+T                       doCorrectDivE
+1                       nDivECorrection
+
+#PARTICLES
+2                       npcelx
+2                       npcely
+2                       npcelz
+
+#MONITOR
+5                       dnReport
+
+#SAVELOG
+5                       dnSavePic
+5                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dnSavePlot
+1.0                     dtSavePlot
+-1                      dxSavePlot
+{fluid} divB divBc      varName
+
+#REFINEREGION
+0                       refineLev
+none                    StringRegion
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
+#STOP
+-1                      MaxIter
+3.0                     TimeMax

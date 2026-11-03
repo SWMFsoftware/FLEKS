@@ -8,6 +8,7 @@
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"
+#include "PicUpwind.h"
 #include "Timer.h"
 
 using namespace amrex;
@@ -18,6 +19,21 @@ void Pic::update_E() {
     update_E_expl();
   } else {
     update_E_impl();
+  }
+  if (finestLevel() > 0) {
+    if (useHybridPIC) {
+      sync_emf_at_interface(nodeE);
+      fill_ghost_emf_from_coarse(nodeE);
+      sync_emf_at_interface(nodeEth);
+      fill_ghost_emf_from_coarse(nodeEth);
+    } else if (useCurlUpwindB) {
+      fill_interface_and_ghost_emf_from_coarse(nodeE);
+      fill_interface_and_ghost_emf_from_coarse(nodeEth);
+      for (int iLev = 1; iLev < n_lev(); ++iLev) {
+        div_node_to_center(nodeE[iLev], centerDivE[iLev],
+                           Geom(iLev).InvCellSize());
+      }
+    }
   }
 }
 
@@ -30,17 +46,19 @@ void Pic::update_E_expl() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    // Physical boundary conditions apply at the base domain; fine-level
-    // boundaries instead take their values from the coarser level.
-    if (iLev == 0) {
-      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                     &Pic::get_center_B, iLev, true);
+    if (useHybridPIC || useCurlUpwindB) {
+      apply_centerB_BC(iLev);
     } else {
-      fill_fine_lev_bny_from_coarse(
-          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          *get_cell_interp());
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(cell_status(iLev), centerB[iLev], 0,
+                       centerB[iLev].nComp(), &Pic::get_center_B, iLev, true);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+            refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+            *get_cell_interp());
+      }
     }
   }
   const Real dt = tc->get_dt();
@@ -582,21 +600,28 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab& temp2Node = solverRhsNode2[iLev];
   temp2Node.setVal(0.0);
 
-  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  if (useHybridPIC || useCurlUpwindB) {
+    apply_centerB_BC(iLev);
+  } else {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
+                     &Pic::get_center_B, iLev, true);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          *get_cell_interp());
+    }
+  }
+
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
   // The same base-versus-fine distinction applies to both B layouts used by
   // the implicit field solve after a regrid.
   if (iLev == 0) {
-    apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                   &Pic::get_center_B, iLev, true);
     apply_field_bc(node_status(iLev), nodeB[iLev], 0, nodeB[iLev].nComp(),
                    &Pic::get_node_B, iLev, true);
   } else {
-    fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
-                                  centerB[iLev - 1].nComp(), refRatio(iLev - 1),
-                                  Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-                                  *get_cell_interp());
-
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                   nodeB[iLev - 1].nComp(), refRatio(iLev - 1),
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
@@ -811,13 +836,55 @@ void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
 
+  if (finestLevel() > 0) {
+    if (useHybridPIC) {
+      sync_emf_at_interface(nodeEth);
+      fill_ghost_emf_from_coarse(nodeEth);
+      sync_emf_at_interface(nodeE);
+      fill_ghost_emf_from_coarse(nodeE);
+    } else if (useCurlUpwindB) {
+      fill_interface_and_ghost_emf_from_coarse(nodeEth);
+      fill_interface_and_ghost_emf_from_coarse(nodeE);
+    }
+  }
+
+  // When curl-form upwind is active in the full-PIC solver, compute the upwind
+  // dissipation as an effective EMF on nodes: E_upwind = sum_d (a_d/2) e_d x jump(B).
+  // Faraday's curl update then advances B strictly divergence-free.
+  const bool doCurlUpwind = useUpwindB && useCurlUpwindB && !useHybridPIC;
+  if (doCurlUpwind) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (nodeEmf[iLev].empty()) {
+        distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
+      }
+      MultiFab::Copy(nodeEmf[iLev], nodeEth[iLev], 0, 0, nDim3,
+                     nodeEth[iLev].nGrow());
+      add_curl_upwind_E(nodeEmf[iLev], iLev);
+      nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
+      nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(node_status(0), nodeEmf[0], 0, nDim3, &Pic::get_node_E,
+                       0, false);
+        if (use_body()) {
+          apply_body_E_bc(nodeEmf[0], 0);
+        }
+      }
+    }
+    if (finestLevel() > 0) {
+      fill_interface_and_ghost_emf_from_coarse(nodeEmf);
+    }
+  }
+
+  Vector<MultiFab>& faradayEmf = doCurlUpwind ? nodeEmf : nodeEth;
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (centerDB[iLev].empty()) {
       distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
                           nDim3, get_n_ghost());
     }
     MultiFab& dB = centerDB[iLev];
-    curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+    curl_node_to_center(faradayEmf[iLev], dB, Geom(iLev).InvCellSize());
 
     // The interior of the body is a cavity: Faraday's law does not change the
     // magnetic field there, so B keeps its initial value.
@@ -829,23 +896,34 @@ void Pic::update_B() {
 
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
-  if (projectDownEmFields && finestLevel() > 0) {
+
+  // Divergence-free relaxation of covered coarse B toward fine average
+  if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0) {
+    for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
+      relax_covered_B_to_fine(iLev);
+    }
+  } else if (projectDownEmFields && finestLevel() > 0) {
     for (int iLev = finestLevel(); iLev > 0; iLev--) {
       average_down(centerB[iLev], centerB[iLev - 1], 0, 3, refRatio(0));
     }
   }
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    if (iLev == 0) {
-      apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                     &Pic::get_center_B, iLev, true);
 
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (useHybridPIC || useCurlUpwindB) {
+      apply_centerB_BC(iLev);
     } else {
-      fill_fine_lev_bny_from_coarse(
-          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          *get_cell_interp());
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
+                       &Pic::get_center_B, iLev, true);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+            refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+            *get_cell_interp());
+      }
     }
+
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
@@ -892,6 +970,22 @@ void Pic::update_B() {
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
+
+  if (need_divB() && finestLevel() > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(
+          divB[iLev - 1], divB[iLev], 0, divB[iLev].nComp(), refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          centerDivB[iLev - 1], centerDivB[iLev], 0, centerDivB[iLev].nComp(),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
+    }
+  }
+
+  if (need_divB() && n_lev() > 1 && doReport) {
+    report_divB_amr();
+  }
 }
 
 //==========================================================
@@ -917,8 +1011,164 @@ void Pic::solve_hyp_phi(int iLev) {
 
   hypPhi[iLev].FillBoundary(Geom(iLev).periodicity());
 
+  if (iLev > 0) {
+    fill_fine_lev_bny_from_coarse(
+        hypPhi[iLev - 1], hypPhi[iLev], 0, 1, refRatio(iLev - 1),
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+    const Real scale =
+        pow(Geom(iLev).CellSize()[ix_] / Geom(iLev - 1).CellSize()[ix_], 2);
+    for (MFIter mfi(hypPhi[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.fabbox();
+      const auto& phi = hypPhi[iLev][mfi].array();
+      const auto& st = cell_status(iLev)[mfi].const_array();
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (bit::is_lev_boundary(st(i, j, k))) {
+          phi(i, j, k) *= scale;
+        }
+      });
+    }
+  }
+
   apply_BC(cell_status(iLev), hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
-           iLev);
+           iLev, nullptr, iLev > 0);
+}
+
+//==========================================================
+void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
+  std::string nameFunc = "Pic::add_curl_upwind_E";
+  timing_func(nameFunc);
+
+  if (!useUpwindB || !useCurlUpwindB)
+    return;
+
+  GpuArray<int, nDim3> upwindDir = { 0, 0, 0 };
+  GpuArray<Real, nDim3> invDxUp = { 0.0, 0.0, 0.0 };
+  for (int iDim = 0; iDim < nDim; ++iDim) {
+    upwindDir[iDim] = (Geom(iLev).Domain().length(iDim) > 1) ? 1 : 0;
+    invDxUp[iDim] = Geom(iLev).InvCellSize(iDim);
+  }
+
+  // Map limiterThetaB to limType: 0 = upwind1, 1 = minmod, 3 = mc
+  int limTypeUp = 1;
+  if (limiterThetaB <= 0.0) {
+    limTypeUp = 0;
+  } else if (limiterThetaB <= 1.0) {
+    limTypeUp = 1;
+  } else {
+    limTypeUp = 3;
+  }
+
+  const Real sensorFloorUp = 1.0;
+  const Real fixedSpeedUp = fixedUpwindVel;
+  const Real dt = tc->get_dt();
+  const bool isFake2D = is_fake_2d();
+
+  for (MFIter mfi(nodeEmfLev); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrE = nodeEmfLev[mfi].array();
+    const Array4<Real const>& arrBin = centerB[iLev][mfi].const_array();
+    const Array4<Real const>& arrU = uBg[iLev][mfi].const_array();
+
+    FArrayBox faceJump[nDim3];
+    Array4<Real const> arrFace[nDim3];
+    FArrayBox slopeFab;
+    for (int iDir = 0; iDir < nDim; ++iDir) {
+      if (!upwindDir[iDir])
+        continue;
+      Box faceBox(box.smallEnd(), box.bigEnd());
+      for (int t = 0; t < nDim; ++t) {
+        if (t != iDir)
+          faceBox.growLo(t, 1);
+      }
+      Box slopeBox = faceBox;
+      slopeBox.growLo(iDir, 1);
+      slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
+      faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
+      const Array4<Real>& arrS = slopeFab.array();
+      const Array4<Real const>& arrSc = slopeFab.const_array();
+      const Array4<Real>& arrF = faceJump[iDir].array();
+
+      if (iDir == ix_) {
+        ParallelFor(slopeBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
+                          arrBin, i, j, k, iVar, limTypeUp);
+                    });
+        ParallelFor(faceBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                    });
+      } else if (iDir == iy_) {
+        ParallelFor(slopeBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
+                          arrBin, i, j, k, iVar, limTypeUp);
+                    });
+        ParallelFor(faceBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                    });
+      } else {
+        ParallelFor(slopeBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
+                          arrBin, i, j, k, iVar, limTypeUp);
+                    });
+        ParallelFor(faceBox, nDim3,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                    });
+      }
+      arrFace[iDir] = faceJump[iDir].const_array();
+    }
+
+    const Array4<Real const> arrFaceX = arrFace[ix_];
+    const Array4<Real const> arrFaceY = arrFace[iy_];
+    const Array4<Real const> arrFaceZ = arrFace[iz_];
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      Real jump[nDim3];
+      for (int iDir = 0; iDir < nDim; ++iDir) {
+        if (!upwindDir[iDir])
+          continue;
+        if (iDir == iz_ && isFake2D)
+          continue;
+
+        if (iDir == ix_) {
+          upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
+        } else if (iDir == iy_) {
+          upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
+        } else {
+          upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
+        }
+
+        Real a = 0.0;
+        if (fixedSpeedUp > 0.0) {
+          a = fixedSpeedUp;
+        } else {
+          a = std::abs(arrU(i, j, k, iDir));
+        }
+
+        const Real maxA = 1.0 / (dt * invDxUp[iDir]);
+        a = amrex::min(a, maxA);
+        const Real halfA = 0.5 * a;
+
+        if (iDir == ix_) {
+          arrE(i, j, k, iy_) -= halfA * jump[iz_];
+          arrE(i, j, k, iz_) += halfA * jump[iy_];
+        } else if (iDir == iy_) {
+          arrE(i, j, k, ix_) += halfA * jump[iz_];
+          arrE(i, j, k, iz_) -= halfA * jump[ix_];
+        } else {
+          arrE(i, j, k, ix_) -= halfA * jump[iy_];
+          arrE(i, j, k, iy_) += halfA * jump[ix_];
+        }
+      }
+    });
+  }
 }
 
 //==========================================================
@@ -931,8 +1181,9 @@ void Pic::correct_B(int iLev) {
   }
 
   // The upwind diffusion needs uBg, which only the full-PIC solver allocates,
-  // so #UPWINDB stays a full-PIC-only option.
-  const bool doUpwind = useUpwindB && !useHybridPIC;
+  // so #UPWINDB stays a full-PIC-only option. When curl-form upwind is active,
+  // upwind dissipation is already applied inside Faraday's law.
+  const bool doUpwind = useUpwindB && !useHybridPIC && !useCurlUpwindB;
   if (!doUpwind && !useHyperbolicCleaning) {
     return;
   }
@@ -999,99 +1250,92 @@ void Pic::correct_B(int iLev) {
       };
 
       ParallelFor(box, [&](int i, int j, int k) {
-        bool doDiffusion;
         Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
         Real ul, ur;
 
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
+        auto is_face_blocked = [&](int ni, int nj, int nk, int ci, int cj,
+                                   int ck) {
+          const int nStat = status(ni, nj, nk);
+          if (bit::is_domain_boundary(nStat))
+            return true;
+          return false;
+        };
 
         // Flux along  x
         for (int iDir = 0; iDir < nDim; iDir++) {
           get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
         }
 
-        ul = lu[ix_];
-        ur = ru[ix_];
-        doDiffusion = true;
-        if ((ul > 0 && bit::is_domain_boundary(status(i - 1, j, k))) ||
-            (ur < 0 && bit::is_domain_boundary(status(i + 1, j, k)))) {
-          doDiffusion = false;
-        }
+        ul = fabs(lu[ix_]);
+        ur = fabs(ru[ix_]);
+        ul = min(ul, 0.5 / coef[ix_]);
+        ur = min(ur, 0.5 / coef[ix_]);
+        const bool blockLx = is_face_blocked(i - 1, j, k, i, j, k);
+        const bool blockRx = is_face_blocked(i + 1, j, k, i, j, k);
 
-        if (doDiffusion) {
-          ul = fabs(ul);
-          ur = fabs(ur);
-          for (int iVar = 0; iVar < nDim3; iVar++) {
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real fluxR = 0.0;
+          if (!blockRx) {
             Real cR = limiter_theta(limiterThetaB, cB(i - 1, j, k, iVar),
                                     cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
+            fluxR = cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar));
+          }
+          Real fluxL = 0.0;
+          if (!blockLx) {
             Real cL = limiter_theta(limiterThetaB, cB(i - 2, j, k, iVar),
                                     cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
-            ul = min(ul, 0.5 / coef[ix_]);
-            ur = min(ur, 0.5 / coef[ix_]);
-            dB(i, j, k, iVar) +=
-                (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
-                 cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
-                coef[ix_];
+            fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar));
           }
+          dB(i, j, k, iVar) += (fluxR - fluxL) * coef[ix_];
         }
 
         // Flux along y
-        ul = lu[iy_];
-        ur = ru[iy_];
-        doDiffusion = true;
-        if ((ul > 0 && bit::is_domain_boundary(status(i, j - 1, k))) ||
-            (ur < 0 && bit::is_domain_boundary(status(i, j + 1, k)))) {
-          doDiffusion = false;
-        }
+        ul = fabs(lu[iy_]);
+        ur = fabs(ru[iy_]);
+        ul = min(ul, 0.5 / coef[iy_]);
+        ur = min(ur, 0.5 / coef[iy_]);
+        const bool blockLy = is_face_blocked(i, j - 1, k, i, j, k);
+        const bool blockRy = is_face_blocked(i, j + 1, k, i, j, k);
 
-        if (doDiffusion) {
-          ul = fabs(ul);
-          ur = fabs(ur);
-
-          for (int iVar = 0; iVar < nDim3; iVar++) {
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real fluxR = 0.0;
+          if (!blockRy) {
             Real cR = limiter_theta(limiterThetaB, cB(i, j - 1, k, iVar),
                                     cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
+            fluxR = cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar));
+          }
+          Real fluxL = 0.0;
+          if (!blockLy) {
             Real cL = limiter_theta(limiterThetaB, cB(i, j - 2, k, iVar),
                                     cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
-            ul = min(ul, 0.5 / coef[iy_]);
-            ur = min(ur, 0.5 / coef[iy_]);
-
-            dB(i, j, k, iVar) +=
-                (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
-                 cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
-                coef[iy_];
+            fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar));
           }
+          dB(i, j, k, iVar) += (fluxR - fluxL) * coef[iy_];
         }
 
         if (nDim > 2 && !isFake2D) {
-
           // Flux along z
-          ul = lu[iz_];
-          ur = ru[iz_];
+          ul = fabs(lu[iz_]);
+          ur = fabs(ru[iz_]);
+          ul = min(ul, 0.5 / coef[iz_]);
+          ur = min(ur, 0.5 / coef[iz_]);
+          const bool blockLz = is_face_blocked(i, j, k - 1, i, j, k);
+          const bool blockRz = is_face_blocked(i, j, k + 1, i, j, k);
 
-          doDiffusion = true;
-          if ((ul > 0 && bit::is_domain_boundary(status(i, j, k - 1))) ||
-              (ur < 0 && bit::is_domain_boundary(status(i, j, k + 1)))) {
-            doDiffusion = false;
-          }
-
-          if (doDiffusion) {
-            ul = fabs(ul);
-            ur = fabs(ur);
-
-            for (int iVar = 0; iVar < nDim3; iVar++) {
+          for (int iVar = 0; iVar < nDim3; iVar++) {
+            Real fluxR = 0.0;
+            if (!blockRz) {
               Real cR = limiter_theta(limiterThetaB, cB(i, j, k - 1, iVar),
                                       cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
+              fluxR = cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar));
+            }
+            Real fluxL = 0.0;
+            if (!blockLz) {
               Real cL = limiter_theta(limiterThetaB, cB(i, j, k - 2, iVar),
                                       cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
-              ul = min(ul, 0.5 / coef[iz_]);
-              ur = min(ur, 0.5 / coef[iz_]);
-
-              dB(i, j, k, iVar) +=
-                  (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
-                   cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
-                  coef[iz_];
+              fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar));
             }
+            dB(i, j, k, iVar) += (fluxR - fluxL) * coef[iz_];
           }
         }
       });
