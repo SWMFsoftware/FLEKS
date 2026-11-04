@@ -2929,30 +2929,34 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
 
 <command name="WAVEBC" alias="WAVEBC_FLEKS" multiple="F">
   <parameter name="nWaveFace" type="integer" default="0"/>
-  <parameter name="direction" type="integer"/>
-  <parameter name="side" type="string" input="select">
-    <option value="lo"/>
-    <option value="hi"/>
-  </parameter>
-  <parameter name="nComp" type="integer"/>
-  <parameter name="iField" type="integer"/>
-  <parameter name="iSpecies" type="integer"/>
-  <parameter name="profile" type="integer"/>
-  <parameter name="amplitude" type="real"/>
-  <parameter name="frequency" type="real"/>
-  <parameter name="waveLength" type="real"/>
-  <parameter name="phase" type="real"/>
-  <for from="1" to="3">
-    <parameter name="dir" type="real"/>
+  <for name="iWaveFace" from="1" to="$nWaveFace">
+    <parameter name="direction" type="integer"/>
+    <parameter name="side" type="string" input="select">
+      <option value="lo"/>
+      <option value="hi"/>
+    </parameter>
+    <parameter name="nComp" type="integer"/>
+    <for name="iComp" from="1" to="$nComp">
+      <parameter name="iField" type="integer"/>
+      <parameter name="iSpecies" type="integer"/>
+      <parameter name="profile" type="integer"/>
+      <parameter name="amplitude" type="real"/>
+      <parameter name="frequency" type="real"/>
+      <parameter name="waveLength" type="real"/>
+      <parameter name="phase" type="real"/>
+      <for from="1" to="3">
+        <parameter name="dir" type="real"/>
+      </for>
+      <for from="1" to="3">
+        <parameter name="pol" type="real"/>
+      </for>
+      <parameter name="tStart" type="real"/>
+      <parameter name="tEnd" type="real"/>
+      <parameter name="rampTime" type="real"/>
+      <parameter name="tCenter" type="real"/>
+      <parameter name="tWidth" type="real"/>
+    </for>
   </for>
-  <for from="1" to="3">
-    <parameter name="pol" type="real"/>
-  </for>
-  <parameter name="tStart" type="real"/>
-  <parameter name="tEnd" type="real"/>
-  <parameter name="rampTime" type="real"/>
-  <parameter name="tCenter" type="real"/>
-  <parameter name="tWidth" type="real"/>
 
 #WAVEBC
 1                       nWaveFace
@@ -2990,6 +2994,28 @@ propagation and polarization unit vectors, and `tStart`/`tEnd`/`rampTime`/
 `tCenter`/`tWidth` gate and shape the injection with smooth Hann ramp-in and
 ramp-out.  Values are in code units (an SI-to-code conversion is applied
 internally when the fluid interface provides the normalization).
+</command>
+
+<command name="WAVEBCWINDOW" alias="WAVEBCWINDOW_FLEKS" multiple="F">
+  <parameter name="direction" type="integer" min="0" max="2"/>
+  <parameter name="min" type="real"/>
+  <parameter name="max" type="real"/>
+  <parameter name="taperWidth" type="real" min="0" default="0.0"/>
+
+#WAVEBCWINDOW
+0                       direction     (0=x,1=y,2=z)
+-1.0e9                  min
+1.0e9                   max
+0.0                     taperWidth
+
+Optional spatial window for the #WAVEBC sources. Every injected field value
+and velocity kick is multiplied by a weight that depends on one coordinate:
+1 inside [min, max], a $\cos^2$ taper of width taperWidth just inside each end,
+and 0 outside. Lengths are in SI units (m) when the normalization is active,
+like the #WAVEBC wavelengths. Use it to drive only the part of a face that
+sees the upstream flow, e.g. the upstream ends of the side faces of a
+magnetosphere box (direction 0, min upstream of the bow shock, max beyond the
+box). The default (no command) applies the full source on every wave face.
 </command>
 </commandgroup>
 

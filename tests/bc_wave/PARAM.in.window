@@ -1,0 +1,216 @@
+#DESCRIPTION
+Wave injection with a spatial window (FULL-PIC semi-implicit). A uniform solar
+wind flows along -x through a 2D x-y box; one out-of-plane shear Alfven wave
+(Bz, consistent E, Walen velocity kick; lambda = 16 d_i, k along x,
+dB/B0 = 0.1) enters through the +x wave face. WAVEBCWINDOW limits the source to
+0 < y < 10 d_i with cos^2 tapers of 3 d_i, away from the periodic seam. The wave
+must stay inside that band. Lengths in d_i (lNorm = 131.6 km); times in s.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#NORMALIZATION
+1.316e5                 lNormSI
+3.0e6                   uNormSI
+
+#GEOMETRY
+0.0                     xMin
+32.0                    xMax
+-12.8                   yMin
+ 12.8                   yMax
+-0.25                   zMin
+ 0.25                   zMax
+
+#NCELL
+64                      nCellX
+64                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+1.0/25.0                mass           Species 1: electrons (reduced mass ratio)
+-1.0                    charge
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo  (-x: open)
+wave                    fieldBoxBoundaryHi  (+x: upstream state + WAVEBC modes)
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi  (+x: ghost cells refilled from the upstream state + kick)
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+implicit
+
+#DIVE
+T                       doCorrectDivE
+1                       nDivECorrection
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     coefDiff
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+
+#SMOOTHJ
+T                       doSmoothJ
+2                       nSmoothJ
+0.5                     coefSmoothJ
+
+Solar wind: n = 3 /cc, V = 440 km/s, B = 5 nT at 45 deg in the plane,
+beta_i = 0.5 (Ti = 1.2008e5 K), beta_e = 1 (Te = 2.4017e5 K), M_A = 7.
+#INFLOW
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.2008e5                T [K]
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+2.4017e5                T [K]
+
+#UNIFORMSTATE
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+1.2008e5                T
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+2.4017e5                T
+3.5355e-9               bx
+-3.5355e-9              by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+-1.5556e-3              ez
+
+dt = 0.02 s: a 3 v_te electron (~1100 km/s) moves 0.33 cells per step.
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#MONITOR
+100                     dnReport
+
+#SAVELOG
+20                      dnSavePic
+20                      dnSavePT
+
+#PARTICLES
+5                       npcelx
+5                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+2.0                     dt
+1                       dx
+Bx By Bz uzS0 rhoS0     varName
+
+14 s: the wave crosses the box (9 s) plus margin.
+#WAVEBCWINDOW
+1                       direction
+0.0                     min       [m]
+1.316e6                 max       [m] (10 d_i)
+3.948e5                 taperWidth [m] (3 d_i)
+
+#WAVEBC
+1                       nWaveFace
+0                       direction
+hi                      side
+3                       nComp
+0                       iField
+-1                      iSpecies
+0                       profile
+7.071000e-10            amplitude
+1.445834e+00            frequency
+2.105600e+06            waveLength
+5.971940                phase
+-1.00000000             dir
+0.00000000              dir
+0.00000000              dir
+0.00000000              pol
+0.00000000              pol
+1.00000000              pol
+0                       tStart
+-1                      tEnd
+2                       rampTime
+0                       tCenter
+1                       tWidth
+1                       iField
+-1                      iSpecies
+0                       profile
+3.440498e-04            amplitude
+1.445834e+00            frequency
+2.105600e+06            waveLength
+5.971940                phase
+-1.00000000             dir
+0.00000000              dir
+0.00000000              dir
+-0.09150523             pol
+-0.99580460             pol
+0.00000000              pol
+0                       tStart
+-1                      tEnd
+2                       rampTime
+0                       tCenter
+1                       tWidth
+2                       iField
+-1                      iSpecies
+0                       profile
+8.904640e+03            amplitude
+1.445834e+00            frequency
+2.105600e+06            waveLength
+5.971940                phase
+-1.00000000             dir
+0.00000000              dir
+0.00000000              dir
+0.00000000              pol
+0.00000000              pol
+1.00000000              pol
+0                       tStart
+-1                      tEnd
+2                       rampTime
+0                       tCenter
+1                       tWidth
+
+#STOP
+-1                      MaxIter
+14.0                    TimeMax

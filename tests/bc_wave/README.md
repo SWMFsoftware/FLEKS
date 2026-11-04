@@ -10,6 +10,7 @@ once.  A single `validate.py` branches on the variant name.
 |---------|------|---------|------------|
 | `bc_inject_mono` | `PARAM.in.mono` | Monochromatic Bz wave injected at the `x-lo` face into a pure-EM domain (`#SOLVEEM T`, `lightwave`) | Bz perturbation reaches the interior |
 | `bc_inject_alfven` | `PARAM.in.alfven` | Shear Alfvén wave (By + matching velocity kick) injected at the `-x` face into an initially uniform magnetized hybrid plasma, propagating along +x | By reaches the interior; By/Bx < 10% (linear) |
+| `bc_inject_window` | `PARAM.in.window` | One out-of-plane shear Alfvén wave (Bz, consistent E, Walén kick; lambda = 16 d_i) injected at the `+x` face of a flowing solar wind (full PIC, 2D), with `#WAVEBCWINDOW` limiting the source to `0 < y < 10` d_i | Bz rms outside the window band < 0.2 of inside (outside is particle noise) |
 
 ## Validation
 
@@ -20,7 +21,8 @@ Both variants exercise the **wave-injection boundary condition** (`BC::wave` +
 2. **`bc_inject_mono` plot**: a monochromatic transverse `Bz` wave injected at a
    boundary face propagates into a pure-EM domain; `Bz` non-zero in the interior.
 3. **`bc_inject_alfven` plot**: a self-consistent shear Alfvén wave (`δBy` +
-   `δv_y = -δB_y/v_A`, with `v_A ≈ 1` in code units) injected at the `-x` face
+   `δv_y = -δB_y/sqrt(μ0 ρ)`, about -1.02 km/s; `#WAVEBC` amplitudes are SI)
+   injected at the `-x` face
    into an initially uniform magnetized hybrid plasma propagates along `+x`;
    `By` non-zero in the interior and `By/Bx < 10%` (linear wave).
 

@@ -34,7 +34,7 @@ bool Domain::find_parameter_owner(const std::string &command,
     "#REGIONHYPERRESISTIVITY", "#REGIONRESISTIVITY", "#RESAMPLING",
     "#RESISTIVITY", "#SELECTPARTICLE", "#SMOOTHE", "#SMOOTHJ", "#SMOOTHMOMENTS",
     "#SOURCEPARTICLES", "#SUPID", "#TESTCASE", "#UPWINDB", "#UPWINDE",
-    "#VACUUM", "#WAVEBC", "#WAVEIC"
+    "#VACUUM", "#WAVEBC", "#WAVEBCWINDOW", "#WAVEIC"
   };
   // clang-format on
   static const std::set<std::string> fiCommands = {
