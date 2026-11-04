@@ -1,0 +1,141 @@
+#DESCRIPTION
+1D hybrid shock tube test using SHOCKPOSITION and SHOCKTUBE with electron pressure.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+0.0                     xMin
+64.0                    xMax
+-0.5                    yMin
+ 0.5                    yMax
+-0.5                    zMin
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo
+fixed                   fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo
+inflow                  particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+T                       useHallTerm
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#ELECTRONTEMPERATURE
+141.0                   electronTemperature
+1.6667                  electronGamma
+5.0                     electronDensity0
+
+#ELECTRONPRESSURE
+T                       useElectronPressureEq
+0.0                     heatCondKappa0SI
+20.0                    coulombLog
+T                       fieldAlignedConduction
+1.0                     fieldAlignedFraction
+1.0e-15                 fieldAlignedBMinSI
+0.0                     heatFluxLimiter
+0.0                     peMin
+T                       ambipolarInStages
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#INFLOW
+5.0                     rho [/cc]
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+144860.0                T [K]
+
+#SHOCKPOSITION
+32.0                    shockPosition
+0.0                     shockSlope
+
+#SHOCKTUBE
+10.0                    LeftState rho [/cc]
+-100.0                  LeftState ux [km/s]
+0.0                     LeftState uy [km/s]
+0.0                     LeftState uz [km/s]
+0.5                     LeftState p [nPa]
+0.5                     LeftState pe [nPa]
+5.0                     LeftState Bx [nT]
+0.0                     LeftState By [nT]
+5.0                     LeftState Bz [nT]
+5.0                     RightState rho [/cc]
+-400.0                  RightState ux [km/s]
+0.0                     RightState uy [km/s]
+0.0                     RightState uz [km/s]
+0.1                     RightState p [nPa]
+0.1                     RightState pe [nPa]
+5.0                     RightState Bx [nT]
+0.0                     RightState By [nT]
+1.0                     RightState Bz [nT]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+200                     dnReport
+400                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+100                     npcelx
+1                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+y=0 fluid ascii planet	plotString
+-1                      dn
+0.5                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+0.5                     TimeMax

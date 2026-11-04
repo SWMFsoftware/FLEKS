@@ -8,6 +8,10 @@ inflow boundary in the same deck.  Four variants are provided:
   reduced mass ratio `m_i/m_e = 25`, `#FIELDSOLVER implicit`).
 * **`PARAM.in.hybrid`** — the **HYBRID** solver (kinetic ions, massless
   electron fluid at `Te ≈ 140 eV`, `#FIELDSOLVER hybrid`).
+* **`PARAM.in.shocktube.hybrid`** — the **HYBRID SHOCK TUBE** solver initialized with
+  `#SHOCKPOSITION` and `#SHOCKTUBE`, including an evolved electron pressure equation (`#ELECTRONPRESSURE`).
+* **`PARAM.in.shocktube.implicit`** — the **SEMI-IMPLICIT FULL PIC SHOCK TUBE** solver initialized
+  with `#SHOCKPOSITION` and multi-species `#SHOCKTUBE` (kinetic ions + kinetic electrons).
 * **`PARAM.in.hybrid_2d`**, **`PARAM.in.hybrid_2d_hyper`** — the hybrid
   solver in 2D at twice the resolution and four times the run length, where
   grid-scale noise must be damped (see [2D variants](#2d-variants)).

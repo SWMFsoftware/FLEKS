@@ -1,0 +1,153 @@
+#DESCRIPTION
+1D semi-implicit PIC shock tube test using SHOCKPOSITION and SHOCKTUBE (2 species: ions and electrons).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+0.0                     xMin
+64.0                    xMax
+-0.5                    yMin
+ 0.5                    yMax
+-0.5                    zMin
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo
+fixed                   fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo
+inflow                  particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+implicit
+
+#DISCRETIZATION
+0.5                     theta
+0.0                     coefDiff
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+0.0                     fixedUpwindVel
+
+#SMOOTHJ
+T                       doSmoothJ
+1                       nSmoothJ
+0.5                     coefSmoothJ
+
+#PLASMA
+2                       nSpecies
+1.0                     mass
+1.0                     charge
+1.0/25.0                mass
+-1.0                    charge
+
+#INFLOW
+5.0                     rho [/cc]   Species 0: ions
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+72430.0                 T [K]
+5.0                     rho [/cc]   Species 1: electrons
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+72430.0                 T [K]
+
+#SHOCKPOSITION
+32.0                    shockPosition
+0.0                     shockSlope
+
+#SHOCKTUBE
+10.0                    LeftState rho [/cc]   Species 0: ions
+-100.0                  LeftState ux [km/s]
+0.0                     LeftState uy [km/s]
+0.0                     LeftState uz [km/s]
+0.5                     LeftState p [nPa]
+10.0                    LeftState rho [/cc]   Species 1: electrons
+-100.0                  LeftState ux [km/s]
+0.0                     LeftState uy [km/s]
+0.0                     LeftState uz [km/s]
+0.5                     LeftState p [nPa]
+5.0                     LeftState Bx [nT]
+0.0                     LeftState By [nT]
+5.0                     LeftState Bz [nT]
+5.0                     RightState rho [/cc]  Species 0: ions
+-400.0                  RightState ux [km/s]
+0.0                     RightState uy [km/s]
+0.0                     RightState uz [km/s]
+0.1                     RightState p [nPa]
+5.0                     RightState rho [/cc]  Species 1: electrons
+-400.0                  RightState ux [km/s]
+0.0                     RightState uy [km/s]
+0.0                     RightState uz [km/s]
+0.1                     RightState p [nPa]
+5.0                     RightState Bx [nT]
+0.0                     RightState By [nT]
+1.0                     RightState Bz [nT]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+200                     dnReport
+400                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+100                     npcelx
+1                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+y=0 fluid ascii planet	plotString
+-1                      dn
+0.5                     dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+0.5                     TimeMax

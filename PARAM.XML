@@ -2659,6 +2659,91 @@ neutrality, i.e. sum_i q_i * rho_i = 0 with q_i the charges declared in
 </command>
 
 
+<command name="SHOCKPOSITION" alias="SHOCKPOSITION_FLEKS0,SHOCKPOSITION_FLEKS1,SHOCKPOSITION_FLEKS2" multiple="T">
+  <parameter name="shockPosition" type="real" default="0"/>
+  <parameter name="shockSlope" type="real" default="0"/>
+
+#SHOCKPOSITION
+0.0			shockPosition
+0.0			shockSlope
+
+The shockPosition parameter sets the position where the shock,
+i.e. the interface between the left and right states given by
+the #SHOCKTUBE command, intersects the X axis.
+When shockSlope is 0 (default), the shock normal is in the X direction.
+If shockSlope is non-zero, the discontinuity plane satisfies
+x + shockSlope * y = shockPosition in 2D and 3D.
+</command>
+
+
+<command name="SHOCKTUBE" alias="SHOCKTUBE_FLEKS0,SHOCKTUBE_FLEKS1,SHOCKTUBE_FLEKS2" multiple="T">
+  <parameter name="rho" type="real"/>
+  <parameter name="ux" type="real"/>
+  <parameter name="uy" type="real"/>
+  <parameter name="uz" type="real"/>
+  <parameter name="p" type="real"/>
+  <for from="2" to="$nS">
+    <parameter name="rho" type="real"/>
+    <parameter name="ux" type="real"/>
+    <parameter name="uy" type="real"/>
+    <parameter name="uz" type="real"/>
+    <parameter name="p" type="real"/>
+  </for>
+  <parameter name="pe" type="real" if="$nS==1"/>
+  <parameter name="Bx" type="real"/>
+  <parameter name="By" type="real"/>
+  <parameter name="Bz" type="real"/>
+  <parameter name="rho" type="real"/>
+  <parameter name="ux" type="real"/>
+  <parameter name="uy" type="real"/>
+  <parameter name="uz" type="real"/>
+  <parameter name="p" type="real"/>
+  <for from="2" to="$nS">
+    <parameter name="rho" type="real"/>
+    <parameter name="ux" type="real"/>
+    <parameter name="uy" type="real"/>
+    <parameter name="uz" type="real"/>
+    <parameter name="p" type="real"/>
+  </for>
+  <parameter name="pe" type="real" if="$nS==1"/>
+  <parameter name="Bx" type="real"/>
+  <parameter name="By" type="real"/>
+  <parameter name="Bz" type="real"/>
+
+#SHOCKTUBE
+10.0                LeftState rho [/cc]   ! Species 1
+-100.0              LeftState ux [km/s]
+0.0                 LeftState uy [km/s]
+0.0                 LeftState uz [km/s]
+0.5                 LeftState p [nPa]
+0.5                 LeftState pe [nPa]    ! Electron fluid if nS == 1
+5.0                 LeftState Bx [nT]
+0.0                 LeftState By [nT]
+5.0                 LeftState Bz [nT]
+1.0                 RightState rho [/cc]  ! Species 1
+-400.0              RightState ux [km/s]
+0.0                 RightState uy [km/s]
+0.0                 RightState uz [km/s]
+0.05                RightState p [nPa]
+0.05                RightState pe [nPa]   ! Electron fluid if nS == 1
+5.0                 RightState Bx [nT]
+0.0                 RightState By [nT]
+1.0                 RightState Bz [nT]
+
+The #SHOCKTUBE command sets up a planar shock tube problem in standalone runs.
+Left and right states are specified sequentially. For each state:
+For each species declared in #PLASMA, specify number density rho [1/cc],
+bulk velocities ux, uy, uz [km/s], and pressure p [nPa].
+If nS == 1 (e.g. hybrid-PIC where electrons are a fluid), specify the
+electron pressure pe [nPa] after the species block. In full-PIC (nS >= 2),
+electrons are typically modeled as a kinetic species (e.g. species 1) and
+their state is given in the corresponding species block.
+Finally, specify the magnetic field Bx, By, Bz [nT].
+Optional electric field components Ex, Ey, Ez [V/m] may follow; if omitted,
+the motional electric field E = -u_0 x B is computed automatically.
+</command>
+
+
 <command name="OHION" alias="OHION_FLEKS0,OHION_FLEKS1, OHION_FLEKS2" multiple="T">
   <parameter name="rAnalytic" type="real" min="0" default="0.0"/>
   <parameter name="doGetFromOH" type="logical" default="F"/>

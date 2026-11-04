@@ -132,6 +132,8 @@ protected:
   amrex::Vector<double> uniformState;
   bool isShockTube = false;
   double shockPosition = 0.0;
+  double shockSlope = 0.0;
+  double shockPeL = 0.0, shockPeR = 0.0;
   amrex::Vector<double> shockStateL, shockStateR;
 
 public:
@@ -188,6 +190,15 @@ public:
   }
   bool get_is_shock_tube() const { return isShockTube; }
   double get_shock_position() const { return shockPosition; }
+  double get_shock_slope() const { return shockSlope; }
+  double get_shock_pe_l() const {
+    return normParams ? shockPeL * normParams->Si2NoP : shockPeL;
+  }
+  double get_shock_pe_r() const {
+    return normParams ? shockPeR * normParams->Si2NoP : shockPeR;
+  }
+  double get_shock_pe_l_si() const { return shockPeL; }
+  double get_shock_pe_r_si() const { return shockPeR; }
 };
 
 class FluidInterface : public GridAccess, public FluidInterfaceParameters {
