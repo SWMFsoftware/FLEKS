@@ -3010,7 +3010,7 @@ internally when the fluid interface provides the normalization).
 
 Optional spatial window for the #WAVEBC sources. Every injected field value
 and velocity kick is multiplied by a weight that depends on one coordinate:
-1 inside [min, max], a cos^2 taper of width taperWidth just inside each end,
+1 inside [min, max], a $\cos^2$ taper of width taperWidth just inside each end,
 and 0 outside. Lengths are in SI units (m) when the normalization is active,
 like the #WAVEBC wavelengths. Use it to drive only the part of a face that
 sees the upstream flow, e.g. the upstream ends of the side faces of a

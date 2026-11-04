@@ -285,8 +285,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     MultiFab::Copy(solverWallInMF[iLev], vecMF, 0, 0, 3, 0);
 
   if (useZeroBC) {
-    // For Dirichlet physical boundaries (inflow, fixed, wave), the correction in the
-    // Krylov subspace must be identically zero on the boundary nodes.
+    // For Dirichlet physical boundaries (inflow, fixed, wave), the correction
+    // in the Krylov subspace must be identically zero on the boundary nodes.
     const BoundaryBounds bnd(Geom(iLev), vecMF.boxArray().ixType(), &bcField);
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
@@ -470,8 +470,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     }
   }
 
-  // Dirichlet physical boundaries (inflow, fixed, wave): enforce A_ii = 1, A_ij = 0
-  // by copying vecMF to matvecMF on boundary nodes.
+  // Dirichlet physical boundaries (inflow, fixed, wave): enforce A_ii = 1, A_ij
+  // = 0 by copying vecMF to matvecMF on boundary nodes.
   {
     const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
                              &bcField);
@@ -643,12 +643,12 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
                   tempNode.nGrow());
   }
 
-  // Dirichlet physical boundaries (inflow, fixed, wave): the right-hand side for
-  // the total field must equal the boundary value that update_E_matvec() puts
-  // into A(E_old), so that the initial residual rhs - A(E_old) is exactly zero
-  // on Dirichlet boundary nodes. The Krylov corrections are zero there, so any
-  // residual left on these nodes is never removed and grows. On level 0 that
-  // value is the prescribed state at the solve time (including the #WAVEBC
+  // Dirichlet physical boundaries (inflow, fixed, wave): the right-hand side
+  // for the total field must equal the boundary value that update_E_matvec()
+  // puts into A(E_old), so that the initial residual rhs - A(E_old) is exactly
+  // zero on Dirichlet boundary nodes. The Krylov corrections are zero there, so
+  // any residual left on these nodes is never removed and grows. On level 0
+  // that value is the prescribed state at the solve time (including the #WAVEBC
   // source), not the nodeE of the previous step.
   {
     const MultiFab* dirichletE = &nodeE[iLev];

@@ -582,10 +582,10 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         if (!bnd.isNode[d])
           continue;
 
-        const bool onLoWall = (FieldBC::is_dirichlet(bnd.bcLo[d]) &&
-                               (ijk[d] == bnd.loBnd[d]));
-        const bool onHiWall = (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
-                               (ijk[d] == bnd.hiBnd[d]));
+        const bool onLoWall =
+            (FieldBC::is_dirichlet(bnd.bcLo[d]) && (ijk[d] == bnd.loBnd[d]));
+        const bool onHiWall =
+            (FieldBC::is_dirichlet(bnd.bcHi[d]) && (ijk[d] == bnd.hiBnd[d]));
         if (onLoWall || onHiWall) {
           bool inValid = true;
           for (int od = 0; od < nDim; ++od) {
@@ -623,8 +623,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         int m[3] = { i, j, k };
         bool touched = false;
         for (int d = 0; d < nDim; ++d) {
-          if (FieldBC::is_dirichlet(bnd.bcLo[d]) &&
-              ijk[d] < bnd.loBnd[d]) {
+          if (FieldBC::is_dirichlet(bnd.bcLo[d]) && ijk[d] < bnd.loBnd[d]) {
             m[d] = bnd.loBnd[d];
             touched = true;
           } else if (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
