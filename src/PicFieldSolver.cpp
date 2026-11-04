@@ -652,7 +652,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   // source), not the nodeE of the previous step.
   {
     const MultiFab* dirichletE = &nodeE[iLev];
-    if (iLev == 0) {
+    if (iLev == 0 && hasInflowBC_) {
       MultiFab::Copy(tempNode, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                      tempNode.nGrow());
       apply_field_bc(node_status(iLev), tempNode, 0, nDim3, &Pic::get_node_E,
