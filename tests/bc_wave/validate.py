@@ -139,6 +139,8 @@ def _check_window(vidx, rows, leak_max=0.2):
     inside, outside = rms(3.5, 6.5), rms(-10.0, -2.0)
     logger.debug("    rms Bz inside window = %.4e, outside = %.4e",
                  inside, outside)
+    if not (math.isfinite(inside) and math.isfinite(outside)):
+        return False, "Non-finite Bz RMS inside or outside the window"
     if inside <= 0.0:
         return False, "Bz zero inside the window (wave did not propagate)"
     if outside > leak_max * inside:
