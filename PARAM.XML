@@ -1060,14 +1060,28 @@ overhead of interpolation and memory management.
 The Theta parameter sets $\theta$ for the time centering of the electric field,
 which is calculated at the time $t_{n+\theta}$. When $\theta$ 
 is 0.5, the total energy is conserved if ratioDivC2C is 0. However, 
-the exact energy conservation may produce artifical oscillations. 
+the exact energy conservation may produce artificial oscillations. 
 Typical values for Theta are from 0.51 to 0.6.
 
-The ratioDivC2C parameter is the fraction of div(E) calculated from an
-extended stencil in the discretization of the Maxwell equation.
-Using an extended stencil helps to suppress short-wavelength oscillations. 
+The ratioDivC2C parameter (stored internally as coefDiff) blends the compact
+node-to-center divergence $(\nabla\cdot\mathbf{E})_{N\to C}$ (weight
+$1 - \alpha$, where $\alpha = \mathrm{ratioDivC2C}$) with an extended center-to-center
+stencil $(\nabla\cdot\langle\mathbf{E}\rangle_{N\to C})_{C\to C}$ (weight
+$\alpha$) in the $\nabla(\nabla\cdot\mathbf{E}) - \nabla^2\mathbf{E}$
+discretization of the implicit Maxwell operator. Because $-\nabla^2\mathbf{E}$
+is not attenuated on the extended stencil, a non-zero ratioDivC2C breaks the
+exact cancellation of $\nabla(\nabla\cdot\mathbf{E}) - \nabla^2\mathbf{E}$ on
+longitudinal (electrostatic) modes, introducing an implicit longitudinal
+damping term proportional to $\alpha\,(\theta c \Delta t / \Delta x)^2$.
+While this can damp short-wavelength longitudinal oscillations, it acts as an
+unconditional energy sink on thermal electrostatic fluctuations (causing
+numerical cooling of electrons when $c \Delta t / \Delta x$ is not small) and
+introduces an additional divergence residual into the discrete Ampere update.
+Setting ratioDivC2C to 0.0 is recommended to remove this extra damping and
+field-operator residual; it does not make the semi-implicit current deposit
+exactly charge-conserving or guarantee exact Gauss's-law conservation.
 
-Default values are shown.
+Default values are shown (kept at 0.1 for legacy coupled-test compatibility).
 </command>
 
 <command name="EFIELDSOLVER">

@@ -43,6 +43,10 @@ T                       isPeriodicZ
 #SOLVEEM
 T                       solveEM
 
+#DISCRETIZATION
+0.51                    theta
+0.0                     ratioDivC2C
+
 Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/1836).
 The electron is kinetic here (unlike the hybrid variant where it is a fluid),
 so the PIC Maxwell solve carries the full whistler dispersion.

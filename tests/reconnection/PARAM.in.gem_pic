@@ -78,6 +78,10 @@ T                       solveEM
 #HYBRIDPIC
 F                       useHybridPIC
 
+#DISCRETIZATION
+0.51                    theta
+0.0                     ratioDivC2C
+
 #PLASMA
 2                       nSpecies
 1.0                     mass        Species 0: ions

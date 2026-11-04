@@ -54,6 +54,10 @@ T                       solveEM
 #HYBRIDPIC
 F                       useHybridPIC
 
+#DISCRETIZATION
+0.51                    theta
+0.0                     ratioDivC2C
+
 Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
 #PLASMA
 2                       nSpecies

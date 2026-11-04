@@ -32,7 +32,7 @@ flux, centered at t^n) heated this plasma by a factor of ~560 in 500 steps.
 | `langmuir_explicit_pc` | `PARAM.in.explicit_pc` | explicit, predictor-corrector | < 3% | each < 6%, mean < 3% | yes |
 | `langmuir_explicit_mag` | `PARAM.in.explicit_mag` | explicit, leapfrog, uniform B at 45 deg (electron w_ce = 0.3 w_pe) | < 1% | not checked (the oblique field splits the branch) | yes |
 | `langmuir_explicit_wall` | `PARAM.in.explicit_wall` | explicit, leapfrog, reflecting particle / conducting field walls in x, 400 steps | < 1% | not checked (non-periodic modes) | yes, wall cells included |
-| `langmuir_implicit` | `PARAM.in.implicit` | semi-implicit (reference) | Etot/Etot0 in [0.80, 1.01] | each < 6%, mean < 3% | no (div(E) correction) |
+| `langmuir_implicit` | `PARAM.in.implicit` | semi-implicit (reference) | Etot/Etot0 in [0.90, 1.01] | each < 6%, mean < 3% | no |
 
 Each spectral peak must also exceed 100 times the median of its spectrum. A
 mode's frequency is the power-weighted centroid of its spectrum within 8% of
@@ -40,8 +40,8 @@ omega_pe around the peak. With the 16 s record one noise realization
 scatters single modes by about 1%; an 8 s record, or the bare peak bin,
 scatters them by up to 4%. The predictor-corrector and implicit schemes run
 1-2% low, more at high k (numerical dispersion), and both lose energy
-steadily: -1.2% and -11% over the run (the implicit scheme uses
-theta = 0.51). The explicit leapfrog variants gain 0.3-0.5% over the run.
+steadily: -1.2% and -6.9% over the run (the implicit scheme uses
+theta = 0.51, ratioDivC2C = 0). The explicit leapfrog variants gain 0.3-0.5% over the run.
 
 Parameters in code units (c = 1, n = 1): omega_pe = 35.4, v_te = 0.354,
 lambda_De = 0.010, dx = 2.8 lambda_De, c dt/dx = 0.36, omega_pe dt = 0.35.
@@ -57,7 +57,7 @@ Bohm-Gross, energy at the end, Gauss residual drift relative to max |div E|):
 | explicit_pc | -1.31% / 2.67% | 0.988 | 9.2e-7 |
 | explicit_mag | - | 1.0026 | 8.6e-7 |
 | explicit_wall | - | 1.0008 (4 s) | 8.6e-7 |
-| implicit | -1.31% / 2.04% | 0.887 | - |
+| implicit | -1.23% / 2.44% | 0.931 | - |
 
 ```bash
 python3 tests/validate_tests.py --test=langmuir
