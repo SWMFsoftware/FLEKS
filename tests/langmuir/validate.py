@@ -10,8 +10,8 @@ test checks the particle-field coupling of the full-PIC solvers in two ways:
      explicit, explicit_sub, explicit_mag,
      explicit_wall                          1%
      explicit_pc                            3% (dissipative: -1.2% in 16 s)
-     implicit                               no heating (< +1%), cooling < 20%
-                                            (theta = 0.51 damps: -11% in 16 s)
+     implicit                               no heating (< +1%), cooling < 10%
+                                            (theta = 0.51, ratioDivC2C = 0 damps: -6.9% in 16 s)
 2. Langmuir branch (plot): the omega-k spectrum of E_x(x, t) must peak at the
    Bohm-Gross frequency omega^2 = omega_pe^2 (1 + 3 k^2 lambda_De^2) for the
    12 lowest modes (k lambda_De <= 0.11, so the thermal term reaches 1.7%),
@@ -94,8 +94,8 @@ def validate_log(pic_diags=None, test_name=None):
                  rmax, rmin)
 
     if variant == "implicit":
-        if rmax > 1.01 or rmin < 0.80:
-            return False, (f"Etot/Etot0 left [0.80, 1.01]: max {rmax:.4f}, "
+        if rmax > 1.01 or rmin < 0.90:
+            return False, (f"Etot/Etot0 left [0.90, 1.01]: max {rmax:.4f}, "
                            f"min {rmin:.4f}")
         return True, f"Passed (Etot/Etot0 in [{rmin:.4f}, {rmax:.4f}])"
 
