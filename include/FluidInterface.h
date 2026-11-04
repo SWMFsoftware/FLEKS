@@ -130,6 +130,9 @@ protected:
       std::make_shared<const NormalizationParams>();
 
   amrex::Vector<double> uniformState;
+  bool isShockTube = false;
+  double shockPosition = 0.0;
+  amrex::Vector<double> shockStateL, shockStateR;
 
 public:
   // Inflow boundary upstream state per species in code units.
@@ -183,6 +186,8 @@ public:
   const amrex::Vector<double>& get_uniform_state() const {
     return uniformState;
   }
+  bool get_is_shock_tube() const { return isShockTube; }
+  double get_shock_position() const { return shockPosition; }
 };
 
 class FluidInterface : public GridAccess, public FluidInterfaceParameters {

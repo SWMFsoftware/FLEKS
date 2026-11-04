@@ -535,6 +535,62 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     // (rho, vx, vy, vz, p)*nFluid + B + E
     nVarFluid = 5 * nFluid + 3 + 3;
     useCurrent = true;
+  } else if (command == "#SHOCKPOSITION") {
+    param.read_var("shockPosition", shockPosition);
+    double slope = 0.0;
+    param.read_optional("shockSlope", slope);
+  } else if (command == "#SHOCKTUBE") {
+    if (nS <= 0) {
+      Abort("Error: number of species <=0! Use #PLASMA command "
+            "to set plasma species information.");
+    }
+    isShockTube = true;
+    shockStateL.clear();
+    shockStateR.clear();
+
+    auto read_shock_state = [&](amrex::Vector<double>& s, const std::string& prefix) {
+      double n, ux, uy, uz, bx, by, bz, hyp, pe, p;
+      param.read_var(prefix + " Rho", n);
+      param.read_var(prefix + " Ux", ux);
+      param.read_var(prefix + " Uy", uy);
+      param.read_var(prefix + " Uz", uz);
+      param.read_var(prefix + " Bx", bx);
+      param.read_var(prefix + " By", by);
+      param.read_var(prefix + " Bz", bz);
+      param.read_var(prefix + " Hyp", hyp);
+      param.read_var(prefix + " Pe", pe);
+      param.read_var(prefix + " P", p);
+
+      double mass_i = (!MoMi_S.empty() && MoMi_S[0] > 0.0)
+                          ? MoMi_S[0] * cProtonMassSI
+                          : cProtonMassSI;
+      double rho = n * 1e6 * mass_i;
+      s.push_back(rho);
+      s.push_back(rho * ux * 1e3);
+      s.push_back(rho * uy * 1e3);
+      s.push_back(rho * uz * 1e3);
+      s.push_back(p * 1e-9); // nPa -> Pa
+
+      bx *= 1e-9;
+      by *= 1e-9;
+      bz *= 1e-9; // nT -> T
+      s.push_back(bx);
+      s.push_back(by);
+      s.push_back(bz);
+
+      double vx = ux * 1e3, vy = uy * 1e3, vz = uz * 1e3;
+      s.push_back(-(vy * bz - vz * by));
+      s.push_back(-(vz * bx - vx * bz));
+      s.push_back(-(vx * by - vy * bx));
+    };
+
+    read_shock_state(shockStateL, "LeftState");
+    read_shock_state(shockStateR, "RightState");
+
+    nFluid = nS;
+    nVarFluid = 5 * nFluid + 3 + 3;
+    useCurrent = true;
+    uniformState = shockStateR;
   } else if (command == "#OHMSLAW") {
     std::string sOhmU;
     double eta;
@@ -784,12 +840,39 @@ void FluidInterface::set_node_fluid() {
   if (is_grid_empty())
     return;
 
-  if (uniformState.empty())
+  if (uniformState.empty() && !isShockTube)
     return;
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (int i = 0; i < nVarFluid; ++i)
-      nodeFluid[iLev].setVal(uniformState[i], i, 1, nodeFluid[iLev].nGrow());
+  if (isShockTube) {
+    const int nVar = nVarFluid;
+    Real lArr[32], rArr[32];
+    for (int v = 0; v < nVar && v < 32; ++v) {
+      lArr[v] = shockStateL[v];
+      rArr[v] = shockStateR[v];
+    }
+    const double xShock = shockPosition;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const auto& geom = Geom(iLev);
+      const auto& prob_lo = geom.ProbLo();
+      const auto& dx = geom.CellSize();
+      for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+        auto& fab = nodeFluid[iLev][mfi];
+        const Box& box = mfi.fabbox();
+        const auto& arr = fab.array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          const Real x = prob_lo[0] + i * dx[0];
+          const auto* s = (x < xShock) ? lArr : rArr;
+          for (int v = 0; v < nVar; ++v) {
+            arr(i, j, k, v) = s[v];
+          }
+        });
+      }
+    }
+  } else {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      for (int i = 0; i < nVarFluid; ++i)
+        nodeFluid[iLev].setVal(uniformState[i], i, 1, nodeFluid[iLev].nGrow());
+    }
   }
 
   isnodeFluidReady = true;

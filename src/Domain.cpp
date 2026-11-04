@@ -40,7 +40,8 @@ bool Domain::find_parameter_owner(const std::string &command,
   static const std::set<std::string> fiCommands = {
     // Handled by FluidInterface::read_param().
     "#EXOSPHERE",    "#FLUIDVARNAMES", "#NORMALIZATION", "#OHMSLAW",
-    "#PLANETRADIUS", "#PLASMA",        "#SCALINGFACTOR", "#UNIFORMSTATE"
+    "#PLANETRADIUS", "#PLASMA",        "#SCALINGFACTOR", "#SHOCKPOSITION",
+    "#SHOCKTUBE",    "#UNIFORMSTATE"
   };
   static const std::set<std::string> ptCommands = {
     // Handled by ParticleTrackerInfo::read_param().
