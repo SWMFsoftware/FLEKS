@@ -115,4 +115,4 @@ rhoS0 rhoS1 Bx By Bz
 
 #STOP
 -1                      MaxIter
-4                       TimeMax   waves: growth t<1, saturation t~2
+4                       TimeMax   CI test only. For a complete 30s wave simulation, run longer (e.g., TimeMax = 120+)
