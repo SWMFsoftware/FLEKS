@@ -1076,8 +1076,10 @@ damping term proportional to $\text{ratioDivC2C}\,(\theta c \Delta t / \Delta x)
 While this can damp short-wavelength longitudinal oscillations, it acts as an
 unconditional energy sink on thermal electrostatic fluctuations (causing
 numerical cooling of electrons when $c \Delta t / \Delta x$ is not small) and
-breaks exact discrete charge conservation. Setting ratioDivC2C to 0.0 is
-recommended whenever energy and Gauss's-law conservation are desired.
+introduces an additional divergence residual into the discrete Amp\`ere update.
+Setting ratioDivC2C to 0.0 is recommended to remove this extra damping and
+field-operator residual; it does not make the semi-implicit current deposit
+exactly charge-conserving or guarantee exact Gauss's-law conservation.
 
 Default values are shown (kept at 0.1 for legacy coupled-test compatibility).
 </command>
