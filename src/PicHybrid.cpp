@@ -916,13 +916,32 @@ void Pic::init_electron_pressure(int iLev) {
   const Real gamma = electronGamma;
   const Real Te = electronTemperature;
 
+  const bool fromShockTube = (fi && fi->get_is_shock_tube());
+  const Real peL = fromShockTube ? fi->get_shock_pe_l() : 0.0;
+  const Real peR = fromShockTube ? fi->get_shock_pe_r() : 0.0;
+  const Real xShock = fromShockTube ? fi->get_shock_position() : 0.0;
+  const Real slope = fromShockTube ? fi->get_shock_slope() : 0.0;
+  const auto& geom = Geom(iLev);
+  const auto& prob_lo = geom.ProbLo();
+  const auto& dx = geom.CellSize();
+
   for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      arrPe(i, j, k) =
-          polytropic_closure(arrRho(i, j, k), p0, invRho0, gamma, Te);
+      if (fromShockTube) {
+        Real xPlane = prob_lo[0] + (i + 0.5) * dx[0];
+#if AMREX_SPACEDIM > 1
+        if (slope != 0.0) {
+          xPlane += slope * (prob_lo[1] + (j + 0.5) * dx[1]);
+        }
+#endif
+        arrPe(i, j, k) = (xPlane < xShock) ? peL : peR;
+      } else {
+        arrPe(i, j, k) =
+            polytropic_closure(arrRho(i, j, k), p0, invRho0, gamma, Te);
+      }
     });
   }
   apply_centerPe_BC(iLev);

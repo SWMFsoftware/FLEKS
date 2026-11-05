@@ -175,6 +175,8 @@ jobs:
             tests/lightwave/PARAM.in.implicit
             tests/lightwave/PARAM.in.explicit
             tests/shock/PARAM.in.hybrid
+            tests/shock/PARAM.in.shocktube.hybrid
+            tests/shock/PARAM.in.shocktube.implicit
           )
 
           # Note on the exit status: CheckParam.pl's param_error() flags its
