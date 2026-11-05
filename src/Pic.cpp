@@ -2234,6 +2234,7 @@ void Pic::update(bool doReportIn) {
     }
   }
 
+  const Real dtStep = tc->get_dt();
   const Real dtStepSI = tc->get_dt_si();
   tc->restore_unconstrained_dt();
 
@@ -2266,16 +2267,16 @@ void Pic::update(bool doReportIn) {
 
 #ifdef _PT_COMPONENT_
   if (maxExchangeRatio > maxExchangeRatioLimit) {
-    Real dtNew = tc->get_dt() * maxExchangeRatioLimit / maxExchangeRatio;
+    Real dtNew = dtStep * maxExchangeRatioLimit / maxExchangeRatio;
     tc->set_dt(dtNew);
     tc->set_next_dt(dtNew);
     Print() << printPrefix << " maxExchangeRatio = " << maxExchangeRatio
             << " maxExchangeRatioLimit = " << maxExchangeRatioLimit
             << " dt is reduced to " << tc->get_dt_si() << std::endl;
   } else {
-    if (tc->get_dt() < tc->get_dt_max()) {
+    if (dtStep < tc->get_dt_max()) {
       // Increase dt if allowed.
-      Real dtnow = tc->get_dt();
+      Real dtnow = dtStep;
       Real dtNew = min(dtnow * maxExchangeRatioLimit / maxExchangeRatio,
                        tc->get_dt_max());
 

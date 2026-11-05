@@ -29,7 +29,8 @@ public:
 
   void update_field(Pic &pic, bool needJacobian = false);
   void set_ic(Pic &pic);
-  void update(Pic &pic, bool doReport = false);
+  void update(Pic &pic, bool doReport = false, amrex::Real dtIn = -1.0,
+              amrex::Real nextDtIn = -1.0);
 
   void complete_parameters();
 

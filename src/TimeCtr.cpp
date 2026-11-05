@@ -83,18 +83,17 @@ bool EventCtr::is_time_to(bool doForce) {
 Real EventCtr::get_next_time(Real tRef) const {
   if (!useDt)
     return -1.0;
-  if (nextTime > tRef + dtEvent * 1e-6)
+  if (nextTime > tRef)
     return nextTime;
-  return (std::floor(tRef / dtEvent + 1e-6) + 1) * dtEvent;
+  return (std::floor(tRef / dtEvent) + 1) * dtEvent;
 }
 
 Real TimeCtr::find_next_event_time(Real tRef, Real timeLimit) const {
-  const Real tol = (dtSI > 0.0 ? dtSI : 1.0) * 1e-5;
   Real tTarget =
-      (timeLimit > tRef + tol) ? timeLimit : std::numeric_limits<Real>::max();
+      (timeLimit > tRef) ? timeLimit : std::numeric_limits<Real>::max();
 
   auto consider = [&](Real tCandidate) {
-    if (tCandidate > tRef + tol && tCandidate < tTarget) {
+    if (tCandidate > tRef && tCandidate < tTarget) {
       tTarget = tCandidate;
     }
   };

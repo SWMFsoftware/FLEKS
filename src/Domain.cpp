@@ -239,6 +239,8 @@ void Domain::update(Real timeLimit) {
   const Real t0 = tc->get_time_si();
   // update time, step number.
   tc->update(timeLimit);
+  const Real dtStep = tc->get_dt();
+  const Real nextDtStep = tc->get_next_dt();
 
   if (doReport && !doCompact) {
     const Real t1 = tc->get_time_si();
@@ -271,7 +273,7 @@ void Domain::update(Real timeLimit) {
   pic->write_log();
 
   if (pt) {
-    pt->update(*pic, doReport);
+    pt->update(*pic, doReport, dtStep, nextDtStep);
     pt->write_log();
   }
 
