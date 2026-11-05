@@ -92,16 +92,10 @@ Real TimeCtr::find_next_event_time(Real tRef, Real timeLimit) const {
   Real tTarget =
       (timeLimit > tRef) ? timeLimit : std::numeric_limits<Real>::max();
 
-  auto consider = [&](Real tCandidate) {
-    if (tCandidate > tRef && tCandidate < tTarget) {
-      tTarget = tCandidate;
-    }
-  };
-
-  for (const auto &plot : plots) {
-    consider(plot.get_next_time(tRef));
+  const Real tRestart = restart.get_next_time(tRef);
+  if (tRestart > tRef && tRestart < tTarget) {
+    tTarget = tRestart;
   }
-  consider(restart.get_next_time(tRef));
 
   return tTarget;
 }
