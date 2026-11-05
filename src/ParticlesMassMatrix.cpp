@@ -166,7 +166,7 @@ void deposit_level_mass_matrix(const LevelBins& lb, State state, JOf jOf,
       jArr(i, j, k, d) += jSum[d];
 
     // Mass matrix: the pairs (node, node + o), kp = o_z + 1 >= kpMin.
-    const Array4<Real> mmArr = mmOf(t);
+    const Array4<NodeMMElem> mmArr = mmOf(t);
     for (int kp = kpMin; kp < 3; ++kp)
       for (int jp = 0; jp < 3; ++jp)
         for (int ip = 0; ip < 3; ++ip) {
@@ -215,7 +215,7 @@ void deposit_level_mass_matrix(const LevelBins& lb, State state, JOf jOf,
               }
           const int idx0 = kp * 81 + jp * 27 + ip * 9;
           for (int idx = 0; idx < 9; ++idx)
-            mmArr(i, j, k, idx0 + idx) += value[idx];
+            node_mm(mmArr, i, j, k, idx0 + idx) += value[idx];
         }
   });
   // The kernels read the bins and the scratch, which are freed on return.
@@ -227,7 +227,7 @@ template <class P> struct MassTile {
   const P* p;
   Array4<Real const> b, b0, u0;
   Array4<Real> j;
-  Array4<Real> mm;
+  Array4<NodeMMElem> mm;
 };
 
 // The data of a tile for the level mass-matrix deposits of
@@ -237,7 +237,7 @@ template <class P> struct AmrMassTile {
   Array4<Real const> b, b0, u0;
   Array4<int const> status;
   Array4<Real> j[8];
-  Array4<Real> mm[8];
+  Array4<NodeMMElem> mm[8];
 };
 
 } // namespace
@@ -374,7 +374,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const Array4<Real const> nodeB0Arr =
         useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
     Array4<Real> const jArr = jHat[pti].array();
-    Array4<Real> const mmArr = nodeMM[pti].array();
+    Array4<NodeMMElem> const mmArr = nodeMM[pti].array();
 
     Array4<Real const> const u0Arr = u0MF[pti].const_array();
 
@@ -436,7 +436,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 #endif
 
                     for (int idx = 0; idx < 9; idx++) {
-                      deposit_add(&mmArr(i1, j1, k1, idx0 + idx),
+                      deposit_add(&node_mm(mmArr, i1, j1, k1, idx0 + idx),
                                   alpha[idx] * weight);
                     }
                   } // k2
@@ -489,7 +489,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    Array4<Real> const mmArr = nodeMM[mfi].array();
+    Array4<NodeMMElem> const mmArr = nodeMM[mfi].array();
 
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
@@ -520,7 +520,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           const int dst0 = gpr * 9;
           const int src0 = gps * 9;
           for (int idx = 0; idx < 9; idx++) {
-            mmArr(ir, jr, kr, dst0 + idx) = mmArr(i1, j1, k1, src0 + idx);
+            node_mm(mmArr, ir, jr, kr, dst0 + idx) =
+                node_mm(mmArr, i1, j1, k1, src0 + idx);
           } // idx
         } // ip
       } // jp
@@ -560,41 +561,48 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
   std::vector<int> nps;
   std::vector<Box> cellBoxes[maxCoef];
   Vector<AmrMassTile<ParticleType> > tiles;
+  int lastFab = -1;
+  Array4<Real const> nodeBArr, nodeB0Arr, u0Arr;
+  Array4<Real> jArr;
+  Array4<NodeMMElem> mmArr;
+  Array4<int const> status;
+  Array4<Real> jArrt[maxCoef];
+  Array4<NodeMMElem> mmArrt[maxCoef];
+  Box mmBoxt[maxCoef]; // the (nodal) boxes of the mass matrices
 
   for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
-    Array4<Real const> const nodeBArr = nodeBMF[pti].const_array();
-    const Array4<Real const> nodeB0Arr =
-        useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
-    Array4<Real> const jArr = jHat[pti].array();
-    Array4<Real> const mmArr = nodeMM[pti].array();
-    Array4<Real const> const u0Arr = u0MF[pti].const_array();
-    // The particles also deposit onto the finer level if their cell is next
-    // to a refined cell (a tile is a single cell on the CPU, a box on the
-    // GPU, so the status is read at the particle's cell).
-    const Array4<int const> status = cellstatus[iLev][pti].const_array();
+    if (pti.index() != lastFab) {
+      lastFab = pti.index();
+      nodeBArr = nodeBMF[pti].const_array();
+      nodeB0Arr = useB0 ? (*nodeB0MF)[pti].const_array() : Array4<Real const>();
+      jArr = jHat[pti].array();
+      mmArr = nodeMM[pti].array();
+      u0Arr = u0MF[pti].const_array();
+      // The particles also deposit onto the finer level if their cell is next
+      // to a refined cell (a tile is a single cell on the CPU, a box on the
+      // GPU, so the status is read at the particle's cell).
+      status = cellstatus[iLev][pti].const_array();
 
-    // Coarser levels, this level, and (possibly) the finer level.
-    Array4<Real> jArrt[maxCoef];
-    Array4<Real> mmArrt[maxCoef];
-    Box mmBoxt[maxCoef]; // the (nodal) boxes of the mass matrices
-    int count = 0;
-    if (iLev > 0) {
-      for (int i = 0; i < iLev; i++) {
-        jArrt[count] = jhc[iLev][i][pti].array();
-        mmArrt[count] = nmmc[iLev][i][pti].array();
-        mmBoxt[count] = nmmc[iLev][i][pti].box();
-        count++;
+      // Coarser levels, this level, and (possibly) the finer level.
+      int count = 0;
+      if (iLev > 0) {
+        for (int i = 0; i < iLev; i++) {
+          jArrt[count] = jhc[iLev][i][pti].array();
+          mmArrt[count] = nmmc[iLev][i][pti].array();
+          mmBoxt[count] = nmmc[iLev][i][pti].box();
+          count++;
+        }
       }
-    }
-    jArrt[count] = jArr;
-    mmArrt[count] = mmArr;
-    mmBoxt[count] = nodeMM[pti].box();
-    count++;
+      jArrt[count] = jArr;
+      mmArrt[count] = mmArr;
+      mmBoxt[count] = nodeMM[pti].box();
+      count++;
 
-    if (hasFiner) {
-      jArrt[count] = jhf[iLev][pti].array();
-      mmArrt[count] = nmmf[iLev][pti].array();
-      mmBoxt[count] = nmmf[iLev][pti].box();
+      if (hasFiner) {
+        jArrt[count] = jhf[iLev][pti].array();
+        mmArrt[count] = nmmf[iLev][pti].array();
+        mmBoxt[count] = nmmf[iLev][pti].box();
+      }
     }
 
     const ParticleType* const pData = pti.GetArrayOfStructs()().data();
@@ -758,7 +766,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 #endif
 
                       for (int idx = 0; idx < 9; idx++) {
-                        deposit_add(&mmArrt[i](i1, j1, k1, idx0 + idx),
+                        deposit_add(&node_mm(mmArrt[i], i1, j1, k1, idx0 + idx),
                                     alpha[idx] * weight);
                       }
                     } // k2

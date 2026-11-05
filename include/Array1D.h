@@ -5,7 +5,10 @@
 
 #include <AMReX_BaseFab.H>
 #include <AMReX_FabArray.H>
+#include <AMReX_MultiFab.H>
 #include <AMReX_REAL.H>
+
+#include "GpuBackend.h"
 
 // The default constructor leaves the values uninitialized, so that the type
 // is trivial: AMReX then allocates FABs of it without a constructor kernel
@@ -89,8 +92,30 @@ constexpr int nCMMComponents = 27;
 using RealMM = Arr1D<amrex::Real, nMMComponents>;
 using RealCMM = Arr1D<amrex::Real, nCMMComponents>;
 
-using NodeMMFab = amrex::MultiFab;
+// Component-major MultiFab on GPU (coalesced threads, native SumBoundary) and
+// node-major FabArray<BaseFab<RealMM>> on CPU (contiguous 243-element per-node
+// cache lines).
+using NodeMMFab = std::conditional_t<fleksUseGpu, amrex::MultiFab,
+                                     amrex::FabArray<amrex::BaseFab<RealMM> > >;
+using NodeMMElem = typename NodeMMFab::value_type;
 using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM> >;
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real& node_mm(
+    const amrex::Array4<amrex::Real>& a, int i, int j, int k, int c) {
+  return a(i, j, k, c);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE const amrex::Real& node_mm(
+    const amrex::Array4<const amrex::Real>& a, int i, int j, int k, int c) {
+  return a(i, j, k, c);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real& node_mm(
+    const amrex::Array4<RealMM>& a, int i, int j, int k, int c) {
+  return a(i, j, k)[c];
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE const amrex::Real& node_mm(
+    const amrex::Array4<const RealMM>& a, int i, int j, int k, int c) {
+  return a(i, j, k)[c];
+}
 
 static_assert(std::is_trivially_default_constructible_v<RealMM>&&
                   std::is_trivially_copyable_v<RealMM>,

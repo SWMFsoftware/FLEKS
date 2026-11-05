@@ -216,8 +216,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
       if (!useExplicitPIC && !useHybridPIC) {
         distribute_FabArray(nodeMM[iLev], node_box_array(iLev),
-                            DistributionMap(iLev), nMMComponents, 1,
-                            doMoveData);
+                            DistributionMap(iLev),
+                            fleksUseGpu ? nMMComponents : 1, 1, doMoveData);
         distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
@@ -1359,8 +1359,7 @@ void Pic::particle_mover(int pushStage) {
 //==========================================================
 void Pic::sum_boundary_node_mm(int iLev) {
   BL_PROFILE("Pic::nodeMM_SumBoundary");
-  sum_boundary(nodeMM[iLev], Geom(iLev).periodicity());
-  nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
+  sum_boundary_node_mm_impl(nodeMM[iLev], Geom(iLev).periodicity());
 }
 
 //==========================================================

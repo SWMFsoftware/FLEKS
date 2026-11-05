@@ -745,6 +745,252 @@ void sum_boundary(amrex::FabArray<FAB>& mf, const amrex::Periodicity& period) {
     mf.OverrideSync(period);
 }
 
+#ifndef AMREX_USE_GPU
+namespace detail {
+
+template <class Elem> struct CpuNodeMMCommData {
+  struct LocTagEntry {
+    int srcIndex;
+    int dstIndex;
+    amrex::Box sbox;
+    amrex::Box dbox;
+    std::size_t bufOffset;
+  };
+  struct RemoteTagEntry {
+    int boxIndex;
+    amrex::Box box;
+    std::size_t bufOffset;
+  };
+  struct PeerComm {
+    int rank;
+    std::vector<RemoteTagEntry> tags;
+    amrex::Vector<Elem> buf;
+    std::size_t totalPts = 0;
+  };
+
+  bool is_initialized = false;
+  amrex::FabArrayBase::BDKey bdkey;
+  std::vector<LocTagEntry> loc_tags;
+  amrex::Vector<Elem> local_buf;
+  std::vector<std::vector<int> > box_to_loc_tags;
+  std::vector<PeerComm> sends;
+  std::vector<PeerComm> recvs;
+#ifdef BL_USE_MPI
+  std::vector<MPI_Request> recv_reqs;
+  std::vector<MPI_Request> send_reqs;
+#endif
+};
+
+template <class Elem, class Array4Type>
+inline void pack_node_mm_box(const Array4Type& src, const amrex::Box& box,
+                             Elem* __restrict__ buf) {
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+  const int len_x = hi.x - lo.x + 1;
+  const std::size_t row_bytes = static_cast<std::size_t>(len_x) * sizeof(Elem);
+  std::size_t p = 0;
+  for (int k = lo.z; k <= hi.z; ++k) {
+    for (int j = lo.y; j <= hi.y; ++j) {
+      std::memcpy(&buf[p], &src(lo.x, j, k), row_bytes);
+      p += len_x;
+    }
+  }
+}
+
+template <class Elem>
+inline void accumulate_node_mm_box(const Elem* __restrict__ buf,
+                                   const amrex::Box& box,
+                                   const amrex::Array4<Elem>& dst) {
+  constexpr std::size_t nComp = sizeof(Elem) / sizeof(amrex::Real);
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+  const int len_x = hi.x - lo.x + 1;
+  const std::size_t n_doubles = static_cast<std::size_t>(len_x) * nComp;
+  std::size_t p = 0;
+  for (int k = lo.z; k <= hi.z; ++k) {
+    for (int j = lo.y; j <= hi.y; ++j) {
+      amrex::Real* __restrict__ dst_ptr =
+          reinterpret_cast<amrex::Real*>(&dst(lo.x, j, k));
+      const amrex::Real* __restrict__ src_ptr =
+          reinterpret_cast<const amrex::Real*>(&buf[p]);
+      for (std::size_t d = 0; d < n_doubles; ++d) {
+        dst_ptr[d] += src_ptr[d];
+      }
+      p += len_x;
+    }
+  }
+}
+
+} // namespace detail
+#endif
+
+// Sum the ghost contributions of the nodal mass matrix into the valid nodes.
+// On GPU, nodeMM is a component-major MultiFab and uses AMReX's native
+// SumBoundary + OverrideSync (ghost nodes of nodeMM are never read afterwards,
+// so no FillBoundary is needed). On CPU, nodeMM is a node-major
+// FabArray<BaseFab<RealMM>> and uses a persistent tag/buffer cache to avoid
+// AMReX's per-call temporary FAB allocations in FB_local_add_cpu.
+template <class FAB>
+void sum_boundary_node_mm_impl(amrex::FabArray<FAB>& mf,
+                               const amrex::Periodicity& period) {
+#ifdef AMREX_USE_GPU
+  sum_boundary(mf, period);
+#else
+  using Elem = typename FAB::value_type;
+  using CommData = detail::CpuNodeMMCommData<Elem>;
+  static std::map<const void*, CommData> comm_cache;
+  CommData& cd = comm_cache[static_cast<const void*>(&mf)];
+
+  if (!cd.is_initialized || cd.bdkey != mf.getBDKey()) {
+    cd.loc_tags.clear();
+    cd.local_buf.clear();
+    cd.box_to_loc_tags.clear();
+    cd.sends.clear();
+    cd.recvs.clear();
+
+    const auto& TheFB = mf.getFB(amrex::IntVect(0), period, false, false, false,
+                                 mf.nGrowVect());
+    if (TheFB.m_LocTags) {
+      const auto& loc_tags = *TheFB.m_LocTags;
+      const int n_loc = static_cast<int>(loc_tags.size());
+      cd.loc_tags.resize(n_loc);
+      std::size_t total_loc_pts = 0;
+      for (int i = 0; i < n_loc; ++i) {
+        const auto& tag = loc_tags[i];
+        cd.loc_tags[i] = { tag.srcIndex, tag.dstIndex, tag.sbox, tag.dbox,
+                           total_loc_pts };
+        total_loc_pts += tag.sbox.numPts();
+      }
+      cd.local_buf.resize(total_loc_pts);
+
+      const int nLocalBoxes = mf.size();
+      cd.box_to_loc_tags.resize(nLocalBoxes);
+      for (int i = 0; i < n_loc; ++i) {
+        int localDst = mf.localindex(cd.loc_tags[i].dstIndex);
+        if (localDst >= 0 && localDst < nLocalBoxes) {
+          cd.box_to_loc_tags[localDst].push_back(i);
+        }
+      }
+    }
+
+#ifdef BL_USE_MPI
+    if (TheFB.m_SndTags) {
+      cd.sends.reserve(TheFB.m_SndTags->size());
+      for (const auto& kv : *TheFB.m_SndTags) {
+        int dst_rank = kv.first;
+        const auto& tags = kv.second;
+        if (tags.empty())
+          continue;
+        typename CommData::PeerComm peer;
+        peer.rank = dst_rank;
+        peer.tags.reserve(tags.size());
+        std::size_t offset = 0;
+        for (const auto& tag : tags) {
+          peer.tags.push_back({ tag.srcIndex, tag.sbox, offset });
+          offset += tag.sbox.numPts();
+        }
+        peer.totalPts = offset;
+        peer.buf.resize(offset);
+        cd.sends.push_back(std::move(peer));
+      }
+    }
+    if (TheFB.m_RcvTags) {
+      cd.recvs.reserve(TheFB.m_RcvTags->size());
+      for (const auto& kv : *TheFB.m_RcvTags) {
+        int src_rank = kv.first;
+        const auto& tags = kv.second;
+        if (tags.empty())
+          continue;
+        typename CommData::PeerComm peer;
+        peer.rank = src_rank;
+        peer.tags.reserve(tags.size());
+        std::size_t offset = 0;
+        for (const auto& tag : tags) {
+          peer.tags.push_back({ tag.dstIndex, tag.dbox, offset });
+          offset += tag.dbox.numPts();
+        }
+        peer.totalPts = offset;
+        peer.buf.resize(offset);
+        cd.recvs.push_back(std::move(peer));
+      }
+    }
+    cd.recv_reqs.assign(cd.recvs.size(), MPI_REQUEST_NULL);
+    cd.send_reqs.assign(cd.sends.size(), MPI_REQUEST_NULL);
+#endif
+    cd.bdkey = mf.getBDKey();
+    cd.is_initialized = true;
+  }
+
+#ifdef BL_USE_MPI
+  const int seq_num = amrex::ParallelDescriptor::SeqNum();
+  const MPI_Comm comm = amrex::ParallelDescriptor::Communicator();
+  const int n_recvs = static_cast<int>(cd.recvs.size());
+  const int n_sends = static_cast<int>(cd.sends.size());
+
+  cd.recv_reqs.assign(n_recvs, MPI_REQUEST_NULL);
+  cd.send_reqs.assign(n_sends, MPI_REQUEST_NULL);
+
+  for (int r = 0; r < n_recvs; ++r) {
+    auto& peer = cd.recvs[r];
+    if (peer.totalPts > 0) {
+      MPI_Irecv(reinterpret_cast<void*>(peer.buf.data()),
+                peer.totalPts * sizeof(Elem), MPI_BYTE, peer.rank, seq_num,
+                comm, &cd.recv_reqs[r]);
+    }
+  }
+  for (int s = 0; s < n_sends; ++s) {
+    auto& peer = cd.sends[s];
+    for (const auto& rt : peer.tags) {
+      const auto src_arr = mf.array(rt.boxIndex);
+      detail::pack_node_mm_box(src_arr, rt.box, &peer.buf[rt.bufOffset]);
+    }
+    if (peer.totalPts > 0) {
+      MPI_Isend(reinterpret_cast<const void*>(peer.buf.data()),
+                peer.totalPts * sizeof(Elem), MPI_BYTE, peer.rank, seq_num,
+                comm, &cd.send_reqs[s]);
+    }
+  }
+#endif
+
+  const int n_loc = static_cast<int>(cd.loc_tags.size());
+  for (int i = 0; i < n_loc; ++i) {
+    const auto& tag = cd.loc_tags[i];
+    const auto src_arr = mf.array(tag.srcIndex);
+    detail::pack_node_mm_box(src_arr, tag.sbox, &cd.local_buf[tag.bufOffset]);
+  }
+
+  const int nLocalBoxes = mf.size();
+  for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
+    const auto& tag_indices = cd.box_to_loc_tags[localDst];
+    if (tag_indices.empty())
+      continue;
+    auto dst_arr = mf.atLocalIdx(localDst).array();
+    for (int tag_idx : tag_indices) {
+      const auto& tag = cd.loc_tags[tag_idx];
+      detail::accumulate_node_mm_box(&cd.local_buf[tag.bufOffset], tag.dbox,
+                                     dst_arr);
+    }
+  }
+
+#ifdef BL_USE_MPI
+  if (n_recvs > 0) {
+    MPI_Waitall(n_recvs, cd.recv_reqs.data(), MPI_STATUSES_IGNORE);
+    for (int r = 0; r < n_recvs; ++r) {
+      const auto& peer = cd.recvs[r];
+      for (const auto& rt : peer.tags) {
+        auto dst_arr = mf.array(rt.boxIndex);
+        detail::accumulate_node_mm_box(&peer.buf[rt.bufOffset], rt.box,
+                                       dst_arr);
+      }
+    }
+  }
+  if (n_sends > 0) {
+    MPI_Waitall(n_sends, cd.send_reqs.data(), MPI_STATUSES_IGNORE);
+  }
+#endif
+#endif
+}
+
 // Sum of f(i), i = 0..n-1 (f a device lambda returning Real), returned on the
 // host. A CPU build adds the values in index order, like a serial loop. A GPU
 // build stores the values and reduces them with cub::DeviceReduce, whose fixed

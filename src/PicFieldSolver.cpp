@@ -532,7 +532,7 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
     const Array4<Real const> inArr = inMF[mfi].const_array();
     const Array4<Real> outArr = outMF[mfi].array();
-    const Array4<Real const> mmArr = nodeMM[iLev][mfi].const_array();
+    const Array4<NodeMMElem const> mmArr = nodeMM[iLev][mfi].const_array();
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       // Accumulate in registers, in the order of the stencil loop (outMF is
@@ -547,17 +547,17 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
           const double vctX = inArr(i2, j2, 0, ix_);
           const double vctY = inArr(i2, j2, 0, iy_);
           const double vctZ = inArr(i2, j2, 0, iz_);
-          sumX += (vctX * mmArr(i, j, 0, idx0 + 0) +
-                   vctY * mmArr(i, j, 0, idx0 + 1) +
-                   vctZ * mmArr(i, j, 0, idx0 + 2)) *
+          sumX += (vctX * node_mm(mmArr, i, j, 0, idx0 + 0) +
+                   vctY * node_mm(mmArr, i, j, 0, idx0 + 1) +
+                   vctZ * node_mm(mmArr, i, j, 0, idx0 + 2)) *
                   c0;
-          sumY += (vctX * mmArr(i, j, 0, idx0 + 3) +
-                   vctY * mmArr(i, j, 0, idx0 + 4) +
-                   vctZ * mmArr(i, j, 0, idx0 + 5)) *
+          sumY += (vctX * node_mm(mmArr, i, j, 0, idx0 + 3) +
+                   vctY * node_mm(mmArr, i, j, 0, idx0 + 4) +
+                   vctZ * node_mm(mmArr, i, j, 0, idx0 + 5)) *
                   c0;
-          sumZ += (vctX * mmArr(i, j, 0, idx0 + 6) +
-                   vctY * mmArr(i, j, 0, idx0 + 7) +
-                   vctZ * mmArr(i, j, 0, idx0 + 8)) *
+          sumZ += (vctX * node_mm(mmArr, i, j, 0, idx0 + 6) +
+                   vctY * node_mm(mmArr, i, j, 0, idx0 + 7) +
+                   vctZ * node_mm(mmArr, i, j, 0, idx0 + 8)) *
                   c0;
         }
       }
@@ -574,15 +574,18 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
             const double vctX = inArr(i2, j2, k2, ix_);
             const double vctY = inArr(i2, j2, k2, iy_);
             const double vctZ = inArr(i2, j2, k2, iz_);
-            sumX += (vctX * mmArr(i, j, k, idx0 + 0) +
-                     vctY * mmArr(i, j, k, idx0 + 1) +
-                     vctZ * mmArr(i, j, k, idx0 + 2)) * c0;
-            sumY += (vctX * mmArr(i, j, k, idx0 + 3) +
-                     vctY * mmArr(i, j, k, idx0 + 4) +
-                     vctZ * mmArr(i, j, k, idx0 + 5)) * c0;
-            sumZ += (vctX * mmArr(i, j, k, idx0 + 6) +
-                     vctY * mmArr(i, j, k, idx0 + 7) +
-                     vctZ * mmArr(i, j, k, idx0 + 8)) * c0;
+            sumX += (vctX * node_mm(mmArr, i, j, k, idx0 + 0) +
+                     vctY * node_mm(mmArr, i, j, k, idx0 + 1) +
+                     vctZ * node_mm(mmArr, i, j, k, idx0 + 2)) *
+                    c0;
+            sumY += (vctX * node_mm(mmArr, i, j, k, idx0 + 3) +
+                     vctY * node_mm(mmArr, i, j, k, idx0 + 4) +
+                     vctZ * node_mm(mmArr, i, j, k, idx0 + 5)) *
+                    c0;
+            sumZ += (vctX * node_mm(mmArr, i, j, k, idx0 + 6) +
+                     vctY * node_mm(mmArr, i, j, k, idx0 + 7) +
+                     vctZ * node_mm(mmArr, i, j, k, idx0 + 8)) *
+                    c0;
           }
         }
       }
