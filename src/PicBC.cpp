@@ -165,11 +165,11 @@ void Pic::apply_field_bc_homogeneous(const iMultiFab& status, MultiFab& mf,
     const BoxArray ba =
         get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
     const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bcField);
-    auto isOpen = [](int type) {
+    auto isOpen = [] AMREX_GPU_HOST_DEVICE(int type) {
       return type == FieldBC::outflow || type == FieldBC::vacuum;
     };
 
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mf, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       if (ba.contains(bxFab))
         continue;

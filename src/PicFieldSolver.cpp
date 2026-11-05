@@ -471,7 +471,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   if (hasWallEt) {
     const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
                              &bcField);
-    for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(matvecMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrOut = matvecMF[mfi].array();
       const Array4<Real const>& arrIn = solverWallInMF[iLev][mfi].array();
@@ -708,7 +708,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   if (iLev == 0 && hasConductingBC_) {
     const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
                              &bcField);
-    for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(temp2Node, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrRHS = temp2Node[mfi].array();
       const Array4<Real const>& arrE = nodeE[iLev][mfi].array();
