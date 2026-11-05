@@ -105,7 +105,9 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
   timing_func(nameFunc);
 
   {
-    MultiFab residual(boxArray(iLev), DistributionMap(iLev), 1, 0);
+    // Reuse divEOutMF[iLev] (boxArray, dmap, nComp=1, nGrow=0) as residual
+    // scratch before solver.solve() uses it inside divE_accurate_matvec.
+    MultiFab& residual = divEOutMF[iLev];
 
     solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
     Real coef = 1.0 / rhoTheta;
@@ -246,8 +248,6 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
     centerMM[iLev].setVal(mm0);
   }
 
-  MultiFab jf;
-  MultiFab jc;
   int fLev = iLev + 1;
   int cLev = iLev - 1;
   if (iLev == 0) {
@@ -256,17 +256,23 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
   if (iLev == finestLevel()) {
     fLev = iLev;
   }
-  {
+  if (static_cast<int>(sumToCenterJc.size()) != n_lev()) {
+    sumToCenterJc.resize(n_lev());
+    sumToCenterJf.resize(n_lev());
+  }
+  MultiFab& jc = sumToCenterJc[iLev];
+  MultiFab& jf = sumToCenterJf[iLev];
+  if (jc.empty()) {
     BoxArray bac = centerB[cLev].boxArray();
     bac.refine(refRatio(iLev));
     jc.define(bac, centerB[cLev].DistributionMap(), 1, 1);
-    jc.setVal(0.0);
     BoxArray baf = centerB[fLev].boxArray();
     baf.coarsen(refRatio(iLev));
     baf.grow(1);
     jf.define(baf, centerB[fLev].DistributionMap(), 1, 1);
-    jf.setVal(0.0);
   }
+  jc.setVal(0.0);
+  jf.setVal(0.0);
   for (int i = 0; i < nSpecies; ++i) {
     parts[i]->sum_to_center_amr(centerNetChargeNew[iLev], jc, jf,
                                 centerMM[iLev], doNetChargeOnly, iLev);
@@ -279,8 +285,7 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
   centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
   jc.SumBoundary();
   jf.SumBoundary();
-  amrex::MultiFab tmp;
-  tmp.define(centerB[iLev].boxArray(), centerB[iLev].DistributionMap(), 1, 0);
+  amrex::MultiFab& tmp = divEOutMF[iLev];
   tmp.setVal(0.0);
   tmp.ParallelCopy(jc);
   MultiFab::Add(centerNetChargeNew[iLev], tmp, 0, 0, 1, 0);

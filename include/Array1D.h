@@ -10,7 +10,11 @@
 template <class T, const int n> struct Arr1D {
   T data[n];
 
-  Arr1D(const T& b = T(0)) {
+  // Trivially default-constructible so that AMReX's FabArray/BaseFab treats
+  // Arr1D as POD (uninitialized allocation, memcpy-based communication).
+  Arr1D() = default;
+
+  Arr1D(const T& b) {
     for (int i = 0; i < n; ++i)
       data[i] = b;
   }
@@ -74,6 +78,10 @@ constexpr int nCMMComponents = 27;
 
 using RealMM = Arr1D<amrex::Real, nMMComponents>;
 using RealCMM = Arr1D<amrex::Real, nCMMComponents>;
+static_assert(std::is_trivially_default_constructible_v<RealMM>&&
+                  std::is_trivially_copyable_v<RealMM>);
+static_assert(std::is_trivially_default_constructible_v<RealCMM>&&
+                  std::is_trivially_copyable_v<RealCMM>);
 
 using NodeMMFab = amrex::FabArray<amrex::BaseFab<RealMM> >;
 using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM> >;
