@@ -1,3 +1,6 @@
+#include <cmath>
+#include <limits>
+
 #include "TimeCtr.h"
 
 using namespace amrex;
@@ -75,4 +78,58 @@ bool EventCtr::is_time_to(bool doForce) {
   } // doForce
 
   return isTime;
+}
+
+Real EventCtr::get_next_time(Real tRef) const {
+  if (!useDt)
+    return -1.0;
+  if (nextTime > tRef + dtEvent * 1e-6)
+    return nextTime;
+  return (std::floor(tRef / dtEvent + 1e-6) + 1) * dtEvent;
+}
+
+Real TimeCtr::find_next_event_time(Real tRef, Real timeLimit) const {
+  const Real tol = (dtSI > 0.0 ? dtSI : 1.0) * 1e-5;
+  Real tTarget =
+      (timeLimit > tRef + tol) ? timeLimit : std::numeric_limits<Real>::max();
+
+  auto consider = [&](Real tCandidate) {
+    if (tCandidate > tRef + tol && tCandidate < tTarget) {
+      tTarget = tCandidate;
+    }
+  };
+
+  for (const auto &plot : plots) {
+    consider(plot.get_next_time(tRef));
+  }
+  consider(restart.get_next_time(tRef));
+
+  return tTarget;
+}
+
+void TimeCtr::update(Real timeLimit) {
+  restore_unconstrained_dt();
+
+  if (dtSI > 0.0) {
+    const Real tTarget = find_next_event_time(timeNowSI, timeLimit);
+    if (dtSI > tTarget - timeNowSI) {
+      savedDtSI = dtSI;
+      savedNextDtSI = nextDtSI;
+      isDtLimited = true;
+      dtSI = tTarget - timeNowSI;
+      nextDtSI = dtSI;
+    }
+
+    timeNowSI += dtSI;
+    if (std::abs(tTarget - timeNowSI) <= 1e-5 * dtSI) {
+      timeNowSI = tTarget;
+    }
+
+    if (!isDtLimited) {
+      set_dummy_dt_si(dtSI);
+    }
+  } else {
+    timeNowSI += dtSI;
+  }
+  cycle++;
 }

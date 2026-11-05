@@ -3281,6 +3281,26 @@ only a reminder for whoever reads the PARAM.in file.
 
 </command>
 
+<command name="SAVERESTART" multiple="T" if="$_IsStandAlone">
+  <parameter name="DoSaveRestart" type="logical" default="T"/>
+  <if expr="$DoSaveRestart">
+    <parameter name="DnSaveRestart" type="integer" min="-1" default="-1"/>
+    <parameter name="DtSaveRestart" type="real" min="-1.0" default="-1.0"/>
+  </if>
+
+#SAVERESTART
+T                       DoSaveRestart
+-1                      DnSaveRestart
+100.0                   DtSaveRestart
+
+Controls periodic restart saving in stand-alone runs. When DoSaveRestart is
+true, FLEKS writes restart files to PC/restartOUT/ every DnSaveRestart cycles
+or every DtSaveRestart seconds (only one of the two may be positive). When
+DtSaveRestart is positive, the time step is limited so that the restart time is
+hit exactly.
+
+</command>
+
 <command name="STOP" if="$_IsStandAlone">
   <parameter name="MaxIter" type="integer" min="-1" default="-1"/>
   <parameter name="TimeMax" type="real" min="-1" default="-1"/>

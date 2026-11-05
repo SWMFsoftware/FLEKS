@@ -218,7 +218,7 @@ void Domain::init(double time, const int iDomain,
 };
 
 //========================================================
-void Domain::update() {
+void Domain::update(Real timeLimit) {
   std::string funcName = "Domain::update";
   timing_func(funcName);
 
@@ -238,7 +238,7 @@ void Domain::update() {
 
   const Real t0 = tc->get_time_si();
   // update time, step number.
-  tc->update();
+  tc->update(timeLimit);
 
   if (doReport && !doCompact) {
     const Real t1 = tc->get_time_si();
@@ -273,6 +273,12 @@ void Domain::update() {
   if (pt) {
     pt->update(*pic, doReport);
     pt->write_log();
+  }
+
+  tc->restore_unconstrained_dt();
+
+  if (tc->restart.is_time_to()) {
+    save_restart();
   }
 };
 
@@ -692,6 +698,8 @@ void Domain::read_restart() {
   if (doRegridOnRestart) {
     grid->mark_refinement_modified();
   }
+
+  tc->restart.is_time_to();
 }
 
 //========================================================
@@ -1209,11 +1217,24 @@ void Domain::read_param() {
         tc->set_dt_si(dtSI);
         tc->set_next_dt_si(dtSI);
         tc->set_cfl(-1);
-        tc->set_dt_max(dtSI);
+        tc->set_dt_max_si(dtSI);
       } else {
         Real cfl;
         readParam.read_var("cfl", cfl);
         tc->set_cfl(cfl);
+      }
+    } else if (command == "#SAVERESTART") {
+      bool doSaveRestart = false;
+      readParam.read_var("DoSaveRestart", doSaveRestart);
+      if (doSaveRestart) {
+        int dnSaveRestart = -1;
+        Real dtSaveRestart = -1.0;
+        readParam.read_var("DnSaveRestart", dnSaveRestart);
+        readParam.read_var("DtSaveRestart", dtSaveRestart);
+        tc->restart.init(dtSaveRestart, dnSaveRestart);
+        tc->restart.is_time_to();
+      } else {
+        tc->restart.init(-1.0, -1);
       }
     } else if (command == "#SAVELOG") {
       int dn;

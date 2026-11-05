@@ -190,7 +190,7 @@ int main(int argc, char* argv[]) {
 
       while ((maxIter < 0 || domain.tc->get_cycle() < maxIter) &&
              (timeMax <= 0.0 || domain.tc->get_time_si() < timeMax - 1e-10)) {
-        domain.update();
+        domain.update(timeMax);
       }
     }
 

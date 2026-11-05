@@ -2234,6 +2234,9 @@ void Pic::update(bool doReportIn) {
     }
   }
 
+  const Real dtStepSI = tc->get_dt_si();
+  tc->restore_unconstrained_dt();
+
 #ifdef _PC_COMPONENT_
   if (useHybridPIC) {
     // For hybrid PIC, accepted moments were already deposited and smoothed in
@@ -2301,8 +2304,7 @@ void Pic::update(bool doReportIn) {
     if (doCompact) {
       Print() << "==== " << printPrefix << "Cycle " << tc->get_cycle()
               << " | t = " << std::setprecision(6) << tc->get_time_si()
-              << " (s) | dt = " << std::setprecision(5) << tc->get_dt_si()
-              << " (s)";
+              << " (s) | dt = " << std::setprecision(5) << dtStepSI << " (s)";
       if (maxCFL > 0.0) {
         Print() << " | CFL = " << std::setprecision(4) << maxCFL;
       }
