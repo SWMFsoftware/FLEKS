@@ -1,0 +1,157 @@
+#DESCRIPTION
+2D Counter-streaming two-ion hybrid test (Phobos foreshock setup):
+Solar wind protons (Species 0, ux = -400 km/s) injected from the right (+x)
+Counter-streaming beam protons (Species 1, ux = +400 km/s) injected from the left (-x)
+Flowing past an absorbing spherical obstacle at the center (radius R = 1.0 code unit = 4 cells across in y).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-16.0                   xMin  [code units, 32 R]
+ 16.0                   xMax
+-7.0                    yMin  [code units, 14 R]
+ 7.0                    yMax
+-0.5                    zMin  one cell invariant in z
+ 0.5                    zMax
+
+#NCELL
+64                      nCellX  dx = 0.5 code units
+28                      nCellY  dy = 0.5 code units
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+14                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.1e4                   lNormSI  [m]    11 km = 1 Phobos radius
+1.0e5                   uNormSI  [m/s]  100 km/s
+
+#BODY
+sphere                  type
+1.0                     radius   [code units; 2 dx = 4 cells diameter]
+0.0                     center x
+0.0                     center y
+0.0                     center z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+insulating              fieldBoundary
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#HALLTERM
+F                       useHallTerm
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+7.4489                  electronTemperature [eV]
+1.0                     electronGamma
+3.0                     electronDensity0 [/cc]
+
+#MINIMUMDENSITY
+0.15                    rhoMinOhm [/cc]
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#PLASMA
+2                       nSpecies
+1.0                     mass    Species 0: SW H+
+1.0                     charge
+1.0                     mass    Species 1: Counter-streaming Beam H+
+1.0                     charge
+
+#INFLOW
+3.0                     rho [/cc]   Species 0: SW H+ (injected at +x, ux < 0)
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+86440.0                 T [K]
+0.375                   rho [/cc]   Species 1: Beam H+ (injected at -x, ux > 0)
+400.0                   ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+345760.0                T [K]
+
+#UNIFORMSTATE
+3.0                     rho [/cc]   Species 0: SW H+
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+86440.0                 T [K]
+0.375                   rho [/cc]   Species 1: Beam H+
+400.0                   ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+345760.0                T [K]
+3.0e-9                  Bx [T, 3 nT]
+0.0                     By [T]
+0.0                     Bz [T]
+0.0                     Ex
+0.0                     Ey
+0.0                     Ez
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo
+inflow                  fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo (Species 0: SW H+)
+inflow                  particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+inflow                  particleBoxBoundaryLo (Species 1: Beam H+)
+outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#MONITOR
+5                       dnReport
+10                      dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+-1                      dnSavePT
+
+#PARTICLES
+16                      nParticle per cell in X
+16                      nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.4                     dt
+1                       dx
+
+#STOP
+20                      MaxIter
+0.4                     TimeMax
