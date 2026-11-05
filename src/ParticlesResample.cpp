@@ -447,9 +447,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
           checkRefined ? hostFabs.array(cell_status(iLev), pti) : statusDev;
       const Array4<int const> tppcDev =
           useConstPPV ? target_PPC(iLev).const_array(pti) : Array4<int const>();
-      const Array4<int const> tppc =
-          useConstPPV ? hostFabs.array(target_PPC(iLev), pti)
-                      : Array4<int const>();
+      const Array4<int const> tppc = useConstPPV
+                                         ? hostFabs.array(target_PPC(iLev), pti)
+                                         : Array4<int const>();
 
       // GPU: the cells with too few particles (the same limits as below).
       auto mayResample = [=] AMREX_GPU_DEVICE(const ParticleType*, const int*,

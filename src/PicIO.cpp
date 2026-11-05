@@ -560,44 +560,56 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           ioCache.array(plasma[extract_int(var)][iLev], mfi);
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
     } else if (var == "rho" || var == "rhoTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iRho_);
     } else if (var == "ux" || var == "uxTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       double rho = arr(ijk, iRho_);
       value = (rho != 0.0) ? (arr(ijk, iUx_) / rho) : 0.0;
     } else if (var == "uy" || var == "uyTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       double rho = arr(ijk, iRho_);
       value = (rho != 0.0) ? (arr(ijk, iUy_) / rho) : 0.0;
     } else if (var == "uz" || var == "uzTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       double rho = arr(ijk, iRho_);
       value = (rho != 0.0) ? (arr(ijk, iUz_) / rho) : 0.0;
     } else if (var == "p" || var == "pTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
     } else if (var == "pXX" || var == "pXXTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iPxx_);
     } else if (var == "pYY" || var == "pYYTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iPyy_);
     } else if (var == "pZZ" || var == "pZZTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iPzz_);
     } else if (var == "pXY" || var == "pXYTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iPxy_);
     } else if (var == "pXZ" || var == "pXZTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iPxz_);
     } else if (var == "pYZ" || var == "pYZTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iPyz_);
     } else if (var == "ppc" || var == "num" || var == "ppcTot" ||
                var == "numTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& arr =
+          ioCache.array(nodePlasma[nSpecies][iLev], mfi);
       value = arr(ijk, iNum_);
     } else if (var.substr(0, 2) == "Pe") {
       // Electron pressure actually used by the Ohm's law: the evolved state

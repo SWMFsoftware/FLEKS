@@ -300,6 +300,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
        ++mfi) {
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
+    Vector<ParticleType> newParticles;
 
     for (int iDim = 0; iDim < nDim; ++iDim) {
       const int t1 = (iDim + 1) % nDim; // first transverse grid direction
@@ -436,11 +437,12 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
             p.idata(iRecordCount_) = 0;
           }
 
-          particles.push_back(p);
+          newParticles.push_back(p);
           faceInMass[2 * iDim + side] += qomSign * q * get_mass();
         }
       }
     }
+    append_particles(particles, newParticles);
   }
 }
 
@@ -495,10 +497,14 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
     return std::min(std::max(iv, domain.smallEnd(d) + 1), domain.bigEnd(d));
   };
 
+  HostStaging<FArrayBox> stageMom(const_cast<MultiFab&>(nodeMom),
+                                  /*writeBack=*/false);
+
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
     const auto mom = nodeMom[mfi].const_array();
+    Vector<ParticleType> newParticles;
 
     for (int iDim = 0; iDim < nDim; ++iDim) {
       const int t1 = (iDim + 1) % nDim;
@@ -617,12 +623,13 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
               pt.rdata(iqp_) = q;
               if (NStructInt > iRecordCount_)
                 pt.idata(iRecordCount_) = 0;
-              particles.push_back(pt);
+              newParticles.push_back(pt);
               faceInMass[2 * iDim + side] += qomSign * q * m;
             }
           }
       }
     }
+    append_particles(particles, newParticles);
   }
 }
 

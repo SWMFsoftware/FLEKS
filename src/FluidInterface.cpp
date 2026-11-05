@@ -887,9 +887,10 @@ void FluidInterface::set_node_fluid() {
     const double slope = shockSlope;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const auto& geom = Geom(iLev);
-      const auto& prob_lo = geom.ProbLo();
-      const auto& dx = geom.CellSize();
-      for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+      const auto prob_lo = geom.ProbLoArray();
+      const auto dx = geom.CellSizeArray();
+      for (MFIter mfi(nodeFluid[iLev], stream_ordered_mfi()); mfi.isValid();
+           ++mfi) {
         auto& fab = nodeFluid[iLev][mfi];
         const Box& box = mfi.fabbox();
         const auto& arr = fab.array();

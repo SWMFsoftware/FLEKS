@@ -119,7 +119,9 @@ struct CellSeeder {
         return;
     }
 
-    if (useTargetPPC) {
+    // The level target (#CONSTANTPPV, pre-splitting) applies only when the
+    // caller does not ask for an explicit count (the source particles do).
+    if (ppc == 0 && useTargetPPC) {
       for (int i = 0; i < nDim; ++i)
         nPPC[i] = int_root(targetPPC(ijk), nDim > 2 ? 3 : 2);
     }
@@ -381,9 +383,9 @@ template <class ParticleType, int NStructInt> struct SeedWriter {
     for (int iDim = 0; iDim < nDim; iDim++) {
       p.pos(iDim) = xyz[iDim];
     }
-    p.rdata(0) = u; // iup_
-    p.rdata(1) = v; // ivp_
-    p.rdata(2) = w; // iwp_
+    p.rdata(0) = u;               // iup_
+    p.rdata(1) = v;               // ivp_
+    p.rdata(2) = w;               // iwp_
     p.rdata(3) = q * weightScale; // iqp_
     if (NStructInt > 1) {
       // For test particle only: the record counter.
@@ -511,8 +513,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cells(
   };
 
   // 1. Count the particles of each cell.
-  auto eval_rule = [=] AMREX_GPU_HOST_DEVICE(
-                       const IntVect& ijk, IntVect& ppc, Real& weightScale) {
+  auto eval_rule = [=] AMREX_GPU_HOST_DEVICE(const IntVect& ijk, IntVect& ppc,
+                                             Real& weightScale) {
+    (void)rule;
     weightScale = 1.0;
     if constexpr (std::is_invocable_v<Rule, const IntVect&, IntVect&, Real&>) {
       return rule(ijk, ppc, weightScale);

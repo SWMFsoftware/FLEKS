@@ -1118,7 +1118,7 @@ void Pic::solve_hyp_phi(int iLev) {
         Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
     const Real scale =
         pow(Geom(iLev).CellSize()[ix_] / Geom(iLev - 1).CellSize()[ix_], 2);
-    for (MFIter mfi(hypPhi[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(hypPhi[iLev], stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const auto& phi = hypPhi[iLev][mfi].array();
       const auto& st = cell_status(iLev)[mfi].const_array();
@@ -1164,7 +1164,7 @@ void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
   const Real dt = tc->get_dt();
   const bool isFake2D = is_fake_2d();
 
-  for (MFIter mfi(nodeEmfLev); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeEmfLev, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = nodeEmfLev[mfi].array();
     const Array4<Real const>& arrBin = centerB[iLev][mfi].const_array();

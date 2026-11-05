@@ -904,7 +904,7 @@ void Pic::compute_node_electron_pressure(int iLev, const MultiFab& nodeNe,
   const Real invRho0 = (electronDensity0 > 0) ? (1.0 / electronDensity0) : 0.0;
   const Real gamma = electronGamma;
   const Real Te = electronTemperature;
-  for (MFIter mfi(nodePe); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodePe, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = nodePe[mfi].array();
     const Array4<Real const>& arrNe = nodeNe[mfi].const_array();
@@ -2228,6 +2228,7 @@ void Pic::update_B_hybrid() {
       // Bound fresh electron velocity (bulk velocity when Hall is disabled) for
       // the upwind dissipation rate estimate.
       if (useHybridUpwind && upwindFixedSpeed <= 0.0 && hasPlasma) {
+        const Real rhoFloor = rhoMinOhm;
         if (useHallTerm) {
           curl_center_to_node(centerB[iLev], nodeJ[iLev],
                               Geom(iLev).InvCellSize());
@@ -2242,7 +2243,7 @@ void Pic::update_B_hybrid() {
                     const Real rho = rhoArrays[nb](i, j, k, iRhoComp);
                     if (rho <= 0.0)
                       return 0.0;
-                    const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
+                    const Real invRho = 1.0 / amrex::max(rho, rhoFloor);
                     Real u2 = 0.0;
                     for (int d = 0; d < 3; ++d) {
                       const Real ue_d = (rhoArrays[nb](i, j, k, iMx_ + d) -
@@ -2261,7 +2262,7 @@ void Pic::update_B_hybrid() {
                           const Real rho = rhoArrays[nb](i, j, k, iRhoComp);
                           if (rho <= 0.0)
                             return 0.0;
-                          const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
+                          const Real invRho = 1.0 / amrex::max(rho, rhoFloor);
                           Real u2 = 0.0;
                           for (int d = 0; d < 3; ++d) {
                             const Real ui_d =

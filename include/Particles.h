@@ -462,8 +462,8 @@ protected:
   }
 
   void load_tallies(const TallyState& t) {
-    amrex::Gpu::copy(amrex::Gpu::hostToDevice, t.tallies,
-                     t.tallies + nTally_, boundaryTallies.begin());
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, t.tallies, t.tallies + nTally_,
+                     boundaryTallies.begin());
     for (int f = 0; f < 6; ++f) {
       faceInMass[f] = t.faceIn[f];
     }

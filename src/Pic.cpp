@@ -954,7 +954,7 @@ void Pic::fill_plasma_state(FluidInterface& dst) {
       }
     }
 
-    for (MFIter mfi(stateMF); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(stateMF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& state = stateMF[mfi].array();
 
@@ -1102,6 +1102,9 @@ void Pic::build_shell_weights(
     const Real dV = AMREX_D_TERM(dxl[0], *dxl[1], *dxl[2]) /
                     (nSub * nSub * (nDim > 2 ? nSub : 1));
 
+    HostStaging<IArrayBox> stageCs(const_cast<iMultiFab&>(cs),
+                                   /*writeBack=*/false);
+    HostStaging<FArrayBox> stageW(sw.weight[iLev], /*writeBack=*/true);
     for (MFIter mfi(sw.weight[iLev]); mfi.isValid(); ++mfi) {
       const auto& status = cs[mfi].const_array();
       const auto& w = sw.weight[iLev][mfi].array();

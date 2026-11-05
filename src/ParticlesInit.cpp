@@ -83,9 +83,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const Box& tile_box = mfi.validbox();
       const Array4<int const> status = cell_status(iLev)[mfi].const_array();
-      const Array4<int const> tppcArr =
-          useTargetPPC ? target_PPC(iLev).const_array(mfi)
-                       : Array4<int const>{};
+      const Array4<int const> tppcArr = useTargetPPC
+                                            ? target_PPC(iLev).const_array(mfi)
+                                            : Array4<int const>{};
 
       // Cells of the source region of this species (OH-PT only). The region
       // test runs on the host.
@@ -175,8 +175,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 
               if (nSource <= 0.0)
                 return false;
-              const Real ppcSource =
-                  (ppcCell == 0) ? ppcRef : product(ppcCell);
+              const Real ppcSource = (ppcCell == 0) ? ppcRef : product(ppcCell);
               if (nSource / ppcSource < wMin) {
                 ppcCell = IntVect(1);
                 if (nSource < wMin) {
@@ -328,11 +327,15 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const Real vol = dx[iLev].product();
+    HostStaging<FArrayBox> stageAdd(const_cast<MultiFab&>(nAdd[iLev]),
+                                    /*writeBack=*/false);
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const auto add = nAdd[iLev][mfi].const_array();
       const Box& box = mfi.validbox();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
+      Vector<ParticleType> newIon;
+      std::vector<Vector<ParticleType> > newEle(electrons.size());
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
@@ -341,15 +344,18 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
               continue;
             IntVect ijk = { AMREX_D_DECL(i, j, k) };
             set_random_seed(iLev, ijk, IntVect(271));
-            ParticleTileType& tile = get_particle_tile(iLev, mfi, ijk);
+            ParticleTileType* tile =
+                useCellTiles ? &get_particle_tile(iLev, mfi, ijk) : nullptr;
             const Real q = qomSign * n * vol / nPPC * charge;
 
             std::vector<ParticleTileType*> eleTiles;
             if (hasElectrons) {
-              eleTiles.resize(electrons.size());
+              eleTiles.resize(electrons.size(), nullptr);
               for (size_t ie = 0; ie < electrons.size(); ++ie) {
-                eleTiles[ie] =
-                    &electrons[ie]->get_particle_tile(iLev, mfi, ijk);
+                if (useCellTiles) {
+                  eleTiles[ie] =
+                      &electrons[ie]->get_particle_tile(iLev, mfi, ijk);
+                }
                 electrons[ie]->set_random_seed(iLev, ijk, IntVect(271));
               }
             }
@@ -383,7 +389,10 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
               p.rdata(iqp_) = q;
               if (NStructInt > iRecordCount_)
                 p.idata(iRecordCount_) = 0;
-              tile.push_back(p);
+              if (tile)
+                tile->push_back(p);
+              else
+                newIon.push_back(p);
 
               // Co-located electron creation: identical position and exact
               // opposite charge fraction to preserve local Gauss's law (rho =
@@ -413,7 +422,10 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
                   pe.rdata(iqp_) = -elecFrac[ie] * q;
                   if (NStructInt > iRecordCount_)
                     pe.idata(iRecordCount_) = 0;
-                  eleTiles[ie]->push_back(pe);
+                  if (eleTiles[ie])
+                    eleTiles[ie]->push_back(pe);
+                  else
+                    newEle[ie].push_back(pe);
 
                   ele->bodyInjectCount += 1;
                   ele->bodyInjectMass +=
@@ -425,6 +437,13 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
             bodyInjectCount += nPPC;
             bodyInjectMass += n * vol * mass;
           }
+      if (!useCellTiles) {
+        append_particles(get_particle_tile(iLev, mfi), newIon);
+        for (size_t ie = 0; ie < electrons.size(); ++ie) {
+          electrons[ie]->append_particles(
+              electrons[ie]->get_particle_tile(iLev, mfi), newEle[ie]);
+        }
+      }
     }
   }
 }

@@ -417,6 +417,7 @@ public:
       vBox *= hBox[d];
     std::vector<amrex::Real> sumN(nC), sumNA(nC), prodN(nC), prodNA(nC);
 
+    HostStaging<amrex::FArrayBox> stageNeu(neuAvg[iLev], /*writeBack=*/true);
     for (amrex::MFIter mfi(neuAvg[iLev]); mfi.isValid(); ++mfi) {
       auto arr = neuAvg[iLev][mfi].array();
       const auto lo = lbound(mfi.validbox());
@@ -1116,8 +1117,10 @@ public:
         }
         HostStaging<amrex::FArrayBox> stageFluid(nodeFluid[iLev],
                                                  /*writeBack=*/true);
+        HostStaging<amrex::FArrayBox> stageNeu(neuAvg[iLev],
+                                               /*writeBack=*/false);
         std::optional<HostStaging<amrex::FArrayBox> > stageLoss;
-        if ((doRecomb || doChem) && has_loss_array(iLev)) {
+        if (doLoss && has_loss_array(iLev)) {
           stageLoss.emplace(nodeLossFluid[iLev], /*writeBack=*/true);
         }
 
