@@ -118,7 +118,8 @@ def validate_plot(test_name):
     if not passed:
         return False, "; ".join(reasons)
 
-    for c in required_species_cols + required_total_cols:
+    coord_cols = [c for c in ["X", "Y"] if c in vidx]
+    for c in coord_cols + required_species_cols + required_total_cols:
         if not all(math.isfinite(row[vidx[c]]) for row in rows):
             return False, f"Non-finite values in column '{c}'"
 

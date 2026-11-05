@@ -63,10 +63,10 @@ F                       useHallTerm
 3.0                     electronDensity0 [/cc]
 
 #MINIMUMDENSITY
-0.15                    rhoMinOhm [/cc]
+2.785477346e-5          rhoMinOhm [code units, ~0.15 /cc]
 
-#BSUBCYCLE
-1                       nBSubcycle
+#FIELDSUBCYCLE
+10                      nSubcycle
 
 #PLASMA
 2                       nSpecies

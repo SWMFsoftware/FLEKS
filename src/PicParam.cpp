@@ -69,6 +69,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
         pInfo.pBCs[s].set(i, 0, ParticleBC::parse(lo));
         pInfo.pBCs[s].set(i, 1, ParticleBC::parse(hi));
       }
+      // In lower-dimensional builds (e.g. nDim == 2), standard six-face decks
+      // provide entries for inactive dimensions (e.g. z-face in 2D). Consume
+      // them for the current species block so they are not mistaken for a new
+      // species block.
+      std::string dummyLo, dummyHi;
+      for (int i = nDim; i < 3; ++i) {
+        if (param.read_optional("particleBoxBoundaryLo", dummyLo)) {
+          param.read_var("particleBoxBoundaryHi", dummyHi);
+        }
+      }
       s++;
       if (!param.read_optional("particleBoxBoundaryLo", lo))
         break;
@@ -76,6 +86,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (s == 1) {
       for (int i = 1; i < static_cast<int>(pInfo.pBCs.size()); ++i) {
         pInfo.pBCs[i] = pInfo.pBCs[0];
+        pInfo.pBCsSet[i] = 1;
       }
     }
   } else if (command == "#FIELDBOXBOUNDARY" ||
