@@ -118,6 +118,10 @@ def validate_plot(test_name):
     if not passed:
         return False, "; ".join(reasons)
 
+    for c in required_species_cols + required_total_cols:
+        if not all(math.isfinite(row[vidx[c]]) for row in rows):
+            return False, f"Non-finite values in column '{c}'"
+
     # 2. Check total density consistency: rho_tot == rhoS0 + rhoS1 outside body
     rho_tot = _col(vidx, rows, "RHO")
     rho_s0 = _col(vidx, rows, "RHOS0")
