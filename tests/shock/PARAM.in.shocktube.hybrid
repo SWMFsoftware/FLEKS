@@ -81,7 +81,7 @@ T                       ambipolarInStages
 -400.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-144860.0                T [K]
+1.4486e6                T [K]
 
 #SHOCKPOSITION
 32.0                    shockPosition

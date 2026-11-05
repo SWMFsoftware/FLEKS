@@ -582,7 +582,18 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
         param.read_var(prefix + " pe", pe);
         shockPe = pe * 1e-9;
       } else {
-        shockPe = (nS > 1) ? s[5 * 1 + 4] : 0.0;
+        int iElectron = -1;
+        for (int i = 0; i < nS; ++i) {
+          if (i < static_cast<int>(QoQi_S.size()) && QoQi_S[i] < 0.0) {
+            iElectron = i;
+            break;
+          }
+        }
+        if (iElectron >= 0) {
+          shockPe = s[5 * iElectron + 4];
+        } else {
+          shockPe = (nS > 1) ? s[5 * 1 + 4] : 0.0;
+        }
       }
 
       double bx, by, bz;
@@ -596,19 +607,10 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       s.push_back(by);
       s.push_back(bz);
 
-      double ex = 0.0, ey = 0.0, ez = 0.0;
-      bool hasEx = param.read_optional(prefix + " Ex", ex);
-      if (hasEx) {
-        param.read_optional(prefix + " Ey", ey);
-        param.read_optional(prefix + " Ez", ez);
-        s.push_back(ex);
-        s.push_back(ey);
-        s.push_back(ez);
-      } else {
-        s.push_back(-(first_vy * bz - first_vz * by));
-        s.push_back(-(first_vz * bx - first_vx * bz));
-        s.push_back(-(first_vx * by - first_vy * bx));
-      }
+      // Motional electric field E = -u_0 x B
+      s.push_back(-(first_vy * bz - first_vz * by));
+      s.push_back(-(first_vz * bx - first_vx * bz));
+      s.push_back(-(first_vx * by - first_vy * bx));
     };
 
     read_shock_state(shockStateL, shockPeL, "LeftState");
@@ -872,11 +874,14 @@ void FluidInterface::set_node_fluid() {
 
   if (isShockTube) {
     const int nVar = nVarFluid;
-    Real lArr[64], rArr[64];
-    for (int v = 0; v < nVar && v < 64; ++v) {
-      lArr[v] = shockStateL[v];
-      rArr[v] = shockStateR[v];
-    }
+    amrex::Gpu::DeviceVector<Real> d_l(nVar), d_r(nVar);
+    amrex::Gpu::copyAsync(amrex::Gpu::hostToDevice, shockStateL.begin(),
+                          shockStateL.end(), d_l.begin());
+    amrex::Gpu::copyAsync(amrex::Gpu::hostToDevice, shockStateR.begin(),
+                          shockStateR.end(), d_r.begin());
+    amrex::Gpu::streamSynchronize();
+    const Real* AMREX_RESTRICT lArr = d_l.data();
+    const Real* AMREX_RESTRICT rArr = d_r.data();
     const double xShock = shockPosition;
     const double slope = shockSlope;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -901,6 +906,7 @@ void FluidInterface::set_node_fluid() {
         });
       }
     }
+    amrex::Gpu::streamSynchronize();
   } else {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       for (int i = 0; i < nVarFluid; ++i)

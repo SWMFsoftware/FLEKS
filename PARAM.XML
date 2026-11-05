@@ -2739,8 +2739,7 @@ electron pressure pe [nPa] after the species block. In full-PIC (nS >= 2),
 electrons are typically modeled as a kinetic species (e.g. species 1) and
 their state is given in the corresponding species block.
 Finally, specify the magnetic field Bx, By, Bz [nT].
-Optional electric field components Ex, Ey, Ez [V/m] may follow; if omitted,
-the motional electric field E = -u_0 x B is computed automatically.
+The motional electric field E = -u_0 x B is computed automatically for both states.
 </command>
 
 

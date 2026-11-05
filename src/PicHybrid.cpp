@@ -916,9 +916,7 @@ void Pic::init_electron_pressure(int iLev) {
   const Real gamma = electronGamma;
   const Real Te = electronTemperature;
 
-  const bool fromShockTube =
-      (fi && fi->get_is_shock_tube() &&
-       (fi->get_shock_pe_l() > 0.0 || fi->get_shock_pe_r() > 0.0));
+  const bool fromShockTube = (fi && fi->get_is_shock_tube());
   const Real peL = fromShockTube ? fi->get_shock_pe_l() : 0.0;
   const Real peR = fromShockTube ? fi->get_shock_pe_r() : 0.0;
   const Real xShock = fromShockTube ? fi->get_shock_position() : 0.0;
