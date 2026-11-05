@@ -181,27 +181,6 @@ void deposit_level_center_mm(const LevelBins& lb, const Real* dx, Real invVol,
   sync_before_free();
 }
 
-// deposit_level_center_mm() for one tile: the cells of cellBox, cellOf and
-// stateOf(ip, dShift, q) for its particles, as in deposit_to_nodes_with().
-template <class CellOf, class StateOf>
-void deposit_center_mm_by_cell(int np, const Box& cellBox,
-                               const Array4<RealCMM>& mmArr, const Real* dx,
-                               Real invVol, CellOf cellOf, StateOf stateOf) {
-  if (np == 0)
-    return;
-  LevelBins lb;
-  lb.build({ np }, { cellBox },
-           [=] AMREX_GPU_DEVICE(int, int ip, IntVect& cell) {
-             return cellOf(ip, cell);
-           });
-  deposit_level_center_mm(
-      lb, dx, invVol,
-      [=] AMREX_GPU_DEVICE(int, int ip, RealVect& dShift, Real& q) {
-        stateOf(ip, dShift, q);
-      },
-      [=] AMREX_GPU_DEVICE(int) { return mmArr; });
-}
-
 // The data of a tile for the level deposit of sum_moments().
 template <class P> struct MomentTile {
   const P* p;
@@ -249,7 +228,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
     for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
       // The cells whose 2^D-cell stencil lies in the FABs.
       Box cellBox = netChargeMF[pti].box();
-      cellBox.growHi(-1);
+      for (int d = 0; d < AMREX_SPACEDIM; ++d)
+        cellBox.growHi(d, -1);
       AMREX_ALWAYS_ASSERT(doNetChargeOnly ||
                           centerMM[pti].box() == netChargeMF[pti].box());
       nps.push_back(pti.numParticles());
@@ -300,45 +280,43 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
             q = p.rdata(iqp);
           },
           [=] AMREX_GPU_DEVICE(int t) { return tile[t].mm; });
-    return;
-  }
+  } else {
+    for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
+      Array4<Real> const chargeArr = netChargeMF[pti].array();
+      Array4<RealCMM> const mmArr = centerMM[pti].array();
+      const ParticleType* const pData = pti.GetArrayOfStructs()().data();
+      const int np = pti.numParticles();
 
-  for (PIter pti(*this, iLev, stream_ordered_pti()); pti.isValid(); ++pti) {
-    Array4<Real> const chargeArr = netChargeMF[pti].array();
-    Array4<RealCMM> const mmArr = centerMM[pti].array();
-    const ParticleType* const pData = pti.GetArrayOfStructs()().data();
-    const int np = pti.numParticles();
+      /*
+      Q: Why do not check p.id() < 0?
+      A: IDs of ghost cell particles are set to -1 inside
+      divE_correct_position(), but these particles should be take into account
+      here.
+      */
+      auto cellOf = [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
+        ParticleInterpolator::Linear interp(pData[ip], plo, dxi);
+        cell = IntVect(
+            AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
+        return true;
+      };
+      // The cells whose 2^D-cell stencil lies in the FABs.
+      Box cellBox = netChargeMF[pti].box();
+      for (int d = 0; d < AMREX_SPACEDIM; ++d)
+        cellBox.growHi(d, -1);
 
-    /*
-    Q: Why do not check p.id() < 0?
-    A: IDs of ghost cell particles are set to -1 inside
-    divE_correct_position(), but these particles should be take into account
-    here.
-    */
-    auto cellOf = [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
-      ParticleInterpolator::Linear interp(pData[ip], plo, dxi);
-      cell = IntVect(
-          AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
-      return true;
-    };
-    // The cells whose 2^D-cell stencil lies in the FABs.
-    Box cellBox = netChargeMF[pti].box();
-    cellBox.growHi(-1);
+      // Net charge: the product of the weights in the order of
+      // ParticleInterpolator::ParticleToMesh.
+      auto chargeContrib = [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
+        const ParticleType& p = pData[ip];
+        ParticleInterpolator::Linear interp(p, plo, dxi);
+        const Real pval = p.rdata(iqp) * invV;
+        for (int kk = 0; kk <= ParticleInterpolator::Linear::nz; ++kk)
+          for (int jj = 0; jj <= ParticleInterpolator::Linear::ny; ++jj)
+            for (int ii = 0; ii <= ParticleInterpolator::Linear::nx; ++ii)
+              acc[ii][jj][kk][0] +=
+                  interp.w[ii] * interp.w[2 + jj] * interp.w[4 + kk] * pval;
+      };
 
-    // Net charge: the product of the weights in the order of
-    // ParticleInterpolator::ParticleToMesh.
-    auto chargeContrib = [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
-      const ParticleType& p = pData[ip];
-      ParticleInterpolator::Linear interp(p, plo, dxi);
-      const Real pval = p.rdata(iqp) * invV;
-      for (int kk = 0; kk <= ParticleInterpolator::Linear::nz; ++kk)
-        for (int jj = 0; jj <= ParticleInterpolator::Linear::ny; ++jj)
-          for (int ii = 0; ii <= ParticleInterpolator::Linear::nx; ++ii)
-            acc[ii][jj][kk][0] +=
-                interp.w[ii] * interp.w[2 + jj] * interp.w[4 + kk] * pval;
-    };
-
-    if constexpr (!useCellBinDeposits) {
       if (!doNetChargeOnly) {
         // CPU: the charge and the mass-matrix terms of a particle in one pass
         // (one read and one interpolation per particle), in particle order.
@@ -358,26 +336,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
         }
         continue;
       }
-    }
 
-    deposit_to_nodes<1>(np, cellBox, chargeArr, 0, cellOf, chargeContrib);
-
-    if (doNetChargeOnly)
-      continue;
-
-    {
-      // GPU: per-cell sums of the mass-matrix terms (see deposit_to_nodes).
-      Box mmBox = centerMM[pti].box();
-      mmBox.growHi(-1);
-      deposit_center_mm_by_cell(
-          np, mmBox, mmArr, dxLoc, invV, cellOf,
-          [=] AMREX_GPU_DEVICE(int ip, RealVect& dShift, Real& q) {
-            const ParticleType& p = pData[ip];
-            ParticleInterpolator::Linear interp(p, plo, dxi);
-            dShift =
-                RealVect(AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
-            q = p.rdata(iqp);
-          });
+      deposit_to_nodes<1>(np, cellBox, chargeArr, 0, cellOf, chargeContrib);
     }
   }
 }
@@ -400,8 +360,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
   }
 
   // Copies, so that the kernels capture values, not host pointers.
-  Real ploLev[3] = { 0, 0, 0 }, invDxLev[3] = { 0, 0, 0 };
-  Real dxLev[3] = { 0, 0, 0 };
+  GpuArray<Real, 3> ploLev = { 0, 0, 0 }, invDxLev = { 0, 0, 0 };
+  GpuArray<Real, 3> dxLev = { 0, 0, 0 };
   for (int d = 0; d < AMREX_SPACEDIM; ++d) {
     ploLev[d] = Geom(iLev).ProbLo(d);
     invDxLev[d] = Geom(iLev).InvCellSize(d);
@@ -413,7 +373,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
   const int iqp = iqp_;
 
   for (int nLev = finer_level; nLev >= coarser_level; nLev--) {
-    Real ploN[3] = { 0, 0, 0 }, invDxN[3] = { 0, 0, 0 };
+    GpuArray<Real, 3> ploN = { 0, 0, 0 }, invDxN = { 0, 0, 0 };
     for (int d = 0; d < AMREX_SPACEDIM; ++d) {
       ploN[d] = Geom(nLev).ProbLo(d);
       invDxN[d] = Geom(nLev).InvCellSize(d);
@@ -435,9 +395,11 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
         if (useCellBinDeposits) {
           // GPU: all the tiles at once, after the loop.
           Box cellBox = netChargeMF[pti].box();
-          cellBox.growHi(-1);
           Box mmBox = centerMM[pti].box();
-          mmBox.growHi(-1);
+          for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+            cellBox.growHi(d, -1);
+            mmBox.growHi(d, -1);
+          }
           nps.push_back(np);
           chargeBoxes.push_back(cellBox);
           mmBoxes.push_back(mmBox);
@@ -451,12 +413,13 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
           RealVect dShift;
           IntVect realIdx;
           RealVect tmprv;
-          find_cell_index_exp(p.pos(), ploN, invDxN, realIdx, tmprv);
+          find_cell_index_exp(p.pos(), ploN.data(), invDxN.data(), realIdx,
+                              tmprv);
           if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
                                bit::is_lev_edge(status(realIdx)))) {
             Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift,
-                                    coef);
+            find_cell_interpolation(p.pos(), ploLev.data(), invDxLev.data(),
+                                    loIdx, dShift, coef);
             const Real cTmp = qp * invVolLev;
             deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
           }
@@ -464,11 +427,11 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
           bool skipParticle = false;
           if (multiLevel) {
             skipParticle = skip_particle_for_dive_cleaning(
-                p.pos(), ploLev, invDxLev, iLev, status);
+                p.pos(), ploLev.data(), invDxLev.data(), iLev, status);
           }
           if (!doNetChargeOnly && !skipParticle) {
-            accumulate_mass_matrix_contribution(dxLev, invVolLev, loIdx, dShift,
-                                                qp, mmArr);
+            accumulate_mass_matrix_contribution(dxLev.data(), invVolLev, loIdx,
+                                                dShift, qp, mmArr);
           }
         });
       }
@@ -487,8 +450,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
           IntVect loIdx;
           RealVect dShift;
           Real coef[2][2][2];
-          find_cell_interpolation(tile[t].p[ip].pos(), ploLev, invDxLev, loIdx,
-                                  dShift, coef);
+          find_cell_interpolation(tile[t].p[ip].pos(), ploLev.data(),
+                                  invDxLev.data(), loIdx, dShift, coef);
           cell = loIdx;
           return true;
         };
@@ -501,8 +464,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
               IntVect loIdx;
               RealVect dShift;
               Real coef[2][2][2];
-              find_cell_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift,
-                                      coef);
+              find_cell_interpolation(p.pos(), ploLev.data(), invDxLev.data(),
+                                      loIdx, dShift, coef);
               const Real cTmp = p.rdata(iqp) * invVolLev;
               for (int kk = lo.z; kk <= hi.z; ++kk)
                 for (int jj = lo.y; jj <= hi.y; ++jj)
@@ -514,21 +477,21 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
             });
         if (!doNetChargeOnly) {
           LevelBins lbMM;
-          lbMM.build(nps, mmBoxes,
-                     [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& cell) {
-                       if (multiLevel && skip_particle_for_dive_cleaning(
-                                             tile[t].p[ip].pos(), ploLev,
-                                             invDxLev, iLev, tile[t].status))
-                         return false;
-                       return cellOf(t, ip, cell);
-                     });
+          lbMM.build(
+              nps, mmBoxes, [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& cell) {
+                if (multiLevel && skip_particle_for_dive_cleaning(
+                                      tile[t].p[ip].pos(), ploLev.data(),
+                                      invDxLev.data(), iLev, tile[t].status))
+                  return false;
+                return cellOf(t, ip, cell);
+              });
           deposit_level_center_mm(
-              lbMM, dxLev, invVolLev,
+              lbMM, dxLev.data(), invVolLev,
               [=] AMREX_GPU_DEVICE(int t, int ip, RealVect& dShift, Real& q) {
                 IntVect loIdx;
                 Real coef[2][2][2];
-                find_cell_interpolation(tile[t].p[ip].pos(), ploLev, invDxLev,
-                                        loIdx, dShift, coef);
+                find_cell_interpolation(tile[t].p[ip].pos(), ploLev.data(),
+                                        invDxLev.data(), loIdx, dShift, coef);
                 q = tile[t].p[ip].rdata(iqp);
               },
               [=] AMREX_GPU_DEVICE(int t) { return tile[t].mm; });
@@ -540,6 +503,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
     // (finer level) or jc (coarser level).
     if (nLev != iLev) {
       MultiFab& depositMF = (nLev > iLev) ? jf : jc;
+      std::vector<int> nps;
+      std::vector<Box> chargeBoxes;
+      Vector<AmrCenterTile<ParticleType> > tiles;
       for (PIter pti(*this, nLev, stream_ordered_pti()); pti.isValid(); ++pti) {
         Array4<Real> const chargeArr = depositMF[pti].array();
         const Array4<int const> status = cell_status(nLev)[pti].const_array();
@@ -547,46 +513,26 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
         const Dim3 lo = init_dim3(0);
         const Dim3 hi = init_dim3(1);
         const int np = pti.numParticles();
+        if (useCellBinDeposits) {
+          // GPU: all the tiles at once, after the loop.
+          Box cellBox = depositMF[pti].box();
+          for (int d = 0; d < AMREX_SPACEDIM; ++d)
+            cellBox.growHi(d, -1);
+          nps.push_back(np);
+          chargeBoxes.push_back(cellBox);
+          tiles.push_back({ pData, chargeArr, Array4<RealCMM>(), status });
+          continue;
+        }
         // A particle deposits if its cell (on its own level) is next to the
         // refinement or on the level edge.
         auto deposits = [=] AMREX_GPU_DEVICE(int ip) {
           IntVect realIdx;
           RealVect tmprv;
-          find_cell_index_exp(pData[ip].pos(), ploN, invDxN, realIdx, tmprv);
+          find_cell_index_exp(pData[ip].pos(), ploN.data(), invDxN.data(),
+                              realIdx, tmprv);
           return bit::is_refined_neighbour(status(realIdx)) ||
                  bit::is_lev_edge(status(realIdx));
         };
-        if (useCellBinDeposits) {
-          // GPU: per-cell sums in particle-key order (see deposit_to_nodes).
-          Box cellBox = depositMF[pti].box();
-          cellBox.growHi(-1);
-          deposit_to_nodes<1>(
-              np, cellBox, chargeArr, 0,
-              [=] AMREX_GPU_DEVICE(int ip, IntVect& cell) {
-                if (!deposits(ip))
-                  return false;
-                IntVect loIdx;
-                RealVect dShift;
-                Real coef[2][2][2];
-                find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev,
-                                        loIdx, dShift, coef);
-                cell = loIdx;
-                return true;
-              },
-              [=] AMREX_GPU_DEVICE(int ip, auto&& acc) {
-                IntVect loIdx;
-                RealVect dShift;
-                Real coef[2][2][2];
-                find_cell_interpolation(pData[ip].pos(), ploLev, invDxLev,
-                                        loIdx, dShift, coef);
-                const Real cTmp = pData[ip].rdata(iqp) * invVolLev;
-                for (int kk = lo.z; kk <= hi.z; ++kk)
-                  for (int jj = lo.y; jj <= hi.y; ++jj)
-                    for (int ii = lo.x; ii <= hi.x; ++ii)
-                      acc[ii][jj][kk][0] += coef[ii][jj][kk] * cTmp;
-              });
-          continue;
-        }
         ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) {
           const ParticleType& p = pData[ip];
           const Real qp = p.rdata(iqp);
@@ -594,12 +540,58 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
           RealVect dShift;
           if (deposits(ip)) {
             Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift,
-                                    coef);
+            find_cell_interpolation(p.pos(), ploLev.data(), invDxLev.data(),
+                                    loIdx, dShift, coef);
             const Real cTmp = qp * invVolLev;
             deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
           }
         });
+      }
+      if (!tiles.empty()) {
+        // GPU: per-cell sums of all the tiles at once (see LevelBins).
+        Gpu::AsyncArray<AmrCenterTile<ParticleType> > tileStore(tiles.data(),
+                                                                tiles.size());
+        const AmrCenterTile<ParticleType>* const tile = tileStore.data();
+        const Dim3 lo = init_dim3(0);
+        const Dim3 hi = init_dim3(1);
+        LevelBins lb;
+        lb.build(nps, chargeBoxes,
+                 [=] AMREX_GPU_DEVICE(int t, int ip, IntVect& cell) {
+                   const ParticleType& p = tile[t].p[ip];
+                   IntVect realIdx;
+                   RealVect tmprv;
+                   find_cell_index_exp(p.pos(), ploN.data(), invDxN.data(),
+                                       realIdx, tmprv);
+                   if (!bit::is_refined_neighbour(tile[t].status(realIdx)) &&
+                       !bit::is_lev_edge(tile[t].status(realIdx)))
+                     return false;
+                   IntVect loIdx;
+                   RealVect dShift;
+                   Real coef[2][2][2];
+                   find_cell_interpolation(p.pos(), ploLev.data(),
+                                           invDxLev.data(), loIdx, dShift,
+                                           coef);
+                   cell = loIdx;
+                   return true;
+                 });
+        deposit_level_to_nodes<1>(
+            lb,
+            [=] AMREX_GPU_DEVICE(int t, int ip, auto&& acc) {
+              const ParticleType& p = tile[t].p[ip];
+              IntVect loIdx;
+              RealVect dShift;
+              Real coef[2][2][2];
+              find_cell_interpolation(p.pos(), ploLev.data(), invDxLev.data(),
+                                      loIdx, dShift, coef);
+              const Real cTmp = p.rdata(iqp) * invVolLev;
+              for (int kk = lo.z; kk <= hi.z; ++kk)
+                for (int jj = lo.y; jj <= hi.y; ++jj)
+                  for (int ii = lo.x; ii <= hi.x; ++ii)
+                    acc[ii][jj][kk][0] += coef[ii][jj][kk] * cTmp;
+            },
+            [=] AMREX_GPU_DEVICE(int t, int i, int j, int k, int n, Real v) {
+              tile[t].charge(i, j, k, n) += v;
+            });
       }
     }
   }

@@ -261,8 +261,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
   const ParticleBoundary pb = particle_boundary();
 
   // Set by a kernel if a particle moved more than one cell.
-  Gpu::DeviceVector<int> movedTooFarFlag(1, 0);
-  int* const movedTooFar = movedTooFarFlag.data();
+  Gpu::DeviceVector<int> movedTooFarFlag(depositCurrent ? 1 : 0, 0);
+  int* const movedTooFar = depositCurrent ? movedTooFarFlag.data() : nullptr;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     // Copies, so that the kernels capture values, not host pointers.
@@ -504,7 +504,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         // A stencil has at most 3 nodes per direction, starting at its base
         // cell.
         Box cellBox = (*currentMF)[iLev][pti].box();
-        cellBox.growHi(-1);
+        for (int d = 0; d < AMREX_SPACEDIM; ++d)
+          cellBox.growHi(d, -1);
         cellBox.enclosedCells();
         nps.push_back(np);
         cellBoxes.push_back(cellBox);
@@ -546,17 +547,19 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           });
     }
 
+    if (currentMF) {
+      fold_wall_ghost_nodes((*currentMF)[iLev], iLev, true);
+      sum_boundary((*currentMF)[iLev], Geom(iLev).periodicity());
+    }
+  }
+
+  if (depositCurrent) {
     int movedTooFarHost = 0;
     Gpu::copy(Gpu::deviceToHost, movedTooFarFlag.begin(), movedTooFarFlag.end(),
               &movedTooFarHost);
     if (movedTooFarHost)
       Abort("charged_particle_mover: a particle moved more than one cell in a "
             "step; the charge-conserving current needs a smaller time step.");
-
-    if (currentMF) {
-      fold_wall_ghost_nodes((*currentMF)[iLev], iLev, true);
-      sum_boundary((*currentMF)[iLev], Geom(iLev).periodicity());
-    }
   }
 }
 

@@ -326,20 +326,20 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
           ParallelFor(n,
                       [=] AMREX_GPU_DEVICE(int k) { vNew[k] -= *t * vOld[k]; });
         }
-        double *const norm = col + i1;
+        double *const normSq = col + i1;
         deterministic_sum_to(
             n,
             [=] AMREX_GPU_DEVICE(int k) -> double { return vNew[k] * vNew[k]; },
-            norm);
-        ParallelFor(1, [=] AMREX_GPU_DEVICE(int) { *norm = sqrt(*norm); });
-        ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) {
-          const double cDot = *norm;
-          if (cDot != 0.0)
-            vNew[k] *= 1.0 / cDot;
-        });
-        // The column of hh: one copy, which also waits for the kernels.
+            normSq);
+        // The column of hh: one copy, which also waits for the reductions.
         Gpu::copy(Gpu::deviceToHost, hhColumn.begin(),
                   hhColumn.begin() + i1 + 1, &hh[i * nKrylov1]);
+        double cDot = sqrt(hh[i * nKrylov1 + i1]);
+        hh[i * nKrylov1 + i1] = cDot;
+        if (cDot != 0.0) {
+          cDot = 1.0 / cDot;
+          ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] *= cDot; });
+        }
       } else {
         for (int j = 0; j <= i; ++j) {
           double t =
@@ -408,11 +408,26 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
 
     // Done with back substitution.
     // Form linear combination to get solution.
-    for (int j = 0; j < i; ++j) {
-      // sol[i] += rs[j] * Krylov_II[i][j];
-      const double rsj = rs[j];
-      const double *const v = &Krylov_II[j * n];
-      ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) { sol[k] += rsj * v[k]; });
+    if (fleksUseGpu) {
+      if (i > 0) {
+        Gpu::copyAsync(Gpu::hostToDevice, rs.begin(), rs.begin() + i,
+                       hhColumn.begin());
+        const double *const rsDev = hhColumn.data();
+        const int nVec = i;
+        ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) {
+          double s = sol[k];
+          for (int j = 0; j < nVec; ++j)
+            s += rsDev[j] * Krylov_II[j * n + k];
+          sol[k] = s;
+        });
+      }
+    } else {
+      for (int j = 0; j < i; ++j) {
+        // sol[i] += rs[j] * Krylov_II[i][j];
+        const double rsj = rs[j];
+        const double *const v = &Krylov_II[j * n];
+        ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) { sol[k] += rsj * v[k]; });
+      }
     }
   } while (ro > Tol1 && its < nIter);
 

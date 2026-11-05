@@ -130,6 +130,14 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     nodePlasma.resize(nSpecies + 1);
   }
 
+  // Clear AMR scratch buffers so they are rebuilt on demand with the new grids.
+  sumToCenterJc.clear();
+  sumToCenterJf.clear();
+  amrJhc.clear();
+  amrJhf.clear();
+  amrNmmc.clear();
+  amrNmmf.clear();
+
   // The relaxation workspace is needed only on coarse levels with an active
   // fine level. The active-level loop below cannot release a workspace on a
   // level that disappeared during coarsening, so clear those slots explicitly.
@@ -142,14 +150,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       relaxDir[iLev].clear();
     }
   }
-
-  // Clear persistent AMR scratch buffers so they are rebuilt on the new grids.
-  sumToCenterJc.clear();
-  sumToCenterJf.clear();
-  amrJhc.clear();
-  amrJhf.clear();
-  amrNmmc.clear();
-  amrNmmf.clear();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {
@@ -1465,7 +1465,7 @@ void Pic::calc_mass_matrix_amr() {
   auto& jhf = amrJhf;
   auto& nmmc = amrNmmc;
   auto& nmmf = amrNmmf;
-  if (static_cast<int>(jhc.size()) != n_lev()) {
+  if (jhc.size() != static_cast<amrex::Long>(n_lev())) {
     jhc.resize(n_lev());
     jhf.resize(n_lev());
     nmmc.resize(n_lev());
@@ -1473,8 +1473,6 @@ void Pic::calc_mass_matrix_amr() {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       jhc[iLev].resize(iLev);
       nmmc[iLev].resize(iLev);
-    }
-    for (int iLev = 1; iLev < n_lev(); iLev++) {
       BoxArray bac = nodeB[iLev].boxArray();
       for (int i = iLev - 1; i >= 0; i--) {
         bac.coarsen(refRatio(iLev));
