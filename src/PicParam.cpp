@@ -49,18 +49,45 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       pInfo.pBCs.resize(1);
       pInfo.pBCsSet.resize(1, 0);
     }
-    pInfo.pBCsSet[0] = 1;
 
     std::string lo, hi;
-    for (int i = 0; i < nDim; ++i) {
-      param.read_var("particleBoxBoundaryLo", lo);
-      param.read_var("particleBoxBoundaryHi", hi);
-      pInfo.pBCs[0].set(i, 0, ParticleBC::parse(lo));
-      pInfo.pBCs[0].set(i, 1, ParticleBC::parse(hi));
-    }
-    for (int s = 1; s < static_cast<int>(pInfo.pBCs.size()); ++s) {
-      pInfo.pBCs[s] = pInfo.pBCs[0];
+    int s = 0;
+    while (true) {
+      if (s >= static_cast<int>(pInfo.pBCs.size())) {
+        pInfo.pBCs.resize(s + 1);
+        pInfo.pBCsSet.resize(s + 1, 0);
+      }
       pInfo.pBCsSet[s] = 1;
+
+      for (int i = 0; i < nDim; ++i) {
+        if (i == 0 && s > 0) {
+          // 'lo' was already read in the while condition
+        } else {
+          param.read_var("particleBoxBoundaryLo", lo);
+        }
+        param.read_var("particleBoxBoundaryHi", hi);
+        pInfo.pBCs[s].set(i, 0, ParticleBC::parse(lo));
+        pInfo.pBCs[s].set(i, 1, ParticleBC::parse(hi));
+      }
+      // In lower-dimensional builds (e.g. nDim == 2), standard six-face decks
+      // provide entries for inactive dimensions (e.g. z-face in 2D). Consume
+      // them for the current species block so they are not mistaken for a new
+      // species block.
+      std::string dummyLo, dummyHi;
+      for (int i = nDim; i < 3; ++i) {
+        if (param.read_optional("particleBoxBoundaryLo", dummyLo)) {
+          param.read_var("particleBoxBoundaryHi", dummyHi);
+        }
+      }
+      s++;
+      if (!param.read_optional("particleBoxBoundaryLo", lo))
+        break;
+    }
+    if (s == 1) {
+      for (int i = 1; i < static_cast<int>(pInfo.pBCs.size()); ++i) {
+        pInfo.pBCs[i] = pInfo.pBCs[0];
+        pInfo.pBCsSet[i] = 1;
+      }
     }
   } else if (command == "#FIELDBOXBOUNDARY" ||
              command == "#BFIELDBOXBOUNDARY") {
@@ -696,11 +723,17 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
           continue; // Field is default coupled: skip field-pairing checks.
 
         if (pType == ParticleBC::inflow && fType != FieldBC::inflow &&
-            fType != FieldBC::fixed)
+            fType != FieldBC::fixed && fType != FieldBC::outflow) {
           add_bc_warning(what() + " is 'inflow' but the field boundary is '" +
                          FieldBC::to_string(fType) +
                          "'; the injected flux has no upstream field to "
                          "match.");
+        } else if (pType == ParticleBC::inflow && fType == FieldBC::outflow) {
+          Print() << "  Note: " << what()
+                  << " is 'inflow' with an 'outflow' field boundary: "
+                  << "incoming particles will couple against floating/extrapolated "
+                  << "boundary fields.\n";
+        }
 
         if (fType == FieldBC::conducting &&
             (ParticleBC::is_outflow(pType) || pType == ParticleBC::vacuum ||

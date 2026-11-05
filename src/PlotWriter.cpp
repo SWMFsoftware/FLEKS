@@ -290,6 +290,9 @@ std::string PlotWriter::expand_variables(std::string inVars) const {
     if (var0 == "fluid") {
       if (useHybridPIC) {
         inVars += " Bx By Bz Ex Ey Ez";
+        if (nSpecies > 1) {
+          inVars += " rho ux uy uz p";
+        }
         for (int is = 0; is < nSpecies; is++) {
           inVars += add_plasma_variables(
               "rhoS uxS uyS uzS pS pXXS pYYS pZZS pXYS pXZS pYZS", is);
@@ -308,6 +311,9 @@ std::string PlotWriter::expand_variables(std::string inVars) const {
     } else if (var0 == "all") {
       if (useHybridPIC) {
         inVars += " Bx By Bz Ex Ey Ez";
+        if (nSpecies > 1) {
+          inVars += " rho ux uy uz p";
+        }
         for (int is = 0; is < nSpecies; is++) {
           inVars += add_plasma_variables(
               "qS kXXS kYYS kZZS kXYS kXZS kYZS jxS jyS jzS", is);
