@@ -729,10 +729,11 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
                          "'; the injected flux has no upstream field to "
                          "match.");
         } else if (pType == ParticleBC::inflow && fType == FieldBC::outflow) {
-          Print() << "  Note: " << what()
-                  << " is 'inflow' with an 'outflow' field boundary: "
-                  << "incoming particles will couple against floating/extrapolated "
-                  << "boundary fields.\n";
+          Print()
+              << "  Note: " << what()
+              << " is 'inflow' with an 'outflow' field boundary: "
+              << "incoming particles will couple against floating/extrapolated "
+              << "boundary fields.\n";
         }
 
         if (fType == FieldBC::conducting &&
