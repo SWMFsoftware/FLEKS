@@ -407,6 +407,16 @@ private:
 
   amrex::Vector<amrex::MultiFab> jHat;
 
+  // Persistent AMR scratch buffers (rebuilt only on regrid) to avoid
+  // per-timestep MultiFab/FabArray allocation in sum_to_center_amr and
+  // calc_mass_matrix_amr.
+  amrex::Vector<amrex::MultiFab> sumToCenterJc;
+  amrex::Vector<amrex::MultiFab> sumToCenterJf;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > amrJhc;
+  amrex::Vector<amrex::MultiFab> amrJhf;
+  amrex::Vector<amrex::Vector<NodeMMFab> > amrNmmc;
+  amrex::Vector<NodeMMFab> amrNmmf;
+
   amrex::Vector<std::unique_ptr<PicParticles> > parts;
   amrex::Vector<std::unique_ptr<PicParticles> > sourceParts;
 
