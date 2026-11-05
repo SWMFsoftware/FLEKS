@@ -2234,7 +2234,9 @@ void Pic::update(bool doReportIn) {
     }
   }
 
+#ifdef _PT_COMPONENT_
   const Real dtStep = tc->get_dt();
+#endif
   const Real dtStepSI = tc->get_dt_si();
   tc->restore_unconstrained_dt();
 

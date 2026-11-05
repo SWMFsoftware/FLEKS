@@ -111,7 +111,7 @@ void TimeCtr::update(Real timeLimit) {
 
   if (dtSI > 0.0) {
     const Real tTarget = find_next_event_time(timeNowSI, timeLimit);
-    if (dtSI > tTarget - timeNowSI) {
+    if (timeNowSI + dtSI > tTarget + 1e-12 * dtSI) {
       savedDtSI = dtSI;
       savedNextDtSI = nextDtSI;
       isDtLimited = true;
