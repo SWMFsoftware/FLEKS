@@ -33,7 +33,7 @@ concurrency:
 jobs:
   gpu-compile-check:
     name: Compile with CUDA (nvcc)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -42,11 +42,26 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.22
-        with:
-          cuda: '12.4.1'
-          method: 'network'
-          sub-packages: '["nvcc", "cudart-dev", "curand-dev", "cusparse-dev"]'
+        run: |
+          set -euo pipefail
+          UBUNTU_VER=$(lsb_release -sr | tr -d '.')
+          wget -q "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb" -O /tmp/cuda-keyring.deb
+          sudo dpkg -i /tmp/cuda-keyring.deb
+          sudo apt-get update \
+            -o Dir::Etc::sourcelist="sources.list.d/cuda-ubuntu${UBUNTU_VER}-x86_64.list" \
+            -o Dir::Etc::sourceparts="-" \
+            -o APT::Get::List-Cleanup="0" || sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cuda-nvcc-12-6 \
+            cuda-cudart-dev-12-6 \
+            cuda-driver-dev-12-6 \
+            cuda-cccl-12-6 \
+            libcurand-dev-12-6 \
+            libcusparse-dev-12-6
+          sudo ln -sfn /usr/local/cuda-12.6 /usr/local/cuda
+          echo "/usr/local/cuda-12.6/bin" >> "$GITHUB_PATH"
+          echo "CUDA_PATH=/usr/local/cuda-12.6" >> "$GITHUB_ENV"
+          echo "CUDA_HOME=/usr/local/cuda-12.6" >> "$GITHUB_ENV"
 
       - name: Setup SWMF dependency tree
         uses: ./.github/actions/setup-swmf

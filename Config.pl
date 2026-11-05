@@ -50,7 +50,7 @@ if (not -f $config and not -f "../../$config"){
     }
 }
 
-my $AmrexDir = "util/AMREX";
+my $AmrexDir = (-f $config) ? "util/AMREX" : "../../util/AMREX";
 
 # GPU (CUDA) build. -cuda[=ARCH] links FLEKS with a CUDA build of AMReX
 # (InstallDir<N>D_cuda, built on demand), -nocuda with the CPU build. Without
@@ -65,26 +65,27 @@ foreach (@Arguments){
 @Arguments = grep { !/^-(no)?cuda(=\S+)?$/i } @Arguments;
 $UseCuda = $NewCuda if defined $NewCuda;
 
+my $AmrexDimArg = "3d";
+foreach (@Arguments){
+    if (/^-amrex(2d|3d)?$/i){
+        $AmrexDimArg = lc($1 || "3d");
+        last;
+    }
+}
+unless (grep { /^-amrex(2d|3d)?$/i } @Arguments){
+    my $AmrexConfig = "${AmrexDir}/InstallDir/include/AMReX_Config.H";
+    if (-f $AmrexConfig) {
+        open(FILE, $AmrexConfig) or warn "Config.pl WARNING: could not open $AmrexConfig \n";
+        while(<FILE>){
+            $AmrexDimArg = "$1d" if /^#define\s+AMREX_SPACEDIM\s+(\d+)/i;
+        }
+        close FILE;
+    }
+}
+
 if(-f $config){
     # Local FLEKS dependency tree. Turn on AMReX automatically, honoring
     # -amrex2d/-amrex3d or defaulting to the currently-linked library's dimension.
-    my $AmrexDimArg = "3d";
-    foreach (@Arguments){
-        if (/^-amrex(2d|3d)?$/i){
-            $AmrexDimArg = lc($1 || "3d");
-            last;
-        }
-    }
-    unless (grep { /^-amrex(2d|3d)?$/i } @Arguments){
-        my $AmrexConfig = "${AmrexDir}/InstallDir/include/AMReX_Config.H";
-        if (-f $AmrexConfig) {
-            open(FILE, $AmrexConfig) or warn "Config.pl WARNING: could not open $AmrexConfig \n";
-            while(<FILE>){
-                $AmrexDimArg = "$1d" if /^#define\s+AMREX_SPACEDIM\s+(\d+)/i;
-            }
-            close FILE;
-        }
-    }
     push @Arguments, "-amrex$AmrexDimArg";
     push @Arguments, "-show" unless @ARGV;
     push @Arguments, "-nodebug", "-install" unless -f $MakefileConf;
@@ -112,7 +113,7 @@ if(-f $config){
     }
     push @Arguments, "-install=c" unless -f $MakefileConf or $IsInstall;
     require "../../$config";
-    $AmrexDir = "../../util/AMREX"; 
+    &link_cuda_amrex($AmrexDimArg) if $UseCuda;
 }
 
 # These are inherited from $config
