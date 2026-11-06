@@ -113,7 +113,11 @@ if(-f $config){
     }
     push @Arguments, "-install=c" unless -f $MakefileConf or $IsInstall;
     require "../../$config";
-    &link_cuda_amrex($AmrexDimArg) if $UseCuda;
+    if ($UseCuda) {
+        &link_cuda_amrex($AmrexDimArg);
+    } elsif (defined $NewCuda) {
+        &link_cpu_amrex($AmrexDimArg);
+    }
 }
 
 # These are inherited from $config
@@ -334,20 +338,54 @@ sub amrex_uses_cuda{
     return $useCuda;
 }
 ################################################################################
+sub amrex_cuda_matches{
+    # True if the CUDA AMReX installation in $_[0] matches the requested
+    # architecture list ($_[1], space-separated) and host compiler ($_[2]).
+    my ($dir, $wantArch, $wantCcbin) = @_;
+    my $pc = "$dir/lib/pkgconfig/amrex.pc";
+    open(my $file, "<", $pc) or return 0;
+    local $/;
+    my $content = <$file>;
+    close $file;
+
+    my ($cachedCcbin) = ($content =~ /-ccbin=(\S+)/);
+    return 0 if not defined $cachedCcbin or $cachedCcbin ne $wantCcbin;
+
+    if (defined $wantArch) {
+        my @cachedArch = ($content =~ /arch=compute_(\d+)/g);
+        my @reqArch = split(/\s+/, $wantArch);
+        return 0 if join(" ", @cachedArch) ne join(" ", @reqArch);
+    }
+    return 1;
+}
+################################################################################
+sub link_cpu_amrex{
+    # Point $AmrexDir/InstallDir to the CPU build of AMReX.
+    my $nDim = substr($_[0], 0, 1);
+    my $InstallDir = "InstallDir${nDim}D";
+    die "$ERROR CPU AMReX library $AmrexDir/$InstallDir does not exist!\n"
+        unless -e "$AmrexDir/$InstallDir/lib/libamrex.a";
+    system("cd $AmrexDir && rm -f InstallDir && ln -s $InstallDir InstallDir") == 0
+        or die "$ERROR could not link $AmrexDir/InstallDir to $InstallDir\n";
+    print "Linking FLEKS with the CPU AMReX library $InstallDir\n";
+}
+################################################################################
 sub link_cuda_amrex{
     # Point util/AMREX/InstallDir to the CUDA build of AMReX, building it first
     # if needed. Fast math is switched off so that the GPU and CPU builds give
     # the same results to round-off.
     my $nDim = substr($_[0], 0, 1);
     my $InstallDir = "InstallDir${nDim}D_cuda";
-    if(not -e "$AmrexDir/$InstallDir/lib/libamrex.a"){
-        my $ccbin = $ENV{NVCC_CCBIN} || "g++";
-        # CUDA_ARCH is a space-separated list for AMReX.
-        (my $archList = $CudaArch) =~ s/,/ /g;
+    my $ccbin = $ENV{NVCC_CCBIN} || "g++";
+    # CUDA_ARCH is a space-separated list for AMReX.
+    (my $archList = $CudaArch) =~ s/,/ /g;
+    my $checkArch = defined($NewCuda) ? $archList : undef;
+    if(not -e "$AmrexDir/$InstallDir/lib/libamrex.a" or
+       not &amrex_cuda_matches("$AmrexDir/$InstallDir", $checkArch, $ccbin)){
         my $flags = "USE_CUDA=TRUE CUDA_ARCH=\"$archList\" USE_CUDA_FAST_MATH=FALSE ".
             "NVCC_CCBIN=$ccbin DIM=$nDim AMREX_INSTALL_DIR=$InstallDir";
         print "Building the CUDA AMReX library in $AmrexDir/$InstallDir\n";
-        system("cd $AmrexDir && make -j 8 $flags && make install $flags") == 0
+        system("cd $AmrexDir && rm -rf $InstallDir && make clean && make -j 8 $flags && make install $flags") == 0
             or die "$ERROR could not build $AmrexDir/$InstallDir\n";
     }
     system("cd $AmrexDir && rm -f InstallDir && ln -s $InstallDir InstallDir") == 0

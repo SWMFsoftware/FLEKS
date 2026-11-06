@@ -109,6 +109,24 @@ def call_arguments(text, start):
     return text[start + 1:]
 
 
+def strip_brace_bodies(text):
+    """Blank out the interior of ``{...}`` blocks, keeping line numbers."""
+    out = []
+    depth = 0
+    for c in text:
+        if c == "{":
+            depth += 1
+            out.append(c if depth == 1 else " ")
+        elif c == "}":
+            out.append(c if depth == 1 else " ")
+            depth = max(0, depth - 1)
+        elif depth > 0 and c != "\n":
+            out.append(" ")
+        else:
+            out.append(c)
+    return "".join(out)
+
+
 def check_file(path, check_launches=True):
     rel = os.path.relpath(path, ROOT)
     with open(path, encoding="utf-8", errors="replace") as f:
@@ -124,18 +142,17 @@ def check_file(path, check_launches=True):
             if m.group(1) and (before.endswith(".") or before.endswith("->")):
                 continue
             args = call_arguments(text, m.end() - 1)
-            lam = LAMBDA_RE.search(args)
-            if lam is None:
-                continue  # functor or named lambda; nvcc checks those
-            line = text.count("\n", 0, m.start()) + 1
+            top_args = strip_brace_bodies(args)
             name = m.group(1) or m.group(2)
-            capture, qualifier = lam.group(1).strip(), lam.group(2)
-            if qualifier is None:
-                problems.append(f"{rel}:{line}: {name} lambda is not "
-                                "AMREX_GPU_DEVICE")
-            elif "&" in capture:
-                problems.append(f"{rel}:{line}: {name} device lambda "
-                                f"captures by reference [{capture}]")
+            for lam in LAMBDA_RE.finditer(top_args):
+                line = text.count("\n", 0, m.end() + lam.start()) + 1
+                capture, qualifier = lam.group(1).strip(), lam.group(2)
+                if qualifier is None:
+                    problems.append(f"{rel}:{line}: {name} lambda is not "
+                                    "AMREX_GPU_DEVICE")
+                elif "&" in capture:
+                    problems.append(f"{rel}:{line}: {name} device lambda "
+                                    f"captures by reference [{capture}]")
 
     if rel not in GPU_BACKEND_FILES:
         for line_no, line in enumerate(text.splitlines(), 1):

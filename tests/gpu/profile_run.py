@@ -73,6 +73,7 @@ def nsys_cmd(args, cmd, report):
 
 
 def profile_dir(args, run_dir, cmd):
+    run_dir = os.path.abspath(run_dir)
     report = os.path.join(run_dir, "prof")
     t0 = time.time()
     with open(os.path.join(run_dir, "stdout.log"), "w") as log:

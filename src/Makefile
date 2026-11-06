@@ -26,7 +26,10 @@ ifeq (${USE_CUDA},TRUE)
                $(sort $(filter -lcu%, \
                  $(shell grep '^Libs:' ${AMREX_PC})))
   NVCC = nvcc -ccbin=${NVCC_CCBIN}
-  COMPILE.mpicxx = ${NVCC} $(shell mpicxx --showme:compile)
+  MPICXX_WRAPPER := ${COMPILE.mpicxx}
+  MPI_CXXFLAGS := $(shell ${MPICXX_WRAPPER} --showme:compile 2>/dev/null || \
+                    ${MPICXX_WRAPPER} -compile_info 2>/dev/null | sed 's/^[^ ]* //')
+  COMPILE.mpicxx = ${NVCC} ${MPI_CXXFLAGS}
   FLAGCC += -x cu --expt-relaxed-constexpr --expt-extended-lambda \
 	--relocatable-device-code=true ${NVCC_ARCH_FLAGS} \
 	--forward-unknown-to-host-compiler -Wno-deprecated-gpu-targets \

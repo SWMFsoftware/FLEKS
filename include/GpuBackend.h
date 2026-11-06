@@ -102,7 +102,7 @@ private:
 inline void sync_before_free() {
 #ifdef AMREX_USE_GPU
   if (amrex::Gpu::numGpuStreams() > 1)
-    amrex::Gpu::streamSynchronize();
+    amrex::Gpu::streamSynchronizeAll();
 #endif
 }
 
@@ -315,6 +315,7 @@ public:
   template <class F> void add(int n, F&& f) {
 #ifdef AMREX_USE_CUDA
     if (amrex::Gpu::numGpuStreams() > 1) {
+      flush();
       done.push_back(deterministic_sum(n, std::forward<F>(f)));
       return;
     }

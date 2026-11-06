@@ -26,6 +26,7 @@ they are reported as differing.
 
 import argparse
 import filecmp
+import math
 import os
 import re
 import shutil
@@ -35,7 +36,11 @@ import time
 
 TESTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.dirname(TESTS)
-NUMBER = re.compile(r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eEdD][-+]?\d+)?")
+NUMBER = re.compile(
+    r"[-+]?(?:(?:\d+\.\d*|\.\d+|\d+)(?:[eEdD][-+]?\d+)?"
+    r"|(?<![A-Za-z_])(?:nan|inf)(?![A-Za-z_]))",
+    re.IGNORECASE,
+)
 
 
 def deck_name(deck):
@@ -102,6 +107,10 @@ def compare_files(a, b, rtol):
         return False, f"{len(na)} vs {len(nb)} numbers"
     worst = 0.0
     for x, y in zip(na, nb):
+        if not (math.isfinite(x) and math.isfinite(y)):
+            if not ((math.isnan(x) and math.isnan(y)) or x == y):
+                return False, f"non-finite mismatch ({x} vs {y})"
+            continue
         scale = max(abs(x), abs(y))
         if scale > 0:
             worst = max(worst, abs(x - y) / scale)
@@ -110,32 +119,50 @@ def compare_files(a, b, rtol):
     return False, f"max rel diff {worst:.2e}"
 
 
+def list_output_files(pc_dir):
+    out = set()
+    for root, _, files in os.walk(pc_dir):
+        for f in files:
+            if f.endswith((".lock",)) or "timing" in f.lower():
+                continue
+            out.add(os.path.relpath(os.path.join(root, f), pc_dir))
+    return out
+
+
 def compare(args):
     status = 0
-    for name in sorted(os.listdir(args.a)):
-        dir_a = os.path.join(args.a, name, "PC")
-        dir_b = os.path.join(args.b, name, "PC")
-        if not os.path.isdir(dir_a):
+    decks_a = {n for n in os.listdir(args.a)
+               if os.path.isdir(os.path.join(args.a, n, "PC"))}
+    decks_b = {n for n in os.listdir(args.b)
+               if os.path.isdir(os.path.join(args.b, n, "PC"))}
+    for name in sorted(decks_a | decks_b):
+        if name not in decks_a:
+            print(f"{name}: missing in {args.a}")
+            status = 1
             continue
-        if not os.path.isdir(dir_b):
+        if name not in decks_b:
             print(f"{name}: missing in {args.b}")
             status = 1
             continue
-        bad, n = [], 0
-        for root, _, files in os.walk(dir_a):
-            for f in sorted(files):
-                fa = os.path.join(root, f)
-                rel = os.path.relpath(fa, dir_a)
-                if f.endswith((".lock",)) or "timing" in f.lower():
-                    continue
-                fb = os.path.join(dir_b, rel)
-                n += 1
-                if not os.path.exists(fb):
-                    bad.append(f"{rel}: missing")
-                    continue
-                ok, msg = compare_files(fa, fb, args.rtol)
-                if not ok:
-                    bad.append(f"{rel}: {msg}")
+        dir_a = os.path.join(args.a, name, "PC")
+        dir_b = os.path.join(args.b, name, "PC")
+        files_a = list_output_files(dir_a)
+        files_b = list_output_files(dir_b)
+        all_files = sorted(files_a | files_b)
+        bad = []
+        for rel in all_files:
+            if rel not in files_a:
+                bad.append(f"{rel}: missing in {args.a}")
+                continue
+            if rel not in files_b:
+                bad.append(f"{rel}: missing in {args.b}")
+                continue
+            fa = os.path.join(dir_a, rel)
+            fb = os.path.join(dir_b, rel)
+            ok, msg = compare_files(fa, fb, args.rtol)
+            if not ok:
+                bad.append(f"{rel}: {msg}")
+        n = len(all_files)
         verdict = "IDENTICAL" if not bad else "DIFFERENT"
         print(f"{name:45s} {verdict} ({n} files)")
         for line in bad[:args.max_report]:
