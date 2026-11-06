@@ -1327,7 +1327,7 @@ public:
   }
 
   inline void label_particles_outside_active_region_general() {
-    for (int iLev = 0; iLev < n_lev(); iLev++)
+    for (int iLev = 0; iLev < n_lev_max(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         const LevelGeomBox lb = make_level_geom_box(iLev);
         for (auto& kv : this->GetParticles(iLev)) {
