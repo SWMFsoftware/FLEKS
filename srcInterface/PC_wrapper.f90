@@ -154,6 +154,8 @@ contains
          ' starting with TimeSimulation, TimeSimulationLimit=', &
          TimeSimulation, TimeSimulationLimit
 
+    PicTime = TimeSimulationLimit
+
     call fleks_run(PicTime)
 
     TimeSimulation = PicTime

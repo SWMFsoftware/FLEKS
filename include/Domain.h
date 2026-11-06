@@ -138,7 +138,7 @@ public:
 
   ~Domain() = default;
 
-  void update();
+  void update(amrex::Real timeLimit = -1.0);
 
   //--------------Initialization begin-------------------------------
   void init(const double time = 0, const int iDomain = 1,
@@ -177,7 +177,7 @@ public:
   // Read the commands that decide whether and how grid, fi, pic and pt are
   // constructed; the caller rolls back so read_param() reads the rest.
   void read_construction_parameters();
-  void save_restart(std::string restartOutDir);
+  void save_restart(std::string restartOutDir = "");
   void save_restart_header();
   void save_restart_data();
   void read_restart();

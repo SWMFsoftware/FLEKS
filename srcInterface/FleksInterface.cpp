@@ -134,6 +134,8 @@ int fleks_run_(double *time) {
   // to make sure the time difference among the domains is within one step:
   // max(t_i)-min(t_i)<min(dt_i)
 
+  const double limit = (time && *time > 0.0) ? *time : -1.0;
+
   bool mayNeedUpdata = true;
   double tMax = 0;
 
@@ -148,12 +150,16 @@ int fleks_run_(double *time) {
         double domainTime =
             std::fabs((double)(fleksDomains(i).tc->get_time_si()));
         double domainDt = std::fabs((double)(fleksDomains(i).tc->get_dt_si()));
+        double stepDt = (limit > domainTime)
+                            ? std::min(domainDt, limit - domainTime)
+                            : domainDt;
 
-        if (iLoop == 0 || domainTime + domainDt <= tMax + 1e-10 * domainDt) {
+        if (iLoop == 0 || (domainTime < tMax - 1e-10 * domainDt &&
+                           domainTime + stepDt <= tMax + 1e-10 * domainDt)) {
           // Update at least once, and a domain should be updated to a time that
           // is close to but smaller or equal to tMax.
           fleksDomains.select(i);
-          fleksDomains(i).update();
+          fleksDomains(i).update(limit);
           mayNeedUpdata = true;
         }
 

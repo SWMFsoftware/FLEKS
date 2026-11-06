@@ -38,6 +38,8 @@ public:
 
   bool is_time_to(bool doForce = false);
 
+  amrex::Real get_next_time(amrex::Real tRef) const;
+
   void set_multiple(const int in) { multiple = in; }
 };
 
@@ -73,9 +75,19 @@ private:
   amrex::Real no2si;
   long int cycle;
 
+  // Unconstrained step sizes saved when dt is truncated to hit an event.
+  amrex::Real savedDtSI = -1.0;
+  amrex::Real savedNextDtSI = -1.0;
+  bool isDtLimited = false;
+
+  amrex::Real find_next_event_time(amrex::Real tRef,
+                                   amrex::Real timeLimit = -1.0) const;
+
   // public member variables.
 public:
   amrex::Vector<PlotCtr> plots;
+
+  EventCtr restart;
 
   EventCtr picLog;
 
@@ -97,6 +109,7 @@ public:
         si2no(1),
         no2si(1),
         cycle(0),
+        restart(this, -1, -1),
         picLog(this, -1, 10),
         ptLog(this, -1, 10),
         loadBalance(this, -1, -1),
@@ -142,12 +155,13 @@ public:
   void set_cfl(amrex::Real in) { cfl = in; }
   amrex::Real get_cfl() { return cfl; }
 
-  void update() {
-    timeNowSI += dtSI;
-    cycle++;
+  void update(amrex::Real timeLimit = -1.0);
 
-    if (dtSI > 0) {
-      set_dummy_dt_si(dtSI);
+  void restore_unconstrained_dt() {
+    if (isDtLimited) {
+      dtSI = savedDtSI;
+      nextDtSI = savedNextDtSI;
+      isDtLimited = false;
     }
   }
 };
