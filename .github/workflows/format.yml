@@ -31,6 +31,10 @@ jobs:
         python3 -m pip install --upgrade pip
         python3 -m pip install clang-format==20.1.8 findent
 
+    - name: Check GPU kernel safety
+      run: |
+        python3 tools/check_gpu_kernels.py
+
     - name: Format changed files
       id: format-check
       run: |
