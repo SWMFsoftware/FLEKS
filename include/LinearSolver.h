@@ -7,6 +7,8 @@
 #include <limits>
 #include <vector>
 
+#include <AMReX_GpuContainers.H>
+#include <AMReX_GpuLaunch.H>
 #include <AMReX_ParallelDescriptor.H>
 
 typedef void (*MATVEC)(const double *vecIn, double *vecOut, int n);
@@ -39,27 +41,47 @@ inline double finite_difference_epsilon(double normBase, double normDirection) {
          normDirection;
 }
 
+// Vector operations of the Jacobian-free matvec. They are not templates:
+// nvcc does not allow device lambdas in a function template instantiated with
+// a local lambda type (the nonlinear matvec below).
+inline void set_zero(double *out, const int n) {
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { out[i] = 0.0; });
+}
+
+// work = base + epsilon * direction
+inline void perturb(const double *base, const double *direction, double epsilon,
+                    double *work, const int n) {
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
+    work[i] = base[i] + epsilon * direction[i];
+  });
+}
+
+// out = (out - baseMatvec) * invEpsilon
+inline void difference_quotient(const double *baseMatvec, double invEpsilon,
+                                double *out, const int n) {
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
+    out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
+  });
+}
+
+// The vectors live in device memory in a GPU build.
 template <typename NonlinearMatvec>
 void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec, const double *base,
                           const double *baseMatvec, const double *direction,
                           double *out, double *work, const int n,
                           const int iLev, const double epsilon) {
   if (epsilon == 0.0) {
-    std::fill(out, out + n, 0.0);
+    set_zero(out, n);
     return;
   }
 
   // Evaluate (F(base + epsilon * direction) - F(base)) / epsilon.
-  for (int i = 0; i < n; ++i) {
-    work[i] = base[i] + epsilon * direction[i];
-  }
+  perturb(base, direction, epsilon, work, n);
 
   nonlinearMatvec(work, out, iLev);
 
   const double invEpsilon = 1.0 / epsilon;
-  for (int i = 0; i < n; ++i) {
-    out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
-  }
+  difference_quotient(baseMatvec, invEpsilon, out, n);
 }
 
 } // namespace fleks_jfnk
@@ -86,12 +108,16 @@ struct Block {
   double *precondMatrix_II;
 };
 
+// The Krylov vectors live in device memory in a GPU build; the small
+// Hessenberg system is solved on the host.
 struct GmresWorkspace {
   std::vector<double> c;
   std::vector<double> s;
   std::vector<double> rs;
-  std::vector<double> krylovBuffer;
+  amrex::Gpu::DeviceVector<double> krylovBuffer;
   std::vector<double> hhBuffer;
+  // One Hessenberg column in device memory (single-rank Arnoldi step).
+  amrex::Gpu::DeviceVector<double> hhColumn;
 };
 
 void matvec_E_solver(const double *vecIn, double *vecOut, int iLev);
@@ -123,9 +149,10 @@ class LinearSolver {
   double tol;
   int nIter;
   MATVEC fMatvec;
-  std::vector<double> rhsBuffer;
-  std::vector<double> xLeftBuffer;
-  std::vector<double> matvecBuffer;
+  // Device memory in a GPU build.
+  amrex::Gpu::DeviceVector<double> rhsBuffer;
+  amrex::Gpu::DeviceVector<double> xLeftBuffer;
+  amrex::Gpu::DeviceVector<double> matvecBuffer;
   GmresWorkspace gmresWork;
   int actualMatvec = 0;
   double initialResidual = 0.0;
@@ -175,20 +202,23 @@ public:
       de_alloc();
       nSolve = nSolveNew;
       if (nSolve > 0) {
-        rhsBuffer.assign(nSolve, 0.0);
-        xLeftBuffer.assign(nSolve, 0.0);
-        matvecBuffer.assign(nSolve, 0.0);
+        rhsBuffer.resize(nSolve);
+        xLeftBuffer.resize(nSolve);
+        matvecBuffer.resize(nSolve);
         rhs = rhsBuffer.data();
         xLeft = xLeftBuffer.data();
         matvec = matvecBuffer.data();
       }
     }
 
-    for (int i = 0; i < nSolve; ++i) {
-      rhs[i] = 0;
-      xLeft[i] = 0;
-      matvec[i] = 0;
-    }
+    double *const r = rhs;
+    double *const x = xLeft;
+    double *const m = matvec;
+    amrex::ParallelFor(nSolve, [=] AMREX_GPU_DEVICE(int i) {
+      r[i] = 0;
+      x[i] = 0;
+      m[i] = 0;
+    });
     actualMatvec = 0;
     initialResidual = 0.0;
     achievedError = 0.0;

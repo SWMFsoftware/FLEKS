@@ -26,9 +26,11 @@ void FadeevIC::set_fields(PicICFields& fields) const {
 
   for (int iLev = 0; iLev < nLev; ++iLev) {
     const auto& geom = fields.geom(iLev);
-    const auto& prob_lo = geom.ProbLo();
-    const auto& prob_hi = geom.ProbHi();
-    const auto& dx = geom.CellSize();
+    // GpuArray (not the Real* that ProbLo() returns) so that the kernels
+    // below capture the values, not a pointer to host memory.
+    const auto prob_lo = geom.ProbLoArray();
+    const auto prob_hi = geom.ProbHiArray();
+    const auto dx = geom.CellSizeArray();
     const amrex::Real Lx = prob_hi[0] - prob_lo[0];
     const amrex::Real Ly = prob_hi[1] - prob_lo[1];
     Lx_ = Lx;
@@ -45,6 +47,8 @@ void FadeevIC::set_fields(PicICFields& fields) const {
     const amrex::Real eps = eps_;
     const amrex::Real L = L_;
     const amrex::Real perturb = perturb_;
+    const amrex::Real invLx = invLx_;
+    const amrex::Real invLy = invLy_;
 
     MultiFab& nodeB = fields.node_B(iLev);
     MultiFab& centerB = fields.center_B(iLev);
@@ -63,12 +67,12 @@ void FadeevIC::set_fields(PicICFields& fields) const {
         const amrex::Real denom = std::cosh(y / L) + eps * std::cos(x / L);
         const amrex::Real denomInv = (denom > 0.0) ? 1.0 / denom : 0.0;
         // m=1 perturbation.
-        const amrex::Real dbx = -perturb * b0 * Lx * invLy_ *
-                                std::cos(2.0 * dPI * x * invLx_) *
-                                std::sin(dPI * y * invLy_);
+        const amrex::Real dbx = -perturb * b0 * Lx * invLy *
+                                std::cos(2.0 * dPI * x * invLx) *
+                                std::sin(dPI * y * invLy);
         const amrex::Real dbz = perturb * b0 * 2.0 *
-                                std::sin(2.0 * dPI * x * invLx_) *
-                                std::cos(dPI * y * invLy_);
+                                std::sin(2.0 * dPI * x * invLx) *
+                                std::cos(dPI * y * invLy);
         arrB(i, j, k, ix_) = b0 * std::sinh(y / L) * denomInv + dbx;
         arrB(i, j, k, iy_) = b0 * eps * std::sin(x / L) * denomInv + dbz;
         arrB(i, j, k, iz_) = b0 * bg;
@@ -84,12 +88,12 @@ void FadeevIC::set_fields(PicICFields& fields) const {
         const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
         const amrex::Real denom = std::cosh(y / L) + eps * std::cos(x / L);
         const amrex::Real denomInv = (denom > 0.0) ? 1.0 / denom : 0.0;
-        const amrex::Real dbx = -perturb * b0 * Lx * invLy_ *
-                                std::cos(2.0 * dPI * x * invLx_) *
-                                std::sin(dPI * y * invLy_);
+        const amrex::Real dbx = -perturb * b0 * Lx * invLy *
+                                std::cos(2.0 * dPI * x * invLx) *
+                                std::sin(dPI * y * invLy);
         const amrex::Real dbz = perturb * b0 * 2.0 *
-                                std::sin(2.0 * dPI * x * invLx_) *
-                                std::cos(dPI * y * invLy_);
+                                std::sin(2.0 * dPI * x * invLx) *
+                                std::cos(dPI * y * invLy);
         arrB(i, j, k, ix_) = b0 * std::sinh(y / L) * denomInv + dbx;
         arrB(i, j, k, iy_) = b0 * eps * std::sin(x / L) * denomInv + dbz;
         arrB(i, j, k, iz_) = b0 * bg;
@@ -101,7 +105,8 @@ void FadeevIC::set_fields(PicICFields& fields) const {
 }
 
 // Boost background density nb to the Fadeev sheet profile.
-void FadeevIC::modify_particle_weight(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void FadeevICParams::hook_weight(
+    ParticleICState& s) const {
   if (profileMax_ <= 0.0 || nb_ <= 0.0 || Ly_ <= 0.0)
     return;
   const amrex::Real denom = std::cosh(s.y / L_) + eps_ * std::cos(s.x / L_);
@@ -112,7 +117,8 @@ void FadeevIC::modify_particle_weight(ParticleICState& s) const {
 }
 
 // Diamagnetic drift u_s = -(T_s/q_s) (grad(n) x B)/(n B^2) for force balance.
-void FadeevIC::modify_particle_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void FadeevICParams::hook_velocity(
+    ParticleICState& s) const {
   if (profileMax_ <= 0.0 || nb_ <= 0.0 || Ly_ <= 0.0)
     return;
   if (s.temperature <= 0.0 || s.charge == 0.0)

@@ -1,6 +1,8 @@
 #ifndef _EXOSOURCE_H_
 #define _EXOSOURCE_H_
 
+#include <optional>
+
 #include "SourceInterface.h"
 
 class UserSource : public SourceInterface {
@@ -415,6 +417,7 @@ public:
       vBox *= hBox[d];
     std::vector<amrex::Real> sumN(nC), sumNA(nC), prodN(nC), prodNA(nC);
 
+    HostStaging<amrex::FArrayBox> stageNeu(neuAvg[iLev], /*writeBack=*/true);
     for (amrex::MFIter mfi(neuAvg[iLev]); mfi.isValid(); ++mfi) {
       auto arr = neuAvg[iLev][mfi].array();
       const auto lo = lbound(mfi.validbox());
@@ -1103,6 +1106,24 @@ public:
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
+        std::optional<HostStaging<amrex::FArrayBox> > stageOther;
+        if (static_cast<const void*>(&other) !=
+                static_cast<const void*>(this) &&
+            iLev < other.n_lev() &&
+            !const_cast<FluidInterface&>(other).get_node_fluid(iLev).empty()) {
+          stageOther.emplace(
+              const_cast<FluidInterface&>(other).get_node_fluid(iLev),
+              /*writeBack=*/false);
+        }
+        HostStaging<amrex::FArrayBox> stageFluid(nodeFluid[iLev],
+                                                 /*writeBack=*/true);
+        HostStaging<amrex::FArrayBox> stageNeu(neuAvg[iLev],
+                                               /*writeBack=*/false);
+        std::optional<HostStaging<amrex::FArrayBox> > stageLoss;
+        if (doLoss && has_loss_array(iLev)) {
+          stageLoss.emplace(nodeLossFluid[iLev], /*writeBack=*/true);
+        }
+
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
           const amrex::Box& box = mfi.validbox();
           const auto lo = lbound(box);

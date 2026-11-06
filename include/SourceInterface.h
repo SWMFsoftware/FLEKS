@@ -204,6 +204,12 @@ public:
 
   amrex::MultiFab& get_node_loss_fluid(int iLev) { return nodeLossFluid[iLev]; }
 
+  /// The loss rates of the FAB mfi of level iLev (for kernels).
+  amrex::Array4<amrex::Real const> loss_array(const amrex::MFIter& mfi,
+                                              const int iLev = 0) const {
+    return nodeLossFluid[iLev].const_array(mfi);
+  }
+
   bool use_loss_source() const {
     return useRecombination || useChemistry || useChargeExchange;
   }
