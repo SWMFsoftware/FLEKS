@@ -49,12 +49,12 @@ F                       solveEM
 0.0                     ez [V/m]
 
 #NORMALIZATION
-1000.0                  lNormSI
+1.0e6                   lNormSI
 1.0e6                   uNormSI
 
 #TIMESTEPPING
 T                       useFixedDt
-0.1                     dt
+0.005                   dt
 
 #MONITOR
 10                      dnReport
@@ -86,4 +86,4 @@ planet                  IOUnit
 
 #STOP
 -1                      MaxIter
-3.0                     TimeMax
+0.15                    TimeMax

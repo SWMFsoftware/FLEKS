@@ -91,9 +91,10 @@ def prepare_run_dir(run_dir, exe):
     os.makedirs(run_dir, exist_ok=True)
     safe_symlink(os.path.abspath(exe), os.path.join(run_dir, "FLEKS.exe"))
 
-    # Component plots and restart directories
+    # Component plots and restart directories (clean per run to avoid I/O bias)
     pc_dir = os.path.join(run_dir, "PC")
-    os.makedirs(pc_dir, exist_ok=True)
+    if os.path.exists(pc_dir):
+        shutil.rmtree(pc_dir)
     os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
 
@@ -336,12 +337,15 @@ def evaluate_suite(solver_kind, targets, count):
             return None
         steps[name] = (particles, cycles)
 
+    target_items = list(targets.items())
     runs = {(name, n_proc): [] for name in targets for n_proc in (1, 2)}
     for n_proc in (1, 2):
         print(f"Running {label} on {n_proc} MPI process(es), {count} runs "
               f"per executable ({', '.join(targets)})...")
         for i in range(count):
-            for name, (exe, param_file) in targets.items():
+            round_items = (target_items if i % 2 == 0
+                           else list(reversed(target_items)))
+            for name, (exe, param_file) in round_items:
                 print(f"  Run {i + 1}/{count} [{name}]...")
                 try:
                     runs[(name, n_proc)].append(run_once(
