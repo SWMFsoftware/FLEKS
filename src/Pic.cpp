@@ -1315,7 +1315,7 @@ void Pic::re_sampling() {
     bool splitInVelocity = false;
     for (int i = 0; i < nSpecies; ++i) {
       if (doOverRideSplitting == 'F') {
-        bool splitInVelocity = parts[i]->is_neutral();
+        splitInVelocity = parts[i]->is_neutral();
       } else if (doOverRideSplitting == 'V') {
         splitInVelocity = true;
       } else if (doOverRideSplitting == 'S') {
