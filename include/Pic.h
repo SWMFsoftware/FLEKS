@@ -443,6 +443,9 @@ private:
   amrex::Real reSamplingHighLimit = 1.5;
   amrex::Real maxWeightRatio = 1.0;
 
+  char doOverRideSplitting = 'F';
+  // F: no override, S: split in space, V: split in velocity
+
   bool solveFieldInCoMov = false;
   int nSmoothBackGroundU = 0;
 
