@@ -409,6 +409,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 void Pic::pre_regrid() {
   if (!parts.empty()) {
     for (int i = 0; i < nSpecies; ++i) {
+      // Release Predictor-Corrector particle backup before regridding so
+      // backupContainer_ is rebuilt with the new BoxArray/DistributionMapping
+      // and its memory is freed prior to redistributing arrays/particles.
+      parts[i]->release_particle_backup();
       // Label the particles outside the OLD PIC region. It should be called
       // before active region is updated.
       parts[i]->label_particles_outside_active_region();
@@ -472,19 +476,42 @@ void Pic::post_regrid(MeshChangeReason reason) {
       }
     }
   } else {
+    if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Arena())) {
+      p->freeUnused();
+    }
+    if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Pinned_Arena())) {
+      p->freeUnused();
+    }
+#if defined(__linux__)
+    malloc_trim(0);
+#endif
     for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->release_particle_backup();
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
 
       parts[i]->redistribute_particles();
+      parts[i]->ShrinkToFit();
       if (i < sourceParts.size() && sourceParts[i]) {
         // sourceParts is emptied after charge exchange. Redistribute also
         // resizes its AMReX level storage; otherwise get_particle_tile() can
         // access a missing level when refinement adds a finer grid.
         sourceParts[i]->redistribute_particles();
+        sourceParts[i]->ShrinkToFit();
       }
     }
   }
+
+  if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Arena())) {
+    p->freeUnused();
+  }
+  if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Pinned_Arena())) {
+    p->freeUnused();
+  }
+  amrex::FabArrayBase::flushTileArrayCache();
+#if defined(__linux__)
+  malloc_trim(0);
+#endif
 
   // Propagate field wave boundaries to each species to drive wave velocity
   // kicks.
@@ -2362,6 +2389,7 @@ void Pic::free_memory() {
   amrex::Arena::PrintUsage();
 
   for (int i = 0; i < nSpecies; ++i) {
+    parts[i]->release_particle_backup();
     amrex::Print() << "[Particles " << i << " Before ShrinkToFit]: ";
     parts[i]->PrintCapacity();
     parts[i]->ShrinkToFit();

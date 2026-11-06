@@ -1327,18 +1327,27 @@ public:
   }
 
   inline void label_particles_outside_active_region_general() {
-    for (int iLev = 0; iLev < n_lev(); iLev++)
+    for (int iLev = 0; iLev < n_lev_max(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         const LevelGeomBox lb = make_level_geom_box(iLev);
-        for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-          AoS& particles = pti.GetArrayOfStructs();
+        for (auto& kv : this->GetParticles(iLev)) {
+          AoS& particles = kv.second.GetArrayOfStructs();
           for (auto& p : particles) {
-            if (is_outside_active_region(p, lb)) {
+            if (p.id().is_valid() && is_outside_active_region(p, lb)) {
               p.id() = -1;
             }
           }
         }
       }
+  }
+
+  void particlePostLocate(ParticleType& p, const amrex::ParticleLocData& pld,
+                          const int /*lev*/) override {
+    if (pld.m_lev < 0 || pld.m_grid < 0 ||
+        !this->ParticleBoxArray(pld.m_lev)[pld.m_grid].contains(
+            this->Index(p, pld.m_lev))) {
+      p.id().make_invalid();
+    }
   }
 
   // Particle resampling routines:
