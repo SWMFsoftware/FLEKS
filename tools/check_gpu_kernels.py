@@ -48,15 +48,11 @@ GPU_BACKEND_FILES = {
 # Files whose ParallelFor lambdas will be ported in upcoming progressive PRs.
 # Entries are removed as each PR lands until this set is empty.
 UNPORTED_FILES = {
-    "include/Pic.h",
-    "src/FluidInterface.cpp",
-    "src/Grid.cpp",
     "src/ParticlesBC.cpp",
     "src/ParticlesInit.cpp",
     "src/Pic.cpp",
     "src/PicBC.cpp",
     "src/PicFieldSolver.cpp",
-    "src/ic/WaveIC.cpp",
 }
 
 LAUNCH_RE = re.compile(r"\b(?:amrex::)?(" + "|".join(LAUNCHERS) +

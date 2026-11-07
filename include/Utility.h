@@ -9,10 +9,12 @@
 
 #include <AMReX_MultiFab.H>
 #include <AMReX_REAL.H>
+#include <AMReX_Reduce.H>
 #include <AMReX_iMultiFab.H>
 #include <mpi.h>
 
 #include "Constants.h"
+#include "GpuBackend.h"
 #include "Timer.h"
 
 // Only works for x>-8;
@@ -20,12 +22,14 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int fastfloor(amrex::Real x) {
   return (int)(x + 8) - 8;
 }
 
-inline amrex::Real median(amrex::Real a, amrex::Real b, amrex::Real c) {
-  return std::clamp(a, std::min(b, c), std::max(b, c));
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real median(amrex::Real a,
+                                                            amrex::Real b,
+                                                            amrex::Real c) {
+  return amrex::Clamp(a, amrex::min(b, c), amrex::max(b, c));
 }
 
-inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
-                                 amrex::Real u1, amrex::Real u2) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real limiter_theta(
+    amrex::Real theta, amrex::Real u0, amrex::Real u1, amrex::Real u2) {
   amrex::Real du21 = u2 - u1;
   if (du21 == 0)
     du21 = 1e-99;
@@ -38,11 +42,12 @@ inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
   return 1 - phi;
 }
 
-inline int product(const amrex::IntVect& vect) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int product(
+    const amrex::IntVect& vect) {
   return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
 }
 
-inline amrex::Dim3 init_dim3(const int i) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Dim3 init_dim3(const int i) {
   amrex::Dim3 dim;
   dim.x = i;
   dim.y = i;
@@ -82,13 +87,14 @@ inline std::string normalize_string_token(std::string name,
   return name;
 }
 
-// Local dot product followed by an optional communicator-wide sum.
+// Local dot product followed by an optional communicator-wide sum. The
+// vectors live in device memory in a GPU build. The local sum is
+// deterministic: a CPU build adds the terms in index order, and a GPU build
+// always combines them in the same order for the same n.
 inline double dot_product_mpi(const double* a, const double* b, const int n,
                               const MPI_Comm iComm) {
-  double c = 0.0;
-  for (int i = 0; i < n; ++i) {
-    c += a[i] * b[i];
-  }
+  double c = deterministic_sum(
+      n, [=] AMREX_GPU_DEVICE(int i) -> double { return a[i] * b[i]; });
 
   if (iComm == MPI_COMM_SELF) {
     return c;
@@ -109,7 +115,9 @@ inline int shift_periodic_index(int idx, int lo, int hi) {
   return idx;
 };
 
-template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
+template <class T>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void a_cross_b(T (&a)[3], T (&b)[3],
+                                                        T (&c)[3]) {
   // c = a x b
 
   c[0] = a[1] * b[2] - a[2] * b[1];
@@ -119,32 +127,34 @@ template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
   return;
 }
 
+// Zero an array in device memory (host memory in a CPU build).
 template <class T> inline void zero_array(T* arr, int nSize) {
-  for (int i = 0; i < nSize; ++i)
-    arr[i] = 0;
+  amrex::ParallelFor(nSize, [=] AMREX_GPU_DEVICE(int i) { arr[i] = 0; });
 }
 
 // rand1, rand2 are random numbers in [0,1].
-inline void random_vector(const amrex::Real rand1, const amrex::Real rand2,
-                          amrex::Real (&vec)[nDim3]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void random_vector(
+    const amrex::Real rand1, const amrex::Real rand2,
+    amrex::Real (&vec)[nDim3]) {
   amrex::Real lon = 2 * M_PI * rand1;
   amrex::Real costheta = 2 * rand2 - 1;
-  amrex::Real sintheta = sqrt(1 - costheta * costheta);
+  amrex::Real sintheta = std::sqrt(1 - costheta * costheta);
 
-  vec[ix_] = sintheta * cos(lon);
-  vec[iy_] = sintheta * sin(lon);
+  vec[ix_] = sintheta * std::cos(lon);
+  vec[iy_] = sintheta * std::sin(lon);
   vec[iz_] = costheta;
 }
 
-inline amrex::Real l2_norm(amrex::Real* vec, int n) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real l2_norm(amrex::Real* vec,
+                                                             int n) {
   amrex::Real sum = 0;
   for (int i = 0; i < n; ++i)
     sum += vec[i] * vec[i];
   return sqrt(sum);
 }
 
-inline void linear_interpolation_coef(const amrex::RealVect& dx,
-                                      amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void linear_interpolation_coef(
+    const amrex::RealVect& dx, amrex::Real (&coef)[2][2][2]) {
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
@@ -163,8 +173,8 @@ inline void linear_interpolation_coef(const amrex::RealVect& dx,
   coef[1][1][1] = xy[0][0] * interpZ[0];
 }
 
-inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
-                                            amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void linear_interpolation_coef_finer(
+    const amrex::RealVect& dx, amrex::Real (&coef)[2][2][2]) {
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };

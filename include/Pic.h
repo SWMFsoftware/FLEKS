@@ -1348,18 +1348,20 @@ public:
                              get_n_ghost());
       errorDivE[iLev].setVal(0.0);
 
-      for (amrex::MFIter mfi(errorDivE[iLev]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(errorDivE[iLev], stream_ordered_mfi());
+           mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
-        const amrex::Array4<amrex::Real> &error = errorDivE[iLev][mfi].array();
+        const amrex::Array4<amrex::Real> error = errorDivE[iLev][mfi].array();
         const amrex::Array4<amrex::Real const> divEcc =
-            centerDivE[iLev][mfi].array();
+            centerDivE[iLev][mfi].const_array();
         const amrex::Array4<amrex::Real const> qcc =
-            centerNetChargeN[iLev][mfi].array();
-        const auto &status = cell_status(iLev)[mfi].array();
+            centerNetChargeN[iLev][mfi].const_array();
+        const amrex::Array4<int const> status =
+            cell_status(iLev)[mfi].const_array();
 
-        amrex::ParallelFor(box, [&](int i, int j, int k) {
-          error(i, j, k) =
-              sqrt(pow((4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k)), 2));
+        amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          error(i, j, k) = std::sqrt(
+              std::pow((4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k)), 2));
           if (bit::is_refined(status(i, j, k))) {
             error(i, j, k) = 0;
           }
@@ -1374,53 +1376,61 @@ public:
       amrex::Abort(
           "ConstantPPV and PreSplitting cannot be true at the same time");
     }
+    const int ppcDefault = product(pInfo.nPartPerCell);
+    const bool doPreSplitting = pInfo.doPreSplitting;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(targetPPC[iLev], stream_ordered_mfi());
+           mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.fabbox();
-        const auto &ppcArr = targetPPC[iLev][mfi].array();
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
-          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
-        });
+        const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
+        amrex::ParallelFor(box,
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k)
+                               noexcept { ppcArr(i, j, k, 0) = ppcDefault; });
       }
     }
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const int refRatioMax = (pInfo.isPPVconstant || pInfo.doPreSplitting)
                                   ? refRatio(iLev).max()
                                   : 1;
-      for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
+      // Target PPC of a cell, and of a cell next to a refined cell when the
+      // particles are split in advance.
+      int ppcCell = ppcDefault;
+      if (pInfo.isPPVconstant && !is_fake_2d()) {
+        int tmp = 1;
+        for (int i = 0; i < nDim; i++) {
+          const int n =
+              static_cast<int>(pInfo.nPartPerCell[i] / pow(refRatioMax, iLev));
+          tmp *= std::max(n, pInfo.minPPCPerDim);
+        }
+        ppcCell = tmp;
+      }
+      const int ppcPreSplit = ppcDefault * pow(refRatioMax, nDim);
+
+      for (amrex::MFIter mfi(targetPPC[iLev], stream_ordered_mfi());
+           mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
-        const auto &ppcArr = targetPPC[iLev][mfi].array();
-        const auto &status = cell_status(iLev)[mfi].array();
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
-          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          if (pInfo.isPPVconstant && !is_fake_2d()) {
-            int tmp = 1;
-            for (int i = 0; i < nDim; i++) {
-              const int n = static_cast<int>(pInfo.nPartPerCell[i] /
-                                             pow(refRatioMax, iLev));
-              tmp *= std::max(n, pInfo.minPPCPerDim);
-            }
-            ppcArr(ijk, 0) = tmp;
-          } else {
-            ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
-          }
-          if (pInfo.doPreSplitting) {
-            for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
-              for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
-                for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
-                  amrex::IntVect ijk2 =
-                      ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
-                  if (bit::is_refined(status(ijk2)) &&
-                      !bit::is_refined(status(ijk))) {
-                    ppcArr(ijk, 0) =
-                        product(pInfo.nPartPerCell) * pow(refRatioMax, nDim);
+        const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
+        const amrex::Array4<int const> status =
+            cell_status(iLev)[mfi].const_array();
+        amrex::ParallelFor(
+            box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+              ppcArr(ijk, 0) = ppcCell;
+              if (doPreSplitting) {
+                for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
+                  for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
+                    for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
+                      amrex::IntVect ijk2 =
+                          ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
+                      if (bit::is_refined(status(ijk2)) &&
+                          !bit::is_refined(status(ijk))) {
+                        ppcArr(ijk, 0) = ppcPreSplit;
+                      }
+                    }
                   }
                 }
               }
-            }
-          }
-        });
+            });
       }
     }
   }
