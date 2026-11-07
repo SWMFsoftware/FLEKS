@@ -87,14 +87,13 @@ inline std::string normalize_string_token(std::string name,
   return name;
 }
 
-// Local dot product followed by an optional communicator-wide sum. The
-// vectors live in device memory in a GPU build. The local sum is
-// deterministic: a CPU build adds the terms in index order, and a GPU build
-// always combines them in the same order for the same n.
+// Local dot product followed by an optional communicator-wide sum.
 inline double dot_product_mpi(const double* a, const double* b, const int n,
                               const MPI_Comm iComm) {
-  double c = deterministic_sum(
-      n, [=] AMREX_GPU_DEVICE(int i) -> double { return a[i] * b[i]; });
+  double c = 0.0;
+  for (int i = 0; i < n; ++i) {
+    c += a[i] * b[i];
+  }
 
   if (iComm == MPI_COMM_SELF) {
     return c;
@@ -127,9 +126,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void a_cross_b(T (&a)[3], T (&b)[3],
   return;
 }
 
-// Zero an array in device memory (host memory in a CPU build).
 template <class T> inline void zero_array(T* arr, int nSize) {
-  amrex::ParallelFor(nSize, [=] AMREX_GPU_DEVICE(int i) { arr[i] = 0; });
+  for (int i = 0; i < nSize; ++i)
+    arr[i] = 0;
 }
 
 // rand1, rand2 are random numbers in [0,1].

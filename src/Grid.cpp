@@ -369,30 +369,45 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
     cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    const auto plo = Geom(iLev).ProbLoArray();
-    const auto dx = Geom(iLev).CellSizeArray();
-    const DomainView domain = domain_view();
+    // Find domain boundary cells: level boundary cells whose centers are
+    // outside the active region. A cell center is never on a level-0 cell
+    // face, so it is inside a box of the active region if and only if its
+    // level-0 cell is. Testing that in index space, against only the active
+    // boxes that overlap this fab, is equivalent to is_inside_domain(), which
+    // loops over all boxes for every cell and is very slow for many boxes.
+    IntVect ratioToLev0(1);
+    for (int lev = 0; lev < iLev; ++lev)
+      ratioToLev0 *= ref_ratio[lev];
 
-    // Find domain boundary cells
     for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
          ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int> cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(cellArr(i, j, k))) {
-          Real xyz[AMREX_SPACEDIM];
-          cell_center_loc(plo, dx, AMREX_D_DECL(i, j, k), xyz);
-          if (!domain.is_inside_domain(xyz)) {
-            bit::set_domain_boundary(cellArr(i, j, k));
-          }
+          bit::set_domain_boundary(cellArr(i, j, k));
         }
       });
+      // Find every active-region box that overlaps the coarsened version of
+      // this fab and clear the domain-boundary bit inside it.
+      const auto isects =
+          activeRegion.intersections(amrex::coarsen(box, ratioToLev0));
+      for (const auto& isect : isects) {
+        const Box activeBox = box & amrex::refine(isect.second, ratioToLev0);
+        ParallelFor(activeBox,
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                      bit::set_not_domain_boundary(cellArr(i, j, k));
+                    });
+      }
     }
 
     // Mark the cells that belong to the absorbing inner body (see #BODY).
     // The body is approximated by the union of the cells whose centers are
     // inside the sphere, i.e., a staircase boundary with an error of dx/2.
     if (useBody) {
+      const auto plo = Geom(iLev).ProbLoArray();
+      const auto dx = Geom(iLev).CellSizeArray();
+      const DomainView domain = domain_view();
       for (MFIter mfi(cellStatus[iLev], stream_ordered_mfi()); mfi.isValid();
            ++mfi) {
         const Box& box = mfi.fabbox();

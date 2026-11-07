@@ -1514,7 +1514,8 @@ public:
                             const double rand3, const double rand4,
                             const int is, const double uthIn = -1) const {
     FluidStateParams::set_particle_uth_iso(fluid_data(mfi, iLev), xyz, u, v, w,
-                                           rand1, rand2, rand3, rand4, is, -1);
+                                           rand1, rand2, rand3, rand4, is,
+                                           uthIn);
   }
 
   template <typename Type>
@@ -1526,7 +1527,7 @@ public:
                               const double uthPerpIn = -1) const {
     FluidStateParams::set_particle_uth_aniso(fluid_data(mfi, iLev), xyz, u, v,
                                              w, rand1, rand2, rand3, rand4, is,
-                                             -1, -1);
+                                             uthParIn, uthPerpIn);
   }
 
   template <typename Type>
