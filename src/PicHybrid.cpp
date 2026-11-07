@@ -108,14 +108,11 @@ polytropic_closure(const Real rho, const Real p0, const Real invRho0,
   return (rho > 0) ? p0 * std::pow(rho * invRho0, gamma) : 0.0;
 }
 
-// True when node (i,j,k) lies outside #BODY and touches at least one active
-// (in-level, uncovered, outside-body) cell on this level.
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_active_cfl_node(
-    const Array4<int const>& cStat, const Array4<int const>& nStat, const int i,
-    const int j, const int k, const bool hasBody,
-    const bool hasFiner) noexcept {
-  if (hasBody && bit::is_body(nStat(i, j, k)))
-    return false;
+// True when node (i,j,k) is a corner of at least one active (in-level,
+// uncovered, outside-body) cell on this level.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool touches_active_cell(
+    const Array4<int const>& cStat, const int i, const int j, const int k,
+    const bool hasBody, const bool hasFiner) noexcept {
   const int kmin = (nDim > 2) ? k - 1 : k;
   const int jmin = (nDim > 1) ? j - 1 : j;
   for (int kk = kmin; kk <= k; ++kk) {
@@ -132,43 +129,39 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_active_cfl_node(
   return false;
 }
 
-// Average |B| at node (i,j,k) over the active (in-level, uncovered,
-// outside-body) surrounding cells. Sets hasActiveCell = true when at least one
-// surrounding cell is active on this level.
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real active_node_B_mag(
-    const Array4<Real const>& bArr, const Array4<int const>& cStat,
-    const Array4<int const>& nStat, const int i, const int j, const int k,
-    const bool hasBody, const bool hasFiner, bool& hasActiveCell) noexcept {
-  if (hasBody && bit::is_body(nStat(i, j, k))) {
-    hasActiveCell = false;
-    return 0.0;
-  }
-  const int kmin = (nDim > 2) ? k - 1 : k;
-  const int jmin = (nDim > 1) ? j - 1 : j;
-  Real bx = 0.0, by = 0.0, bz = 0.0;
-  int nActive = 0;
-  for (int kk = kmin; kk <= k; ++kk) {
-    for (int jj = jmin; jj <= j; ++jj) {
-      for (int ii = i - 1; ii <= i; ++ii) {
-        const int st = cStat(ii, jj, kk);
-        if (bit::is_lev_boundary(st) || (hasBody && bit::is_body(st)) ||
-            (hasFiner && bit::is_refined(st)))
-          continue;
-        bx += bArr(ii, jj, kk, ix_);
-        by += bArr(ii, jj, kk, iy_);
-        bz += bArr(ii, jj, kk, iz_);
-        ++nActive;
-      }
+// True when node (i,j,k) lies outside #BODY and touches at least one active
+// (in-level, uncovered, outside-body) cell on this level.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_active_cfl_node(
+    const Array4<int const>& cStat, const Array4<int const>& nStat, const int i,
+    const int j, const int k, const bool hasBody,
+    const bool hasFiner) noexcept {
+  if (hasBody && bit::is_body(nStat(i, j, k)))
+    return false;
+  return touches_active_cell(cStat, i, j, k, hasBody, hasFiner);
+}
+
+// Minimum positive stage density rho_q(hstep) encountered by assemble_ohm_E
+// across all stages of a hybrid step. Returns numeric_limits<Real>::max() when
+// every active stage has rho_q <= 0.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
+min_positive_stage_rho(const Real rCur, const Real rPrev, const bool hasPrev,
+                       const bool isPC, const Real minSubStageWeight) noexcept {
+  Real rMin = (rCur > 0.0) ? rCur : std::numeric_limits<Real>::max();
+  if (!hasPrev)
+    return rMin;
+  const Real rMid = 0.5 * (rPrev + rCur);
+  if (rMid > 0.0)
+    rMin = amrex::min(rMin, rMid);
+  if (isPC) {
+    if (rPrev > 0.0)
+      rMin = amrex::min(rMin, rPrev);
+    if ((rPrev > 0.0) != (rCur > 0.0)) {
+      const Real rEdge = minSubStageWeight * amrex::max(rPrev, rCur);
+      if (rEdge > 0.0)
+        rMin = amrex::min(rMin, rEdge);
     }
   }
-  hasActiveCell = (nActive > 0);
-  if (nActive <= 0)
-    return 0.0;
-  const Real invN = 1.0 / static_cast<Real>(nActive);
-  bx *= invN;
-  by *= invN;
-  bz *= invN;
-  return std::sqrt(bx * bx + by * by + bz * bz);
+  return rMin;
 }
 
 } // namespace
@@ -2225,13 +2218,33 @@ void Pic::update_B_hybrid() {
       ParallelDescriptor::ReduceRealMax(bMaxLev);
 
       // assemble_ohm_E disables Hall and wave-speed upwind terms at nodes with
-      // rho <= 0 (vacuum, particle-free tests, or inside #BODY), and evaluates
-      // the Hall/upwind speeds from the local nodal B and rho_eff. Reduce the
-      // pointwise maxima of |B|/rho_eff and |B|/sqrt(rho_eff) over active
-      // plasma nodes so a strong crustal/dipole field inside #BODY or high-
-      // density ionosphere is not falsely paired with a low-density wake floor.
+      // rho <= 0 (vacuum, particle-free tests, or inside #BODY), interpolates
+      // cell-centered B to nodeBstage using the full 8-cell stencil (plus BC
+      // and conducting-body projection), and evaluates Hall/upwind speeds from
+      // stage-interpolated densities between nodePlasmaPrev and nodePlasma.
+      average_center_to_node(bForCfl, nodeBstage[iLev]);
+      nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(node_status(iLev), nodeBstage[iLev], 0, 3,
+                       &Pic::get_node_B, iLev, true);
+      }
+      if (is_body_conducting()) {
+        project_body_B(nodeBstage[iLev], iLev);
+        nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+
       const Real rhoFloor = amrex::max(rhoMinOhm, static_cast<Real>(1e-10));
+      auto const& nbArrays = nodeBstage[iLev].const_arrays();
       auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
+      const bool hasPrevMoments =
+          !nodePlasmaPrev.empty() && !nodePlasmaPrev[nSpecies][iLev].empty();
+      auto const& rhoPrevArrays =
+          hasPrevMoments ? nodePlasmaPrev[nSpecies][iLev].const_arrays()
+                         : rhoArrays;
+      const bool isPC = usePredictorCorrector;
+      const int nSubBound =
+          amrex::max(nBSubcycleMax, amrex::max(nBSubcycle, 1));
+      const Real minSubW = 0.5 / static_cast<Real>(nSubBound);
       auto const& nStatArrays = node_status(iLev).const_arrays();
       const int iRhoComp = iRho_;
       auto redTuple = ParReduce(
@@ -2239,15 +2252,21 @@ void Pic::update_B_hybrid() {
           TypeList<Real, Real, Real>{}, nodePlasma[nSpecies][iLev], IntVect(0),
           [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                                int k) noexcept -> GpuTuple<Real, Real, Real> {
-            const Real r = rhoArrays[nb](i, j, k, iRhoComp);
-            if (r <= 0.0)
+            if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j, k,
+                                    hasBody, hasFiner))
               return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
-            bool hasActiveCell = false;
+            const Real rCur = rhoArrays[nb](i, j, k, iRhoComp);
+            const Real rPrev =
+                hasPrevMoments ? rhoPrevArrays[nb](i, j, k, iRhoComp) : rCur;
+            const Real r = min_positive_stage_rho(rCur, rPrev, hasPrevMoments,
+                                                  isPC, minSubW);
+            if (r >= std::numeric_limits<Real>::max())
+              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+            Array4<Real const> const& nbArr = nbArrays[nb];
             const Real bNode =
-                active_node_B_mag(bArrays[nb], cStatArrays[nb], nStatArrays[nb],
-                                  i, j, k, hasBody, hasFiner, hasActiveCell);
-            if (!hasActiveCell)
-              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+                std::sqrt(nbArr(i, j, k, ix_) * nbArr(i, j, k, ix_) +
+                          nbArr(i, j, k, iy_) * nbArr(i, j, k, iy_) +
+                          nbArr(i, j, k, iz_) * nbArr(i, j, k, iz_));
             const Real rEff = amrex::max(r, rhoFloor);
             return { r, bNode / rEff, bNode / std::sqrt(rEff) };
           });
@@ -2264,8 +2283,8 @@ void Pic::update_B_hybrid() {
       rhoMinLev = hasPlasma ? rhoPosMin : 0.0;
       rhoEff = hasPlasma ? amrex::max(rhoMinLev, rhoFloor) : 0.0;
 
-      // Bound fresh electron velocity (bulk velocity when Hall is disabled) for
-      // the upwind dissipation rate estimate.
+      // Bound stage electron velocity (bulk velocity when Hall is disabled) for
+      // the upwind dissipation rate estimate across active solver stages.
       if (useHybridUpwind && upwindFixedSpeed <= 0.0 && hasPlasma) {
         if (useHallTerm) {
           curl_center_to_node(centerB[iLev], nodeJ[iLev],
@@ -2276,41 +2295,76 @@ void Pic::update_B_hybrid() {
           uMaxLev = ParReduce(
               TypeList<ReduceOpMax>{}, TypeList<Real>{},
               nodePlasma[nSpecies][iLev], IntVect(0),
-              [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
-                  noexcept -> GpuTuple<Real> {
-                    const Real rho = rhoArrays[nb](i, j, k, iRhoComp);
-                    if (rho <= 0.0 ||
-                        !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i,
-                                            j, k, hasBody, hasFiner))
-                      return 0.0;
-                    const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
-                    Real u2 = 0.0;
-                    for (int d = 0; d < 3; ++d) {
-                      const Real ue_d = (rhoArrays[nb](i, j, k, iMx_ + d) -
-                                         jArrays[nb](i, j, k, d) * invFourPI) *
-                                        invRho;
-                      u2 += ue_d * ue_d;
-                    }
-                    return std::sqrt(u2);
-                  });
+              [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                                   int k) noexcept -> GpuTuple<Real> {
+                if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
+                                        k, hasBody, hasFiner))
+                  return 0.0;
+                auto eval_ue2 = [&](const Real rStage, const Real wPrevM)
+                                    noexcept -> Real {
+                  if (rStage <= 0.0)
+                    return 0.0;
+                  const Real invRho = 1.0 / amrex::max(rStage, rhoMinOhm);
+                  const Real wCurM = 1.0 - wPrevM;
+                  Real u2 = 0.0;
+                  for (int d = 0; d < 3; ++d) {
+                    const Real mStage =
+                        wCurM * rhoArrays[nb](i, j, k, iMx_ + d) +
+                        wPrevM * rhoPrevArrays[nb](i, j, k, iMx_ + d);
+                    const Real ue_d =
+                        (mStage - jArrays[nb](i, j, k, d) * invFourPI) * invRho;
+                    u2 += ue_d * ue_d;
+                  }
+                  return u2;
+                };
+                const Real rCur = rhoArrays[nb](i, j, k, iRhoComp);
+                Real u2Max = eval_ue2(rCur, 0.0);
+                if (hasPrevMoments) {
+                  const Real rPrev = rhoPrevArrays[nb](i, j, k, iRhoComp);
+                  const Real rMid = 0.5 * (rPrev + rCur);
+                  u2Max = amrex::max(u2Max, eval_ue2(rMid, isPC ? 0.5 : 0.0));
+                  if (isPC) {
+                    u2Max = amrex::max(u2Max, eval_ue2(rPrev, 1.0));
+                  }
+                }
+                return std::sqrt(u2Max);
+              });
         } else {
           uMaxLev = ParReduce(
               TypeList<ReduceOpMax>{}, TypeList<Real>{},
               nodePlasma[nSpecies][iLev], IntVect(0),
               [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                                    int k) noexcept -> GpuTuple<Real> {
-                const Real rho = rhoArrays[nb](i, j, k, iRhoComp);
-                if (rho <= 0.0 ||
-                    !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
+                if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
                                         k, hasBody, hasFiner))
                   return 0.0;
-                const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
-                Real u2 = 0.0;
-                for (int d = 0; d < 3; ++d) {
-                  const Real ui_d = rhoArrays[nb](i, j, k, iMx_ + d) * invRho;
-                  u2 += ui_d * ui_d;
+                auto eval_ui2 = [&](const Real rStage, const Real wPrevM)
+                                    noexcept -> Real {
+                  if (rStage <= 0.0)
+                    return 0.0;
+                  const Real invRho = 1.0 / amrex::max(rStage, rhoMinOhm);
+                  const Real wCurM = 1.0 - wPrevM;
+                  Real u2 = 0.0;
+                  for (int d = 0; d < 3; ++d) {
+                    const Real mStage =
+                        wCurM * rhoArrays[nb](i, j, k, iMx_ + d) +
+                        wPrevM * rhoPrevArrays[nb](i, j, k, iMx_ + d);
+                    const Real ui_d = mStage * invRho;
+                    u2 += ui_d * ui_d;
+                  }
+                  return u2;
+                };
+                const Real rCur = rhoArrays[nb](i, j, k, iRhoComp);
+                Real u2Max = eval_ui2(rCur, 0.0);
+                if (hasPrevMoments) {
+                  const Real rPrev = rhoPrevArrays[nb](i, j, k, iRhoComp);
+                  const Real rMid = 0.5 * (rPrev + rCur);
+                  u2Max = amrex::max(u2Max, eval_ui2(rMid, isPC ? 0.5 : 0.0));
+                  if (isPC) {
+                    u2Max = amrex::max(u2Max, eval_ui2(rPrev, 1.0));
+                  }
                 }
-                return std::sqrt(u2);
+                return std::sqrt(u2Max);
               });
         }
         ParallelDescriptor::ReduceRealMax(uMaxLev);
@@ -2756,11 +2810,30 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       }
     }
 
-    // 2. Maximum magnetic field magnitude on active plasma cells of this level
-    // (including intrinsic B0, excluding #BODY and covered AMR cells)
+    // 2. Maximum magnetic field magnitude on active plasma cells and their
+    // corner nodes on this level (including intrinsic B0 and nodal stencils
+    // that reach into #BODY or masked neighbor cells).
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
+    average_center_to_node(bForCfl, nodeBstage[iLev]);
+    nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_field_bc(node_status(iLev), nodeBstage[iLev], 0, 3,
+                     &Pic::get_node_B, iLev, true);
+    }
+    if (is_body_conducting()) {
+      project_body_B(nodeBstage[iLev], iLev);
+      nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
     auto const& bArrays = bForCfl.const_arrays();
+    auto const& nbArrays = nodeBstage[iLev].const_arrays();
+    const bool hasMoverNodeB = !nodeB[iLev].empty();
+    const bool hasMoverNodeB0 = use_intrinsic_B() && !nodeB0[iLev].empty();
+    auto const& moverBArrays =
+        hasMoverNodeB ? nodeB[iLev].const_arrays() : nbArrays;
+    auto const& moverB0Arrays =
+        hasMoverNodeB0 ? nodeB0[iLev].const_arrays() : nbArrays;
     Real bMaxLev = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl,
                              IntVect(0),
                              [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
@@ -2775,7 +2848,34 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                                              arr(i, j, k, 2) * arr(i, j, k, 2);
                                    return sqrt(b2);
                                  });
-    ParallelDescriptor::ReduceRealMax(bMaxLev);
+    Real bGyroNodeMaxLev = ParReduce(
+        TypeList<ReduceOpMax>{}, TypeList<Real>{}, nodeBstage[iLev], IntVect(0),
+        [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                             int k) noexcept -> GpuTuple<Real> {
+          if (!touches_active_cell(cStatArrays[nb], i, j, k, hasBody, hasFiner))
+            return 0.0;
+          Array4<Real const> const& nbArr = nbArrays[nb];
+          Real b2 = nbArr(i, j, k, ix_) * nbArr(i, j, k, ix_) +
+                    nbArr(i, j, k, iy_) * nbArr(i, j, k, iy_) +
+                    nbArr(i, j, k, iz_) * nbArr(i, j, k, iz_);
+          if (hasMoverNodeB) {
+            const Real bx =
+                moverBArrays[nb](i, j, k, ix_) +
+                (hasMoverNodeB0 ? moverB0Arrays[nb](i, j, k, ix_) : 0.0);
+            const Real by =
+                moverBArrays[nb](i, j, k, iy_) +
+                (hasMoverNodeB0 ? moverB0Arrays[nb](i, j, k, iy_) : 0.0);
+            const Real bz =
+                moverBArrays[nb](i, j, k, iz_) +
+                (hasMoverNodeB0 ? moverB0Arrays[nb](i, j, k, iz_) : 0.0);
+            b2 = amrex::max(b2, bx * bx + by * by + bz * bz);
+          }
+          return std::sqrt(b2);
+        });
+    Real bMaxPair[2] = { bMaxLev, bGyroNodeMaxLev };
+    ParallelDescriptor::ReduceRealMax(bMaxPair, 2);
+    bMaxLev = bMaxPair[0];
+    const Real bGyroMaxLev = amrex::max(bMaxLev, bMaxPair[1]);
 
     // Kinetic advection limit
     Real dtPart =
@@ -2783,7 +2883,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
     // Ion gyrofrequency limit (Omega_ci * dt <= thetaGyro)
     Real dtGyro = std::numeric_limits<Real>::max();
-    if (bMaxLev > 0.0) {
+    if (bGyroMaxLev > 0.0) {
       Real maxQom = 0.0;
       for (int i = 0; i < nSpecies; ++i) {
         Real qom = std::abs(parts[i]->get_charge() / parts[i]->get_mass());
@@ -2791,7 +2891,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       }
       if (maxQom > 0.0) {
         const Real thetaGyro = 0.35; // radians (~18 steps per gyroperiod)
-        dtGyro = thetaGyro / (maxQom * bMaxLev);
+        dtGyro = thetaGyro / (maxQom * bGyroMaxLev);
       }
     }
 
@@ -2820,21 +2920,37 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     if (sMax > 0.0) {
       const Real rhoFloor = amrex::max(rhoMinOhm, static_cast<Real>(1e-10));
       auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
+      const bool hasPrevMoments = !isFirstHybridStep &&
+                                  !nodePlasmaPrev.empty() &&
+                                  !nodePlasmaPrev[nSpecies][iLev].empty();
+      auto const& rhoPrevArrays =
+          hasPrevMoments ? nodePlasmaPrev[nSpecies][iLev].const_arrays()
+                         : rhoArrays;
+      const bool isPC = usePredictorCorrector;
+      const int nSubBound =
+          amrex::max(nBSubcycleMax, amrex::max(nBSubcycle, 1));
+      const Real minSubW = 0.5 / static_cast<Real>(nSubBound);
       const int iRhoComp = iRho_;
       auto redTuple = ParReduce(
           TypeList<ReduceOpMin, ReduceOpMax, ReduceOpMax>{},
           TypeList<Real, Real, Real>{}, nodePlasma[nSpecies][iLev], IntVect(0),
           [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                                int k) noexcept -> GpuTuple<Real, Real, Real> {
-            const Real r = rhoArrays[nb](i, j, k, iRhoComp);
-            if (r <= 0.0)
+            if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j, k,
+                                    hasBody, hasFiner))
               return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
-            bool hasActiveCell = false;
+            const Real rCur = rhoArrays[nb](i, j, k, iRhoComp);
+            const Real rPrev =
+                hasPrevMoments ? rhoPrevArrays[nb](i, j, k, iRhoComp) : rCur;
+            const Real r = min_positive_stage_rho(rCur, rPrev, hasPrevMoments,
+                                                  isPC, minSubW);
+            if (r >= std::numeric_limits<Real>::max())
+              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+            Array4<Real const> const& nbArr = nbArrays[nb];
             const Real bNode =
-                active_node_B_mag(bArrays[nb], cStatArrays[nb], nStatArrays[nb],
-                                  i, j, k, hasBody, hasFiner, hasActiveCell);
-            if (!hasActiveCell)
-              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+                std::sqrt(nbArr(i, j, k, ix_) * nbArr(i, j, k, ix_) +
+                          nbArr(i, j, k, iy_) * nbArr(i, j, k, iy_) +
+                          nbArr(i, j, k, iz_) * nbArr(i, j, k, iz_));
             const Real rEff = amrex::max(r, rhoFloor);
             return { r, bNode / rEff, bNode / std::sqrt(rEff) };
           });
