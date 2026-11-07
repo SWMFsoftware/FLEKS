@@ -5,37 +5,16 @@ SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 VERBOSE_GMRES = 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 
-# GPU build: on when the linked AMReX library was built with CUDA
-# (./Config.pl -cuda). Every source is then compiled by nvcc as CUDA with
-# relocatable device code, and the device code is linked by nvcc -dlink before
-# the host link. The target architectures and nvcc's host compiler are taken
-# from the AMReX build so that the two always match.
-AMREX_INSTALL = ${UTILDIR}/AMREX/InstallDir
-USE_CUDA := $(if $(shell grep -s '^\#define AMREX_USE_CUDA 1' \
-               ${AMREX_INSTALL}/include/AMReX_Config.H),TRUE,FALSE)
-
-ifeq (${USE_CUDA},TRUE)
-  AMREX_PC := ${AMREX_INSTALL}/lib/pkgconfig/amrex.pc
-  NVCC_ARCH_FLAGS := $(shell grep -o -- '--generate-code [^ ]*' ${AMREX_PC})
-  NVCC_CCBIN := $(patsubst -ccbin=%,%, \
-                  $(firstword $(shell grep -o -- '-ccbin=[^ ]*' ${AMREX_PC})))
+# GPU build: when Makefile.conf uses share/build/Makefile.nvcc (./Config.pl -cuda),
+# take CUDA_ARCH from the linked AMReX pkg-config file so the two always match.
+ifeq (${C_COMPILER_NAME},nvcc)
+  CUDA_ARCH := $(shell grep -o 'arch=compute_[0-9]*' \
+                 ${UTILDIR}/AMREX/InstallDir/lib/pkgconfig/amrex.pc | head -1 | tr -dc 0-9)
   CUDA_HOME ?= $(patsubst %/bin/nvcc,%,$(shell which nvcc))
-  # libcuda.so belongs to the driver (in WSL: /usr/lib/wsl/lib); link against
-  # the toolkit's stub, the driver's library is loaded at run time.
-  CUDA_LIBS := -L${CUDA_HOME}/lib64 -L${CUDA_HOME}/lib64/stubs -lcudart \
-               $(sort $(filter -lcu%, \
-                 $(shell grep '^Libs:' ${AMREX_PC})))
-  NVCC = nvcc -ccbin=${NVCC_CCBIN}
-  MPICXX_WRAPPER := ${COMPILE.mpicxx}
-  MPI_CXXFLAGS := $(shell ${MPICXX_WRAPPER} --showme:compile 2>/dev/null || \
-                    ${MPICXX_WRAPPER} -compile_info 2>/dev/null | sed 's/^[^ ]* //')
-  COMPILE.mpicxx = ${NVCC} ${MPI_CXXFLAGS}
-  FLAGCC += -x cu --expt-relaxed-constexpr --expt-extended-lambda \
-	--relocatable-device-code=true ${NVCC_ARCH_FLAGS} \
-	--forward-unknown-to-host-compiler -Wno-deprecated-gpu-targets \
-	--Werror cross-execution-space-call --Werror ext-lambda-captures-this \
-	--display-error-number --diag-error 20092 \
-	-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored
+  CUDA_LIBS = -L${CUDA_HOME}/lib64 -L${CUDA_HOME}/lib64/stubs -lcudart
+  FLAGCC += -Wno-psabi --Werror cross-execution-space-call \
+	--Werror ext-lambda-captures-this --display-error-number \
+	--diag-error 20092 -Xcudafe --diag_suppress=esa_on_defaulted_function_ignored
   DLINK_OBJ = dlink.o
 endif
 
@@ -63,7 +42,7 @@ default: EXE
 EXE:
 	$(MAKE) LIB
 	$(MAKE) main.o
-ifeq (${USE_CUDA},TRUE)
+ifeq (${C_COMPILER_NAME},nvcc)
 	$(MAKE) dlink.o
 endif
 	mkdir -p ../bin
@@ -72,8 +51,7 @@ endif
 
 # Device link of all relocatable device code (FLEKS and AMReX).
 dlink.o: main.o ${LIBFLEKS}
-	${NVCC} -dlink ${NVCC_ARCH_FLAGS} -Wno-deprecated-gpu-targets \
-		main.o ${LIBFLEKS} -L${AMREX_INSTALL}/lib -lamrex -o $@
+	${LINK.cpp} -dlink main.o ${LIBFLEKS} ${AMREXLIB} -o $@
 
 DEPEND:
 	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} main.o
