@@ -6,13 +6,14 @@
 
 #include "Constants.h"
 #include "GemIC.h"
+#include "GpuBackend.h"
 #include "Particles.h"
 #include "ReadParam.h"
 
 using namespace amrex;
 
 namespace {
-inline amrex::Real sech2(amrex::Real u) {
+AMREX_GPU_HOST_DEVICE inline amrex::Real sech2(amrex::Real u) {
   if (std::abs(u) > 40.0)
     return 0.0;
   const amrex::Real ch = std::cosh(u);
@@ -136,9 +137,10 @@ void GemIC::read_param(ReadParam& param) {
       continue;
     }
   }
+  isGaussianPert_ = (pertType_ == "gaussian");
 }
 
-void GemIC::init_geometry(amrex::Real Lx, amrex::Real Ly) const {
+void GemICParams::init_geometry(amrex::Real Lx, amrex::Real Ly) const {
   Lx_ = Lx;
   Ly_ = Ly;
   Wx_ = (waveLengthX_ > 0.0) ? waveLengthX_ : Lx;
@@ -181,7 +183,7 @@ void GemIC::init_geometry(amrex::Real Lx, amrex::Real Ly) const {
   geomInit_ = true;
 }
 
-amrex::Real GemIC::eval_Bx0(amrex::Real y) const {
+AMREX_GPU_HOST_DEVICE amrex::Real GemICParams::eval_Bx0(amrex::Real y) const {
   const amrex::Real l0 = (lambda0_ > 0.0) ? lambda0_ : 1.0;
   if (useDoubleCurrentSheet_) {
     return b0Eff_ * (std::tanh((y + ySheet_) / l0) -
@@ -201,7 +203,7 @@ amrex::Real GemIC::eval_Bx0(amrex::Real y) const {
   return b0Eff_ * std::tanh(y / l0);
 }
 
-amrex::Real GemIC::eval_Jz(amrex::Real y) const {
+AMREX_GPU_HOST_DEVICE amrex::Real GemICParams::eval_Jz(amrex::Real y) const {
   const amrex::Real l0 = (lambda0_ > 0.0) ? lambda0_ : 1.0;
   const amrex::Real factor = -b0Eff_ / (fourPI * l0);
   if (useDoubleCurrentSheet_) {
@@ -219,8 +221,8 @@ amrex::Real GemIC::eval_Jz(amrex::Real y) const {
   return factor * sech2(y / l0);
 }
 
-void GemIC::eval_perturbation(amrex::Real x, amrex::Real y, amrex::Real& dbx,
-                              amrex::Real& dby) const {
+AMREX_GPU_HOST_DEVICE void GemICParams::eval_perturbation(
+    amrex::Real x, amrex::Real y, amrex::Real& dbx, amrex::Real& dby) const {
   dbx = 0.0;
   dby = 0.0;
   if (apert_ == 0.0)
@@ -265,7 +267,7 @@ void GemIC::eval_perturbation(amrex::Real x, amrex::Real y, amrex::Real& dbx,
           std::sin(ky * (y - ySheet_));
     dby = apert_ * b0Eff_ * (2.0 * dPI / Lx_) * std::sin(kx * x) *
           std::cos(ky * (y - ySheet_));
-  } else if (useStandardGem_ && pertType_ != "gaussian") {
+  } else if (useStandardGem_ && !isGaussianPert_) {
     // Classic GEM challenge modal perturbation
     const amrex::Real kx = 2.0 * dPI / Lx_;
     const amrex::Real ky = dPI / Ly_;
@@ -285,7 +287,7 @@ void GemIC::eval_perturbation(amrex::Real x, amrex::Real y, amrex::Real& dbx,
   }
 }
 
-amrex::Real GemIC::eval_Tp(amrex::Real y) const {
+AMREX_GPU_HOST_DEVICE amrex::Real GemICParams::eval_Tp(amrex::Real y) const {
   if (isAsymmetryReconnection_) {
     const amrex::Real l0 = (lambda0_ > 0.0) ? lambda0_ : 1.0;
     return t2_ +
@@ -295,7 +297,8 @@ amrex::Real GemIC::eval_Tp(amrex::Real y) const {
   return tpEff_;
 }
 
-amrex::Real GemIC::eval_density(amrex::Real y, amrex::Real Bx0) const {
+AMREX_GPU_HOST_DEVICE amrex::Real GemICParams::eval_density(
+    amrex::Real y, amrex::Real Bx0) const {
   amrex::Real deltaP = 0.5 * (pB_ - Bx0 * Bx0);
   if (deltaP < 0.0)
     deltaP = 0.0;
@@ -333,61 +336,46 @@ void GemIC::set_fields(PicICFields& fields) const {
     const amrex::Real b0Eff = b0Eff_;
     const bool useUniformPressure = useUniformPressure_;
 
+    // B = Bx0(y) + perturbation, with Bz balancing the pressure if required.
+    // The profile functions are host members, and this runs once.
+    auto set_B = [&](amrex::Real x, amrex::Real y, Array4<Real> const& arrB,
+                     int i, int j, int k) {
+      const amrex::Real bx0 = eval_Bx0(y);
+      amrex::Real dbx = 0.0, dby = 0.0;
+      eval_perturbation(x, y, dbx, dby);
+
+      amrex::Real bz = b0Eff * bg;
+      if (useUniformPressure) {
+        const amrex::Real bz2 =
+            b0Eff * b0Eff - bx0 * bx0 + (b0Eff * bg) * (b0Eff * bg);
+        bz = (bz2 > 0.0) ? std::sqrt(bz2) : 0.0;
+      }
+
+      arrB(i, j, k, ix_) = bx0 + dbx;
+      arrB(i, j, k, iy_) = dby;
+      arrB(i, j, k, iz_) = bz;
+    };
+
     // Node-centered B
-    for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeB[mfi];
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrB = fab.array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        const amrex::Real x = prob_lo[0] + dx[0] * i;
-        const amrex::Real y = prob_lo[1] + dx[1] * j;
-        const amrex::Real bx0 = eval_Bx0(y);
-        amrex::Real dbx = 0.0, dby = 0.0;
-        eval_perturbation(x, y, dbx, dby);
-
-        amrex::Real bz = b0Eff * bg;
-        if (useUniformPressure) {
-          const amrex::Real bz2 =
-              b0Eff * b0Eff - bx0 * bx0 + (b0Eff * bg) * (b0Eff * bg);
-          bz = (bz2 > 0.0) ? std::sqrt(bz2) : 0.0;
-        }
-
-        arrB(i, j, k, ix_) = bx0 + dbx;
-        arrB(i, j, k, iy_) = dby;
-        arrB(i, j, k, iz_) = bz;
-      });
-    }
+    host_fill(
+        nodeB, true,
+        [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrB) {
+          set_B(prob_lo[0] + dx[0] * i, prob_lo[1] + dx[1] * j, arrB, i, j, k);
+        });
 
     // Cell-centered B
-    for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = centerB[mfi];
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrB = fab.array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-        const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
-        const amrex::Real bx0 = eval_Bx0(y);
-        amrex::Real dbx = 0.0, dby = 0.0;
-        eval_perturbation(x, y, dbx, dby);
-
-        amrex::Real bz = b0Eff * bg;
-        if (useUniformPressure) {
-          const amrex::Real bz2 =
-              b0Eff * b0Eff - bx0 * bx0 + (b0Eff * bg) * (b0Eff * bg);
-          bz = (bz2 > 0.0) ? std::sqrt(bz2) : 0.0;
-        }
-
-        arrB(i, j, k, ix_) = bx0 + dbx;
-        arrB(i, j, k, iy_) = dby;
-        arrB(i, j, k, iz_) = bz;
-      });
-    }
+    host_fill(
+        centerB, true,
+        [&](const MFIter&, int i, int j, int k, Array4<Real> const& arrB) {
+          set_B(prob_lo[0] + dx[0] * (i + 0.5), prob_lo[1] + dx[1] * (j + 0.5),
+                arrB, i, j, k);
+        });
   }
 
   fields.fill_boundary_E_B();
 }
 
-void GemIC::modify_particle_weight(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void GemICParams::hook_weight(ParticleICState& s) const {
   if (!geomInit_ || nb_ <= 0.0)
     return;
   const amrex::Real bx0 = eval_Bx0(s.y);
@@ -396,7 +384,8 @@ void GemIC::modify_particle_weight(ParticleICState& s) const {
   s.q *= (factor > 0.0) ? factor : 0.0;
 }
 
-void GemIC::modify_particle_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void GemICParams::hook_velocity(
+    ParticleICState& s) const {
   if (!geomInit_ || s.charge == 0.0)
     return;
   const amrex::Real bx0 = eval_Bx0(s.y);
@@ -429,7 +418,8 @@ void GemIC::modify_particle_velocity(ParticleICState& s) const {
   s.wBulk += uz;
 }
 
-void GemIC::modify_particle_thermal_velocity(ParticleICState& s) const {
+AMREX_GPU_HOST_DEVICE void GemICParams::hook_thermal_velocity(
+    ParticleICState& s) const {
   if (!geomInit_ || !isAsymmetryReconnection_)
     return;
   const amrex::Real tp = eval_Tp(s.y);

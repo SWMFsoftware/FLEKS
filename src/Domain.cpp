@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "Domain.h"
+#include "GpuBackend.h"
 #include "GridUtility.h"
 #include "Shape.h"
 #include "UserSource.h"
@@ -221,6 +222,9 @@ void Domain::init(double time, const int iDomain,
 void Domain::update(Real timeLimit) {
   std::string funcName = "Domain::update";
   timing_func(funcName);
+
+  // One GPU stream, no per-loop synchronization (see GpuBackend.h).
+  [[maybe_unused]] const StreamOrderedRegion streamOrdered;
 
   bool doReport = tc->monitor.is_time_to();
 

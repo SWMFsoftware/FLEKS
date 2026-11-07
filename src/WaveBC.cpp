@@ -92,16 +92,6 @@ std::unique_ptr<WaveProfile> WaveRegistry::create(const WaveComponent& c) {
   return std::make_unique<MonoWave>();
 }
 
-amrex::Real WaveWindow::weight(const amrex::Real* pos) const {
-  const amrex::Real x = pos[direction];
-  if (x < lo || x > hi)
-    return 0.0;
-  const amrex::Real d = std::min(x - lo, hi - x);
-  if (taper > 0.0 && d < taper)
-    return 0.5 * (1.0 - std::cos(dPI * d / taper));
-  return 1.0;
-}
-
 void WaveBoundaryManager::read_window(ReadParam& param) {
   param.read_var("direction", window.direction);
   if (window.direction < 0 || window.direction >= 3)
@@ -302,4 +292,56 @@ void WaveBoundaryManager::convert_units(const FluidInterface* fi) {
       c.isCodeUnits = true;
     }
   }
+}
+
+WaveKickView make_wave_kick_view(const WaveBoundaryManager& wave,
+                                 amrex::Real t) {
+  WaveKickView view;
+  if (!wave.active)
+    return view;
+  view.window = wave.window;
+  for (const auto& f : wave.faces) {
+    for (const auto& c : f.comps) {
+      if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
+        continue;
+      WaveKickComp k;
+      k.profile = c.profile;
+      k.amplitude = c.amplitude;
+      for (int d = 0; d < 3; ++d) {
+        k.k_vec[d] = c.k_vec[d];
+        k.pol[d] = c.pol[d];
+      }
+      k.frequency = c.frequency;
+      k.phase = c.phase;
+      k.env = wave.envelope(c, t);
+      if (c.profile == WaveComponent::kPacket) {
+        const amrex::Real tw = (c.tWidth > 0.0) ? c.tWidth : 1.0;
+        const amrex::Real tau = (t - c.tCenter) / tw;
+        k.packet = std::exp(-tau * tau);
+      }
+      if (c.profile == WaveComponent::kSpectral) {
+        k.sub0 = view.subs.size();
+        for (const auto& sub : c.comps) {
+          WaveKickComp m;
+          m.amplitude = sub.amplitude;
+          for (int d = 0; d < 3; ++d)
+            m.k_vec[d] = sub.k_vec[d];
+          m.frequency = sub.frequency;
+          m.phase = sub.phase;
+          view.subs.resize(view.subs.size() + 1);
+          view.subs[view.subs.size() - 1] = m;
+        }
+        k.nSub = view.subs.size() - k.sub0;
+      }
+      if (c.profile == WaveComponent::kCustom) {
+        if (fleksUseGpu)
+          amrex::Abort("A custom wave profile is a host function and cannot "
+                       "be used in a GPU run.");
+        k.orig = &c;
+      }
+      view.comps.resize(view.comps.size() + 1);
+      view.comps[view.comps.size() - 1] = k;
+    }
+  }
+  return view;
 }
