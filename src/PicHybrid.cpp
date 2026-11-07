@@ -108,6 +108,69 @@ polytropic_closure(const Real rho, const Real p0, const Real invRho0,
   return (rho > 0) ? p0 * std::pow(rho * invRho0, gamma) : 0.0;
 }
 
+// True when node (i,j,k) lies outside #BODY and touches at least one active
+// (in-level, uncovered, outside-body) cell on this level.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_active_cfl_node(
+    const Array4<int const>& cStat, const Array4<int const>& nStat, const int i,
+    const int j, const int k, const bool hasBody,
+    const bool hasFiner) noexcept {
+  if (hasBody && bit::is_body(nStat(i, j, k)))
+    return false;
+  const int kmin = (nDim > 2) ? k - 1 : k;
+  const int jmin = (nDim > 1) ? j - 1 : j;
+  for (int kk = kmin; kk <= k; ++kk) {
+    for (int jj = jmin; jj <= j; ++jj) {
+      for (int ii = i - 1; ii <= i; ++ii) {
+        const int st = cStat(ii, jj, kk);
+        if (!bit::is_lev_boundary(st) && !(hasBody && bit::is_body(st)) &&
+            !(hasFiner && bit::is_refined(st))) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// Average |B| at node (i,j,k) over the active (in-level, uncovered,
+// outside-body) surrounding cells. Sets hasActiveCell = true when at least one
+// surrounding cell is active on this level.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real active_node_B_mag(
+    const Array4<Real const>& bArr, const Array4<int const>& cStat,
+    const Array4<int const>& nStat, const int i, const int j, const int k,
+    const bool hasBody, const bool hasFiner, bool& hasActiveCell) noexcept {
+  if (hasBody && bit::is_body(nStat(i, j, k))) {
+    hasActiveCell = false;
+    return 0.0;
+  }
+  const int kmin = (nDim > 2) ? k - 1 : k;
+  const int jmin = (nDim > 1) ? j - 1 : j;
+  Real bx = 0.0, by = 0.0, bz = 0.0;
+  int nActive = 0;
+  for (int kk = kmin; kk <= k; ++kk) {
+    for (int jj = jmin; jj <= j; ++jj) {
+      for (int ii = i - 1; ii <= i; ++ii) {
+        const int st = cStat(ii, jj, kk);
+        if (bit::is_lev_boundary(st) || (hasBody && bit::is_body(st)) ||
+            (hasFiner && bit::is_refined(st)))
+          continue;
+        bx += bArr(ii, jj, kk, ix_);
+        by += bArr(ii, jj, kk, iy_);
+        bz += bArr(ii, jj, kk, iz_);
+        ++nActive;
+      }
+    }
+  }
+  hasActiveCell = (nActive > 0);
+  if (nActive <= 0)
+    return 0.0;
+  const Real invN = 1.0 / static_cast<Real>(nActive);
+  bx *= invN;
+  by *= invN;
+  bz *= invN;
+  return std::sqrt(bx * bx + by * by + bz * bz);
+}
+
 } // namespace
 
 //==========================================================
@@ -2095,7 +2158,16 @@ void Pic::update_B_hybrid() {
   }
   const Real maxEta = etaResistivity + maxRegionalEta;
 
+  // Ensure B ghost cells are fresh across all levels before CFL checks and
+  // Faraday subcycling.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    apply_centerB_BC(iLev);
+  }
+
+  const bool hasBody = use_body();
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    const bool hasFiner = (iLev < finestLevel());
     Real maxRegionalHyperLev = 0.0;
     for (const auto& cfg : regionalHyperResistivityConfigs) {
       if (iLev < static_cast<int>(cfg.etaLev.size())) {
@@ -2128,14 +2200,22 @@ void Pic::update_B_hybrid() {
     Real bMaxLev = 0.0;
     Real rhoMinLev = 0.0;
     Real rhoEff = 0.0;
+    Real bOverRhoMax = 0.0;
+    Real bOverSqrtRhoMax = 0.0;
     Real uMaxLev = 0.0;
+    bool hasPlasma = false;
     if (useHallTerm || useHybridUpwind) {
       const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
       auto const& bArrays = bForCfl.const_arrays();
+      auto const& cStatArrays = cell_status(iLev).const_arrays();
       bMaxLev = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl,
                           IntVect(0),
                           [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
                               noexcept -> GpuTuple<Real> {
+                                const int st = cStatArrays[nb](i, j, k);
+                                if ((hasBody && bit::is_body(st)) ||
+                                    (hasFiner && bit::is_refined(st)))
+                                  return 0.0;
                                 Array4<Real const> const& arr = bArrays[nb];
                                 Real b2 = arr(i, j, k, 0) * arr(i, j, k, 0) +
                                           arr(i, j, k, 1) * arr(i, j, k, 1) +
@@ -2145,25 +2225,44 @@ void Pic::update_B_hybrid() {
       ParallelDescriptor::ReduceRealMax(bMaxLev);
 
       // assemble_ohm_E disables Hall and wave-speed upwind terms at nodes with
-      // rho <= 0 (vacuum, particle-free tests, or inside #BODY), so only
-      // positive-density nodes participate in the density floor.
+      // rho <= 0 (vacuum, particle-free tests, or inside #BODY), and evaluates
+      // the Hall/upwind speeds from the local nodal B and rho_eff. Reduce the
+      // pointwise maxima of |B|/rho_eff and |B|/sqrt(rho_eff) over active
+      // plasma nodes so a strong crustal/dipole field inside #BODY or high-
+      // density ionosphere is not falsely paired with a low-density wake floor.
+      const Real rhoFloor = amrex::max(rhoMinOhm, static_cast<Real>(1e-10));
       auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
+      auto const& nStatArrays = node_status(iLev).const_arrays();
       const int iRhoComp = iRho_;
-      Real rhoPosMin =
-          ParReduce(TypeList<ReduceOpMin>{}, TypeList<Real>{},
-                    nodePlasma[nSpecies][iLev], IntVect(0),
-                    [=] AMREX_GPU_DEVICE(int nb, int i, int j,
-                                         int k) noexcept -> GpuTuple<Real> {
-                      const Real r = rhoArrays[nb](i, j, k, iRhoComp);
-                      return (r > 0.0) ? r : std::numeric_limits<Real>::max();
-                    });
+      auto redTuple = ParReduce(
+          TypeList<ReduceOpMin, ReduceOpMax, ReduceOpMax>{},
+          TypeList<Real, Real, Real>{}, nodePlasma[nSpecies][iLev], IntVect(0),
+          [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                               int k) noexcept -> GpuTuple<Real, Real, Real> {
+            const Real r = rhoArrays[nb](i, j, k, iRhoComp);
+            if (r <= 0.0)
+              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+            bool hasActiveCell = false;
+            const Real bNode =
+                active_node_B_mag(bArrays[nb], cStatArrays[nb], nStatArrays[nb],
+                                  i, j, k, hasBody, hasFiner, hasActiveCell);
+            if (!hasActiveCell)
+              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+            const Real rEff = amrex::max(r, rhoFloor);
+            return { r, bNode / rEff, bNode / std::sqrt(rEff) };
+          });
+      Real rhoPosMin = amrex::get<0>(redTuple);
+      bOverRhoMax = amrex::get<1>(redTuple);
+      bOverSqrtRhoMax = amrex::get<2>(redTuple);
       ParallelDescriptor::ReduceRealMin(rhoPosMin);
-      const bool hasPlasma = (rhoPosMin < std::numeric_limits<Real>::max());
+      Real maxRatios[2] = { bOverRhoMax, bOverSqrtRhoMax };
+      ParallelDescriptor::ReduceRealMax(maxRatios, 2);
+      bOverRhoMax = maxRatios[0];
+      bOverSqrtRhoMax = maxRatios[1];
+
+      hasPlasma = (rhoPosMin < std::numeric_limits<Real>::max());
       rhoMinLev = hasPlasma ? rhoPosMin : 0.0;
-      rhoEff = hasPlasma
-                   ? amrex::max(rhoMinLev,
-                                amrex::max(rhoMinOhm, static_cast<Real>(1e-10)))
-                   : 0.0;
+      rhoEff = hasPlasma ? amrex::max(rhoMinLev, rhoFloor) : 0.0;
 
       // Bound fresh electron velocity (bulk velocity when Hall is disabled) for
       // the upwind dissipation rate estimate.
@@ -2180,7 +2279,9 @@ void Pic::update_B_hybrid() {
               [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
                   noexcept -> GpuTuple<Real> {
                     const Real rho = rhoArrays[nb](i, j, k, iRhoComp);
-                    if (rho <= 0.0)
+                    if (rho <= 0.0 ||
+                        !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i,
+                                            j, k, hasBody, hasFiner))
                       return 0.0;
                     const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
                     Real u2 = 0.0;
@@ -2193,23 +2294,24 @@ void Pic::update_B_hybrid() {
                     return std::sqrt(u2);
                   });
         } else {
-          uMaxLev =
-              ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{},
-                        nodePlasma[nSpecies][iLev], IntVect(0),
-                        [=] AMREX_GPU_DEVICE(int nb, int i, int j,
-                                             int k) noexcept -> GpuTuple<Real> {
-                          const Real rho = rhoArrays[nb](i, j, k, iRhoComp);
-                          if (rho <= 0.0)
-                            return 0.0;
-                          const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
-                          Real u2 = 0.0;
-                          for (int d = 0; d < 3; ++d) {
-                            const Real ui_d =
-                                rhoArrays[nb](i, j, k, iMx_ + d) * invRho;
-                            u2 += ui_d * ui_d;
-                          }
-                          return std::sqrt(u2);
-                        });
+          uMaxLev = ParReduce(
+              TypeList<ReduceOpMax>{}, TypeList<Real>{},
+              nodePlasma[nSpecies][iLev], IntVect(0),
+              [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                                   int k) noexcept -> GpuTuple<Real> {
+                const Real rho = rhoArrays[nb](i, j, k, iRhoComp);
+                if (rho <= 0.0 ||
+                    !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
+                                        k, hasBody, hasFiner))
+                  return 0.0;
+                const Real invRho = 1.0 / amrex::max(rho, rhoMinOhm);
+                Real u2 = 0.0;
+                for (int d = 0; d < 3; ++d) {
+                  const Real ui_d = rhoArrays[nb](i, j, k, iMx_ + d) * invRho;
+                  u2 += ui_d * ui_d;
+                }
+                return std::sqrt(u2);
+              });
         }
         ParallelDescriptor::ReduceRealMax(uMaxLev);
       }
@@ -2218,11 +2320,12 @@ void Pic::update_B_hybrid() {
     const Real rateEtaDt = (maxEta / fourPI) * sMax * dt;
     const Real rateHyperDt = (maxHyper / fourPI) * sMax * lMax * dt;
     const Real rateUpwindDt =
-        useHybridUpwind ? upwind_max_rate(iLev, uMaxLev, bMaxLev, rhoEff) * dt
+        useHybridUpwind ? upwind_max_rate(iLev, uMaxLev, bOverSqrtRhoMax,
+                                          bOverRhoMax, hasPlasma) *
+                              dt
                         : 0.0;
-    const Real rateWhistlerDt = (useHallTerm && rhoEff > 0.0)
-                                    ? (sMax * bMaxLev / (fourPI * rhoEff)) * dt
-                                    : 0.0;
+    const Real rateWhistlerDt =
+        (useHallTerm && hasPlasma) ? (sMax * bOverRhoMax / fourPI) * dt : 0.0;
     // Bound the summed dissipative rate on the real axis (resistive +
     // hyper-resistive + upwind dissipation).
     const Real rateDissipativeDt = rateEtaDt + rateHyperDt + rateUpwindDt;
@@ -2266,7 +2369,7 @@ void Pic::update_B_hybrid() {
                      << ", explicit diffusion may be unstable)\n";
     }
 
-    if (useHallTerm && rhoEff > 0.0) {
+    if (useHallTerm && hasPlasma) {
       if (cflWhistler > cflLimitWhistler) {
         const int nSubReq = safe_ceil_int(rateWhistlerDt / cflLimitWhistler);
         amrex::Print() << "  [CFL warning] whistler wave: "
@@ -2275,6 +2378,7 @@ void Pic::update_B_hybrid() {
                        << ", whistler wave is linearly unstable in "
                        << fieldIntegrator << "! rho_min=" << rhoMinLev
                        << ", rho_eff=" << rhoEff << ", B_max=" << bMaxLev
+                       << ", (B/rho_eff)_max=" << bOverRhoMax
                        << "). Recommend nBSubcycle >= " << nSubReq
                        << " or increasing rhoMinOhm.\n";
       }
@@ -2290,11 +2394,6 @@ void Pic::update_B_hybrid() {
   // produced an artificial jump across coarse-fine boundaries, generating
   // unphysical horizontal dipole stripes of Bz in Harris reconnection.
   const bool ambiInStages = (electronTemperature > 0);
-
-  // Ensure B ghost cells are fresh across all levels before subcycling.
-  for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    apply_centerB_BC(iLev);
-  }
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
@@ -2537,18 +2636,19 @@ void Pic::update_B_hybrid() {
 // 2 a_d / dx_d (a real eigenvalue), so the explicit field advance needs
 // dt_sub * sum_d 2 a_d / dx_d below the real-axis stability limit of the RK
 // scheme. Limited reconstructions only damp less.
-Real Pic::upwind_max_rate(int iLev, Real uMax, Real bMax, Real rhoEff) const {
-  if (!useHybridUpwind)
+Real Pic::upwind_max_rate(int iLev, Real uMax, Real bOverSqrtRhoMax,
+                          Real bOverRhoMax, bool hasPlasma) const {
+  if (!useHybridUpwind || (!hasPlasma && upwindFixedSpeed <= 0.0))
     return 0.0;
 
   Real cFast = 0.0, cWhistlerDx = 0.0;
-  if (rhoEff > 0.0) {
+  if (hasPlasma && upwindFixedSpeed <= 0.0) {
     Real cs2 = 0.0;
     if (electronTemperature > 0.0)
       cs2 = ((electronGamma > 0.0) ? electronGamma : 1.0) * electronTemperature;
-    cFast = std::sqrt(bMax * bMax / (fourPI * rhoEff) + cs2);
+    cFast = std::sqrt(bOverSqrtRhoMax * bOverSqrtRhoMax / fourPI + cs2);
     if (useHallTerm)
-      cWhistlerDx = upwindCoefWhistler * 0.25 * bMax / rhoEff;
+      cWhistlerDx = upwindCoefWhistler * 0.25 * bOverRhoMax;
   }
 
   Real rate = 0.0;
@@ -2602,14 +2702,19 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     Real dtWave = std::numeric_limits<Real>::max();
   };
   Vector<LevSubReq> levReqs(n_lev());
+  const bool hasBody = use_body();
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     LevSubReq& req = levReqs[iLev];
+    const bool hasFiner = (iLev < finestLevel());
     const auto dx = Geom(iLev).CellSizeArray();
     Real dxMin = dx[0];
     for (int d = 1; d < nDim; ++d) {
       dxMin = amrex::min(dxMin, dx[d]);
     }
+
+    auto const& cStatArrays = cell_status(iLev).const_arrays();
+    auto const& nStatArrays = node_status(iLev).const_arrays();
 
     // 1. Kinetic ion advection limit (including bulk flow + thermal spread)
     Real uMaxLev = 0.0;
@@ -2626,7 +2731,9 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                 noexcept -> GpuTuple<Real> {
                   Array4<Real const> const& arr = ma[nb];
                   Real rho = arr(i, j, k, iRho_);
-                  if (rho <= 0.0)
+                  if (rho <= 0.0 ||
+                      !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i,
+                                          j, k, hasBody, hasFiner))
                     return 0.0;
                   Real invRho = 1.0 / rho;
                   Real uBulk2 = (arr(i, j, k, iUx_) * arr(i, j, k, iUx_) +
@@ -2649,14 +2756,19 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       }
     }
 
-    // 2. Maximum magnetic field magnitude on this level (including intrinsic
-    // B0)
+    // 2. Maximum magnetic field magnitude on active plasma cells of this level
+    // (including intrinsic B0, excluding #BODY and covered AMR cells)
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
     auto const& bArrays = bForCfl.const_arrays();
     Real bMaxLev = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl,
                              IntVect(0),
                              [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
                                  noexcept -> GpuTuple<Real> {
+                                   const int st = cStatArrays[nb](i, j, k);
+                                   if ((hasBody && bit::is_body(st)) ||
+                                       (hasFiner && bit::is_refined(st)))
+                                     return 0.0;
                                    Array4<Real const> const& arr = bArrays[nb];
                                    Real b2 = arr(i, j, k, 0) * arr(i, j, k, 0) +
                                              arr(i, j, k, 1) * arr(i, j, k, 1) +
@@ -2706,27 +2818,39 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     }
 
     if (sMax > 0.0) {
+      const Real rhoFloor = amrex::max(rhoMinOhm, static_cast<Real>(1e-10));
       auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
       const int iRhoComp = iRho_;
-      Real rhoPosMin =
-          ParReduce(TypeList<ReduceOpMin>{}, TypeList<Real>{},
-                    nodePlasma[nSpecies][iLev], IntVect(0),
-                    [=] AMREX_GPU_DEVICE(int nb, int i, int j,
-                                         int k) noexcept -> GpuTuple<Real> {
-                      const Real r = rhoArrays[nb](i, j, k, iRhoComp);
-                      return (r > 0.0) ? r : std::numeric_limits<Real>::max();
-                    });
+      auto redTuple = ParReduce(
+          TypeList<ReduceOpMin, ReduceOpMax, ReduceOpMax>{},
+          TypeList<Real, Real, Real>{}, nodePlasma[nSpecies][iLev], IntVect(0),
+          [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                               int k) noexcept -> GpuTuple<Real, Real, Real> {
+            const Real r = rhoArrays[nb](i, j, k, iRhoComp);
+            if (r <= 0.0)
+              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+            bool hasActiveCell = false;
+            const Real bNode =
+                active_node_B_mag(bArrays[nb], cStatArrays[nb], nStatArrays[nb],
+                                  i, j, k, hasBody, hasFiner, hasActiveCell);
+            if (!hasActiveCell)
+              return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
+            const Real rEff = amrex::max(r, rhoFloor);
+            return { r, bNode / rEff, bNode / std::sqrt(rEff) };
+          });
+      Real rhoPosMin = amrex::get<0>(redTuple);
+      Real bOverRhoMax = amrex::get<1>(redTuple);
+      Real bOverSqrtRhoMax = amrex::get<2>(redTuple);
       ParallelDescriptor::ReduceRealMin(rhoPosMin);
-      const bool hasPlasma = (rhoPosMin < std::numeric_limits<Real>::max());
-      const Real rhoMinLev = hasPlasma ? rhoPosMin : 0.0;
-      const Real rhoEff =
-          hasPlasma
-              ? amrex::max(rhoMinLev,
-                           amrex::max(rhoMinOhm, static_cast<Real>(1e-10)))
-              : 0.0;
+      Real maxRatios[2] = { bOverRhoMax, bOverSqrtRhoMax };
+      ParallelDescriptor::ReduceRealMax(maxRatios, 2);
+      bOverRhoMax = maxRatios[0];
+      bOverSqrtRhoMax = maxRatios[1];
 
-      if (useHallTerm && bMaxLev > 0.0 && rhoEff > 0.0) {
-        const Real omegaWhistler = (sMax * bMaxLev) / (fourPI * rhoEff);
+      const bool hasPlasma = (rhoPosMin < std::numeric_limits<Real>::max());
+
+      if (useHallTerm && hasPlasma && bOverRhoMax > 0.0) {
+        const Real omegaWhistler = (sMax * bOverRhoMax) / fourPI;
         if (omegaWhistler > 0.0) {
           req.dtWhistler = (cflLimitWhistler * fieldSafety) / omegaWhistler;
           if (req.dtWhistler < dtSubMin) {
@@ -2738,8 +2862,8 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
       // Fast magnetosonic / Alfvén wave limit (governs when useHallTerm is
       // false or on coarse cells)
-      if (bMaxLev > 0.0 && rhoEff > 0.0) {
-        Real vA = bMaxLev / std::sqrt(fourPI * rhoEff);
+      if (hasPlasma && (bOverSqrtRhoMax > 0.0 || electronTemperature > 0.0)) {
+        Real vA = bOverSqrtRhoMax / std::sqrt(fourPI);
         Real cs = 0.0;
         if (electronTemperature > 0.0) {
           Real gammaE = (electronGamma > 0.0) ? electronGamma : 1.0;
@@ -2796,7 +2920,8 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
       }
 
       if (useHybridUpwind) {
-        req.omegaDiss += upwind_max_rate(iLev, uMaxLev, bMaxLev, rhoEff);
+        req.omegaDiss += upwind_max_rate(iLev, uMaxLev, bOverSqrtRhoMax,
+                                         bOverRhoMax, hasPlasma);
       }
 
       if (req.omegaDiss > 0.0) {

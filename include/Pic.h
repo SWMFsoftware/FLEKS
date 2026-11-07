@@ -1015,9 +1015,12 @@ public:
   void calc_hybrid_dt_and_subcycle(amrex::Real &dtNext, int &nSubNext,
                                    bool doReport);
   // Largest damping rate sum_d 2 a_d / dx_d of the #HYBRIDUPWIND term on
-  // level iLev for the bulk speed uMax, field bMax and density rhoEff.
-  amrex::Real upwind_max_rate(int iLev, amrex::Real uMax, amrex::Real bMax,
-                              amrex::Real rhoEff) const;
+  // level iLev for the bulk speed uMax and active-node maxima of
+  // |B|/sqrt(rho_eff) and |B|/rho_eff.
+  amrex::Real upwind_max_rate(int iLev, amrex::Real uMax,
+                              amrex::Real bOverSqrtRhoMax,
+                              amrex::Real bOverRhoMax,
+                              bool hasPlasma = true) const;
   // Apply periodic and physical boundary conditions (and coarse-fine interface
   // ghosts on refined levels) to the cell-centered B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.
