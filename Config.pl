@@ -59,8 +59,8 @@ my $NewCuda;
 my $CudaArch;
 my $UseCuda = &amrex_uses_cuda("$AmrexDir/InstallDir");
 foreach (@Arguments){
-    if(/^-cuda(?:=(\d+))?$/i){ $NewCuda = 1; $CudaArch = $1 if defined $1; }
-    if(/^-nocuda$/i)         { $NewCuda = 0; }
+    if(/^-cuda(?:=([\d,]+))?$/i){ $NewCuda = 1; $CudaArch = $1 if defined $1; }
+    if(/^-nocuda$/i)            { $NewCuda = 0; }
 }
 @Arguments = grep { !/^-(no)?cuda(=\S+)?$/i } @Arguments;
 $UseCuda = $NewCuda if defined $NewCuda;
@@ -94,7 +94,8 @@ if(-f $config){
         push @Arguments, "-amrex$AmrexDimArg"
             unless grep { /^-amrex(2d|3d)?$/i } @Arguments;
     } elsif (defined $NewCuda) {
-        &set_c_compiler_conf($UseCuda ? "nvcc" : "gcc_mpicc");
+        &set_c_compiler_conf($UseCuda ? "nvcc" : "gcc_mpicc",
+                             "$AmrexDir/InstallDir\U$AmrexDimArg\E_cuda");
     }
     push @Arguments, "-show" unless @ARGV;
     push @Arguments, "-nodebug", "-install" unless -f $MakefileConf;
@@ -348,16 +349,37 @@ sub amrex_uses_cuda{
 }
 ################################################################################
 sub set_c_compiler_conf{
-    my $cMake = (-f "share/build/Makefile.$_[0]")
-        ? "share/build/Makefile.$_[0]" : "../../share/build/Makefile.$_[0]";
+    my ($comp, $amrexInstallDir) = @_;
+    my $cMake = (-f "share/build/Makefile.$comp")
+        ? "share/build/Makefile.$comp" : "../../share/build/Makefile.$comp";
     return unless -f $MakefileConf and -f $cMake;
-    my $skip = 0;
+    my $mpicxxShow = `mpicxx -show 2>/dev/null`;
+    my ($cudaArch, @genCode);
+    if ($comp eq "nvcc" and $amrexInstallDir and
+        open(my $pc, "<", "$amrexInstallDir/lib/pkgconfig/amrex.pc")) {
+        while (<$pc>) {
+            push @genCode, /(--generate-code\s+\S+)/g;
+        }
+        close $pc;
+        $cudaArch = join(",", map { /arch=compute_(\d+)/ ? $1 : () } @genCode);
+    }
+    my ($skip, $isDebug) = (0, 0);
     @ARGV = ($MakefileConf);
     while (<>) {
+        $isDebug = 1 if !$skip and /^\s*DEBUG\s*=\s*\$\{DEBUGFLAG\}/;
         if (/^# C language related part of Makefile\.conf:/) {
             $skip = 1;
             open(my $f, "<", $cMake) or die "$ERROR could not open $cMake\n";
-            print while <$f>;
+            while (my $line = <$f>) {
+                if ($line =~ /^CPPLIB/) {
+                    $line =~ s/ -lmpi_cxx// if $mpicxxShow !~ /-lmpi_cxx/;
+                    $line =~ s/ -lmpi\+\+// if $mpicxxShow !~ /-lmpi\+\+/;
+                }
+                $line =~ s/^#(DEBUGC\s*=)/$1/ if $isDebug;
+                $line =~ s/^CUDA_ARCH\s*:=.*/CUDA_ARCH := $cudaArch/ if $cudaArch;
+                $line =~ s/--generate-code\s+\S+/join(" ", @genCode)/e if @genCode;
+                print $line;
+            }
             close $f;
         }
         print unless $skip;
@@ -375,16 +397,18 @@ sub link_amrex{
         my $arch = $CudaArch ||
             `nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -dc 0-9` ||
             "80";
-        my $libArch = `grep -o 'arch=compute_[0-9]*' $AmrexDir/$InstallDir/lib/pkgconfig/amrex.pc 2>/dev/null | head -1 | tr -dc 0-9`;
-        if (not -e "$AmrexDir/$InstallDir/lib/libamrex.a" or
-            (defined $CudaArch and $libArch ne $arch) or not $libArch) {
-            my $flags = "USE_CUDA=TRUE CUDA_ARCH=$arch USE_CUDA_FAST_MATH=FALSE " .
+        (my $archList = $arch) =~ s/,/ /g;
+        my @libArch = (`cat $AmrexDir/$InstallDir/lib/pkgconfig/amrex.pc 2>/dev/null`
+                       =~ /arch=compute_(\d+)/g);
+        if (not -e "$AmrexDir/$InstallDir/lib/libamrex.a" or not @libArch or
+            (defined $NewCuda and join(" ", @libArch) ne $archList)) {
+            my $flags = "USE_CUDA=TRUE CUDA_ARCH=\"$archList\" USE_CUDA_FAST_MATH=FALSE " .
                 "NVCC_CCBIN=mpicxx DIM=$nDim AMREX_INSTALL_DIR=$InstallDir";
             print "Building the CUDA AMReX library in $AmrexDir/$InstallDir (sm_$arch)\n";
             system("cd $AmrexDir && rm -rf $InstallDir && make clean && make -j 8 $flags && make install $flags") == 0
                 or die "$ERROR could not build $AmrexDir/$InstallDir\n";
         }
-        &set_c_compiler_conf("nvcc");
+        &set_c_compiler_conf("nvcc", "$AmrexDir/$InstallDir");
     } else {
         die "$ERROR CPU AMReX library $AmrexDir/$InstallDir does not exist!\n"
             unless -e "$AmrexDir/$InstallDir/lib/libamrex.a";

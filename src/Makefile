@@ -5,11 +5,9 @@ SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 VERBOSE_GMRES = 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 
-# GPU build: when Makefile.conf uses share/build/Makefile.nvcc (./Config.pl -cuda),
-# take CUDA_ARCH from the linked AMReX pkg-config file so the two always match.
+# GPU build: extra nvcc warning/error flags and device linking when Makefile.conf
+# uses share/build/Makefile.nvcc (./Config.pl -cuda).
 ifeq (${C_COMPILER_NAME},nvcc)
-  CUDA_ARCH := $(shell grep -o 'arch=compute_[0-9]*' \
-                 ${UTILDIR}/AMREX/InstallDir/lib/pkgconfig/amrex.pc | head -1 | tr -dc 0-9)
   CUDA_HOME ?= $(patsubst %/bin/nvcc,%,$(shell which nvcc))
   CUDA_LIBS = -L${CUDA_HOME}/lib64 -L${CUDA_HOME}/lib64/stubs -lcudart
   FLAGCC += -Wno-psabi --Werror cross-execution-space-call \
