@@ -63,16 +63,16 @@ F                       useHybridPIC
 -1.0                    charge
 
 #UNIFORMSTATE
-12.5                    rho [/cc]   Species 0: ions (nb = 0.2)
+13.03188                rho [/cc]   Species 0: ions (nb = 0.20 code units = 0.20 * 65.15939)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-304000.0                T [K]
-12.5                    rho [/cc]   Species 1: electrons (rho_e = rho_i * me/mi)
+187191.0                T [K]       ions (Ti_code = (5/6)*tpEff = 5*2.33/(24*pi) ~ 0.15452, Ti/Te = 5)
+13.03188                rho [/cc]   Species 1: electrons (nb = 0.20 code units)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-304000.0                T [K]
+37438.2                 T [K]       electrons (Te_code = (1/6)*tpEff = 2.33/(24*pi) ~ 0.03090, Ti/Te = 5)
 0.0                     bx [T]
 0.0                     by [T]
 0.0                     bz [T]
@@ -86,8 +86,8 @@ gem
 #GEMIC
 1.0                     b1
 2.0                     b2
-1.33                    t1
-3.33                    t2
+0.105838                t1       [1.33 / (4*pi)]
+0.265003                t2       [3.33 / (4*pi)]
 1.0                     lambda0
 1.0                     apert
 T                       isAsymmetryReconnection

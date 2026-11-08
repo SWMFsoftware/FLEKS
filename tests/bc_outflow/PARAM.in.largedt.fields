@@ -88,7 +88,7 @@ gem
 
 #GEMIC
 1.0                     b0
-0.5                     tp
+0.0397887               tp       [1/(8*pi)]
 0.14105                 lambda0  [0.5 d_i]
 0.02821                 apert  [psi_0 = 0.1 B_0 d_i]
 T                       useStandardGem

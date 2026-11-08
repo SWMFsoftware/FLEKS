@@ -118,6 +118,26 @@ def _load_efield(path):
     return ex, ey, ez
 
 
+def _load_uz(path):
+    """Parse ion out-of-plane bulk velocity uzS0 from a ``z=0`` .out file."""
+    lines = open(path, encoding="latin-1").read().splitlines()
+    if len(lines) < 6:
+        return None
+    names = lines[4].split()[:19]
+    idx = {v: i for i, v in enumerate(names)}
+    if "uzS0" not in idx:
+        return None
+    rows = [ln.split() for ln in lines[5:] if len(ln.split()) >= 19]
+    if not rows:
+        return None
+    data = np.array([r[:19] for r in rows], dtype=float)
+    x = data[:, idx["x"]]
+    y = data[:, idx["y"]]
+    nx = len(np.unique(np.round(x, 3)))
+    ny = len(np.unique(np.round(y, 3)))
+    return data[:, idx["uzS0"]].reshape(ny, nx)
+
+
 def _island_flux(frame):
     """Flux between the central X-point and the island O-points (Fadeev).
 
@@ -502,6 +522,21 @@ def _validate_asym_plot(test_name, frames):
         return False, f"t=0: peak density {rho_peak:.3f} not in range (0.5, 1.6)"
     if rho_bg > 0.4:
         return False, f"t=0: background density {rho_bg:.3f} too high (expected ~0.2)"
+
+    # Check current sheet drift sign at t=0: Jz = -(1/4pi) dBx/dy, so
+    # upper sheet (y ~ +7, dBx/dy < 0) has Jz > 0 (uzS0 > 0) and
+    # lower sheet (y ~ -7, dBx/dy > 0) has Jz < 0 (uzS0 < 0).
+    uz0 = _load_uz(frames[0][0])
+    if uz0 is not None:
+        j_up = int(np.argmin(np.abs(uy - 7.0)))
+        j_lo = int(np.argmin(np.abs(uy + 7.0)))
+        uz_up = float(uz0[j_up, :].mean())
+        uz_lo = float(uz0[j_lo, :].mean())
+        if uz_up <= 0.0 or uz_lo >= 0.0:
+            return False, (
+                f"t=0: wrong current sign at asymmetric sheets "
+                f"(uz_up={uz_up:.4f} expected > 0, uz_lo={uz_lo:.4f} expected < 0)"
+            )
 
     # 2. Perturbation evolution
     max_dby_series = []

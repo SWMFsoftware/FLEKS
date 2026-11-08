@@ -127,7 +127,7 @@ gem
 
 #GEMIC
 1.0                     b0       [asymptotic magnetic field B0 = 1.0]
-0.5                     tp       [tp = 0.5 yields delta_n = 1.0, so n(0) = nb + n0 = 0.2 + 1.0 = 1.2]
+0.0397887               tp       [tp = Ti_code + Te_code = 1/(8*pi) yields delta_n = 1.0, so n(0) = nb + n0 = 1.2]
 0.14105                 lambda0  [current sheet half-width = 0.5 d_i = 0.5 / sqrt(4*pi) code units]
 0.02821                 apert    [vector potential perturbation amplitude psi0 = 0.1 * B0 * d_i]
 T                       useStandardGem
