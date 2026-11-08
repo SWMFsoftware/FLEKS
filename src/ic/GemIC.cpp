@@ -207,7 +207,7 @@ amrex::Real GemIC::eval_Jz(amrex::Real y) const {
   if (useDoubleCurrentSheet_) {
     return factor * (sech2((y + ySheet_) / l0) - sech2((y - ySheet_) / l0));
   } else if (isAsymmetryReconnection_) {
-    return factor *
+    return -factor *
            (sech2((y - 0.25 * Wy_) / l0) - sech2((y - 0.75 * Wy_) / l0) +
             sech2((y - 1.25 * Wy_) / l0) - sech2((y + 0.25 * Wy_) / l0));
   } else if (useGEMReflected_) {
@@ -296,7 +296,7 @@ amrex::Real GemIC::eval_Tp(amrex::Real y) const {
 }
 
 amrex::Real GemIC::eval_density(amrex::Real y, amrex::Real Bx0) const {
-  amrex::Real deltaP = 0.5 * (pB_ - Bx0 * Bx0);
+  amrex::Real deltaP = (pB_ - Bx0 * Bx0) / (2.0 * fourPI);
   if (deltaP < 0.0)
     deltaP = 0.0;
   const amrex::Real Ptot = nb_ * tpEff_ + deltaP;
