@@ -108,8 +108,11 @@ jobs:
         working-directory: SWMF
         run: |
           FAILED=0
-          for diff_file in test20_ohpt.diff test21_oh_pt.diff test22_ohpt.diff; do
-            if [ -s "$diff_file" ]; then
+          for diff_file in test20_ohpt.diff test21_ohpt.diff test22_ohpt.diff; do
+            if [ ! -f "$diff_file" ]; then
+              echo "::error::Test verification failed! Expected diff file $diff_file was not generated."
+              FAILED=1
+            elif [ -s "$diff_file" ]; then
               echo "::error::Test verification failed! Non-zero diff detected in $diff_file"
               cat "$diff_file"
               FAILED=1
