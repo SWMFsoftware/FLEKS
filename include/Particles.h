@@ -498,7 +498,7 @@ public:
 
   // Wave bulk-velocity kick (pos, t -> dvx,dvy,dvz), set by Pic; null = off.
   std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
-                     amrex::Real&, amrex::Real&)>
+                     amrex::Real&, amrex::Real&, int, int)>
       waveVelocityKick = nullptr;
 
   // Index of the integer data.

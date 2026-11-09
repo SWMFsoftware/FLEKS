@@ -470,8 +470,8 @@ void Pic::post_regrid(MeshChangeReason reason) {
     if (waveBC.active) {
       for (auto& p : parts) {
         p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
-                                     Real& dvy, Real& dvz) {
-          wave_velocity_kick(pos, t, dvx, dvy, dvz);
+                                     Real& dvy, Real& dvz, int dir, int side) {
+          wave_velocity_kick(pos, t, dvx, dvy, dvz, dir, side);
         };
       }
     }

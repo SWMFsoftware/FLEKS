@@ -1266,7 +1266,8 @@ public:
 
   // Compute wave velocity perturbation for particle injection.
   void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
-                          amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz);
+                          amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz,
+                          int dir = -1, int side = -1);
 
   // Fill external Dirichlet (coupled / fixed) ghost cells from func.
   void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,
