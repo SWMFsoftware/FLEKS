@@ -54,6 +54,11 @@ jobs:
         run: |
           make -j$(nproc) test17
 
+      - name: Build and Run test17_hybrid
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test17_hybrid
+
       - name: Build and Run test18
         working-directory: SWMF
         run: |
@@ -122,6 +127,8 @@ jobs:
             Param/PARAM.in.test.GMPC.FLEKS.2D.2steps \
             Param/PARAM.in.test.GMPC.FLEKS.2D.4steps \
             Param/PARAM.in.test.GMPC.FLEKS.2D.adapt \
+            Param/PARAM.in.test.GMPC.FLEKS.2D.hybrid \
+            Param/PARAM.in.test.GMPC.FLEKS.2D.hybrid.adapt \
             Param/PARAM.in.test.GMPC.FLEKS.3D \
             Param/PARAM.in.test.GMPC.FLEKS.AMR.FASTWAVE.3D \
             Param/PARAM.in.test.FLEKS.AMR.LightWave.3D \
@@ -141,11 +148,15 @@ jobs:
         run: |
           FAILED=0
           for diff_file in test16_2d_gmpc.diff test16_3d_gmpc.diff \
-                           test17_gmpc.diff test18_gmpc.diff \
+                           test17_gmpc.diff test17_hybrid_gmpc.diff \
+                           test18_gmpc.diff \
                            test23_2d_gmpc.diff test23_3d_gmpc.diff \
                            test25_gmpc.diff \
                            test_swpc_aepic_gm.diff test_swpc_aepic_pc.diff; do
-            if [ -s "$diff_file" ]; then
+            if [ ! -f "$diff_file" ]; then
+              echo "::error::Test verification failed! Expected diff file $diff_file was not generated."
+              FAILED=1
+            elif [ -s "$diff_file" ]; then
               echo "::error::Test verification failed! Non-zero diff detected in $diff_file"
               cat "$diff_file"
               FAILED=1
