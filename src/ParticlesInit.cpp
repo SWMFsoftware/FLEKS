@@ -243,32 +243,28 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
             const int loZ = (nDim > 2) ? domBox.smallEnd(iz_) : 0;
             const int hiZ = (nDim > 2) ? domBox.bigEnd(iz_) : 0;
             // Driven by the field-side wave faces (set from Pic::bcField),
-            // not by a particle-side spelling.
-            int waveDir = -1, waveSide = -1;
-            if (isWaveFace[0] && ijk[ix_] < loX) {
-              waveDir = ix_;
-              waveSide = 0;
-            } else if (isWaveFace[1] && ijk[ix_] > hiX) {
-              waveDir = ix_;
-              waveSide = 1;
-            } else if (isWaveFace[2] && ijk[iy_] < loY) {
-              waveDir = iy_;
-              waveSide = 0;
-            } else if (isWaveFace[3] && ijk[iy_] > hiY) {
-              waveDir = iy_;
-              waveSide = 1;
-            } else if (nDim > 2 && isWaveFace[4] && ijk[iz_] < loZ) {
-              waveDir = iz_;
-              waveSide = 0;
-            } else if (nDim > 2 && isWaveFace[5] && ijk[iz_] > hiZ) {
-              waveDir = iz_;
-              waveSide = 1;
-            }
-            if (waveDir >= 0) {
+            // not by a particle-side spelling. Build a bitmask of all wave
+            // faces that this ghost cell lies outside of so wave_velocity_kick
+            // selects the first matching active face in #WAVEBC input order,
+            // matching Pic::apply_wave_field at ghost corners.
+            int waveFaceMask = 0;
+            if (isWaveFace[0] && ijk[ix_] < loX)
+              waveFaceMask |= (1 << 0);
+            if (isWaveFace[1] && ijk[ix_] > hiX)
+              waveFaceMask |= (1 << 1);
+            if (isWaveFace[2] && ijk[iy_] < loY)
+              waveFaceMask |= (1 << 2);
+            if (isWaveFace[3] && ijk[iy_] > hiY)
+              waveFaceMask |= (1 << 3);
+            if (nDim > 2 && isWaveFace[4] && ijk[iz_] < loZ)
+              waveFaceMask |= (1 << 4);
+            if (nDim > 2 && isWaveFace[5] && ijk[iz_] > hiZ)
+              waveFaceMask |= (1 << 5);
+            if (waveFaceMask != 0) {
               const Real ppos[3] = { xyz[0], xyz[1], zp };
               const Real tNow = tc ? tc->get_time() : 0.0;
               Real dvx = 0, dvy = 0, dvz = 0;
-              waveVelocityKick(ppos, tNow, dvx, dvy, dvz, waveDir, waveSide);
+              waveVelocityKick(ppos, tNow, dvx, dvy, dvz, waveFaceMask);
               uBulk += dvx;
               vBulk += dvy;
               wBulk += dvz;

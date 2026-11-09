@@ -1,0 +1,200 @@
+#DESCRIPTION
+Multi-face wave injection on a 2x2-block non-periodic 2D grid with reversed
+face order (y-hi listed before x-hi in WAVEBC) and opposite-sign mode tables:
+y-hi injects +Bz (+1 nT) and +uz (+20 km/s); x-hi injects -Bz (-1 nT) and
+-uz (-20 km/s). Tests that: (1) interior block boundaries and non-wave faces
+(x-lo, y-lo) remain unperturbed; (2) each wave face applies only its own modes;
+(3) the (x-hi, y-hi) ghost corner selects y-hi (the first matching face in
+WAVEBC input order) consistently for both fields and particle velocity kicks.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#NORMALIZATION
+1.0e5                   lNormSI
+3.0e6                   uNormSI
+
+#GEOMETRY
+0.0                     xMin
+16.0                    xMax
+0.0                     yMin
+16.0                    yMax
+-0.5                    zMin
+0.5                     zMax
+
+#NCELL
+16                      nCellX
+16                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#PLASMA
+2                       nSpecies
+1.0                     mass
+1.0                     charge
+1.0/25.0                mass
+-1.0                    charge
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo
+wave                    fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo
+wave                    fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+outflow                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+implicit
+
+#DIVE
+T                       doCorrectDivE
+1                       nDivECorrection
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     coefDiff
+
+#UNIFORMSTATE
+3.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0                     T
+3.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0                     T
+1.0e-9                  bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#TIMESTEPPING
+T                       useFixedDt
+1.0e-4                  dt
+
+#MONITOR
+1                       dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+4                       npcelx
+4                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+1                       dn
+-1.0                    dt
+1                       dx
+Bx By Bz uzS0 rhoS0     varName
+
+#WAVEBC
+2                       nWaveFace
+1                       direction
+hi                      side
+2                       nComp
+0                       iField
+-1                      iSpecies
+0                       profile
+1.0e-9                  amplitude
+0.0                     frequency
+1.0e12                  waveLength
+1.5707963267948966      phase
+0.0                     dir
+-1.0                    dir
+0.0                     dir
+0.0                     pol
+0.0                     pol
+1.0                     pol
+0.0                     tStart
+-1.0                    tEnd
+0.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+2                       iField
+-1                      iSpecies
+0                       profile
+2.0e4                   amplitude
+0.0                     frequency
+1.0e12                  waveLength
+1.5707963267948966      phase
+0.0                     dir
+-1.0                    dir
+0.0                     dir
+0.0                     pol
+0.0                     pol
+1.0                     pol
+0.0                     tStart
+-1.0                    tEnd
+0.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+0                       direction
+hi                      side
+2                       nComp
+0                       iField
+-1                      iSpecies
+0                       profile
+-1.0e-9                 amplitude
+0.0                     frequency
+1.0e12                  waveLength
+1.5707963267948966      phase
+-1.0                    dir
+0.0                     dir
+0.0                     dir
+0.0                     pol
+0.0                     pol
+1.0                     pol
+0.0                     tStart
+-1.0                    tEnd
+0.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+2                       iField
+-1                      iSpecies
+0                       profile
+-2.0e4                  amplitude
+0.0                     frequency
+1.0e12                  waveLength
+1.5707963267948966      phase
+-1.0                    dir
+0.0                     dir
+0.0                     dir
+0.0                     pol
+0.0                     pol
+1.0                     pol
+0.0                     tStart
+-1.0                    tEnd
+0.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+
+#STOP
+2                       MaxIter
+-1.0                    TimeMax
+

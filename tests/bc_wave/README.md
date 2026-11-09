@@ -11,6 +11,7 @@ once.  A single `validate.py` branches on the variant name.
 | `bc_inject_mono` | `PARAM.in.mono` | Monochromatic Bz wave injected at the `x-lo` face into a pure-EM domain (`#SOLVEEM T`, `lightwave`) | Bz perturbation reaches the interior |
 | `bc_inject_alfven` | `PARAM.in.alfven` | Shear Alfvén wave (By + matching velocity kick) injected at the `-x` face into an initially uniform magnetized hybrid plasma, propagating along +x | By reaches the interior; By/Bx < 10% (linear) |
 | `bc_inject_window` | `PARAM.in.window` | One out-of-plane shear Alfvén wave (Bz, consistent E, Walén kick; lambda = 16 d_i) injected at the `+x` face of a flowing solar wind (full PIC, 2D), with `#WAVEBCWINDOW` limiting the source to `0 < y < 10` d_i | Bz rms outside the window band < 0.2 of inside (outside is particle noise) |
+| `bc_inject_multiface` | `PARAM.in.multiface` | Two `wave` faces (`y:hi` listed before `x:hi` in `#WAVEBC`) with opposite-sign `Bz` and `uz` mode tables on a 2x2-block non-periodic 2D grid | Non-wave block bounds stay zero; `y:hi` and `x:hi` get their distinct kicks; `(x:hi, y:hi)` corner follows `#WAVEBC` face order (`y:hi`) for both `Bz` and `uzS0` |
 
 ## Validation
 
