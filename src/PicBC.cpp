@@ -664,7 +664,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
   std::vector<ActiveComp> activeComps;
   for (const auto& f : waveBC.faces) {
-    if (f.direction >= nDim)
+    if (f.direction >= nDim || bc.face(f.direction, f.side) != FieldBC::wave)
       continue;
     for (const auto& c : f.comps) {
       if (c.iField != iField || c.amplitude == 0.0)
@@ -716,13 +716,13 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       const int d = ac.dir;
       const int side = ac.side;
       if (side == 0) {
-        if (bxFab.smallEnd(d) < bxValid.smallEnd(d) ||
+        if (bxFab.smallEnd(d) < bnd.loBnd[d] ||
             (bnd.isNode[d] && bxFab.smallEnd(d) <= bnd.loBnd[d])) {
           boxTouchesWaveFace = true;
           break;
         }
       } else {
-        if (bxFab.bigEnd(d) > bxValid.bigEnd(d) ||
+        if (bxFab.bigEnd(d) > bnd.hiBnd[d] ||
             (bnd.isNode[d] && bxFab.bigEnd(d) >= bnd.hiBnd[d])) {
           boxTouchesWaveFace = true;
           break;
@@ -750,14 +750,18 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       Real waveVal[3] = { 0.0, 0.0, 0.0 };
       bool hasWave = false;
       bool isBndNode = false;
+      int matchedDir = -1;
+      int matchedSide = -1;
 
       for (const auto& ac : activeComps) {
         const int d = ac.dir;
         const int side = ac.side;
+        if (matchedDir >= 0 && (d != matchedDir || side != matchedSide))
+          continue;
         const int idx = ijk[d];
         const bool onGhostFace =
-            isGhost && ((side == 0 && idx < bxValid.smallEnd(d)) ||
-                        (side == 1 && idx > bxValid.bigEnd(d)));
+            isGhost && ((side == 0 && idx < bnd.loBnd[d]) ||
+                        (side == 1 && idx > bnd.hiBnd[d]));
 
         // Boundary node on physical wall (node-centered only).
         bool onNodeWall = false;
@@ -779,6 +783,11 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
         if (!onGhostFace && !onNodeWall)
           continue;
+
+        if (matchedDir < 0) {
+          matchedDir = d;
+          matchedSide = side;
+        }
 
         if (onNodeWall)
           isBndNode = true;
@@ -842,14 +851,30 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
 //==========================================================
 void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
-                             Real& dvz) {
+                             Real& dvz, int waveFaceMask) {
   dvx = dvy = dvz = 0.0;
   if (!waveBC.active)
     return;
+  int matchedDir = -1;
+  int matchedSide = -1;
   for (const auto& f : waveBC.faces) {
+    if (f.direction >= nDim ||
+        bcField.face(f.direction, f.side) != FieldBC::wave)
+      continue;
+    const int faceBit = 1 << (2 * f.direction + f.side);
+    if (waveFaceMask >= 0 && (waveFaceMask & faceBit) == 0)
+      continue;
+    if (matchedDir >= 0 && (f.direction != matchedDir || f.side != matchedSide))
+      continue;
     for (const auto& c : f.comps) {
       if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
         continue;
+      if (waveBC.envelope(c, t) <= 0.0)
+        continue;
+      if (matchedDir < 0) {
+        matchedDir = f.direction;
+        matchedSide = f.side;
+      }
       const Real val = waveBC.value(c, t, pos);
       if (val == 0.0)
         continue;
