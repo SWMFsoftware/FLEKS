@@ -1,8 +1,9 @@
 #DESCRIPTION
-BC_DISCONTINUITY (RD): Rotational discontinuity propagating into the domain
-along +x (normal = (1, 0, 0)) with normal field Bx = 3 nT and a 180-degree
-circular rotation of the tangential field By: +4 nT -> -4 nT at constant
-|B| = 5 nT and exact Walen velocity jump du = +(B2 - B1)/sqrt(mu0 * rho_m).
+BC_DISCONTINUITY (RD): Rotational discontinuity propagating along +x.
+
+Normal field Bx = 3 nT and a 180-degree circular rotation of the tangential
+field By: +4 nT -> -4 nT at constant |B| = 5 nT and exact Walen velocity jump
+du = +(B2 - B1)/sqrt(mu0 * rho_m).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -106,6 +107,7 @@ F                       useHallTerm
 
 #FIELDSUBCYCLE
 2                       nSubcycle
+F                       isAutoSubcycle
 
 #TIMESTEPPING
 T                       useFixedDt

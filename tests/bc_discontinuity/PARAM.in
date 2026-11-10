@@ -1,8 +1,9 @@
 #DESCRIPTION
-BC_DISCONTINUITY (TD): 2D tilted tangential discontinuity propagating into
-the domain across both x-lo and y-lo inflow boundaries at 45 degrees
-(normal = (1, 1, 0)). State 1 is defined in UNIFORMSTATE (without INFLOW),
-and State 2 in DISCONTINUITY with exact total pressure balance.
+BC_DISCONTINUITY (TD): 2D tilted tangential discontinuity across x-lo and y-lo.
+
+The discontinuity propagates at 45 degrees (normal = (1, 1, 0)). State 1 is
+defined in UNIFORMSTATE (without INFLOW), and State 2 in DISCONTINUITY with
+exact total pressure balance.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -106,6 +107,7 @@ F                       useHallTerm
 
 #FIELDSUBCYCLE
 2                       nSubcycle
+F                       isAutoSubcycle
 
 #TIMESTEPPING
 T                       useFixedDt
