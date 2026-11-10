@@ -338,7 +338,7 @@ void DiscontinuityBoundaryManager::convert_and_validate(
     // Project out tiny sub-tolerance Bn so B.n == 0 is exact for TD
     for (int d = 0; d < 3; ++d) {
       b1[d] -= bn1 * normal[d];
-      b2[d] -= dot3(b2, normal) * normal[d];
+      b2[d] -= bn1 * normal[d];
     }
     bn = 0.0;
 
@@ -350,6 +350,24 @@ void DiscontinuityBoundaryManager::convert_and_validate(
           << "  u1.n = " << un1 / vFactor << " [km/s], u2.n = " << un2 / vFactor
           << " [km/s].";
       amrex::Abort(oss.str());
+    }
+    // Remove any sub-tolerance normal velocity difference so u_n == V_n is
+    // exact
+    const amrex::Real dUn = un2 - un1;
+    for (int d = 0; d < 3; ++d) {
+      uBulk2[d] -= dUn * normal[d];
+    }
+    for (int iS = 0; iS < nS; ++iS) {
+      const amrex::Real u1sN = state1[iS].ux * normal[0] +
+                               state1[iS].uy * normal[1] +
+                               state1[iS].uz * normal[2];
+      const amrex::Real u2sN = state2[iS].ux * normal[0] +
+                               state2[iS].uy * normal[1] +
+                               state2[iS].uz * normal[2];
+      const amrex::Real dUsN = u2sN - u1sN;
+      state2[iS].ux -= dUsN * normal[0];
+      state2[iS].uy -= dUsN * normal[1];
+      state2[iS].uz -= dUsN * normal[2];
     }
 
     // (c) Total pressure balance: P_tot,1 == P_tot,2
@@ -386,7 +404,18 @@ void DiscontinuityBoundaryManager::convert_and_validate(
       amrex::Abort(oss.str());
     }
 
-    vn = (vnInput > 0.0) ? (vnInput * vFactor) : un1;
+    if (vnInput > 0.0) {
+      const amrex::Real vnOverride = vnInput * vFactor;
+      if (std::abs(vnOverride - un1) > 1.0e-2 * uScale) {
+        std::ostringstream oss;
+        oss << "Invalid #DISCONTINUITY (type 'td'): override vn = " << vnInput
+            << " [km/s] is inconsistent with the tangential discontinuity "
+            << "normal flow speed u1.n = " << un1 / vFactor
+            << " [km/s] (required by Faraday's law dB/dt + curl(E) = 0).";
+        amrex::Abort(oss.str());
+      }
+    }
+    vn = un1;
 
   } else if (type == DiscontinuityType::RD) {
     // Rotational discontinuity checks:
@@ -465,6 +494,32 @@ void DiscontinuityBoundaryManager::convert_and_validate(
       amrex::Abort(oss.str());
     }
 
+    // Validate per-species Walen velocity jump so multi-species opposing
+    // offsets cannot cancel in uBulk while violating species continuity.
+    for (int iS = 0; iS < nS; ++iS) {
+      if (isHybridPIC && state1[iS].charge < 0.0)
+        continue;
+      const amrex::Real duS[3] = { state2[iS].ux - state1[iS].ux,
+                                   state2[iS].uy - state1[iS].uy,
+                                   state2[iS].uz - state1[iS].uz };
+      amrex::Real errS = 0.0;
+      for (int d = 0; d < 3; ++d) {
+        const amrex::Real diff = duS[d] - walenSign * dVa[d];
+        errS += diff * diff;
+      }
+      errS = std::sqrt(errS);
+      if (errS > 1.5e-2 * walenScale) {
+        std::ostringstream oss;
+        oss << "Invalid #DISCONTINUITY (type 'rd'): species " << iS
+            << " State 2 velocity violates the Walen relation u2 - u1 = "
+            << (walenSign > 0.0 ? "+" : "-")
+            << " (B2 - B1) / sqrt(4*pi*rho_m).\n"
+            << "  Got du_s = (" << duS[0] / vFactor << ", " << duS[1] / vFactor
+            << ", " << duS[2] / vFactor << ") [km/s].";
+        amrex::Abort(oss.str());
+      }
+    }
+
     // Build orthonormal basis (e1, e2) in the plane perpendicular to normal
     amrex::Real b1tVec[3] = { b1[0] - bn * normal[0], b1[1] - bn * normal[1],
                               b1[2] - bn * normal[2] };
@@ -517,7 +572,19 @@ void DiscontinuityBoundaryManager::convert_and_validate(
     }
 
     const amrex::Real vAn = bn * invSqrtFourPiRho1;
-    vn = (vnInput > 0.0) ? (vnInput * vFactor) : (un1 - walenSign * vAn);
+    const amrex::Real vnExpected = un1 - walenSign * vAn;
+    if (vnInput > 0.0) {
+      const amrex::Real vnOverride = vnInput * vFactor;
+      if (std::abs(vnOverride - vnExpected) > 1.5e-2 * walenScale) {
+        std::ostringstream oss;
+        oss << "Invalid #DISCONTINUITY (type 'rd'): override vn = " << vnInput
+            << " [km/s] is inconsistent with the Walen-frame propagation "
+            << "speed u1.n -/+ v_An = " << vnExpected / vFactor
+            << " [km/s] (required by Faraday's law dB/dt + curl(E) = 0).";
+        amrex::Abort(oss.str());
+      }
+    }
+    vn = vnExpected;
 
   } else {
     // DiscontinuityType::General
@@ -623,7 +690,12 @@ void DiscontinuityBoundaryManager::eval_u_bulk(const amrex::Real* pos,
     amrex::Real bCur[3];
     eval_B(pos, t, bCur);
     for (int d = 0; d < 3; ++d) {
-      uOut[d] = uBulk1[d] + walenSign * (bCur[d] - b1[d]) * invSqrtFourPiRho1;
+      const amrex::Real dVaCur =
+          walenSign * (bCur[d] - b1[d]) * invSqrtFourPiRho1;
+      const amrex::Real dVaTot =
+          walenSign * (b2[d] - b1[d]) * invSqrtFourPiRho1;
+      const amrex::Real resid = (uBulk2[d] - uBulk1[d]) - dVaTot;
+      uOut[d] = uBulk1[d] + dVaCur + alpha * resid;
     }
   } else {
     for (int d = 0; d < 3; ++d) {
@@ -683,8 +755,14 @@ void DiscontinuityBoundaryManager::eval_species(int iS, const amrex::Real* pos,
     amrex::Real bCur[3];
     eval_B(pos, t, bCur);
     const amrex::Real s1u[3] = { s1.ux, s1.uy, s1.uz };
+    const amrex::Real s2u[3] = { s2.ux, s2.uy, s2.uz };
     for (int d = 0; d < 3; ++d) {
-      uOut[d] = s1u[d] + walenSign * (bCur[d] - b1[d]) * invSqrtFourPiRho1;
+      const amrex::Real dVaCur =
+          walenSign * (bCur[d] - b1[d]) * invSqrtFourPiRho1;
+      const amrex::Real dVaTot =
+          walenSign * (b2[d] - b1[d]) * invSqrtFourPiRho1;
+      const amrex::Real resid = (s2u[d] - s1u[d]) - dVaTot;
+      uOut[d] = s1u[d] + dVaCur + alpha * resid;
     }
   } else {
     uOut[0] = (1.0 - alpha) * s1.ux + alpha * s2.ux;

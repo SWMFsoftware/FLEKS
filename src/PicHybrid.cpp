@@ -1579,7 +1579,7 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB, Real timeOverride) {
 // barely damped (the grid-mode hyper-resistivity was set by the finest dx). On
 // a 2-level GEM deck (base dx = 0.1 d_i) that mode grew along the interface
 // from the first cycle and blew the run up within an ion gyroperiod.
-void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf) {
+void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf, Real timeOverride) {
   BL_PROFILE("Pic::sync_emf_at_interface");
   for (int iLev = finestLevel(); iLev >= 1; --iLev) {
     // A node shared by two fine boxes can hold two values (each box computes
@@ -1633,7 +1633,7 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf) {
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
-                   iLev, false);
+                   iLev, false, -1.0, timeOverride);
     if (use_body()) {
       apply_body_E_bc(nodeEmf[iLev], iLev);
     }
@@ -1645,7 +1645,8 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf) {
 // Together with the interface nodes (already set from the coarse E), linear
 // interpolation along the coarse edges makes the ghost face fluxes sum to the
 // coarse face fluxes.
-void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
+void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf,
+                                     Real timeOverride) {
   BL_PROFILE("Pic::fill_ghost_emf_from_coarse");
   for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
     fill_fine_lev_bny_from_coarse(
@@ -1653,14 +1654,15 @@ void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
-                   iLev, false);
+                   iLev, false, -1.0, timeOverride);
     if (use_body()) {
       apply_body_E_bc(nodeEmf[iLev], iLev);
     }
   }
 }
 
-void Pic::fill_interface_and_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
+void Pic::fill_interface_and_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf,
+                                                   Real timeOverride) {
   BL_PROFILE("Pic::fill_interface_and_ghost_emf_from_coarse");
   for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
     fill_fine_lev_edge_from_coarse(
@@ -1672,7 +1674,7 @@ void Pic::fill_interface_and_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf) {
     nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
-                   iLev, false);
+                   iLev, false, -1.0, timeOverride);
     if (use_body()) {
       apply_body_E_bc(nodeEmf[iLev], iLev);
     }
@@ -1694,8 +1696,8 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
   }
 
   if (finestLevel() > 0) {
-    sync_emf_at_interface(nodeEstage);
-    fill_ghost_emf_from_coarse(nodeEstage);
+    sync_emf_at_interface(nodeEstage, timeOverride);
+    fill_ghost_emf_from_coarse(nodeEstage, timeOverride);
   }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -2154,10 +2156,13 @@ void Pic::update_B_hybrid() {
   }
   const Real maxEta = etaResistivity + maxRegionalEta;
 
-  // Ensure B ghost cells are fresh across all levels before CFL checks and
-  // Faraday subcycling.
+  const Real tStepEnd = tc ? tc->get_time() : 0.0;
+  const Real tStepStart = std::max(0.0, tStepEnd - dt);
+
+  // Ensure B ghost cells are fresh across all levels at tStepStart before CFL
+  // checks and Faraday subcycling.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    apply_centerB_BC(iLev);
+    apply_centerB_BC(iLev, tStepStart);
   }
 
   const bool hasBody = use_body();
@@ -2453,8 +2458,12 @@ void Pic::update_B_hybrid() {
   const bool ambiInStages = (electronTemperature > 0);
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
-  const Real tStepEnd = tc ? tc->get_time() : 0.0;
-  const Real tStepStart = std::max(0.0, tStepEnd - dt);
+
+  // Refresh cell-centered B ghosts at tStepStart before the first RK/SSPRK
+  // stage so upwind and hyper-resistive stencils read stage-consistent ghosts.
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    apply_centerB_BC(iLev, tStepStart);
+  }
 
   // Each stage first evaluates curl(E) on ALL levels (faraday_stage_rhs, which
   // also synchronizes E across the coarse-fine interface), then updates every

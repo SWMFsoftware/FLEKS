@@ -1050,13 +1050,15 @@ public:
                          amrex::Real hstep, bool includeAmbi,
                          amrex::Real timeOverride = -1.0);
   // Set the fine nodal E on the coarse-fine interfaces from the coarse E.
-  void sync_emf_at_interface(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  void sync_emf_at_interface(amrex::Vector<amrex::MultiFab> &nodeEmf,
+                             amrex::Real timeOverride = -1.0);
   // Fill the fine-level ghost nodes of E from the coarse E.
-  void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf);
+  void fill_ghost_emf_from_coarse(amrex::Vector<amrex::MultiFab> &nodeEmf,
+                                  amrex::Real timeOverride = -1.0);
   // One-way: fill fine-level interface edge nodes AND ghost nodes from coarse
   // E, leaving coarse E untouched.
   void fill_interface_and_ghost_emf_from_coarse(
-      amrex::Vector<amrex::MultiFab> &nodeEmf);
+      amrex::Vector<amrex::MultiFab> &nodeEmf, amrex::Real timeOverride = -1.0);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
   int faraday_ngrow(int iLev) const {
     return ((useHybridPIC || useCurlUpwindB) && iLev > 0) ? 1 : 0;
