@@ -9,6 +9,7 @@
 #include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
+#include "DiscontinuityBC.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "GridAccess.h"
@@ -261,6 +262,9 @@ private:
 
   // Wave-injection boundary-condition manager (#WAVEBC).
   WaveBoundaryManager waveBC;
+  // Planar solar wind discontinuity boundary-condition manager
+  // (#DISCONTINUITY).
+  DiscontinuityBoundaryManager discontinuityBC;
   TimeCtr *tc = nullptr;
 
   amrex::Vector<amrex::MultiFab> nodeE;
@@ -1024,8 +1028,9 @@ public:
   // Apply periodic and physical boundary conditions (and coarse-fine interface
   // ghosts on refined levels) to the cell-centered B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.
-  void apply_centerB_BC(int iLev);
-  void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
+  void apply_centerB_BC(int iLev, amrex::Real timeOverride = -1.0);
+  void apply_centerB_BC(int iLev, amrex::MultiFab &mfB,
+                        amrex::Real timeOverride = -1.0);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion
@@ -1035,14 +1040,15 @@ public:
   void assemble_ohm_E(const amrex::MultiFab &centerBin,
                       const amrex::MultiFab &centerBtimeAvg,
                       amrex::MultiFab &Eout, int iLev, amrex::Real hstep,
-                      bool includeAmbi = true);
+                      bool includeAmbi = true, amrex::Real timeOverride = -1.0);
   void compute_ambipolar_E();
   void compute_ambipolar_E(int iLev);
   // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
   // E assembled from Bin at moment fraction hstep, then synchronized
   // across levels.
   void faraday_stage_rhs(amrex::Vector<amrex::MultiFab> &Bin, int iK,
-                         amrex::Real hstep, bool includeAmbi);
+                         amrex::Real hstep, bool includeAmbi,
+                         amrex::Real timeOverride = -1.0);
   // Set the fine nodal E on the coarse-fine interfaces from the coarse E.
   void sync_emf_at_interface(amrex::Vector<amrex::MultiFab> &nodeEmf);
   // Fill the fine-level ghost nodes of E from the coarse E.
@@ -1232,7 +1238,8 @@ public:
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
                          const BoxBC<FieldBC::Type> &bc, bool isB,
-                         GETVALUE func = nullptr);
+                         GETVALUE func = nullptr,
+                         amrex::Real timeOverride = -1.0);
 
   //--- Inner body field boundary (see #BODY / #BODYBOUNDARY) ---
   // These act on the nodes/cells flagged with bit::iBody_ and use the radial
@@ -1275,7 +1282,8 @@ public:
   void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                     const int iStart, const int nComp, GETVALUE func,
                     const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr,
-                    bool skipCoarseFineGhosts = false);
+                    bool skipCoarseFineGhosts = false,
+                    amrex::Real timeOverride = -1.0);
 
   amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {

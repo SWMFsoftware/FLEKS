@@ -23,6 +23,7 @@
 #include "TimeCtr.h"
 
 class InitialCondition; // forward: Particles only stores a non-owning pointer
+class DiscontinuityBoundaryManager;
 
 enum class CrossSection { LS = 0, MT };
 
@@ -500,6 +501,10 @@ public:
   std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
                      amrex::Real&, amrex::Real&, int)>
       waveVelocityKick = nullptr;
+
+  // Non-owning pointer to the active planar discontinuity BC manager (owned by
+  // Pic).
+  const DiscontinuityBoundaryManager* discontinuityBC = nullptr;
 
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;

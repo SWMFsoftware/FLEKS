@@ -475,6 +475,12 @@ void Pic::post_regrid(MeshChangeReason reason) {
         };
       }
     }
+
+    if (discontinuityBC.active) {
+      for (auto& p : parts) {
+        p->discontinuityBC = &discontinuityBC;
+      }
+    }
   } else {
     if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Arena())) {
       p->freeUnused();

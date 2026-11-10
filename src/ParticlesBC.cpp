@@ -2,6 +2,7 @@
 
 #include <AMReX_ParReduce.H>
 
+#include "DiscontinuityBC.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -237,6 +238,22 @@ struct InflowSpeedSampler {
     return w;
   }
 };
+
+// Flux-weighted speed samplers by drift quantized to 0.05 vtherm; the
+// rate uses the exact drift. The sampler depends on vd only, so the cache
+// is shared by all species.
+inline const InflowSpeedSampler& get_inflow_speed_sampler(Real vd) {
+  static std::map<int, InflowSpeedSampler> samplers;
+  const int key = static_cast<int>(std::lround(vd * 20));
+  auto it = samplers.find(key);
+  if (it == samplers.end()) {
+    InflowSpeedSampler smp;
+    smp.init(key / 20.0);
+    it = samplers.emplace(key, smp).first;
+  }
+  return it->second;
+}
+
 } // namespace
 
 //==========================================================
@@ -254,6 +271,157 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
                 (bc.hi[iDim] == ParticleBC::inflow);
   if (!hasInflow)
     return;
+
+  // Spatio-temporal planar discontinuity injection (#DISCONTINUITY):
+  // Evaluates local density, bulk velocity, and thermal velocity cell-by-cell
+  // along each inflow face at the step midpoint time and injects from the
+  // half-space drifting Maxwellian.
+  if (discontinuityBC != nullptr && discontinuityBC->active) {
+    const int nppc = product(nPartPerCell);
+    const int iLev = 0;
+    const auto& geom = Geom(iLev);
+    const Box& domain = geom.Domain();
+    const Real* probLo = geom.ProbLo();
+    const Real* probHi = geom.ProbHi();
+    const Real* cellSize = geom.CellSize();
+    const Real vol = dx[iLev].product();
+    const Real m = get_mass();
+    const Real tNow = tc ? tc->get_time() : 0.0;
+    const Real tMid = std::max(0.0, tNow - 0.5 * dt);
+
+    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      ParticleTileType& particles = get_particle_tile(iLev, mfi);
+
+      for (int iDim = 0; iDim < nDim; ++iDim) {
+        const int t1 = (iDim + 1) % nDim;
+        const int t2 = (nDim > 2) ? (iDim + 2) % nDim : 0;
+        const int trans1 = (iDim + 1) % 3;
+        const int trans2 = (iDim + 2) % 3;
+
+        for (int side = 0; side < 2; ++side) {
+          const bool isHi = (side == 1);
+          const int faceBc = isHi ? bc.hi[iDim] : bc.lo[iDim];
+          if (faceBc != ParticleBC::inflow)
+            continue;
+
+          const int domEdge =
+              isHi ? domain.bigEnd(iDim) : domain.smallEnd(iDim);
+          const int tileEdge = isHi ? bx.bigEnd(iDim) : bx.smallEnd(iDim);
+          if (tileEdge != domEdge)
+            continue;
+
+          const Real dxn = cellSize[iDim];
+          const Real inward = isHi ? -1.0 : 1.0;
+          const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
+
+          const int lo1 = bx.smallEnd(t1), hi1 = bx.bigEnd(t1);
+          const int lo2 = (nDim > 2) ? bx.smallEnd(t2) : 0;
+          const int hi2 = (nDim > 2) ? bx.bigEnd(t2) : 0;
+
+          for (int c2 = lo2; c2 <= hi2; ++c2) {
+            const Real base2 =
+                (nDim > 2)
+                    ? probLo[t2] + (c2 - domain.smallEnd(t2)) * cellSize[t2]
+                    : 0.0;
+            for (int c1 = lo1; c1 <= hi1; ++c1) {
+              const Real base1 =
+                  probLo[t1] + (c1 - domain.smallEnd(t1)) * cellSize[t1];
+
+              Real facePos[3] = { 0.0, 0.0, 0.0 };
+              facePos[iDim] = xFace;
+              facePos[t1] = base1 + 0.5 * cellSize[t1];
+              if (nDim > 2)
+                facePos[t2] = base2 + 0.5 * cellSize[t2];
+
+              Real nLocal = 0.0;
+              Real uLocal[3] = { 0.0, 0.0, 0.0 };
+              Real sigmaLocal = 0.0;
+              discontinuityBC->eval_species(speciesID, facePos, tMid, nLocal,
+                                            uLocal, sigmaLocal);
+              if (nLocal <= 0.0)
+                continue;
+
+              const Real uInNorm = uLocal[iDim] * inward;
+              const Real vtherm = std::sqrt(2.0) * sigmaLocal;
+              Real vd = 0.0;
+              Real vFlux = 0.0;
+              if (sigmaLocal > 0.0) {
+                vd = uInNorm / vtherm;
+                vFlux = vtherm * inj_mean_inward_flux(vd);
+              } else {
+                vFlux = std::max(0.0, uInNorm);
+              }
+
+              const Real expected = nppc * vFlux * dt / dxn;
+              if (expected <= 0.0)
+                continue;
+
+              const int64_t cellKey =
+                  (static_cast<int64_t>(1) << 62) |
+                  (static_cast<int64_t>(iDim * 2 + side) << 48) |
+                  (static_cast<int64_t>(c1 - domain.smallEnd(t1)) << 24) |
+                  static_cast<int64_t>(nDim > 2 ? (c2 - domain.smallEnd(t2))
+                                                : 0);
+              auto [itAcc, inserted] =
+                  injectFluxAcc.try_emplace(cellKey, randNum());
+              Real& acc = itAcc->second;
+              acc += expected;
+              const int nInject = static_cast<int>(acc);
+              if (nInject <= 0)
+                continue;
+              acc -= nInject;
+
+              const Real qCell = qomSign * vol * nLocal / nppc;
+
+              for (int ip = 0; ip < nInject; ++ip) {
+                Real wIn = 0.0;
+                Real vel[3] = { 0.0, 0.0, 0.0 };
+                if (sigmaLocal > 0.0) {
+                  const auto& smp = get_inflow_speed_sampler(vd);
+                  wIn = vtherm * smp.draw(randNum());
+                  vel[trans1] = uLocal[trans1] +
+                                sigmaLocal * inj_gaussian(randNum(), randNum());
+                  vel[trans2] = uLocal[trans2] +
+                                sigmaLocal * inj_gaussian(randNum(), randNum());
+                } else {
+                  wIn = std::max(0.0, uInNorm);
+                  vel[trans1] = uLocal[trans1];
+                  vel[trans2] = uLocal[trans2];
+                }
+                vel[iDim] = inward * wIn;
+
+                const Real pDist =
+                    (wIn > 0.0) ? std::min(1.0e-3 * dxn + wIn * dt * randNum(),
+                                           0.999 * dxn)
+                                : 1.0e-3 * dxn;
+
+                RealVect pos;
+                pos[iDim] = xFace + inward * pDist;
+                pos[t1] = base1 + randNum() * cellSize[t1];
+                if (nDim > 2)
+                  pos[t2] = base2 + randNum() * cellSize[t2];
+
+                auto pt = make_particle();
+                set_ids(pt);
+                for (int d = 0; d < nDim; ++d)
+                  pt.pos(d) = pos[d];
+                pt.rdata(iup_) = vel[ix_];
+                pt.rdata(ivp_) = vel[iy_];
+                pt.rdata(iwp_) = vel[iz_];
+                pt.rdata(iqp_) = qCell;
+                if (NStructInt > iRecordCount_)
+                  pt.idata(iRecordCount_) = 0;
+                particles.push_back(pt);
+                faceInMass[2 * iDim + side] += qomSign * qCell * m;
+              }
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
 
   // Prescribed upstream state (#INFLOW, code units).  vth is the 1-D
   // thermal std sigma = sqrt(kT/m); the Maxwellian is written with
@@ -444,21 +612,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
   if (!hasOpen)
     return;
 
-  // Flux-weighted speed samplers by drift quantized to 0.05 vtherm; the
-  // rate uses the exact drift. The sampler depends on vd only, so the cache
-  // is shared by all species.
-  static std::map<int, InflowSpeedSampler> samplers;
-  auto sampler = [&](Real vd) -> const InflowSpeedSampler& {
-    const int key = static_cast<int>(std::lround(vd * 20));
-    auto it = samplers.find(key);
-    if (it == samplers.end()) {
-      InflowSpeedSampler smp;
-      smp.init(key / 20.0);
-      it = samplers.emplace(key, smp).first;
-    }
-    return it->second;
-  };
-
   const int nppc = product(nPartPerCell);
   const Real m = get_mass();
   const int iLev = 0;
@@ -566,7 +719,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
               continue;
 
             const Real q = qomSign * vol * nDens / nppc;
-            const auto& smp = sampler(vd);
+            const auto& smp = get_inflow_speed_sampler(vd);
             const Real base1 =
                 probLo[t1] + (c1 - domain.smallEnd(t1)) * cellSize[t1];
             const Real base2 =

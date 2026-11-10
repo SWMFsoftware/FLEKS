@@ -91,13 +91,16 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   PhysBCFunct<GpuBndryFuncFab<FabFillNoOp> > physbcf(Geom(iLev), bcr, bfunc);
   physbcf(mf, iStart, nComp, mf.nGrowVect(), 0.0, 0);
 
+  const Real t =
+      (timeOverride >= 0.0) ? timeOverride : (tc ? tc->get_time() : 0.0);
+
   // Fill external Dirichlet (coupled / fixed) faces from func if provided:
   // Hybrid PIC fills (or, for the first B layer, Faraday-advances) the
   // coarse-fine ghosts of a refined level itself, so the prescribed state must
   // stay out of them. The full-PIC solver still relies on this fill there.
   if (func != nullptr) {
     fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField,
-                 useHybridPIC || useCurlUpwindB);
+                 useHybridPIC || useCurlUpwindB, t);
   }
 
   // Node-centered conducting wall requires zeroing boundary wall nodes
@@ -107,7 +110,7 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   }
 
   if (hasInflowBC_) {
-    apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB, func);
+    apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB, func, t);
   }
 
   if (hasAbsorbBC_)
@@ -116,8 +119,6 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
 
   // Wave boundary condition overwrites faces where active.
   if (waveBC.active) {
-    const Real t =
-        (timeOverride >= 0.0) ? timeOverride : (tc ? tc->get_time() : 0.0);
     apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t,
                      func);
   }
@@ -189,7 +190,7 @@ void Pic::apply_field_bc_homogeneous(const iMultiFab& status, MultiFab& mf,
 void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                        const int nComp, GETVALUE func, const int iLev,
                        const BoxBC<FieldBC::Type>* bc,
-                       bool skipCoarseFineGhosts) {
+                       bool skipCoarseFineGhosts, Real timeOverride) {
   if (!func)
     return;
 
@@ -204,6 +205,20 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                                                    Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), bc);
   const Geometry& geom = Geom(iLev);
+  const Real* probLo = geom.ProbLo();
+  const Real* dx = geom.CellSize();
+  const Real tEval =
+      (timeOverride >= 0.0) ? timeOverride : (tc ? tc->get_time() : 0.0);
+  const GETVALUE fnNodeB = &Pic::get_node_B;
+  const GETVALUE fnCenterB = &Pic::get_center_B;
+  const GETVALUE fnNodeE = &Pic::get_node_E;
+  const GETVALUE fnCenterE = &Pic::get_center_E;
+  const bool isDiscontinuityB = discontinuityBC.active && bc != nullptr &&
+                                nComp == 3 &&
+                                (func == fnNodeB || func == fnCenterB);
+  const bool isDiscontinuityE = discontinuityBC.active && bc != nullptr &&
+                                nComp == 3 &&
+                                (func == fnNodeE || func == fnCenterE);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
@@ -229,6 +244,7 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
       if (bc != nullptr) {
         const int ijk[3] = { i, j, k };
         bool skipForPhysWall = false;
+        bool onInflowGhost = false;
         for (int d = 0; d < nDim; ++d) {
           if ((ijk[d] < bnd.loBnd[d] && (bnd.bcLo[d] == FieldBC::outflow ||
                                          bnd.bcLo[d] == FieldBC::conducting)) ||
@@ -237,9 +253,32 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
             skipForPhysWall = true;
             break;
           }
+          if ((ijk[d] < bnd.loBnd[d] && bnd.bcLo[d] == FieldBC::inflow) ||
+              (ijk[d] > bnd.hiBnd[d] && bnd.bcHi[d] == FieldBC::inflow)) {
+            onInflowGhost = true;
+          }
         }
         if (skipForPhysWall)
           return;
+
+        if (onInflowGhost && (isDiscontinuityB || isDiscontinuityE)) {
+          Real pos[3] = { 0.0, 0.0, 0.0 };
+          for (int d = 0; d < nDim; ++d) {
+            pos[d] = probLo[d] +
+                     (static_cast<Real>(ijk[d]) + (bnd.isNode[d] ? 0.0 : 0.5)) *
+                         dx[d];
+          }
+          Real val[3] = { 0.0, 0.0, 0.0 };
+          if (isDiscontinuityB) {
+            discontinuityBC.eval_B(pos, tEval, val);
+          } else {
+            discontinuityBC.eval_E(pos, tEval, val);
+          }
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            arr(i, j, k, iStart + iVar) = val[iVar];
+          }
+          return;
+        }
       }
 
       for (int iVar = 0; iVar < nComp; ++iVar) {
@@ -551,7 +590,7 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
                             const int iStart, const int nComp, const int iLev,
                             const BoxBC<FieldBC::Type>& bc, bool isB,
-                            GETVALUE func) {
+                            GETVALUE func, Real timeOverride) {
   // isB indicates whether mf is magnetic (true) or electric (false).
 
   std::string nameFunc = "Pic::apply_inflow_wall";
@@ -560,6 +599,19 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
   const BoxArray ba =
       get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
+  const Geometry& geom = Geom(iLev);
+  const Real* probLo = geom.ProbLo();
+  const Real* dx = geom.CellSize();
+  const Real tEval =
+      (timeOverride >= 0.0) ? timeOverride : (tc ? tc->get_time() : 0.0);
+  const GETVALUE fnNodeB = &Pic::get_node_B;
+  const GETVALUE fnCenterB = &Pic::get_center_B;
+  const GETVALUE fnNodeE = &Pic::get_node_E;
+  const GETVALUE fnCenterE = &Pic::get_center_E;
+  const bool useDiscOnWall = discontinuityBC.active && nComp == 3 &&
+                             func != nullptr &&
+                             (func == fnNodeB || func == fnCenterB ||
+                              func == fnNodeE || func == fnCenterE);
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
@@ -595,15 +647,36 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
             }
           }
           if (inValid) {
-            for (int iVar = 0; iVar < nComp; ++iVar) {
-              const int comp = iStart + iVar;
-              if (func != nullptr) {
-                arr(i, j, k, comp) = (this->*func)(
-                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+            const bool isInflowFace =
+                (onLoWall && bnd.bcLo[d] == FieldBC::inflow) ||
+                (onHiWall && bnd.bcHi[d] == FieldBC::inflow);
+            if (isInflowFace && useDiscOnWall) {
+              Real pos[3] = { 0.0, 0.0, 0.0 };
+              for (int od = 0; od < nDim; ++od) {
+                pos[od] = probLo[od] + (static_cast<Real>(ijk[od]) +
+                                        (bnd.isNode[od] ? 0.0 : 0.5)) *
+                                           dx[od];
+              }
+              Real val[3] = { 0.0, 0.0, 0.0 };
+              if (isB) {
+                discontinuityBC.eval_B(pos, tEval, val);
               } else {
-                int m[3] = { i, j, k };
-                m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
-                arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
+                discontinuityBC.eval_E(pos, tEval, val);
+              }
+              for (int iVar = 0; iVar < nComp; ++iVar) {
+                arr(i, j, k, iStart + iVar) = val[iVar];
+              }
+            } else {
+              for (int iVar = 0; iVar < nComp; ++iVar) {
+                const int comp = iStart + iVar;
+                if (func != nullptr) {
+                  arr(i, j, k, comp) = (this->*func)(
+                      mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+                } else {
+                  int m[3] = { i, j, k };
+                  m[d] = onLoWall ? (bnd.loBnd[d] + 1) : (bnd.hiBnd[d] - 1);
+                  arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
+                }
               }
             }
           }
