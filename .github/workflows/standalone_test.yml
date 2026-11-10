@@ -167,6 +167,8 @@ jobs:
           PARAM_FILES=(
             tests/bc_absorb/PARAM.in.fields
             tests/bc_absorb/PARAM.in.particles
+            tests/bc_discontinuity/PARAM.in
+            tests/bc_discontinuity/PARAM.in.rd
             tests/bc_inflow/PARAM.in
             tests/bc_reflecting/PARAM.in.fields
             tests/freestream/PARAM.in.hybrid

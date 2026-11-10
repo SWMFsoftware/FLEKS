@@ -3041,6 +3041,86 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
 `outflow` at the opposite face for a wind-tunnel-style domain.
 </command>
 
+<command name="DISCONTINUITY" alias="DISCONTINUITY_FLEKS" multiple="F">
+  <parameter name="typeDiscontinuity" type="string" input="select" required="T">
+    <option value="td"/>
+    <option value="rd"/>
+    <option value="rd+"/>
+    <option value="rd-"/>
+    <option value="general"/>
+  </parameter>
+  <parameter name="normalX" type="real" default="1.0"/>
+  <parameter name="normalY" type="real" default="0.0"/>
+  <parameter name="normalZ" type="real" default="0.0"/>
+  <parameter name="width" type="real" default="0.0"/>
+  <parameter name="tStart" type="real" default="0.0"/>
+  <parameter name="rho" type="real" default="0.0"/>
+  <parameter name="ux" type="real" default="0.0"/>
+  <parameter name="uy" type="real" default="0.0"/>
+  <parameter name="uz" type="real" default="0.0"/>
+  <parameter name="T" type="real" default="0.0"/>
+  <for from="2" to="$nS">
+    <parameter name="rho" type="real" default="0.0"/>
+    <parameter name="ux" type="real" default="0.0"/>
+    <parameter name="uy" type="real" default="0.0"/>
+    <parameter name="uz" type="real" default="0.0"/>
+    <parameter name="T" type="real" default="0.0"/>
+  </for>
+  <parameter name="bx" type="real" default="0.0"/>
+  <parameter name="by" type="real" default="0.0"/>
+  <parameter name="bz" type="real" default="0.0"/>
+  <parameter name="vn" type="real" default="-1.0"/>
+
+#DISCONTINUITY
+td                       typeDiscontinuity ('td', 'rd', 'rd+', 'rd-', or 'general')
+1.0                      normalX
+1.0                      normalY
+0.0                      normalZ
+1.0                      width [code length units]
+0.0                      tStart [s]
+20.0                     rho [/cc]      Species 0 State 2
+100.0                    ux [km/s]
+0.0                      uy [km/s]
+0.0                      uz [km/s]
+314000.0                 T [K]
+0.0                      bx [T]         State 2 magnetic field
+-3.0e-9                  by [T]
+0.0                      bz [T]
+-1.0                     vn [km/s]      (optional; non-positive = auto)
+
+Specifies a planar solar wind discontinuity propagating into the domain across
+`inflow` boundaries (`#FIELDBOXBOUNDARY ... inflow ...` and
+`#PARTICLEBOXBOUNDARY ... inflow ...`).
+
+State 1 (the pre-discontinuity upstream state that fills the domain at `t = 0`)
+is taken from `#UNIFORMSTATE` (or `#INFLOW` for plasma moments if `#INFLOW` is
+also present; when `#UNIFORMSTATE` is present, `#INFLOW` may be omitted).
+State 2 (the post-discontinuity upstream state) and the plane geometry are
+specified in `#DISCONTINUITY`:
+
+* `typeDiscontinuity`:
+  - `td`: tangential discontinuity (`B.n = 0`, `u1.n = u2.n`, total thermal +
+    magnetic pressure balance `P_tot,1 = P_tot,2` strictly validated at startup,
+    with internal temperature compensation across finite `width > 0` so total
+    pressure is constant everywhere inside the transition layer).
+  - `rd`, `rd+`, `rd-`: rotational discontinuity (`B.n != 0`, `|B1| = |B2|`,
+    `n1 = n2`, `T1 = T2`, and Walen relation `u2 - u1 = +/- (B2 - B1) / sqrt(4*pi*rho_m)`
+    strictly validated at startup; tangential B and u rotate at constant
+    magnitude in the plane perpendicular to the normal).
+  - `general`: general planar transition checking only `B1.n = B2.n`.
+* `(normalX, normalY, normalZ)`: propagation normal vector (auto-normalized).
+* `width`: half-thickness of the smooth `tanh` transition layer in grid/code
+  length units (matching `#GEOMETRY`; `0` gives a sharp step).
+* `tStart`: onset time in SI seconds (`[s]`, matching `#TIMESTEPPING`/`#STOP`).
+  At or before `tStart`, the transition layer is automatically padded outside the
+  first-contact domain corner so the initial domain interior is purely State 1.
+* Per-species State 2 blocks (`rho` in 1/cc, `ux, uy, uz` in km/s, `T` in K),
+  followed by State 2 magnetic field `bx, by, bz` in Tesla `[T]`, and an
+  optional normal propagation speed override `vn` in km/s (non-positive or omitted
+  computes `V_n` automatically from `u1.n` for TD or the Alfvénic Walen frame
+  speed for RD).
+</command>
+
 <command name="WAVEBC" alias="WAVEBC_FLEKS" multiple="F">
   <parameter name="nWaveFace" type="integer" default="0"/>
   <for name="iWaveFace" from="1" to="$nWaveFace">

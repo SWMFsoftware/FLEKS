@@ -259,6 +259,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     waveBC.read_param(param);
   } else if (command == "#WAVEBCWINDOW") {
     waveBC.read_window(param);
+  } else if (command == "#DISCONTINUITY") {
+    discontinuityBC.read_param(param);
   } else if (command == "#MEMORY") {
     param.read_var("dnMemory", dnMemory);
   } else if (command == "#RANDOMPARTICLESLOCATION") {
@@ -779,6 +781,12 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
           "deposition is not implemented.");
   }
 
+  if (discontinuityBC.active && !bcField.has(FieldBC::inflow) &&
+      !has_particle_face(ParticleBC::inflow)) {
+    add_bc_warning("#DISCONTINUITY is active but no field or particle boundary "
+                   "face is set to 'inflow'.");
+  }
+
   update_bc_flags();
 }
 
@@ -1006,6 +1014,39 @@ void Pic::post_process_param() {
     }
   }
 
+  // If #INFLOW was omitted when #UNIFORMSTATE is present and an inflow boundary
+  // or #DISCONTINUITY is active, automatically populate State 1 inflow
+  // parameters from #UNIFORMSTATE so the user does not need to repeat State 1.
+  if (!inflowDefined_ && fi && !fi->get_uniform_state().empty() &&
+      (discontinuityBC.active || bcField.has(FieldBC::inflow) ||
+       has_particle_face(ParticleBC::inflow))) {
+    const auto& us = fi->get_uniform_state();
+    if (static_cast<int>(us.size()) >= 5 * nSpecies) {
+      inflowRho_I.resize(nSpecies);
+      inflowUx_I.resize(nSpecies);
+      inflowUy_I.resize(nSpecies);
+      inflowUz_I.resize(nSpecies);
+      inflowT_I.resize(nSpecies);
+      for (int iS = 0; iS < nSpecies; ++iS) {
+        const double mass_i = (fi->get_species_mass(iS) > 0.0)
+                                  ? (fi->get_species_mass(iS) * cProtonMassSI)
+                                  : cProtonMassSI;
+        const double rhoSI = us[5 * iS + 0];
+        const double nCC = (mass_i > 0.0) ? (rhoSI / (1.0e6 * mass_i)) : 0.0;
+        inflowRho_I[iS] = nCC;
+        inflowUx_I[iS] =
+            (rhoSI > 0.0) ? ((us[5 * iS + 1] / rhoSI) * 1.0e-3) : 0.0;
+        inflowUy_I[iS] =
+            (rhoSI > 0.0) ? ((us[5 * iS + 2] / rhoSI) * 1.0e-3) : 0.0;
+        inflowUz_I[iS] =
+            (rhoSI > 0.0) ? ((us[5 * iS + 3] / rhoSI) * 1.0e-3) : 0.0;
+        inflowT_I[iS] =
+            (nCC > 0.0) ? (us[5 * iS + 4] / (nCC * 1.0e6 * cBoltzmannSI)) : 0.0;
+      }
+      inflowDefined_ = true;
+    }
+  }
+
   fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
@@ -1138,6 +1179,9 @@ void Pic::finalize_units_conversion() {
   convert_intrinsic_B();
   convert_ionosphere_emission();
   waveBC.convert_units(fi);
+  discontinuityBC.convert_and_validate(fi, Geom(0), nDim, is_fake_2d(),
+                                       useHybridPIC, electronTemperature,
+                                       electronDensity0, electronGamma);
 }
 
 //==========================================================

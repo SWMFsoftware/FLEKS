@@ -27,6 +27,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Reflecting & PEC BC   | `bc_reflecting/`      | Specular reflecting particle walls + conducting (PEC) field walls (4 variants: full/hybrid fields/particles) | [README](bc_reflecting/README.md) |
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |
 | Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |
+| Discontinuity BC      | `bc_discontinuity/`   | Spatio-temporal planar solar wind discontinuity (`#DISCONTINUITY`) across `inflow` boundaries: 2D tilted TD and circular-rotation RD | [README](bc_discontinuity/README.md) |
 | Oblique shock         | `shock/`              | Oblique magnetized shock: 1D full PIC and hybrid; 2D hybrid with hyper-resistivity or upwind dissipation | [README](shock/README.md) |
 | Inner body            | `body/`               | Absorbing spherical inner boundary (`#BODY`): particle absorption, empty interior, wake | [README](body/README.md) |
 | Intrinsic field       | `intrinsic_field/`    | Static planetary magnetic field (`#DIPOLE`, `#CRUSTALFIELD`): analytic dipole, spherical harmonic crustal field | [README](intrinsic_field/README.md) |
