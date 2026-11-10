@@ -140,26 +140,64 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                                (domBox.length(iy_) == 1),
                                (nDim > 2 && domBox.length(iz_) == 1) };
 
+  // The structured format has one node per cell in a periodic direction, so
+  // the rightmost (periodic image) nodes are left out. The unstructured
+  // format writes them too: a node on the high face of a periodic direction
+  // is written by the box that would own it if the domain were not periodic.
+  const bool isStructured = writerIn.get_plotDx() >= 0;
+  const int activeDim = get_dim();
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (iLevSave >= 0 && iLevSave != iLev) {
       continue;
     }
     const auto& geom = Geom(iLev);
+    const Box& cellDomain = geom.Domain();
     int iBlock = 0;
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       const auto& typeArr = node_status(iLev)[mfi].array();
+      const auto& cellArr = cell_status(iLev)[mfi].array();
+      const Box cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
 
       auto lo = box.loVect3d();
       auto hi = box.hiVect3d();
 
-      if (iLev == 0) {
+      if (iLev == 0 && isStructured) {
         // Do not output the rightmost nodes for periodic boundary.
         for (int iDim = 0; iDim < nDim; iDim++)
           if ((geom.isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
             hi[iDim]--;
       }
+
+      // Is (i,j,k) a node on the high face of a periodic direction that this
+      // box owns when the periodicity is ignored? The owner is the box of the
+      // first cell around the node (same search as the 'owner' status in
+      // Grid::update_node_status) that is inside the domain and on this level.
+      auto is_periodic_image_to_write = [&](int i, int j, int k) {
+        if (isStructured)
+          return false;
+        const int ijk[3] = { i, j, k };
+        bool onHighFace = false;
+        for (int iDim = 0; iDim < nDim; iDim++)
+          if (geom.isPeriodic(iDim) && !singleCell[iDim] &&
+              ijk[iDim] == cellDomain.bigEnd(iDim) + 1)
+            onHighFace = true;
+        if (!onHighFace)
+          return false;
+        const int dkMin = (activeDim == 2) ? 0 : -1;
+        for (int dk = 0; dk >= dkMin; dk--)
+          for (int dj = 0; dj >= -1; dj--)
+            for (int di = 0; di >= -1; di--) {
+              const IntVect iv{ AMREX_D_DECL(i + di, j + dj, k + dk) };
+              if (!cellDomain.contains(iv) ||
+                  bit::is_lev_boundary(cellArr(i + di, j + dj, k + dk)))
+                continue;
+              return cellBox.contains(iv);
+            }
+        return false;
+      };
 
       // Collapse single-cell dimensions to a single node row.
       const int kHi = singleCell[iz_] ? lo[iz_] : hi[iz_];
@@ -177,7 +215,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
           for (int i = lo[ix_]; i <= iHi; ++i) {
             const double xp = singleCell[ix_] ? geom.CellCenter(lo[ix_], ix_)
                                               : geom.LoEdge(i, ix_);
-            if (bit::is_owner(typeArr(i, j, k)) &&
+            if ((bit::is_owner(typeArr(i, j, k)) ||
+                 is_periodic_image_to_write(i, j, k)) &&
                 (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
                 writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
@@ -1130,6 +1169,19 @@ void Pic::write_plots(bool doForce) {
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
+        // Cell-centered variables are written at the node of the cell's low
+        // corner. The nodes on the high face of a periodic direction read a
+        // ghost cell (the periodic image of the first cell), so fill it.
+        for (int iLev = 0; iLev < n_lev(); ++iLev) {
+          const auto period = Geom(iLev).periodicity();
+          for (auto* mf : { &centerNetChargeN, &centerDivE, &centerPhi,
+                            &centerPe, &centerPeState, &centerPeRho,
+                            &centerDivB, &divB }) {
+            if (iLev < (int)mf->size() && !(*mf)[iLev].empty() &&
+                (*mf)[iLev].nGrow() > 0)
+              (*mf)[iLev].FillBoundary(period);
+          }
+        }
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
                           find_output_list_caller, get_field_var_caller);
       }
