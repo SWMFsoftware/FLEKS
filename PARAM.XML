@@ -3086,7 +3086,7 @@ td                       typeDiscontinuity ('td', 'rd', 'rd+', 'rd-', or 'genera
 0.0                      bx [T]         State 2 magnetic field
 -3.0e-9                  by [T]
 0.0                      bz [T]
--1.0                     vn [km/s]      (optional; <=0 = auto)
+-1.0                     vn [km/s]      (optional; non-positive = auto)
 
 Specifies a planar solar wind discontinuity propagating into the domain across
 `inflow` boundaries (`#FIELDBOXBOUNDARY ... inflow ...` and
@@ -3112,11 +3112,11 @@ specified in `#DISCONTINUITY`:
 * `width`: half-thickness of the smooth `tanh` transition layer in grid/code
   length units (matching `#GEOMETRY`; `0` gives a sharp step).
 * `tStart`: onset time in SI seconds (`[s]`, matching `#TIMESTEPPING`/`#STOP`).
-  At `t <= tStart`, the transition layer is automatically padded outside the
+  At or before `tStart`, the transition layer is automatically padded outside the
   first-contact domain corner so the initial domain interior is purely State 1.
 * Per-species State 2 blocks (`rho` in 1/cc, `ux, uy, uz` in km/s, `T` in K),
   followed by State 2 magnetic field `bx, by, bz` in Tesla `[T]`, and an
-  optional normal propagation speed override `vn` in km/s (`<= 0` or omitted
+  optional normal propagation speed override `vn` in km/s (non-positive or omitted
   computes `V_n` automatically from `u1.n` for TD or the Alfvénic Walen frame
   speed for RD).
 </command>
