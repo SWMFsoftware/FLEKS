@@ -1174,9 +1174,9 @@ void Pic::write_plots(bool doForce) {
         // ghost cell (the periodic image of the first cell), so fill it.
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           const auto period = Geom(iLev).periodicity();
-          for (auto* mf : { &centerNetChargeN, &centerDivE, &centerPhi,
-                            &centerPe, &centerPeState, &centerPeRho,
-                            &centerDivB, &divB }) {
+          for (auto* mf :
+               { &centerNetChargeN, &centerDivE, &centerPhi, &centerPe,
+                 &centerPeState, &centerPeRho, &centerDivB, &divB }) {
             if (iLev < (int)mf->size() && !(*mf)[iLev].empty() &&
                 (*mf)[iLev].nGrow() > 0)
               (*mf)[iLev].FillBoundary(period);
