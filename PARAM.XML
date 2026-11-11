@@ -1103,11 +1103,6 @@ Default values are shown (kept at 0.1 for legacy coupled-test compatibility).
 <command name="EFIELDSOLVER">
   <parameter name="EFieldTol" type="real" default="1e-6"/>
   <parameter name="EFieldIter" type="integer" default="200"/>
-  <parameter name="solverType" type="string" default="amrex"/>
-  <parameter name="precondType" type="string" default="auto"/>
-  <parameter name="nRestart" type="integer" default="30"/>
-  <parameter name="nPrecondIter" type="integer" default="2"/>
-  <parameter name="smootherWeight" type="real" default="0.6667"/>
   
 #EFIELDSOLVER
 1e-6                     EFieldTol
