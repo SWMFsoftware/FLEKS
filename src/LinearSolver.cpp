@@ -1,6 +1,5 @@
-#include "SimDomains.h"
-// #include "linear_solver_wrapper_c.h" // Calling Fortran solver
 #include "LinearSolver.h"
+#include "SimDomains.h"
 
 using namespace amrex;
 
@@ -14,135 +13,37 @@ void matvec_divE_accurate(const Real *vecIn, Real *vecOut, int iLev) {
       .pic->divE_accurate_matvec(vecIn, vecOut, iLev);
 }
 
-void linear_solver_gmres(Real tolerance, int nIteration, int nVarSolve,
-                         int nDim, int nGrid, Real *rhs, Real *xLeft,
-                         MATVEC fMatvec, int iLev, bool doReport,
-                         GmresWorkspace *work, Real *initialResidual,
-                         int *actualMatvec, Real *achievedError) {
-
-  int nJ = 1, nK = 1, nBlock = 1;
-  Real precond_matrix_II[1][1];
-  precond_matrix_II[0][0] = 0;
-  int lTest = (doReport && ParallelDescriptor::MyProc() == 0);
-
-  if (true) {
-    MPI_Comm iComm = ParallelDescriptor::Communicator();
-    PrecondType TypePrecond = NONE;
-    linear_solver_wrapper_hy(
-        fMatvec, iLev, GMRES, tolerance, nIteration, nVarSolve, nDim, nGrid, nJ,
-        nK, nBlock, iComm, rhs, xLeft, TypePrecond, precond_matrix_II[0], lTest,
-        work, initialResidual, actualMatvec, achievedError);
-  } else { // Fortran solver
-    /*
-    // The shared library matvec requires non-const vecIn due to compatibility
-    // issue with AMPS. If one intends to use it, remember to change the
-    // definition of `const Real *vecIn` to `Real vecIn`.
-    MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
-    //// parameter to choose preconditioner types
-    // 0:No precondition; 1: BILU; 2:DILU;
-    //[-1,0): MBILU;
-    Real PrecondParam = 0;
-    linear_solver_matvec_c = fMatvec;
-    linear_solver_wrapper("GMRES", &tolerance, &nIteration, &nVarSolve, &nDim,
-                          &nGrid, &nJ, &nK, &nBlock, &iComm, rhs, xLeft,
-                          &PrecondParam, precond_matrix_II[0], &lTest);
-    */
-  }
-}
-
-void linear_solver_wrapper_hy(
+void LinearSolver::solve(
     std::function<void(const Real *, Real *, const int)> matvec, int iLev,
-    // Matrix-free operation
-    const KrylovType typeSolver,              // Type of Solver
-    const Real tolerance,                     // Tolerance for the solver
-    const int nIteration,                     // Max iteration number
-    const int nVar,                           // Number of impl. variables/cell
-    const int nDim,                           // Number of spatial dimensions
-    const int nI, const int nJ, const int nK, // Number of cells in a block
-    const int nBlock,              // Number of impl. blocks on current proc
-    const MPI_Comm iComm,          // MPI communicator for processors
-    Real *rhs_I,                   // RHS std::vector
-    Real *x_I,                     // Initial guess/solution
-    const PrecondType typePrecond, // Parameter for the preconditioner
-    Real *precondMatrix_II, // Diagonal and super/sub diagonal elements from
-                            // the matrix A, which is in the equation Ax = b
-    const int lTest, GmresWorkspace *work, Real *initialResidual,
-    int *actualMatvec, Real *achievedError) {
-  struct LinearSolverParam param;
+    bool doReport) {
+  const bool doTest = (doReport && ParallelDescriptor::MyProc() == 0);
+  const MPI_Comm iComm = ParallelDescriptor::Communicator();
+  const StopType typeStop = REL;
+  const bool useInitialGuess = false;
 
-  param.typePrecond = typePrecond;
-  if (param.typePrecond == NONE) {
-    param.doPrecond = false;
-  } else {
-    param.doPrecond = true;
-  }
-
-  param.typeKrylov = typeSolver;
-  param.typeStop = REL;
-  param.errorMax = tolerance;
-  param.maxMatvec = nIteration;
-  param.nKrylovVector = nIteration;
-  param.useInitialGuess = false;
-
-  // CG solver does not have preconditioner.
-  assert(!(param.doPrecond && param.typeKrylov == CG));
-
-  int nVarIjk = nVar * nI * nJ * nK; // Number of variables per block
-
-  int nImpl = nVarIjk * nBlock; // Number of variables per processor
-
-  bool DoTest = lTest == 1;
-
-  // Make sure that left preconditioning is used when necessary
-  param.typePrecondSide = LEFT;
-
-  // Initialize solution std::vector to zero
-  std::fill(x_I, x_I + nImpl, 0.0);
-
-  // Get preconditioning matrix if required.
-  // Precondition RHS and initial guess (for symmetric prec only)
-  // if (param.doPrecond) WIP
+  // Initialize solution vector to zero
+  std::fill(xLeft, xLeft + nSolve, 0.0);
 
   // Initialize stopping conditions. Solver will return actual values.
-  param.nMatvec = param.maxMatvec;
-  param.error = param.errorMax;
+  int nMatvec = nIter;
+  Real error = tol;
 
   // Label the tolerance/error explicitly as relative or absolute
-  const char *typeError = param.typeStop == REL ? "relative" : "absolute";
+  const char *typeError = typeStop == REL ? "relative" : "absolute";
 
-  if (DoTest)
-    std::cout << "Before " << param.typeKrylov << " nMatVec, " << typeError
-              << " tol: " << param.nMatvec << " " << param.error << std::endl;
+  if (doTest)
+    std::cout << "Before " << KrylovType::GMRES << " nMatVec, " << typeError
+              << " tol: " << nMatvec << " " << error << std::endl;
 
-  // Solve linear problem
-  switch (param.typeKrylov) {
-    case GMRES:
-      gmres(matvec, iLev, rhs_I, x_I, param.useInitialGuess, nImpl,
-            param.nKrylovVector, param.error, param.typeStop, param.nMatvec,
-            DoTest, iComm, work, initialResidual);
-      break;
-    case BICGSTAB:
-      // bicgstab(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
-      //         param.error, param.typeStop, param.nMatvec,
-      //         DoTest, iComm);
-      break;
-    case CG:
-      // cg(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
-      //   param.error, param.typeStop, param.nMatvec,
-      //   DoTest, iComm);
-      break;
-    default:
-      std::cout << "Unknown solver type = " << param.typeKrylov << std::endl;
-  }
+  gmres(matvec, iLev, rhs, xLeft, useInitialGuess, nSolve, nIter, error,
+        typeStop, nMatvec, doTest, iComm, &gmresWork, &initialResidual);
 
-  if (DoTest)
-    std::cout << "After nMatVec, " << typeError << " error = " << param.nMatvec
-              << " " << param.error << std::endl;
+  if (doTest)
+    std::cout << "After nMatVec, " << typeError << " error = " << nMatvec << " "
+              << error << std::endl;
 
-  if (actualMatvec)
-    *actualMatvec = param.nMatvec;
-  if (achievedError)
-    *achievedError = param.error;
+  actualMatvec = nMatvec;
+  achievedError = error;
 }
 
 /*

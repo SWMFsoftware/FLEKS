@@ -998,8 +998,12 @@ public:
   void solve_E_gmres(int iLev);
   void solve_E_newton_krylov(int iLev);
   void update_E_rhs(amrex::Real *rhos, int iLev);
+  void update_E_rhs(amrex::MultiFab &rhsMF, int iLev);
   void update_E_matvec(const amrex::Real *vecIn, amrex::Real *vecOut, int iLev,
                        const bool useZeroBC = true);
+  void update_E_matvec(const amrex::MultiFab &vecIn, amrex::MultiFab &vecOut,
+                       int iLev, const bool useZeroBC = true);
+  void sync_nodal_solver_vec(amrex::MultiFab &vecMF, int iLev);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
   void convert_1d_to_3d(const amrex::Real *const p, amrex::MultiFab &MF,
