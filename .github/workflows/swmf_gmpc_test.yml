@@ -146,24 +146,101 @@ jobs:
       - name: Verify Test Results
         working-directory: SWMF
         run: |
+          DIFF_FILES=(
+            test16_2d_gmpc.diff
+            test16_3d_gmpc.diff
+            test17_gmpc.diff
+            test17_hybrid_gmpc.diff
+            test18_gmpc.diff
+            test23_2d_gmpc.diff
+            test23_3d_gmpc.diff
+            test25_gmpc.diff
+            test_swpc_aepic_gm.diff
+            test_swpc_aepic_pc.diff
+          )
+
+          test_name_for() {
+            case "$1" in
+              test_swpc_aepic_gm.diff) echo "test_swpc_aepic (GM)" ;;
+              test_swpc_aepic_pc.diff) echo "test_swpc_aepic (PC)" ;;
+              *_gmpc.diff)             echo "${1%_gmpc.diff}" ;;
+              *)                       echo "${1%.diff}" ;;
+            esac
+          }
+
           FAILED=0
-          for diff_file in test16_2d_gmpc.diff test16_3d_gmpc.diff \
-                           test17_gmpc.diff test17_hybrid_gmpc.diff \
-                           test18_gmpc.diff \
-                           test23_2d_gmpc.diff test23_3d_gmpc.diff \
-                           test25_gmpc.diff \
-                           test_swpc_aepic_gm.diff test_swpc_aepic_pc.diff; do
+          PASSED_COUNT=0
+          FAILED_COUNT=0
+          FAILED_ROWS=""
+          ALL_ROWS=""
+          DIFF_DETAILS=""
+
+          for diff_file in "${DIFF_FILES[@]}"; do
+            test_name=$(test_name_for "$diff_file")
             if [ ! -f "$diff_file" ]; then
               echo "::error::Test verification failed! Expected diff file $diff_file was not generated."
               FAILED=1
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              reason="Expected diff file not generated"
+              FAILED_ROWS+="| \`$test_name\` | \`$diff_file\` | 🔴 **FAILED** | $reason |\n"
+              ALL_ROWS+="| \`$test_name\` | \`$diff_file\` | 🔴 **FAILED** | $reason |\n"
             elif [ -s "$diff_file" ]; then
               echo "::error::Test verification failed! Non-zero diff detected in $diff_file"
               cat "$diff_file"
               FAILED=1
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              last_line=$(tail -n 1 "$diff_file" | tr -d '\r')
+              if [[ "$last_line" =~ _compile\.\.\.$ ]] || [[ "$last_line" =~ _rundir\.\.\.$ ]] || [[ "$last_line" =~ _run\.\.\.$ ]] || [[ "$last_line" =~ _check\.\.\.$ ]]; then
+                reason="Aborted during \`${last_line%...}\`"
+              else
+                err_summary=$(grep -E "ERROR in DiffNum\.pl:" "$diff_file" | sed 's/ERROR in DiffNum\.pl: //' | paste -sd "; " - || true)
+                if [ -n "$err_summary" ]; then
+                  reason="$err_summary"
+                else
+                  reason="Non-zero diff ($(wc -l < "$diff_file" | tr -d ' ') lines)"
+                fi
+              fi
+              FAILED_ROWS+="| \`$test_name\` | \`$diff_file\` | 🔴 **FAILED** | $reason |\n"
+              ALL_ROWS+="| \`$test_name\` | \`$diff_file\` | 🔴 **FAILED** | $reason |\n"
+              DIFF_DETAILS+="<details><summary>📄 <code>$diff_file</code> ($test_name)</summary>\n\n\`\`\`diff\n$(cat "$diff_file")\n\`\`\`\n\n</details>\n\n"
             else
               echo "Test verification successful for $diff_file! Diff is empty."
+              PASSED_COUNT=$((PASSED_COUNT + 1))
+              ALL_ROWS+="| \`$test_name\` | \`$diff_file\` | 🟢 **PASSED** | - |\n"
             fi
           done
+
+          TOTAL_COUNT=${#DIFF_FILES[@]}
+          {
+            echo "### 🧪 SWMF GM-PC Integration Test Results"
+            echo ""
+            if [ "$FAILED" -eq 0 ]; then
+              echo "✅ **All $TOTAL_COUNT checks passed!**"
+            else
+              echo "❌ **$FAILED_COUNT of $TOTAL_COUNT check(s) failed** (**$PASSED_COUNT** passed, **$FAILED_COUNT** failed)"
+              echo ""
+              echo "#### 🔴 Failed Checks"
+              echo ""
+              echo "| Test | Diff File | Status | Details |"
+              echo "| :--- | :--- | :--- | :--- |"
+              printf '%b' "$FAILED_ROWS"
+              echo ""
+              if [ -n "$DIFF_DETAILS" ]; then
+                echo "#### 🔍 Diff Output for Failed Checks"
+                echo ""
+                printf '%b' "$DIFF_DETAILS"
+              fi
+            fi
+            echo ""
+            echo "<details>"
+            echo "<summary>📋 <b>Full Check Results ($TOTAL_COUNT checks)</b></summary>"
+            echo ""
+            echo "| Test | Diff File | Status | Details |"
+            echo "| :--- | :--- | :--- | :--- |"
+            printf '%b' "$ALL_ROWS"
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           if [ $FAILED -ne 0 ]; then
             exit 1
