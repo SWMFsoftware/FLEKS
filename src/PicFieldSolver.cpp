@@ -185,6 +185,30 @@ void Pic::solve_E_gmres(int iLev) {
 }
 
 //==========================================================
+void Pic::sync_nodal_solver_vec(MultiFab& vecMF, int iLev) {
+  const bool skipAllBody = is_body_linetied();
+  const bool skipInterior = is_body_conducting();
+  const auto& statusMF = node_status(iLev);
+
+  for (MFIter mfi(vecMF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.tilebox();
+    const Array4<Real>& arr = vecMF[mfi].array();
+    const Array4<int const>& nodeArr = statusMF[mfi].const_array();
+    ParallelFor(bx, vecMF.nComp(),
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                  const int st = nodeArr(i, j, k);
+                  if (!bit::is_owner(st) || (skipAllBody && bit::is_body(st)) ||
+                      (skipInterior && bit::is_body_interior(st))) {
+                    arr(i, j, k, c) = 0.0;
+                  }
+                });
+  }
+
+  vecMF.SumBoundary(0, vecMF.nComp(), IntVect(0), IntVect(0),
+                    Geom(iLev).periodicity());
+}
+
+//==========================================================
 void Pic::solve_E_newton_krylov(int iLev) {
   const int nSolve = eSolver.get_nSolve();
 
@@ -237,10 +261,35 @@ void Pic::solve_E_newton_krylov(int iLev) {
 //==========================================================
 void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
                           const bool useZeroBC) {
+  if (solverVecMF[iLev].empty()) {
+    distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, 1);
+    distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverCenterLapMF[iLev], boxArray(iLev),
+                        DistributionMap(iLev), 3, 1);
+  }
+
+  MultiFab& vecMF = solverVecMF[iLev];
+  MultiFab& matvecMF = solverMatvecMF[iLev];
+
+  convert_1d_to_3d(vecIn, vecMF, iLev);
+
+  // The right side edges should be filled in.
+  vecMF.SumBoundary(Geom(iLev).periodicity());
+
+  update_E_matvec(vecMF, matvecMF, iLev, useZeroBC);
+
+  convert_3d_to_1d(matvecMF, vecOut, iLev);
+}
+
+//==========================================================
+void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
+                          const bool useZeroBC) {
   std::string nameFunc = "Pic::E_matvec";
   timing_func(nameFunc);
-
-  zero_array(vecOut, eSolver.get_nSolve());
 
   if (solverVecMF[iLev].empty()) {
     distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
@@ -259,18 +308,17 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
                         DistributionMap(iLev), 3, 0);
 
   MultiFab& vecMF = solverVecMF[iLev];
-  vecMF.setVal(0.0);
-
-  MultiFab& matvecMF = solverMatvecMF[iLev];
-  matvecMF.setVal(0.0);
+  if (&vecIn != &vecMF) {
+    vecMF.setVal(0.0);
+    MultiFab::Copy(vecMF, vecIn, 0, 0, 3, 0);
+    if (vecIn.nGrow() == 0) {
+      vecMF.SumBoundary(0, 3, IntVect(0), IntVect(0), Geom(iLev).periodicity());
+    } else {
+      sync_nodal_solver_vec(vecMF, iLev);
+    }
+  }
 
   MultiFab& tempNode3 = solverTempNode3[iLev];
-  tempNode3.setVal(0.0);
-
-  convert_1d_to_3d(vecIn, vecMF, iLev);
-
-  // The right side edges should be filled in.
-  vecMF.SumBoundary(Geom(iLev).periodicity());
 
   // M*E needs ghost cell information.
   vecMF.FillBoundary(Geom(iLev).periodicity());
@@ -284,27 +332,37 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
   if (hasWallEt)
     MultiFab::Copy(solverWallInMF[iLev], vecMF, 0, 0, 3, 0);
 
+  const BoundaryBounds bnd(Geom(iLev), vecMF.boxArray().ixType(), &bcField);
+  bool hasDirichlet = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bnd.isNode[d] && (FieldBC::is_dirichlet(bnd.bcLo[d]) ||
+                          FieldBC::is_dirichlet(bnd.bcHi[d]))) {
+      hasDirichlet = true;
+    }
+  }
+
   if (useZeroBC) {
     // For Dirichlet physical boundaries (inflow, fixed, wave), the correction
     // in the Krylov subspace must be identically zero on the boundary nodes.
-    const BoundaryBounds bnd(Geom(iLev), vecMF.boxArray().ixType(), &bcField);
-    for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
-      const Box& bx = mfi.validbox();
-      const Array4<Real>& arrVec = vecMF[mfi].array();
-      ParallelFor(bx, vecMF.nComp(),
-                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                    const int ijk[3] = { i, j, k };
-                    for (int d = 0; d < nDim; ++d) {
-                      if (!bnd.isNode[d])
-                        continue;
-                      if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
-                           ijk[d] == bnd.loBnd[d]) ||
-                          (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
-                           ijk[d] == bnd.hiBnd[d])) {
-                        arrVec(i, j, k, c) = 0.0;
+    if (hasDirichlet) {
+      for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        const Array4<Real>& arrVec = vecMF[mfi].array();
+        ParallelFor(bx, vecMF.nComp(),
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                      const int ijk[3] = { i, j, k };
+                      for (int d = 0; d < nDim; ++d) {
+                        if (!bnd.isNode[d])
+                          continue;
+                        if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
+                             ijk[d] == bnd.loBnd[d]) ||
+                            (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
+                             ijk[d] == bnd.hiBnd[d])) {
+                          arrVec(i, j, k, c) = 0.0;
+                        }
                       }
-                    }
-                  });
+                    });
+      }
     }
 
     // The correction obeys the linear, homogeneous part of the field BC:
@@ -332,7 +390,7 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
                    &solverCenterLapMF[iLev]);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
-  matvecMF.mult(-delt2);
+  matvecMF.mult(-delt2, 0, matvecMF.nComp(), 0);
 
   if (useUpwindE) {
     // Explicit scheme: add the LF artificial viscosity term to the rhs
@@ -440,12 +498,9 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
 
     grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
 
-    tempNode3.mult(delt2);
-    MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
-                  matvecMF.nGrow());
+    MultiFab::Saxpy(matvecMF, delt2, tempNode3, 0, 0, matvecMF.nComp(), 0);
   }
 
-  tempNode3.setVal(0);
   update_E_M_dot_E(vecMF, tempNode3, iLev);
 
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
@@ -455,8 +510,6 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
   // Identity rows of the tangential E on conducting walls, from the input
   // before the wall BC zeroed it.
   if (hasWallEt) {
-    const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
-                             &bcField);
     for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrOut = matvecMF[mfi].array();
@@ -472,9 +525,7 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
 
   // Dirichlet physical boundaries (inflow, fixed, wave): enforce A_ii = 1, A_ij
   // = 0 by copying vecMF to matvecMF on boundary nodes.
-  {
-    const BoundaryBounds bnd(Geom(iLev), matvecMF.boxArray().ixType(),
-                             &bcField);
+  if (hasDirichlet) {
     for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrOut = matvecMF[mfi].array();
@@ -502,8 +553,6 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
   // E_t = 0 an exact constraint of the linear system.
   if (is_body_conducting())
     project_body_E(matvecMF, iLev);
-
-  convert_3d_to_1d(matvecMF, vecOut, iLev);
 }
 
 //==========================================================
@@ -511,7 +560,6 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
   std::string nameFunc = "Pic::update_E_M_dot_E";
   timing_func(nameFunc);
 
-  outMF.setVal(0.0);
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
   for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -524,9 +572,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
       auto& data0 = mmArr(ijk);
-      Real sumX = outArr(i, j, k, ix_);
-      Real sumY = outArr(i, j, k, iy_);
-      Real sumZ = outArr(i, j, k, iz_);
+      Real sumX = 0.0;
+      Real sumY = 0.0;
+      Real sumZ = 0.0;
 
 #if (AMREX_SPACEDIM == 2)
       for (int j2 = j - 1; j2 <= j + 1; ++j2) {
@@ -581,6 +629,22 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
 //==========================================================
 void Pic::update_E_rhs(Real* rhs, int iLev) {
+  if (solverRhsNode1[iLev].empty()) {
+    distribute_FabArray(solverRhsNode1[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverRhsNode2[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+  }
+
+  MultiFab& temp2Node = solverRhsNode2[iLev];
+
+  update_E_rhs(temp2Node, iLev);
+
+  convert_3d_to_1d(temp2Node, rhs, iLev);
+}
+
+//==========================================================
+void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
@@ -593,7 +657,6 @@ void Pic::update_E_rhs(Real* rhs, int iLev) {
 
   MultiFab& tempNode = solverRhsNode1[iLev];
   tempNode.setVal(0.0);
-  MultiFab& temp2Node = solverRhsNode2[iLev];
   temp2Node.setVal(0.0);
 
   if (useHybridPIC || useCurlUpwindB) {
@@ -650,7 +713,16 @@ void Pic::update_E_rhs(Real* rhs, int iLev) {
   // any residual left on these nodes is never removed and grows. On level 0
   // that value is the prescribed state at the solve time (including the #WAVEBC
   // source), not the nodeE of the previous step.
-  {
+  const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(), &bcField);
+  bool hasDirichlet = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bnd.isNode[d] && (FieldBC::is_dirichlet(bnd.bcLo[d]) ||
+                          FieldBC::is_dirichlet(bnd.bcHi[d]))) {
+      hasDirichlet = true;
+    }
+  }
+
+  if (hasDirichlet) {
     const MultiFab* dirichletE = &nodeE[iLev];
     if (iLev == 0 && hasInflowBC_) {
       MultiFab::Copy(tempNode, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
@@ -660,8 +732,6 @@ void Pic::update_E_rhs(Real* rhs, int iLev) {
       dirichletE = &tempNode;
     }
 
-    const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
-                             &bcField);
     for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrRHS = temp2Node[mfi].array();
@@ -685,8 +755,6 @@ void Pic::update_E_rhs(Real* rhs, int iLev) {
 
   // Tangential E on conducting walls: rhs = E^n (zero after the wall BC).
   if (iLev == 0 && hasConductingBC_) {
-    const BoundaryBounds bnd(Geom(iLev), temp2Node.boxArray().ixType(),
-                             &bcField);
     for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real>& arrRHS = temp2Node[mfi].array();
@@ -704,8 +772,6 @@ void Pic::update_E_rhs(Real* rhs, int iLev) {
   // so that the Krylov space stays inside the constrained space.
   if (is_body_conducting())
     project_body_E(temp2Node, iLev);
-
-  convert_3d_to_1d(temp2Node, rhs, iLev);
 }
 
 //==========================================================

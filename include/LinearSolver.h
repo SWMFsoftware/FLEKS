@@ -12,12 +12,6 @@
 
 typedef void (*MATVEC)(const amrex::Real *vecIn, amrex::Real *vecOut, int n);
 
-enum PrecondType {
-  NONE,  // No preconditioner
-  MBILU, // Gustaffson modification of diagonal blocks
-  DILU,  // LU for diagonal, keep off-diagonal blocks
-  BILU,  // LU for diagonal, premultiply U with D^-1
-};
 enum KrylovType { GMRES, BICGSTAB, CG };
 enum class FieldSolverMode { GMRES, NewtonKrylov };
 enum StopType { // (||.|| denotes the 2-norm):
@@ -25,7 +19,6 @@ enum StopType { // (||.|| denotes the 2-norm):
   ABS,          // absolute stopping crit.:||res|| <= Tol
   MAX           // maximum  stopping crit.: max(abs(res)) <= Tol
 };
-enum PrecondSideType { LEFT };
 
 namespace fleks_jfnk {
 
@@ -68,28 +61,6 @@ void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec,
 
 } // namespace fleks_jfnk
 
-struct LinearSolverParam {
-  bool doPrecond;                  // Do preconditioning
-  PrecondSideType typePrecondSide; // Precondition left, right, symmetric
-  PrecondType typePrecond;         // Preconditioner type
-  KrylovType typeKrylov;           // Krylov solver type
-  StopType typeStop;               // Stopping criterion type
-  amrex::Real errorMax;            // Tolerance for solver
-  int maxMatvec;                   // Maximum number of iterations
-  int nKrylovVector;               // Number of vectors for GMRES
-  bool useInitialGuess;            // Non-zero initial guess
-  amrex::Real error;               // Actual accuracy achieved
-  int nMatvec;                     // Actual number of iterations
-};
-
-struct Block {
-  int nDim;       // Number of spatial dimensions
-  int nVar;       // Number of impl. variables/cell
-  int nI, nJ, nK; // Number of cells in a block
-  int nBlock;     // Number of impl. blocks on current proc
-  amrex::Real *precondMatrix_II;
-};
-
 struct GmresWorkspace {
   std::vector<amrex::Real> c;
   std::vector<amrex::Real> s;
@@ -102,25 +73,6 @@ void matvec_E_solver(const amrex::Real *vecIn, amrex::Real *vecOut, int iLev);
 void matvec_divE_accurate(const amrex::Real *vecIn, amrex::Real *vecOut,
                           int iLev);
 
-void linear_solver_gmres(amrex::Real tolerance, int nIteration, int nVarSolve,
-                         int nDim, int nGrid, amrex::Real *rhs,
-                         amrex::Real *xLeft, MATVEC fMatvec, int iLev,
-                         bool doReport = true, GmresWorkspace *work = nullptr,
-                         amrex::Real *initialResidual = nullptr,
-                         int *actualMatvec = nullptr,
-                         amrex::Real *achievedError = nullptr);
-
-void linear_solver_wrapper_hy(
-    std::function<void(const amrex::Real *, amrex::Real *, const int)> matvec,
-    int iLev, const KrylovType solverType, const amrex::Real tolerance,
-    const int nIteration, const int nVar, const int nDim, const int nI,
-    const int nJ, const int nK, const int nBlock, MPI_Comm iComm,
-    amrex::Real *Rhs_I, amrex::Real *x_I, const PrecondType TypePrecond,
-    amrex::Real *precond_matrix, const int lTest,
-    GmresWorkspace *work = nullptr, amrex::Real *initialResidual = nullptr,
-    int *actualMatvec = nullptr, amrex::Real *achievedError = nullptr);
-
-// hyzhou: eventually we should use this and merge the above into this class!
 class LinearSolver {
   int nGrid;
   int nVar;
@@ -203,6 +155,15 @@ public:
   void set_tol(amrex::Real in) { tol = in; }
   void set_nIter(int in) { nIter = in; }
 
+  amrex::Real get_tol() const { return tol; }
+  int get_nIter() const { return nIter; }
+
+  void set_stats(amrex::Real res0, int nMatvecIn, amrex::Real relErr) {
+    initialResidual = res0;
+    actualMatvec = nMatvecIn;
+    achievedError = relErr;
+  }
+
   void init(int nGridIn, int nVarIn, int nDimIn, MATVEC fIn) {
     nVar = nVarIn;
     nDim = nDimIn;
@@ -210,25 +171,11 @@ public:
     reset(nGridIn);
   }
 
-  void solve(int iLev, bool doReport = true) {
-    linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec,
-                        iLev, doReport, &gmresWork, &initialResidual,
-                        &actualMatvec, &achievedError);
-  }
+  void solve(int iLev, bool doReport = true) { solve(fMatvec, iLev, doReport); }
 
   void solve(
       std::function<void(const amrex::Real *, amrex::Real *, const int)> matvec,
-      int iLev, bool doReport = true) {
-    int nJ = 1, nK = 1, nBlock = 1;
-    amrex::Real precondMatrix[1] = { 0.0 };
-    int lTest = (doReport && amrex::ParallelDescriptor::MyProc() == 0);
-
-    linear_solver_wrapper_hy(matvec, iLev, GMRES, tol, nIter, nVar, nDim, nGrid,
-                             nJ, nK, nBlock,
-                             amrex::ParallelDescriptor::Communicator(), rhs,
-                             xLeft, NONE, precondMatrix, lTest, &gmresWork,
-                             &initialResidual, &actualMatvec, &achievedError);
-  }
+      int iLev, bool doReport = true);
 
   int get_nSolve() const { return nSolve; }
   int get_actual_nIter() const { return actualMatvec; }
