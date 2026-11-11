@@ -1442,7 +1442,8 @@ void FluidInterface::calc_fluid_state(const Real* dataPIC_I,
   data_I[iBy] = BY;
   data_I[iBz] = BZ;
 
-  const Real invB2 = 1.0 / (BX * BX + BY * BY + BZ * BZ + 1e-40);
+  constexpr Real epsB2 = (sizeof(Real) == 8) ? Real(1e-40) : Real(1e-30);
+  const Real invB2 = Real(1.0) / (BX * BX + BY * BY + BZ * BZ + epsB2);
 
   if (useElectronFluid) {
 
@@ -1652,7 +1653,8 @@ void FluidInterface::calc_fluid_state_hybrid(const Real* dataPIC_I,
     data_I[iEz] = dataPIC_I[iEzPIC];
   }
 
-  const Real invB2 = 1.0 / (BX * BX + BY * BY + BZ * BZ + 1e-40);
+  constexpr Real epsB2 = (sizeof(Real) == 8) ? Real(1e-40) : Real(1e-30);
+  const Real invB2 = Real(1.0) / (BX * BX + BY * BY + BZ * BZ + epsB2);
 
   const Real Pe = dataPIC_I[iPePIC];
   if (useMhdPe && iPe >= 0) {

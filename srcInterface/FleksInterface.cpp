@@ -209,21 +209,103 @@ int fleks_get_ngridpoints_(int *nPoint) {
   return 0;
 }
 
-//==========================================================
-int fleks_get_grid_(double *Pos_DI, int *n) {
+namespace {
+
+template <typename RealT = Real, typename DoublePtr>
+void get_grid_impl(DoublePtr Pos_DI) {
   for (int i = 0; i < fleksDomains.size(); ++i) {
     int idx = fleksDomains(i).couplerMarker *
               fleksDomains(i).fi->get_fluid_dimension();
-    if constexpr (std::is_same_v<Real, double>) {
+    if constexpr (std::is_same_v<RealT, double>) {
       fleksDomains(i).get_grid(&Pos_DI[idx]);
     } else {
       const int nVal = fleksDomains(i).get_grid_nodes_number() *
                        fleksDomains(i).fi->get_fluid_dimension();
-      Vector<Real> posTmp(nVal);
+      Vector<RealT> posTmp(nVal);
       fleksDomains(i).get_grid(posTmp.data());
       std::copy(posTmp.begin(), posTmp.end(), &Pos_DI[idx]);
     }
   }
+}
+
+template <typename RealT = Real, typename DoublePtr>
+void set_state_var_impl(DoublePtr Data_VI, int *iPoint_I, int nVar,
+                        std::vector<std::string> &names) {
+  if constexpr (std::is_same_v<RealT, double>) {
+    for (int i = 0; i < fleksDomains.size(); ++i) {
+      int idx = fleksDomains(i).couplerMarker;
+      fleksDomains(i).set_state_var(Data_VI, &iPoint_I[idx], names);
+    }
+  } else {
+    int totalNodes = 0;
+    for (int i = 0; i < fleksDomains.size(); ++i) {
+      totalNodes += fleksDomains(i).get_grid_nodes_number();
+    }
+    int maxIdx = 0;
+    for (int k = 0; k < totalNodes; ++k) {
+      if (iPoint_I[k] > maxIdx)
+        maxIdx = iPoint_I[k];
+    }
+    Vector<RealT> dataTmp(Data_VI, Data_VI + maxIdx * nVar);
+    for (int i = 0; i < fleksDomains.size(); ++i) {
+      int idx = fleksDomains(i).couplerMarker;
+      fleksDomains(i).set_state_var(dataTmp.data(), &iPoint_I[idx], names);
+    }
+  }
+}
+
+template <typename RealT = Real, typename DoublePtr>
+void get_state_var_impl(int nDim, int nPoint, DoublePtr Xyz_I, DoublePtr data_I,
+                        int nVar) {
+  if constexpr (std::is_same_v<RealT, double>) {
+    for (int i = 0; i < fleksDomains.size(); ++i)
+      fleksDomains(i).get_fluid_state_for_points(nDim, nPoint, Xyz_I, data_I,
+                                                 nVar);
+  } else {
+    Vector<RealT> xyzTmp(Xyz_I, Xyz_I + nDim * nPoint);
+    Vector<RealT> dataTmp(nVar * nPoint, RealT(0));
+    for (int i = 0; i < fleksDomains.size(); ++i)
+      fleksDomains(i).get_fluid_state_for_points(nDim, nPoint, xyzTmp.data(),
+                                                 dataTmp.data(), nVar);
+    std::copy(dataTmp.begin(), dataTmp.end(), data_I);
+  }
+}
+
+template <typename RealT = Real, typename DoublePtr>
+void get_for_oh_impl(int nDim, int nPoint, DoublePtr Xyz_I, DoublePtr data_I,
+                     int nVar) {
+  if constexpr (std::is_same_v<RealT, double>) {
+    for (int i = 0; i < fleksDomains.size(); ++i)
+      fleksDomains(i).get_source_for_points(nDim, nPoint, Xyz_I, data_I, nVar);
+  } else {
+    Vector<RealT> xyzTmp(Xyz_I, Xyz_I + nDim * nPoint);
+    Vector<RealT> dataTmp(nVar * nPoint, RealT(0));
+    for (int i = 0; i < fleksDomains.size(); ++i)
+      fleksDomains(i).get_source_for_points(nDim, nPoint, xyzTmp.data(),
+                                            dataTmp.data(), nVar);
+    std::copy(dataTmp.begin(), dataTmp.end(), data_I);
+  }
+}
+
+template <typename RealT = Real, typename DoublePtr>
+void find_points_impl(int nPoint, DoublePtr Xyz_I, int *iProc_I) {
+  if constexpr (std::is_same_v<RealT, double>) {
+    for (int i = 0; i < fleksDomains.size(); ++i)
+      fleksDomains(i).find_mpi_rank_for_points(nPoint, Xyz_I, iProc_I);
+  } else {
+    for (int i = 0; i < fleksDomains.size(); ++i) {
+      const int nDimGM = fleksDomains(i).fi->get_fluid_dimension();
+      Vector<RealT> xyzTmp(Xyz_I, Xyz_I + nPoint * nDimGM);
+      fleksDomains(i).find_mpi_rank_for_points(nPoint, xyzTmp.data(), iProc_I);
+    }
+  }
+}
+
+} // namespace
+
+//==========================================================
+int fleks_get_grid_(double *Pos_DI, int *n) {
+  get_grid_impl(Pos_DI);
   return 0;
 }
 
@@ -241,78 +323,27 @@ int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
       Abort("Error: variable names are not set correctly!\n");
     }
   }
-  if constexpr (std::is_same_v<Real, double>) {
-    for (int i = 0; i < fleksDomains.size(); ++i) {
-      int idx = fleksDomains(i).couplerMarker;
-      fleksDomains(i).set_state_var(Data_VI, &iPoint_I[idx], names);
-    }
-  } else {
-    int totalNodes = 0;
-    for (int i = 0; i < fleksDomains.size(); ++i) {
-      totalNodes += fleksDomains(i).get_grid_nodes_number();
-    }
-    int maxIdx = 0;
-    for (int k = 0; k < totalNodes; ++k) {
-      if (iPoint_I[k] > maxIdx)
-        maxIdx = iPoint_I[k];
-    }
-    Vector<Real> dataTmp(Data_VI, Data_VI + maxIdx * (*nVar));
-    for (int i = 0; i < fleksDomains.size(); ++i) {
-      int idx = fleksDomains(i).couplerMarker;
-      fleksDomains(i).set_state_var(dataTmp.data(), &iPoint_I[idx], names);
-    }
-  }
+  set_state_var_impl(Data_VI, iPoint_I, *nVar, names);
   return 0;
 }
 
 //==========================================================
 int fleks_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                          int *nVar) {
-  if constexpr (std::is_same_v<Real, double>) {
-    for (int i = 0; i < fleksDomains.size(); ++i)
-      fleksDomains(i).get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I,
-                                                 *nVar);
-  } else {
-    Vector<Real> xyzTmp(Xyz_I, Xyz_I + (*nDim) * (*nPoint));
-    Vector<Real> dataTmp(data_I, data_I + (*nVar) * (*nPoint));
-    for (int i = 0; i < fleksDomains.size(); ++i)
-      fleksDomains(i).get_fluid_state_for_points(*nDim, *nPoint, xyzTmp.data(),
-                                                 dataTmp.data(), *nVar);
-    std::copy(dataTmp.begin(), dataTmp.end(), data_I);
-  }
+  get_state_var_impl(*nDim, *nPoint, Xyz_I, data_I, *nVar);
   return 0;
 }
 
 //==========================================================
 int fleks_get_for_oh_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                       int *nVar) {
-  if constexpr (std::is_same_v<Real, double>) {
-    for (int i = 0; i < fleksDomains.size(); ++i)
-      fleksDomains(i).get_source_for_points(*nDim, *nPoint, Xyz_I, data_I,
-                                            *nVar);
-  } else {
-    Vector<Real> xyzTmp(Xyz_I, Xyz_I + (*nDim) * (*nPoint));
-    Vector<Real> dataTmp(data_I, data_I + (*nVar) * (*nPoint));
-    for (int i = 0; i < fleksDomains.size(); ++i)
-      fleksDomains(i).get_source_for_points(*nDim, *nPoint, xyzTmp.data(),
-                                            dataTmp.data(), *nVar);
-    std::copy(dataTmp.begin(), dataTmp.end(), data_I);
-  }
+  get_for_oh_impl(*nDim, *nPoint, Xyz_I, data_I, *nVar);
   return 0;
 }
 
 //==========================================================
 int fleks_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
-  if constexpr (std::is_same_v<Real, double>) {
-    for (int i = 0; i < fleksDomains.size(); ++i)
-      fleksDomains(i).find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
-  } else {
-    for (int i = 0; i < fleksDomains.size(); ++i) {
-      const int nDimGM = fleksDomains(i).fi->get_fluid_dimension();
-      Vector<Real> xyzTmp(Xyz_I, Xyz_I + (*nPoint) * nDimGM);
-      fleksDomains(i).find_mpi_rank_for_points(*nPoint, xyzTmp.data(), iProc_I);
-    }
-  }
+  find_points_impl(*nPoint, Xyz_I, iProc_I);
   return 0;
 }
 
