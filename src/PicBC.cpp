@@ -716,6 +716,35 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 }
 
 //==========================================================
+void Pic::ensure_wave_bc_initialized() {
+  if (!waveBC.turb.active || waveBC.turb.initialized)
+    return;
+  bool isWaveFace[6] = { false, false, false, false, false, false };
+  bool anyWaveFace = false;
+  for (int d = 0; d < nDim; ++d) {
+    isWaveFace[2 * d + 0] = (bcField.face(d, 0) == FieldBC::wave);
+    isWaveFace[2 * d + 1] = (bcField.face(d, 1) == FieldBC::wave);
+    if (isWaveFace[2 * d + 0] || isWaveFace[2 * d + 1])
+      anyWaveFace = true;
+  }
+  if (!anyWaveFace)
+    return;
+  if (!fi)
+    return;
+  const bool hasNodeFluid =
+      fi->is_node_fluid_ready() && !fi->get_node_fluid(0).empty();
+  const bool hasUniformFallback =
+      !fi->is_init_from_swmf() && (fi->get_nS() > 0) &&
+      (static_cast<int>(fi->get_uniform_state().size()) >=
+       5 * fi->get_nS() + 3) &&
+      (static_cast<int>(fi->inflowState.size()) >= fi->get_nS());
+  if (!hasNodeFluid && !hasUniformFallback)
+    return;
+  waveBC.ensure_turbulence_initialized(fi, Geom(0), nDim, is_fake_2d(),
+                                       isWaveFace);
+}
+
+//==========================================================
 void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            const int iStart, const int nComp, const int iLev,
                            const BoxBC<FieldBC::Type>& bc, int iField, Real t,
@@ -1061,16 +1090,7 @@ void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
     dvz *= w;
   }
 
-  if (waveBC.turb.active) {
-    if (!waveBC.turb.initialized) {
-      bool isWaveFace[6] = { false, false, false, false, false, false };
-      for (int d = 0; d < nDim; ++d) {
-        isWaveFace[2 * d + 0] = (bcField.face(d, 0) == FieldBC::wave);
-        isWaveFace[2 * d + 1] = (bcField.face(d, 1) == FieldBC::wave);
-      }
-      waveBC.ensure_turbulence_initialized(fi, Geom(0), nDim, is_fake_2d(),
-                                           isWaveFace);
-    }
+  if (waveBC.turb.active && waveBC.turb.initialized) {
     waveBC.eval_turbulent_velocity_kick(pos, t, charge, dvx, dvy, dvz);
   }
 }

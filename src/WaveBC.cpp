@@ -119,18 +119,24 @@ amrex::Real WaveWindow::weight(const amrex::Real* pos) const {
   const amrex::Real x = pos[direction];
   if (x < lo || x > hi)
     return 0.0;
+  if (taperLo == taperHi) {
+    const amrex::Real d = std::min(x - lo, hi - x);
+    if (taperLo > 0.0 && d < taperLo)
+      return 0.5 * (1.0 - std::cos(dPI * d / taperLo));
+    return 1.0;
+  }
+  amrex::Real w = 1.0;
   if (taperLo > 0.0 && (x - lo) < taperLo)
-    return 0.5 * (1.0 - std::cos(dPI * (x - lo) / taperLo));
+    w *= 0.5 * (1.0 - std::cos(dPI * (x - lo) / taperLo));
   if (taperHi > 0.0 && (hi - x) < taperHi)
-    return 0.5 * (1.0 - std::cos(dPI * (hi - x) / taperHi));
-  return 1.0;
+    w *= 0.5 * (1.0 - std::cos(dPI * (hi - x) / taperHi));
+  return w;
 }
 
-void WaveWindow::weight_and_grad(const amrex::Real* pos, amrex::Real& w,
-                                 amrex::Real gradW[3]) const {
-  gradW[0] = 0.0;
-  gradW[1] = 0.0;
-  gradW[2] = 0.0;
+void WaveWindow::weight_and_derivs(const amrex::Real* pos, amrex::Real& w,
+                                   amrex::Real& dW, amrex::Real& d2W) const {
+  dW = 0.0;
+  d2W = 0.0;
   if (!active) {
     w = 1.0;
     return;
@@ -140,19 +146,39 @@ void WaveWindow::weight_and_grad(const amrex::Real* pos, amrex::Real& w,
     w = 0.0;
     return;
   }
+
+  amrex::Real wLo = 1.0, dWLo = 0.0, d2WLo = 0.0;
   if (taperLo > 0.0 && (x - lo) < taperLo) {
-    const amrex::Real arg = dPI * (x - lo) / taperLo;
-    w = 0.5 * (1.0 - std::cos(arg));
-    gradW[direction] = 0.5 * (dPI / taperLo) * std::sin(arg);
-    return;
+    const amrex::Real kLo = dPI / taperLo;
+    const amrex::Real arg = kLo * (x - lo);
+    wLo = 0.5 * (1.0 - std::cos(arg));
+    dWLo = 0.5 * kLo * std::sin(arg);
+    d2WLo = 0.5 * kLo * kLo * std::cos(arg);
   }
+
+  amrex::Real wHi = 1.0, dWHi = 0.0, d2WHi = 0.0;
   if (taperHi > 0.0 && (hi - x) < taperHi) {
-    const amrex::Real arg = dPI * (hi - x) / taperHi;
-    w = 0.5 * (1.0 - std::cos(arg));
-    gradW[direction] = -0.5 * (dPI / taperHi) * std::sin(arg);
-    return;
+    const amrex::Real kHi = dPI / taperHi;
+    const amrex::Real arg = kHi * (hi - x);
+    wHi = 0.5 * (1.0 - std::cos(arg));
+    dWHi = -0.5 * kHi * std::sin(arg);
+    d2WHi = 0.5 * kHi * kHi * std::cos(arg);
   }
-  w = 1.0;
+
+  w = wLo * wHi;
+  dW = dWLo * wHi + wLo * dWHi;
+  d2W = d2WLo * wHi + 2.0 * dWLo * dWHi + wLo * d2WHi;
+}
+
+void WaveWindow::weight_and_grad(const amrex::Real* pos, amrex::Real& w,
+                                 amrex::Real gradW[3]) const {
+  gradW[0] = 0.0;
+  gradW[1] = 0.0;
+  gradW[2] = 0.0;
+  amrex::Real dW = 0.0, d2W = 0.0;
+  weight_and_derivs(pos, w, dW, d2W);
+  if (active)
+    gradW[direction] = dW;
 }
 
 void WaveBoundaryManager::read_window(ReadParam& param) {
@@ -224,6 +250,11 @@ void WaveBoundaryManager::read_turbulent_inflow(ReadParam& param) {
     if (param.read_optional("modeFile", turb.modeFile)) {
       progress = true;
     }
+  }
+
+  if (turb.nMode < 2 && std::abs(turb.sigmaC) < 1.0 - 1.0e-12) {
+    amrex::Abort("TURBULENTINFLOW: mixed cross-helicity (|sigmaC| < 1) "
+                 "requires nMode >= 2.");
   }
 }
 
@@ -794,11 +825,87 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
   // Outward propagation sign in the plasma frame: follows V0 along B0
   const amrex::Real sOut = (dot3(turb.v0, turb.b0) >= 0.0) ? 1.0 : -1.0;
 
-  // Spectral amplitude weights w_m ~ k_m^((1 - spectralIndex)/2)
+  const amrex::Real* probLo = geom.ProbLo();
+  const amrex::Real* probHi = geom.ProbHi();
+  const bool perX = geom.isPeriodic(0);
+  const bool perY = (effDim > 1) && geom.isPeriodic(1);
+  const amrex::Real lx = perX ? (probHi[0] - probLo[0]) : 0.0;
+  const amrex::Real ly = perY ? (probHi[1] - probLo[1]) : 0.0;
+  const amrex::Real dkx = (lx > 0.0) ? (cTwoPi / lx) : 0.0;
+  const amrex::Real dky = (ly > 0.0) ? (cTwoPi / ly) : 0.0;
+  const amrex::Real kMin = cTwoPi / turb.lambdaMax;
+  const amrex::Real kMax = cTwoPi / turb.lambdaMin;
+
+  // Quantize wavevector components along every periodic direction while
+  // enforcing the [lambdaMin, lambdaMax] wavelength bounds.
+  std::vector<amrex::Real> kNormVec(N, 0.0);
+  for (int m = 0; m < N; ++m) {
+    amrex::Real kx = kmag[m] * std::cos(theta[m]);
+    amrex::Real ky = kmag[m] * std::sin(theta[m]);
+    const amrex::Real kz = 0.0;
+
+    if (perX && perY && dkx > 0.0 && dky > 0.0) {
+      const int maxMx = static_cast<int>(std::floor(kMax / dkx));
+      const int maxMy = static_cast<int>(std::floor(kMax / dky));
+      int bestMx = 0, bestMy = 0;
+      amrex::Real bestDistSq = 1.0e60;
+      for (int mx = -maxMx; mx <= maxMx; ++mx) {
+        for (int my = -maxMy; my <= maxMy; ++my) {
+          if (mx == 0 && my == 0)
+            continue;
+          const amrex::Real candKx = static_cast<amrex::Real>(mx) * dkx;
+          const amrex::Real candKy = static_cast<amrex::Real>(my) * dky;
+          const amrex::Real candK = std::hypot(candKx, candKy);
+          if (candK < kMin * (1.0 - 1.0e-12) || candK > kMax * (1.0 + 1.0e-12))
+            continue;
+          const amrex::Real dxK = candKx - kx;
+          const amrex::Real dyK = candKy - ky;
+          const amrex::Real distSq = dxK * dxK + dyK * dyK;
+          if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestMx = mx;
+            bestMy = my;
+          }
+        }
+      }
+      if (bestMx == 0 && bestMy == 0) {
+        amrex::Abort("TURBULENTINFLOW: no non-zero periodic (kx, ky) lattice "
+                     "mode fits within [lambdaMin, lambdaMax].");
+      }
+      kx = static_cast<amrex::Real>(bestMx) * dkx;
+      ky = static_cast<amrex::Real>(bestMy) * dky;
+    } else if (perY && dky > 0.0) {
+      int mult = static_cast<int>(std::llround(ky / dky));
+      while (std::abs(mult) * dky > kmag[m]) {
+        mult -= (mult > 0) ? 1 : -1;
+      }
+      ky = static_cast<amrex::Real>(mult) * dky;
+      const amrex::Real kxAbs =
+          std::sqrt(std::max(kmag[m] * kmag[m] - ky * ky, amrex::Real(0.0)));
+      kx = (kx >= 0.0) ? kxAbs : -kxAbs;
+    } else if (perX && dkx > 0.0) {
+      int mult = static_cast<int>(std::llround(kx / dkx));
+      while (std::abs(mult) * dkx > kmag[m]) {
+        mult -= (mult > 0) ? 1 : -1;
+      }
+      kx = static_cast<amrex::Real>(mult) * dkx;
+      const amrex::Real kyAbs =
+          std::sqrt(std::max(kmag[m] * kmag[m] - kx * kx, amrex::Real(0.0)));
+      ky = (ky >= 0.0) ? kyAbs : -kyAbs;
+    }
+
+    turb.kx[m] = kx;
+    turb.ky[m] = ky;
+    turb.kz[m] = kz;
+    const amrex::Real kVec[3] = { kx, ky, kz };
+    kNormVec[m] = norm3(kVec);
+  }
+
+  // Spectral amplitude weights w_m ~ |k_m|^((1 - spectralIndex)/2)
   std::vector<amrex::Real> rawWeight(N, 0.0);
   amrex::Real sumSqPlus = 0.0, sumSqMinus = 0.0;
   for (int m = 0; m < N; ++m) {
-    rawWeight[m] = std::pow(kmag[m], 0.5 * (1.0 - turb.spectralIndex));
+    rawWeight[m] = std::pow(kNormVec[m], 0.5 * (1.0 - turb.spectralIndex));
     if (turb.sigmaC >= 1.0 - 1.0e-12) {
       turb.signProp[m] = sOut;
       sumSqPlus += rawWeight[m] * rawWeight[m];
@@ -829,32 +936,14 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
   const amrex::Real scaleMinus =
       (sumSqMinus > 0.0) ? (targetRms * std::sqrt(fMinus / (0.5 * sumSqMinus)))
                          : 0.0;
-
-  const amrex::Real* probLo = geom.ProbLo();
-  const amrex::Real* probHi = geom.ProbHi();
-  const bool perY = (effDim > 1) && geom.isPeriodic(1);
-  const amrex::Real ly = perY ? (probHi[1] - probLo[1]) : 0.0;
-  const amrex::Real dky = (ly > 0.0) ? (cTwoPi / ly) : 0.0;
   const amrex::Real invFourPi = 1.0 / fourPI;
 
   for (int m = 0; m < N; ++m) {
-    amrex::Real kx = kmag[m] * std::cos(theta[m]);
-    amrex::Real ky = kmag[m] * std::sin(theta[m]);
-    amrex::Real kz = 0.0;
-
-    if (perY && dky > 0.0) {
-      int mult = static_cast<int>(std::llround(ky / dky));
-      while (std::abs(mult) * dky > kmag[m]) {
-        mult -= (mult > 0) ? 1 : -1;
-      }
-      ky = static_cast<amrex::Real>(mult) * dky;
-      const amrex::Real kxAbs =
-          std::sqrt(std::max(kmag[m] * kmag[m] - ky * ky, amrex::Real(0.0)));
-      kx = (kx >= 0.0) ? kxAbs : -kxAbs;
-    }
-
+    const amrex::Real kx = turb.kx[m];
+    const amrex::Real ky = turb.ky[m];
+    const amrex::Real kz = turb.kz[m];
     const amrex::Real kVec[3] = { kx, ky, kz };
-    const amrex::Real kNorm = norm3(kVec);
+    const amrex::Real kNorm = kNormVec[m];
     const amrex::Real kHat[3] = { (kNorm > 0.0) ? (kx / kNorm) : 1.0,
                                   (kNorm > 0.0) ? (ky / kNorm) : 0.0,
                                   (kNorm > 0.0) ? (kz / kNorm) : 0.0 };
@@ -906,9 +995,6 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
     const amrex::Real invKSq = (kNorm > 0.0) ? (1.0 / (kNorm * kNorm)) : 0.0;
     const amrex::Real alphaV = -turb.signProp[m] * invSqrtFourPiRho;
 
-    turb.kx[m] = kx;
-    turb.ky[m] = ky;
-    turb.kz[m] = kz;
     turb.Bx[m] = bVec[0];
     turb.By[m] = bVec[1];
     turb.Bz[m] = bVec[2];
@@ -1027,22 +1113,29 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
   }
 }
 
-void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
-                                               const amrex::Real* phase_t,
-                                               amrex::Real env, int iField,
-                                               amrex::Real out[3]) const {
-  out[0] = 0.0;
-  out[1] = 0.0;
-  out[2] = 0.0;
+bool WaveBoundaryManager::eval_turbulent_state(
+    const amrex::Real* pos, const amrex::Real* phase_t, amrex::Real t,
+    amrex::Real env, bool needJAndV, amrex::Real dB[3], amrex::Real dJ[3],
+    amrex::Real dVmhd[3]) const {
+  dB[0] = dB[1] = dB[2] = 0.0;
+  dJ[0] = dJ[1] = dJ[2] = 0.0;
+  dVmhd[0] = dVmhd[1] = dVmhd[2] = 0.0;
+
   if (!turb.active || !turb.initialized || env <= 0.0 ||
       turb.dBrmsOverB0 <= 0.0)
-    return;
+    return false;
 
-  amrex::Real w = 1.0;
+  amrex::Real w = 1.0, dW = 0.0, d2W = 0.0;
+  window.weight_and_derivs(pos, w, dW, d2W);
+  if (w == 0.0 && dW == 0.0 && d2W == 0.0)
+    return false;
+
+  const int wDir =
+      (window.active && window.direction >= 0 && window.direction < 3)
+          ? window.direction
+          : 0;
   amrex::Real gradW[3] = { 0.0, 0.0, 0.0 };
-  window.weight_and_grad(pos, w, gradW);
-  if (w == 0.0 && gradW[0] == 0.0 && gradW[1] == 0.0 && gradW[2] == 0.0)
-    return;
+  gradW[wDir] = dW;
 
   const int N = turb.nMode;
   const amrex::Real* AMREX_RESTRICT kx = turb.kx.data();
@@ -1054,16 +1147,18 @@ void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
   const amrex::Real* AMREX_RESTRICT Ax = turb.Ax.data();
   const amrex::Real* AMREX_RESTRICT Ay = turb.Ay.data();
   const amrex::Real* AMREX_RESTRICT Az = turb.Az.data();
+  const amrex::Real* AMREX_RESTRICT omega = turb.omega.data();
+  const amrex::Real* AMREX_RESTRICT phase = turb.phase.data();
 
   amrex::Real dBxRaw = 0.0, dByRaw = 0.0, dBzRaw = 0.0;
   amrex::Real dAxRaw = 0.0, dAyRaw = 0.0, dAzRaw = 0.0;
 
-  if (iField == 0) {
-// Magnetic field perturbation: dB = env * (W * dB_raw + grad(W) x dA_raw)
+  if (!needJAndV) {
 #pragma omp simd reduction(+ : dBxRaw, dByRaw, dBzRaw, dAxRaw, dAyRaw, dAzRaw)
     for (int m = 0; m < N; ++m) {
+      const amrex::Real ph = phase_t ? phase_t[m] : (phase[m] - omega[m] * t);
       const amrex::Real arg =
-          kx[m] * pos[0] + ky[m] * pos[1] + kz[m] * pos[2] + phase_t[m];
+          kx[m] * pos[0] + ky[m] * pos[1] + kz[m] * pos[2] + ph;
       const amrex::Real s = std::sin(arg);
       const amrex::Real c = std::cos(arg);
       dBxRaw += Bx[m] * s;
@@ -1076,67 +1171,110 @@ void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
     const amrex::Real dA[3] = { dAxRaw, dAyRaw, dAzRaw };
     amrex::Real gradWCrossA[3];
     cross3(gradW, dA, gradWCrossA);
-    out[0] = env * (w * dBxRaw + gradWCrossA[0]);
-    out[1] = env * (w * dByRaw + gradWCrossA[1]);
-    out[2] = env * (w * dBzRaw + gradWCrossA[2]);
-  } else if (iField == 1) {
-    // Electric field perturbation from full kinetic consistency:
-    //   dV_e = dV_mhd - (m_i / (m_i + m_e)) * dJ / rho_q0
-    //   dE   = -(V0 x dB + dV_e x B0 + dV_e x dB)
-    const amrex::Real* AMREX_RESTRICT Jx = turb.Jx.data();
-    const amrex::Real* AMREX_RESTRICT Jy = turb.Jy.data();
-    const amrex::Real* AMREX_RESTRICT Jz = turb.Jz.data();
-    const amrex::Real* AMREX_RESTRICT Vmx = turb.Vmx.data();
-    const amrex::Real* AMREX_RESTRICT Vmy = turb.Vmy.data();
-    const amrex::Real* AMREX_RESTRICT Vmz = turb.Vmz.data();
+    dB[0] = env * (w * dBxRaw + gradWCrossA[0]);
+    dB[1] = env * (w * dByRaw + gradWCrossA[1]);
+    dB[2] = env * (w * dBzRaw + gradWCrossA[2]);
+    return true;
+  }
 
-    amrex::Real dJxRaw = 0.0, dJyRaw = 0.0, dJzRaw = 0.0;
-    amrex::Real dVxRaw = 0.0, dVyRaw = 0.0, dVzRaw = 0.0;
+  const amrex::Real* AMREX_RESTRICT Jx = turb.Jx.data();
+  const amrex::Real* AMREX_RESTRICT Jy = turb.Jy.data();
+  const amrex::Real* AMREX_RESTRICT Jz = turb.Jz.data();
+  const amrex::Real* AMREX_RESTRICT Vmx = turb.Vmx.data();
+  const amrex::Real* AMREX_RESTRICT Vmy = turb.Vmy.data();
+  const amrex::Real* AMREX_RESTRICT Vmz = turb.Vmz.data();
+  const amrex::Real* AMREX_RESTRICT kd =
+      (wDir == 0) ? kx : ((wDir == 1) ? ky : kz);
+
+  amrex::Real dJxRaw = 0.0, dJyRaw = 0.0, dJzRaw = 0.0;
+  amrex::Real dVxRaw = 0.0, dVyRaw = 0.0, dVzRaw = 0.0;
+  amrex::Real ddAxRaw = 0.0, ddAyRaw = 0.0, ddAzRaw = 0.0;
 
 #pragma omp simd reduction(+ : dBxRaw, dByRaw, dBzRaw, dAxRaw, dAyRaw, dAzRaw, \
-                               dJxRaw, dJyRaw, dJzRaw, dVxRaw, dVyRaw, dVzRaw)
-    for (int m = 0; m < N; ++m) {
-      const amrex::Real arg =
-          kx[m] * pos[0] + ky[m] * pos[1] + kz[m] * pos[2] + phase_t[m];
-      const amrex::Real s = std::sin(arg);
-      const amrex::Real c = std::cos(arg);
-      dBxRaw += Bx[m] * s;
-      dByRaw += By[m] * s;
-      dBzRaw += Bz[m] * s;
-      dAxRaw += Ax[m] * c;
-      dAyRaw += Ay[m] * c;
-      dAzRaw += Az[m] * c;
-      dJxRaw += Jx[m] * c;
-      dJyRaw += Jy[m] * c;
-      dJzRaw += Jz[m] * c;
-      dVxRaw += Vmx[m] * s;
-      dVyRaw += Vmy[m] * s;
-      dVzRaw += Vmz[m] * s;
-    }
+                               dJxRaw, dJyRaw, dJzRaw, dVxRaw, dVyRaw, dVzRaw, \
+                               ddAxRaw, ddAyRaw, ddAzRaw)
+  for (int m = 0; m < N; ++m) {
+    const amrex::Real ph = phase_t ? phase_t[m] : (phase[m] - omega[m] * t);
+    const amrex::Real arg =
+        kx[m] * pos[0] + ky[m] * pos[1] + kz[m] * pos[2] + ph;
+    const amrex::Real s = std::sin(arg);
+    const amrex::Real c = std::cos(arg);
+    dBxRaw += Bx[m] * s;
+    dByRaw += By[m] * s;
+    dBzRaw += Bz[m] * s;
+    dAxRaw += Ax[m] * c;
+    dAyRaw += Ay[m] * c;
+    dAzRaw += Az[m] * c;
+    dJxRaw += Jx[m] * c;
+    dJyRaw += Jy[m] * c;
+    dJzRaw += Jz[m] * c;
+    dVxRaw += Vmx[m] * s;
+    dVyRaw += Vmy[m] * s;
+    dVzRaw += Vmz[m] * s;
+    const amrex::Real kds = -kd[m] * s;
+    ddAxRaw += Ax[m] * kds;
+    ddAyRaw += Ay[m] * kds;
+    ddAzRaw += Az[m] * kds;
+  }
 
-    const amrex::Real dA[3] = { dAxRaw, dAyRaw, dAzRaw };
-    amrex::Real gradWCrossA[3];
-    cross3(gradW, dA, gradWCrossA);
-    const amrex::Real dB[3] = { env * (w * dBxRaw + gradWCrossA[0]),
-                                env * (w * dByRaw + gradWCrossA[1]),
-                                env * (w * dBzRaw + gradWCrossA[2]) };
+  const amrex::Real dA[3] = { dAxRaw, dAyRaw, dAzRaw };
+  amrex::Real gradWCrossA[3];
+  cross3(gradW, dA, gradWCrossA);
+  dB[0] = env * (w * dBxRaw + gradWCrossA[0]);
+  dB[1] = env * (w * dByRaw + gradWCrossA[1]);
+  dB[2] = env * (w * dBzRaw + gradWCrossA[2]);
 
-    const amrex::Real dBRawVec[3] = { dBxRaw, dByRaw, dBzRaw };
-    amrex::Real gradWCrossB[3];
-    cross3(gradW, dBRawVec, gradWCrossB);
-    const amrex::Real invFourPi = 1.0 / fourPI;
-    const amrex::Real dJ[3] = { env * (w * dJxRaw + invFourPi * gradWCrossB[0]),
-                                env * (w * dJyRaw + invFourPi * gradWCrossB[1]),
-                                env *
-                                    (w * dJzRaw + invFourPi * gradWCrossB[2]) };
+  // Full curl(dB)/(4*pi) where dB = W * dB_raw + grad(W) x dA_raw:
+  //   curl(W * dB_raw)         = W * curl(dB_raw) + grad(W) x dB_raw
+  //   curl(grad(W) x dA_raw)   = -dW * d(dA_raw)/dx_d
+  //                              + d2W * (dA_raw,d * e_d - dA_raw)
+  const amrex::Real dBRawVec[3] = { dBxRaw, dByRaw, dBzRaw };
+  amrex::Real gradWCrossB[3];
+  cross3(gradW, dBRawVec, gradWCrossB);
+  const amrex::Real ddA[3] = { ddAxRaw, ddAyRaw, ddAzRaw };
+  const amrex::Real invFourPi = 1.0 / fourPI;
+  for (int c = 0; c < 3; ++c) {
+    const amrex::Real d2WTerm = (c == wDir) ? 0.0 : (-d2W * dA[c]);
+    const amrex::Real jRawComp =
+        (c == 0) ? dJxRaw : ((c == 1) ? dJyRaw : dJzRaw);
+    dJ[c] = env * (w * jRawComp +
+                   invFourPi * (gradWCrossB[c] - dW * ddA[c] + d2WTerm));
+  }
 
+  dVmhd[0] = env * w * dVxRaw;
+  dVmhd[1] = env * w * dVyRaw;
+  dVmhd[2] = env * w * dVzRaw;
+  return true;
+}
+
+void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
+                                               const amrex::Real* phase_t,
+                                               amrex::Real env, int iField,
+                                               amrex::Real out[3]) const {
+  out[0] = 0.0;
+  out[1] = 0.0;
+  out[2] = 0.0;
+  if (iField != 0 && iField != 1)
+    return;
+
+  amrex::Real dB[3], dJ[3], dVmhd[3];
+  if (!eval_turbulent_state(pos, phase_t, 0.0, env, (iField == 1), dB, dJ,
+                            dVmhd))
+    return;
+
+  if (iField == 0) {
+    out[0] = dB[0];
+    out[1] = dB[1];
+    out[2] = dB[2];
+  } else {
+    // Electric field perturbation from full kinetic consistency:
+    //   dV_e = dV_mhd - (m_i / (m_i + m_e)) * dJ / rho_q0
+    //   dE   = -(V0 x dB + dV_e x B0 + dV_e x dB) = dB x V0 + (B0 + dB) x dV_e
     const amrex::Real jFactorElec =
         (turb.rhoQ0 > 0.0) ? (turb.massRatioIon / turb.rhoQ0) : 0.0;
-    const amrex::Real dVe[3] = { env * w * dVxRaw - jFactorElec * dJ[0],
-                                 env * w * dVyRaw - jFactorElec * dJ[1],
-                                 env * w * dVzRaw - jFactorElec * dJ[2] };
-
-    // dE = -(V0 x dB + dVe x B0 + dVe x dB) = dB x V0 + (B0 + dB) x dVe
+    const amrex::Real dVe[3] = { dVmhd[0] - jFactorElec * dJ[0],
+                                 dVmhd[1] - jFactorElec * dJ[1],
+                                 dVmhd[2] - jFactorElec * dJ[2] };
     const amrex::Real bTot[3] = { turb.b0[0] + dB[0], turb.b0[1] + dB[1],
                                   turb.b0[2] + dB[2] };
     amrex::Real term1[3], term2[3];
@@ -1151,63 +1289,13 @@ void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
 void WaveBoundaryManager::eval_turbulent_velocity_kick(
     const amrex::Real* pos, amrex::Real t, amrex::Real charge, amrex::Real& dvx,
     amrex::Real& dvy, amrex::Real& dvz) const {
-  if (!turb.active || !turb.initialized || turb.dBrmsOverB0 <= 0.0)
-    return;
   const amrex::Real env = turbulent_envelope(t);
   if (env <= 0.0)
     return;
 
-  amrex::Real w = 1.0;
-  amrex::Real gradW[3] = { 0.0, 0.0, 0.0 };
-  window.weight_and_grad(pos, w, gradW);
-  if (w == 0.0 && gradW[0] == 0.0 && gradW[1] == 0.0 && gradW[2] == 0.0)
+  amrex::Real dB[3], dJ[3], dVmhd[3];
+  if (!eval_turbulent_state(pos, nullptr, t, env, true, dB, dJ, dVmhd))
     return;
-
-  const int N = turb.nMode;
-  const amrex::Real* AMREX_RESTRICT kx = turb.kx.data();
-  const amrex::Real* AMREX_RESTRICT ky = turb.ky.data();
-  const amrex::Real* AMREX_RESTRICT kz = turb.kz.data();
-  const amrex::Real* AMREX_RESTRICT Bx = turb.Bx.data();
-  const amrex::Real* AMREX_RESTRICT By = turb.By.data();
-  const amrex::Real* AMREX_RESTRICT Bz = turb.Bz.data();
-  const amrex::Real* AMREX_RESTRICT Jx = turb.Jx.data();
-  const amrex::Real* AMREX_RESTRICT Jy = turb.Jy.data();
-  const amrex::Real* AMREX_RESTRICT Jz = turb.Jz.data();
-  const amrex::Real* AMREX_RESTRICT Vmx = turb.Vmx.data();
-  const amrex::Real* AMREX_RESTRICT Vmy = turb.Vmy.data();
-  const amrex::Real* AMREX_RESTRICT Vmz = turb.Vmz.data();
-  const amrex::Real* AMREX_RESTRICT omega = turb.omega.data();
-  const amrex::Real* AMREX_RESTRICT phase = turb.phase.data();
-
-  amrex::Real dBxRaw = 0.0, dByRaw = 0.0, dBzRaw = 0.0;
-  amrex::Real dJxRaw = 0.0, dJyRaw = 0.0, dJzRaw = 0.0;
-  amrex::Real dVxRaw = 0.0, dVyRaw = 0.0, dVzRaw = 0.0;
-
-#pragma omp simd reduction(+ : dBxRaw, dByRaw, dBzRaw, dJxRaw, dJyRaw, dJzRaw, \
-                               dVxRaw, dVyRaw, dVzRaw)
-  for (int m = 0; m < N; ++m) {
-    const amrex::Real arg = kx[m] * pos[0] + ky[m] * pos[1] + kz[m] * pos[2] -
-                            omega[m] * t + phase[m];
-    const amrex::Real s = std::sin(arg);
-    const amrex::Real c = std::cos(arg);
-    dBxRaw += Bx[m] * s;
-    dByRaw += By[m] * s;
-    dBzRaw += Bz[m] * s;
-    dJxRaw += Jx[m] * c;
-    dJyRaw += Jy[m] * c;
-    dJzRaw += Jz[m] * c;
-    dVxRaw += Vmx[m] * s;
-    dVyRaw += Vmy[m] * s;
-    dVzRaw += Vmz[m] * s;
-  }
-
-  const amrex::Real dBRawVec[3] = { dBxRaw, dByRaw, dBzRaw };
-  amrex::Real gradWCrossB[3];
-  cross3(gradW, dBRawVec, gradWCrossB);
-  const amrex::Real invFourPi = 1.0 / fourPI;
-  const amrex::Real dJ[3] = { env * (w * dJxRaw + invFourPi * gradWCrossB[0]),
-                              env * (w * dJyRaw + invFourPi * gradWCrossB[1]),
-                              env * (w * dJzRaw + invFourPi * gradWCrossB[2]) };
 
   amrex::Real jDriftScale = 0.0;
   if (turb.rhoQ0 > 0.0) {
@@ -1218,7 +1306,7 @@ void WaveBoundaryManager::eval_turbulent_velocity_kick(
     }
   }
 
-  dvx += env * w * dVxRaw + jDriftScale * dJ[0];
-  dvy += env * w * dVyRaw + jDriftScale * dJ[1];
-  dvz += env * w * dVzRaw + jDriftScale * dJ[2];
+  dvx += dVmhd[0] + jDriftScale * dJ[0];
+  dvy += dVmhd[1] + jDriftScale * dJ[1];
+  dvz += dVmhd[2] + jDriftScale * dJ[2];
 }

@@ -73,6 +73,8 @@ struct WaveWindow {
   amrex::Real weight(const amrex::Real* pos) const;
   void weight_and_grad(const amrex::Real* pos, amrex::Real& w,
                        amrex::Real gradW[3]) const;
+  void weight_and_derivs(const amrex::Real* pos, amrex::Real& w,
+                         amrex::Real& dW, amrex::Real& d2W) const;
 };
 
 // Broadband Alfvenic / Elsasser turbulent inflow spectrum (#TURBULENTINFLOW).
@@ -189,6 +191,12 @@ public:
 
   // Evaluate #TURBULENTINFLOW time envelope at code time t.
   amrex::Real turbulent_envelope(amrex::Real t) const;
+  // Shared evaluator for #TURBULENTINFLOW windowed dB, dJ = curl(dB)/(4*pi),
+  // and bulk Walen velocity w * dV_mhd at position pos.
+  bool eval_turbulent_state(const amrex::Real* pos, const amrex::Real* phase_t,
+                            amrex::Real t, amrex::Real env, bool needJAndV,
+                            amrex::Real dB[3], amrex::Real dJ[3],
+                            amrex::Real dVmhd[3]) const;
   // Evaluate #TURBULENTINFLOW field perturbation (iField: 0 = dB, 1 = dE)
   // using precomputed phase_t[m] = phase[m] - omega[m] * t and time envelope.
   void eval_turbulent_field(const amrex::Real* pos, const amrex::Real* phase_t,
