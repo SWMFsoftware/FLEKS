@@ -86,6 +86,7 @@ GENERATED_PATHS = {
     "run_test/RESULTS/3d/PC/",
     "tests/summary.md",
     "tests/performance_summary.md",
+    "wave_modes.json",
     "GM/BATSRUS/srcInterface/ModGridDescriptor.f90",
 }
 

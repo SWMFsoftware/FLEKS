@@ -3220,10 +3220,6 @@ box). The default (no command) applies the full source on every wave face.
   <parameter name="dBrmsOverB0" type="real" min="0" default="0.3"/>
   <parameter name="seed" type="integer" default="1"/>
   <parameter name="rampTime" type="real" min="0" default="20.0"/>
-  <parameter name="polarization" type="string" default="out_of_plane"/>
-  <parameter name="sigmaC" type="real" min="-1.0" max="1.0" default="1.0"/>
-  <parameter name="tStart" type="real" default="0.0"/>
-  <parameter name="modeFile" type="string" default="wave_modes.json"/>
 
 #TURBULENTINFLOW
 48                      nMode
@@ -3256,7 +3252,7 @@ boundary faces marked `wave` in `#FIELDBOXBOUNDARY`.
 * Optional trailing parameters: `polarization` (`out_of_plane`, `in_plane`,
   `alfven`, or `isotropic`), `sigmaC` (normalized cross-helicity in $[-1, 1]$),
   `tStart` (`[s]`), and `modeFile` (JSON mode table written by Rank 0, default
-  `wave_modes.json`).
+  wave_modes.json).
 </command>
 </commandgroup>
 

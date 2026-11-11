@@ -1154,7 +1154,6 @@ bool WaveBoundaryManager::eval_turbulent_state(
   amrex::Real dAxRaw = 0.0, dAyRaw = 0.0, dAzRaw = 0.0;
 
   if (!needJAndV) {
-#pragma omp simd reduction(+ : dBxRaw, dByRaw, dBzRaw, dAxRaw, dAyRaw, dAzRaw)
     for (int m = 0; m < N; ++m) {
       const amrex::Real ph = phase_t ? phase_t[m] : (phase[m] - omega[m] * t);
       const amrex::Real arg =
@@ -1190,9 +1189,6 @@ bool WaveBoundaryManager::eval_turbulent_state(
   amrex::Real dVxRaw = 0.0, dVyRaw = 0.0, dVzRaw = 0.0;
   amrex::Real ddAxRaw = 0.0, ddAyRaw = 0.0, ddAzRaw = 0.0;
 
-#pragma omp simd reduction(+ : dBxRaw, dByRaw, dBzRaw, dAxRaw, dAyRaw, dAzRaw, \
-                               dJxRaw, dJyRaw, dJzRaw, dVxRaw, dVyRaw, dVzRaw, \
-                               ddAxRaw, ddAyRaw, ddAzRaw)
   for (int m = 0; m < N; ++m) {
     const amrex::Real ph = phase_t ? phase_t[m] : (phase[m] - omega[m] * t);
     const amrex::Real arg =
