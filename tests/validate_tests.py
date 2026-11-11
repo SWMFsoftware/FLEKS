@@ -1397,6 +1397,36 @@ def main():
         with open(summary_file, "w") as f:
             header_prefix = summary_title if summary_title.startswith("#") else f"### 🧪 {summary_title}"
             f.write(f"{header_prefix}{shard_info}\n\n")
+
+            n_passed = sum(1 for item in results if item[1] == "PASSED")
+            n_failed = sum(1 for item in results if item[1] == "FAILED")
+            n_skipped = sum(1 for item in results if item[1] == "SKIPPED")
+            total_time = sum(item[3] if len(item) > 3 else 0.0 for item in results)
+
+            counts_parts = [f"**{n_passed}** passed"]
+            if n_failed:
+                counts_parts.append(f"**{n_failed}** failed")
+            if n_skipped:
+                counts_parts.append(f"**{n_skipped}** skipped")
+            counts_str = ", ".join(counts_parts)
+
+            if n_failed == 0:
+                f.write(f"✅ **All tests passed!** ({counts_str} in {total_time:.1f}s)\n\n")
+            else:
+                f.write(f"❌ **{n_failed} test(s) failed** ({counts_str} in {total_time:.1f}s)\n\n")
+                f.write("#### 🔴 Failed Tests\n\n")
+                f.write("| Test Name | Status | Time | Failure Reason / Details |\n")
+                f.write("| :--- | :--- | :--- | :--- |\n")
+                for item in results:
+                    if item[1] == "FAILED":
+                        name_str, _, reason = item[0], item[1], item[2]
+                        dt = item[3] if len(item) > 3 else 0.0
+                        time_md = f"{dt:.2f}s" if dt > 0 else "-"
+                        f.write(f"| {name_str} | 🔴 **FAILED** | {time_md} | {reason} |\n")
+                f.write("\n")
+
+            f.write("<details>\n")
+            f.write(f"<summary>📋 <b>Full Test Results ({len(results)} tests)</b></summary>\n\n")
             f.write("| Test Name | Status | Time | Failure Reason / Details |\n")
             f.write("| :--- | :--- | :--- | :--- |\n")
             for item in results:
@@ -1411,6 +1441,7 @@ def main():
                     status_md = "🔴 **FAILED**"
                 reason_md = reason if status != "PASSED" else ""
                 f.write(f"| {name_str} | {status_md} | {time_md} | {reason_md} |\n")
+            f.write("\n</details>\n")
     except Exception as e:
         logger.warning("Warning: Could not write summary file %s: %s", summary_file, e)
 
