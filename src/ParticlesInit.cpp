@@ -89,6 +89,35 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
 
   ParticleTileType& particles = get_particle_tile(iLev, mfi, ijk);
 
+  // Hoist wave boundary face-mask and time checks outside the per-particle
+  // loop so interior cells do zero extra work while boundary ghost cells
+  // still evaluate spatially varying wave kicks at each particle's position.
+  int waveFaceMask = 0;
+  Real tWave = 0.0;
+  if (waveVelocityKick) {
+    const Box& domBox = Geom(iLev).Domain();
+    const int loX = domBox.smallEnd(ix_);
+    const int hiX = domBox.bigEnd(ix_);
+    const int loY = domBox.smallEnd(iy_);
+    const int hiY = domBox.bigEnd(iy_);
+    const int loZ = (nDim > 2) ? domBox.smallEnd(iz_) : 0;
+    const int hiZ = (nDim > 2) ? domBox.bigEnd(iz_) : 0;
+    if (isWaveFace[0] && ijk[ix_] < loX)
+      waveFaceMask |= (1 << 0);
+    if (isWaveFace[1] && ijk[ix_] > hiX)
+      waveFaceMask |= (1 << 1);
+    if (isWaveFace[2] && ijk[iy_] < loY)
+      waveFaceMask |= (1 << 2);
+    if (isWaveFace[3] && ijk[iy_] > hiY)
+      waveFaceMask |= (1 << 3);
+    if (nDim > 2 && isWaveFace[4] && ijk[iz_] < loZ)
+      waveFaceMask |= (1 << 4);
+    if (nDim > 2 && isWaveFace[5] && ijk[iz_] > hiZ)
+      waveFaceMask |= (1 << 5);
+    if (waveFaceMask != 0)
+      tWave = tc ? tc->get_time() : 0.0;
+  }
+
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
 
@@ -233,42 +262,16 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
             wBulk = pics.wBulk;
             q *= pics.qScale;
           }
-          // Wave boundary: add the velocity kick to particles in a wave cell.
-          if (waveVelocityKick) {
-            const Box& domBox = Geom(iLev).Domain();
-            const int loX = domBox.smallEnd(ix_);
-            const int hiX = domBox.bigEnd(ix_);
-            const int loY = domBox.smallEnd(iy_);
-            const int hiY = domBox.bigEnd(iy_);
-            const int loZ = (nDim > 2) ? domBox.smallEnd(iz_) : 0;
-            const int hiZ = (nDim > 2) ? domBox.bigEnd(iz_) : 0;
-            // Driven by the field-side wave faces (set from Pic::bcField),
-            // not by a particle-side spelling. Build a bitmask of all wave
-            // faces that this ghost cell lies outside of so wave_velocity_kick
-            // selects the first matching active face in #WAVEBC input order,
-            // matching Pic::apply_wave_field at ghost corners.
-            int waveFaceMask = 0;
-            if (isWaveFace[0] && ijk[ix_] < loX)
-              waveFaceMask |= (1 << 0);
-            if (isWaveFace[1] && ijk[ix_] > hiX)
-              waveFaceMask |= (1 << 1);
-            if (isWaveFace[2] && ijk[iy_] < loY)
-              waveFaceMask |= (1 << 2);
-            if (isWaveFace[3] && ijk[iy_] > hiY)
-              waveFaceMask |= (1 << 3);
-            if (nDim > 2 && isWaveFace[4] && ijk[iz_] < loZ)
-              waveFaceMask |= (1 << 4);
-            if (nDim > 2 && isWaveFace[5] && ijk[iz_] > hiZ)
-              waveFaceMask |= (1 << 5);
-            if (waveFaceMask != 0) {
-              const Real ppos[3] = { xyz[0], xyz[1], zp };
-              const Real tNow = tc ? tc->get_time() : 0.0;
-              Real dvx = 0, dvy = 0, dvz = 0;
-              waveVelocityKick(ppos, tNow, dvx, dvy, dvz, waveFaceMask);
-              uBulk += dvx;
-              vBulk += dvy;
-              wBulk += dvz;
-            }
+          // Wave boundary: evaluate and add the velocity kick at each
+          // particle's position when inside a wave ghost cell.
+          if (waveFaceMask != 0) {
+            const Real pos[3] = { xyz[0], xyz[1], zp };
+            Real dvWaveX = 0.0, dvWaveY = 0.0, dvWaveZ = 0.0;
+            waveVelocityKick(pos, tWave, dvWaveX, dvWaveY, dvWaveZ,
+                             waveFaceMask, speciesID, charge);
+            uBulk += dvWaveX;
+            vBulk += dvWaveY;
+            wBulk += dvWaveZ;
           }
           u += uBulk;
           v += vBulk;

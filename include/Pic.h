@@ -964,6 +964,7 @@ public:
     if (!usePIC)
       return;
 
+    ensure_wave_bc_initialized();
     for (int i : kineticSpecies_) {
       parts[i]->add_particles_domain(!particlesInitialized);
     }
@@ -973,6 +974,7 @@ public:
     if (!usePIC)
       return;
 
+    ensure_wave_bc_initialized();
     for (int i : kineticSpecies_) {
       parts[i]->inject_particles_at_boundary();
     }
@@ -1276,6 +1278,10 @@ public:
   void accumulate_body_net_charge();
 
   // Inject wave source into boundary ghost cells (iField: 0 = B, 1 = E).
+  // Collectively initialize #TURBULENTINFLOW across all MPI ranks before any
+  // field or boundary-particle evaluation.
+  void ensure_wave_bc_initialized();
+
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                         const int iStart, const int nComp, const int iLev,
                         const BoxBC<FieldBC::Type> &bc, int iField,
@@ -1286,7 +1292,8 @@ public:
   // the ghost cell lies outside of, or -1 to match the first active wave face.
   void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
                           amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz,
-                          int waveFaceMask = -1);
+                          int waveFaceMask = -1, int iSpecies = -1,
+                          amrex::Real charge = 0.0);
 
   // Fill external Dirichlet (coupled / fixed) ghost cells from func.
   void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,

@@ -467,15 +467,6 @@ void Pic::post_regrid(MeshChangeReason reason) {
       sourceParts.push_back(std::move(ptrSource));
     }
 
-    if (waveBC.active) {
-      for (auto& p : parts) {
-        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
-                                     Real& dvy, Real& dvz, int waveFaceMask) {
-          wave_velocity_kick(pos, t, dvx, dvy, dvz, waveFaceMask);
-        };
-      }
-    }
-
     if (discontinuityBC.active) {
       for (auto& p : parts) {
         p->discontinuityBC = &discontinuityBC;
@@ -521,6 +512,16 @@ void Pic::post_regrid(MeshChangeReason reason) {
 
   // Propagate field wave boundaries to each species to drive wave velocity
   // kicks.
+  if (waveBC.active) {
+    for (auto& p : parts) {
+      p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
+                                   Real& dvy, Real& dvz, int waveFaceMask,
+                                   int iSpecies, Real charge) {
+        wave_velocity_kick(pos, t, dvx, dvy, dvz, waveFaceMask, iSpecies,
+                           charge);
+      };
+    }
+  }
   for (int d = 0; d < nDim; ++d) {
     const bool isWaveLo = (bcField.face(d, 0) == FieldBC::wave);
     const bool isWaveHi = (bcField.face(d, 1) == FieldBC::wave);
@@ -529,6 +530,7 @@ void Pic::post_regrid(MeshChangeReason reason) {
       p->set_wave_face(d, 1, isWaveHi);
     }
   }
+  ensure_wave_bc_initialized();
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.

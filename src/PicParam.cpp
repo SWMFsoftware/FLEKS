@@ -259,6 +259,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     waveBC.read_param(param);
   } else if (command == "#WAVEBCWINDOW") {
     waveBC.read_window(param);
+  } else if (command == "#TURBULENTINFLOW") {
+    waveBC.read_turbulent_inflow(param);
   } else if (command == "#DISCONTINUITY") {
     discontinuityBC.read_param(param);
   } else if (command == "#MEMORY") {
@@ -705,8 +707,8 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
 
       if (fType == FieldBC::wave && !waveBC.active)
         add_bc_warning(std::string("field boundary ") + face +
-                       " is 'wave' but no #WAVEBC block was given; the face "
-                       "carries no wave source.");
+                       " is 'wave' but no #WAVEBC or #TURBULENTINFLOW block "
+                       "was given; the face carries no wave source.");
 
       for (int i = 0; i < nCheck; ++i) {
         if (pInfo.pBCsSet[i] == 0)
@@ -1179,6 +1181,27 @@ void Pic::finalize_units_conversion() {
   convert_intrinsic_B();
   convert_ionosphere_emission();
   waveBC.convert_units(fi);
+  if (!parts.empty()) {
+    if (waveBC.active) {
+      for (auto& p : parts) {
+        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
+                                     Real& dvy, Real& dvz, int waveFaceMask,
+                                     int iSpecies, Real charge) {
+          wave_velocity_kick(pos, t, dvx, dvy, dvz, waveFaceMask, iSpecies,
+                             charge);
+        };
+      }
+    }
+    for (int d = 0; d < nDim; ++d) {
+      const bool isWaveLo = (bcField.face(d, 0) == FieldBC::wave);
+      const bool isWaveHi = (bcField.face(d, 1) == FieldBC::wave);
+      for (auto& p : parts) {
+        p->set_wave_face(d, 0, isWaveLo);
+        p->set_wave_face(d, 1, isWaveHi);
+      }
+    }
+    ensure_wave_bc_initialized();
+  }
   discontinuityBC.convert_and_validate(fi, Geom(0), nDim, is_fake_2d(),
                                        useHybridPIC, electronTemperature,
                                        electronDensity0, electronGamma);

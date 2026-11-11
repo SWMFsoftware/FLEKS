@@ -2947,7 +2947,7 @@ internally by `isB`):
   `#INFLOW`.
 * `fixed` -- Dirichlet: the ghost cells of E and B are pinned to the
   initial / uniform state (`#UNIFORMSTATE`).
-* `wave` -- hard wave source (antenna); requires `#WAVEBC`.
+* `wave` -- hard wave source (antenna); requires `#WAVEBC` or `#TURBULENTINFLOW`.
 
 The same value means slightly different things in the two field solvers:
 
@@ -3210,6 +3210,49 @@ like the #WAVEBC wavelengths. Use it to drive only the part of a face that
 sees the upstream flow, e.g. the upstream ends of the side faces of a
 magnetosphere box (direction 0, min upstream of the bow shock, max beyond the
 box). The default (no command) applies the full source on every wave face.
+</command>
+
+<command name="TURBULENTINFLOW" alias="TURBULENTINFLOW_FLEKS" multiple="F">
+  <parameter name="nMode" type="integer" min="1" default="48"/>
+  <parameter name="lambdaMin" type="real" min="0"/>
+  <parameter name="lambdaMax" type="real" min="0"/>
+  <parameter name="spectralIndex" type="real" default="1.666667"/>
+  <parameter name="dBrmsOverB0" type="real" min="0" default="0.3"/>
+  <parameter name="seed" type="integer" default="1"/>
+  <parameter name="rampTime" type="real" min="0" default="20.0"/>
+
+#TURBULENTINFLOW
+48                      nMode
+0.5                     lambdaMin     [code/domain length units]
+8.0                     lambdaMax     [code/domain length units]
+1.666667                spectralIndex (1D magnetic power-law slope, e.g. 5/3)
+0.3                     dBrmsOverB0   (rms dB / |B0|; 0 for steady control)
+1                       seed
+20.0                    rampTime      [s]
+
+Synthesizes a divergence-free broadband Alfvenic / Elsasser wave spectrum on
+boundary faces marked `wave` in `#FIELDBOXBOUNDARY`.
+* `lambdaMin` and `lambdaMax` are in domain length units (matching `#GEOMETRY`
+  and `#REGION`, e.g. $R_E$ in global runs or $d_i$ in standalone box runs);
+  `rampTime` and optional `tStart` are in seconds `[s]`.
+* The upstream reference state $(\rho_0, \mathbf{V}_0, \mathbf{B}_0)$ is sampled
+  automatically from `FluidInterface` on the primary inflow `wave` face.
+* If side `wave` faces cross a bow shock ($\rho > 1.2\rho_0$), a smooth $\cos^2$
+  spatial window is automatically applied upstream of the shock crossing via the
+  vector potential $\delta\mathbf{B} = \nabla \times (W \delta\mathbf{A})$ so
+  $\nabla \cdot \delta\mathbf{B} = 0$ holds identically without needing
+  `#WAVEBCWINDOW`.
+* If a transverse domain direction is periodic, $k_\perp$ is automatically
+  quantized to an integer multiple of $2\pi / L_\perp$.
+* Full kinetic consistency: boundary electrons and ions receive species velocity
+  kicks carrying both the Walen bulk flow $\delta\mathbf{V}_{\mathrm{MHD}}$ and
+  the wave current $\delta\mathbf{J} = \nabla \times \delta\mathbf{B} / (4\pi)$,
+  and $\delta\mathbf{E}$ is evaluated from the full nonlinear Ohm's law
+  $-(\mathbf{V}_0 + \delta\mathbf{V}_e) \times (\mathbf{B}_0 + \delta\mathbf{B}) + \mathbf{V}_0 \times \mathbf{B}_0$.
+* Optional trailing parameters: `polarization` (`out_of_plane`, `in_plane`,
+  `alfven`, or `isotropic`), `sigmaC` (normalized cross-helicity in $[-1, 1]$),
+  `tStart` (`[s]`), and `modeFile` (JSON mode table written by Rank 0, default
+  wave_modes.json).
 </command>
 </commandgroup>
 

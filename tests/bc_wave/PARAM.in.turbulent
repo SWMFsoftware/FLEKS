@@ -1,0 +1,157 @@
+#DESCRIPTION
+Broadband Alfvenic turbulence injection via TURBULENTINFLOW (FULL-PIC
+semi-implicit). A uniform solar wind flows along -x through a 2D x-y box
+(periodic in y); an 8-mode k^-5/3 spectrum of out-of-plane shear Alfven waves
+(lambda = 8-32 d_i, dB_rms/B0 = 0.25) enters through the +x wave face. Tests
+automatic upstream state sampling from FluidInterface, periodic ky snapping,
+self-consistent E and kinetic ion/electron velocity kicks, Walen correlation,
+and wave_modes.json output.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#NORMALIZATION
+1.316e5                 lNormSI
+3.0e6                   uNormSI
+
+#GEOMETRY
+0.0                     xMin
+32.0                    xMax
+-16.0                   yMin
+ 16.0                   yMax
+-0.25                   zMin
+ 0.25                   zMax
+
+#NCELL
+64                      nCellX
+64                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+1.0/25.0                mass           Species 1: electrons (reduced mass ratio)
+-1.0                    charge
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo
+wave                    fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+implicit
+
+#DIVE
+T                       doCorrectDivE
+1                       nDivECorrection
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     coefDiff
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+
+#SMOOTHJ
+T                       doSmoothJ
+2                       nSmoothJ
+0.5                     coefSmoothJ
+
+#INFLOW
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.2008e5                T [K]
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+2.4017e5                T [K]
+
+#UNIFORMSTATE
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+1.2008e5                T
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+2.4017e5                T
+3.5355e-9               bx
+-3.5355e-9              by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+-1.5556e-3              ez
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#MONITOR
+100                     dnReport
+
+#SAVELOG
+20                      dnSavePic
+20                      dnSavePT
+
+#PARTICLES
+5                       npcelx
+5                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+2.0                     dt
+1                       dx
+Bx By Bz uzS0 uzS1 rhoS0 varName
+
+#TURBULENTINFLOW
+8                       nMode
+8.0                     lambdaMin
+32.0                    lambdaMax
+1.666667                spectralIndex
+0.25                    dBrmsOverB0
+1                       seed
+2.0                     rampTime
+
+#STOP
+-1                      MaxIter
+12.0                    TimeMax
+
