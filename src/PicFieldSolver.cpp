@@ -188,9 +188,9 @@ void Pic::solve_E_gmres(int iLev) {
 void Pic::solve_E_newton_krylov(int iLev) {
   const int nSolve = eSolver.get_nSolve();
 
-  std::vector<double> base(nSolve);
-  std::vector<double> baseMatvec(nSolve);
-  std::vector<double> work(nSolve);
+  std::vector<Real> base(nSolve);
+  std::vector<Real> baseMatvec(nSolve);
+  std::vector<Real> work(nSolve);
 
   convert_3d_to_1d(nodeE[iLev], base.data(), iLev);
 
@@ -208,19 +208,19 @@ void Pic::solve_E_newton_krylov(int iLev) {
 
   BL_PROFILE_VAR("Pic::E_iterate", eSolver);
   const MPI_Comm iComm = ParallelDescriptor::Communicator();
-  const double normBase =
+  const Real normBase =
       sqrt(dot_product_mpi(base.data(), base.data(), nSolve, iComm));
 
   // GMRES only sees this linearized Jacobian-vector product.
   auto jacobianFreeMatvec = [this, &base, &baseMatvec, &work, nSolve, normBase,
-                             iComm](const double* vecIn, double* vecOut,
+                             iComm](const Real* vecIn, Real* vecOut,
                                     const int iLevIn) {
-    const double normDirection =
+    const Real normDirection =
         sqrt(dot_product_mpi(vecIn, vecIn, nSolve, iComm));
-    const double epsilon =
+    const Real epsilon =
         fleks_jfnk::finite_difference_epsilon(normBase, normDirection);
 
-    auto nonlinearMatvec = [this](const double* in, double* out,
+    auto nonlinearMatvec = [this](const Real* in, Real* out,
                                   const int iLevMatvec) {
       update_E_matvec(in, out, iLevMatvec, false);
     };
@@ -235,7 +235,7 @@ void Pic::solve_E_newton_krylov(int iLev) {
 }
 
 //==========================================================
-void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
+void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
                           const bool useZeroBC) {
   std::string nameFunc = "Pic::E_matvec";
   timing_func(nameFunc);
@@ -536,9 +536,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
           const Real* const M_I = &(data0[idx0]);
 
-          const double vctX = inArr(i2, j2, 0, ix_);
-          const double vctY = inArr(i2, j2, 0, iy_);
-          const double vctZ = inArr(i2, j2, 0, iz_);
+          const Real vctX = inArr(i2, j2, 0, ix_);
+          const Real vctY = inArr(i2, j2, 0, iy_);
+          const Real vctZ = inArr(i2, j2, 0, iz_);
           sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
           sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
           sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
@@ -556,9 +556,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
             const Real* const M_I = &(data0[idx0]);
 
-            const double vctX = inArr(i2, j2, k2, ix_);
-            const double vctY = inArr(i2, j2, k2, iy_);
-            const double vctZ = inArr(i2, j2, k2, iz_);
+            const Real vctX = inArr(i2, j2, k2, ix_);
+            const Real vctY = inArr(i2, j2, k2, iy_);
+            const Real vctZ = inArr(i2, j2, k2, iz_);
             sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
             sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
             sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
@@ -580,7 +580,7 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 }
 
 //==========================================================
-void Pic::update_E_rhs(double* rhs, int iLev) {
+void Pic::update_E_rhs(Real* rhs, int iLev) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
@@ -709,7 +709,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
 }
 
 //==========================================================
-void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
+void Pic::convert_1d_to_3d(const Real* const p, MultiFab& MF, int iLev) {
   std::string nameFunc = "Pic::convert_1d_to_3d";
   timing_func(nameFunc);
 
@@ -742,7 +742,7 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
 }
 
 //==========================================================
-void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
+void Pic::convert_3d_to_1d(const MultiFab& MF, Real* const p, int iLev) {
   std::string nameFunc = "Pic::convert_3d_to_1d";
   timing_func(nameFunc);
 

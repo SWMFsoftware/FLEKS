@@ -2,31 +2,32 @@
 #define _CONSTANTS_H_
 
 #include <AMReX.H>
+#include <AMReX_REAL.H>
 #include <AMReX_SPACE.H>
 
 //========= Physical constants =====================
-inline constexpr double fourPI = 3.14159265359 * 4;
-inline constexpr double dPI = 3.14159265358979323846;
+inline constexpr amrex::Real fourPI = 3.14159265359 * 4;
+inline constexpr amrex::Real dPI = 3.14159265358979323846;
 
-inline constexpr double cProtonMassSI = 1.67262192e-27; // kg
-inline constexpr double cElectronMassSI = 9.1093837e-31; // kg
-inline constexpr double cUnitChargeSI = 1.60217663e-19; // C
+inline constexpr amrex::Real cProtonMassSI = 1.67262192e-27; // kg
+inline constexpr amrex::Real cElectronMassSI = 9.1093837e-31; // kg
+inline constexpr amrex::Real cUnitChargeSI = 1.60217663e-19; // C
 
-inline constexpr double cBoltzmannSI = 1.380649e-23;
+inline constexpr amrex::Real cBoltzmannSI = 1.380649e-23;
 
 // Vacuum permittivity [F/m] = 1/(mu0*c^2).
-inline constexpr double cEps0SI = 8.8541878176198092e-12;
+inline constexpr amrex::Real cEps0SI = 8.8541878176198092e-12;
 
-inline constexpr double cAUSI = 1.495978707e11; // m
+inline constexpr amrex::Real cAUSI = 1.495978707e11; // m
 
-inline constexpr double gamma0 = 5./3; 
-inline constexpr double invGamma = 1./gamma0;
+inline constexpr amrex::Real gamma0 = 5./3; 
+inline constexpr amrex::Real invGamma = 1./gamma0;
 //===================================================
 
 //========= Numerical constants =====================
 // Sentinel stored in the cells that a regrid creates and the old grid does
 // not cover.
-inline constexpr double cUninitialized = -1e30;
+inline constexpr amrex::Real cUninitialized = -1e30;
 
 // FLEKS is always 3D. But it can be fake 2D with one cell in the z-direction.
 inline constexpr int nDim = amrex::SpaceDim;

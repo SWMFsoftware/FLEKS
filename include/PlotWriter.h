@@ -17,13 +17,14 @@
 
 class PlotWriter; // Forward declaration
 
-typedef std::array<double, 8> ArrayPointLoc; // (i,j,k,x,y,z,iBlock, iLev)
+typedef std::array<amrex::Real, 8> ArrayPointLoc; // (i,j,k,x,y,z,iBlock, iLev)
 typedef std::vector<ArrayPointLoc> VectorPointList;
 typedef void (*FuncFindPointList)(const PlotWriter&, long int&,
                                   VectorPointList&, amrex::RealVect&,
                                   amrex::RealVect&);
 typedef void (*FuncGetField)(const VectorPointList&,
-                             const std::vector<std::string>&, MDArray<double>&);
+                             const std::vector<std::string>&,
+                             MDArray<amrex::Real>&);
 
 //------------------------------------------------------------------
 class PlotWriter {
@@ -42,7 +43,7 @@ private:
   int iRegion;
   std::string plotString;
   std::string plotVar;
-  double plotDx;
+  amrex::Real plotDx;
 
   // Global plot domain in PIC unit
   amrex::RealVect plotMin_D, plotMinCorrected_D;
@@ -86,18 +87,18 @@ private:
   std::string outputUnit;
 
   // Unit conversion.
-  double No2OutL, No2OutV, No2OutB, No2OutRho, No2OutP, No2OutJ, No2OutM;
-  double No2SiL, No2SiV, No2SiB, No2SiRho, No2SiP, No2SiJ;
-  double rPlanet; // In SI unit.
+  amrex::Real No2OutL, No2OutV, No2OutB, No2OutRho, No2OutP, No2OutJ, No2OutM;
+  amrex::Real No2SiL, No2SiV, No2SiB, No2SiRho, No2SiP, No2SiJ;
+  amrex::Real rPlanet; // In SI unit.
 
   // MHD NO -> PIC NO
-  double No2NoL;
+  amrex::Real No2NoL;
 
   // The conversion for each var_I.
-  std::vector<double> No2Out_I;
+  std::vector<amrex::Real> No2Out_I;
 
   // Scalar parameters.
-  std::vector<double> scalarValue_I;
+  std::vector<amrex::Real> scalarValue_I;
   std::vector<std::string> scalarName_I;
 
   int particleSpecies;
@@ -105,16 +106,17 @@ private:
   int iLevSave;
 
   // Helper methods for IDL output formatting and writing
-  std::string get_idl_filename(double const timeNow, int const iCycle) const;
-  void write_binary_idl(double const timeNow, int const iCycle,
-                        MDArray<double>& value_II, double const dx);
-  void write_ascii_idl(double const timeNow, int const iCycle,
-                       MDArray<double>& value_II, double const dx);
+  std::string get_idl_filename(amrex::Real const timeNow,
+                               int const iCycle) const;
+  void write_binary_idl(amrex::Real const timeNow, int const iCycle,
+                        MDArray<amrex::Real>& value_II, amrex::Real const dx);
+  void write_ascii_idl(amrex::Real const timeNow, int const iCycle,
+                       MDArray<amrex::Real>& value_II, amrex::Real const dx);
   //-----------------------------------------------------------------
 
 public:
   PlotWriter(const MPI_Comm& ic, const int idIn = 0,
-             const std::string plotStringIN = "", const double dxIn = 1,
+             const std::string plotStringIN = "", const amrex::Real dxIn = 1,
              const std::string plotVarIn = "",
              const amrex::RealVect& plotMinIn_D = { AMREX_D_DECL(1, 1, 1) },
              const amrex::RealVect& plotMaxIn_D = { AMREX_D_DECL(-1, -1, -1) },
@@ -160,7 +162,7 @@ public:
   ~PlotWriter() {}
 
   /*----Get class member value begin--------------------*/
-  double get_plotDx() const { return plotDx; }
+  amrex::Real get_plotDx() const { return plotDx; }
   std::string get_plotString() const { return plotString; }
   bool is_compact() const {
     return plotString.find("compact") != std::string::npos;
@@ -174,8 +176,8 @@ public:
   }
   int get_particleSpecies() const { return particleSpecies; }
   int get_ilev_save() const { return iLevSave; }
-  double get_plotMin_D(int iDim) const { return plotMin_D[iDim]; }
-  double get_plotMax_D(int iDim) const { return plotMax_D[iDim]; }
+  amrex::Real get_plotMin_D(int iDim) const { return plotMin_D[iDim]; }
+  amrex::Real get_plotMax_D(int iDim) const { return plotMax_D[iDim]; }
   int get_nDim() const { return nDim; }
   /*----Get class member value end--------------------*/
 
@@ -183,22 +185,22 @@ public:
   void set_plotString(std::string in) { plotString = in; }
   void set_plotVar(std::string in) { plotVar = in; }
   void set_has_body(const bool in) { hasBody = in; }
-  void set_plotDx(const double in) { plotDx = in; }
+  void set_plotDx(const amrex::Real in) { plotDx = in; }
   void set_nSpecies(const int in) { nSpecies = in; }
   void set_useHybridPIC(const bool in) { useHybridPIC = in; }
   // nDim must not exceed AMREX_SPACEDIM (RealVect components).
   void set_nDim(const int in) { nDim = std::min(in, AMREX_SPACEDIM); }
   void set_iRegion(const int in) { iRegion = in; }
-  void set_No2NoL(const double& in) { No2NoL = in; }
+  void set_No2NoL(const amrex::Real& in) { No2NoL = in; }
   void set_plotMin_D(const amrex::RealVect& in) { plotMin_D = in; }
   void set_plotMax_D(const amrex::RealVect& in) { plotMax_D = in; }
   void set_domainMin_D(const amrex::RealVect& in) { domainMin_D = in; }
   void set_domainMax_D(const amrex::RealVect& in) { domainMax_D = in; }
   void set_dx_D(const amrex::RealVect& in) { dx_D = in; }
-  void set_units(const double No2SiLIn, const double No2SiVIn,
-                 const double No2SiBIn, const double No2SiRhoIn,
-                 const double No2SiPIn, const double No2SiJIn,
-                 const double rPlanetIn = 1) {
+  void set_units(const amrex::Real No2SiLIn, const amrex::Real No2SiVIn,
+                 const amrex::Real No2SiBIn, const amrex::Real No2SiRhoIn,
+                 const amrex::Real No2SiPIn, const amrex::Real No2SiJIn,
+                 const amrex::Real rPlanetIn = 1) {
     // Set the conversion to SI unit.
     No2SiL = No2SiLIn;
     No2SiV = No2SiVIn;
@@ -209,7 +211,9 @@ public:
     rPlanet = rPlanetIn;
   }
 
-  void set_scalarValue_I(const std::vector<double>& in) { scalarValue_I = in; }
+  void set_scalarValue_I(const std::vector<amrex::Real>& in) {
+    scalarValue_I = in;
+  }
   void set_scalarName_I(const std::vector<std::string>& in) {
     scalarName_I = in;
   }
@@ -230,35 +234,37 @@ public:
    1) this method calls the function find_output_list to find the ouput point
       list,
    2) and writes the header (write_header) and data (write_field). */
-  void write_idl(double const timeNow, int const iCycle,
+  void write_idl(amrex::Real const timeNow, int const iCycle,
                  FuncFindPointList find_output_list, FuncGetField get_var);
 
-  void write(double const timeNow, int const iCycle,
+  void write(amrex::Real const timeNow, int const iCycle,
              FuncFindPointList find_output_list, FuncGetField get_var);
 
-  void write_header(double const timeNow, int const iCycle);
+  void write_header(amrex::Real const timeNow, int const iCycle);
 
   /*Based on the point list, this function calls function get_var to collect
    output values first, then writes the data. */
-  void write_field(double const timeNow, int const iCycle,
+  void write_field(amrex::Real const timeNow, int const iCycle,
                    VectorPointList const& pointList_II, FuncGetField get_var);
 
   /* Calculate the unit conversion coef for var_I. */
   void set_output_unit();
-  double No2OutTable(std::string_view var) const;
+  amrex::Real No2OutTable(std::string_view var) const;
 
   /* Decide if the input point should be saved or not based on plotMin_D,
      plotMax_D and plotDx. ix, iy and iz are global indices.*/
   bool is_inside_plot_region(int const ix, int const iy, int const iz,
-                             double const x, double const y,
-                             double const z) const;
+                             amrex::Real const x, amrex::Real const y,
+                             amrex::Real const z) const;
 
   bool is_amrex_format() const { return outputFormat == "amrex"; }
   bool is_hdf5_format() const { return outputFormat == "hdf5"; }
-  std::string get_amrex_filename(double const timeNow, int const iCycle) const {
+  std::string get_amrex_filename(amrex::Real const timeNow,
+                                 int const iCycle) const {
     return get_filename(timeNow, iCycle) + "_amrex";
   };
-  std::string get_hdf5_filename(double const timeNow, int const iCycle) const {
+  std::string get_hdf5_filename(amrex::Real const timeNow,
+                                int const iCycle) const {
     return get_filename(timeNow, iCycle) + "_hdf5";
   };
 
@@ -267,11 +273,11 @@ public:
 
   friend std::ostream& operator<<(std::ostream& cout, PlotWriter const& output);
 
-  int get_time_digits(double second) const;
+  int get_time_digits(amrex::Real second) const;
 
   // Return the filename for the input time and cycle. Do not contain the
   // file extension.
-  std::string get_filename(double const time, int const iCycle) const {
+  std::string get_filename(amrex::Real const time, int const iCycle) const {
 
     std::stringstream ss;
     ss << namePrefix << "_region" << iRegion << "_" << ID << "_t"

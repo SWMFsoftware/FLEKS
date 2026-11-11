@@ -208,7 +208,7 @@ void sum_boundary(amrex::FabArray<FAB>& mf, const amrex::Periodicity& period) {
 // decomposition gives the same result from run to run (amrex::ReduceOps does
 // not guarantee that).
 #ifdef AMREX_USE_CUDA
-// A pinned host double that receives the result of deterministic_sum().
+// A pinned host Real that receives the result of deterministic_sum().
 inline amrex::Real* deterministic_sum_result() {
   static amrex::Real* p = static_cast<amrex::Real*>(
       amrex::The_Pinned_Arena()->alloc(sizeof(amrex::Real)));

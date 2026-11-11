@@ -50,7 +50,7 @@ public:
 public:
   PlotCtr(const MPI_Comm &ic, TimeCtr *tcIn, const int idIn = 0,
           const amrex::Real dtIn = -1, const int dnIn = -1,
-          const std::string plotStringIN = "", const double dxIn = 1,
+          const std::string plotStringIN = "", const amrex::Real dxIn = 1,
           const std::string plotVarIn = "",
           const amrex::RealVect plotMinIn_D = { AMREX_D_DECL(1, 1, 1) },
           const amrex::RealVect plotMaxIn_D = { AMREX_D_DECL(-1, -1, -1) },
