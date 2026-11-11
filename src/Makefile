@@ -1,7 +1,7 @@
 -include ../Makefile.def
 include ../Makefile.conf
 
-SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
+SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH} -I${UTILDIR}/AMREX/Src/LinearSolvers
 VERBOSE_GMRES = 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 

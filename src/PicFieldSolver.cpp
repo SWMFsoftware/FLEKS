@@ -109,21 +109,25 @@ void Pic::update_E_impl() {
     warn_absorb_cfl();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
-
-    update_E_rhs(eSolver.rhs, iLev);
-
-    // Both solver modes compute one correction in eSolver.xLeft.
-    if (fsolver.mode == FieldSolverMode::NewtonKrylov) {
-      solve_E_newton_krylov(iLev);
+    if (fsolver.solverBackend == ESolverBackend::AmrexGMRES) {
+      solve_E_gmres_amrex(iLev);
     } else {
-      solve_E_gmres(iLev);
-    }
+      eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
 
-    nodeEth[iLev].setVal(0.0);
-    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
-    nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
-    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+      update_E_rhs(eSolver.rhs, iLev);
+
+      // Both solver modes compute one correction in eSolver.xLeft.
+      if (fsolver.mode == FieldSolverMode::NewtonKrylov) {
+        solve_E_newton_krylov(iLev);
+      } else {
+        solve_E_gmres(iLev);
+      }
+
+      nodeEth[iLev].setVal(0.0);
+      convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
+      nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
+      nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
 
     if (doSmoothE) {
       smooth_E(nodeEth[iLev], iLev);
@@ -206,6 +210,89 @@ void Pic::sync_nodal_solver_vec(MultiFab& vecMF, int iLev) {
 
   vecMF.SumBoundary(0, vecMF.nComp(), IntVect(0), IntVect(0),
                     Geom(iLev).periodicity());
+}
+
+//==========================================================
+void Pic::solve_E_gmres_amrex(int iLev) {
+  if (static_cast<int>(amrexESolver.size()) < n_lev_max()) {
+    amrexESolver.resize(n_lev_max());
+  }
+  if (!amrexESolver[iLev]) {
+    amrexESolver[iLev] = std::make_unique<AmrexLinearSolver>(this, iLev);
+  }
+  amrexESolver[iLev]->define(this, iLev, fsolver.precondType,
+                             fsolver.precondIters, fsolver.smootherWeight,
+                             fsolver.mode);
+
+  if (solverRhsNode2[iLev].empty()) {
+    distribute_FabArray(solverRhsNode1[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverRhsNode2[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+  }
+  if (solverMatvecMF[iLev].empty()) {
+    distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, 1);
+    distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverCenterLapMF[iLev], boxArray(iLev),
+                        DistributionMap(iLev), 3, 1);
+  }
+
+  MultiFab& rhsMF = solverRhsNode2[iLev];
+  update_E_rhs(rhsMF, iLev);
+
+  MultiFab& matvecMF = solverMatvecMF[iLev];
+  update_E_matvec(nodeE[iLev], matvecMF, iLev, false);
+
+  if (fsolver.mode == FieldSolverMode::NewtonKrylov) {
+    amrexESolver[iLev]->set_newton_base(nodeE[iLev], matvecMF);
+  }
+
+  MultiFab::Saxpy(rhsMF, -1.0, matvecMF, 0, 0, 3, 0);
+
+  if (doReport) {
+    Print() << "\n-------" << printPrefix
+            << (fsolver.mode == FieldSolverMode::NewtonKrylov
+                    ? " Newton-Krylov E solver ------------------"
+                    : " GMRES E solver ------------------")
+            << std::endl;
+    Print() << "Before 0 nMatVec, relative tol: " << eSolver.get_nIter() << " "
+            << eSolver.get_tol() << std::endl;
+  }
+
+  const Real res0 = std::sqrt(
+      MultiFab::Dot(amrexESolver[iLev]->dot_mask(), rhsMF, 0, rhsMF, 0, 3, 0));
+  if (doReport) {
+    Print() << "initial residual norm: " << res0 << std::endl;
+  }
+
+#ifdef GMRES_VERBOSE
+  const int verbose = doReport ? 2 : 0;
+#else
+  const int verbose = 0;
+#endif
+
+  int nMatvec = 0;
+  Real resFinal = 0.0;
+  BL_PROFILE_VAR("Pic::E_iterate", amrex_gmres);
+  amrexESolver[iLev]->solve(nodeEth[iLev], rhsMF, eSolver.get_tol(), 0.0,
+                            eSolver.get_nIter(), fsolver.gmresRestartLength,
+                            verbose, nMatvec, resFinal);
+  BL_PROFILE_VAR_STOP(amrex_gmres);
+
+  const Real relErr = (res0 > 0.0) ? (resFinal / res0) : 0.0;
+  eSolver.set_stats(res0, nMatvec, relErr);
+
+  if (doReport) {
+    Print() << "After nMatVec, relative error = " << nMatvec << " " << relErr
+            << std::endl;
+  }
+
+  nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
+  nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
 }
 
 //==========================================================
@@ -772,6 +859,176 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
   // so that the Krylov space stays inside the constrained space.
   if (is_body_conducting())
     project_body_E(temp2Node, iLev);
+}
+
+//==========================================================
+void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
+                                 EPrecondType type) {
+  std::string nameFunc = "Pic::build_E_precond";
+  timing_func(nameFunc);
+
+  const int nCompInv = (type == EPrecondType::Jacobi) ? 3 : 9;
+  const BoxArray& ba = node_box_array(iLev);
+  const DistributionMapping& dm = DistributionMap(iLev);
+  if (invDiagMF.empty() || invDiagMF.boxArray() != ba ||
+      invDiagMF.DistributionMap() != dm || invDiagMF.nComp() != nCompInv) {
+    invDiagMF.define(ba, dm, nCompInv, 0);
+  }
+
+  const Real dtTheta = fsolver.theta * tc->get_dt();
+  const Real delt2 = dtTheta * dtTheta;
+  const Real c0 = fourPI * dtTheta;
+  const Real* invDx = Geom(iLev).InvCellSize();
+  const Real wDim = (nDim > 2) ? 0.5 : 1.0;
+
+  Real lapDiag = 0.0;
+  for (int d = 0; d < nDim; ++d) {
+    lapDiag += invDx[d] * invDx[d];
+  }
+
+  GpuArray<Real, 3> emDiag = { 0.0, 0.0, 0.0 };
+  for (int a = 0; a < 3; ++a) {
+    const Real gradDivDiag =
+        (a < nDim) ? (1.0 - fsolver.coefDiff) * invDx[a] * invDx[a] : 0.0;
+    emDiag[a] = delt2 * wDim * (lapDiag - gradDivDiag);
+  }
+
+  const Real dx0 = Geom(iLev).CellSize()[0];
+  const Real coeUpwind = useUpwindE ? (0.5 * dtTheta / dx0) : 0.0;
+  const Real cMaxVal = cMaxE;
+  const bool doUpwindE = useUpwindE;
+
+  const bool skipAllBody = is_body_linetied();
+  const bool skipInterior = is_body_conducting();
+  const bool hasWallEt = iLev == 0 && hasConductingBC_;
+  const BoundaryBounds bnd(Geom(iLev), ba.ixType(), &bcField);
+  const auto& statusMF = node_status(iLev);
+
+  for (MFIter mfi(invDiagMF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.tilebox();
+    const Array4<Real>& invArr = invDiagMF[mfi].array();
+    const Array4<RealMM const>& mmArr = nodeMM[iLev][mfi].const_array();
+    const Array4<int const>& statusArr = statusMF[mfi].const_array();
+    const Array4<Real const>& arrU = uBg[iLev][mfi].const_array();
+
+    ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const int st = statusArr(i, j, k);
+      const bool isExcludedBody = (skipAllBody && bit::is_body(st)) ||
+                                  (skipInterior && bit::is_body_interior(st));
+      const int ijk[3] = { i, j, k };
+      bool isDirichletNode = false;
+      for (int d = 0; d < nDim; ++d) {
+        if (!bnd.isNode[d])
+          continue;
+        if ((FieldBC::is_dirichlet(bnd.bcLo[d]) && ijk[d] == bnd.loBnd[d]) ||
+            (FieldBC::is_dirichlet(bnd.bcHi[d]) && ijk[d] == bnd.hiBnd[d])) {
+          isDirichletNode = true;
+        }
+      }
+
+      if (isExcludedBody || isDirichletNode) {
+        if (nCompInv == 3) {
+          invArr(i, j, k, 0) = 1.0;
+          invArr(i, j, k, 1) = 1.0;
+          invArr(i, j, k, 2) = 1.0;
+        } else {
+          for (int m = 0; m < 9; ++m)
+            invArr(i, j, k, m) = 0.0;
+          invArr(i, j, k, 0) = 1.0;
+          invArr(i, j, k, 4) = 1.0;
+          invArr(i, j, k, 8) = 1.0;
+        }
+        return;
+      }
+
+      Real upwindDiag = 0.0;
+      if (doUpwindE) {
+        for (int iDir = 0; iDir < nDim; ++iDir) {
+          int dii[3] = { 0, 0, 0 };
+          dii[iDir] = 1;
+          Real ur = cMaxVal;
+          Real ul = cMaxVal;
+          if (cMaxVal <= 0.0) {
+            ul =
+                std::abs(0.5 * (arrU(i - dii[0], j - dii[1], k - dii[2], iDir) +
+                                arrU(i, j, k, iDir)));
+            ur = std::abs(0.5 *
+                          (arrU(i, j, k, iDir) +
+                           arrU(i + dii[0], j + dii[1], k + dii[2], iDir)));
+          }
+          upwindDiag += coeUpwind * (ur + ul);
+        }
+      }
+
+#if (AMREX_SPACEDIM == 2)
+      constexpr int idx0 = 4 * 9;
+#else
+      constexpr int idx0 = 13 * 9;
+#endif
+      const Real* const M_I = &(mmArr(i, j, k)[idx0]);
+
+      Real D[3][3];
+      for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+          D[a][b] = c0 * M_I[a * 3 + b];
+        }
+        D[a][a] += 1.0 + emDiag[a] + upwindDiag;
+      }
+
+      if (hasWallEt) {
+        for (int c = 0; c < 3; ++c) {
+          if (is_conducting_wall_Et(bnd, ijk, c)) {
+            D[c][0] = 0.0;
+            D[c][1] = 0.0;
+            D[c][2] = 0.0;
+            D[0][c] = 0.0;
+            D[1][c] = 0.0;
+            D[2][c] = 0.0;
+            D[c][c] = 1.0;
+          }
+        }
+      }
+
+      if (nCompInv == 3) {
+        for (int c = 0; c < 3; ++c) {
+          invArr(i, j, k, c) =
+              (std::abs(D[c][c]) > 1e-30) ? (1.0 / D[c][c]) : 1.0;
+        }
+      } else {
+        const Real c00 = D[1][1] * D[2][2] - D[1][2] * D[2][1];
+        const Real c01 = -(D[1][0] * D[2][2] - D[1][2] * D[2][0]);
+        const Real c02 = D[1][0] * D[2][1] - D[1][1] * D[2][0];
+
+        const Real c10 = -(D[0][1] * D[2][2] - D[0][2] * D[2][1]);
+        const Real c11 = D[0][0] * D[2][2] - D[0][2] * D[2][0];
+        const Real c12 = -(D[0][0] * D[2][1] - D[0][1] * D[2][0]);
+
+        const Real c20 = D[0][1] * D[1][2] - D[0][2] * D[1][1];
+        const Real c21 = -(D[0][0] * D[1][2] - D[0][2] * D[1][0]);
+        const Real c22 = D[0][0] * D[1][1] - D[0][1] * D[1][0];
+
+        const Real det = D[0][0] * c00 + D[0][1] * c01 + D[0][2] * c02;
+        if (std::abs(det) > 1e-30) {
+          const Real invDet = 1.0 / det;
+          invArr(i, j, k, 0) = c00 * invDet;
+          invArr(i, j, k, 1) = c10 * invDet;
+          invArr(i, j, k, 2) = c20 * invDet;
+          invArr(i, j, k, 3) = c01 * invDet;
+          invArr(i, j, k, 4) = c11 * invDet;
+          invArr(i, j, k, 5) = c21 * invDet;
+          invArr(i, j, k, 6) = c02 * invDet;
+          invArr(i, j, k, 7) = c12 * invDet;
+          invArr(i, j, k, 8) = c22 * invDet;
+        } else {
+          for (int m = 0; m < 9; ++m)
+            invArr(i, j, k, m) = 0.0;
+          invArr(i, j, k, 0) = 1.0;
+          invArr(i, j, k, 4) = 1.0;
+          invArr(i, j, k, 8) = 1.0;
+        }
+      }
+    });
+  }
 }
 
 //==========================================================

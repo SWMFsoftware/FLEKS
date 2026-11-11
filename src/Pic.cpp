@@ -149,6 +149,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   amrJhf.clear();
   amrNmmc.clear();
   amrNmmf.clear();
+  amrexESolver.clear();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {

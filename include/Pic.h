@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 
+#include "AmrexLinearSolver.h"
 #include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
@@ -42,11 +43,21 @@ public:
   amrex::Real coefDiff;
   bool useLaggedLimiter;
   FieldSolverMode mode;
+  ESolverBackend solverBackend;
+  EPrecondType precondType;
+  int gmresRestartLength;
+  int precondIters;
+  amrex::Real smootherWeight;
   FieldSolver() {
     theta = 0.51;
     coefDiff = 0.1;
     useLaggedLimiter = false;
     mode = FieldSolverMode::GMRES;
+    solverBackend = ESolverBackend::AmrexGMRES;
+    precondType = EPrecondType::Auto;
+    gmresRestartLength = 30;
+    precondIters = 2;
+    smootherWeight = 2.0 / 3.0;
   }
 };
 
@@ -98,6 +109,7 @@ struct NodeMMCommData {
 class Pic : public GridAccess {
   friend PlotWriter;
   friend ParticleTracker;
+  friend class amrex::AmrexLinearSolver;
   // private variables
 private:
   bool useHybridPIC = false;
@@ -342,6 +354,7 @@ private:
 
   LinearSolver eSolver;
   LinearSolver divESolver;
+  amrex::Vector<std::unique_ptr<amrex::AmrexLinearSolver> > amrexESolver;
 
   // Persistent scratch MultiFabs for implicit field solver (full-PIC)
   amrex::Vector<amrex::MultiFab> solverVecMF;
@@ -996,6 +1009,7 @@ public:
   void update_E_impl();
   void update_E_expl();
   void solve_E_gmres(int iLev);
+  void solve_E_gmres_amrex(int iLev);
   void solve_E_newton_krylov(int iLev);
   void update_E_rhs(amrex::Real *rhos, int iLev);
   void update_E_rhs(amrex::MultiFab &rhsMF, int iLev);
@@ -1003,6 +1017,8 @@ public:
                        const bool useZeroBC = true);
   void update_E_matvec(const amrex::MultiFab &vecIn, amrex::MultiFab &vecOut,
                        int iLev, const bool useZeroBC = true);
+  void build_E_preconditioner(amrex::MultiFab &invDiagMF, int iLev,
+                              EPrecondType type);
   void sync_nodal_solver_vec(amrex::MultiFab &vecMF, int iLev);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
