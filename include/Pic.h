@@ -53,7 +53,7 @@ public:
     coefDiff = 0.1;
     useLaggedLimiter = false;
     mode = FieldSolverMode::GMRES;
-    solverBackend = ESolverBackend::AmrexGMRES;
+    solverBackend = ESolverBackend::LegacyGMRES;
     precondType = EPrecondType::Auto;
     gmresRestartLength = 30;
     precondIters = 2;

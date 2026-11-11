@@ -14,7 +14,7 @@ class Pic;
 enum class ESolverBackend { LegacyGMRES, AmrexGMRES };
 
 enum class EPrecondType {
-  Auto,        // Adaptive selection (None / BlockJacobi / Smoother)
+  Auto,        // Adaptive selection (None for <5 iters or JFNK, BlockJacobi otherwise)
   None,        // P = I (unpreconditioned)
   Jacobi,      // Scalar diagonal scaling (3 components per node)
   BlockJacobi, // Point-block 3x3 exact inverse per node

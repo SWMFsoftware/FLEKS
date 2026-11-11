@@ -58,24 +58,10 @@ void AmrexLinearSolver::define(Pic* pic, int iLev, EPrecondType precondType,
   m_mode = mode;
 
   if (precondType == EPrecondType::Auto) {
-    if (m_mode == FieldSolverMode::NewtonKrylov) {
+    if (m_mode == FieldSolverMode::NewtonKrylov || m_lastIters < 5) {
       m_precondType = EPrecondType::None;
-    } else if (m_lastAutoPrecond == EPrecondType::Smoother) {
-      if (m_lastIters >= 12) {
-        m_precondType = EPrecondType::Smoother;
-      } else if (m_lastIters >= 5) {
-        m_precondType = EPrecondType::BlockJacobi;
-      } else {
-        m_precondType = EPrecondType::None;
-      }
     } else {
-      if (m_lastIters > 18) {
-        m_precondType = EPrecondType::Smoother;
-      } else if (m_lastIters >= 5) {
-        m_precondType = EPrecondType::BlockJacobi;
-      } else {
-        m_precondType = EPrecondType::None;
-      }
+      m_precondType = EPrecondType::BlockJacobi;
     }
     m_lastAutoPrecond = m_precondType;
   } else {

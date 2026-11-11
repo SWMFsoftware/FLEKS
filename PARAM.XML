@@ -1103,21 +1103,32 @@ Default values are shown (kept at 0.1 for legacy coupled-test compatibility).
 <command name="EFIELDSOLVER">
   <parameter name="EFieldTol" type="real" default="1e-6"/>
   <parameter name="EFieldIter" type="integer" default="200"/>
+  <parameter name="solverType" type="string" input="select" default="legacy">
+    <option value="legacy" default="T"/>
+    <option value="amrex"/>
+  </parameter>
+  <parameter name="precondType" type="string" input="select" default="auto">
+    <option value="auto" default="T"/>
+    <option value="none"/>
+    <option value="jacobi"/>
+    <option value="block_jacobi"/>
+    <option value="blockjacobi"/>
+    <option value="smoother"/>
+  </parameter>
   
 #EFIELDSOLVER
 1e-6                     EFieldTol
 200                      EFieldIter
-amrex                    solverType (optional: amrex | legacy)
-auto                     precondType (optional: auto | none | jacobi | block_jacobi | smoother)
-30                       nRestart (optional: GMRES restart length for amrex)
-2                        nPrecondIter (optional: smoother iterations)
-0.6667                   smootherWeight (optional: smoother relaxation weight)
+legacy                   solverType (legacy | amrex)
+auto                     precondType (auto | none | jacobi | blockjacobi | smoother)
 
 The tolerance and the maximum iteration number of the electric field 
-solver. Optional named lines configure the GMRES backend (`amrex` MultiFab
-GMRES solver vs. `legacy` 1D MGS solver) and right preconditioner (`auto`
-adaptive selection, `none`, `jacobi` scalar diagonal, `block_jacobi` 3x3
-point-block inverse, or `smoother` multi-step damped block-Jacobi smoother).
+solver. Additional lines configure the GMRES backend (legacy 1D MGS solver
+vs. amrex MultiFab GMRES solver) and right preconditioner (auto adaptive
+selection, none, jacobi scalar diagonal, blockjacobi 3x3 point-block
+inverse, or smoother multi-step damped block-Jacobi smoother). Optional
+lines nRestart (default 30), nPrecondIter (default 2), and smootherWeight
+(default 0.6667) may also be specified in standalone runs.
 </command>
 
 <command name="DIVE">
