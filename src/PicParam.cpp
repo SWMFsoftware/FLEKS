@@ -259,6 +259,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     waveBC.read_param(param);
   } else if (command == "#WAVEBCWINDOW") {
     waveBC.read_window(param);
+  } else if (command == "#TURBULENTINFLOW") {
+    waveBC.read_turbulent_inflow(param);
   } else if (command == "#DISCONTINUITY") {
     discontinuityBC.read_param(param);
   } else if (command == "#MEMORY") {
@@ -705,8 +707,8 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
 
       if (fType == FieldBC::wave && !waveBC.active)
         add_bc_warning(std::string("field boundary ") + face +
-                       " is 'wave' but no #WAVEBC block was given; the face "
-                       "carries no wave source.");
+                       " is 'wave' but no #WAVEBC or #TURBULENTINFLOW block "
+                       "was given; the face carries no wave source.");
 
       for (int i = 0; i < nCheck; ++i) {
         if (pInfo.pBCsSet[i] == 0)

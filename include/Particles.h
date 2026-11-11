@@ -499,7 +499,7 @@ public:
 
   // Wave bulk-velocity kick (pos, t -> dvx,dvy,dvz), set by Pic; null = off.
   std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
-                     amrex::Real&, amrex::Real&, int)>
+                     amrex::Real&, amrex::Real&, int, int, amrex::Real)>
       waveVelocityKick = nullptr;
 
   // Non-owning pointer to the active planar discontinuity BC manager (owned by

@@ -720,7 +720,35 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            const int iStart, const int nComp, const int iLev,
                            const BoxBC<FieldBC::Type>& bc, int iField, Real t,
                            GETVALUE func) {
-  // Pre-filter components active at time t for iField.
+  bool isWaveFace[6] = { false, false, false, false, false, false };
+  bool anyWaveFace = false;
+  for (int d = 0; d < nDim; ++d) {
+    isWaveFace[2 * d + 0] = (bc.face(d, 0) == FieldBC::wave);
+    isWaveFace[2 * d + 1] = (bc.face(d, 1) == FieldBC::wave);
+    if (isWaveFace[2 * d + 0] || isWaveFace[2 * d + 1])
+      anyWaveFace = true;
+  }
+  if (!anyWaveFace)
+    return;
+
+  if (waveBC.turb.active && !waveBC.turb.initialized) {
+    waveBC.ensure_turbulence_initialized(fi, Geom(iLev), nDim, is_fake_2d(),
+                                         isWaveFace);
+  }
+
+  const Real turbEnv = waveBC.turbulent_envelope(t);
+  const bool hasTurb = waveBC.turb.active && waveBC.turb.initialized &&
+                       (turbEnv > 0.0) && (iField == 0 || iField == 1);
+  std::vector<Real> turbPhaseT;
+  if (hasTurb) {
+    const int N = waveBC.turb.nMode;
+    turbPhaseT.resize(N);
+    for (int m = 0; m < N; ++m)
+      turbPhaseT[m] = waveBC.turb.phase[m] - waveBC.turb.omega[m] * t;
+  }
+  const Real* turbPhaseTPtr = hasTurb ? turbPhaseT.data() : nullptr;
+
+  // Pre-filter legacy #WAVEBC components active at time t for iField.
   // Hoisting envelope and time-phase evaluation out of the cell loops.
   struct ActiveComp {
     int dir;
@@ -761,7 +789,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       activeComps.push_back(ac);
     }
   }
-  if (activeComps.empty())
+  if (!hasTurb && activeComps.empty())
     return;
 
   std::string nameFunc = "Pic::apply_wave_field";
@@ -785,7 +813,23 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
     // Box culling: check if this FAB touches any face active for wave
     // injection.
     bool boxTouchesWaveFace = false;
+    if (hasTurb) {
+      for (int d = 0; d < nDim && !boxTouchesWaveFace; ++d) {
+        if (isWaveFace[2 * d + 0] &&
+            (bxFab.smallEnd(d) < bnd.loBnd[d] ||
+             (bnd.isNode[d] && bxFab.smallEnd(d) <= bnd.loBnd[d]))) {
+          boxTouchesWaveFace = true;
+        }
+        if (isWaveFace[2 * d + 1] &&
+            (bxFab.bigEnd(d) > bnd.hiBnd[d] ||
+             (bnd.isNode[d] && bxFab.bigEnd(d) >= bnd.hiBnd[d]))) {
+          boxTouchesWaveFace = true;
+        }
+      }
+    }
     for (const auto& ac : activeComps) {
+      if (boxTouchesWaveFace)
+        break;
       const int d = ac.dir;
       const int side = ac.side;
       if (side == 0) {
@@ -898,6 +942,55 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
         const Real w = waveBC.window_weight(pos);
         for (int iVar = 0; iVar < 3; ++iVar)
           waveVal[iVar] *= w;
+      }
+
+      if (hasTurb) {
+        bool onTurbWaveBnd = false;
+        for (int d = 0; d < nDim; ++d) {
+          for (int side = 0; side < 2; ++side) {
+            if (!isWaveFace[2 * d + side])
+              continue;
+            const int idx = ijk[d];
+            const bool onGhostFace =
+                isGhost && ((side == 0 && idx < bnd.loBnd[d]) ||
+                            (side == 1 && idx > bnd.hiBnd[d]));
+            bool onNodeWall = false;
+            if (bnd.isNode[d]) {
+              const bool onLoNode = (side == 0 && idx == bnd.loBnd[d]);
+              const bool onHiNode = (side == 1 && idx == bnd.hiBnd[d]);
+              if (onLoNode || onHiNode) {
+                bool inTangential = true;
+                for (int od = 0; od < nDim; ++od) {
+                  if (od != d &&
+                      (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+                    inTangential = false;
+                    break;
+                  }
+                }
+                if (inTangential)
+                  onNodeWall = true;
+              }
+            }
+            if (onGhostFace || onNodeWall) {
+              onTurbWaveBnd = true;
+              if (onNodeWall)
+                isBndNode = true;
+            }
+          }
+        }
+        if (onTurbWaveBnd) {
+          Real turbVal[3] = { 0.0, 0.0, 0.0 };
+          waveBC.eval_turbulent_field(pos, turbPhaseTPtr, turbEnv, iField,
+                                      turbVal);
+          if (turbVal[0] != 0.0 || turbVal[1] != 0.0 || turbVal[2] != 0.0) {
+            hasWave = true;
+            for (int iVar = 0; iVar < 3; ++iVar)
+              waveVal[iVar] += turbVal[iVar];
+          }
+        }
+      }
+
+      if (hasWave) {
         if (isBndNode && func) {
           // Reset nodal physical boundary from base state before superimposing
           // wave.
@@ -924,42 +1017,62 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
 //==========================================================
 void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
-                             Real& dvz, int waveFaceMask) {
+                             Real& dvz, int waveFaceMask, int iSpecies,
+                             Real charge) {
   dvx = dvy = dvz = 0.0;
   if (!waveBC.active)
     return;
-  int matchedDir = -1;
-  int matchedSide = -1;
-  for (const auto& f : waveBC.faces) {
-    if (f.direction >= nDim ||
-        bcField.face(f.direction, f.side) != FieldBC::wave)
-      continue;
-    const int faceBit = 1 << (2 * f.direction + f.side);
-    if (waveFaceMask >= 0 && (waveFaceMask & faceBit) == 0)
-      continue;
-    if (matchedDir >= 0 && (f.direction != matchedDir || f.side != matchedSide))
-      continue;
-    for (const auto& c : f.comps) {
-      if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
+
+  if (!waveBC.faces.empty()) {
+    int matchedDir = -1;
+    int matchedSide = -1;
+    for (const auto& f : waveBC.faces) {
+      if (f.direction >= nDim ||
+          bcField.face(f.direction, f.side) != FieldBC::wave)
         continue;
-      if (waveBC.envelope(c, t) <= 0.0)
+      const int faceBit = 1 << (2 * f.direction + f.side);
+      if (waveFaceMask >= 0 && (waveFaceMask & faceBit) == 0)
         continue;
-      if (matchedDir < 0) {
-        matchedDir = f.direction;
-        matchedSide = f.side;
+      if (matchedDir >= 0 &&
+          (f.direction != matchedDir || f.side != matchedSide))
+        continue;
+      for (const auto& c : f.comps) {
+        if (c.iField != 2 || c.amplitude == 0.0) // velocity kick
+          continue;
+        if (c.iSpecies >= 0 && iSpecies >= 0 && c.iSpecies != iSpecies)
+          continue;
+        if (waveBC.envelope(c, t) <= 0.0)
+          continue;
+        if (matchedDir < 0) {
+          matchedDir = f.direction;
+          matchedSide = f.side;
+        }
+        const Real val = waveBC.value(c, t, pos);
+        if (val == 0.0)
+          continue;
+        dvx += val * c.pol[0];
+        dvy += val * c.pol[1];
+        dvz += val * c.pol[2];
       }
-      const Real val = waveBC.value(c, t, pos);
-      if (val == 0.0)
-        continue;
-      dvx += val * c.pol[0];
-      dvy += val * c.pol[1];
-      dvz += val * c.pol[2];
     }
+    const Real w = waveBC.window_weight(pos);
+    dvx *= w;
+    dvy *= w;
+    dvz *= w;
   }
-  const Real w = waveBC.window_weight(pos);
-  dvx *= w;
-  dvy *= w;
-  dvz *= w;
+
+  if (waveBC.turb.active) {
+    if (!waveBC.turb.initialized) {
+      bool isWaveFace[6] = { false, false, false, false, false, false };
+      for (int d = 0; d < nDim; ++d) {
+        isWaveFace[2 * d + 0] = (bcField.face(d, 0) == FieldBC::wave);
+        isWaveFace[2 * d + 1] = (bcField.face(d, 1) == FieldBC::wave);
+      }
+      waveBC.ensure_turbulence_initialized(fi, Geom(0), nDim, is_fake_2d(),
+                                           isWaveFace);
+    }
+    waveBC.eval_turbulent_velocity_kick(pos, t, charge, dvx, dvy, dvz);
+  }
 }
 
 //==========================================================

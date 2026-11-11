@@ -1282,7 +1282,8 @@ public:
   // the ghost cell lies outside of, or -1 to match the first active wave face.
   void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
                           amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz,
-                          int waveFaceMask = -1);
+                          int waveFaceMask = -1, int iSpecies = -1,
+                          amrex::Real charge = 0.0);
 
   // Fill external Dirichlet (coupled / fixed) ghost cells from func.
   void fill_ext_dir(const amrex::iMultiFab &status, amrex::MultiFab &mf,

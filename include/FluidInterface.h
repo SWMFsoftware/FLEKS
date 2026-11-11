@@ -386,6 +386,11 @@ public:
   int get_iP(int is) const { return iP_I[is]; }
 
   amrex::MultiFab& get_node_fluid(int iLev) { return nodeFluid[iLev]; }
+  const amrex::MultiFab& get_node_fluid(int iLev) const {
+    return nodeFluid[iLev];
+  }
+  bool is_node_fluid_ready() const { return isnodeFluidReady; }
+  bool is_init_from_swmf() const { return initFromSWMF; }
 
   amrex::Real get_MoMi(int is) const {
     return (is >= 0 && is < static_cast<int>(MoMi_S.size())) ? MoMi_S[is] : 1.0;
