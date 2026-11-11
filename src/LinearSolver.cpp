@@ -4,24 +4,24 @@
 
 using namespace amrex;
 
-void matvec_E_solver(const double *vecIn, double *vecOut, int iLev) {
+void matvec_E_solver(const Real *vecIn, Real *vecOut, int iLev) {
   fleksDomains(fleksDomains.selected())
       .pic->update_E_matvec(vecIn, vecOut, iLev);
 }
 
-void matvec_divE_accurate(const double *vecIn, double *vecOut, int iLev) {
+void matvec_divE_accurate(const Real *vecIn, Real *vecOut, int iLev) {
   fleksDomains(fleksDomains.selected())
       .pic->divE_accurate_matvec(vecIn, vecOut, iLev);
 }
 
-void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
-                         int nDim, int nGrid, double *rhs, double *xLeft,
+void linear_solver_gmres(Real tolerance, int nIteration, int nVarSolve,
+                         int nDim, int nGrid, Real *rhs, Real *xLeft,
                          MATVEC fMatvec, int iLev, bool doReport,
-                         GmresWorkspace *work, double *initialResidual,
-                         int *actualMatvec, double *achievedError) {
+                         GmresWorkspace *work, Real *initialResidual,
+                         int *actualMatvec, Real *achievedError) {
 
   int nJ = 1, nK = 1, nBlock = 1;
-  double precond_matrix_II[1][1];
+  Real precond_matrix_II[1][1];
   precond_matrix_II[0][0] = 0;
   int lTest = (doReport && ParallelDescriptor::MyProc() == 0);
 
@@ -36,12 +36,12 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
     /*
     // The shared library matvec requires non-const vecIn due to compatibility
     // issue with AMPS. If one intends to use it, remember to change the
-    // definition of `const double *vecIn` to `double vecIn`.
+    // definition of `const Real *vecIn` to `Real vecIn`.
     MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
     //// parameter to choose preconditioner types
     // 0:No precondition; 1: BILU; 2:DILU;
     //[-1,0): MBILU;
-    double PrecondParam = 0;
+    Real PrecondParam = 0;
     linear_solver_matvec_c = fMatvec;
     linear_solver_wrapper("GMRES", &tolerance, &nIteration, &nVarSolve, &nDim,
                           &nGrid, &nJ, &nK, &nBlock, &iComm, rhs, xLeft,
@@ -51,23 +51,23 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
 }
 
 void linear_solver_wrapper_hy(
-    std::function<void(const double *, double *, const int)> matvec, int iLev,
+    std::function<void(const Real *, Real *, const int)> matvec, int iLev,
     // Matrix-free operation
     const KrylovType typeSolver,              // Type of Solver
-    const double tolerance,                   // Tolerance for the solver
+    const Real tolerance,                     // Tolerance for the solver
     const int nIteration,                     // Max iteration number
     const int nVar,                           // Number of impl. variables/cell
     const int nDim,                           // Number of spatial dimensions
     const int nI, const int nJ, const int nK, // Number of cells in a block
     const int nBlock,              // Number of impl. blocks on current proc
     const MPI_Comm iComm,          // MPI communicator for processors
-    double *rhs_I,                 // RHS std::vector
-    double *x_I,                   // Initial guess/solution
+    Real *rhs_I,                   // RHS std::vector
+    Real *x_I,                     // Initial guess/solution
     const PrecondType typePrecond, // Parameter for the preconditioner
-    double *precondMatrix_II, // Diagonal and super/sub diagonal elements from
-                              // the matrix A, which is in the equation Ax = b
-    const int lTest, GmresWorkspace *work, double *initialResidual,
-    int *actualMatvec, double *achievedError) {
+    Real *precondMatrix_II, // Diagonal and super/sub diagonal elements from
+                            // the matrix A, which is in the equation Ax = b
+    const int lTest, GmresWorkspace *work, Real *initialResidual,
+    int *actualMatvec, Real *achievedError) {
   struct LinearSolverParam param;
 
   param.typePrecond = typePrecond;
@@ -152,19 +152,19 @@ Rewritten into F90 and parallelized by Gabor Toth (May 2002)
 Moved into LinearSolver.f90 for SWMF by Gabor Toth (Dec 2006)
 Rewritten into C++ by Hongyang Zhou (Oct 2020)
 */
-int gmres(std::function<void(const double *, double *, const int)> matvec,
+int gmres(std::function<void(const Real *, Real *, const int)> matvec,
           int iLev,                // Func for matrix std::vector multiplication
-          const double *rhs,       // Right hand side std::vector
-          double *sol,             // Initial guess / solution std::vector
+          const Real *rhs,         // Right hand side std::vector
+          Real *sol,               // Initial guess / solution std::vector
           const bool isInit,       // true if sol contains initial guess
           const int n,             // Number of unknowns
           const int nKrylov,       // Size of krylov subspace
-          double &tol,             // Required / achieved norm of residual
+          Real &tol,               // Required / achieved norm of residual
           const StopType typeStop, // Determine stopping criterion
           int &nIter,              // Maximum/actual number of iterations
           const bool doTest,       // Write debug info if true
           MPI_Comm iComm,          // MPI communicator
-          GmresWorkspace *work, double *initialResidual) {
+          GmresWorkspace *work, Real *initialResidual) {
   int info = -1;
   // gives reason for returning:
   //    abs(info)=  0: solution found satisfying given tolerance.
@@ -187,18 +187,17 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   const size_t krylovSize = static_cast<size_t>(n) * (nKrylov + 2);
   const size_t hhSize = static_cast<size_t>(nKrylov1) * nKrylov;
 
-  std::vector<double> cFallback;
-  std::vector<double> sFallback;
-  std::vector<double> rsFallback;
-  std::vector<double> krylovFallback;
-  std::vector<double> hhFallback;
+  std::vector<Real> cFallback;
+  std::vector<Real> sFallback;
+  std::vector<Real> rsFallback;
+  std::vector<Real> krylovFallback;
+  std::vector<Real> hhFallback;
 
-  std::vector<double> &c = work ? work->c : cFallback;
-  std::vector<double> &s = work ? work->s : sFallback;
-  std::vector<double> &rs = work ? work->rs : rsFallback;
-  std::vector<double> &krylovBuffer =
-      work ? work->krylovBuffer : krylovFallback;
-  std::vector<double> &hhBuffer = work ? work->hhBuffer : hhFallback;
+  std::vector<Real> &c = work ? work->c : cFallback;
+  std::vector<Real> &s = work ? work->s : sFallback;
+  std::vector<Real> &rs = work ? work->rs : rsFallback;
+  std::vector<Real> &krylovBuffer = work ? work->krylovBuffer : krylovFallback;
+  std::vector<Real> &hhBuffer = work ? work->hhBuffer : hhFallback;
 
   if (c.size() < static_cast<size_t>(nKrylov))
     c.resize(nKrylov);
@@ -214,16 +213,9 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   auto *Krylov_II = krylovBuffer.data();
   auto *hh = hhBuffer.data();
 
-  double epsmac;
-  if (true) // double precision by default
-  {
-    epsmac = 1e-16;
-  } else // single precision
-  {
-    epsmac = 1e-8;
-  }
+  constexpr Real epsmac = (sizeof(Real) == 8) ? Real(1e-16) : Real(1e-8);
 
-  double Tol1, ro, ro0;
+  Real Tol1, ro, ro0;
   int its = 0;
 
   do // Restart loop
@@ -300,14 +292,14 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
 
       // Modified Gram-Schmidt
       for (int j = 0; j <= i; ++j) {
-        double t =
+        Real t =
             dot_product_mpi(&Krylov_II[j * n], &Krylov_II[i1 * n], n, iComm);
         hh[i * nKrylov1 + j] = t;
         for (int k = 0; k < n; ++k) {
           Krylov_II[i1 * n + k] -= t * Krylov_II[j * n + k];
         }
       }
-      double cDot = sqrt(
+      Real cDot = sqrt(
           dot_product_mpi(&Krylov_II[i1 * n], &Krylov_II[i1 * n], n, iComm));
       hh[i * nKrylov1 + i1] = cDot;
       if (cDot != 0.0) {
@@ -321,12 +313,12 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
       // Perform previous transformations on i-th column of h.
       for (int k = 1; k <= i; ++k) {
         int k1 = k - 1;
-        double t = hh[i * nKrylov1 + k1];
+        Real t = hh[i * nKrylov1 + k1];
         hh[i * nKrylov1 + k1] = c[k1] * t + s[k1] * hh[i * nKrylov1 + k];
         hh[i * nKrylov1 + k] = -s[k1] * t + c[k1] * hh[i * nKrylov1 + k];
       }
-      double g = sqrt(hh[i * nKrylov1 + i] * hh[i * nKrylov1 + i] +
-                      hh[i * nKrylov1 + i1] * hh[i * nKrylov1 + i1]);
+      Real g = sqrt(hh[i * nKrylov1 + i] * hh[i * nKrylov1 + i] +
+                    hh[i * nKrylov1 + i1] * hh[i * nKrylov1 + i1]);
       if (g == 0.0)
         g = epsmac;
       // Determine next plane rotation

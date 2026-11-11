@@ -100,7 +100,7 @@ private:
   bool find_parameter_owner(const std::string &command,
                             ParameterOwner &owner) const;
   static bool is_construction_command(const std::string &command);
-  void prepare_grid_info(const amrex::Vector<double> &info,
+  void prepare_grid_info(const amrex::Vector<amrex::Real> &info,
                          amrex::Geometry &geometry, amrex::AmrInfo &amrInfo);
 
 public:
@@ -141,32 +141,36 @@ public:
   void update(amrex::Real timeLimit = -1.0);
 
   //--------------Initialization begin-------------------------------
-  void init(const double time = 0, const int iDomain = 1,
+  void init(const amrex::Real time = 0, const int iDomain = 1,
             const std::string &paramString = std::string(),
             const amrex::Vector<int> &paramInt = amrex::Vector<int>(),
-            const amrex::Vector<double> &paramRegion = amrex::Vector<double>(),
-            const amrex::Vector<double> &paramComm = amrex::Vector<double>(),
+            const amrex::Vector<amrex::Real> &paramRegion =
+                amrex::Vector<amrex::Real>(),
+            const amrex::Vector<amrex::Real> &paramComm =
+                amrex::Vector<amrex::Real>(),
             const bool isStandaloneIn = false);
   void update_param(const std::string &paramString);
   void set_ic();
   //----------------Initialization end-------------------------------
 
   //------------Coupler related begin--------------
-  void set_state_var(double *data, int *index, std::vector<std::string> &names);
+  void set_state_var(amrex::Real *data, int *index,
+                     std::vector<std::string> &names);
 
   int get_grid_nodes_number();
 
-  void get_grid(double *pos_DI);
+  void get_grid(amrex::Real *pos_DI);
 
-  void find_mpi_rank_for_points(const int nPoint, const double *const xyz_I,
+  void find_mpi_rank_for_points(const int nPoint,
+                                const amrex::Real *const xyz_I,
                                 int *const rank_I);
 
   void get_fluid_state_for_points(const int nDim, const int nPoint,
-                                  const double *const xyz_I,
-                                  double *const data_I, const int nVar);
+                                  const amrex::Real *const xyz_I,
+                                  amrex::Real *const data_I, const int nVar);
   void get_source_for_points(const int nDim, const int nPoint,
-                             const double *const xyz_I, double *const data_I,
-                             const int nVar);
+                             const amrex::Real *const xyz_I,
+                             amrex::Real *const data_I, const int nVar);
   void refresh_source(const FluidInterface &state);
 
   //------------Coupler related end--------------

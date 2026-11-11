@@ -227,9 +227,8 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
 FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
                                const Vector<int>& iParam,
-                               const Vector<double>& norm,
-                               const Vector<double>& paramComm,
-                               bool useHybridIn)
+                               const Vector<Real>& norm,
+                               const Vector<Real>& paramComm, bool useHybridIn)
     : GridAccess(gridIn), tag(tagIn), gridID(gridIn.get_id()) {
 
   gridName = std::string("FLEKS") + std::to_string(gridID);
@@ -394,7 +393,7 @@ FluidInterface::FluidInterface(Grid& gridIn, std::string tagIn,
 //==========================================================
 void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
-    const double lOld = lNormSI, uOld = uNormSI;
+    const Real lOld = lNormSI, uOld = uNormSI;
     param.read_var("lNorm", lNormSI);
     param.read_var("uNorm", uNormSI);
     // In SWMF/OH-PT mode the variable indices are already known (set in the
@@ -412,7 +411,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     // The planetary length scale: the reference radius of the exosphere
     // profiles and the unit of the 'planet' output. It does NOT create an
     // inner boundary for the PIC solver; see #BODY.
-    const double rOld = rPlanetSi;
+    const Real rOld = rPlanetSi;
     param.read_var("radius", rPlanetSi);
     if (rPlanetSi != rOld && initFromSWMF)
       finalize_normalization();
@@ -493,15 +492,15 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       Abort("Error: number of species <=0! Use #PLASMA command "
             "to set plasma species information.");
     }
-    double tmp;
+    Real tmp;
     for (int i = 0; i < nS; ++i) {
-      double n;
+      Real n;
       param.read_var("rho", n);
-      double mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
-                          ? MoMi_S[i] * cProtonMassSI
-                          : cProtonMassSI;
+      Real mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
+                        ? MoMi_S[i] * cProtonMassSI
+                        : cProtonMassSI;
       // [1/cc] -> [1/m^3] -> mass density [kg/m^3]
-      double rho = n * 1e6 * mass_i;
+      Real rho = n * 1e6 * mass_i;
       uniformState.push_back(rho);
       param.read_var("ux", tmp);
       // km/s -> m/s
@@ -515,7 +514,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       uniformState.push_back(tmp * rho);
       param.read_var("T", tmp);
       // p = nkT
-      double p = n * 1e6 * cBoltzmannSI * tmp;
+      Real p = n * 1e6 * cBoltzmannSI * tmp;
       uniformState.push_back(p);
     }
     param.read_var("bx", tmp);
@@ -547,25 +546,25 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     shockStateL.clear();
     shockStateR.clear();
 
-    auto read_shock_state = [&](amrex::Vector<double>& s, double& shockPe,
+    auto read_shock_state = [&](amrex::Vector<Real>& s, Real& shockPe,
                                 const std::string& prefix) {
-      double first_vx = 0.0, first_vy = 0.0, first_vz = 0.0;
+      Real first_vx = 0.0, first_vy = 0.0, first_vz = 0.0;
 
       for (int i = 0; i < nS; ++i) {
-        double n, ux, uy, uz, p;
+        Real n, ux, uy, uz, p;
         param.read_var(prefix + " rho", n);
         param.read_var(prefix + " ux", ux);
         param.read_var(prefix + " uy", uy);
         param.read_var(prefix + " uz", uz);
         param.read_var(prefix + " p", p);
 
-        double mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
-                            ? MoMi_S[i] * cProtonMassSI
-                            : cProtonMassSI;
+        Real mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
+                          ? MoMi_S[i] * cProtonMassSI
+                          : cProtonMassSI;
         // n is in [/cc] -> [1/m^3] -> mass density [kg/m^3]
-        double rho = n * 1e6 * mass_i;
+        Real rho = n * 1e6 * mass_i;
         s.push_back(rho);
-        double vx = ux * 1e3, vy = uy * 1e3, vz = uz * 1e3;
+        Real vx = ux * 1e3, vy = uy * 1e3, vz = uz * 1e3;
         if (i == 0) {
           first_vx = vx;
           first_vy = vy;
@@ -578,7 +577,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       }
 
       if (nS == 1) {
-        double pe = 0.0;
+        Real pe = 0.0;
         param.read_var(prefix + " pe", pe);
         shockPe = pe * 1e-9;
       } else {
@@ -596,7 +595,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
         }
       }
 
-      double bx, by, bz;
+      Real bx, by, bz;
       param.read_var(prefix + " Bx", bx);
       param.read_var(prefix + " By", by);
       param.read_var(prefix + " Bz", bz);
@@ -622,7 +621,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     uniformState = shockStateR;
   } else if (command == "#OHMSLAW") {
     std::string sOhmU;
-    double eta;
+    Real eta;
     param.read_var("OhmU", sOhmU);
     param.read_var("resistivity", eta);
 
@@ -692,7 +691,7 @@ void FluidInterface::fill_new_cells() {
 
 //==========================================================
 void FluidInterface::find_mpi_rank_for_points(const int nPoint,
-                                              const double* const xyz_I,
+                                              const Real* const xyz_I,
                                               int* const rank_I) {
   const int iNotSet_ = -777;
   int nDimGM = get_fluid_dimension();
@@ -722,8 +721,8 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
   }
 }
 
-int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
-                                      const double* const data,
+int FluidInterface::loop_through_node(std::string action, Real* const pos_DI,
+                                      const Real* const data,
                                       const int* const index) {
   timing_func("FI::loop_through_node");
 
@@ -741,7 +740,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     Abort("Error: unknown action!\n");
   }
 
-  const double no2siL = get_No2SiL();
+  const Real no2siL = get_No2SiL();
 
   int nIdxCount = 0;
   int nCount = 0;
@@ -822,11 +821,11 @@ int FluidInterface::count_couple_node_number() {
   return loop_through_node("count");
 }
 
-void FluidInterface::get_couple_node_loc(double* const pos_DI) {
+void FluidInterface::get_couple_node_loc(Real* const pos_DI) {
   loop_through_node("loc", pos_DI);
 }
 
-void FluidInterface::set_node_fluid(const double* const data,
+void FluidInterface::set_node_fluid(const Real* const data,
                                     const int* const index,
                                     const std::vector<std::string>& names) {
   timing_func("FI::set_node_fluid");
@@ -882,8 +881,8 @@ void FluidInterface::set_node_fluid() {
     amrex::Gpu::streamSynchronize();
     const Real* AMREX_RESTRICT lArr = d_l.data();
     const Real* AMREX_RESTRICT rArr = d_r.data();
-    const double xShock = shockPosition;
-    const double slope = shockSlope;
+    const Real xShock = shockPosition;
+    const Real slope = shockSlope;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const auto& geom = Geom(iLev);
       const auto& prob_lo = geom.ProbLo();
@@ -1020,7 +1019,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
 
       ParallelFor(box, [=](int i, int j, int k) noexcept {
         if (useMultiSpecies) {
-          double Rhot = 0;
+          Real Rhot = 0;
           for (int iIon = 0; iIon < nIon; ++iIon) {
             // Rho = sum(Rhoi) + Rhoe;
             Rhot += arr(i, j, k, iRho_I[iIon]) * pMassFactor[iIon];
@@ -1029,16 +1028,16 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
           // Nodes that were not filled by the coupler keep a zero density.
           // (e.g. nodes inside the body of the source component)
           if (Rhot > 0) {
-            const double invRhot = 1.0 / Rhot;
+            const Real invRhot = 1.0 / Rhot;
             arr(i, j, k, iUx_I[0]) *= invRhot;
             arr(i, j, k, iUy_I[0]) *= invRhot;
             arr(i, j, k, iUz_I[0]) *= invRhot;
           }
         } else {
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-            const double& rho = arr(i, j, k, iRho_I[iFluid]);
+            const Real& rho = arr(i, j, k, iRho_I[iFluid]);
             if (rho > 0) {
-              const double invRho = 1.0 / rho;
+              const Real invRho = 1.0 / rho;
               arr(i, j, k, iUx_I[iFluid]) *= invRho;
               arr(i, j, k, iUy_I[iFluid]) *= invRho;
               arr(i, j, k, iUz_I[iFluid]) *= invRho;
@@ -1145,9 +1144,8 @@ NormalizationParams::NormalizationParams(const FluidInterface& fi,
 
 //-------------------------------------------------------------------------
 
-void NormalizationParams::calc_normalization_units(double lNormSI,
-                                                   double uNormSI,
-                                                   double mNormSI) {
+void NormalizationParams::calc_normalization_units(Real lNormSI, Real uNormSI,
+                                                   Real mNormSI) {
   // Normalization units converted [SI] -> [cgs]
   if (lNormSI > 0) {
     Lnorm = 100.0 * lNormSI;
@@ -1166,7 +1164,7 @@ void NormalizationParams::calc_normalization_units(double lNormSI,
   }
 
   // normalization variables
-  double RHOnorm, Bnorm, Jnorm, Pnorm;
+  Real RHOnorm, Bnorm, Jnorm, Pnorm;
 
   RHOnorm = Mnorm / (Lnorm * Lnorm * Lnorm);
 
@@ -1400,8 +1398,8 @@ void FluidInterface::print_info() const {
   }
 }
 
-void FluidInterface::calc_fluid_state(const double* dataPIC_I,
-                                      double* data_I) const {
+void FluidInterface::calc_fluid_state(const Real* dataPIC_I,
+                                      Real* data_I) const {
   if (useHybridPIC) {
     calc_fluid_state_hybrid(dataPIC_I, data_I);
     return;
@@ -1416,14 +1414,14 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
      vectors are in MHD coordinates.
    */
 
-  double Rhoi, Pi;
-  double Rhoe;
-  double Rho;
-  double PeXX, PeYY, PeZZ, PeXY, PeXZ, PeYZ, PiXX, PiYY, PiZZ, PiXY, PiXZ, PiYZ;
-  double PtXX, PtYY, PtZZ, PtXY, PtXZ, PtYZ, BX, BY, BZ;
-  double PitXX, PitYY, PitZZ, PitXY, PitXZ, PitYZ;
-  double Mx, My, Mz;    // Total momentum.
-  double Mix, Miy, Miz; // Momentum of i species.
+  Real Rhoi, Pi;
+  Real Rhoe;
+  Real Rho;
+  Real PeXX, PeYY, PeZZ, PeXY, PeXZ, PeYZ, PiXX, PiYY, PiZZ, PiXY, PiXZ, PiYZ;
+  Real PtXX, PtYY, PtZZ, PtXY, PtXZ, PtYZ, BX, BY, BZ;
+  Real PitXX, PitYY, PitZZ, PitXY, PitXZ, PitYZ;
+  Real Mx, My, Mz;    // Total momentum.
+  Real Mix, Miy, Miz; // Momentum of i species.
 
   // (rho + 3*Moment + 6*p) = 10 variables per PIC species.
   const int nVarSpecies = 10;
@@ -1444,7 +1442,8 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   data_I[iBy] = BY;
   data_I[iBz] = BZ;
 
-  const double invB2 = 1.0 / (BX * BX + BY * BY + BZ * BZ + 1e-40);
+  constexpr Real epsB2 = (sizeof(Real) == 8) ? Real(1e-40) : Real(1e-30);
+  const Real invB2 = Real(1.0) / (BX * BX + BY * BY + BZ * BZ + epsB2);
 
   if (useElectronFluid) {
 
@@ -1629,8 +1628,8 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   }
 }
 
-void FluidInterface::calc_fluid_state_hybrid(const double* dataPIC_I,
-                                             double* data_I) const {
+void FluidInterface::calc_fluid_state_hybrid(const Real* dataPIC_I,
+                                             Real* data_I) const {
   const int nVarSpecies = 10;
   const int iRhoPIC = 0, iMxPIC = 1, iMyPIC = 2, iMzPIC = 3, iPxxPIC = 4,
             iPyyPIC = 5, iPzzPIC = 6, iPxyPIC = 7, iPxzPIC = 8, iPyzPIC = 9;
@@ -1640,9 +1639,9 @@ void FluidInterface::calc_fluid_state_hybrid(const double* dataPIC_I,
 
   std::fill_n(data_I, nVarFluid, 0.0);
 
-  const double BX = dataPIC_I[iBxPIC];
-  const double BY = dataPIC_I[iByPIC];
-  const double BZ = dataPIC_I[iBzPIC];
+  const Real BX = dataPIC_I[iBxPIC];
+  const Real BY = dataPIC_I[iByPIC];
+  const Real BZ = dataPIC_I[iBzPIC];
 
   data_I[iBx] = BX;
   data_I[iBy] = BY;
@@ -1654,32 +1653,33 @@ void FluidInterface::calc_fluid_state_hybrid(const double* dataPIC_I,
     data_I[iEz] = dataPIC_I[iEzPIC];
   }
 
-  const double invB2 = 1.0 / (BX * BX + BY * BY + BZ * BZ + 1e-40);
+  constexpr Real epsB2 = (sizeof(Real) == 8) ? Real(1e-40) : Real(1e-30);
+  const Real invB2 = Real(1.0) / (BX * BX + BY * BY + BZ * BZ + epsB2);
 
-  const double Pe = dataPIC_I[iPePIC];
+  const Real Pe = dataPIC_I[iPePIC];
   if (useMhdPe && iPe >= 0) {
     data_I[iPe] = Pe;
   }
 
-  double totalRho = 0.0;
-  double totalMx = 0.0, totalMy = 0.0, totalMz = 0.0;
-  double totalPi = 0.0;
-  double totalPiXX = 0.0, totalPiYY = 0.0, totalPiZZ = 0.0;
-  double totalPiXY = 0.0, totalPiXZ = 0.0, totalPiYZ = 0.0;
+  Real totalRho = 0.0;
+  Real totalMx = 0.0, totalMy = 0.0, totalMz = 0.0;
+  Real totalPi = 0.0;
+  Real totalPiXX = 0.0, totalPiYY = 0.0, totalPiZZ = 0.0;
+  Real totalPiXY = 0.0, totalPiXZ = 0.0, totalPiYZ = 0.0;
 
   for (int iS = 0; iS < nS; ++iS) {
-    const double Rhoi = dataPIC_I[iRhoPIC + iS * nVarSpecies];
-    const double Mix = dataPIC_I[iMxPIC + iS * nVarSpecies];
-    const double Miy = dataPIC_I[iMyPIC + iS * nVarSpecies];
-    const double Miz = dataPIC_I[iMzPIC + iS * nVarSpecies];
+    const Real Rhoi = dataPIC_I[iRhoPIC + iS * nVarSpecies];
+    const Real Mix = dataPIC_I[iMxPIC + iS * nVarSpecies];
+    const Real Miy = dataPIC_I[iMyPIC + iS * nVarSpecies];
+    const Real Miz = dataPIC_I[iMzPIC + iS * nVarSpecies];
 
-    const double PiXX = dataPIC_I[iPxxPIC + iS * nVarSpecies];
-    const double PiYY = dataPIC_I[iPyyPIC + iS * nVarSpecies];
-    const double PiZZ = dataPIC_I[iPzzPIC + iS * nVarSpecies];
-    const double PiXY = dataPIC_I[iPxyPIC + iS * nVarSpecies];
-    const double PiXZ = dataPIC_I[iPxzPIC + iS * nVarSpecies];
-    const double PiYZ = dataPIC_I[iPyzPIC + iS * nVarSpecies];
-    const double Pi = (PiXX + PiYY + PiZZ) / 3.0;
+    const Real PiXX = dataPIC_I[iPxxPIC + iS * nVarSpecies];
+    const Real PiYY = dataPIC_I[iPyyPIC + iS * nVarSpecies];
+    const Real PiZZ = dataPIC_I[iPzzPIC + iS * nVarSpecies];
+    const Real PiXY = dataPIC_I[iPxyPIC + iS * nVarSpecies];
+    const Real PiXZ = dataPIC_I[iPxzPIC + iS * nVarSpecies];
+    const Real PiYZ = dataPIC_I[iPyzPIC + iS * nVarSpecies];
+    const Real Pi = (PiXX + PiYY + PiZZ) / 3.0;
 
     totalRho += Rhoi;
     totalMx += Mix;
@@ -1716,7 +1716,7 @@ void FluidInterface::calc_fluid_state_hybrid(const double* dataPIC_I,
     data_I[iP_I[0]] = useMhdPe ? totalPi : (totalPi + Pe);
 
     if (useAnisoP) {
-      const double Ppar =
+      const Real Ppar =
           (BX * totalPiXX * BX + BY * totalPiYY * BY + BZ * totalPiZZ * BZ +
            2.0 * BX * totalPiXY * BY + 2.0 * BX * totalPiXZ * BZ +
            2.0 * BY * totalPiYZ * BZ) *
@@ -1731,7 +1731,7 @@ void FluidInterface::calc_fluid_state_hybrid(const double* dataPIC_I,
     data_I[iRhoUz_I[0]] = totalMz;
     data_I[iP_I[0]] = useMhdPe ? totalPi : (totalPi + Pe);
     if (useAnisoP) {
-      const double Ppar =
+      const Real Ppar =
           (BX * totalPiXX * BX + BY * totalPiYY * BY + BZ * totalPiZZ * BZ +
            2.0 * BX * totalPiXY * BY + 2.0 * BX * totalPiXZ * BZ +
            2.0 * BY * totalPiYZ * BZ) *
@@ -1767,9 +1767,8 @@ void FluidInterface::save_amrex_file() {
 }
 
 void FluidInterface::get_for_points(const int nDim, const int nPoint,
-                                    const double* const xyz_I,
-                                    double* const data_I, const int nVar,
-                                    const double coef,
+                                    const Real* const xyz_I, Real* const data_I,
+                                    const int nVar, const Real coef,
                                     const Vector<int>& idxMap) {
   timing_func("FI::get_for_points");
 

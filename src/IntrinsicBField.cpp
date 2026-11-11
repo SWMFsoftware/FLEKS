@@ -15,12 +15,12 @@
 using namespace amrex;
 
 namespace {
-constexpr double cDegToRad = dPI / 180.0;
+constexpr Real cDegToRad = dPI / 180.0;
 // The recurrence divides by sin(theta); below this the azimuthal component is
 // set to zero instead, exactly as the reference implementation does.
-constexpr double cThetaSinMin = 1.0e-6;
+constexpr Real cThetaSinMin = 1.0e-6;
 // nanotesla -> tesla, the unit of #DIPOLE / #CRUSTALFIELD input.
-constexpr double cNTToT = 1.0e-9;
+constexpr Real cNTToT = 1.0e-9;
 } // namespace
 
 //==========================================================
@@ -121,26 +121,25 @@ void IntrinsicBField::read_coefficients() {
 // makes the evaluation a plain function of the code-unit radius returning
 // code-unit field, so no unit is touched at run time.
 //==========================================================
-void IntrinsicBField::rescale_coefficients(double si2NoB) {
+void IntrinsicBField::rescale_coefficients(Real si2NoB) {
   const int n = nMax_;
-  const Real unit = static_cast<Real>(cNTToT * si2NoB);
+  const Real unit = cNTToT * si2NoB;
 
-  Real power = static_cast<Real>(rPlanetCode_ * rPlanetCode_); // n+2 with n = 0
+  Real power = rPlanetCode_ * rPlanetCode_; // n+2 with n = 0
   for (int iDeg = 0; iDeg < n; ++iDeg) {
     const Real scale = power * unit;
     for (int m = 0; m < n; ++m) {
       coefC_[iDeg * n + m] *= scale;
       coefD_[iDeg * n + m] *= scale;
     }
-    power *= static_cast<Real>(rPlanetCode_);
+    power *= rPlanetCode_;
   }
 }
 
 //==========================================================
-void IntrinsicBField::convert_units(double si2NoB, double si2NoL,
-                                    double rPlanetSI,
-                                    const double *bodyCenterCode,
-                                    double bodyRadiusCode, bool useBody,
+void IntrinsicBField::convert_units(Real si2NoB, Real si2NoL, Real rPlanetSI,
+                                    const Real *bodyCenterCode,
+                                    Real bodyRadiusCode, bool useBody,
                                     int nDim) {
   nDim_ = nDim;
   rPlanetCode_ = rPlanetSI * si2NoL;
@@ -150,7 +149,7 @@ void IntrinsicBField::convert_units(double si2NoB, double si2NoL,
   }
 
   for (int i = 0; i < 3; ++i)
-    params_.center[i] = useBody ? static_cast<Real>(bodyCenterCode[i]) : 0.0;
+    params_.center[i] = useBody ? bodyCenterCode[i] : 0.0;
 
   // Dipole: the reference radius is #DIPOLE's own radius when given, else the
   // radius of the inner body, else the planetary radius.
@@ -169,8 +168,7 @@ void IntrinsicBField::convert_units(double si2NoB, double si2NoL,
     const Real theta = thetaDeg_ * cDegToRad;
     const Real phi = phiDeg_ * cDegToRad;
     const Real sinTheta = std::sin(theta);
-    const Real moment =
-        static_cast<Real>(bEqCode_ * rRefCode_ * rRefCode_ * rRefCode_);
+    const Real moment = bEqCode_ * rRefCode_ * rRefCode_ * rRefCode_;
 
     params_.moment[0] = -moment * sinTheta * std::cos(phi);
     params_.moment[1] = -moment * sinTheta * std::sin(phi);
@@ -211,12 +209,11 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z, Real b[3]) const {
   // (rPlanet / r)^(n+2) diverges rapidly (e.g. 10^40 for nMax=60 as r -> 0).
   // Clamp evaluation radius to rPlanet to prevent unphysical numerical blowup
   // inside the dead core.
-  const Real rEff =
-      (rPlanetCode_ > 0.0) ? std::max(r, static_cast<Real>(rPlanetCode_)) : r;
+  const Real rEff = (rPlanetCode_ > 0.0) ? std::max(r, rPlanetCode_) : r;
 
   // Colatitude and longitude of the point; theta is in [0, pi] so xtsin >= 0.
   const Real xtcos = zc / r;
-  const Real xtsin = std::sqrt(std::max(0.0, 1.0 - xtcos * xtcos));
+  const Real xtsin = std::sqrt(std::max(Real(0.0), Real(1.0) - xtcos * xtcos));
   const Real phi = std::atan2(yc, xc);
 
   // Scratch, grown once and then reused: the fill loop runs on the host, so a

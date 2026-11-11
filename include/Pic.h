@@ -981,8 +981,8 @@ public:
   //------------Coupler related begin--------------
   void update_cells_for_pt();
   void get_fluid_state_for_points(const int nDim, const int nPoint,
-                                  const double *const xyz_I,
-                                  double *const data_I, const int nVar);
+                                  const amrex::Real *const xyz_I,
+                                  amrex::Real *const data_I, const int nVar);
   void read_param(const std::string &command, ReadParam &param);
   void post_process_param();
 
@@ -997,13 +997,15 @@ public:
   void update_E_expl();
   void solve_E_gmres(int iLev);
   void solve_E_newton_krylov(int iLev);
-  void update_E_rhs(double *rhos, int iLev);
-  void update_E_matvec(const double *vecIn, double *vecOut, int iLev,
+  void update_E_rhs(amrex::Real *rhos, int iLev);
+  void update_E_matvec(const amrex::Real *vecIn, amrex::Real *vecOut, int iLev,
                        const bool useZeroBC = true);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
-  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF, int iLev);
-  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p, int iLev);
+  void convert_1d_to_3d(const amrex::Real *const p, amrex::MultiFab &MF,
+                        int iLev);
+  void convert_3d_to_1d(const amrex::MultiFab &MF, amrex::Real *const p,
+                        int iLev);
 
   void smooth_E(amrex::MultiFab &mfE, int iLev);
   void project_down_E();
@@ -1155,7 +1157,8 @@ public:
   //-------------div(E) correction begin----------------
   void divE_correction();
   void amr_divE_correction();
-  void divE_accurate_matvec(const double *vecIn, double *vecOut, int iLev);
+  void divE_accurate_matvec(const amrex::Real *vecIn, amrex::Real *vecOut,
+                            int iLev);
   void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
   void sum_to_center_amr(bool isBeforeCorrection, int iLev);
@@ -1174,27 +1177,28 @@ public:
 
   void get_field_var(const VectorPointList &pointList_II,
                      const std::vector<std::string> &sVar_I,
-                     MDArray<double> &var_II);
-  double get_var(std::string_view var, const int iLev, const amrex::IntVect ijk,
-                 const amrex::MFIter &mfi, bool isValidMFI = true);
+                     MDArray<amrex::Real> &var_II);
+  amrex::Real get_var(std::string_view var, const int iLev,
+                      const amrex::IntVect ijk, const amrex::MFIter &mfi,
+                      bool isValidMFI = true);
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();
   amrex::Vector<std::array<int, 3> > read_select_particle_input();
   void read_restart();
   void write_log(bool doForce = false, bool doCreateFile = false);
   void write_plots(bool doForce = false);
-  void write_amrex(const PlotWriter &pw, double const timeNow,
+  void write_amrex(const PlotWriter &pw, amrex::Real const timeNow,
                    int const iCycle);
-  void write_amrex_field(const PlotWriter &pw, double const timeNow,
+  void write_amrex_field(const PlotWriter &pw, amrex::Real const timeNow,
                          int const iCycle,
                          const std::string plotVars = "X E B plasma",
                          const std::string filenameIn = std::string(),
                          const amrex::BoxArray baOut = amrex::BoxArray());
-  void write_amrex_field(const PlotWriter &pw, double const timeNow,
+  void write_amrex_field(const PlotWriter &pw, amrex::Real const timeNow,
                          int const iCycle, const std::string plotVars,
                          const std::string filenameIn,
                          const amrex::Vector<amrex::BoxArray> &baOutLevels);
-  void write_amrex_particle(const PlotWriter &pw, double const timeNow,
+  void write_amrex_particle(const PlotWriter &pw, amrex::Real const timeNow,
                             int const iCycle);
 
   amrex::Vector<amrex::BoxArray> get_cut_box_arrays(
@@ -1460,6 +1464,6 @@ void find_output_list_caller(const PlotWriter &writerIn,
 
 void get_field_var_caller(const VectorPointList &pointList_II,
                           const std::vector<std::string> &sVar_I,
-                          MDArray<double> &var_II);
+                          MDArray<amrex::Real> &var_II);
 
 #endif

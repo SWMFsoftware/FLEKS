@@ -85,9 +85,9 @@ public:
   // Turn the SI input into code units. Must be called once, after the
   // normalization is finalized. Reads the coefficient file on rank 0 and
   // broadcasts it.
-  void convert_units(double si2NoB, double si2NoL, double rPlanetSI,
-                     const double *bodyCenterCode, double bodyRadiusCode,
-                     bool useBody, int nDim);
+  void convert_units(amrex::Real si2NoB, amrex::Real si2NoL,
+                     amrex::Real rPlanetSI, const amrex::Real *bodyCenterCode,
+                     amrex::Real bodyRadiusCode, bool useBody, int nDim);
 
   // Total B0 at a code-unit position, added into b[]. Host only: the crustal
   // part needs O(nMax^2) scratch per point.
@@ -97,9 +97,9 @@ public:
   const B0Params &get_params() const { return params_; }
 
   // Resolved quantities after the conversion.
-  double get_reference_radius_code() const { return rRefCode_; }
-  double get_planet_radius_code() const { return rPlanetCode_; }
-  double get_dipole_strength_code() const { return bEqCode_; }
+  amrex::Real get_reference_radius_code() const { return rRefCode_; }
+  amrex::Real get_planet_radius_code() const { return rPlanetCode_; }
+  amrex::Real get_dipole_strength_code() const { return bEqCode_; }
 
   // Multi-line summary for the log.
   std::string describe() const;
@@ -109,7 +109,7 @@ private:
   void read_coefficients();
   // Fold the rPlanet^(n+2) power and the unit conversion into the coefficients
   // so that the evaluation works in code units.
-  void rescale_coefficients(double si2NoB);
+  void rescale_coefficients(amrex::Real si2NoB);
   // Add Cartesian crustal field into b[] for a code-unit position.
   void eval_crustal(amrex::Real x, amrex::Real y, amrex::Real z,
                     amrex::Real b[3]) const;
@@ -126,9 +126,9 @@ private:
   int nMax_ = 0;
   std::string fileName_;
 
-  double rRefCode_ = 0.0;
-  double rPlanetCode_ = 1.0;
-  double bEqCode_ = 0.0;
+  amrex::Real rRefCode_ = 0.0;
+  amrex::Real rPlanetCode_ = 1.0;
+  amrex::Real bEqCode_ = 0.0;
   int nDim_ = 3;
 
   amrex::Gpu::ManagedVector<amrex::Real> coefC_, coefD_;

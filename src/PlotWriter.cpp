@@ -183,6 +183,14 @@ void PlotWriter::init() {
     outputFormat = "real4";
     doSaveBinary = true;
   } else if (plotString.find("real8") != std::string::npos) {
+    if constexpr (sizeof(Real) < 8) {
+      if (isVerbose)
+        std::cout << errorPrefix
+                  << "real8 output format is not supported when compiled with "
+                     "single precision (Real = float)!"
+                  << std::endl;
+      Abort();
+    }
     outputFormat = "real8";
     doSaveBinary = true;
   } else if (plotString.find("amrex") != std::string::npos) {
@@ -375,8 +383,8 @@ std::ostream& operator<<(std::ostream& coutIn, PlotWriter const& outputIn) {
 }
 
 bool PlotWriter::is_inside_plot_region(int const ix, int const iy, int const iz,
-                                       double const x, double const y,
-                                       double const z) const {
+                                       Real const x, Real const y,
+                                       Real const z) const {
   // ix, iy and iz are global indices.
 
   bool isInside = false;
@@ -401,7 +409,7 @@ bool PlotWriter::is_inside_plot_region(int const ix, int const iy, int const iz,
   return isInside;
 }
 
-void PlotWriter::write(double const timeNow, int const iCycle,
+void PlotWriter::write(Real const timeNow, int const iCycle,
                        FuncFindPointList find_output_list,
                        FuncGetField get_var) {
   if (outputFormat == "amrex") {
@@ -412,7 +420,7 @@ void PlotWriter::write(double const timeNow, int const iCycle,
   }
 }
 
-void PlotWriter::write_idl(double const timeNow, int const iCycle,
+void PlotWriter::write_idl(Real const timeNow, int const iCycle,
                            FuncFindPointList find_output_list,
                            FuncGetField get_var) {
   long int nPoint;
@@ -446,7 +454,7 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
   // std::cout << "After write_header \n" << (*this) << std::endl;
 }
 
-void PlotWriter::write_header(double const timeNow, int const iCycle) {
+void PlotWriter::write_header(Real const timeNow, int const iCycle) {
 
   std::string filename = get_filename(timeNow, iCycle) + ".h";
 
@@ -464,7 +472,7 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
     if (outputFormat == "real4") {
       nByte = sizeof(float);
     } else {
-      nByte = sizeof(double);
+      nByte = sizeof(Real);
     }
   }
   outFile << nByte << "\t nByte\n";
@@ -568,7 +576,7 @@ void PlotWriter::set_output_unit() {
     No2OutM = No2SiRho * pow(No2OutL, 3);
 
     if (outputUnit == "PLANETARY") {
-      double massProton = 1.6726219e-27;   // unit: kg
+      Real massProton = 1.6726219e-27;     // unit: kg
       No2OutL *= 1. / rPlanet;             // it should be No2OutL *= 1/rPlanet
       No2OutV *= 1e-3;                     // m/s -> km/s
       No2OutB *= 1e9;                      // T -> nT
@@ -598,8 +606,8 @@ void PlotWriter::set_output_unit() {
   }
 }
 
-double PlotWriter::No2OutTable(std::string_view var) const {
-  double value = 0;
+Real PlotWriter::No2OutTable(std::string_view var) const {
+  Real value = 0;
 
   // The order of the following if-else statements matter. For example,
   // var="ppcS1" matchs "p" if "p" is before "ppc". Bad design.
@@ -651,7 +659,7 @@ double PlotWriter::No2OutTable(std::string_view var) const {
   } else if (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
              var.substr(0, 5) == "dBzdt") {
     // dB/dt
-    double No2OutT = No2OutL / No2OutV;
+    Real No2OutT = No2OutL / No2OutV;
     value = No2OutB / No2OutT;
   } else if (var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
              var.substr(0, 1) == "Z" || var.substr(0, 2) == "dx") {
@@ -664,7 +672,7 @@ double PlotWriter::No2OutTable(std::string_view var) const {
   return value;
 }
 
-std::string PlotWriter::get_idl_filename(double const timeNow,
+std::string PlotWriter::get_idl_filename(Real const timeNow,
                                          int const iCycle) const {
   int nLength = 4;
   if (nProcs > 100000) {
@@ -679,8 +687,8 @@ std::string PlotWriter::get_idl_filename(double const timeNow,
   return get_filename(timeNow, iCycle) + ss.str();
 }
 
-void PlotWriter::write_ascii_idl(double const timeNow, int const iCycle,
-                                 MDArray<double>& value_II, double const dx) {
+void PlotWriter::write_ascii_idl(Real const timeNow, int const iCycle,
+                                 MDArray<Real>& value_II, Real const dx) {
   std::string const filename = get_idl_filename(timeNow, iCycle);
 
   std::ofstream outFile(filename.c_str(),
@@ -692,7 +700,7 @@ void PlotWriter::write_ascii_idl(double const timeNow, int const iCycle,
   long const nPoint = value_II.get_nSize(0);
 
   for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
-    const double* const valRow = &value_II(iPoint, 0);
+    const Real* const valRow = &value_II(iPoint, 0);
     outFile << dx;
     for (int iVar = 0; iVar < nVar; ++iVar) {
       outFile << "\t" << valRow[iVar];
@@ -703,8 +711,8 @@ void PlotWriter::write_ascii_idl(double const timeNow, int const iCycle,
   outFile.close();
 }
 
-void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
-                                  MDArray<double>& value_II, double const dx) {
+void PlotWriter::write_binary_idl(Real const timeNow, int const iCycle,
+                                  MDArray<Real>& value_II, Real const dx) {
   int const nVar = static_cast<int>(var_I.size());
   long const nPoint = value_II.get_nSize(0);
   int32_t const nSizeInt = sizeof(int32_t);
@@ -724,7 +732,7 @@ void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
     float const dx_f = static_cast<float>(dx);
 
     for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
-      const double* const valRow = &value_II(iPoint, 0);
+      const Real* const valRow = &value_II(iPoint, 0);
 
       std::memcpy(pos, &nRecord, nSizeInt);
       pos += nSizeInt;
@@ -744,9 +752,9 @@ void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
       pos += nSizeInt;
     }
   } else { // for "real8"
-    int32_t const nSizeDouble = sizeof(double);
-    int32_t const nRecord = static_cast<int32_t>((nVar + 1) * nSizeDouble);
-    long long int const pointBytes = 2 * nSizeInt + (nVar + 1) * nSizeDouble;
+    int32_t const nSizeReal = sizeof(Real);
+    int32_t const nRecord = static_cast<int32_t>((nVar + 1) * nSizeReal);
+    long long int const pointBytes = 2 * nSizeInt + (nVar + 1) * nSizeReal;
     nSize = static_cast<long long int>(nPoint) * pointBytes;
 
     // Use default-initialization (new char[]) to avoid zero-filling the buffer
@@ -754,16 +762,16 @@ void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
     char* pos = buffer.get();
 
     for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
-      const double* const valRow = &value_II(iPoint, 0);
+      const Real* const valRow = &value_II(iPoint, 0);
 
       std::memcpy(pos, &nRecord, nSizeInt);
       pos += nSizeInt;
 
-      std::memcpy(pos, &dx, nSizeDouble);
-      pos += nSizeDouble;
+      std::memcpy(pos, &dx, nSizeReal);
+      pos += nSizeReal;
 
-      std::memcpy(pos, valRow, nSizeDouble * nVar);
-      pos += nSizeDouble * nVar;
+      std::memcpy(pos, valRow, nSizeReal * nVar);
+      pos += nSizeReal * nVar;
 
       std::memcpy(pos, &nRecord, nSizeInt);
       pos += nSizeInt;
@@ -815,25 +823,25 @@ void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
 
 /*This method calls function get_var to obtain the variables var_I
  at position pointList_II, and write the data to *.idl file. */
-void PlotWriter::write_field(double const timeNow, int const iCycle,
+void PlotWriter::write_field(Real const timeNow, int const iCycle,
                              VectorPointList const& pointList_II,
                              FuncGetField get_var) {
   //------------Get values begin-----------------------
   int const nVar = static_cast<int>(var_I.size());
   long const nPoint = static_cast<long>(pointList_II.size());
   // 2D array.
-  MDArray<double> value_II(nPoint, nVar);
+  MDArray<Real> value_II(nPoint, nVar);
   get_var(pointList_II, var_I, value_II);
 
   // Vectorized row normalization avoiding MDArray operator() overhead
   for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
-    double* const valRow = &value_II(iPoint, 0);
+    Real* const valRow = &value_II(iPoint, 0);
     for (int iVar = 0; iVar < nVar; ++iVar) {
       valRow[iVar] *= No2Out_I[iVar];
     }
   }
 
-  const double dx = dx_D[x_] * No2OutL;
+  const Real dx = dx_D[x_] * No2OutL;
   //------------Get values end-----------------------
 
   if (doSaveBinary) {
@@ -843,7 +851,7 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
   }
 }
 
-int PlotWriter::get_time_digits(double second) const {
+int PlotWriter::get_time_digits(Real second) const {
   int digits = 0;
 
   if (maxTimeUnit.find("hour") != std::string::npos) {
@@ -860,7 +868,7 @@ the output will be a int of 010108*/
   } else if (maxTimeUnit.find("year") != std::string::npos) {
     // Left four digits are year, right four digits are day.
     int iYr, iDy;
-    double scInYr = 3600 * 24 * 365.25;
+    Real scInYr = 3600 * 24 * 365.25;
 
     iYr = floor(second / (scInYr));
     second -= iYr * scInYr;

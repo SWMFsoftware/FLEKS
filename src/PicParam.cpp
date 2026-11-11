@@ -114,7 +114,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     inflowUz_I.clear();
     inflowT_I.clear();
 
-    double rho = 0.0, ux = 0.0, uy = 0.0, uz = 0.0, temp = 0.0;
+    Real rho = 0.0, ux = 0.0, uy = 0.0, uz = 0.0, temp = 0.0;
     param.read_var("rho", rho);
     param.read_var("ux", ux);
     param.read_var("uy", uy);
@@ -140,7 +140,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#DIPOLE") {
     // Static dipole of the inner body. Everything is SI; convert_intrinsic_B()
     // turns it into code units once the normalization is known.
-    double bEq = 0.0, theta = 0.0, phi = 0.0, rRef = -1.0;
+    Real bEq = 0.0, theta = 0.0, phi = 0.0, rRef = -1.0;
     param.read_var("strength", bEq);
     param.read_var("theta", theta);
     param.read_var("phi", phi);
@@ -221,7 +221,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
           (photochemStr == "photochemical" || photochemStr == "photochem" ||
            photochemStr == "T" || photochemStr == "true");
     }
-    double rPhoto = 0.0;
+    Real rPhoto = 0.0;
     if (param.read_optional("rPhotochem", rPhoto) ||
         param.read_optional("radius", rPhoto) ||
         param.read_optional("radiusPhotochem", rPhoto) ||
@@ -296,7 +296,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("npcely", nSourcePPC[iy_]);
     if (nDim == 3)
       param.read_var("npcelz", nSourcePPC[iz_]);
-    double ratio = sourceMinWeightRatio;
+    Real ratio = sourceMinWeightRatio;
     if (param.read_optional("minWeightRatio", ratio) ||
         param.read_optional("weightFloor", ratio) ||
         param.read_optional("sourceWeightFloor", ratio)) {
@@ -1028,11 +1028,11 @@ void Pic::post_process_param() {
       inflowUz_I.resize(nSpecies);
       inflowT_I.resize(nSpecies);
       for (int iS = 0; iS < nSpecies; ++iS) {
-        const double mass_i = (fi->get_species_mass(iS) > 0.0)
-                                  ? (fi->get_species_mass(iS) * cProtonMassSI)
-                                  : cProtonMassSI;
-        const double rhoSI = us[5 * iS + 0];
-        const double nCC = (mass_i > 0.0) ? (rhoSI / (1.0e6 * mass_i)) : 0.0;
+        const Real mass_i = (fi->get_species_mass(iS) > 0.0)
+                                ? (fi->get_species_mass(iS) * cProtonMassSI)
+                                : cProtonMassSI;
+        const Real rhoSI = us[5 * iS + 0];
+        const Real nCC = (mass_i > 0.0) ? (rhoSI / (1.0e6 * mass_i)) : 0.0;
         inflowRho_I[iS] = nCC;
         inflowUx_I[iS] =
             (rhoSI > 0.0) ? ((us[5 * iS + 1] / rhoSI) * 1.0e-3) : 0.0;
@@ -1150,7 +1150,7 @@ void Pic::post_process_param() {
             << "\n"
             << "  fieldSubcycle: " << nSubcycle << "\n";
     if (electronTemperatureEV > 0) {
-      double unormSI = fi->get_unorm_si();
+      Real unormSI = fi->get_unorm_si();
       electronTemperature = electronTemperatureEV * cUnitChargeSI /
                             (cProtonMassSI * unormSI * unormSI);
       Print() << "  electronTemperature: " << electronTemperatureEV
@@ -1189,15 +1189,15 @@ void Pic::convert_ionosphere_emission() {
   auto& ie = ionoEmission;
   if (!ie.use)
     return;
-  const double unormSI = fi->get_unorm_si();
-  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
+  const Real unormSI = fi->get_unorm_si();
+  const Real tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
   const int nS = fi->get_nS();
   ie.vth.assign(nS, 0.0);
   Print() << "  #IONOSPHEREEMISSION: r = " << ie.radiusSI / 1e3
           << " km, profile noon/night = " << ie.noon << "/" << ie.night << ", "
           << ie.nPPC << " particles per cell and step\n";
   for (int iS = 0; iS < nS; iS++) {
-    const double mass = fi->get_species_mass(iS);
+    const Real mass = fi->get_species_mass(iS);
     ie.vth[iS] = mass > 0 ? std::sqrt(ie.tempSI[iS] * tFactor / mass) : 0.0;
     const bool isElectron = fi->get_species_charge(iS) < 0;
     Print() << "    species " << iS << ": "
@@ -1219,9 +1219,9 @@ void Pic::convert_intrinsic_B() {
     return;
   }
 
-  const double bodyCenterTmp[3] = { get_body_center()[ix_],
-                                    get_body_center()[iy_],
-                                    get_body_center()[iz_] };
+  const Real bodyCenterTmp[3] = { get_body_center()[ix_],
+                                  get_body_center()[iy_],
+                                  get_body_center()[iz_] };
 
   intrinsicB_->convert_units(fi->get_Si2NoB(), fi->get_Si2NoL(),
                              fi->get_rPlanet_SI(), bodyCenterTmp,
@@ -1429,11 +1429,11 @@ void Pic::convert_inflow_state() {
             << "; the extra blocks are ignored.\n";
 
   // Conversion factors: rho [amu/cc], u [km/s], T [K] -> code units.
-  const double Si2NoRho = fi->get_Si2NoRho();
-  const double rhoFactor = 1.0e6 * cProtonMassSI * Si2NoRho;
-  const double vFactor = 1.0e3 * fi->get_Si2NoV();
-  const double unormSI = fi->get_unorm_si();
-  const double tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
+  const Real Si2NoRho = fi->get_Si2NoRho();
+  const Real rhoFactor = 1.0e6 * cProtonMassSI * Si2NoRho;
+  const Real vFactor = 1.0e3 * fi->get_Si2NoV();
+  const Real unormSI = fi->get_unorm_si();
+  const Real tFactor = cBoltzmannSI / (cProtonMassSI * unormSI * unormSI);
 
   Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies);
 
@@ -1442,8 +1442,8 @@ void Pic::convert_inflow_state() {
     // block still describes a uniform multi-species upstream plasma.
     const int iB = std::min(iS, nBlock - 1);
 
-    const double rho = inflowRho_I[iB] * rhoFactor;
-    const double T = inflowT_I[iB] * tFactor;
+    const Real rho = inflowRho_I[iB] * rhoFactor;
+    const Real T = inflowT_I[iB] * tFactor;
 
     stateVec[iS].nDens = rho;
     stateVec[iS].ux = inflowUx_I[iB] * vFactor;
@@ -1456,9 +1456,9 @@ void Pic::convert_inflow_state() {
 
     // vth is the 1-D thermal std sigma = sqrt(kT/m), with the species mass in
     // proton units from the fluid interface (parts[] is built later).
-    const double mass_i = (iS < fi->get_nS() && fi->get_species_mass(iS) > 0.0)
-                              ? fi->get_species_mass(iS)
-                              : 1.0;
+    const Real mass_i = (iS < fi->get_nS() && fi->get_species_mass(iS) > 0.0)
+                            ? fi->get_species_mass(iS)
+                            : 1.0;
     if (T > 0)
       stateVec[iS].vth = std::sqrt(T / mass_i);
 
@@ -1480,9 +1480,9 @@ void Pic::convert_inflow_state() {
   }
 
   if (nSpecies > 1 && !useHybridPIC && hasElectronSpecies) {
-    double netCharge = 0.0, totalN = 0.0;
+    Real netCharge = 0.0, totalN = 0.0;
     for (int iS = 0; iS < nSpecies && iS < fi->get_nS(); ++iS) {
-      const double ni = stateVec[iS].nDens / rhoFactor; // back to /cc
+      const Real ni = stateVec[iS].nDens / rhoFactor; // back to /cc
       if (ni <= 0)
         continue;
       netCharge += fi->get_species_charge(iS) * ni;

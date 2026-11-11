@@ -23,8 +23,8 @@ void Pic::update_cells_for_pt() {
 
 //==========================================================
 void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
-                                     const double* const xyz_I,
-                                     double* const data_I, const int nVar) {
+                                     const Real* const xyz_I,
+                                     Real* const data_I, const int nVar) {
   std::string nameFunc = "Pic::get_fluid_state_for_points";
 
   Print() << printPrefix << component
@@ -41,7 +41,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B (+ 1 Pe if hybrid);
   const int nVarPerSpecies = 10;
   const int nVarPIC = nSpecies * nVarPerSpecies + 6 + (useHybridPIC ? 1 : 0);
-  Vector<double> dataPIC_I(nVarPIC);
+  Vector<Real> dataPIC_I(nVarPIC);
 
   const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
   const int iEx_ = iBz_ + 1;
@@ -205,23 +205,23 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       const int iHi = singleCell[ix_] ? lo[ix_] : hi[ix_];
 
       for (int k = lo[iz_]; k <= kHi; ++k) {
-        const double zp = (nDim > 2)
-                              ? (singleCell[iz_] ? geom.CellCenter(lo[iz_], iz_)
-                                                 : geom.LoEdge(k, iz_))
-                              : 0.0;
+        const Real zp = (nDim > 2)
+                            ? (singleCell[iz_] ? geom.CellCenter(lo[iz_], iz_)
+                                               : geom.LoEdge(k, iz_))
+                            : 0.0;
         for (int j = lo[iy_]; j <= jHi; ++j) {
-          const double yp = singleCell[iy_] ? geom.CellCenter(lo[iy_], iy_)
-                                            : geom.LoEdge(j, iy_);
+          const Real yp = singleCell[iy_] ? geom.CellCenter(lo[iy_], iy_)
+                                          : geom.LoEdge(j, iy_);
           for (int i = lo[ix_]; i <= iHi; ++i) {
-            const double xp = singleCell[ix_] ? geom.CellCenter(lo[ix_], ix_)
-                                              : geom.LoEdge(i, ix_);
+            const Real xp = singleCell[ix_] ? geom.CellCenter(lo[ix_], ix_)
+                                            : geom.LoEdge(i, ix_);
             if ((bit::is_owner(typeArr(i, j, k)) ||
                  is_periodic_image_to_write(i, j, k)) &&
                 (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
                 writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
-              pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
-                                       zp, (double)iBlock, (double)iLev });
+              pointList_II.push_back({ (Real)i, (Real)j, (Real)k, xp, yp, zp,
+                                       (Real)iBlock, (Real)iLev });
               if (xp < xMinL_D[ix_])
                 xMinL_D[ix_] = xp;
               if (yp < xMinL_D[iy_])
@@ -274,22 +274,21 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       kMax = lo.z;
 
     for (int k = lo.z; k <= kMax; ++k) {
-      const double zp = (nDim > 2)
-                            ? (singleCell[iz_] ? geom.CellCenter(lo.z, iz_)
-                                               : geom.LoEdge(k, iz_))
-                            : 0.0;
+      const Real zp = (nDim > 2) ? (singleCell[iz_] ? geom.CellCenter(lo.z, iz_)
+                                                    : geom.LoEdge(k, iz_))
+                                 : 0.0;
       for (int j = lo.y; j <= jMax; ++j) {
-        const double yp =
+        const Real yp =
             singleCell[iy_] ? geom.CellCenter(lo.y, iy_) : geom.LoEdge(j, iy_);
         for (int i = lo.x; i <= iMax; ++i) {
-          const double xp = singleCell[ix_] ? geom.CellCenter(lo.x, ix_)
-                                            : geom.LoEdge(i, ix_);
+          const Real xp = singleCell[ix_] ? geom.CellCenter(lo.x, ix_)
+                                          : geom.LoEdge(i, ix_);
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
               !node_box_array(iLev).contains(
                   IntVect{ AMREX_D_DECL(i, j, k) })) {
             const int iBlock = -1;
-            pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
-                                     zp, (double)iBlock, (double)iLev });
+            pointList_II.push_back({ (Real)i, (Real)j, (Real)k, xp, yp, zp,
+                                     (Real)iBlock, (Real)iLev });
             if (xp < xMinL_D[ix_])
               xMinL_D[ix_] = xp;
             if (yp < xMinL_D[iy_])
@@ -327,7 +326,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 //==========================================================
 void Pic::get_field_var(const VectorPointList& pointList_II,
                         const std::vector<std::string>& sVar_I,
-                        MDArray<double>& var_II) {
+                        MDArray<Real>& var_II) {
 
   // loop not implemented correctly // Talha
 
@@ -382,9 +381,9 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 }
 
 //==========================================================
-double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
-                    const MFIter& mfi, bool isValidMFI) {
-  double value = 0;
+Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
+                  const MFIter& mfi, bool isValidMFI) {
+  Real value = 0;
   // Full-PIC-only diagnostics: their arrays are not allocated for hybrid.
   if (useHybridPIC &&
       (var.substr(0, 5) == "jHatx" || var.substr(0, 5) == "jHaty" ||
@@ -571,7 +570,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         value = arr(ijk, iVar);
 
         if (var.substr(0, 1) == "u") {
-          double rho = arr(ijk, iRho_);
+          Real rho = arr(ijk, iRho_);
           if (rho != 0)
             value /= rho;
         }
@@ -598,15 +597,15 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       value = arr(ijk, iRho_);
     } else if (var == "ux" || var == "uxTot") {
       const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      double rho = arr(ijk, iRho_);
+      Real rho = arr(ijk, iRho_);
       value = (rho != 0.0) ? (arr(ijk, iUx_) / rho) : 0.0;
     } else if (var == "uy" || var == "uyTot") {
       const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      double rho = arr(ijk, iRho_);
+      Real rho = arr(ijk, iRho_);
       value = (rho != 0.0) ? (arr(ijk, iUy_) / rho) : 0.0;
     } else if (var == "uz" || var == "uzTot") {
       const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      double rho = arr(ijk, iRho_);
+      Real rho = arr(ijk, iRho_);
       value = (rho != 0.0) ? (arr(ijk, iUz_) / rho) : 0.0;
     } else if (var == "p" || var == "pTot") {
       const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
@@ -1190,7 +1189,7 @@ void Pic::write_plots(bool doForce) {
 }
 
 //==========================================================
-void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
+void Pic::write_amrex(const PlotWriter& pw, Real const timeNow,
                       int const iCycle) {
 
   if (pw.is_particle()) {
@@ -1201,7 +1200,7 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
 }
 
 //==========================================================
-void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
+void Pic::write_amrex_particle(const PlotWriter& pw, Real const timeNow,
                                int const iCycle) {
   int iSpecies = pw.get_particleSpecies();
 
@@ -1359,7 +1358,7 @@ Vector<BoxArray> Pic::get_cut_box_arrays(const BoxArray& baOut0) const {
 }
 
 //==========================================================
-void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
+void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
                             int const iCycle, const std::string plotVars,
                             const std::string filenameIn,
                             const BoxArray baOut) {
@@ -1369,7 +1368,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 }
 
 //==========================================================
-void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
+void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
                             int const iCycle, const std::string plotVars,
                             const std::string filenameIn,
                             const Vector<BoxArray>& baOutLevels) {
@@ -1757,7 +1756,7 @@ void find_output_list_caller(const PlotWriter& writerIn,
 //==========================================================
 void get_field_var_caller(const VectorPointList& pointList_II,
                           const std::vector<std::string>& sVar_I,
-                          MDArray<double>& var_II) {
+                          MDArray<Real>& var_II) {
   fleksDomains(fleksDomains.selected())
       .pic->get_field_var(pointList_II, sVar_I, var_II);
 }

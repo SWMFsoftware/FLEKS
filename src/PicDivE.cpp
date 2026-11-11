@@ -24,9 +24,9 @@ void Pic::divE_correction() {
 #endif
 
   struct DivELogEntry {
-    double res0;
+    Real res0;
     int nMatVec;
-    double relErr;
+    Real relErr;
   };
   std::vector<DivELogEntry> logEntries;
   if (doReport && useCompactDivELog) {
@@ -57,8 +57,8 @@ void Pic::divE_correction() {
     for (const auto& entry : logEntries) {
       totalMatVec += entry.nMatVec;
     }
-    const double resInitial = logEntries.front().res0;
-    const double resFinal = logEntries.back().res0 * logEntries.back().relErr;
+    const Real resInitial = logEntries.front().res0;
+    const Real resFinal = logEntries.back().res0 * logEntries.back().relErr;
 
     if (logEntries.size() == 1) {
       Print() << printPrefix << "div(E): res " << std::setprecision(5)
@@ -138,7 +138,7 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
 }
 
 //==========================================================
-void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
+void Pic::divE_accurate_matvec(const Real* vecIn, Real* vecOut, int iLev) {
   std::string nameFunc = "Pic::divE_matvec";
   timing_func(nameFunc);
 
@@ -325,9 +325,9 @@ void Pic::amr_divE_correction() {
   struct DivELogEntry {
     int iter;
     int lev;
-    double res0;
+    Real res0;
     int nMatVec;
-    double relErr;
+    Real relErr;
   };
   std::vector<DivELogEntry> logEntries;
   if (doReport && useCompactDivELog) {
@@ -367,8 +367,8 @@ void Pic::amr_divE_correction() {
     for (const auto& entry : logEntries) {
       totalMatVec += entry.nMatVec;
     }
-    const double resInitial = logEntries.front().res0;
-    const double resFinal = logEntries.back().res0 * logEntries.back().relErr;
+    const Real resInitial = logEntries.front().res0;
+    const Real resFinal = logEntries.back().res0 * logEntries.back().relErr;
 
     if (finestLevel() == 0) {
       if (logEntries.size() == 1) {

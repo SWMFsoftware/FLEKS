@@ -209,7 +209,7 @@ public:
       if (!fi)
         amrex::Abort("Error [ParticleTrackerInfo]: #TPSTATESI requires a "
                      "FluidInterface to be set.");
-      double si2noV = fi->get_Si2NoV();
+      amrex::Real si2noV = fi->get_Si2NoV();
       int nState;
       param.read_var("nState", nState);
       tpStates.clear();

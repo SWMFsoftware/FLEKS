@@ -80,10 +80,9 @@ bool Domain::is_construction_command(const std::string &command) {
 }
 
 //========================================================
-void Domain::init(double time, const int iDomain,
-                  const std::string &paramString, const Vector<int> &paramInt,
-                  const Vector<double> &paramRegion,
-                  const Vector<double> &paramComm, const bool isStandaloneIn) {
+void Domain::init(Real time, const int iDomain, const std::string &paramString,
+                  const Vector<int> &paramInt, const Vector<Real> &paramRegion,
+                  const Vector<Real> &paramComm, const bool isStandaloneIn) {
 
   isStandalone = isStandaloneIn;
 
@@ -135,7 +134,7 @@ void Domain::init(double time, const int iDomain,
   if (initFromSWMF) {
     fi = std::make_unique<FluidInterface>(
         *grid, "fi", paramInt,
-        Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
+        Vector<Real>(paramRegion.begin() + 18, paramRegion.end()), paramComm,
         useHybridPIC);
   } else {
     fi = std::make_unique<FluidInterface>(*grid, "fi", useHybridPIC);
@@ -296,7 +295,7 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-void Domain::prepare_grid_info(const Vector<double> &info, Geometry &geometry,
+void Domain::prepare_grid_info(const Vector<Real> &info, Geometry &geometry,
                                AmrInfo &amrInfo) {
   // If MHD is 2D, PIC has to be periodic in the z-direction.
   if (isFake2D)
@@ -537,7 +536,7 @@ void Domain::set_ic() {
 }
 
 //========================================================
-void Domain::set_state_var(double *data, int *index,
+void Domain::set_state_var(Real *data, int *index,
                            std::vector<std::string> &names) {
   std::string funcName = "Domain::set_state_var";
   timing_func(funcName);
@@ -595,26 +594,25 @@ void Domain::refresh_source(const FluidInterface &state) {
 int Domain::get_grid_nodes_number() { return fi->count_couple_node_number(); }
 
 //========================================================
-void Domain::get_grid(double *pos_DI) { fi->get_couple_node_loc(pos_DI); }
+void Domain::get_grid(Real *pos_DI) { fi->get_couple_node_loc(pos_DI); }
 
 //========================================================
-void Domain::find_mpi_rank_for_points(const int nPoint,
-                                      const double *const xyz_I,
+void Domain::find_mpi_rank_for_points(const int nPoint, const Real *const xyz_I,
                                       int *const rank_I) {
   fi->find_mpi_rank_for_points(nPoint, xyz_I, rank_I);
 }
 
 //========================================================
 void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
-                                        const double *const xyz_I,
-                                        double *const data_I, const int nVar) {
+                                        const Real *const xyz_I,
+                                        Real *const data_I, const int nVar) {
   pic->get_fluid_state_for_points(nDim, nPoint, xyz_I, data_I, nVar);
 }
 
 //========================================================
 void Domain::get_source_for_points(const int nDim, const int nPoint,
-                                   const double *const xyz_I,
-                                   double *const data_I, const int nVar) {
+                                   const Real *const xyz_I, Real *const data_I,
+                                   const int nVar) {
   if (!sourcePT2OH)
     return;
 
@@ -624,8 +622,8 @@ void Domain::get_source_for_points(const int nDim, const int nPoint,
   Real t0 = sourcePT2OH->get_period_start_si();
   Real t1 = tc->get_time_si();
   Print() << printPrefix << " t0 = " << t0 << " t1 = " << t1 << std::endl;
-  double invDt = 0;
-  if (t1 - t0 > 1e-99)
+  Real invDt = 0;
+  if (t1 - t0 > Real(1e-35))
     invDt = 1. / (t1 - t0);
 
   sourcePT2OH->sum_boundary();
@@ -890,7 +888,7 @@ void Domain::init_time_ctr() {
 
     //------ Scalar parameters.----------
     std::vector<std::string> scalarName_I;
-    std::vector<double> scalarVar_I;
+    std::vector<Real> scalarVar_I;
     std::string ms = "mS", qs = "qS";
     const int nS = fi->get_nS();
     for (int i = 0; i < nS; ++i) {

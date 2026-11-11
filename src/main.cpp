@@ -126,7 +126,7 @@ std::vector<std::string> split_sessions(const std::string& paramString) {
 }
 
 void read_stop_criteria(const std::string& paramString, int& maxIter,
-                        double& timeMax) {
+                        amrex::Real& timeMax) {
   ReadParam reader;
   reader = paramString;
 
@@ -181,7 +181,7 @@ int main(int argc, char* argv[]) {
       }
 
       int maxIter = -1;
-      double timeMax = 0.0;
+      Real timeMax = 0.0;
       read_stop_criteria(sessions[iSession], maxIter, timeMax);
 
       if (maxIter < 0 && timeMax <= 0.0) {

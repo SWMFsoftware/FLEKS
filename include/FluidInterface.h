@@ -36,21 +36,22 @@ public:
   NormalizationParams(const FluidInterface& fi, bool scalarOnly = false);
 
   // Derived temperature conversions.
-  double si2noT() const { return Si2NoL / Si2NoV; }
-  double no2siT() const { return Si2NoV / Si2NoL; }
+  amrex::Real si2noT() const { return Si2NoL / Si2NoV; }
+  amrex::Real no2siT() const { return Si2NoV / Si2NoL; }
 
   // normalization units for length, velocity, mass and charge
   // Normalized q/m == 1 for proton in CGS units
-  double Lnorm = 1, Unorm = 1;
-  double Mnorm = 0, Qnorm = 0;
+  amrex::Real Lnorm = 1, Unorm = 1;
+  amrex::Real Mnorm = 0, Qnorm = 0;
 
-  amrex::Vector<double> Si2No_V, No2Si_V;
-  double Si2NoM = 0, Si2NoV = 0, Si2NoRho = 0, Si2NoB = 0, Si2NoP = 0,
-         Si2NoJ = 0, Si2NoL = 0, Si2NoE = 0;
-  double No2SiV = 0, No2SiL = 0;
+  amrex::Vector<amrex::Real> Si2No_V, No2Si_V;
+  amrex::Real Si2NoM = 0, Si2NoV = 0, Si2NoRho = 0, Si2NoB = 0, Si2NoP = 0,
+              Si2NoJ = 0, Si2NoL = 0, Si2NoE = 0;
+  amrex::Real No2SiV = 0, No2SiL = 0;
 
 private:
-  void calc_normalization_units(double lNormSI, double uNormSI, double mNormSI);
+  void calc_normalization_units(amrex::Real lNormSI, amrex::Real uNormSI,
+                                amrex::Real mNormSI);
   void compute_var_conversions(const FluidInterface& fi);
 };
 
@@ -66,7 +67,7 @@ public:
 protected:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
 
-  double tStartSI;
+  amrex::Real tStartSI;
 
   int nCellPerPatch = 1;
 
@@ -107,48 +108,48 @@ protected:
   amrex::Vector<std::string> varNames;
 
   //-------------------------------------------------------------------
-  int nS = 0;                   // number of particle species
-  amrex::Vector<double> MoMi_S; // masses for the particles species
-  amrex::Vector<double> QoQi_S; // charge for each particle species
+  int nS = 0;                        // number of particle species
+  amrex::Vector<amrex::Real> MoMi_S; // masses for the particles species
+  amrex::Vector<amrex::Real> QoQi_S; // charge for each particle species
   //-------------------------------------------------------------------
 
   // temperature ratio for electrons: PeRatio = Pe/Ptotal
-  double PeRatio = 0;
+  amrex::Real PeRatio = 0;
 
   // Sum of masses of each particle species
-  double SumMass = 0, invSumMass = 0;
+  amrex::Real SumMass = 0, invSumMass = 0;
 
   int iJx, iJy, iJz;
 
   // Normalization base scalars, read from SWMF iParam/norm or from
   // #NORMALIZATION/#SCALINGFACTOR/#PLANETRADIUS.
-  double lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
-  double rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
+  amrex::Real lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
+  amrex::Real rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
 
   // Read-only once published; changable via finalize_normalization().
   std::shared_ptr<const NormalizationParams> normParams =
       std::make_shared<const NormalizationParams>();
 
-  amrex::Vector<double> uniformState;
+  amrex::Vector<amrex::Real> uniformState;
   bool isShockTube = false;
-  double shockPosition = 0.0;
-  double shockSlope = 0.0;
-  double shockPeL = 0.0, shockPeR = 0.0;
-  amrex::Vector<double> shockStateL, shockStateR;
+  amrex::Real shockPosition = 0.0;
+  amrex::Real shockSlope = 0.0;
+  amrex::Real shockPeL = 0.0, shockPeR = 0.0;
+  amrex::Vector<amrex::Real> shockStateL, shockStateR;
 
 public:
   // Inflow boundary upstream state per species in code units.
   struct InflowVel {
-    double nDens = -1.0;
-    double vth = 0.0; // sqrt(kT/m)
-    double ux = 0.0, uy = 0.0, uz = 0.0;
+    amrex::Real nDens = -1.0;
+    amrex::Real vth = 0.0; // sqrt(kT/m)
+    amrex::Real ux = 0.0, uy = 0.0, uz = 0.0;
   };
   amrex::Vector<InflowVel> inflowState;
   bool inflowDefined = false;
 
 protected:
   bool useResist = false;
-  double etaSI = 0, etaNO = 0;
+  amrex::Real etaSI = 0, etaNO = 0;
   int OhmU = OhmUe_;
 
   bool initFromSWMF;
@@ -161,10 +162,10 @@ protected:
   // Profile of each component: exosphereType, or with typeProfile "Mixed"
   // the typeComponent read for each component.
   amrex::Vector<std::string> exoTypeC;
-  amrex::Vector<double> exoN0;
-  amrex::Vector<double> exoH0;
-  amrex::Vector<double> exoT0;
-  amrex::Vector<double> exoK0;
+  amrex::Vector<amrex::Real> exoN0;
+  amrex::Vector<amrex::Real> exoH0;
+  amrex::Vector<amrex::Real> exoT0;
+  amrex::Vector<amrex::Real> exoK0;
 
 public:
   amrex::Vector<std::string> get_var_names() const { return varNames; }
@@ -185,20 +186,20 @@ public:
   }
   void set_inflow_state(const amrex::Vector<InflowVel>& s) { inflowState = s; }
   void set_inflow_defined(bool v) { inflowDefined = v; }
-  const amrex::Vector<double>& get_uniform_state() const {
+  const amrex::Vector<amrex::Real>& get_uniform_state() const {
     return uniformState;
   }
   bool get_is_shock_tube() const { return isShockTube; }
-  double get_shock_position() const { return shockPosition; }
-  double get_shock_slope() const { return shockSlope; }
-  double get_shock_pe_l() const {
+  amrex::Real get_shock_position() const { return shockPosition; }
+  amrex::Real get_shock_slope() const { return shockSlope; }
+  amrex::Real get_shock_pe_l() const {
     return normParams ? shockPeL * normParams->Si2NoP : shockPeL;
   }
-  double get_shock_pe_r() const {
+  amrex::Real get_shock_pe_r() const {
     return normParams ? shockPeR * normParams->Si2NoP : shockPeR;
   }
-  double get_shock_pe_l_si() const { return shockPeL; }
-  double get_shock_pe_r_si() const { return shockPeR; }
+  amrex::Real get_shock_pe_l_si() const { return shockPeL; }
+  amrex::Real get_shock_pe_r_si() const { return shockPeR; }
 };
 
 class FluidInterface : public GridAccess, public FluidInterfaceParameters {
@@ -226,8 +227,8 @@ public:
 
   FluidInterface(Grid& gridIn, std::string tag,
                  const amrex::Vector<int>& iParam,
-                 const amrex::Vector<double>& norm,
-                 const amrex::Vector<double>& paramComm,
+                 const amrex::Vector<amrex::Real>& norm,
+                 const amrex::Vector<amrex::Real>& paramComm,
                  bool useHybridIn = false);
 
   FluidInterface(Grid& gridIn, std::string tag, bool useHybridIn = false,
@@ -269,9 +270,9 @@ public:
         static_cast<const FluidInterfaceParameters&>(other);
   }
 
-  void set_period_start_si(double t) { tStartSI = t; }
+  void set_period_start_si(amrex::Real t) { tStartSI = t; }
 
-  double get_period_start_si() const { return tStartSI; }
+  amrex::Real get_period_start_si() const { return tStartSI; }
 
   void save_amrex_file();
 
@@ -291,16 +292,17 @@ public:
 
   int count_couple_node_number();
 
-  int loop_through_node(std::string action, double* const pos_DI = nullptr,
-                        const double* const data = nullptr,
+  int loop_through_node(std::string action, amrex::Real* const pos_DI = nullptr,
+                        const amrex::Real* const data = nullptr,
                         const int* const index = nullptr);
 
-  void find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
+  void find_mpi_rank_for_points(const int nPoint,
+                                const amrex::Real* const xyz_I,
                                 int* const rank_I);
 
-  void get_couple_node_loc(double* const pos_DI);
+  void get_couple_node_loc(amrex::Real* const pos_DI);
 
-  void set_node_fluid(const double* const data, const int* const index,
+  void set_node_fluid(const amrex::Real* const data, const int* const index,
                       const std::vector<std::string>& names);
 
   void set_node_fluid();
@@ -329,20 +331,22 @@ public:
   void calc_mag_base_vector(const amrex::Real Bx, const amrex::Real By,
                             const amrex::Real Bz, Basis3x3& norm_DD) const;
 
-  void calc_fluid_state(const double* dataPIC_I, double* dataFluid_I) const;
-  void calc_fluid_state_hybrid(const double* dataPIC_I,
-                               double* dataFluid_I) const;
+  void calc_fluid_state(const amrex::Real* dataPIC_I,
+                        amrex::Real* dataFluid_I) const;
+  void calc_fluid_state_hybrid(const amrex::Real* dataPIC_I,
+                               amrex::Real* dataFluid_I) const;
 
   void print_info() const;
 
   void get_for_points(const int nDim, const int nPoint,
-                      const double* const xyz_I, double* const data_I,
-                      const int nVar, const double coef = 1,
+                      const amrex::Real* const xyz_I, amrex::Real* const data_I,
+                      const int nVar, const amrex::Real coef = 1,
                       const amrex::Vector<int>& idxMap = {});
 
   void get_moments_for_points(const int nDim, const int nPoint,
-                              const double* const xyz_I, double* const data_I,
-                              const int nVar, const double coef) {
+                              const amrex::Real* const xyz_I,
+                              amrex::Real* const data_I, const int nVar,
+                              const amrex::Real coef) {
     amrex::Vector<int> idxMap;
     idxMap.reserve(5 * nFluid);
     for (int i = 0; i < nFluid; i++) {
@@ -383,10 +387,10 @@ public:
 
   amrex::MultiFab& get_node_fluid(int iLev) { return nodeFluid[iLev]; }
 
-  double get_MoMi(int is) const {
+  amrex::Real get_MoMi(int is) const {
     return (is >= 0 && is < static_cast<int>(MoMi_S.size())) ? MoMi_S[is] : 1.0;
   }
-  double get_QoQi(int is) const {
+  amrex::Real get_QoQi(int is) const {
     return (is >= 0 && is < static_cast<int>(QoQi_S.size())) ? QoQi_S[is] : 1.0;
   }
 
@@ -410,46 +414,46 @@ public:
   const amrex::Vector<std::string>& get_var_names() const { return varNames; }
 
   // Read-only accessors for the shared, frozen normalization state.
-  double get_Si2NoL() const { return (normParams->Si2NoL); }
-  double get_Si2NoM() const { return (1. / mNormSI); }
-  double get_Si2NoRho() const { return normParams->Si2NoRho; }
-  double get_Si2NoV() const { return normParams->Si2NoV; }
-  double get_Si2NoB() const { return normParams->Si2NoB; }
-  double get_Si2NoP() const { return normParams->Si2NoP; }
+  amrex::Real get_Si2NoL() const { return (normParams->Si2NoL); }
+  amrex::Real get_Si2NoM() const { return (1. / mNormSI); }
+  amrex::Real get_Si2NoRho() const { return normParams->Si2NoRho; }
+  amrex::Real get_Si2NoV() const { return normParams->Si2NoV; }
+  amrex::Real get_Si2NoB() const { return normParams->Si2NoB; }
+  amrex::Real get_Si2NoP() const { return normParams->Si2NoP; }
 
-  double get_lnorm_si() const { return lNormSI; }
-  double get_unorm_si() const { return uNormSI; }
-  double get_mnorm_si() const { return mNormSI; }
+  amrex::Real get_lnorm_si() const { return lNormSI; }
+  amrex::Real get_unorm_si() const { return uNormSI; }
+  amrex::Real get_mnorm_si() const { return mNormSI; }
 
-  double get_cLight_SI() const { return uNormSI; }
+  amrex::Real get_cLight_SI() const { return uNormSI; }
 
-  double get_rPlanet_SI() const { return rPlanetSi; }
+  amrex::Real get_rPlanet_SI() const { return rPlanetSi; }
 
   int get_scaling_factor() const { return ScalingFactor; }
 
-  double get_MhdNo2SiL() const { return (MhdNo2SiL); }
+  amrex::Real get_MhdNo2SiL() const { return (MhdNo2SiL); }
 
-  double get_Si2No_V(int idx) const { return normParams->Si2No_V[idx]; }
+  amrex::Real get_Si2No_V(int idx) const { return normParams->Si2No_V[idx]; }
 
-  double get_No2Si_V(int idx) const { return normParams->No2Si_V[idx]; }
-  double get_No2SiL() const { return (normParams->No2SiL); }
-  double get_No2SiRho() const { return (1. / normParams->Si2NoRho); }
-  double get_No2SiV() const { return (1. / normParams->Si2NoV); }
-  double get_No2SiB() const { return (1. / normParams->Si2NoB); }
-  double get_No2SiE() const {
+  amrex::Real get_No2Si_V(int idx) const { return normParams->No2Si_V[idx]; }
+  amrex::Real get_No2SiL() const { return (normParams->No2SiL); }
+  amrex::Real get_No2SiRho() const { return (1. / normParams->Si2NoRho); }
+  amrex::Real get_No2SiV() const { return (1. / normParams->Si2NoV); }
+  amrex::Real get_No2SiB() const { return (1. / normParams->Si2NoB); }
+  amrex::Real get_No2SiE() const {
     return (normParams->Si2NoE > 0.0 ? 1. / normParams->Si2NoE : 1.0);
   }
-  double get_No2SiP() const { return (1. / normParams->Si2NoP); }
-  double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
-  double get_No2SiM() const { return mNormSI; }
+  amrex::Real get_No2SiP() const { return (1. / normParams->Si2NoP); }
+  amrex::Real get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
+  amrex::Real get_No2SiM() const { return mNormSI; }
 
-  double get_species_mass(int i) const { return MoMi_S[i]; }
-  double get_species_charge(int i) const { return QoQi_S[i]; }
+  amrex::Real get_species_mass(int i) const { return MoMi_S[i]; }
+  amrex::Real get_species_charge(int i) const { return QoQi_S[i]; }
 
   // Derived temperature + MHD-length conversions.
-  double get_Si2NoT() const { return normParams->si2noT(); }
-  double get_No2SiT() const { return normParams->no2siT(); }
-  double get_MhdNo2NoL() const { return (MhdNo2SiL * normParams->Si2NoL); }
+  amrex::Real get_Si2NoT() const { return normParams->si2noT(); }
+  amrex::Real get_No2SiT() const { return normParams->no2siT(); }
+  amrex::Real get_MhdNo2NoL() const { return (MhdNo2SiL * normParams->Si2NoL); }
 
   void sum_boundary() {
     timing_func("FI::sum_boundary");
@@ -484,7 +488,7 @@ public:
     return -1;
   }
 
-  void set_resistivity(double etaSIIn) {
+  void set_resistivity(amrex::Real etaSIIn) {
     // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic
     // diffusivity with unit m^2/s. In normalized CGS unit R =
     // u_pic*L_pic/(eta_pic/4pi), where eta_pic is also magnetic
@@ -706,7 +710,7 @@ public:
       // Ue = U_{MHD} - Rhoit/Qit*J/Rho;
       // where Rhoit = sum(ni*Mi), Qit = sum(ni*Qi).
 
-      double moq, Numi;
+      amrex::Real moq, Numi;
       if (is == 0) {
         Rhoit = 0;
         Qit = 0;
@@ -1060,11 +1064,12 @@ public:
 
   template <typename Type>
   void set_particle_uth_iso(const int iLev, const amrex::MFIter& mfi,
-                            const Type xyz, double* u, double* v, double* w,
-                            const double rand1, const double rand2,
-                            const double rand3, const double rand4,
-                            const int is, const double uthIn = -1) const {
-    double harvest, prob, theta, uth;
+                            const Type xyz, amrex::Real* u, amrex::Real* v,
+                            amrex::Real* w, const amrex::Real rand1,
+                            const amrex::Real rand2, const amrex::Real rand3,
+                            const amrex::Real rand4, const int is,
+                            const amrex::Real uthIn = -1) const {
+    amrex::Real harvest, prob, theta, uth;
 
     // u = X velocity
     harvest = rand1;
@@ -1086,11 +1091,12 @@ public:
 
   template <typename Type>
   void set_particle_uth_aniso(const int iLev, const amrex::MFIter& mfi,
-                              const Type xyz, double* u, double* v, double* w,
-                              const double rand1, const double rand2,
-                              const double rand3, const double rand4,
-                              const int is, const double uthParIn = -1,
-                              const double uthPerpIn = -1) const {
+                              const Type xyz, amrex::Real* u, amrex::Real* v,
+                              amrex::Real* w, const amrex::Real rand1,
+                              const amrex::Real rand2, const amrex::Real rand3,
+                              const amrex::Real rand4, const int is,
+                              const amrex::Real uthParIn = -1,
+                              const amrex::Real uthPerpIn = -1) const {
     amrex::Real Bx, By, Bz, P, Ppar, Pperp, Uthperp, Uthpar, Uthperp1, Uthperp2,
         prob, theta;
     Basis3x3 norm_DD;
@@ -1103,7 +1109,7 @@ public:
     }
 
     // Get number density and B at the particle position
-    double ni = get_number_density(mfi, xyz, is, iLev);
+    amrex::Real ni = get_number_density(mfi, xyz, is, iLev);
     Bx = get_value(mfi, xyz, iBx, iLev);
     By = get_value(mfi, xyz, iBy, iLev);
     Bz = get_value(mfi, xyz, iBz, iLev);

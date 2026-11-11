@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <AMReX_MultiFab.H>
+#include <AMReX_ParallelDescriptor.H>
 #include <AMReX_REAL.H>
 #include <AMReX_iMultiFab.H>
 #include <mpi.h>
@@ -83,9 +84,9 @@ inline std::string normalize_string_token(std::string name,
 }
 
 // Local dot product followed by an optional communicator-wide sum.
-inline double dot_product_mpi(const double* a, const double* b, const int n,
-                              const MPI_Comm iComm) {
-  double c = 0.0;
+inline amrex::Real dot_product_mpi(const amrex::Real* a, const amrex::Real* b,
+                                   const int n, const MPI_Comm iComm) {
+  amrex::Real c = 0.0;
   for (int i = 0; i < n; ++i) {
     c += a[i] * b[i];
   }
@@ -94,8 +95,10 @@ inline double dot_product_mpi(const double* a, const double* b, const int n,
     return c;
   }
 
-  double cMpi = 0.0;
-  MPI_Allreduce(&c, &cMpi, 1, MPI_DOUBLE, MPI_SUM, iComm);
+  amrex::Real cMpi = 0.0;
+  MPI_Allreduce(&c, &cMpi, 1,
+                amrex::ParallelDescriptor::Mpi_typemap<amrex::Real>::type(),
+                MPI_SUM, iComm);
   return cMpi;
 }
 
@@ -260,7 +263,7 @@ bool linear_solver_Gauss_Elimination(
       if (!(fabs(a(i, i)) > ref[i])) {
         return false;
       }
-      double term = a(k, i) / a(i, i);
+      T term = a(k, i) / a(i, i);
       for (int j = 0; j < n; ++j) {
         a(k, j) = a(k, j) - term * a(i, j);
       }
@@ -317,10 +320,10 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
     return idx;
   }
 
-  amrex::Vector<double> w1;
+  amrex::Vector<amrex::Real> w1;
   w1.resize(n);
 
-  double wt = 0;
+  amrex::Real wt = 0;
   for (int i = 0; i < arr.size(); ++i) {
     wt += arr[i];
     w1[i] = wt;
@@ -330,7 +333,7 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
   amrex::Vector<int> selected(n, iNotSelected);
 
   while (idx.size() < size_t(m)) {
-    double r = rd() * wt;
+    amrex::Real r = rd() * wt;
     int i = 0;
     while (w1[i] < r)
       ++i;
@@ -353,7 +356,7 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
   return idx;
 };
 
-inline double read_mem_usage() {
+inline amrex::Real read_mem_usage() {
   // This function returns the resident set size (RSS) of
   // this processor in unit MB.
 
@@ -361,7 +364,7 @@ inline double read_mem_usage() {
   // RSS is the portion of memory occupied by a process that is
   // held in main memory (RAM).
 
-  double rssMB = 0.0;
+  amrex::Real rssMB = 0.0;
 
   std::ifstream stat_stream("/proc/self/stat", std::ios_base::in);
 
