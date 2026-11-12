@@ -82,9 +82,12 @@ public:
         const Real* AMREX_RESTRICT p1 = v1.atLocalIdx(li).dataPtr();
         const Real* AMREX_RESTRICT p2 = v2.atLocalIdx(li).dataPtr();
         const Long n = v1.atLocalIdx(li).size();
+        RT localSm = RT(0.0);
+#pragma omp simd reduction(+ : localSm)
         for (Long i = 0; i < n; ++i) {
-          sm += p1[i] * p2[i];
+          localSm += p1[i] * p2[i];
         }
+        sm += localSm;
       }
       ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
       return sm;
@@ -100,6 +103,7 @@ public:
         Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
         const Real* AMREX_RESTRICT pR = rhs.atLocalIdx(li).dataPtr();
         const Long n = lhs.atLocalIdx(li).size();
+#pragma omp simd
         for (Long i = 0; i < n; ++i) {
           pL[i] += a * pR[i];
         }
@@ -117,6 +121,7 @@ public:
         const Real* AMREX_RESTRICT pA = rhs_a.atLocalIdx(li).dataPtr();
         const Real* AMREX_RESTRICT pB = rhs_b.atLocalIdx(li).dataPtr();
         const Long n = lhs.atLocalIdx(li).size();
+#pragma omp simd
         for (Long i = 0; i < n; ++i) {
           pL[i] = a * pA[i] + b * pB[i];
         }
@@ -136,9 +141,12 @@ public:
       for (int li = 0; li < nFabs; ++li) {
         const Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
         const Long n = v.atLocalIdx(li).size();
+        RT localSm = RT(0.0);
+#pragma omp simd reduction(+ : localSm)
         for (Long i = 0; i < n; ++i) {
-          sm += p[i] * p[i];
+          localSm += p[i] * p[i];
         }
+        sm += localSm;
       }
       ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
       return std::sqrt(sm);
@@ -155,6 +163,7 @@ public:
       for (int li = 0; li < nFabs; ++li) {
         Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
         const Long n = v.atLocalIdx(li).size();
+#pragma omp simd
         for (Long i = 0; i < n; ++i) {
           p[i] *= fac;
         }

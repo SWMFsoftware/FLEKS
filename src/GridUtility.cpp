@@ -278,27 +278,29 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
       int km1 = nDim > 2 ? k - 1 : k;
       int kp1 = nDim > 2 ? k + 1 : k;
       Real compX = 0;
-      for (int jj = -1; jj < 2; ++jj)
-        for (int kk = -1; kk < 2; ++kk) {
-          int k0 = nDim > 2 ? k + kk : 0;
+      for (int kk = -1; kk < 2; ++kk) {
+        int k0 = nDim > 2 ? k + kk : 0;
+        for (int jj = -1; jj < 2; ++jj) {
           compX +=
               srcArr(i + 1, j + jj, k0, ix_) - srcArr(i - 1, j + jj, k0, ix_);
         }
+      }
       compX *= 0.5 * invDx_x;
 
       Real compY = 0;
-      for (int ii = -1; ii < 2; ++ii)
-        for (int kk = -1; kk < 2; ++kk) {
-          int k0 = nDim > 2 ? k + kk : 0;
+      for (int kk = -1; kk < 2; ++kk) {
+        int k0 = nDim > 2 ? k + kk : 0;
+        for (int ii = -1; ii < 2; ++ii) {
           compY +=
               srcArr(i + ii, j + 1, k0, iy_) - srcArr(i + ii, j - 1, k0, iy_);
         }
+      }
       compY *= 0.5 * invDx_y;
 
       Real compZ = 0.0;
-      if (nDim > 2) {
-        for (int ii = -1; ii < 2; ++ii)
-          for (int jj = -1; jj < 2; ++jj) {
+      if constexpr (nDim > 2) {
+        for (int jj = -1; jj < 2; ++jj)
+          for (int ii = -1; ii < 2; ++ii) {
             compZ += srcArr(i + ii, j + jj, kp1, iz_) -
                      srcArr(i + ii, j + jj, km1, iz_);
           }

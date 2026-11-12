@@ -47,15 +47,26 @@ void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec,
   }
 
   // Evaluate (F(base + epsilon * direction) - F(base)) / epsilon.
-  for (int i = 0; i < n; ++i) {
-    work[i] = base[i] + epsilon * direction[i];
+  {
+    amrex::Real *AMREX_RESTRICT w = work;
+    const amrex::Real *AMREX_RESTRICT b = base;
+    const amrex::Real *AMREX_RESTRICT d = direction;
+#pragma omp simd
+    for (int i = 0; i < n; ++i) {
+      w[i] = b[i] + epsilon * d[i];
+    }
   }
 
   nonlinearMatvec(work, out, iLev);
 
   const amrex::Real invEpsilon = 1.0 / epsilon;
-  for (int i = 0; i < n; ++i) {
-    out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
+  {
+    amrex::Real *AMREX_RESTRICT o = out;
+    const amrex::Real *AMREX_RESTRICT bm = baseMatvec;
+#pragma omp simd
+    for (int i = 0; i < n; ++i) {
+      o[i] = (o[i] - bm[i]) * invEpsilon;
+    }
   }
 }
 

@@ -84,9 +84,11 @@ inline std::string normalize_string_token(std::string name,
 }
 
 // Local dot product followed by an optional communicator-wide sum.
-inline amrex::Real dot_product_mpi(const amrex::Real* a, const amrex::Real* b,
+inline amrex::Real dot_product_mpi(const amrex::Real* AMREX_RESTRICT a,
+                                   const amrex::Real* AMREX_RESTRICT b,
                                    const int n, const MPI_Comm iComm) {
   amrex::Real c = 0.0;
+#pragma omp simd reduction(+ : c)
   for (int i = 0; i < n; ++i) {
     c += a[i] * b[i];
   }

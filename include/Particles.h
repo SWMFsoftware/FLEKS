@@ -656,11 +656,114 @@ public:
 
   void release_particle_backup() { backupContainer_.reset(); }
 
-  void accumulate_mass_matrix_contribution(int iLev,
-                                           const amrex::IntVect& loIdx,
-                                           const amrex::RealVect& dShift,
-                                           amrex::Real qp,
-                                           amrex::Array4<RealCMM> const& mmArr);
+  AMREX_FORCE_INLINE void accumulate_mass_matrix_contribution(
+      int iLev, const amrex::IntVect& loIdx, const amrex::RealVect& dShift,
+      amrex::Real qp, amrex::Array4<RealCMM> const& mmArr) {
+    const amrex::Real dx0 = dx[iLev][ix_];
+    const amrex::Real dx1 = dx[iLev][iy_];
+    const amrex::Real invV = invVol[iLev];
+    const amrex::Real xi0 = dShift[ix_] * dx0;
+    const amrex::Real eta0 = dShift[iy_] * dx1;
+    const amrex::Real xi1 = dx0 - xi0;
+    const amrex::Real eta1 = dx1 - eta0;
+    const amrex::Real coef = std::abs(qp) * invV;
+    const int iMin = loIdx[ix_];
+    const int jMin = loIdx[iy_];
+
+#if (AMREX_SPACEDIM == 2)
+    alignas(32) const amrex::Real wx[4] = { -eta1 * invV, -eta0 * invV,
+                                            eta1 * invV, eta0 * invV };
+    alignas(32) const amrex::Real wy[4] = { -xi1 * invV, xi1 * invV,
+                                            -xi0 * invV, xi0 * invV };
+    constexpr int off2D[4] = { 0, 1, 3, 4 };
+    for (int n1 = 0; n1 < 4; ++n1) {
+      const int di1 = n1 >> 1;
+      const int dj1 = n1 & 1;
+      const amrex::Real wx1 = coef * wx[n1];
+      const amrex::Real wy1 = coef * wy[n1];
+      alignas(32) amrex::Real dot[4];
+#pragma omp simd
+      for (int n2 = 0; n2 < 4; ++n2) {
+        dot[n2] = wx1 * wx[n2] + wy1 * wy[n2];
+      }
+      amrex::Real* AMREX_RESTRICT d =
+          mmArr(iMin + di1, jMin + dj1, 0).data + (4 - off2D[n1]);
+      d[0] += dot[0];
+      d[1] += dot[1];
+      d[3] += dot[2];
+      d[4] += dot[3];
+    }
+#else
+    const amrex::Real dx2 = dx[iLev][iz_];
+    const amrex::Real zeta0 = dShift[iz_] * dx2;
+    const amrex::Real zeta1 = dx2 - zeta0;
+    const amrex::Real zeta0V = zeta0 * invV;
+    const amrex::Real zeta1V = zeta1 * invV;
+    const amrex::Real eta0V = eta0 * invV;
+    const amrex::Real eta1V = eta1 * invV;
+    const int kMin = loIdx[iz_];
+
+    alignas(32) const amrex::Real wx[8] = { -eta1 * zeta1V, -eta1 * zeta0V,
+                                            -eta0 * zeta1V, -eta0 * zeta0V,
+                                            eta1 * zeta1V,  eta1 * zeta0V,
+                                            eta0 * zeta1V,  eta0 * zeta0V };
+    alignas(32)
+        const amrex::Real wy[8] = { -xi1 * zeta1V, -xi1 * zeta0V, xi1 * zeta1V,
+                                    xi1 * zeta0V,  -xi0 * zeta1V, -xi0 * zeta0V,
+                                    xi0 * zeta1V,  xi0 * zeta0V };
+    alignas(32)
+        const amrex::Real wz[8] = { -xi1 * eta1V, xi1 * eta1V,  -xi1 * eta0V,
+                                    xi1 * eta0V,  -xi0 * eta1V, xi0 * eta1V,
+                                    -xi0 * eta0V, xi0 * eta0V };
+    constexpr int off3D[4] = { 0, 1, 3, 4 };
+    for (int dk1 = 0; dk1 < 2; ++dk1) {
+      for (int dj1 = 0; dj1 < 2; ++dj1) {
+        const int n1_0 = (dj1 << 1) | dk1;
+        const int n1_1 = n1_0 + 4;
+        const amrex::Real wx1_0 = coef * wx[n1_0];
+        const amrex::Real wy1_0 = coef * wy[n1_0];
+        const amrex::Real wz1_0 = coef * wz[n1_0];
+        const amrex::Real wx1_1 = -wx1_0;
+        const amrex::Real wy1_1 = coef * wy[n1_1];
+        const amrex::Real wz1_1 = coef * wz[n1_1];
+        alignas(32) amrex::Real dot0[8];
+        alignas(32) amrex::Real dot1[8];
+#pragma omp simd
+        for (int n2 = 0; n2 < 8; ++n2) {
+          const amrex::Real wx2 = wx[n2];
+          const amrex::Real wy2 = wy[n2];
+          const amrex::Real wz2 = wz[n2];
+          dot0[n2] = wx1_0 * wx2 + wy1_0 * wy2 + wz1_0 * wz2;
+          dot1[n2] = wx1_1 * wx2 + wy1_1 * wy2 + wz1_1 * wz2;
+        }
+        amrex::Real* AMREX_RESTRICT basePtr =
+            mmArr(iMin, jMin + dj1, kMin + dk1).data + (13 - off3D[n1_0]);
+        basePtr[0] += dot0[0];
+        basePtr[1] += dot0[1];
+        basePtr[3] += dot0[2];
+        basePtr[4] += dot0[3];
+        basePtr[9] += dot0[4];
+        basePtr[10] += dot0[5];
+        basePtr[12] += dot0[6];
+        basePtr[13] += dot0[7];
+
+        // di1 = 1 is at mmArr(iMin + 1, ...), which is +27 doubles in memory,
+        // and its stencil offset is (13 - (off3D[n1_0] + 9)) = (13 -
+        // off3D[n1_0]) - 9, so relative to basePtr it is at basePtr + 27 - 9 =
+        // basePtr + 18!
+        amrex::Real* AMREX_RESTRICT d1 = basePtr + 18;
+        d1[0] += dot1[0];
+        d1[1] += dot1[1];
+        d1[3] += dot1[2];
+        d1[4] += dot1[3];
+        d1[9] += dot1[4];
+        d1[10] += dot1[5];
+        d1[12] += dot1[6];
+        d1[13] += dot1[7];
+      }
+    }
+#endif
+  }
 
   void get_ion_fluid(FluidInterface* stateOH, PIter& pti, const int iLev,
                      const int iFluid, const amrex::RealVect xyz,
