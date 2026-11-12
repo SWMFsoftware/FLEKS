@@ -9,6 +9,7 @@
 // only (tools/check_gpu_kernels.py enforces it), so the physics never forks.
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <memory>
 #include <utility>
@@ -21,9 +22,13 @@
 #include <AMReX_GpuAtomic.H>
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_Loop.H>
+#include <AMReX_MultiFab.H>
+#include <AMReX_OpenMP.H>
+#include <AMReX_ParallelReduce.H>
 #include <AMReX_Print.H>
 #include <AMReX_Reduce.H>
 #include <AMReX_Utility.H>
+#include <AMReX_iMultiFab.H>
 
 #ifdef AMREX_USE_CUDA
 #include <cub/device/device_radix_sort.cuh>
@@ -38,6 +43,13 @@
 inline constexpr bool fleksUseGpu = true;
 #else
 inline constexpr bool fleksUseGpu = false;
+#endif
+
+// True in a CPU OpenMP build.
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+inline constexpr bool fleksUseOmp = true;
+#else
+inline constexpr bool fleksUseOmp = false;
 #endif
 
 // MFIter options for a loop that only launches kernels whose results are
@@ -236,31 +248,115 @@ inline void* reduction_scratch(std::size_t nBytes) {
 }
 #endif
 
-// Sum of f(i), i = 0..n-1, written to *result, which is device memory in a
-// GPU build: unlike deterministic_sum() this does not wait for the GPU, so
-// later kernels can read the result without a round trip to the host. The
-// summation order is that of deterministic_sum().
-template <class F>
-void deterministic_sum_to(int n, F&& f, amrex::Real* result) {
-#ifdef AMREX_USE_CUDA
-  if (n <= 0) {
-    amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE(int) { *result = 0; });
+// Fixed block size for CPU deterministic reductions and 1D parallel loops so
+// that floating-point summation order is independent of OMP_NUM_THREADS.
+inline constexpr int kDetSumBlockSize = 256;
+
+// Launch a 1D loop f(i) for i = 0..n-1 on the GPU, across OpenMP threads on
+// the CPU when n is large enough and not already inside an OpenMP parallel
+// region, or as a SIMD loop on the CPU.
+template <class F> void parallel_for_1d(int n, F&& f) {
+  if (n <= 0)
+    return;
+#ifdef AMREX_USE_GPU
+  amrex::ParallelFor(n, std::forward<F>(f));
+#elif defined(AMREX_USE_OMP)
+  if (!amrex::OpenMP::in_parallel() && n >= kDetSumBlockSize) {
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < n; ++i)
+      f(i);
+  } else {
+    AMREX_PRAGMA_SIMD
+    for (int i = 0; i < n; ++i)
+      f(i);
+  }
+#else
+  amrex::ParallelFor(n, std::forward<F>(f));
+#endif
+}
+
+// Run host work items f(i), i = 0..n-1, across OpenMP threads (or serially
+// without OpenMP). Each item must write a disjoint set of data, so the result
+// does not depend on the thread count. Use `dynamic` when the items have very
+// different costs. This is a host-only helper (f may use host data
+// structures); it never launches a GPU kernel.
+template <class F> void parallel_for_host_items(int n, F&& f, bool dynamic) {
+  if (n <= 0)
+    return;
+#ifdef AMREX_USE_OMP
+  if (!amrex::OpenMP::in_parallel()) {
+    if (dynamic) {
+#pragma omp parallel for schedule(dynamic)
+      for (int i = 0; i < n; ++i)
+        f(i);
+    } else {
+#pragma omp parallel for schedule(static)
+      for (int i = 0; i < n; ++i)
+        f(i);
+    }
     return;
   }
-  auto values = cuda::make_transform_iterator(
-      cuda::counting_iterator<int>(0),
-      cuda::proclaim_return_type<amrex::Real>(std::decay_t<F>(f)));
-  std::size_t tmpBytes = 0;
-  cub::DeviceReduce::Sum(nullptr, tmpBytes, values, result, n,
-                         amrex::Gpu::gpuStream());
-  cub::DeviceReduce::Sum(reduction_scratch(tmpBytes), tmpBytes, values, result,
-                         n, amrex::Gpu::gpuStream());
-#else
-  amrex::Real sum = 0;
-  for (int i = 0; i < n; ++i)
-    sum += f(i);
-  *result = sum;
 #endif
+  amrex::ignore_unused(dynamic);
+  for (int i = 0; i < n; ++i)
+    f(i);
+}
+
+// Run f() with a single OpenMP thread if cond is true (no-op otherwise, and
+// without OpenMP). Used where an AMReX CPU routine is only deterministic per
+// thread count: e.g. ParticleContainer::Redistribute gathers the particles
+// that change tile into per-thread buffers level by level, so with several
+// AMR levels the order of the particles in a destination tile (and hence the
+// summation order of every later deposit) depends on OMP_NUM_THREADS.
+template <class F> void run_single_threaded_if(bool cond, F&& f) {
+  if (!cond || fleksUseGpu || amrex::OpenMP::in_parallel()) {
+    f();
+    return;
+  }
+  const int nThreads = amrex::OpenMP::get_max_threads();
+  amrex::OpenMP::set_num_threads(1);
+  f();
+  amrex::OpenMP::set_num_threads(nThreads);
+}
+
+// Deterministic sum of N per-particle quantities over the local particles of
+// level iLev, for the CPU (host particle memory). Each particle tile is
+// summed sequentially into its own partial sum, the tiles are processed in
+// parallel, and the partial sums are added in the fixed (grid, tile) order of
+// the container, so the result does not depend on OMP_NUM_THREADS.
+// f(const ParticleType& p, std::array<Real, N>& s) adds the particle to s.
+template <int N, class PC, class F>
+std::array<amrex::Real, N> deterministic_particle_sum(const PC& pc, int iLev,
+                                                      F&& f) {
+  using TileType = typename PC::ParticleTileType;
+  std::array<amrex::Real, N> total{};
+  if (iLev >= pc.numLevels())
+    return total;
+  const auto& plev = pc.GetParticles(iLev);
+  std::vector<const TileType*> tiles;
+  tiles.reserve(plev.size());
+  for (const auto& kv : plev)
+    tiles.push_back(&kv.second);
+
+  const int nTile = static_cast<int>(tiles.size());
+  std::vector<std::array<amrex::Real, N> > partial(nTile);
+  parallel_for_host_items(
+      nTile,
+      [&](int it) {
+        std::array<amrex::Real, N> s{};
+        const TileType& ptile = *tiles[it];
+        const auto* pstruct = ptile.GetArrayOfStructs()().data();
+        const int np = static_cast<int>(ptile.numParticles());
+        for (int ip = 0; ip < np; ++ip)
+          f(pstruct[ip], s);
+        partial[it] = s;
+      },
+      true);
+
+  for (int it = 0; it < nTile; ++it)
+    for (int c = 0; c < N; ++c)
+      total[c] += partial[it][c];
+  return total;
 }
 
 template <class F> amrex::Real deterministic_sum(int n, F&& f) {
@@ -281,11 +377,102 @@ template <class F> amrex::Real deterministic_sum(int n, F&& f) {
   amrex::Gpu::streamSynchronize();
   return *result;
 #else
+  if (n <= 0)
+    return 0;
+  if (n <= kDetSumBlockSize) {
+    amrex::Real sum = 0;
+    for (int i = 0; i < n; ++i)
+      sum += f(i);
+    return sum;
+  }
+  const int nBlocks = (n + kDetSumBlockSize - 1) / kDetSumBlockSize;
+  constexpr int kMaxStackBlocks = 256;
+  amrex::Real stackBlocks[kMaxStackBlocks];
+  std::vector<amrex::Real> heapBlocks;
+  if (nBlocks > kMaxStackBlocks)
+    heapBlocks.resize(nBlocks);
+  amrex::Real* const blockSums =
+      (nBlocks <= kMaxStackBlocks) ? stackBlocks : heapBlocks.data();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel for schedule(static) if (!amrex::OpenMP::in_parallel())
+#endif
+  for (int b = 0; b < nBlocks; ++b) {
+    const int iStart = b * kDetSumBlockSize;
+    const int iEnd = std::min(n, iStart + kDetSumBlockSize);
+    amrex::Real localSum = 0;
+    for (int i = iStart; i < iEnd; ++i)
+      localSum += f(i);
+    blockSums[b] = localSum;
+  }
   amrex::Real sum = 0;
-  for (int i = 0; i < n; ++i)
-    sum += f(i);
+  for (int b = 0; b < nBlocks; ++b)
+    sum += blockSums[b];
   return sum;
 #endif
+}
+
+// Sum of f(i), i = 0..n-1, written to *result, which is device memory in a
+// GPU build: unlike deterministic_sum() this does not wait for the GPU, so
+// later kernels can read the result without a round trip to the host. The
+// summation order is that of deterministic_sum().
+template <class F>
+void deterministic_sum_to(int n, F&& f, amrex::Real* result) {
+#ifdef AMREX_USE_CUDA
+  if (n <= 0) {
+    amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE(int) { *result = 0; });
+    return;
+  }
+  auto values = cuda::make_transform_iterator(
+      cuda::counting_iterator<int>(0),
+      cuda::proclaim_return_type<amrex::Real>(std::decay_t<F>(f)));
+  std::size_t tmpBytes = 0;
+  cub::DeviceReduce::Sum(nullptr, tmpBytes, values, result, n,
+                         amrex::Gpu::gpuStream());
+  cub::DeviceReduce::Sum(reduction_scratch(tmpBytes), tmpBytes, values, result,
+                         n, amrex::Gpu::gpuStream());
+#else
+  *result = deterministic_sum(n, std::forward<F>(f));
+#endif
+}
+
+// Deterministic replacement for amrex::MultiFab::Dot (whose OpenMP / GPU
+// reduction order depends on the thread count): sum over the local FABs, in
+// local index order, of sum_n x(i,j,k,xcomp+n) * y(i,j,k,ycomp+n) on the valid
+// box grown by nghost, using deterministic_sum() inside each FAB. Cells where
+// mask is 0 are skipped (mask may be nullptr). Unless local, the result is
+// summed over all MPI ranks.
+inline amrex::Real mf_dot(const amrex::MultiFab& x, int xcomp,
+                          const amrex::MultiFab& y, int ycomp, int numcomp,
+                          int nghost, const amrex::iMultiFab* mask = nullptr,
+                          bool local = false) {
+  amrex::Real sum = 0;
+  for (amrex::MFIter mfi(x, false); mfi.isValid(); ++mfi) {
+    const amrex::Box bx = amrex::grow(mfi.validbox(), nghost);
+    const auto xa = x.const_array(mfi);
+    const auto ya = y.const_array(mfi);
+    const bool hasMask = (mask != nullptr);
+    const amrex::Array4<const int> ma =
+        hasMask ? mask->const_array(mfi) : amrex::Array4<const int>();
+    const auto lo = amrex::lbound(bx);
+    const int nx = bx.length(0);
+    const int ny = (AMREX_SPACEDIM > 1) ? bx.length(1) : 1;
+    const int nPts = static_cast<int>(bx.numPts());
+    sum += deterministic_sum(nPts, [=] AMREX_GPU_HOST_DEVICE(int idx) {
+      const int i = lo.x + idx % nx;
+      const int j = lo.y + (idx / nx) % ny;
+      const int k = lo.z + idx / (nx * ny);
+      if (hasMask && !ma(i, j, k))
+        return amrex::Real(0);
+      amrex::Real t = 0;
+      for (int n = 0; n < numcomp; ++n)
+        t += xa(i, j, k, xcomp + n) * ya(i, j, k, ycomp + n);
+      return t;
+    });
+  }
+  if (!local)
+    amrex::ParallelAllReduce::Sum(sum,
+                                  amrex::ParallelContext::CommunicatorSub());
+  return sum;
 }
 
 // Several deterministic_sum() results returned to the host together: add()
@@ -327,10 +514,7 @@ public:
     // The result goes straight to pinned host memory.
     deterministic_sum_to(n, std::forward<F>(f), buf + nPending++);
 #else
-    amrex::Real sum = 0;
-    for (int i = 0; i < n; ++i)
-      sum += f(i);
-    done.push_back(sum);
+    done.push_back(deterministic_sum(n, std::forward<F>(f)));
 #endif
   }
 

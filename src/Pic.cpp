@@ -1600,31 +1600,32 @@ void Pic::sum_boundary_node_mm(int iLev) {
 
   // 3. Snapshot local tags into local_buf (Phase 1)
   const int n_loc = static_cast<int>(cd.loc_tags.size());
-#ifdef AMREX_USE_OMP
-#pragma omp parallel for schedule(static)
-#endif
-  for (int i = 0; i < n_loc; ++i) {
-    const auto& tag = cd.loc_tags[i];
-    const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
-    pack_node_mm_box(src_arr, tag.sbox, &cd.local_buf[tag.bufOffset]);
-  }
+  parallel_for_host_items(
+      n_loc,
+      [&](int i) {
+        const auto& tag = cd.loc_tags[i];
+        const auto src_arr = nodeMM[iLev].array(tag.srcIndex);
+        pack_node_mm_box(src_arr, tag.sbox, &cd.local_buf[tag.bufOffset]);
+      },
+      false);
 
   // 4. Accumulate local tags into destination boxes (Phase 2)
   const int nLocalBoxes = nodeMM[iLev].size();
-#ifdef AMREX_USE_OMP
-#pragma omp parallel for schedule(dynamic)
-#endif
-  for (int localDst = 0; localDst < nLocalBoxes; ++localDst) {
-    const auto& tag_indices = cd.box_to_loc_tags[localDst];
-    if (tag_indices.empty())
-      continue;
+  parallel_for_host_items(
+      nLocalBoxes,
+      [&](int localDst) {
+        const auto& tag_indices = cd.box_to_loc_tags[localDst];
+        if (tag_indices.empty())
+          return;
 
-    auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
-    for (int tag_idx : tag_indices) {
-      const auto& tag = cd.loc_tags[tag_idx];
-      accumulate_node_mm_box(&cd.local_buf[tag.bufOffset], tag.dbox, dst_arr);
-    }
-  }
+        auto dst_arr = nodeMM[iLev].atLocalIdx(localDst).array();
+        for (int tag_idx : tag_indices) {
+          const auto& tag = cd.loc_tags[tag_idx];
+          accumulate_node_mm_box(&cd.local_buf[tag.bufOffset], tag.dbox,
+                                 dst_arr);
+        }
+      },
+      true);
 
 #ifdef BL_USE_MPI
   // 5. Wait for MPI receives and unpack/accumulate

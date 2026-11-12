@@ -199,11 +199,11 @@ void Pic::divE_accurate_matvec_impl(MultiFab& inMF, MultiFab& outMF, int iLev) {
   for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
-    const Array4<Real>& lArr = outMF[mfi].array();
-    const Array4<Real const>& rArr = inMF[mfi].array();
-    const Array4<RealCMM const>& mmArr = centerMM[iLev][mfi].array();
+    const Array4<Real> lArr = outMF[mfi].array();
+    const Array4<Real const> rArr = inMF[mfi].const_array();
+    const Array4<RealCMM const> mmArr = centerMM[iLev][mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       Real sum = 0.0;
 #if (AMREX_SPACEDIM == 2)
       for (int dj = jMin; dj <= jMax; ++dj) {
@@ -443,7 +443,7 @@ void Pic::amr_divE_correction() {
       }
       if (finestLevel() > 0) {
         for (int i = 0; i < nSpecies; ++i) {
-          parts[i]->Redistribute();
+          parts[i]->redistribute_particles();
         }
       }
     }

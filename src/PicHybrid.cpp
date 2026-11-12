@@ -1926,20 +1926,20 @@ void Pic::relax_covered_B_to_fine(int iLev) {
   // and r tracks the residual.
   apply_curlT();
   MultiFab::Copy(p, s, 0, 0, nDim3, 0);
-  Real gamma = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
+  Real gamma = mf_dot(s, 0, s, 0, nDim3, 0, owner.get());
   const Real gamma0 = gamma;
 
   for (int iter = 0; iter < maxIter && gamma > relTol * relTol * gamma0;
        ++iter) {
     apply_curl();
-    const Real qq = MultiFab::Dot(q, 0, q, 0, nRelax, 0);
+    const Real qq = mf_dot(q, 0, q, 0, nRelax, 0);
     if (qq <= 0)
       break;
     const Real a = gamma / qq;
     MultiFab::Saxpy(B, a, q, 0, 0, nRelax, 0);
     MultiFab::Saxpy(r, -a, q, 0, 0, nRelax, 0);
     apply_curlT();
-    const Real gammaNew = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
+    const Real gammaNew = mf_dot(s, 0, s, 0, nDim3, 0, owner.get());
     MultiFab::Xpay(p, gammaNew / gamma, s, 0, 0, nDim3, 0);
     gamma = gammaNew;
   }

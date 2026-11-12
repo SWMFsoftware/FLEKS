@@ -4,6 +4,7 @@
 
 #include <AMReX_Algorithm.H>
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_Scan.H>
 
 #include "GridUtility.h"
 #include "LinearSolver.h"
@@ -174,10 +175,13 @@ void Pic::solve_E_gmres(int iLev) {
   update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
 
   // Original linear solve: A * delta = rhs - A(E_old).
-  for (int i = 0; i < eSolver.get_nSolve(); ++i) {
-    eSolver.rhs[i] -= eSolver.matvec[i];
-    eSolver.xLeft[i] = 0;
-  }
+  Real* const r = eSolver.rhs;
+  const Real* const m = eSolver.matvec;
+  Real* const x = eSolver.xLeft;
+  parallel_for_1d(eSolver.get_nSolve(), [=] AMREX_GPU_DEVICE(int i) {
+    r[i] -= m[i];
+    x[i] = 0;
+  });
 
   if (doReport)
     Print() << "\n-------" << printPrefix
@@ -196,16 +200,17 @@ void Pic::sync_nodal_solver_vec(MultiFab& vecMF, int iLev) {
 
   for (MFIter mfi(vecMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.tilebox();
-    const Array4<Real>& arr = vecMF[mfi].array();
-    const Array4<int const>& nodeArr = statusMF[mfi].const_array();
-    ParallelFor(bx, vecMF.nComp(),
-                [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                  const int st = nodeArr(i, j, k);
-                  if (!bit::is_owner(st) || (skipAllBody && bit::is_body(st)) ||
-                      (skipInterior && bit::is_body_interior(st))) {
-                    arr(i, j, k, c) = 0.0;
-                  }
-                });
+    const Array4<Real> arr = vecMF[mfi].array();
+    const Array4<int const> nodeArr = statusMF[mfi].const_array();
+    ParallelForOMP(bx, vecMF.nComp(),
+                   [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                     const int st = nodeArr(i, j, k);
+                     if (!bit::is_owner(st) ||
+                         (skipAllBody && bit::is_body(st)) ||
+                         (skipInterior && bit::is_body_interior(st))) {
+                       arr(i, j, k, c) = 0.0;
+                     }
+                   });
   }
 
   vecMF.SumBoundary(0, vecMF.nComp(), IntVect(0), IntVect(0),
@@ -264,7 +269,7 @@ void Pic::solve_E_gmres_amrex(int iLev) {
   }
 
   const Real res0 = std::sqrt(
-      MultiFab::Dot(amrexESolver[iLev]->dot_mask(), rhsMF, 0, rhsMF, 0, 3, 0));
+      mf_dot(rhsMF, 0, rhsMF, 0, 3, 0, &amrexESolver[iLev]->dot_mask()));
   if (doReport) {
     Print() << "initial residual norm: " << res0 << std::endl;
   }
@@ -308,10 +313,13 @@ void Pic::solve_E_newton_krylov(int iLev) {
   update_E_matvec(base.data(), baseMatvec.data(), iLev, false);
 
   // One Newton step: J(E_old) * delta = rhs - F(E_old).
-  for (int i = 0; i < nSolve; ++i) {
-    eSolver.rhs[i] -= baseMatvec[i];
-    eSolver.xLeft[i] = 0;
-  }
+  Real* const r = eSolver.rhs;
+  const Real* const bm = baseMatvec.data();
+  Real* const x = eSolver.xLeft;
+  parallel_for_1d(nSolve, [=] AMREX_GPU_DEVICE(int i) {
+    r[i] -= bm[i];
+    x[i] = 0;
+  });
 
   if (doReport)
     Print() << "\n-------" << printPrefix
@@ -434,21 +442,22 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
     if (hasDirichlet) {
       for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
         const Box& bx = mfi.validbox();
-        const Array4<Real>& arrVec = vecMF[mfi].array();
-        ParallelFor(bx, vecMF.nComp(),
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                      const int ijk[3] = { i, j, k };
-                      for (int d = 0; d < nDim; ++d) {
-                        if (!bnd.isNode[d])
-                          continue;
-                        if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
-                             ijk[d] == bnd.loBnd[d]) ||
-                            (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
-                             ijk[d] == bnd.hiBnd[d])) {
-                          arrVec(i, j, k, c) = 0.0;
-                        }
-                      }
-                    });
+        const Array4<Real> arrVec = vecMF[mfi].array();
+        ParallelForOMP(bx, vecMF.nComp(),
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int c)
+                           noexcept {
+                             const int ijk[3] = { i, j, k };
+                             for (int d = 0; d < nDim; ++d) {
+                               if (!bnd.isNode[d])
+                                 continue;
+                               if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
+                                    ijk[d] == bnd.loBnd[d]) ||
+                                   (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
+                                    ijk[d] == bnd.hiBnd[d])) {
+                                 arrVec(i, j, k, c) = 0.0;
+                               }
+                             }
+                           });
       }
     }
 
@@ -487,54 +496,59 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
 
     const Real dx = Geom(iLev).CellSize()[0];
     const Real coe1 = -0.5 * fsolver.theta * tc->get_dt() / dx;
+    const Real limThetaE = limiterThetaE;
+    const Real cMaxVal = cMaxE;
 
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const Array4<Real>& arrE = vecMF[mfi].array();
-      const Array4<Real>& arrE0 = nodeE[iLev][mfi].array();
-      const Array4<Real>& limitE = fsolver.useLaggedLimiter ? arrE0 : arrE;
-      const Array4<Real>& res = matvecMF[mfi].array();
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
+      const Array4<Real const> arrE = vecMF[mfi].const_array();
+      const Array4<Real const> arrE0 = nodeE[iLev][mfi].const_array();
+      const Array4<Real const> limitE = fsolver.useLaggedLimiter ? arrE0 : arrE;
+      const Array4<Real> res = matvecMF[mfi].array();
+      const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
 
-      ParallelFor(box, vecMF.nComp(), [&](int i, int j, int k, int iVar) {
-        for (int iDir = 0; iDir < nDim; iDir++) {
-          Real dii[nDim3] = { 0, 0, 0 };
-          dii[iDir] = 1;
+      ParallelForOMP(
+          box, vecMF.nComp(),
+          [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+            for (int iDir = 0; iDir < nDim; iDir++) {
+              int dii[nDim3] = { 0, 0, 0 };
+              dii[iDir] = 1;
 
-          Real cR = limiter_theta(
-              limiterThetaE,
-              limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-              limitE(i, j, k, iVar),
-              limitE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
+              Real cR = limiter_theta(
+                  limThetaE,
+                  limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+                  limitE(i, j, k, iVar),
+                  limitE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
 
-          Real cL = limiter_theta(
-              limiterThetaE,
-              limitE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_],
-                     iVar),
-              limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-              limitE(i, j, k, iVar));
+              Real cL = limiter_theta(
+                  limThetaE,
+                  limitE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_],
+                         iVar),
+                  limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+                  limitE(i, j, k, iVar));
 
-          Real ur = cMaxE, ul = cMaxE;
+              Real ur = cMaxVal, ul = cMaxVal;
 
-          if (cMaxE <= 0) {
-            ul = fabs(0.5 *
-                      (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_], iDir) +
-                       arrU(i, j, k, iDir)));
-            ur = fabs(0.5 *
-                      (arrU(i, j, k, iDir) +
-                       arrU(i + dii[ix_], j + dii[iy_], k + dii[iz_], iDir)));
-          }
+              if (cMaxVal <= 0) {
+                ul = fabs(0.5 * (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_],
+                                      iDir) +
+                                 arrU(i, j, k, iDir)));
+                ur = fabs(0.5 * (arrU(i, j, k, iDir) +
+                                 arrU(i + dii[ix_], j + dii[iy_], k + dii[iz_],
+                                      iDir)));
+              }
 
-          Real dE = cR * ur *
-                        (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
-                         arrE(i, j, k, iVar)) -
-                    cL * ul *
-                        (arrE(i, j, k, iVar) -
-                         arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
+              Real dE =
+                  cR * ur *
+                      (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
+                       arrE(i, j, k, iVar)) -
+                  cL * ul *
+                      (arrE(i, j, k, iVar) -
+                       arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
 
-          res(i, j, k, iVar) += coe1 * dE;
-        }
-      });
+              res(i, j, k, iVar) += coe1 * dE;
+            }
+          });
     }
   }
 
@@ -599,14 +613,14 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
   if (hasWallEt) {
     for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
-      const Array4<Real>& arrOut = matvecMF[mfi].array();
-      const Array4<Real const>& arrIn = solverWallInMF[iLev][mfi].array();
-      ParallelFor(bx, matvecMF.nComp(),
-                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                    const int ijk[3] = { i, j, k };
-                    if (is_conducting_wall_Et(bnd, ijk, c))
-                      arrOut(i, j, k, c) = arrIn(i, j, k, c);
-                  });
+      const Array4<Real> arrOut = matvecMF[mfi].array();
+      const Array4<Real const> arrIn = solverWallInMF[iLev][mfi].const_array();
+      ParallelForOMP(bx, matvecMF.nComp(),
+                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                       const int ijk[3] = { i, j, k };
+                       if (is_conducting_wall_Et(bnd, ijk, c))
+                         arrOut(i, j, k, c) = arrIn(i, j, k, c);
+                     });
     }
   }
 
@@ -615,22 +629,22 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
   if (hasDirichlet) {
     for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
-      const Array4<Real>& arrOut = matvecMF[mfi].array();
-      const Array4<Real const>& arrIn = vecMF[mfi].array();
-      ParallelFor(bx, matvecMF.nComp(),
-                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                    const int ijk[3] = { i, j, k };
-                    for (int d = 0; d < nDim; ++d) {
-                      if (!bnd.isNode[d])
-                        continue;
-                      if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
-                           ijk[d] == bnd.loBnd[d]) ||
-                          (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
-                           ijk[d] == bnd.hiBnd[d])) {
-                        arrOut(i, j, k, c) = arrIn(i, j, k, c);
-                      }
-                    }
-                  });
+      const Array4<Real> arrOut = matvecMF[mfi].array();
+      const Array4<Real const> arrIn = vecMF[mfi].const_array();
+      ParallelForOMP(bx, matvecMF.nComp(),
+                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                       const int ijk[3] = { i, j, k };
+                       for (int d = 0; d < nDim; ++d) {
+                         if (!bnd.isNode[d])
+                           continue;
+                         if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
+                              ijk[d] == bnd.loBnd[d]) ||
+                             (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
+                              ijk[d] == bnd.hiBnd[d])) {
+                           arrOut(i, j, k, c) = arrIn(i, j, k, c);
+                         }
+                       }
+                     });
     }
   }
 
@@ -651,11 +665,11 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
   for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
-    const Array4<Real const>& inArr = inMF[mfi].array();
-    const Array4<Real>& outArr = outMF[mfi].array();
-    const Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
+    const Array4<Real const> inArr = inMF[mfi].const_array();
+    const Array4<Real> outArr = outMF[mfi].array();
+    const Array4<RealMM const> mmArr = nodeMM[iLev][mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
       const auto& data0 = mmArr(ijk);
@@ -821,22 +835,22 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
 
     for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
-      const Array4<Real>& arrRHS = temp2Node[mfi].array();
-      const Array4<Real const>& arrE = (*dirichletE)[mfi].const_array();
-      ParallelFor(bx, temp2Node.nComp(),
-                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                    const int ijk[3] = { i, j, k };
-                    for (int d = 0; d < nDim; ++d) {
-                      if (!bnd.isNode[d])
-                        continue;
-                      if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
-                           ijk[d] == bnd.loBnd[d]) ||
-                          (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
-                           ijk[d] == bnd.hiBnd[d])) {
-                        arrRHS(i, j, k, c) = arrE(i, j, k, c);
-                      }
-                    }
-                  });
+      const Array4<Real> arrRHS = temp2Node[mfi].array();
+      const Array4<Real const> arrE = (*dirichletE)[mfi].const_array();
+      ParallelForOMP(bx, temp2Node.nComp(),
+                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                       const int ijk[3] = { i, j, k };
+                       for (int d = 0; d < nDim; ++d) {
+                         if (!bnd.isNode[d])
+                           continue;
+                         if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
+                              ijk[d] == bnd.loBnd[d]) ||
+                             (FieldBC::is_dirichlet(bnd.bcHi[d]) &&
+                              ijk[d] == bnd.hiBnd[d])) {
+                           arrRHS(i, j, k, c) = arrE(i, j, k, c);
+                         }
+                       }
+                     });
     }
   }
 
@@ -844,14 +858,14 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
   if (iLev == 0 && hasConductingBC_) {
     for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
-      const Array4<Real>& arrRHS = temp2Node[mfi].array();
-      const Array4<Real const>& arrE = nodeE[iLev][mfi].array();
-      ParallelFor(bx, temp2Node.nComp(),
-                  [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                    const int ijk[3] = { i, j, k };
-                    if (is_conducting_wall_Et(bnd, ijk, c))
-                      arrRHS(i, j, k, c) = arrE(i, j, k, c);
-                  });
+      const Array4<Real> arrRHS = temp2Node[mfi].array();
+      const Array4<Real const> arrE = nodeE[iLev][mfi].const_array();
+      ParallelForOMP(bx, temp2Node.nComp(),
+                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                       const int ijk[3] = { i, j, k };
+                       if (is_conducting_wall_Et(bnd, ijk, c))
+                         arrRHS(i, j, k, c) = arrE(i, j, k, c);
+                     });
     }
   }
 
@@ -909,12 +923,12 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
 
   for (MFIter mfi(invDiagMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.tilebox();
-    const Array4<Real>& invArr = invDiagMF[mfi].array();
-    const Array4<RealMM const>& mmArr = nodeMM[iLev][mfi].const_array();
-    const Array4<int const>& statusArr = statusMF[mfi].const_array();
-    const Array4<Real const>& arrU = uBg[iLev][mfi].const_array();
+    const Array4<Real> invArr = invDiagMF[mfi].array();
+    const Array4<RealMM const> mmArr = nodeMM[iLev][mfi].const_array();
+    const Array4<int const> statusArr = statusMF[mfi].const_array();
+    const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
 
-    ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    ParallelForOMP(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       const int st = statusArr(i, j, k);
       const bool isExcludedBody = (skipAllBody && bit::is_body(st)) ||
                                   (skipInterior && bit::is_body_interior(st));
@@ -1035,55 +1049,91 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
 }
 
 //==========================================================
+const Pic::LinearSystemLayout& Pic::linear_system_layout(const MultiFab& MF,
+                                                         int iLev) {
+  const bool isCenter = MF.ixType().cellCentered();
+  auto& layouts = isCenter ? centerLayout : nodeLayout;
+  if (static_cast<int>(layouts.size()) < n_lev_max())
+    layouts.resize(n_lev_max());
+
+  // The selection depends only on the grid (node ownership) and on the body,
+  // which is static, so the layout is rebuilt only after a regrid.
+  LinearSystemLayout& layout = layouts[iLev];
+  if (!layout.localIdx.empty() && layout.localIdx.boxArray() == MF.boxArray() &&
+      layout.localIdx.DistributionMap() == MF.DistributionMap())
+    return layout;
+
+  layout.localIdx.define(MF.boxArray(), MF.DistributionMap(), 1, 0);
+  layout.nBoxUnknown.assign(layout.localIdx.local_size(), 0);
+
+  // A 'linetied' body drops all its nodes from the linear system (E = 0),
+  // a 'conducting' body only drops the interior ones (E = 0 inside, E_t = 0
+  // on the surface), and an 'insulating' body keeps all of them.
+  const bool skipAllBody = is_body_linetied();
+  const bool skipInterior = is_body_conducting();
+
+  for (MFIter mfi(layout.localIdx, stream_ordered_mfi()); mfi.isValid();
+       ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<int> idx = layout.localIdx[mfi].array();
+    const Array4<int const> nodeArr =
+        isCenter ? Array4<int const>() : node_status(iLev)[mfi].const_array();
+    const Dim3 lo = lbound(box);
+    const Dim3 len = length(box);
+
+    auto is_unknown = [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      return isCenter ||
+             (bit::is_owner(nodeArr(i, j, k)) &&
+              !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
+              !(skipInterior && bit::is_body_interior(nodeArr(i, j, k))));
+    };
+
+    // Number the unknowns of the box in x-fastest order.
+    layout.nBoxUnknown[mfi.LocalIndex()] = Scan::PrefixSum<int>(
+        static_cast<int>(box.numPts()),
+        [=] AMREX_GPU_DEVICE(int l) -> int {
+          const int k = l / (len.x * len.y);
+          const int j = (l - k * len.x * len.y) / len.x;
+          const int i = l - (k * len.y + j) * len.x;
+          return is_unknown(lo.x + i, lo.y + j, lo.z + k) ? 1 : 0;
+        },
+        [=] AMREX_GPU_DEVICE(int l, int nBefore) {
+          const int k = l / (len.x * len.y);
+          const int j = (l - k * len.x * len.y) / len.x;
+          const int i = l - (k * len.y + j) * len.x;
+          idx(lo.x + i, lo.y + j, lo.z + k) =
+              is_unknown(lo.x + i, lo.y + j, lo.z + k) ? nBefore : -1;
+        },
+        Scan::Type::exclusive, Scan::retSum);
+  }
+
+  return layout;
+}
+
+//==========================================================
 void Pic::convert_1d_to_3d(const Real* const p, MultiFab& MF, int iLev) {
   std::string nameFunc = "Pic::convert_1d_to_3d";
   timing_func(nameFunc);
 
-  bool isCenter = MF.ixType().cellCentered();
+  const LinearSystemLayout& layout = linear_system_layout(MF, iLev);
 
   MF.setVal(0.0);
 
-  int iCount = 0;
   const int nComp = MF.nComp();
-  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
+  int offset = 0;
+  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
+    const Array4<Real> arr = MF[mfi].array();
+    const Array4<int const> idx = layout.localIdx[mfi].const_array();
+    const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];
+    const Real* const pBox = p + offset;
 
-    const Array4<Real>& arr = MF[mfi].array();
-
-    if (isCenter) {
-      const auto lo = amrex::lbound(box);
-      const auto hi = amrex::ubound(box);
-      const int lenX = hi.x - lo.x + 1;
-      for (int iVar = 0; iVar < nComp; ++iVar) {
-        for (int k = lo.z; k <= hi.z; ++k) {
-          for (int j = lo.y; j <= hi.y; ++j) {
-            Real* AMREX_RESTRICT dst = arr.ptr(lo.x, j, k, iVar);
-            const Real* AMREX_RESTRICT src = p + iCount;
-#pragma omp simd
-            for (int ii = 0; ii < lenX; ++ii) {
-              dst[ii] = src[ii];
-            }
-            iCount += lenX;
-          }
-        }
-      }
-      continue;
-    }
-
-    const auto& nodeArr = node_status(iLev)[mfi].array();
-
-    // A 'linetied' body drops all its nodes from the linear system (E = 0),
-    // a 'conducting' body only drops the interior ones (E = 0 inside, E_t = 0
-    // on the surface), and an 'insulating' body keeps all of them.
-    const bool skipAllBody = is_body_linetied();
-    const bool skipInterior = is_body_conducting();
-    ParallelFor(box, nComp, [&](int i, int j, int k, int iVar) {
-      if (bit::is_owner(nodeArr(i, j, k)) &&
-          !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
-          !(skipInterior && bit::is_body_interior(nodeArr(i, j, k)))) {
-        arr(i, j, k, iVar) = p[iCount++];
-      }
-    });
+    ParallelForOMP(mfi.validbox(), nComp,
+                   [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                     const int l = idx(i, j, k);
+                     if (l >= 0)
+                       arr(i, j, k, iVar) = pBox[iVar * nUnknown + l];
+                   });
+    offset += nComp * nUnknown;
   }
 }
 
@@ -1092,56 +1142,33 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, Real* const p, int iLev) {
   std::string nameFunc = "Pic::convert_3d_to_1d";
   timing_func(nameFunc);
 
-  bool isCenter = MF.ixType().cellCentered();
+  const LinearSystemLayout& layout = linear_system_layout(MF, iLev);
 
-  int iCount = 0;
   const int nComp = MF.nComp();
-  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
+  int offset = 0;
+  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
+    const Array4<Real const> arr = MF[mfi].const_array();
+    const Array4<int const> idx = layout.localIdx[mfi].const_array();
+    const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];
+    Real* const pBox = p + offset;
 
-    const Array4<Real const>& arr = MF[mfi].array();
-
-    if (isCenter) {
-      const auto lo = amrex::lbound(box);
-      const auto hi = amrex::ubound(box);
-      const int lenX = hi.x - lo.x + 1;
-      for (int iVar = 0; iVar < nComp; ++iVar) {
-        for (int k = lo.z; k <= hi.z; ++k) {
-          for (int j = lo.y; j <= hi.y; ++j) {
-            const Real* AMREX_RESTRICT src = arr.ptr(lo.x, j, k, iVar);
-            Real* AMREX_RESTRICT dst = p + iCount;
-#pragma omp simd
-            for (int ii = 0; ii < lenX; ++ii) {
-              dst[ii] = src[ii];
-            }
-            iCount += lenX;
-          }
-        }
-      }
-      continue;
-    }
-
-    const auto& nodeArr = node_status(iLev)[mfi].array();
-
-    // See convert_1d_to_3d: only the 'linetied' body drops its nodes from the
-    // linear system.
-    const bool skipAllBody = is_body_linetied();
-    const bool skipInterior = is_body_conducting();
-    ParallelFor(box, nComp, [&](int i, int j, int k, int iVar) {
-      if (bit::is_owner(nodeArr(i, j, k)) &&
-          !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
-          !(skipInterior && bit::is_body_interior(nodeArr(i, j, k)))) {
-        p[iCount++] = arr(i, j, k, iVar);
-      }
-    });
+    ParallelForOMP(mfi.validbox(), nComp,
+                   [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                     const int l = idx(i, j, k);
+                     if (l >= 0)
+                       pBox[iVar * nUnknown + l] = arr(i, j, k, iVar);
+                   });
+    offset += nComp * nUnknown;
   }
 
   // Explicitly zero trailing slots up to the solver dimension to prevent
   // uninitialized or stale memory from polluting GMRES Arnoldi inner products.
-  if (!isCenter) {
+  if (!MF.ixType().cellCentered()) {
     const int nSolve = eSolver.get_nSolve();
-    if (iCount < nSolve) {
-      std::fill(p + iCount, p + nSolve, 0.0);
+    if (offset < nSolve) {
+      Real* const pTail = p + offset;
+      parallel_for_1d(nSolve - offset,
+                      [=] AMREX_GPU_DEVICE(int i) { pTail[i] = 0.0; });
     }
   }
 }
@@ -1371,15 +1398,16 @@ void Pic::solve_hyp_phi(int iLev) {
   Real ch = 0.8 * Geom(iLev).CellSize()[ix_] / tc->get_dt();
 
   Real coef = -tc->get_dt() * (ch * ch);
+  const Real decayFactor = 1.0 - hypDecay;
   for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
 
-    const Array4<Real>& divBArr = divB[iLev][mfi].array();
-    const Array4<Real>& phiArr = hypPhi[iLev][mfi].array();
+    const Array4<Real const> divBArr = divB[iLev][mfi].const_array();
+    const Array4<Real> phiArr = hypPhi[iLev][mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
-      phiArr(ijk) = (phiArr(ijk) + coef * divBArr(ijk)) * (1.0 - hypDecay);
+      phiArr(ijk) = (phiArr(ijk) + coef * divBArr(ijk)) * decayFactor;
     });
   }
 
@@ -1393,9 +1421,9 @@ void Pic::solve_hyp_phi(int iLev) {
         pow(Geom(iLev).CellSize()[ix_] / Geom(iLev - 1).CellSize()[ix_], 2);
     for (MFIter mfi(hypPhi[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const auto& phi = hypPhi[iLev][mfi].array();
-      const auto& st = cell_status(iLev)[mfi].const_array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const auto phi = hypPhi[iLev][mfi].array();
+      const auto st = cell_status(iLev)[mfi].const_array();
+      ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(st(i, j, k))) {
           phi(i, j, k) *= scale;
         }
@@ -1463,38 +1491,38 @@ void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
       const Array4<Real>& arrF = faceJump[iDir].array();
 
       if (iDir == ix_) {
-        ParallelFor(slopeBox, nDim3,
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                      arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
-                          arrBin, i, j, k, iVar, limTypeUp);
-                    });
-        ParallelFor(faceBox, nDim3,
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                      arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
-                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                    });
+        ParallelForOMP(slopeBox, nDim3,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                         arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
+                             arrBin, i, j, k, iVar, limTypeUp);
+                       });
+        ParallelForOMP(faceBox, nDim3,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                         arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                             arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                       });
       } else if (iDir == iy_) {
-        ParallelFor(slopeBox, nDim3,
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                      arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
-                          arrBin, i, j, k, iVar, limTypeUp);
-                    });
-        ParallelFor(faceBox, nDim3,
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                      arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
-                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                    });
+        ParallelForOMP(slopeBox, nDim3,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                         arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
+                             arrBin, i, j, k, iVar, limTypeUp);
+                       });
+        ParallelForOMP(faceBox, nDim3,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                         arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                             arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                       });
       } else {
-        ParallelFor(slopeBox, nDim3,
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                      arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
-                          arrBin, i, j, k, iVar, limTypeUp);
-                    });
-        ParallelFor(faceBox, nDim3,
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                      arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
-                          arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                    });
+        ParallelForOMP(slopeBox, nDim3,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                         arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
+                             arrBin, i, j, k, iVar, limTypeUp);
+                       });
+        ParallelForOMP(faceBox, nDim3,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                         arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                             arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                       });
       }
       arrFace[iDir] = faceJump[iDir].const_array();
     }
@@ -1503,7 +1531,7 @@ void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
     const Array4<Real const> arrFaceY = arrFace[iy_];
     const Array4<Real const> arrFaceZ = arrFace[iz_];
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       Real jump[nDim3];
       for (int iDir = 0; iDir < nDim; ++iDir) {
         if (!upwindDir[iDir])
@@ -1575,29 +1603,32 @@ void Pic::correct_B(int iLev) {
 
   if (doUpwind) {
     const bool isFake2D = is_fake_2d();
-    Real coef[nDim3];
-    for (int i = 0; i < nDim3; ++i) {
+    const Real limThetaB = limiterThetaB;
+    const Real fixedVel = fixedUpwindVel;
+    GpuArray<Real, nDim3> coef = { 0.0, 0.0, 0.0 };
+    for (int i = 0; i < nDim; ++i) {
       coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
     }
 
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.validbox();
 
-      const Array4<Real>& cB = centerB[iLev][mfi].array();
-      const Array4<Real const>& nU = uBg[iLev][mfi].array();
-      const Array4<Real>& dB = cDB[mfi].array();
-      const auto& status = cell_status(iLev)[mfi].array();
+      const Array4<Real const> cB = centerB[iLev][mfi].const_array();
+      const Array4<Real const> nU = uBg[iLev][mfi].const_array();
+      const Array4<Real> dB = cDB[mfi].array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
       // Get the face along the direction iDir for the cell (i,j,k) for the iVar
       // component
-      auto get_face = [&](int iDir, int i, int j, int k, int iVar,
+      auto get_face = [=] AMREX_GPU_DEVICE(
+                          int iDir, int i, int j, int k, int iVar,
                           Array4<Real const> const& arr, Real& l, Real& r) {
         // Generic fixed-upwind-velocity override (e.g. the old TopHat
         // "bypass_limiter" used a constant speed of 1.0). Zero keeps the
         // normal plasma-background-velocity reconstruction below.
-        if (fixedUpwindVel > 0) {
-          l = fixedUpwindVel;
-          r = fixedUpwindVel;
+        if (fixedVel > 0) {
+          l = fixedVel;
+          r = fixedVel;
           return;
         }
 
@@ -1623,12 +1654,11 @@ void Pic::correct_B(int iLev) {
         }
       };
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
         Real ul, ur;
 
-        auto is_face_blocked = [&](int ni, int nj, int nk, int ci, int cj,
-                                   int ck) {
+        auto is_face_blocked = [&](int ni, int nj, int nk, int, int, int) {
           const int nStat = status(ni, nj, nk);
           if (bit::is_domain_boundary(nStat))
             return true;
@@ -1650,13 +1680,13 @@ void Pic::correct_B(int iLev) {
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real fluxR = 0.0;
           if (!blockRx) {
-            Real cR = limiter_theta(limiterThetaB, cB(i - 1, j, k, iVar),
+            Real cR = limiter_theta(limThetaB, cB(i - 1, j, k, iVar),
                                     cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
             fluxR = cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar));
           }
           Real fluxL = 0.0;
           if (!blockLx) {
-            Real cL = limiter_theta(limiterThetaB, cB(i - 2, j, k, iVar),
+            Real cL = limiter_theta(limThetaB, cB(i - 2, j, k, iVar),
                                     cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
             fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar));
           }
@@ -1674,13 +1704,13 @@ void Pic::correct_B(int iLev) {
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real fluxR = 0.0;
           if (!blockRy) {
-            Real cR = limiter_theta(limiterThetaB, cB(i, j - 1, k, iVar),
+            Real cR = limiter_theta(limThetaB, cB(i, j - 1, k, iVar),
                                     cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
             fluxR = cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar));
           }
           Real fluxL = 0.0;
           if (!blockLy) {
-            Real cL = limiter_theta(limiterThetaB, cB(i, j - 2, k, iVar),
+            Real cL = limiter_theta(limThetaB, cB(i, j - 2, k, iVar),
                                     cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
             fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar));
           }
@@ -1699,13 +1729,13 @@ void Pic::correct_B(int iLev) {
           for (int iVar = 0; iVar < nDim3; iVar++) {
             Real fluxR = 0.0;
             if (!blockRz) {
-              Real cR = limiter_theta(limiterThetaB, cB(i, j, k - 1, iVar),
+              Real cR = limiter_theta(limThetaB, cB(i, j, k - 1, iVar),
                                       cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
               fluxR = cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar));
             }
             Real fluxL = 0.0;
             if (!blockLz) {
-              Real cL = limiter_theta(limiterThetaB, cB(i, j, k - 2, iVar),
+              Real cL = limiter_theta(limThetaB, cB(i, j, k - 2, iVar),
                                       cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
               fluxL = cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar));
             }
@@ -1732,16 +1762,17 @@ void Pic::correct_B(int iLev) {
     average_node_to_cellcenter(gradPhi, 0, gradPhiNode, 0, nDim3,
                                gradPhi.nGrow());
 
+    const Real dt = tc->get_dt();
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.validbox();
 
-      const Array4<Real>& dB = cDB[mfi].array();
-      const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
+      const Array4<Real> dB = cDB[mfi].array();
+      const Array4<Real const> gradPhiArr = gradPhi[mfi].const_array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         IntVect ijk{ AMREX_D_DECL(i, j, k) };
         for (int iVar = 0; iVar < nDim3; iVar++) {
-          dB(ijk, iVar) += -tc->get_dt() * gradPhiArr(ijk, iVar);
+          dB(ijk, iVar) += -dt * gradPhiArr(ijk, iVar);
         }
       });
     } // end MFIter
@@ -1793,17 +1824,16 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
       Array4<Real const> const& arrTmp = mfOld[mfi].const_array();
 
       if (isPeriodicDir) {
-        ParallelFor(box, mf.nComp(),
-                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                      const Real neiLo =
-                          arrTmp(i - dIdx0, j - dIdx1, k - dIdx2, iVar);
-                      const Real neiHi =
-                          arrTmp(i + dIdx0, j + dIdx1, k + dIdx2, iVar);
-                      arrE(i, j, k, iVar) = weightSelf * arrTmp(i, j, k, iVar) +
-                                            WeightNei * (neiLo + neiHi);
-                    });
+        ParallelForOMP(
+            box, mf.nComp(),
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+              const Real neiLo = arrTmp(i - dIdx0, j - dIdx1, k - dIdx2, iVar);
+              const Real neiHi = arrTmp(i + dIdx0, j + dIdx1, k + dIdx2, iVar);
+              arrE(i, j, k, iVar) = weightSelf * arrTmp(i, j, k, iVar) +
+                                    WeightNei * (neiLo + neiHi);
+            });
       } else {
-        ParallelFor(
+        ParallelForOMP(
             box, mf.nComp(),
             [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
               Real neiLo = arrTmp(i - dIdx0, j - dIdx1, k - dIdx2, iVar);
@@ -1854,9 +1884,9 @@ void Pic::project_down_E() {
       tmp.setVal(0.0);
       for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
-        const Array4<Real>& arrE = nodeE[iLev][mfi].array();
-        const Array4<Real>& arrTmp = tmp[mfi].array();
-        ParallelFor(box, [&](int i, int j, int k) {
+        const Array4<Real const> arrE = nodeE[iLev][mfi].const_array();
+        const Array4<Real> arrTmp = tmp[mfi].array();
+        ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           for (int iVar = 0; iVar < 3; iVar++) {
             if (nDim == 3) {
               arrTmp(i, j, k, iVar) =
@@ -1896,28 +1926,29 @@ Real Pic::calc_E_field_energy() {
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeE[iLev][mfi];
-      const auto& status = cell_status(iLev)[mfi].array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
       Box box = mfi.validbox();
-      const Array4<Real>& arr = fab.array();
+      const Array4<Real const> arr = nodeE[iLev][mfi].const_array();
 
-      Real sumLoc = 0;
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
-        if (!bit::is_refined(status(ijk))) {
-          const int kMax = nDim > 2 ? k + 1 : k;
-          for (int kk = k; kk <= kMax; ++kk) {
-            for (int jj = j; jj <= j + 1; ++jj) {
-              for (int ii = i; ii <= i + 1; ++ii) {
-                sumLoc += arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
-                          arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
-                          arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
-              }
-            }
-          }
-        }
-      });
+      const Dim3 lo = lbound(box);
+      const Dim3 len = length(box);
+      const int nNode = nDim > 2 ? 8 : 4;
+      const Real sumLoc = deterministic_sum(
+          static_cast<int>(box.numPts()) * nNode,
+          [=] AMREX_GPU_DEVICE(int l) -> Real {
+            const int c = l / nNode, m = l - c * nNode;
+            const int k = lo.z + c / (len.x * len.y);
+            const int j = lo.y + (c / len.x) % len.y;
+            const int i = lo.x + c % len.x;
+            if (bit::is_refined(status(i, j, k)))
+              return 0.0;
+            const int ii = i + (m & 1);
+            const int jj = j + ((m >> 1) & 1);
+            const int kk = k + (m >> 2);
+            return arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
+                   arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
+                   arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
+          });
 
       Real avg = (nDim == 3) ? 0.125 : 0.25;
 
@@ -1946,21 +1977,24 @@ Real Pic::calc_B_field_energy() {
     MultiFab& mfB = hasB0 ? *centerBt : centerB[iLev];
 
     for (MFIter mfi(mfB); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = mfB[mfi];
-      const auto& status = cell_status(iLev)[mfi].array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
       const Box& box = mfi.validbox();
-      const Array4<Real>& arr = fab.array();
+      const Array4<Real const> arr = mfB[mfi].const_array();
+      const Dim3 lo = lbound(box);
+      const Dim3 len = length(box);
 
-      Real sumLoc = 0;
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (!bit::is_refined(status(ijk))) {
-          sumLoc += arr(i, j, k, ix_) * arr(i, j, k, ix_) +
-                    arr(i, j, k, iy_) * arr(i, j, k, iy_) +
-                    arr(i, j, k, iz_) * arr(i, j, k, iz_);
-        }
-      });
+      const Real sumLoc = deterministic_sum(
+          static_cast<int>(box.numPts()), [=] AMREX_GPU_DEVICE(int c) -> Real {
+            const int k = lo.z + c / (len.x * len.y);
+            const int j = lo.y + (c / len.x) % len.y;
+            const int i = lo.x + c % len.x;
+            if (bit::is_refined(status(i, j, k)))
+              return 0.0;
+            return arr(i, j, k, ix_) * arr(i, j, k, ix_) +
+                   arr(i, j, k, iy_) * arr(i, j, k, iy_) +
+                   arr(i, j, k, iz_) * arr(i, j, k, iz_);
+          });
 
       sum += sumLoc * get_cell_volume(iLev) * 0.5 / fourPI;
     }

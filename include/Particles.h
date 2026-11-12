@@ -1271,7 +1271,10 @@ public:
 
     if (!gdb->boxArray(0).empty()) {
       // It will crash if there is no active cells.
-      Redistribute();
+      // With several levels AMReX's threaded Redistribute orders the moved
+      // particles by thread; run it single-threaded so the result does not
+      // depend on OMP_NUM_THREADS (see run_single_threaded_if).
+      run_single_threaded_if(gdb->finestLevel() > 0, [&]() { Redistribute(); });
     }
   }
 

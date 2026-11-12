@@ -4,6 +4,7 @@
 #include <AMReX_ParticleInterpolators.H>
 #include <AMReX_ParticleReduce.H>
 
+#include "GpuBackend.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -204,6 +205,29 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
   Real sum0 = 0.0, sum1 = 0.0, sum2 = 0.0, sum3 = 0.0, sum4 = 0.0;
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if constexpr (!fleksUseGpu) {
+      // CPU: thread-count independent summation order.
+      const auto r = deterministic_particle_sum<5>(
+          *this, iLev, [=](const ParticleType& p, std::array<Real, 5>& s) {
+            if (p.id() < 0)
+              return;
+            const Real up = p.rdata(iup);
+            const Real vp = p.rdata(ivp);
+            const Real wp = p.rdata(iwp);
+            const Real qp = p.rdata(iqp);
+            s[0] += qp;
+            s[1] += qp * up;
+            s[2] += qp * vp;
+            s[3] += qp * wp;
+            s[4] += 0.5 * qp * (up * up + vp * vp + wp * wp);
+          });
+      sum0 += r[0];
+      sum1 += r[1];
+      sum2 += r[2];
+      sum3 += r[3];
+      sum4 += r[4];
+      continue;
+    }
     auto r = amrex::ParticleReduce<ReduceData<Real, Real, Real, Real, Real> >(
         *this, iLev,
         [=] AMREX_GPU_DEVICE(const ParticleType& p)
