@@ -32,6 +32,19 @@ void AmrexLinearSolver::ensure_mask() {
 }
 
 void AmrexLinearSolver::mask_inactive_nodes(MultiFab& mf) const {
+#ifdef AMREX_USE_GPU
+  for (MFIter mfi(mf, doTiling); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.tilebox();
+    const Array4<Real>& arr = mf[mfi].array();
+    const Array4<int const>& msk = m_dotMask[mfi].const_array();
+    ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const Real m = static_cast<Real>(msk(i, j, k));
+      arr(i, j, k, 0) *= m;
+      arr(i, j, k, 1) *= m;
+      arr(i, j, k, 2) *= m;
+    });
+  }
+#else
   const int nFabs = mf.local_size();
   for (int li = 0; li < nFabs; ++li) {
     Real* AMREX_RESTRICT p0 = mf.atLocalIdx(li).dataPtr(0);
@@ -46,6 +59,7 @@ void AmrexLinearSolver::mask_inactive_nodes(MultiFab& mf) const {
       p2[i] *= m;
     }
   }
+#endif
 }
 
 void AmrexLinearSolver::define(Pic* pic, int iLev, EPrecondType precondType,
@@ -63,7 +77,6 @@ void AmrexLinearSolver::define(Pic* pic, int iLev, EPrecondType precondType,
     } else {
       m_precondType = EPrecondType::BlockJacobi;
     }
-    m_lastAutoPrecond = m_precondType;
   } else {
     m_precondType = precondType;
   }
@@ -177,6 +190,41 @@ MultiFab AmrexLinearSolver::makeVecLHS() {
 
 void AmrexLinearSolver::apply_point_precond(V& dst, V const& src,
                                             Real scaleFactor) const {
+#ifdef AMREX_USE_GPU
+  if (m_precondType == EPrecondType::Jacobi) {
+    for (MFIter mfi(dst, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real>& d = dst[mfi].array();
+      const Array4<Real const>& s = src[mfi].const_array();
+      const Array4<Real const>& inv = m_invDiagMF[mfi].const_array();
+      ParallelFor(
+          bx, 3, [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+            d(i, j, k, c) = scaleFactor * inv(i, j, k, c) * s(i, j, k, c);
+          });
+    }
+  } else {
+    for (MFIter mfi(dst, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real>& d = dst[mfi].array();
+      const Array4<Real const>& s = src[mfi].const_array();
+      const Array4<Real const>& inv = m_invDiagMF[mfi].const_array();
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real sx = s(i, j, k, 0);
+        const Real sy = s(i, j, k, 1);
+        const Real sz = s(i, j, k, 2);
+        d(i, j, k, 0) =
+            scaleFactor * (inv(i, j, k, 0) * sx + inv(i, j, k, 1) * sy +
+                           inv(i, j, k, 2) * sz);
+        d(i, j, k, 1) =
+            scaleFactor * (inv(i, j, k, 3) * sx + inv(i, j, k, 4) * sy +
+                           inv(i, j, k, 5) * sz);
+        d(i, j, k, 2) =
+            scaleFactor * (inv(i, j, k, 6) * sx + inv(i, j, k, 7) * sy +
+                           inv(i, j, k, 8) * sz);
+      });
+    }
+  }
+#else
   const int nFabs = dst.local_size();
   if (m_precondType == EPrecondType::Jacobi) {
     for (int li = 0; li < nFabs; ++li) {
@@ -216,6 +264,7 @@ void AmrexLinearSolver::apply_point_precond(V& dst, V const& src,
       }
     }
   }
+#endif
 
   if (m_pic->is_body_conducting()) {
     m_pic->project_body_E(dst, m_iLev);
@@ -240,11 +289,32 @@ void AmrexLinearSolver::precond(V& lhs, V const& rhs) {
   apply_point_precond(lhs, rhs, m_smootherWeight);
 
   const Real omega = m_smootherWeight;
+#ifndef AMREX_USE_GPU
   const int nFabs = lhs.local_size();
+#endif
   for (int iter = 1; iter < m_precondIters; ++iter) {
     apply_linear_matvec(m_smoothAx, lhs);
     linComb(m_smoothRes, 1.0, rhs, -1.0, m_smoothAx);
 
+#ifdef AMREX_USE_GPU
+    for (MFIter mfi(lhs, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real>& d = lhs[mfi].array();
+      const Array4<Real const>& r = m_smoothRes[mfi].const_array();
+      const Array4<Real const>& inv = m_invDiagMF[mfi].const_array();
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real rx = r(i, j, k, 0);
+        const Real ry = r(i, j, k, 1);
+        const Real rz = r(i, j, k, 2);
+        d(i, j, k, 0) += omega * (inv(i, j, k, 0) * rx + inv(i, j, k, 1) * ry +
+                                  inv(i, j, k, 2) * rz);
+        d(i, j, k, 1) += omega * (inv(i, j, k, 3) * rx + inv(i, j, k, 4) * ry +
+                                  inv(i, j, k, 5) * rz);
+        d(i, j, k, 2) += omega * (inv(i, j, k, 6) * rx + inv(i, j, k, 7) * ry +
+                                  inv(i, j, k, 8) * rz);
+      });
+    }
+#else
     for (int li = 0; li < nFabs; ++li) {
       Real* AMREX_RESTRICT d0 = lhs.atLocalIdx(li).dataPtr(0);
       Real* AMREX_RESTRICT d1 = lhs.atLocalIdx(li).dataPtr(1);
@@ -271,6 +341,7 @@ void AmrexLinearSolver::precond(V& lhs, V const& rhs) {
         d2[i] += omega * (inv20[i] * rx + inv21[i] * ry + inv22[i] * rz);
       }
     }
+#endif
 
     if (m_pic->is_body_conducting()) {
       m_pic->project_body_E(lhs, m_iLev);

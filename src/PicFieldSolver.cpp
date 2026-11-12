@@ -887,10 +887,13 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
   }
 
   GpuArray<Real, 3> emDiag = { 0.0, 0.0, 0.0 };
+  const Real c2cWeight = (nDim > 2) ? (1.0 / 18.0) : (1.0 / 6.0);
+  const Real gradDivCoeff =
+      (1.0 - fsolver.coefDiff) * wDim + fsolver.coefDiff * c2cWeight;
   for (int a = 0; a < 3; ++a) {
     const Real gradDivDiag =
-        (a < nDim) ? (1.0 - fsolver.coefDiff) * invDx[a] * invDx[a] : 0.0;
-    emDiag[a] = delt2 * wDim * (lapDiag - gradDivDiag);
+        (a < nDim) ? gradDivCoeff * invDx[a] * invDx[a] : 0.0;
+    emDiag[a] = delt2 * (wDim * lapDiag - gradDivDiag);
   }
 
   const Real dx0 = Geom(iLev).CellSize()[0];

@@ -14,8 +14,8 @@ class Pic;
 enum class ESolverBackend { LegacyGMRES, AmrexGMRES };
 
 enum class EPrecondType {
-  Auto,        // Adaptive selection (None for <5 iters or JFNK, BlockJacobi otherwise)
-  None,        // P = I (unpreconditioned)
+  Auto, // Adaptive selection (None for <5 iters or JFNK, BlockJacobi otherwise)
+  None, // P = I (unpreconditioned)
   Jacobi,      // Scalar diagonal scaling (3 components per node)
   BlockJacobi, // Point-block 3x3 exact inverse per node
   Smoother     // Multi-step weighted block-Jacobi smoother using full matvec
@@ -58,6 +58,9 @@ public:
   void apply(V& Ax, V const& x);
 
   void assign(V& lhs, V const& rhs) {
+#ifdef AMREX_USE_GPU
+    MultiFab::Copy(lhs, rhs, 0, 0, lhs.nComp(), 0);
+#else
     const int nFabs = lhs.local_size();
     for (int li = 0; li < nFabs; ++li) {
       Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
@@ -65,9 +68,13 @@ public:
       const Long n = lhs.atLocalIdx(li).size();
       std::memcpy(pL, pR, static_cast<std::size_t>(n) * sizeof(Real));
     }
+#endif
   }
 
   RT dotProduct(V const& v1, V const& v2) {
+#ifdef AMREX_USE_GPU
+    return MultiFab::Dot(v1, 0, v2, 0, v1.nComp(), 0);
+#else
     RT sm = RT(0.0);
     const int nFabs = v1.local_size();
     for (int li = 0; li < nFabs; ++li) {
@@ -80,9 +87,13 @@ public:
     }
     ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
     return sm;
+#endif
   }
 
   void increment(V& lhs, V const& rhs, RT a) {
+#ifdef AMREX_USE_GPU
+    MultiFab::Saxpy(lhs, a, rhs, 0, 0, lhs.nComp(), 0);
+#else
     const int nFabs = lhs.local_size();
     for (int li = 0; li < nFabs; ++li) {
       Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
@@ -92,9 +103,13 @@ public:
         pL[i] += a * pR[i];
       }
     }
+#endif
   }
 
   void linComb(V& lhs, RT a, V const& rhs_a, RT b, V const& rhs_b) {
+#ifdef AMREX_USE_GPU
+    MultiFab::LinComb(lhs, a, rhs_a, 0, b, rhs_b, 0, 0, lhs.nComp(), 0);
+#else
     const int nFabs = lhs.local_size();
     for (int li = 0; li < nFabs; ++li) {
       Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
@@ -105,12 +120,16 @@ public:
         pL[i] = a * pA[i] + b * pB[i];
       }
     }
+#endif
   }
 
   V makeVecRHS();
   V makeVecLHS();
 
   RT norm2(V const& v) {
+#ifdef AMREX_USE_GPU
+    return std::sqrt(MultiFab::Dot(v, 0, v, 0, v.nComp(), 0));
+#else
     RT sm = RT(0.0);
     const int nFabs = v.local_size();
     for (int li = 0; li < nFabs; ++li) {
@@ -122,11 +141,15 @@ public:
     }
     ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
     return std::sqrt(sm);
+#endif
   }
 
   void precond(V& lhs, V const& rhs);
 
   void scale(V& v, RT fac) {
+#ifdef AMREX_USE_GPU
+    v.mult(fac, 0, v.nComp(), 0);
+#else
     const int nFabs = v.local_size();
     for (int li = 0; li < nFabs; ++li) {
       Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
@@ -135,15 +158,20 @@ public:
         p[i] *= fac;
       }
     }
+#endif
   }
 
   void setToZero(V& v) {
+#ifdef AMREX_USE_GPU
+    v.setVal(RT(0.0));
+#else
     const int nFabs = v.local_size();
     for (int li = 0; li < nFabs; ++li) {
       Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
       const Long n = v.atLocalIdx(li).size();
       std::memset(p, 0, static_cast<std::size_t>(n) * sizeof(Real));
     }
+#endif
   }
 
   const iMultiFab& dot_mask() const { return m_dotMask; }
@@ -156,7 +184,6 @@ private:
   Pic* m_pic = nullptr;
   int m_iLev = -1;
   EPrecondType m_precondType = EPrecondType::None;
-  EPrecondType m_lastAutoPrecond = EPrecondType::None;
   int m_lastIters = 0;
   int m_precondIters = 2;
   Real m_smootherWeight = Real(2.0 / 3.0);
