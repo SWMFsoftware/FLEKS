@@ -3,7 +3,7 @@ include ../Makefile.conf
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH} -I${UTILDIR}/AMREX/Src/LinearSolvers
 VERBOSE_GMRES = 
-SIMD_FLAGS = 
+SIMD_FLAGS = -march=native -fopenmp-simd
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 
 # GPU build: extra nvcc warning/error flags and device linking when Makefile.conf

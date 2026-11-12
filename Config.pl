@@ -165,7 +165,7 @@ foreach (@Arguments){
      if(/^-u=(.*)$/)            {$NewUserSource=$1; next};
      if(/^-debug$/i)            {$VerboseGmres="yes"; next};
      if(/^-nodebug$/i)          {$VerboseGmres="no";  next};
-     if(/^-simd$/i)             {$SimdFlags="yes"; next};
+     if(/^-simd(?:=(\S+))?$/i)  {$SimdFlags = defined($1) ? $1 : "yes"; next};
      if(/^-nosimd$/i)           {$SimdFlags="no";  next};
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
@@ -272,10 +272,15 @@ sub set_verbose_gmres{
 ################################################################################
 sub set_simd_flags{
     # Set SIMD compiler flags in src/Makefile:
-    #   -simd   -> SIMD_FLAGS = -march=native -fopenmp-simd
-    #   -nosimd -> SIMD_FLAGS is empty
+    #   -simd        -> SIMD_FLAGS = -march=native -fopenmp-simd (default)
+    #   -simd=ARCH   -> SIMD_FLAGS = -march=ARCH -fopenmp-simd
+    #   -nosimd      -> SIMD_FLAGS is empty
     my $SIMD_FLAGS = "";
-    $SIMD_FLAGS = '-march=native -fopenmp-simd' if $SimdFlags eq "yes";
+    if ($SimdFlags eq "yes") {
+        $SIMD_FLAGS = '-march=native -fopenmp-simd';
+    } elsif ($SimdFlags ne "no") {
+        $SIMD_FLAGS = "-march=$SimdFlags -fopenmp-simd";
+    }
 
     print "Setting SIMD flags to '$SIMD_FLAGS' in src/Makefile\n";
 
@@ -452,9 +457,10 @@ sub print_help{
               residual logging (only the iteration count and the final
               residual are reported by the solver).
 
--simd         Enable host-native SIMD compiler flags (-march=native -fopenmp-simd)
-              in src/Makefile for C++ compilation.
--nosimd       Disable extra SIMD compiler flags in src/Makefile (default).
+-simd[=ARCH]  Enable SIMD compiler flags (-march=native -fopenmp-simd by default,
+              or -march=ARCH -fopenmp-simd if ARCH is given, e.g. x86-64-v3) in
+              src/Makefile for C++ compilation. Enabled by default.
+-nosimd       Disable extra SIMD compiler flags in src/Makefile.
 
 -lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.
 
