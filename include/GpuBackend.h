@@ -359,6 +359,134 @@ std::array<amrex::Real, N> deterministic_particle_sum(const PC& pc, int iLev,
   return total;
 }
 
+// Descriptor for a non-empty cell-sized particle tile (tile_size = {1, 1, 1})
+// on the CPU. `grid` is the FAB index in ParticleBoxArray(iLev), `tile` is the
+// local tile index, `cell` is the cell IntVect of the 1x1x1 tile box, and
+// `ptile` points to the ParticleTile.
+template <class TileType> struct CellTileItem {
+  int grid = 0;
+  int tile = 0;
+  amrex::IntVect cell;
+  TileType* ptile = nullptr;
+};
+
+// Collect all non-empty particle tiles at level iLev in deterministic
+// (grid, tile) order, computing each tile's cell IntVect without red-black
+// tree lookups per cell.
+template <class PC> auto collect_cell_tiles(PC& pc, int iLev) {
+  using TileType = std::conditional_t<std::is_const_v<PC>,
+                                      const typename PC::ParticleTileType,
+                                      typename PC::ParticleTileType>;
+  std::vector<CellTileItem<TileType> > items;
+  if (iLev >= pc.numLevels())
+    return items;
+  auto& plev = pc.GetParticles(iLev);
+  if (plev.empty())
+    return items;
+  const amrex::BoxArray& ba = pc.ParticleBoxArray(iLev);
+  items.reserve(plev.size());
+  int lastGrid = -1;
+  amrex::IntVect sml;
+  amrex::IntVect len;
+  for (auto& kv : plev) {
+    if (kv.second.numParticles() == 0)
+      continue;
+    const int grid = kv.first.first;
+    const int tile = kv.first.second;
+    if (grid != lastGrid) {
+      lastGrid = grid;
+      const amrex::Box& bx = ba[grid];
+      sml = bx.smallEnd();
+      len = bx.length();
+    }
+    const amrex::IntVect cell(AMREX_D_DECL(
+        sml[0] + (tile % len[0]), sml[1] + ((tile / len[0]) % len[1]),
+        sml[2] + (tile / (len[0] * len[1]))));
+    items.push_back(CellTileItem<TileType>{ grid, tile, cell, &kv.second });
+  }
+  return items;
+}
+
+// Run f(const CellTileItem<TileType>& item, int ord) across OpenMP threads for
+// all non-empty cell tiles in `items` (in deterministic `ord = 0..nTiles-1`).
+template <class TileType, class F>
+void parallel_for_cell_tiles(const std::vector<CellTileItem<TileType> >& items,
+                             F&& f) {
+  const int nTiles = static_cast<int>(items.size());
+  parallel_for_host_items(nTiles, [&](int ord) { f(items[ord], ord); }, true);
+}
+
+template <class PC, class F>
+void parallel_for_cell_tiles(PC& pc, int iLev, F&& f) {
+  const auto items = collect_cell_tiles(pc, iLev);
+  parallel_for_cell_tiles(items, std::forward<F>(f));
+}
+
+// Deterministic colored cell-tile deposition over `items` with stencil span
+// `stencilSpan` per dimension (e.g. 2 for 2-node CIC, 3 for 3-cell CIC, 4 for
+// Esirkepov current).
+//
+// Pass 1 partitions tiles into `stencilSpan^D` colors by `cell[d] mod
+// stencilSpan` and runs each color in parallel across OpenMP threads: two
+// tiles of the same color are separated by at least `stencilSpan` cells in at
+// least one dimension and never touch the same mesh target. `f(item, ord,
+// /*strayPass=*/false)` processes all particles whose stencil is confined to
+// `item.cell` and returns true if the tile also holds any out-of-cell ("stray")
+// particles (such as boundary ghost particles or freshly injected face
+// particles before Redistribute).
+//
+// Pass 2 runs `f(item, ord, /*strayPass=*/true)` sequentially in deterministic
+// `ord` order for only those tiles that returned true in Pass 1.
+template <class TileType, class F>
+void deposit_cell_tiles_colored(
+    const std::vector<CellTileItem<TileType> >& items, int stencilSpan, F&& f) {
+  const int nTiles = static_cast<int>(items.size());
+  if (nTiles == 0)
+    return;
+
+  int nColors = 1;
+  for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    nColors *= stencilSpan;
+
+  std::vector<std::vector<int> > colorBuckets(nColors);
+  for (int ord = 0; ord < nTiles; ++ord) {
+    const auto& c = items[ord].cell;
+    int color = 0;
+    int stride = 1;
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+      const int rem = ((c[d] % stencilSpan) + stencilSpan) % stencilSpan;
+      color += rem * stride;
+      stride *= stencilSpan;
+    }
+    colorBuckets[color].push_back(ord);
+  }
+
+  std::vector<unsigned char> hasStray(nTiles, 0);
+  for (int color = 0; color < nColors; ++color) {
+    const auto& bucket = colorBuckets[color];
+    const int nInBucket = static_cast<int>(bucket.size());
+    parallel_for_host_items(
+        nInBucket,
+        [&](int idx) {
+          const int ord = bucket[idx];
+          if (f(items[ord], ord, false))
+            hasStray[ord] = 1;
+        },
+        true);
+  }
+
+  for (int ord = 0; ord < nTiles; ++ord) {
+    if (hasStray[ord])
+      f(items[ord], ord, true);
+  }
+}
+
+template <class PC, class F>
+void deposit_cell_tiles_colored(PC& pc, int iLev, int stencilSpan, F&& f) {
+  const auto items = collect_cell_tiles(pc, iLev);
+  deposit_cell_tiles_colored(items, stencilSpan, std::forward<F>(f));
+}
+
 template <class F> amrex::Real deterministic_sum(int n, F&& f) {
 #ifdef AMREX_USE_CUDA
   if (n <= 0)
