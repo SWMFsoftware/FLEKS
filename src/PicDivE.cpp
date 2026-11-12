@@ -125,7 +125,7 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       mask_body(residual, cell_status(iLev));
     }
 
-    if (fsolver.effective_divE_backend() == ESolverBackend::AmrexGMRES) {
+    if (fsolver.divESolverBackend == ESolverBackend::AmrexGMRES) {
       if (static_cast<int>(amrexDivESolver.size()) < n_lev_max()) {
         amrexDivESolver.resize(n_lev_max());
       }

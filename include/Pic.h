@@ -45,7 +45,6 @@ public:
   FieldSolverMode mode;
   ESolverBackend solverBackend;
   EPrecondType precondType;
-  bool hasDivESolverBackend;
   ESolverBackend divESolverBackend;
   EPrecondType divEPrecondType;
   int gmresRestartLength;
@@ -58,16 +57,11 @@ public:
     mode = FieldSolverMode::GMRES;
     solverBackend = ESolverBackend::LegacyGMRES;
     precondType = EPrecondType::Auto;
-    hasDivESolverBackend = false;
     divESolverBackend = ESolverBackend::LegacyGMRES;
     divEPrecondType = EPrecondType::Auto;
     gmresRestartLength = 30;
     precondIters = 2;
     smootherWeight = 2.0 / 3.0;
-  }
-
-  ESolverBackend effective_divE_backend() const {
-    return hasDivESolverBackend ? divESolverBackend : solverBackend;
   }
 };
 

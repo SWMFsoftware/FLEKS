@@ -291,10 +291,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
           std::string lower = solverStr;
           std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
           if (lower == "legacy" || lower == "gmres" || lower == "fleks") {
-            fsolver.hasDivESolverBackend = true;
             fsolver.divESolverBackend = ESolverBackend::LegacyGMRES;
           } else if (lower == "amrex" || lower == "amrex_gmres") {
-            fsolver.hasDivESolverBackend = true;
             fsolver.divESolverBackend = ESolverBackend::AmrexGMRES;
           } else {
             Abort("Invalid #DIVE solverType '" + solverStr +

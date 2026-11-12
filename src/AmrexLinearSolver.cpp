@@ -138,7 +138,7 @@ void AmrexLinearSolver::solve(MultiFab& sol, const MultiFab& rhs, Real tolRel,
   MultiFab::Copy(m_rhs0, rhs, 0, 0, 3, 0);
   mask_inactive_nodes(m_rhs0);
 
-  m_gmres.setRestartLength(restartLen);
+  m_gmres.setRestartLength(std::min(restartLen, maxIters));
   m_gmres.setMaxIters(maxIters);
   m_gmres.setVerbose(verbose);
   m_gmres.solve(m_sol0, m_rhs0, tolRel, tolAbs);
@@ -450,7 +450,7 @@ void AmrexDivESolver::solve(MultiFab& sol, const MultiFab& rhs, Real tolRel,
   MultiFab::Copy(m_rhs0, rhs, 0, 0, 1, 0);
   mask_inactive_cells(m_rhs0);
 
-  m_gmres.setRestartLength(restartLen);
+  m_gmres.setRestartLength(std::min(restartLen, maxIters));
   m_gmres.setMaxIters(maxIters);
   m_gmres.setVerbose(verbose);
   m_gmres.solve(m_sol0, m_rhs0, tolRel, tolAbs);
