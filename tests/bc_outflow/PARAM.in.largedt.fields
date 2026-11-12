@@ -50,6 +50,12 @@ implicit
 0.5                     theta
 0.0                     ratioDivC2C
 
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
 #DIVE
 F                       doCorrectDivE
 

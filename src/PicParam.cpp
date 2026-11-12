@@ -279,6 +279,49 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {
       param.read_var("nDivECorrection", nDivECorrection);
+
+      bool progress = true;
+      while (progress) {
+        progress = false;
+        std::string solverStr;
+        if (param.read_optional("solverType", solverStr) ||
+            param.read_optional("typeSolver", solverStr) ||
+            param.read_optional("backend", solverStr)) {
+          progress = true;
+          std::string lower = solverStr;
+          std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+          if (lower == "legacy" || lower == "gmres" || lower == "fleks") {
+            fsolver.hasDivESolverBackend = true;
+            fsolver.divESolverBackend = ESolverBackend::LegacyGMRES;
+          } else if (lower == "amrex" || lower == "amrex_gmres") {
+            fsolver.hasDivESolverBackend = true;
+            fsolver.divESolverBackend = ESolverBackend::AmrexGMRES;
+          } else {
+            Abort("Invalid #DIVE solverType '" + solverStr +
+                  "': expected 'legacy' or 'amrex'.");
+          }
+        }
+
+        std::string precondStr;
+        if (param.read_optional("precondType", precondStr) ||
+            param.read_optional("typePrecond", precondStr) ||
+            param.read_optional("precond", precondStr)) {
+          progress = true;
+          std::string lower = precondStr;
+          std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+          if (lower == "auto" || lower == "adaptive") {
+            fsolver.divEPrecondType = EPrecondType::Auto;
+          } else if (lower == "none" || lower == "identity") {
+            fsolver.divEPrecondType = EPrecondType::None;
+          } else if (lower == "jacobi" || lower == "diag" ||
+                     lower == "diagonal") {
+            fsolver.divEPrecondType = EPrecondType::Jacobi;
+          } else {
+            Abort("Invalid #DIVE precondType '" + precondStr +
+                  "': expected 'auto', 'none', or 'jacobi'.");
+          }
+        }
+      }
     }
   } else if (command == "#EFIELDSOLVER") {
     hasEFieldSolver_ = true;

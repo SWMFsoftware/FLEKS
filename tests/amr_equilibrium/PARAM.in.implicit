@@ -105,6 +105,8 @@ z=0 fluid ascii planet  plotString
 #EFIELDSOLVER
 1.0e-6                  EFieldTol
 200                     EFieldIter
+amrex                   solverType
+auto                    precondType
 
 #REGION
 center_slab             name

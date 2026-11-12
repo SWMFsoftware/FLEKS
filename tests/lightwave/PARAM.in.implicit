@@ -74,6 +74,12 @@ CAVEAT: line mirrors SWMF test25 (PARAM.in.test.FLEKS.AMR.LightWave.3D) for
 100                     dnReportLB
 T                       doCompact
 
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
 #DIVE
 F                       doCorrectDivE
 

@@ -109,7 +109,6 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
     // scratch before solver.solve() uses it inside divE_accurate_matvec.
     MultiFab& residual = divEOutMF[iLev];
 
-    solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
     Real coef = 1.0 / rhoTheta;
 
     MultiFab::LinComb(residual, coef, centerDivE[iLev], 0, -fourPI * coef,
@@ -126,26 +125,66 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       mask_body(residual, cell_status(iLev));
     }
 
-    convert_3d_to_1d(residual, solver.rhs, iLev);
+    if (fsolver.effective_divE_backend() == ESolverBackend::AmrexGMRES) {
+      if (static_cast<int>(amrexDivESolver.size()) < n_lev_max()) {
+        amrexDivESolver.resize(n_lev_max());
+      }
+      if (!amrexDivESolver[iLev]) {
+        amrexDivESolver[iLev] = std::make_unique<AmrexDivESolver>(this, iLev);
+      }
+      amrexDivESolver[iLev]->define(this, iLev, fsolver.divEPrecondType);
 
-    BL_PROFILE_VAR("Pic::phi_iterate", solve);
-    solver.solve(iLev, reportSolver);
-    BL_PROFILE_VAR_STOP(solve);
+      const Real res0 = std::sqrt(MultiFab::Dot(
+          amrexDivESolver[iLev]->dot_mask(), residual, 0, residual, 0, 1, 0));
+      if (reportSolver) {
+        Print() << "Before 0 nMatVec, relative tol: " << solver.get_nIter()
+                << " " << solver.get_tol() << std::endl;
+        Print() << "initial residual norm: " << res0 << std::endl;
+      }
 
-    convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
-    centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
+#ifdef GMRES_VERBOSE
+      const int verbose = reportSolver ? 2 : 0;
+#else
+      const int verbose = 0;
+#endif
+
+      int nMatvec = 0;
+      Real resFinal = 0.0;
+      BL_PROFILE_VAR("Pic::phi_iterate", solve);
+      amrexDivESolver[iLev]->solve(centerPhi[iLev], residual, solver.get_tol(),
+                                   0.0, solver.get_nIter(),
+                                   fsolver.gmresRestartLength, verbose, nMatvec,
+                                   resFinal);
+      BL_PROFILE_VAR_STOP(solve);
+
+      const Real relErr = (res0 > 0.0) ? (resFinal / res0) : 0.0;
+      solver.set_stats(res0, nMatvec, relErr);
+
+      if (reportSolver) {
+        Print() << "After nMatVec, relative error = " << nMatvec << " "
+                << relErr << std::endl;
+      }
+      centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
+    } else {
+      solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
+
+      convert_3d_to_1d(residual, solver.rhs, iLev);
+
+      BL_PROFILE_VAR("Pic::phi_iterate", solve);
+      solver.solve(iLev, reportSolver);
+      BL_PROFILE_VAR_STOP(solve);
+
+      convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
+      centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
   }
 }
 
 //==========================================================
-void Pic::divE_accurate_matvec(const Real* vecIn, Real* vecOut, int iLev) {
+void Pic::divE_accurate_matvec_impl(MultiFab& inMF, MultiFab& outMF, int iLev) {
   std::string nameFunc = "Pic::divE_matvec";
   timing_func(nameFunc);
 
-  MultiFab& inMF = divEInMF[iLev];
-  MultiFab& outMF = divEOutMF[iLev];
-
-  convert_1d_to_3d(vecIn, inMF, iLev);
   inMF.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
 
   const Real factor = fourPI * fourPI;
@@ -187,8 +226,57 @@ void Pic::divE_accurate_matvec(const Real* vecIn, Real* vecOut, int iLev) {
       lArr(i, j, k) = sum * factor;
     });
   }
+}
 
+//==========================================================
+void Pic::divE_accurate_matvec(const Real* vecIn, Real* vecOut, int iLev) {
+  MultiFab& inMF = divEInMF[iLev];
+  MultiFab& outMF = divEOutMF[iLev];
+
+  convert_1d_to_3d(vecIn, inMF, iLev);
+  divE_accurate_matvec_impl(inMF, outMF, iLev);
   convert_3d_to_1d(outMF, vecOut, iLev);
+}
+
+//==========================================================
+void Pic::divE_accurate_matvec(const MultiFab& inMF, MultiFab& outMF,
+                               int iLev) {
+  MultiFab::Copy(divEInMF[iLev], inMF, 0, 0, 1, 0);
+  divE_accurate_matvec_impl(divEInMF[iLev], outMF, iLev);
+}
+
+//==========================================================
+void Pic::build_divE_preconditioner(MultiFab& invDiagMF,
+                                    const iMultiFab& dotMask, int iLev) const {
+  const BoxArray& ba = boxArray(iLev);
+  const DistributionMapping& dm = DistributionMap(iLev);
+  if (invDiagMF.empty() || invDiagMF.boxArray() != ba ||
+      invDiagMF.DistributionMap() != dm) {
+    invDiagMF.define(ba, dm, 1, 0);
+  }
+
+  const Real factor = fourPI * fourPI;
+#if (AMREX_SPACEDIM == 2)
+  constexpr int centerGp = 4;
+#else
+  constexpr int centerGp = 13;
+#endif
+
+  for (MFIter mfi(invDiagMF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.tilebox();
+    const Array4<Real>& invArr = invDiagMF[mfi].array();
+    const Array4<RealCMM const>& mmArr = centerMM[iLev][mfi].const_array();
+    const Array4<int const>& maskArr = dotMask[mfi].const_array();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (maskArr(i, j, k) == 0) {
+        invArr(i, j, k) = 0.0;
+        return;
+      }
+      const Real diag = mmArr(i, j, k)[centerGp] * factor;
+      invArr(i, j, k) = (std::abs(diag) > 0.0) ? (1.0 / diag) : 0.0;
+    });
+  }
 }
 
 //==========================================================

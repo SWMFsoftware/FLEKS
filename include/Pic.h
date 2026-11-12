@@ -45,6 +45,9 @@ public:
   FieldSolverMode mode;
   ESolverBackend solverBackend;
   EPrecondType precondType;
+  bool hasDivESolverBackend;
+  ESolverBackend divESolverBackend;
+  EPrecondType divEPrecondType;
   int gmresRestartLength;
   int precondIters;
   amrex::Real smootherWeight;
@@ -55,9 +58,16 @@ public:
     mode = FieldSolverMode::GMRES;
     solverBackend = ESolverBackend::LegacyGMRES;
     precondType = EPrecondType::Auto;
+    hasDivESolverBackend = false;
+    divESolverBackend = ESolverBackend::LegacyGMRES;
+    divEPrecondType = EPrecondType::Auto;
     gmresRestartLength = 30;
     precondIters = 2;
     smootherWeight = 2.0 / 3.0;
+  }
+
+  ESolverBackend effective_divE_backend() const {
+    return hasDivESolverBackend ? divESolverBackend : solverBackend;
   }
 };
 
@@ -110,6 +120,7 @@ class Pic : public GridAccess {
   friend PlotWriter;
   friend ParticleTracker;
   friend class amrex::AmrexLinearSolver;
+  friend class amrex::AmrexDivESolver;
   // private variables
 private:
   bool useHybridPIC = false;
@@ -355,6 +366,7 @@ private:
   LinearSolver eSolver;
   LinearSolver divESolver;
   amrex::Vector<std::unique_ptr<amrex::AmrexLinearSolver> > amrexESolver;
+  amrex::Vector<std::unique_ptr<amrex::AmrexDivESolver> > amrexDivESolver;
 
   // Persistent scratch MultiFabs for implicit field solver (full-PIC)
   amrex::Vector<amrex::MultiFab> solverVecMF;
@@ -569,6 +581,9 @@ private:
   }
   bool is_body_conducting() const {
     return use_body() && bodyFieldBC == BodyFieldBC::conducting;
+  }
+  bool is_body_insulating() const {
+    return use_body() && bodyFieldBC == BodyFieldBC::insulating;
   }
   // Static intrinsic field of the planet (#DIPOLE / #CRUSTALFIELD), on the
   // same grids as the evolved field. Filled at init and after every regrid,
@@ -1181,6 +1196,13 @@ public:
   void amr_divE_correction();
   void divE_accurate_matvec(const amrex::Real *vecIn, amrex::Real *vecOut,
                             int iLev);
+  void divE_accurate_matvec(const amrex::MultiFab &inMF,
+                            amrex::MultiFab &outMF, int iLev);
+  void divE_accurate_matvec_impl(amrex::MultiFab &inMF, amrex::MultiFab &outMF,
+                                 int iLev);
+  void build_divE_preconditioner(amrex::MultiFab &invDiagMF,
+                                 const amrex::iMultiFab &dotMask,
+                                 int iLev) const;
   void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
   void sum_to_center_amr(bool isBeforeCorrection, int iLev);

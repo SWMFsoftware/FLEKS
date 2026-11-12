@@ -51,6 +51,8 @@ F                       doCorrectDivE
 #EFIELDSOLVER
 1.0e-8                  tol        GMRES relative tolerance
 30                      nIter      GMRES max iterations
+amrex                   solverType
+auto                    precondType
 
 Field time-discretization for the implicit Maxwell solver (theta-scheme).
 theta = 1 is fully implicit, 0.5 is Crank-Nicolson. coefDiff is the

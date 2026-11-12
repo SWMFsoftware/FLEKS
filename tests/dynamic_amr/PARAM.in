@@ -86,6 +86,8 @@ F                       useFixedDt
 #EFIELDSOLVER
 1.0e-6                  EFieldTol
 200                     EFieldIter
+amrex                   solverType
+auto                    precondType
 
 #DIVE
 T

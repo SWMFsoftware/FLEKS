@@ -99,6 +99,12 @@ T                       useFixedDt
 10                      dnSavePic
 10                      dnSavePT
 
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
 #PARTICLES
 250                     nParticle per cell in X
 1                       nParticle per cell in Y
