@@ -288,6 +288,76 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("nIter", nIter);
     eSolver.set_tol(tol);
     eSolver.set_nIter(nIter);
+
+    bool progress = true;
+    while (progress) {
+      progress = false;
+      std::string solverStr;
+      if (param.read_optional("solverType", solverStr) ||
+          param.read_optional("typeSolver", solverStr) ||
+          param.read_optional("backend", solverStr)) {
+        progress = true;
+        std::string lower = solverStr;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower == "legacy" || lower == "gmres" || lower == "fleks") {
+          fsolver.solverBackend = ESolverBackend::LegacyGMRES;
+        } else if (lower == "amrex" || lower == "amrex_gmres") {
+          fsolver.solverBackend = ESolverBackend::AmrexGMRES;
+        } else {
+          Abort("Invalid #EFIELDSOLVER solverType '" + solverStr +
+                "': expected 'legacy' or 'amrex'.");
+        }
+      }
+
+      std::string precondStr;
+      if (param.read_optional("precondType", precondStr) ||
+          param.read_optional("typePrecond", precondStr) ||
+          param.read_optional("precond", precondStr)) {
+        progress = true;
+        std::string lower = precondStr;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower == "auto" || lower == "adaptive") {
+          fsolver.precondType = EPrecondType::Auto;
+        } else if (lower == "none" || lower == "identity") {
+          fsolver.precondType = EPrecondType::None;
+        } else if (lower == "jacobi" || lower == "diag" ||
+                   lower == "diagonal") {
+          fsolver.precondType = EPrecondType::Jacobi;
+        } else if (lower == "block_jacobi" || lower == "blockjacobi" ||
+                   lower == "block") {
+          fsolver.precondType = EPrecondType::BlockJacobi;
+        } else if (lower == "smoother" || lower == "weighted_jacobi") {
+          fsolver.precondType = EPrecondType::Smoother;
+        } else {
+          Abort("Invalid #EFIELDSOLVER precondType '" + precondStr +
+                "': expected 'auto', 'none', 'jacobi', 'block_jacobi', or "
+                "'smoother'.");
+        }
+      }
+
+      if (param.read_optional("nRestart", fsolver.gmresRestartLength) ||
+          param.read_optional("restartLength", fsolver.gmresRestartLength)) {
+        progress = true;
+        if (fsolver.gmresRestartLength < 1) {
+          Abort("Invalid #EFIELDSOLVER nRestart: must be >= 1.");
+        }
+      }
+
+      if (param.read_optional("nPrecondIter", fsolver.precondIters) ||
+          param.read_optional("precondIters", fsolver.precondIters)) {
+        progress = true;
+        if (fsolver.precondIters < 1) {
+          Abort("Invalid #EFIELDSOLVER nPrecondIter: must be >= 1.");
+        }
+      }
+
+      if (param.read_optional("smootherWeight", fsolver.smootherWeight)) {
+        progress = true;
+        if (fsolver.smootherWeight <= 0.0) {
+          Abort("Invalid #EFIELDSOLVER smootherWeight: must be > 0.");
+        }
+      }
+    }
   } else if (command == "#PARTICLES") {
     param.read_var("npcelx", pInfo.nPartPerCell[ix_]);
     param.read_var("npcely", pInfo.nPartPerCell[iy_]);
