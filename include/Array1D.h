@@ -18,11 +18,13 @@ template <class T, const int n> struct Arr1D {
   Arr1D() = default;
 
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D(const T& b) {
+    AMREX_PRAGMA_SIMD
     for (int i = 0; i < n; ++i)
       data[i] = b;
   }
 
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D& operator=(const T& b) {
+    AMREX_PRAGMA_SIMD
     for (int i = 0; i < n; ++i)
       data[i] = b;
     return *this;
@@ -37,12 +39,14 @@ template <class T, const int n> struct Arr1D {
   }
 
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D& operator+=(const Arr1D& b) {
+    AMREX_PRAGMA_SIMD
     for (int i = 0; i < n; ++i)
       data[i] += b.data[i];
     return *this;
   }
 
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D& operator*=(const Arr1D& b) {
+    AMREX_PRAGMA_SIMD
     for (int i = 0; i < n; ++i)
       data[i] *= b.data[i];
     return *this;
@@ -50,6 +54,7 @@ template <class T, const int n> struct Arr1D {
 
   template <typename U, typename = std::enable_if_t<std::is_arithmetic_v<U> > >
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D& operator*=(U b) {
+    AMREX_PRAGMA_SIMD
     for (int i = 0; i < n; ++i)
       data[i] *= static_cast<T>(b);
     return *this;

@@ -3,6 +3,7 @@ include ../Makefile.conf
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH} -I${UTILDIR}/AMREX/Src/LinearSolvers
 VERBOSE_GMRES = 
+SIMD_FLAGS = -march=native -fopenmp-simd
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 
 # GPU build: extra nvcc warning/error flags and device linking when Makefile.conf
@@ -14,6 +15,8 @@ ifeq (${C_COMPILER_NAME},nvcc)
 	--Werror ext-lambda-captures-this --display-error-number \
 	--diag-error 20092 -Xcudafe --diag_suppress=esa_on_defaulted_function_ignored
   DLINK_OBJ = dlink.o
+else
+  FLAGCC += ${SIMD_FLAGS}
 endif
 
 -include Makefile.DEPEND

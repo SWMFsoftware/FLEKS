@@ -153,6 +153,7 @@ my $NewLevMax;
 my $NewUserSource;
 my $ListUserSources;
 my $VerboseGmres;
+my $SimdFlags;
 
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
@@ -164,6 +165,8 @@ foreach (@Arguments){
      if(/^-u=(.*)$/)            {$NewUserSource=$1; next};
      if(/^-debug$/i)            {$VerboseGmres="yes"; next};
      if(/^-nodebug$/i)          {$VerboseGmres="no";  next};
+     if(/^-simd(?:=(\S+))?$/i)  {$SimdFlags = defined($1) ? $1 : "yes"; next};
+     if(/^-nosimd$/i)           {$SimdFlags="no";  next};
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
 
@@ -199,6 +202,8 @@ if (!defined $NewUserSource && !-f $UserSourceFile &&
 &set_grid if $NewLevMax and $NewLevMax ne $nLevMax;
 
 &set_verbose_gmres if defined $VerboseGmres;
+
+&set_simd_flags if defined $SimdFlags;
 
 &print_help if $Help;
 
@@ -261,6 +266,27 @@ sub set_verbose_gmres{
     @ARGV = ("src/Makefile");
     while(<>){
         s/^(\s*VERBOSE_GMRES\s*=).*/$1 $VERBOSE_GMRES/;
+        print;
+    }
+}
+################################################################################
+sub set_simd_flags{
+    # Set SIMD compiler flags in src/Makefile:
+    #   -simd        -> SIMD_FLAGS = -march=native -fopenmp-simd (default)
+    #   -simd=ARCH   -> SIMD_FLAGS = -march=ARCH -fopenmp-simd
+    #   -nosimd      -> SIMD_FLAGS is empty
+    my $SIMD_FLAGS = "";
+    if ($SimdFlags eq "yes") {
+        $SIMD_FLAGS = '-march=native -fopenmp-simd';
+    } elsif ($SimdFlags ne "no") {
+        $SIMD_FLAGS = "-march=$SimdFlags -fopenmp-simd";
+    }
+
+    print "Setting SIMD flags to '$SIMD_FLAGS' in src/Makefile\n";
+
+    @ARGV = ("src/Makefile");
+    while(<>){
+        s/^(\s*SIMD_FLAGS\s*=).*/$1 $SIMD_FLAGS/;
         print;
     }
 }
@@ -430,6 +456,11 @@ sub print_help{
 -nodebug      Do not use debug flags, and switch off the verbose GMRES
               residual logging (only the iteration count and the final
               residual are reported by the solver).
+
+-simd[=ARCH]  Enable SIMD compiler flags (-march=native -fopenmp-simd by default,
+              or -march=ARCH -fopenmp-simd if ARCH is given, e.g. x86-64-v3) in
+              src/Makefile for C++ compilation. Enabled by default.
+-nosimd       Disable extra SIMD compiler flags in src/Makefile.
 
 -lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.
 

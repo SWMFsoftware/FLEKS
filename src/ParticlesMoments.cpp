@@ -378,6 +378,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     timing_func("Pts::sum_moments_node_deposit");
     momentsMF[iLev].setVal(0.0);
+    const Real* const ploLoc = Geom(iLev).ProbLo();
+    const Real* const invDxLoc = Geom(iLev).InvCellSize();
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
 
@@ -401,8 +403,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         IntVect loIdx;
         RealVect dShift;
         Real coef[2][2][2];
-        find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                Geom(iLev).InvCellSize(), loIdx, dShift, coef);
+        find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
         //-----calculate interpolate coef end-------------
 
         //-------nodePlasma begin---------
@@ -428,14 +429,24 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           pMoments[iPyz_] = my * wp;
         }
 
-        for (int iVar = 0; iVar < nMoments; iVar++)
-          for (int kk = lo.z; kk <= hi.z; ++kk)
-            for (int jj = lo.y; jj <= hi.y; ++jj)
-              for (int ii = lo.x; ii <= hi.x; ++ii) {
-                const IntVect ijk = { AMREX_D_DECL(
-                    loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-                momentsArr(ijk, iVar) += coef[ii][jj][kk] * pMoments[iVar];
-              }
+        const int i0 = loIdx[ix_];
+        const int j0 = loIdx[iy_];
+#if (AMREX_SPACEDIM > 2)
+        const int k0 = loIdx[iz_];
+#else
+        constexpr int k0 = 0;
+#endif
+        for (int iVar = 0; iVar < nMoments; iVar++) {
+          const Real mVal = pMoments[iVar];
+          for (int kk = lo.z; kk <= hi.z; ++kk) {
+            for (int jj = lo.y; jj <= hi.y; ++jj) {
+              Real* AMREX_RESTRICT mPtr =
+                  momentsArr.ptr(i0, j0 + jj, k0 + kk, iVar);
+              mPtr[0] += coef[0][jj][kk] * mVal;
+              mPtr[1] += coef[1][jj][kk] * mVal;
+            }
+          }
+        }
 
         //-------nodePlasma end---------
 
@@ -540,26 +551,22 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
       const Box& box = mfi.fabbox();
       const Array4<Real>& arr = fab.array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real rho = arr(i, j, k, iRho_);
+        if (rho > 0) {
+          const Real invRho = 1.0 / rho;
+          const Real ux = arr(i, j, k, iUx_) * invRho;
+          const Real uy = arr(i, j, k, iUy_) * invRho;
+          const Real uz = arr(i, j, k, iUz_) * invRho;
+          arr(i, j, k, iPxx_) = arr(i, j, k, iPxx_) - rho * ux * ux;
+          arr(i, j, k, iPyy_) = arr(i, j, k, iPyy_) - rho * uy * uy;
+          arr(i, j, k, iPzz_) = arr(i, j, k, iPzz_) - rho * uz * uz;
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            const Real rho = arr(i, j, k, iRho_);
-            if (rho > 0) {
-              const Real ux = arr(i, j, k, iUx_) / rho;
-              const Real uy = arr(i, j, k, iUy_) / rho;
-              const Real uz = arr(i, j, k, iUz_) / rho;
-              arr(i, j, k, iPxx_) = arr(i, j, k, iPxx_) - rho * ux * ux;
-              arr(i, j, k, iPyy_) = arr(i, j, k, iPyy_) - rho * uy * uy;
-              arr(i, j, k, iPzz_) = arr(i, j, k, iPzz_) - rho * uz * uz;
-
-              arr(i, j, k, iPxy_) = arr(i, j, k, iPxy_) - rho * ux * uy;
-              arr(i, j, k, iPxz_) = arr(i, j, k, iPxz_) - rho * ux * uz;
-              arr(i, j, k, iPyz_) = arr(i, j, k, iPyz_) - rho * uy * uz;
-            }
-          }
+          arr(i, j, k, iPxy_) = arr(i, j, k, iPxy_) - rho * ux * uy;
+          arr(i, j, k, iPxz_) = arr(i, j, k, iPxz_) - rho * ux * uz;
+          arr(i, j, k, iPyz_) = arr(i, j, k, iPyz_) - rho * uy * uz;
+        }
+      });
     }
   }
 }

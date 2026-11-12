@@ -52,6 +52,7 @@ void AmrexLinearSolver::mask_inactive_nodes(MultiFab& mf) const {
       Real* AMREX_RESTRICT p2 = mf.atLocalIdx(li).dataPtr(2);
       const int* AMREX_RESTRICT pM = m_dotMask.atLocalIdx(li).dataPtr();
       const Long nPts = mf.atLocalIdx(li).box().numPts();
+#pragma omp simd
       for (Long i = 0; i < nPts; ++i) {
         const Real m = static_cast<Real>(pM[i]);
         p0[i] *= m;

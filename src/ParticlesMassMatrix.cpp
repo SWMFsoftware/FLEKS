@@ -12,112 +12,6 @@
 using namespace amrex;
 
 //==========================================================
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
-    int iLev, const IntVect& loIdx, const RealVect& dShift, Real qp,
-    Array4<RealCMM> const& mmArr) {
-
-  Real weights_IIID[2][2][2][nDim3];
-  //----- Mass matrix calculation begin--------------
-  const Real xi0 = dShift[ix_] * dx[iLev][ix_];
-  const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-  const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
-  const Real xi1 = dx[iLev][ix_] - xi0;
-  const Real eta1 = dx[iLev][iy_] - eta0;
-  const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
-
-  weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
-  weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
-  weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol[iLev];
-
-  // xi0*eta0*zeta1*invVol[iLev];
-  weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol[iLev];
-  weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol[iLev];
-  weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol[iLev];
-
-  // xi0*eta1*zeta0*invVol[iLev];
-  weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol[iLev];
-  weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol[iLev];
-  weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol[iLev];
-
-  // xi0*eta1*zeta1*invVol[iLev];
-  weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol[iLev];
-  weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol[iLev];
-  weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol[iLev];
-
-  // xi1*eta0*zeta0*invVol[iLev];
-  weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol[iLev];
-  weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol[iLev];
-  weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol[iLev];
-
-  // xi1*eta0*zeta1*invVol[iLev];
-  weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol[iLev];
-  weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol[iLev];
-  weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol[iLev];
-
-  // xi1*eta1*zeta0*invVol[iLev];
-  weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol[iLev];
-  weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol[iLev];
-  weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol[iLev];
-
-  // xi1*eta1*zeta1*invVol[iLev];
-  weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol[iLev];
-  weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol[iLev];
-  weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol[iLev];
-
-  const int iMin = loIdx[ix_];
-  const int jMin = loIdx[iy_];
-  const int kMin = nDim > 2 ? loIdx[iz_] : 0;
-  const int iMax = iMin + 1;
-  const int jMax = jMin + 1;
-  const int kMax = nDim > 2 ? kMin + 1 : 0;
-
-  const Real coef = fabs(qp) * invVol[iLev];
-  Real wg_D[nDim3];
-  for (int k1 = kMin; k1 <= kMax; k1++)
-    for (int j1 = jMin; j1 <= jMax; j1++)
-      for (int i1 = iMin; i1 <= iMax; i1++) {
-
-        for (int iDim = 0; iDim < nDim; iDim++) {
-          wg_D[iDim] =
-              coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
-        }
-
-        auto& data = mmArr(i1, j1, k1);
-        // Real weights[27] = { 0 };
-        for (int i2 = iMin; i2 <= iMax; i2++) {
-          int ip = i2 - i1 + 1;
-#if (AMREX_SPACEDIM == 2)
-          for (int j2 = jMin; j2 <= jMax; j2++) {
-            int jp = j2 - j1 + 1;
-            const int gp = ip * 3 + jp;
-            const Real(&wg1_D)[nDim3] = weights_IIID[i2 - iMin][j2 - jMin][0];
-            for (int iDim = 0; iDim < nDim; iDim++) {
-              data[gp] += wg_D[iDim] * wg1_D[iDim];
-            }
-          }
-#else
-          const int gp0 = ip * 9;
-          for (int j2 = jMin; j2 <= jMax; j2++) {
-            int jp = j2 - j1 + 1;
-            const int gp1 = gp0 + jp * nDim3;
-            for (int k2 = kMin; k2 <= kMax; k2++) {
-              const Real(&wg1_D)[nDim3] =
-                  weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
-
-              // const int kp = k2 - k1 + 1;
-              const int gp = gp1 + k2 - k1 + 1;
-              for (int iDim = 0; iDim < nDim; iDim++) {
-                data[gp] += wg_D[iDim] * wg1_D[iDim];
-              }
-            }
-          }
-#endif
-        }
-      }
-}
-
-//==========================================================
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
@@ -128,6 +22,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
+  const Real* const ploLoc = Geom(iLev).ProbLo();
+  const Real* const invDxLoc = Geom(iLev).InvCellSize();
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
@@ -157,8 +53,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       RealVect dShift;
 
       Real coef[2][2][2];
-      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
+      find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
       //-----calculate interpolate coef end-------------
 
       //----- Mass matrix calculation begin--------------
@@ -249,34 +144,38 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const int kMax = nDim > 2 ? kMin + 1 : 0;
 
       for (int k1 = kMin; k1 <= kMax; k1++)
-        for (int j1 = jMin; j1 <= jMax; j1++)
+        for (int j1 = jMin; j1 <= jMax; j1++) {
+          const int jp0 = 1 - (j1 - jMin);
           for (int i1 = iMin; i1 <= iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
             auto& data0 = mmArr(i1, j1, k1);
+            const int iBase = (1 - (i1 - iMin)) * 9;
             for (int k2 = kMin; k2 <= kMax; k2++) {
               const int kp = k2 - k1 + 1;
               if (kp > 0) {
-                for (int j2 = jMin; j2 <= jMax; j2++) {
-                  const int jp = j2 - j1 + 1;
-                  for (int i2 = iMin; i2 <= iMax; i2++) {
-                    const Real weight =
-                        wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
+                const int dk2 = k2 - kMin;
+                const Real w00 = wg * coef[0][0][dk2];
+                const Real w01 = wg * coef[1][0][dk2];
+                const Real w10 = wg * coef[0][1][dk2];
+                const Real w11 = wg * coef[1][1][dk2];
 #if (AMREX_SPACEDIM == 2)
-                    const int idx0 = jp * 27 + (i2 - i1 + 1) * 9;
+                const int idxBase = jp0 * 27 + iBase;
 #else
-                    const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+                const int idxBase = kp * 81 + jp0 * 27 + iBase;
 #endif
-
-                    Real* const data = &(data0[idx0]);
-                    for (int idx = 0; idx < 9; idx++) {
-                      data[idx] += alpha[idx] * weight;
-                    }
-                  } // k2
-
-                } // j2
-              } // if (ip > 0)
-            } // i2
-          } // k1
+                Real* AMREX_RESTRICT d00 = &(data0[idxBase]);
+#pragma omp simd
+                for (int idx = 0; idx < 9; idx++) {
+                  const Real a = alpha[idx];
+                  d00[idx] += a * w00;
+                  d00[idx + 9] += a * w01;
+                  d00[idx + 27] += a * w10;
+                  d00[idx + 36] += a * w11;
+                }
+              } // if (kp > 0)
+            } // k2
+          } // i1
+        } // j1
 
       //----- Mass matrix calculation end--------------
 
@@ -500,6 +399,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
             for (int i1 = iMin; i1 <= iMax; i1++) {
               const Real wg = coef[i][i1 - iMin][j1 - jMin][k1 - kMin];
               auto& data0 = mmArrt[i](i1, j1, k1);
+              const int iBase = (1 - (i1 - iMin)) * 9;
               for (int k2 = kMin; k2 <= kMax; k2++) {
 #if (AMREX_SPACEDIM == 3)
                 const int kp = k2 - k1 + 1;
@@ -508,25 +408,24 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
                 if (true) {
                   for (int j2 = jMin; j2 <= jMax; j2++) {
                     const int jp = j2 - j1 + 1;
-                    for (int i2 = iMin; i2 <= iMax; i2++) {
-                      const Real weight =
-                          wg * coef[i][i2 - iMin][j2 - jMin][k2 - kMin];
+                    const Real w0 = wg * coef[i][0][j2 - jMin][k2 - kMin];
+                    const Real w1 = wg * coef[i][1][j2 - jMin][k2 - kMin];
 #if (AMREX_SPACEDIM == 2)
-                      const int idx0 = jp * 27 + (i2 - i1 + 1) * 9;
+                    const int idxBase = jp * 27 + iBase;
 #else
-                      const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+                    const int idxBase = kp * 81 + jp * 27 + iBase;
 #endif
-
-                      Real* const data = &(data0[idx0]);
-                      for (int idx = 0; idx < 9; idx++) {
-                        data[idx] += alpha[idx] * weight;
-                      }
-                    } // k2
-
+                    Real* AMREX_RESTRICT data = &(data0[idxBase]);
+#pragma omp simd
+                    for (int idx = 0; idx < 9; idx++) {
+                      const Real a = alpha[idx];
+                      data[idx] += a * w0;
+                      data[idx + 9] += a * w1;
+                    }
                   } // j2
-                } // if (ip > 0)
-              } // i2
-            } // k1
+                } // if (kp > 0)
+              } // k2
+            } // i1
       }
     } // for p
   }
@@ -542,8 +441,9 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
 
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
-
   const int iLev = 0;
+  const Real* const ploLoc = Geom(iLev).ProbLo();
+  const Real* const invDxLoc = Geom(iLev).InvCellSize();
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     const Array4<Real const> nodeB0Arr =
@@ -567,8 +467,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       RealVect dShift;
 
       Real coef[2][2][2];
-      find_node_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                              Geom(iLev).InvCellSize(), loIdx, dShift, coef);
+      find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
       //-----calculate interpolate coef end-------------
 
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];

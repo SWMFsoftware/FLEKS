@@ -298,23 +298,48 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_fields(
     const amrex::IntVect& loIdx, const amrex::Real (&coef)[NCoef][NCoef][NCoef],
     const amrex::Dim3& lo, const amrex::Dim3& hi,
     amrex::Real* (&values)[NField]) {
-  for (int iField = 0; iField < NField; ++iField)
-    for (int iDim = 0; iDim < nDim3; ++iDim)
-      values[iField][iDim] = 0.0;
-
-  for (int k = lo.z; k <= hi.z; ++k)
-    for (int j = lo.y; j <= hi.y; ++j)
-      for (int i = lo.x; i <= hi.x; ++i) {
-        const amrex::IntVect ijk = { AMREX_D_DECL(
-            loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
-        const amrex::Real c = coef[i][j][k];
-        for (int iField = 0; iField < NField; ++iField) {
-          const amrex::Array4<const amrex::Real>& field = fields[iField];
-          amrex::Real* AMREX_RESTRICT value = values[iField];
-          for (int iDim = 0; iDim < nDim3; ++iDim)
-            value[iDim] += field(ijk, iDim) * c;
+  if (NCoef == 2 && lo.x == 0 && hi.x == 1) {
+    const int i0 = loIdx[ix_];
+    const int j0 = loIdx[iy_];
+#if (AMREX_SPACEDIM > 2)
+    const int k0 = loIdx[iz_];
+#else
+    constexpr int k0 = 0;
+#endif
+    for (int iField = 0; iField < NField; ++iField) {
+      const amrex::Array4<const amrex::Real>& field = fields[iField];
+      amrex::Real* AMREX_RESTRICT value = values[iField];
+      for (int iDim = 0; iDim < nDim3; ++iDim) {
+        amrex::Real acc = 0.0;
+        for (int k = lo.z; k <= hi.z; ++k) {
+          for (int j = lo.y; j <= hi.y; ++j) {
+            const amrex::Real* AMREX_RESTRICT p =
+                field.ptr(i0, j0 + j, k0 + k, iDim);
+            acc += p[0] * coef[0][j][k] + p[1] * coef[1][j][k];
+          }
         }
+        value[iDim] = acc;
       }
+    }
+  } else {
+    for (int iField = 0; iField < NField; ++iField)
+      for (int iDim = 0; iDim < nDim3; ++iDim)
+        values[iField][iDim] = 0.0;
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          const amrex::IntVect ijk = { AMREX_D_DECL(
+              loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
+          const amrex::Real c = coef[i][j][k];
+          for (int iField = 0; iField < NField; ++iField) {
+            const amrex::Array4<const amrex::Real>& field = fields[iField];
+            amrex::Real* AMREX_RESTRICT value = values[iField];
+            for (int iDim = 0; iDim < nDim3; ++iDim)
+              value[iDim] += field(ijk, iDim) * c;
+          }
+        }
+  }
 }
 
 /**
@@ -334,15 +359,35 @@ template <int NCoef>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
     const amrex::Array4<amrex::Real>& field, const amrex::IntVect& loIdx,
     const amrex::Real (&coef)[NCoef][NCoef][NCoef], const amrex::Dim3& lo,
-    const amrex::Dim3& hi, const amrex::Real* value, int nComp) {
-  for (int k = lo.z; k <= hi.z; ++k)
-    for (int j = lo.y; j <= hi.y; ++j)
-      for (int i = lo.x; i <= hi.x; ++i) {
-        const amrex::IntVect ijk = { AMREX_D_DECL(
-            loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
-        for (int iDim = 0; iDim < nComp; ++iDim)
-          field(ijk, iDim) += coef[i][j][k] * value[iDim];
+    const amrex::Dim3& hi, const amrex::Real* AMREX_RESTRICT value, int nComp) {
+  if (NCoef == 2 && lo.x == 0 && hi.x == 1) {
+    const int i0 = loIdx[ix_];
+    const int j0 = loIdx[iy_];
+#if (AMREX_SPACEDIM > 2)
+    const int k0 = loIdx[iz_];
+#else
+    constexpr int k0 = 0;
+#endif
+    for (int iDim = 0; iDim < nComp; ++iDim) {
+      const amrex::Real v = value[iDim];
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          amrex::Real* AMREX_RESTRICT p = field.ptr(i0, j0 + j, k0 + k, iDim);
+          p[0] += coef[0][j][k] * v;
+          p[1] += coef[1][j][k] * v;
+        }
       }
+    }
+  } else {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          const amrex::IntVect ijk = { AMREX_D_DECL(
+              loIdx[ix_] + i, loIdx[iy_] + j, loIdx[iz_] + k) };
+          for (int iDim = 0; iDim < nComp; ++iDim)
+            field(ijk, iDim) += coef[i][j][k] * value[iDim];
+        }
+  }
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(

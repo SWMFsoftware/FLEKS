@@ -168,16 +168,16 @@ void Pic::divE_accurate_matvec(const Real* vecIn, Real* vecOut, int iLev) {
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       Real sum = 0.0;
 #if (AMREX_SPACEDIM == 2)
-      for (int di = -1; di <= 1; ++di) {
-        for (int dj = jMin; dj <= jMax; ++dj) {
+      for (int dj = jMin; dj <= jMax; ++dj) {
+        for (int di = -1; di <= 1; ++di) {
           const int gp = (di + 1) * 3 + (dj + 1);
           sum += rArr(i + di, j + dj, 0) * mmArr(i, j, 0)[gp];
         }
       }
 #else
-      for (int di = -1; di <= 1; ++di) {
+      for (int dk = kMin; dk <= kMax; ++dk) {
         for (int dj = jMin; dj <= jMax; ++dj) {
-          for (int dk = kMin; dk <= kMax; ++dk) {
+          for (int di = -1; di <= 1; ++di) {
             const int gp = (di + 1) * 9 + (dj + 1) * 3 + (dk + 1);
             sum += rArr(i + di, j + dj, k + dk) * mmArr(i, j, k)[gp];
           }

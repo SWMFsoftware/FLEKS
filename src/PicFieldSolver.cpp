@@ -655,10 +655,10 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
     const Array4<Real>& outArr = outMF[mfi].array();
     const Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-      auto& data0 = mmArr(ijk);
+      const auto& data0 = mmArr(ijk);
       Real sumX = 0.0;
       Real sumY = 0.0;
       Real sumZ = 0.0;
@@ -669,14 +669,14 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
           const int gp = (j2 - j + 1) * 3 + i2 - i + 1;
           const int idx0 = gp * 9;
 
-          const Real* const M_I = &(data0[idx0]);
+          const Real* AMREX_RESTRICT const M_I = &(data0[idx0]);
 
           const Real vctX = inArr(i2, j2, 0, ix_);
           const Real vctY = inArr(i2, j2, 0, iy_);
           const Real vctZ = inArr(i2, j2, 0, iz_);
-          sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-          sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-          sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+          sumX += vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2];
+          sumY += vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5];
+          sumZ += vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8];
         }
       }
 #else
@@ -689,21 +689,21 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
             const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
             const int idx0 = gp * 9;
 
-            const Real* const M_I = &(data0[idx0]);
+            const Real* AMREX_RESTRICT const M_I = &(data0[idx0]);
 
             const Real vctX = inArr(i2, j2, k2, ix_);
             const Real vctY = inArr(i2, j2, k2, iy_);
             const Real vctZ = inArr(i2, j2, k2, iz_);
-            sumX += (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-            sumY += (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-            sumZ += (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+            sumX += vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2];
+            sumY += vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5];
+            sumZ += vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8];
           }
         }
       }
 #endif
-      outArr(i, j, k, ix_) = sumX;
-      outArr(i, j, k, iy_) = sumY;
-      outArr(i, j, k, iz_) = sumZ;
+      outArr(i, j, k, ix_) = sumX * c0;
+      outArr(i, j, k, iy_) = sumY * c0;
+      outArr(i, j, k, iz_) = sumZ * c0;
     });
   }
 
@@ -1044,10 +1044,31 @@ void Pic::convert_1d_to_3d(const Real* const p, MultiFab& MF, int iLev) {
   MF.setVal(0.0);
 
   int iCount = 0;
+  const int nComp = MF.nComp();
   for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.tilebox();
 
     const Array4<Real>& arr = MF[mfi].array();
+
+    if (isCenter) {
+      const auto lo = amrex::lbound(box);
+      const auto hi = amrex::ubound(box);
+      const int lenX = hi.x - lo.x + 1;
+      for (int iVar = 0; iVar < nComp; ++iVar) {
+        for (int k = lo.z; k <= hi.z; ++k) {
+          for (int j = lo.y; j <= hi.y; ++j) {
+            Real* AMREX_RESTRICT dst = arr.ptr(lo.x, j, k, iVar);
+            const Real* AMREX_RESTRICT src = p + iCount;
+#pragma omp simd
+            for (int ii = 0; ii < lenX; ++ii) {
+              dst[ii] = src[ii];
+            }
+            iCount += lenX;
+          }
+        }
+      }
+      continue;
+    }
 
     const auto& nodeArr = node_status(iLev)[mfi].array();
 
@@ -1056,11 +1077,10 @@ void Pic::convert_1d_to_3d(const Real* const p, MultiFab& MF, int iLev) {
     // on the surface), and an 'insulating' body keeps all of them.
     const bool skipAllBody = is_body_linetied();
     const bool skipInterior = is_body_conducting();
-    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter ||
-          (bit::is_owner(nodeArr(i, j, k)) &&
-           !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
-           !(skipInterior && bit::is_body_interior(nodeArr(i, j, k))))) {
+    ParallelFor(box, nComp, [&](int i, int j, int k, int iVar) {
+      if (bit::is_owner(nodeArr(i, j, k)) &&
+          !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
+          !(skipInterior && bit::is_body_interior(nodeArr(i, j, k)))) {
         arr(i, j, k, iVar) = p[iCount++];
       }
     });
@@ -1075,10 +1095,31 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, Real* const p, int iLev) {
   bool isCenter = MF.ixType().cellCentered();
 
   int iCount = 0;
+  const int nComp = MF.nComp();
   for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.tilebox();
 
     const Array4<Real const>& arr = MF[mfi].array();
+
+    if (isCenter) {
+      const auto lo = amrex::lbound(box);
+      const auto hi = amrex::ubound(box);
+      const int lenX = hi.x - lo.x + 1;
+      for (int iVar = 0; iVar < nComp; ++iVar) {
+        for (int k = lo.z; k <= hi.z; ++k) {
+          for (int j = lo.y; j <= hi.y; ++j) {
+            const Real* AMREX_RESTRICT src = arr.ptr(lo.x, j, k, iVar);
+            Real* AMREX_RESTRICT dst = p + iCount;
+#pragma omp simd
+            for (int ii = 0; ii < lenX; ++ii) {
+              dst[ii] = src[ii];
+            }
+            iCount += lenX;
+          }
+        }
+      }
+      continue;
+    }
 
     const auto& nodeArr = node_status(iLev)[mfi].array();
 
@@ -1086,11 +1127,10 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, Real* const p, int iLev) {
     // linear system.
     const bool skipAllBody = is_body_linetied();
     const bool skipInterior = is_body_conducting();
-    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter ||
-          (bit::is_owner(nodeArr(i, j, k)) &&
-           !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
-           !(skipInterior && bit::is_body_interior(nodeArr(i, j, k))))) {
+    ParallelFor(box, nComp, [&](int i, int j, int k, int iVar) {
+      if (bit::is_owner(nodeArr(i, j, k)) &&
+          !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
+          !(skipInterior && bit::is_body_interior(nodeArr(i, j, k)))) {
         p[iCount++] = arr(i, j, k, iVar);
       }
     });
@@ -1733,8 +1773,9 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
   MultiFab& mfOld = smoothScratchMF[iLev];
 
   auto smooth_dir = [&](int iDir) {
-    int dIdx[3] = { 0, 0, 0 };
-    dIdx[iDir] = di;
+    const int dIdx0 = (iDir == ix_) ? di : 0;
+    const int dIdx1 = (iDir == iy_) ? di : 0;
+    const int dIdx2 = (iDir == iz_) ? di : 0;
 
     MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
 
@@ -1742,35 +1783,41 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
     const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType());
     const int domLo = bnd.loBnd[iDir];
     const int domHi = bnd.hiBnd[iDir];
+    const Real weightSelf = 1 - coef;
+    const Real WeightNei = coef / 2.0;
 
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       Array4<Real> const& arrE = mf[mfi].array();
-      Array4<Real> const& arrTmp = mfOld[mfi].array();
+      Array4<Real const> const& arrTmp = mfOld[mfi].const_array();
 
-      ParallelFor(
-          box, mf.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-            const Real weightSelf = 1 - coef;
-            const Real WeightNei = coef / 2.0;
-
-            Real neiLo =
-                arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar);
-            Real neiHi =
-                arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
-            if (!isPeriodicDir) {
+      if (isPeriodicDir) {
+        ParallelFor(box, mf.nComp(),
+                    [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                      const Real neiLo =
+                          arrTmp(i - dIdx0, j - dIdx1, k - dIdx2, iVar);
+                      const Real neiHi =
+                          arrTmp(i + dIdx0, j + dIdx1, k + dIdx2, iVar);
+                      arrE(i, j, k, iVar) = weightSelf * arrTmp(i, j, k, iVar) +
+                                            WeightNei * (neiLo + neiHi);
+                    });
+      } else {
+        ParallelFor(
+            box, mf.nComp(),
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+              Real neiLo = arrTmp(i - dIdx0, j - dIdx1, k - dIdx2, iVar);
+              Real neiHi = arrTmp(i + dIdx0, j + dIdx1, k + dIdx2, iVar);
               const int idx = (iDir == ix_) ? i : ((iDir == iy_) ? j : k);
               if (idx <= domLo) {
                 neiLo = neiHi;
               } else if (idx >= domHi) {
                 neiHi = neiLo;
               }
-            }
-
-            const Real neiSum = neiLo + neiHi;
-            arrE(i, j, k, iVar) =
-                weightSelf * arrTmp(i, j, k, iVar) + WeightNei * neiSum;
-          });
+              arrE(i, j, k, iVar) = weightSelf * arrTmp(i, j, k, iVar) +
+                                    WeightNei * (neiLo + neiHi);
+            });
+      }
     }
 
     mf.FillBoundary(Geom(iLev).periodicity());

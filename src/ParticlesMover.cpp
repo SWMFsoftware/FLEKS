@@ -464,6 +464,14 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
   const Real* const ploLoc = plo[iLev].begin();
   const Real* const invDxLoc = invDx[iLev].begin();
+  const Real dx0 = dx[iLev][ix_];
+  const Real dx1 = dx[iLev][iy_];
+  const Real dx2 = (nDim > 2) ? dx[iLev][iz_] : 0.0;
+  const Real invV = invVol[iLev];
+#if AMREX_SPACEDIM > 2
+  const int nD = get_dim();
+#endif
+  const bool useBody = (grid != nullptr && grid->use_body());
   const LevelGeomBox lb = make_level_geom_box(iLev);
   int lastFab = -1;
   ActiveRegionBox ab;
@@ -499,98 +507,88 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       // correcting particles that are close to the boundaries may produce
       // artificial oscillations, which are seen in Earth's magnetotail
       // simulations. So, it is better to skip the boundary physical cells.
-      bool isBoundaryPhysicalCell = false;
-      for (int iz = 0; iz <= 1; iz++)
-        for (int iy = 0; iy <= 1; iy++)
-          for (int ix = 0; ix <= 1; ix++) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy,
-                                         loIdx[iz_] + iz) };
-            if (bit::is_lev_boundary(status(ijk)) ||
-                (grid != nullptr && grid->use_body() &&
-                 bit::is_body(status(ijk))))
-              isBoundaryPhysicalCell = true;
-          }
-      if (isBoundaryPhysicalCell && iLev == 0)
-        continue;
+      if (iLev == 0) {
+        bool isBoundaryPhysicalCell = false;
+        for (int iz = 0; iz <= 1; iz++)
+          for (int iy = 0; iy <= 1; iy++)
+            for (int ix = 0; ix <= 1; ix++) {
+              const int st = status(loIdx[ix_] + ix, loIdx[iy_] + iy,
+#if (AMREX_SPACEDIM > 2)
+                                    loIdx[iz_] + iz
+#else
+                                    0
+#endif
+              );
+              if (bit::is_lev_boundary(st) || (useBody && bit::is_body(st)))
+                isBoundaryPhysicalCell = true;
+            }
+        if (isBoundaryPhysicalCell)
+          continue;
+      }
 
       {
-        Real weights_IIID[2][2][2][nDim3];
         //----- Mass matrix calculation begin--------------
-        const Real xi0 = dShift[ix_] * dx[iLev][ix_];
-        const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
-        const Real xi1 = dx[iLev][ix_] - xi0;
-        const Real eta1 = dx[iLev][iy_] - eta0;
-        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
+        const Real xi0 = dShift[ix_] * dx0;
+        const Real eta0 = dShift[iy_] * dx1;
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx2 : 0;
+        const Real xi1 = dx0 - xi0;
+        const Real eta1 = dx1 - eta0;
+        const Real zeta1 = nDim > 2 ? dx2 - zeta0 : 1;
 
-        const Real zeta02Vol = zeta0 * invVol[iLev];
-        const Real zeta12Vol = zeta1 * invVol[iLev];
-        const Real eta02Vol = eta0 * invVol[iLev];
-        const Real eta12Vol = eta1 * invVol[iLev];
-
-        weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
-        weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
-        weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
-
-        // xi0*eta0*zeta1*invVol[iLev];
-        weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
-        weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
-        weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
-
-        // xi0*eta1*zeta0*invVol[iLev];
-        weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
-        weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
-        weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
-
-        // xi0*eta1*zeta1*invVol[iLev];
-        weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
-        weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
-        weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
-
-        // xi1*eta0*zeta0*invVol[iLev];
-        weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
-        weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
-        weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
-
-        // xi1*eta0*zeta1*invVol[iLev];
-        weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
-        weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
-        weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
-
-        // xi1*eta1*zeta0*invVol[iLev];
-        weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
-        weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
-        weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
-
-        // xi1*eta1*zeta1*invVol[iLev];
-        weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
-        weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
-        weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
+        const Real zeta12Vol = zeta1 * invV;
 
         RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
-
-        // Do not shift along z direction for both 2D and fake 2D cases.
-        int nD = get_dim();
-
 #if AMREX_SPACEDIM > 2
-        constexpr int kEnd = 1;
-#else
-        constexpr int kEnd = 0;
-#endif
-        for (int k = 0; k <= kEnd; ++k) {
-          for (int j = 0; j <= 1; ++j) {
-            for (int i = 0; i <= 1; ++i) {
-              IntVect ijk = { AMREX_D_DECL(i, j, k) };
-              const Real coef = phiArr(loIdx + ijk);
-              // nDim, not nD, as the loop bound: a compile-time trip count
-              // lets the compiler unroll the loop (about 1.5x faster).
-              for (int iDim = 0; iDim < nDim; iDim++) {
-                if (iDim < nD)
-                  eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
-              }
-            }
-          }
+        const Real zeta02Vol = zeta0 * invV;
+        const Real eta02Vol = eta0 * invV;
+        const Real eta12Vol = eta1 * invV;
+        alignas(32) const Real wx[8] = { -eta1 * zeta12Vol, eta1 * zeta12Vol,
+                                         -eta0 * zeta12Vol, eta0 * zeta12Vol,
+                                         -eta1 * zeta02Vol, eta1 * zeta02Vol,
+                                         -eta0 * zeta02Vol, eta0 * zeta02Vol };
+        alignas(32) const Real wy[8] = { -xi1 * zeta12Vol, -xi0 * zeta12Vol,
+                                         xi1 * zeta12Vol,  xi0 * zeta12Vol,
+                                         -xi1 * zeta02Vol, -xi0 * zeta02Vol,
+                                         xi1 * zeta02Vol,  xi0 * zeta02Vol };
+        alignas(32) const Real wz[8] = { -xi1 * eta12Vol, -xi0 * eta12Vol,
+                                         -xi1 * eta02Vol, -xi0 * eta02Vol,
+                                         xi1 * eta12Vol,  xi0 * eta12Vol,
+                                         xi1 * eta02Vol,  xi0 * eta02Vol };
+        const int i0 = loIdx[ix_], j0 = loIdx[iy_], k0 = loIdx[iz_];
+        const Real* AMREX_RESTRICT p00 = phiArr.ptr(i0, j0, k0);
+        const Real* AMREX_RESTRICT p10 = phiArr.ptr(i0, j0 + 1, k0);
+        const Real* AMREX_RESTRICT p01 = phiArr.ptr(i0, j0, k0 + 1);
+        const Real* AMREX_RESTRICT p11 = phiArr.ptr(i0, j0 + 1, k0 + 1);
+        alignas(32) const Real phi8[8] = { p00[0], p00[1], p10[0], p10[1],
+                                           p01[0], p01[1], p11[0], p11[1] };
+        Real ex = 0.0, ey = 0.0, ez = 0.0;
+#pragma omp simd reduction(+ : ex, ey, ez)
+        for (int n = 0; n < 8; ++n) {
+          ex += phi8[n] * wx[n];
+          ey += phi8[n] * wy[n];
+          ez += phi8[n] * wz[n];
         }
+        eps_D[ix_] = ex;
+        eps_D[iy_] = ey;
+        eps_D[iz_] = (nD > 2) ? ez : 0.0;
+#else
+        alignas(32) const Real wx[4] = { -eta1 * zeta12Vol, eta1 * zeta12Vol,
+                                         -eta0 * zeta12Vol, eta0 * zeta12Vol };
+        alignas(32) const Real wy[4] = { -xi1 * zeta12Vol, -xi0 * zeta12Vol,
+                                         xi1 * zeta12Vol, xi0 * zeta12Vol };
+        const int i0 = loIdx[ix_], j0 = loIdx[iy_];
+        const Real* AMREX_RESTRICT p00 = phiArr.ptr(i0, j0, 0);
+        const Real* AMREX_RESTRICT p10 = phiArr.ptr(i0, j0 + 1, 0);
+        alignas(32) const Real phi4[4] = { p00[0], p00[1], p10[0], p10[1] };
+        Real ex = 0.0, ey = 0.0;
+#pragma omp simd reduction(+ : ex, ey)
+        for (int n = 0; n < 4; ++n) {
+          ex += phi4[n] * wx[n];
+          ey += phi4[n] * wy[n];
+        }
+        eps_D[ix_] = ex;
+        eps_D[iy_] = ey;
+#endif
 
         for (int iDim = 0; iDim < nDim; iDim++)
           eps_D[iDim] *= sign * fourPI;
