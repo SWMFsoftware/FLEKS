@@ -7,6 +7,7 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_iMultiFab.H>
 
+#include "GpuBackend.h"
 #include "LinearSolver.h"
 
 class Pic;
@@ -58,120 +59,120 @@ public:
   void apply(V& Ax, V const& x);
 
   void assign(V& lhs, V const& rhs) {
-#ifdef AMREX_USE_GPU
-    MultiFab::Copy(lhs, rhs, 0, 0, lhs.nComp(), 0);
-#else
-    const int nFabs = lhs.local_size();
-    for (int li = 0; li < nFabs; ++li) {
-      Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
-      const Real* AMREX_RESTRICT pR = rhs.atLocalIdx(li).dataPtr();
-      const Long n = lhs.atLocalIdx(li).size();
-      std::memcpy(pL, pR, static_cast<std::size_t>(n) * sizeof(Real));
+    if constexpr (fleksUseGpu) {
+      MultiFab::Copy(lhs, rhs, 0, 0, lhs.nComp(), 0);
+    } else {
+      const int nFabs = lhs.local_size();
+      for (int li = 0; li < nFabs; ++li) {
+        Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
+        const Real* AMREX_RESTRICT pR = rhs.atLocalIdx(li).dataPtr();
+        const Long n = lhs.atLocalIdx(li).size();
+        std::memcpy(pL, pR, static_cast<std::size_t>(n) * sizeof(Real));
+      }
     }
-#endif
   }
 
   RT dotProduct(V const& v1, V const& v2) {
-#ifdef AMREX_USE_GPU
-    return MultiFab::Dot(v1, 0, v2, 0, v1.nComp(), 0);
-#else
-    RT sm = RT(0.0);
-    const int nFabs = v1.local_size();
-    for (int li = 0; li < nFabs; ++li) {
-      const Real* AMREX_RESTRICT p1 = v1.atLocalIdx(li).dataPtr();
-      const Real* AMREX_RESTRICT p2 = v2.atLocalIdx(li).dataPtr();
-      const Long n = v1.atLocalIdx(li).size();
-      for (Long i = 0; i < n; ++i) {
-        sm += p1[i] * p2[i];
+    if constexpr (fleksUseGpu) {
+      return MultiFab::Dot(v1, 0, v2, 0, v1.nComp(), 0);
+    } else {
+      RT sm = RT(0.0);
+      const int nFabs = v1.local_size();
+      for (int li = 0; li < nFabs; ++li) {
+        const Real* AMREX_RESTRICT p1 = v1.atLocalIdx(li).dataPtr();
+        const Real* AMREX_RESTRICT p2 = v2.atLocalIdx(li).dataPtr();
+        const Long n = v1.atLocalIdx(li).size();
+        for (Long i = 0; i < n; ++i) {
+          sm += p1[i] * p2[i];
+        }
       }
+      ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
+      return sm;
     }
-    ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
-    return sm;
-#endif
   }
 
   void increment(V& lhs, V const& rhs, RT a) {
-#ifdef AMREX_USE_GPU
-    MultiFab::Saxpy(lhs, a, rhs, 0, 0, lhs.nComp(), 0);
-#else
-    const int nFabs = lhs.local_size();
-    for (int li = 0; li < nFabs; ++li) {
-      Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
-      const Real* AMREX_RESTRICT pR = rhs.atLocalIdx(li).dataPtr();
-      const Long n = lhs.atLocalIdx(li).size();
-      for (Long i = 0; i < n; ++i) {
-        pL[i] += a * pR[i];
+    if constexpr (fleksUseGpu) {
+      MultiFab::Saxpy(lhs, a, rhs, 0, 0, lhs.nComp(), 0);
+    } else {
+      const int nFabs = lhs.local_size();
+      for (int li = 0; li < nFabs; ++li) {
+        Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
+        const Real* AMREX_RESTRICT pR = rhs.atLocalIdx(li).dataPtr();
+        const Long n = lhs.atLocalIdx(li).size();
+        for (Long i = 0; i < n; ++i) {
+          pL[i] += a * pR[i];
+        }
       }
     }
-#endif
   }
 
   void linComb(V& lhs, RT a, V const& rhs_a, RT b, V const& rhs_b) {
-#ifdef AMREX_USE_GPU
-    MultiFab::LinComb(lhs, a, rhs_a, 0, b, rhs_b, 0, 0, lhs.nComp(), 0);
-#else
-    const int nFabs = lhs.local_size();
-    for (int li = 0; li < nFabs; ++li) {
-      Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
-      const Real* AMREX_RESTRICT pA = rhs_a.atLocalIdx(li).dataPtr();
-      const Real* AMREX_RESTRICT pB = rhs_b.atLocalIdx(li).dataPtr();
-      const Long n = lhs.atLocalIdx(li).size();
-      for (Long i = 0; i < n; ++i) {
-        pL[i] = a * pA[i] + b * pB[i];
+    if constexpr (fleksUseGpu) {
+      MultiFab::LinComb(lhs, a, rhs_a, 0, b, rhs_b, 0, 0, lhs.nComp(), 0);
+    } else {
+      const int nFabs = lhs.local_size();
+      for (int li = 0; li < nFabs; ++li) {
+        Real* AMREX_RESTRICT pL = lhs.atLocalIdx(li).dataPtr();
+        const Real* AMREX_RESTRICT pA = rhs_a.atLocalIdx(li).dataPtr();
+        const Real* AMREX_RESTRICT pB = rhs_b.atLocalIdx(li).dataPtr();
+        const Long n = lhs.atLocalIdx(li).size();
+        for (Long i = 0; i < n; ++i) {
+          pL[i] = a * pA[i] + b * pB[i];
+        }
       }
     }
-#endif
   }
 
   V makeVecRHS();
   V makeVecLHS();
 
   RT norm2(V const& v) {
-#ifdef AMREX_USE_GPU
-    return std::sqrt(MultiFab::Dot(v, 0, v, 0, v.nComp(), 0));
-#else
-    RT sm = RT(0.0);
-    const int nFabs = v.local_size();
-    for (int li = 0; li < nFabs; ++li) {
-      const Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
-      const Long n = v.atLocalIdx(li).size();
-      for (Long i = 0; i < n; ++i) {
-        sm += p[i] * p[i];
+    if constexpr (fleksUseGpu) {
+      return std::sqrt(MultiFab::Dot(v, 0, v, 0, v.nComp(), 0));
+    } else {
+      RT sm = RT(0.0);
+      const int nFabs = v.local_size();
+      for (int li = 0; li < nFabs; ++li) {
+        const Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
+        const Long n = v.atLocalIdx(li).size();
+        for (Long i = 0; i < n; ++i) {
+          sm += p[i] * p[i];
+        }
       }
+      ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
+      return std::sqrt(sm);
     }
-    ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
-    return std::sqrt(sm);
-#endif
   }
 
   void precond(V& lhs, V const& rhs);
 
   void scale(V& v, RT fac) {
-#ifdef AMREX_USE_GPU
-    v.mult(fac, 0, v.nComp(), 0);
-#else
-    const int nFabs = v.local_size();
-    for (int li = 0; li < nFabs; ++li) {
-      Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
-      const Long n = v.atLocalIdx(li).size();
-      for (Long i = 0; i < n; ++i) {
-        p[i] *= fac;
+    if constexpr (fleksUseGpu) {
+      v.mult(fac, 0, v.nComp(), 0);
+    } else {
+      const int nFabs = v.local_size();
+      for (int li = 0; li < nFabs; ++li) {
+        Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
+        const Long n = v.atLocalIdx(li).size();
+        for (Long i = 0; i < n; ++i) {
+          p[i] *= fac;
+        }
       }
     }
-#endif
   }
 
   void setToZero(V& v) {
-#ifdef AMREX_USE_GPU
-    v.setVal(RT(0.0));
-#else
-    const int nFabs = v.local_size();
-    for (int li = 0; li < nFabs; ++li) {
-      Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
-      const Long n = v.atLocalIdx(li).size();
-      std::memset(p, 0, static_cast<std::size_t>(n) * sizeof(Real));
+    if constexpr (fleksUseGpu) {
+      v.setVal(RT(0.0));
+    } else {
+      const int nFabs = v.local_size();
+      for (int li = 0; li < nFabs; ++li) {
+        Real* AMREX_RESTRICT p = v.atLocalIdx(li).dataPtr();
+        const Long n = v.atLocalIdx(li).size();
+        std::memset(p, 0, static_cast<std::size_t>(n) * sizeof(Real));
+      }
     }
-#endif
   }
 
   const iMultiFab& dot_mask() const { return m_dotMask; }
