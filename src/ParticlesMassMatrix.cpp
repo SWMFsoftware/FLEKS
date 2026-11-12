@@ -244,8 +244,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
-  const Real* const ploLoc = Geom(iLev).ProbLo();
-  const Real* const invDxLoc = Geom(iLev).InvCellSize();
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();

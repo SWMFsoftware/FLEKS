@@ -468,7 +468,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   const Real dx1 = dx[iLev][iy_];
   const Real dx2 = (nDim > 2) ? dx[iLev][iz_] : 0.0;
   const Real invV = invVol[iLev];
+#if AMREX_SPACEDIM > 2
   const int nD = get_dim();
+#endif
   const bool useBody = (grid != nullptr && grid->use_body());
   const LevelGeomBox lb = make_level_geom_box(iLev);
   int lastFab = -1;
@@ -533,13 +535,13 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         const Real eta1 = dx1 - eta0;
         const Real zeta1 = nDim > 2 ? dx2 - zeta0 : 1;
 
-        const Real zeta02Vol = zeta0 * invV;
         const Real zeta12Vol = zeta1 * invV;
-        const Real eta02Vol = eta0 * invV;
-        const Real eta12Vol = eta1 * invV;
 
         RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
 #if AMREX_SPACEDIM > 2
+        const Real zeta02Vol = zeta0 * invV;
+        const Real eta02Vol = eta0 * invV;
+        const Real eta12Vol = eta1 * invV;
         alignas(32) const Real wx[8] = { -eta1 * zeta12Vol, eta1 * zeta12Vol,
                                          -eta0 * zeta12Vol, eta0 * zeta12Vol,
                                          -eta1 * zeta02Vol, eta1 * zeta02Vol,
