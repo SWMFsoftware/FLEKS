@@ -298,7 +298,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void interpolate_vector_fields(
     const amrex::IntVect& loIdx, const amrex::Real (&coef)[NCoef][NCoef][NCoef],
     const amrex::Dim3& lo, const amrex::Dim3& hi,
     amrex::Real* (&values)[NField]) {
-  if constexpr (NCoef == 2) {
+  if (NCoef == 2 && lo.x == 0 && hi.x == 1) {
     const int i0 = loIdx[ix_];
     const int j0 = loIdx[iy_];
 #if (AMREX_SPACEDIM > 2)
@@ -360,7 +360,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
     const amrex::Array4<amrex::Real>& field, const amrex::IntVect& loIdx,
     const amrex::Real (&coef)[NCoef][NCoef][NCoef], const amrex::Dim3& lo,
     const amrex::Dim3& hi, const amrex::Real* AMREX_RESTRICT value, int nComp) {
-  if constexpr (NCoef == 2) {
+  if (NCoef == 2 && lo.x == 0 && hi.x == 1) {
     const int i0 = loIdx[ix_];
     const int j0 = loIdx[iy_];
 #if (AMREX_SPACEDIM > 2)
