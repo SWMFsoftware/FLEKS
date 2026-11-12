@@ -53,8 +53,6 @@ GPU_BACKEND_FILES = {
 UNPORTED_FILES = {
     "src/FluidInterface.cpp",
     "src/Grid.cpp",
-    "src/ParticlesBC.cpp",
-    "src/ParticlesInit.cpp",
     "src/Pic.cpp",
     "src/ic/WaveIC.cpp",
 }

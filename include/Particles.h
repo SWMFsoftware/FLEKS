@@ -525,7 +525,8 @@ public:
                          const FluidInterface* interface, bool doVacuumLimit,
                          amrex::IntVect ppc = amrex::IntVect(),
                          const Vel& tpVel = Vel(), amrex::Real dt = -1,
-                         amrex::Real weightScale = 1.0);
+                         amrex::Real weightScale = 1.0,
+                         amrex::Vector<ParticleType>* outParticles = nullptr);
   void inject_particles_at_boundary();
 
   // Inflow (ParticleBC::inflow) particle boundary
@@ -1533,9 +1534,13 @@ public:
              bool useTargetPPC = false);
 
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
-                                   amrex::Vector<ParticleType>& newparticles);
+                                   amrex::Vector<ParticleType>& newparticles,
+                                   RandNum* rng = nullptr,
+                                   bool assignIds = true);
   bool split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
-                                  ParticleType& p3, ParticleType& p4);
+                                  ParticleType& p3, ParticleType& p4,
+                                  RandNum* rng = nullptr,
+                                  bool assignIds = true);
 
   void merge(amrex::Real limit, bool useTargetPPC = false);
 

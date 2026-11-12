@@ -3,6 +3,7 @@
 #include <AMReX_ParReduce.H>
 
 #include "DiscontinuityBC.h"
+#include "GpuBackend.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -103,42 +104,69 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
       bxGst.grow(iDim, nGstInject);
     }
 
-    ParallelFor(bxGst, [&](int i, int j, int k) noexcept {
-      IntVect ijk = { AMREX_D_DECL(i, j, k) };
-      IntVect ijksrc;
-      if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
-        // A ghost cell can lie beyond more than one face (a corner); it is
-        // skipped when ANY of those faces must not carry a ghost-cell
-        // population -- see particle_bc_no_injection() above.
-        bool skip = false;
-        for (int d = 0; d < nDim && !skip; ++d) {
-          if (ijk[d] < bxLo[d])
-            skip = particle_bc_no_injection(
-                static_cast<ParticleBC::Type>(bc.face(d, 0)));
-          else if (ijk[d] > bxHi[d])
-            skip = particle_bc_no_injection(
-                static_cast<ParticleBC::Type>(bc.face(d, 1)));
-        }
-        if (skip)
-          return;
-
-        // Seed ghost cell from prescribed #INFLOW state if defined, else fall
-        // back to the fluid interface.
-        Vel inflowVel;
-        if (fi->get_inflow_defined()) {
-          const auto* iv = fi->get_inflow_vel(speciesID);
-          if (iv) {
-            inflowVel.tag = speciesID; // enable the userState override path
-            inflowVel.nDens = iv->nDens;
-            inflowVel.vth = iv->vth;
-            inflowVel.vx = iv->ux;
-            inflowVel.vy = iv->uy;
-            inflowVel.vz = iv->uz;
+    const auto lo = lbound(bxGst);
+    const auto hi = ubound(bxGst);
+    Vector<IntVect> activeCells;
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          IntVect ijksrc;
+          if (!do_inject_particles_for_this_cell(bx, status, ijk, ijksrc))
+            continue;
+          // A ghost cell can lie beyond more than one face (a corner); it is
+          // skipped when ANY of those faces must not carry a ghost-cell
+          // population -- see particle_bc_no_injection() above.
+          bool skip = false;
+          for (int d = 0; d < nDim && !skip; ++d) {
+            if (ijk[d] < bxLo[d])
+              skip = particle_bc_no_injection(
+                  static_cast<ParticleBC::Type>(bc.face(d, 0)));
+            else if (ijk[d] > bxHi[d])
+              skip = particle_bc_no_injection(
+                  static_cast<ParticleBC::Type>(bc.face(d, 1)));
           }
+          if (!skip)
+            activeCells.push_back(ijk);
         }
-        add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), inflowVel, -1);
+
+    const int nActive = static_cast<int>(activeCells.size());
+    if (nActive == 0)
+      continue;
+
+    // Seed ghost cell from prescribed #INFLOW state if defined, else fall
+    // back to the fluid interface.
+    Vel inflowVel;
+    if (fi->get_inflow_defined()) {
+      const auto* iv = fi->get_inflow_vel(speciesID);
+      if (iv) {
+        inflowVel.tag = speciesID; // enable the userState override path
+        inflowVel.nDens = iv->nDens;
+        inflowVel.vth = iv->vth;
+        inflowVel.vx = iv->ux;
+        inflowVel.vy = iv->uy;
+        inflowVel.vz = iv->uz;
       }
-    });
+    }
+
+    Vector<Vector<ParticleType> > cellParticles(nActive);
+    parallel_for_host_items(
+        nActive,
+        [&](int idx) {
+          add_particles_cell(iLev, mfi, activeCells[idx], fi, true, IntVect(),
+                             inflowVel, -1, 1.0, &cellParticles[idx]);
+        },
+        true);
+
+    for (int idx = 0; idx < nActive; ++idx) {
+      if (cellParticles[idx].empty())
+        continue;
+      auto& tile = get_particle_tile(iLev, mfi, activeCells[idx]);
+      for (auto& p : cellParticles[idx]) {
+        set_ids(p);
+        tile.push_back(p);
+      }
+    }
   }
 }
 
