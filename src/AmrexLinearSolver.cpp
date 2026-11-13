@@ -1,5 +1,6 @@
 #include "AmrexLinearSolver.h"
 #include "Bit.h"
+#include "GridUtility.h"
 #include "Pic.h"
 
 namespace amrex {
@@ -137,7 +138,7 @@ void AmrexLinearSolver::solve(MultiFab& sol, const MultiFab& rhs, Real tolRel,
   MultiFab::Copy(m_rhs0, rhs, 0, 0, 3, 0);
   mask_inactive_nodes(m_rhs0);
 
-  m_gmres.setRestartLength(restartLen);
+  m_gmres.setRestartLength(std::min(restartLen, maxIters));
   m_gmres.setMaxIters(maxIters);
   m_gmres.setVerbose(verbose);
   m_gmres.solve(m_sol0, m_rhs0, tolRel, tolAbs);
@@ -365,6 +366,146 @@ void AmrexLinearSolver::precond(V& lhs, V const& rhs) {
 
     if (m_pic->is_body_conducting()) {
       m_pic->project_body_E(lhs, m_iLev);
+    }
+  }
+}
+
+void AmrexDivESolver::ensure_mask() {
+  const BoxArray& ba = m_pic->boxArray(m_iLev);
+  const DistributionMapping& dm = m_pic->DistributionMap(m_iLev);
+  if (!m_dotMask.empty() && m_dotMask.boxArray() == ba &&
+      m_dotMask.DistributionMap() == dm) {
+    return;
+  }
+
+  m_dotMask.define(ba, dm, 1, 0);
+  m_dotMask.setVal(1);
+
+  if (m_pic->finestLevel() > 0) {
+    skip_cells_divE_correction(m_dotMask, m_pic->cell_status(m_iLev), m_iLev);
+  }
+  if (m_pic->use_body() && !m_pic->is_body_insulating()) {
+    mask_body(m_dotMask, m_pic->cell_status(m_iLev));
+  }
+}
+
+void AmrexDivESolver::mask_inactive_cells(MultiFab& mf) const {
+  if constexpr (fleksUseGpu) {
+    for (MFIter mfi(mf, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real>& arr = mf[mfi].array();
+      const Array4<int const>& msk = m_dotMask[mfi].const_array();
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        arr(i, j, k, 0) *= static_cast<Real>(msk(i, j, k));
+      });
+    }
+  } else {
+    const int nFabs = mf.local_size();
+    for (int li = 0; li < nFabs; ++li) {
+      Real* AMREX_RESTRICT p = mf.atLocalIdx(li).dataPtr();
+      const int* AMREX_RESTRICT pM = m_dotMask.atLocalIdx(li).dataPtr();
+      const Long nPts = mf.atLocalIdx(li).box().numPts();
+#pragma omp simd
+      for (Long i = 0; i < nPts; ++i) {
+        p[i] *= static_cast<Real>(pM[i]);
+      }
+    }
+  }
+}
+
+void AmrexDivESolver::define(Pic* pic, int iLev, EPrecondType precondType) {
+  m_pic = pic;
+  m_iLev = iLev;
+
+  if (precondType == EPrecondType::Auto) {
+    m_precondType =
+        (m_lastIters < 5) ? EPrecondType::None : EPrecondType::Jacobi;
+  } else {
+    m_precondType = precondType;
+  }
+
+  ensure_mask();
+
+  if (m_precondType == EPrecondType::Jacobi) {
+    m_pic->build_divE_preconditioner(m_invDiagMF, m_dotMask, m_iLev);
+  }
+
+  if (!m_gmresDefined) {
+    m_gmres.define(*this);
+    m_gmresDefined = true;
+  }
+}
+
+void AmrexDivESolver::solve(MultiFab& sol, const MultiFab& rhs, Real tolRel,
+                            Real tolAbs, int maxIters, int restartLen,
+                            int verbose, int& outIters, Real& outResNorm) {
+  const BoxArray& ba = m_pic->boxArray(m_iLev);
+  const DistributionMapping& dm = m_pic->DistributionMap(m_iLev);
+  if (m_sol0.empty() || m_sol0.boxArray() != ba ||
+      m_sol0.DistributionMap() != dm) {
+    m_sol0.define(ba, dm, 1, 0);
+    m_rhs0.define(ba, dm, 1, 0);
+  }
+  setToZero(m_sol0);
+  MultiFab::Copy(m_rhs0, rhs, 0, 0, 1, 0);
+  mask_inactive_cells(m_rhs0);
+
+  m_gmres.setRestartLength(std::min(restartLen, maxIters));
+  m_gmres.setMaxIters(maxIters);
+  m_gmres.setVerbose(verbose);
+  m_gmres.solve(m_sol0, m_rhs0, tolRel, tolAbs);
+  outIters = m_gmres.getNumIters();
+  outResNorm = m_gmres.getResidualNorm();
+  m_lastIters = outIters;
+
+  sol.setVal(0.0);
+  MultiFab::Copy(sol, m_sol0, 0, 0, 1, 0);
+}
+
+void AmrexDivESolver::apply(V& Ax, V const& x) {
+  m_pic->divE_accurate_matvec(x, Ax, m_iLev);
+  mask_inactive_cells(Ax);
+}
+
+MultiFab AmrexDivESolver::makeVecRHS() {
+  MultiFab mf(m_pic->boxArray(m_iLev), m_pic->DistributionMap(m_iLev), 1, 0);
+  setToZero(mf);
+  return mf;
+}
+
+MultiFab AmrexDivESolver::makeVecLHS() {
+  MultiFab mf(m_pic->boxArray(m_iLev), m_pic->DistributionMap(m_iLev), 1, 0);
+  setToZero(mf);
+  return mf;
+}
+
+void AmrexDivESolver::precond(V& lhs, V const& rhs) {
+  if (m_precondType == EPrecondType::None) {
+    assign(lhs, rhs);
+    return;
+  }
+
+  if constexpr (fleksUseGpu) {
+    for (MFIter mfi(lhs, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real>& d = lhs[mfi].array();
+      const Array4<Real const>& s = rhs[mfi].const_array();
+      const Array4<Real const>& inv = m_invDiagMF[mfi].const_array();
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        d(i, j, k, 0) = inv(i, j, k, 0) * s(i, j, k, 0);
+      });
+    }
+  } else {
+    const int nFabs = lhs.local_size();
+    for (int li = 0; li < nFabs; ++li) {
+      Real* AMREX_RESTRICT pD = lhs.atLocalIdx(li).dataPtr();
+      const Real* AMREX_RESTRICT pS = rhs.atLocalIdx(li).dataPtr();
+      const Real* AMREX_RESTRICT pInv = m_invDiagMF.atLocalIdx(li).dataPtr();
+      const Long n = lhs.atLocalIdx(li).size();
+#pragma omp simd
+      for (Long i = 0; i < n; ++i) {
+        pD[i] = pInv[i] * pS[i];
+      }
     }
   }
 }

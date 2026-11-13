@@ -67,6 +67,12 @@ implicit
 T                       useFixedDt
 0.01                    dt
 
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
 #PARTICLES
 64                      nParticle
 1                       nParticle

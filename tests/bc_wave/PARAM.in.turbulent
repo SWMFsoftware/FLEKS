@@ -63,6 +63,12 @@ periodic                particleBoxBoundaryHi
 #FIELDSOLVER
 implicit
 
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
 #DIVE
 T                       doCorrectDivE
 1                       nDivECorrection

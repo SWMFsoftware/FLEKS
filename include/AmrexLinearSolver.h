@@ -25,38 +25,16 @@ enum class EPrecondType {
 namespace amrex {
 
 /**
- * @brief Linear operator and preconditioner wrapper for amrex::GMRES
- * operating directly on nodal 3-component MultiFabs for the FLEKS implicit E
- * solver.
+ * @brief Shared 0-ghost MultiFab vector operations for amrex::GMRES wrappers.
  *
- * All GMRES Krylov vectors are 0-ghost nodal MultiFabs whose inactive DOFs
- * (non-owner shared boundary nodes and excluded body nodes) are maintained at
- * zero. This guarantees exact active-DOF inner products and norms using fast
- * contiguous SIMD loops without per-dot-product mask branching or MFIter
- * overhead.
+ * All Krylov vectors are 0-ghost MultiFabs whose inactive DOFs are maintained
+ * at zero, enabling contiguous SIMD inner products and norms without per-element
+ * mask branching.
  */
-class AmrexLinearSolver {
+class AmrexMultiFabOps {
 public:
   using RT = Real;
   using V = MultiFab;
-
-  AmrexLinearSolver() = default;
-  AmrexLinearSolver(Pic* pic, int iLev) : m_pic(pic), m_iLev(iLev) {}
-
-  void define(Pic* pic, int iLev, EPrecondType precondType = EPrecondType::Auto,
-              int precondIters = 2, Real smootherWeight = Real(2.0 / 3.0),
-              FieldSolverMode mode = FieldSolverMode::GMRES);
-
-  void set_newton_base(const MultiFab& baseE, const MultiFab& baseMatvec);
-
-  void mask_inactive_nodes(MultiFab& mf) const;
-
-  void solve(MultiFab& sol, const MultiFab& rhs, Real tolRel, Real tolAbs,
-             int maxIters, int restartLen, int verbose, int& outIters,
-             Real& outResNorm);
-
-  // Required by amrex::GMRES
-  void apply(V& Ax, V const& x);
 
   void assign(V& lhs, V const& rhs) {
     if constexpr (fleksUseGpu) {
@@ -129,9 +107,6 @@ public:
     }
   }
 
-  V makeVecRHS();
-  V makeVecLHS();
-
   RT norm2(V const& v) {
     if constexpr (fleksUseGpu) {
       return std::sqrt(MultiFab::Dot(v, 0, v, 0, v.nComp(), 0));
@@ -152,8 +127,6 @@ public:
       return std::sqrt(sm);
     }
   }
-
-  void precond(V& lhs, V const& rhs);
 
   void scale(V& v, RT fac) {
     if constexpr (fleksUseGpu) {
@@ -183,6 +156,37 @@ public:
       }
     }
   }
+};
+
+/**
+ * @brief Linear operator and preconditioner wrapper for amrex::GMRES
+ * operating directly on nodal 3-component MultiFabs for the FLEKS implicit E
+ * solver.
+ */
+class AmrexLinearSolver : public AmrexMultiFabOps {
+public:
+  AmrexLinearSolver() = default;
+  AmrexLinearSolver(Pic* pic, int iLev) : m_pic(pic), m_iLev(iLev) {}
+
+  void define(Pic* pic, int iLev, EPrecondType precondType = EPrecondType::Auto,
+              int precondIters = 2, Real smootherWeight = Real(2.0 / 3.0),
+              FieldSolverMode mode = FieldSolverMode::GMRES);
+
+  void set_newton_base(const MultiFab& baseE, const MultiFab& baseMatvec);
+
+  void mask_inactive_nodes(MultiFab& mf) const;
+
+  void solve(MultiFab& sol, const MultiFab& rhs, Real tolRel, Real tolAbs,
+             int maxIters, int restartLen, int verbose, int& outIters,
+             Real& outResNorm);
+
+  // Required by amrex::GMRES
+  void apply(V& Ax, V const& x);
+
+  V makeVecRHS();
+  V makeVecLHS();
+
+  void precond(V& lhs, V const& rhs);
 
   const iMultiFab& dot_mask() const { return m_dotMask; }
 
@@ -224,6 +228,56 @@ private:
   MultiFab m_nkBase;
   MultiFab m_nkBaseMatvec;
   Real m_nkNormBase = 0.0;
+};
+
+/**
+ * @brief Linear operator and preconditioner wrapper for amrex::GMRES
+ * operating directly on cell-centered 1-component MultiFabs for FLEKS div(E)
+ * cleaning.
+ */
+class AmrexDivESolver : public AmrexMultiFabOps {
+public:
+  AmrexDivESolver() = default;
+  AmrexDivESolver(Pic* pic, int iLev) : m_pic(pic), m_iLev(iLev) {}
+
+  void define(Pic* pic, int iLev, EPrecondType precondType = EPrecondType::Auto);
+
+  void mask_inactive_cells(MultiFab& mf) const;
+
+  void solve(MultiFab& sol, const MultiFab& rhs, Real tolRel, Real tolAbs,
+             int maxIters, int restartLen, int verbose, int& outIters,
+             Real& outResNorm);
+
+  // Required by amrex::GMRES
+  void apply(V& Ax, V const& x);
+
+  V makeVecRHS();
+  V makeVecLHS();
+
+  void precond(V& lhs, V const& rhs);
+
+  const iMultiFab& dot_mask() const { return m_dotMask; }
+
+private:
+  void ensure_mask();
+
+  Pic* m_pic = nullptr;
+  int m_iLev = -1;
+  EPrecondType m_precondType = EPrecondType::None;
+  int m_lastIters = 0;
+
+  GMRES<MultiFab, AmrexDivESolver> m_gmres;
+  bool m_gmresDefined = false;
+
+  // Active-DOF mask: 1 on active cells, 0 on skipped AMR/body cells.
+  iMultiFab m_dotMask;
+
+  // Precomputed scalar inverse diagonal (1 component) for Jacobi preconditioning.
+  MultiFab m_invDiagMF;
+
+  // 0-ghost solution and RHS buffers for GMRES::solve
+  MultiFab m_sol0;
+  MultiFab m_rhs0;
 };
 
 } // namespace amrex

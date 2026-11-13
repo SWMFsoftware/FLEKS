@@ -68,6 +68,8 @@ F                       useHybridPIC
 #EFIELDSOLVER
 1.0e-8                  tol
 30                      nIter
+amrex                   solverType
+auto                    precondType
 
 #DISCRETIZATION
 0.5                     theta

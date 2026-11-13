@@ -136,6 +136,12 @@ T                       doCompact
 10                      dnSavePic
 10                      dnSavePT
 
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
 #PARTICLES
 100                     npcelx
 1                       npcely

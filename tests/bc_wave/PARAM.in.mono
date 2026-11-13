@@ -126,6 +126,12 @@ T                       useFixedDt
 #MONITOR
 10                      dnReport
 
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
 #DIVE
 F                       doCorrectDivE
 

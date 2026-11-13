@@ -1146,6 +1146,10 @@ of long simulations. The correction repeats nDivECorrection (default is 3)
 times. If the divE cleaning is time consuming, reducing nDivECorrection to 1
 may also work.
 
+In standalone runs, optional lines solverType (legacy | amrex; default legacy)
+and precondType (auto | none | jacobi; default auto) may also be specified
+when doCorrectDivE=T.
+
 The explicit solver (#FIELDSOLVER explicit) deposits a charge-conserving
 current that keeps Gauss's law exactly, so its default is false. Resampling,
 boundary injection, current smoothing, bodies and AMR interfaces still change
