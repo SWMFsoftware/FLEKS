@@ -151,10 +151,9 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       int nMatvec = 0;
       Real resFinal = 0.0;
       BL_PROFILE_VAR("Pic::phi_iterate", solve);
-      amrexDivESolver[iLev]->solve(centerPhi[iLev], residual, solver.get_tol(),
-                                   0.0, solver.get_nIter(),
-                                   fsolver.gmresRestartLength, verbose, nMatvec,
-                                   resFinal);
+      amrexDivESolver[iLev]->solve(
+          centerPhi[iLev], residual, solver.get_tol(), 0.0, solver.get_nIter(),
+          fsolver.gmresRestartLength, verbose, nMatvec, resFinal);
       BL_PROFILE_VAR_STOP(solve);
 
       const Real relErr = (res0 > 0.0) ? (resFinal / res0) : 0.0;

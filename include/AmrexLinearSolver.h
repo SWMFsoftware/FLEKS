@@ -28,8 +28,8 @@ namespace amrex {
  * @brief Shared 0-ghost MultiFab vector operations for amrex::GMRES wrappers.
  *
  * All Krylov vectors are 0-ghost MultiFabs whose inactive DOFs are maintained
- * at zero, enabling contiguous SIMD inner products and norms without per-element
- * mask branching.
+ * at zero, enabling contiguous SIMD inner products and norms without
+ * per-element mask branching.
  */
 class AmrexMultiFabOps {
 public:
@@ -240,7 +240,8 @@ public:
   AmrexDivESolver() = default;
   AmrexDivESolver(Pic* pic, int iLev) : m_pic(pic), m_iLev(iLev) {}
 
-  void define(Pic* pic, int iLev, EPrecondType precondType = EPrecondType::Auto);
+  void define(Pic* pic, int iLev,
+              EPrecondType precondType = EPrecondType::Auto);
 
   void mask_inactive_cells(MultiFab& mf) const;
 
@@ -272,7 +273,8 @@ private:
   // Active-DOF mask: 1 on active cells, 0 on skipped AMR/body cells.
   iMultiFab m_dotMask;
 
-  // Precomputed scalar inverse diagonal (1 component) for Jacobi preconditioning.
+  // Precomputed scalar inverse diagonal (1 component) for Jacobi
+  // preconditioning.
   MultiFab m_invDiagMF;
 
   // 0-ghost solution and RHS buffers for GMRES::solve

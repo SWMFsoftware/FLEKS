@@ -1190,8 +1190,8 @@ public:
   void amr_divE_correction();
   void divE_accurate_matvec(const amrex::Real *vecIn, amrex::Real *vecOut,
                             int iLev);
-  void divE_accurate_matvec(const amrex::MultiFab &inMF,
-                            amrex::MultiFab &outMF, int iLev);
+  void divE_accurate_matvec(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
+                            int iLev);
   void divE_accurate_matvec_impl(amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                                  int iLev);
   void build_divE_preconditioner(amrex::MultiFab &invDiagMF,
