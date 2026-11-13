@@ -42,42 +42,16 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
   const Real invV = invVol[iLev];
   const int iqp = iqp_;
 
-  auto depositOne = [&](const ParticleType& p, const Array4<Real>& chargeArr,
-                        const Array4<RealCMM>& mmArr) {
-    ParticleInterpolator::Linear interp(p, plo, dxi);
-    interp.ParticleToMesh(
-        p, chargeArr, 0, 0, 1,
-        [=] AMREX_GPU_DEVICE(const ParticleType& part, int /*comp*/) {
-          return part.rdata(iqp) * invV;
-        });
-
-    if (!doNetChargeOnly) {
-      const IntVect loIdx(
-          AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
-      const RealVect dShift(
-          AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
-      accumulate_mass_matrix_contribution(iLev, loIdx, dShift, p.rdata(iqp),
-                                          mmArr);
-    }
-  };
-
-  if (use_serial_fast_path()) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      Array4<Real> const& chargeArr = netChargeMF[pti].array();
-      Array4<RealCMM> const& mmArr = centerMM[pti].array();
-      const AoS& particles = pti.GetArrayOfStructs();
-      for (const auto& p : particles) {
-        depositOne(p, chargeArr, mmArr);
-      }
-    }
-    return;
-  }
+  const auto fabTable =
+      build_local_fab_table(netChargeMF, [&](const MFIter& mfi) {
+        return std::pair{ netChargeMF[mfi].array(), centerMM[mfi].array() };
+      });
 
   deposit_cell_tiles_colored(
       *this, iLev, 3,
-      [&](const auto& item, int /*ord*/, bool strayPass) -> bool {
-        Array4<Real> const& chargeArr = netChargeMF[item.grid].array();
-        Array4<RealCMM> const& mmArr = centerMM[item.grid].array();
+      [&](const auto& item, int /*ord*/, auto checkHomeTag,
+          bool strayPass) -> bool {
+        const auto& [chargeArr, mmArr] = fabTable[item.grid];
         const AoS& particles = item.ptile->GetArrayOfStructs();
         bool foundStray = false;
 
@@ -91,20 +65,33 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
           ParticleInterpolator::Linear interp(p, plo, dxi);
           const IntVect loIdx(
               AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
-          const bool isHome = AMREX_D_TERM(
-              (loIdx[0] == item.cell[0] - 1 || loIdx[0] == item.cell[0]),
-              &&(loIdx[1] == item.cell[1] - 1 || loIdx[1] == item.cell[1]),
-              &&(loIdx[2] == item.cell[2] - 1 || loIdx[2] == item.cell[2]));
-          if (!strayPass) {
-            if (!isHome) {
-              foundStray = true;
+          if constexpr (decltype(checkHomeTag)::value) {
+            const bool isHome = AMREX_D_TERM(
+                (loIdx[0] == item.cell[0] - 1 || loIdx[0] == item.cell[0]),
+                &&(loIdx[1] == item.cell[1] - 1 || loIdx[1] == item.cell[1]),
+                &&(loIdx[2] == item.cell[2] - 1 || loIdx[2] == item.cell[2]));
+            if (!strayPass) {
+              if (!isHome) {
+                foundStray = true;
+                continue;
+              }
+            } else if (isHome) {
               continue;
             }
-          } else if (isHome) {
-            continue;
           }
 
-          depositOne(p, chargeArr, mmArr);
+          interp.ParticleToMesh(
+              p, chargeArr, 0, 0, 1,
+              [=] AMREX_GPU_DEVICE(const ParticleType& part, int /*comp*/) {
+                return part.rdata(iqp) * invV;
+              });
+
+          if (!doNetChargeOnly) {
+            const RealVect dShift(
+                AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
+            accumulate_mass_matrix_contribution(iLev, loIdx, dShift,
+                                                p.rdata(iqp), mmArr);
+          }
         } // for p
         return foundStray;
       });
@@ -491,6 +478,14 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
     auto depositDirect = [&](const AoS& particles,
                              const Array4<Real>& momentsArr) -> Real {
+      const Real ploTile[3] = { ploLev[0], ploLev[1],
+                                nDim > 2 ? ploLev[2] : 0.0 };
+      const Real invDxTile[3] = { invDxLev[0], invDxLev[1],
+                                  nDim > 2 ? invDxLev[2] : 0.0 };
+      const int iup = iup_;
+      const int ivp = ivp_;
+      const int iwp = iwp_;
+      const int iqp = iqp_;
       const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
       Real localEnergy = 0.0;
@@ -499,16 +494,17 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         if (p.id() < 0)
           continue;
 
-        const Real up = p.rdata(iup_);
-        const Real vp = p.rdata(ivp_);
-        const Real wp = p.rdata(iwp_);
-        const Real qp = p.rdata(iqp_);
+        const Real up = p.rdata(iup);
+        const Real vp = p.rdata(ivp);
+        const Real wp = p.rdata(iwp);
+        const Real qp = p.rdata(iqp);
         localEnergy += qp * (up * up + vp * vp + wp * wp);
 
         IntVect loIdx;
         RealVect dShift;
         Real coef[2][2][2];
-        find_node_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift, coef);
+        find_node_interpolation(p.pos(), ploTile, invDxTile, loIdx, dShift,
+                                coef);
 
         Real pMoments[nMoments];
         pMoments[iNum_] = 1;
@@ -550,166 +546,11 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
       return localEnergy;
     };
 
-    if (use_serial_fast_path()) {
-      for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-        energy += depositDirect(pti.GetArrayOfStructs(),
-                                momentsMF[iLev][pti].array());
-      }
-    } else {
-      const auto items = collect_cell_tiles(*this, iLev);
-      std::vector<Real> tileEnergy(items.size(), 0.0);
-
-      const bool ranThreadPrivate = deposit_cell_tiles_thread_private(
-          items, momentsMF[iLev], nMoments,
-          [&](const auto& item, int ord, const Array4<Real>& momentsArr) {
-            tileEnergy[ord] =
-                depositDirect(item.ptile->GetArrayOfStructs(), momentsArr);
-          });
-
-      if (!ranThreadPrivate)
-        deposit_cell_tiles_colored(
-            items, 3, [&](const auto& item, int ord, bool strayPass) -> bool {
-              Array4<Real> const& momentsArr =
-                  momentsMF[iLev][item.grid].array();
-              const AoS& particles = item.ptile->GetArrayOfStructs();
-
-              const Dim3 lo = init_dim3(0);
-              const Dim3 hi = init_dim3(1);
-              bool foundStray = false;
-              Real localEnergy = 0.0;
-              Real localMom[3][3][3][nMoments] = {};
-              bool hasLocalMom = false;
-
-              for (const auto& p : particles) {
-                if (p.id() < 0)
-                  continue;
-
-                const Real up = p.rdata(iup_);
-                const Real vp = p.rdata(ivp_);
-                const Real wp = p.rdata(iwp_);
-                const Real qp = p.rdata(iqp_);
-
-                if (!strayPass) {
-                  localEnergy += qp * (up * up + vp * vp + wp * wp);
-                }
-
-                //-----calculate interpolate coef begin-------------
-                IntVect loIdx;
-                RealVect dShift;
-                Real coef[2][2][2];
-                find_node_interpolation(p.pos(), ploLev, invDxLev, loIdx,
-                                        dShift, coef);
-                //-----calculate interpolate coef end-------------
-
-                const bool isHome = is_home_nodal(loIdx, item.cell);
-                if (!strayPass) {
-                  if (!isHome) {
-                    foundStray = true;
-                    continue;
-                  }
-                } else if (isHome) {
-                  continue;
-                }
-
-                //-------nodePlasma begin---------
-                Real pMoments[nMoments];
-
-                pMoments[iNum_] = 1;
-                pMoments[iRho_] = qp;
-
-                {
-                  const Real mx = qp * up;
-                  const Real my = qp * vp;
-                  const Real mz = qp * wp;
-                  pMoments[iMx_] = mx;
-                  pMoments[iMy_] = my;
-                  pMoments[iMz_] = mz;
-
-                  pMoments[iPxx_] = mx * up;
-                  pMoments[iPyy_] = my * vp;
-                  pMoments[iPzz_] = mz * wp;
-
-                  pMoments[iPxy_] = mx * vp;
-                  pMoments[iPxz_] = mx * wp;
-                  pMoments[iPyz_] = my * wp;
-                }
-
-                if (!strayPass) {
-                  hasLocalMom = true;
-                  const int ox = loIdx[ix_] - (item.cell[ix_] - 1);
-                  const int oy = loIdx[iy_] - (item.cell[iy_] - 1);
-#if (AMREX_SPACEDIM > 2)
-                  const int oz = loIdx[iz_] - (item.cell[iz_] - 1);
-#else
-                  constexpr int oz = 0;
-#endif
-                  for (int kk = lo.z; kk <= hi.z; ++kk) {
-                    for (int jj = lo.y; jj <= hi.y; ++jj) {
-                      for (int ii = lo.x; ii <= hi.x; ++ii) {
-                        const Real c = coef[ii][jj][kk];
-                        Real* AMREX_RESTRICT dst =
-                            localMom[ox + ii][oy + jj][oz + kk];
-                        AMREX_PRAGMA_SIMD
-                        for (int iVar = 0; iVar < nMoments; iVar++) {
-                          dst[iVar] += c * pMoments[iVar];
-                        }
-                      }
-                    }
-                  }
-                } else {
-                  const int i0 = loIdx[ix_];
-                  const int j0 = loIdx[iy_];
-#if (AMREX_SPACEDIM > 2)
-                  const int k0 = loIdx[iz_];
-#else
-                  constexpr int k0 = 0;
-#endif
-                  for (int iVar = 0; iVar < nMoments; iVar++) {
-                    const Real mVal = pMoments[iVar];
-                    for (int kk = lo.z; kk <= hi.z; ++kk) {
-                      for (int jj = lo.y; jj <= hi.y; ++jj) {
-                        Real* AMREX_RESTRICT mPtr =
-                            momentsArr.ptr(i0, j0 + jj, k0 + kk, iVar);
-                        mPtr[0] += coef[0][jj][kk] * mVal;
-                        mPtr[1] += coef[1][jj][kk] * mVal;
-                      }
-                    }
-                  }
-                }
-                //-------nodePlasma end---------
-              } // for p
-
-              if (!strayPass) {
-                tileEnergy[ord] = localEnergy;
-                if (hasLocalMom) {
-                  const int baseI = item.cell[ix_] - 1;
-                  const int baseJ = item.cell[iy_] - 1;
-#if (AMREX_SPACEDIM > 2)
-                  const int baseK = item.cell[iz_] - 1;
-                  constexpr int kRange = 3;
-#else
-                  constexpr int baseK = 0;
-                  constexpr int kRange = 1;
-#endif
-                  for (int iVar = 0; iVar < nMoments; iVar++) {
-                    for (int kk = 0; kk < kRange; ++kk) {
-                      for (int jj = 0; jj < 3; ++jj) {
-                        Real* AMREX_RESTRICT mPtr =
-                            momentsArr.ptr(baseI, baseJ + jj, baseK + kk, iVar);
-                        mPtr[0] += localMom[0][jj][kk][iVar];
-                        mPtr[1] += localMom[1][jj][kk][iVar];
-                        mPtr[2] += localMom[2][jj][kk][iVar];
-                      }
-                    }
-                  }
-                }
-              }
-              return foundStray;
-            });
-
-      for (const Real e : tileEnergy)
-        energy += e;
-    }
+    energy += deposit_moments_omp(
+        *this, iLev, momentsMF[iLev], nMoments,
+        [&](const auto& ptile, const Array4<Real>& momentsArr) -> Real {
+          return depositDirect(ptile.GetArrayOfStructs(), momentsArr);
+        });
 
     // Exclude the number density.
     mf_mult(momentsMF[iLev], invVol[iLev], 0, nMoments - 1,

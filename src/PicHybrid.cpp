@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include <AMReX_MultiFabUtil.H>
@@ -241,8 +242,13 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           : 0.0;
   const bool useHall = useHallTerm;
 
-  FArrayBox faceJump[nDim3];
-  FArrayBox slopeFab;
+  struct UpwindScratch {
+    FArrayBox faceJump[nDim3];
+    FArrayBox slopeFab;
+  };
+  std::optional<UpwindScratch> upwindScratch;
+  if (doUpwind)
+    upwindScratch.emplace();
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
@@ -266,6 +272,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     // ghost layers of centerBin.
     Array4<Real const> arrFace[nDim3];
     if (doUpwind) {
+      FArrayBox(&faceJump)[nDim3] = upwindScratch->faceJump;
+      FArrayBox& slopeFab = upwindScratch->slopeFab;
       const Array4<Real const>& arrBin = centerBin[mfi].const_array();
       for (int iDir = 0; iDir < nDim; ++iDir) {
         if (!upwindDir[iDir])

@@ -973,13 +973,9 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const auto items = collect_cell_tiles(*this, iLev);
-    if (items.empty())
-      continue;
-
     const auto* tppcFab = useTargetPPC ? &target_PPC(iLev) : nullptr;
 
-    parallel_for_cell_tiles(items, [&](const auto& item, int) {
+    parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int) {
       int nPartGoal = 0;
       if (tppcFab != nullptr) {
         const auto tppc = (*tppcFab)[item.grid].const_array();

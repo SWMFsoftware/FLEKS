@@ -916,8 +916,8 @@ public:
       const amrex::Real xHi = lb.plo[d] + (validBox.bigEnd(d) + 1) * lb.dx[d];
       const amrex::Real tol =
           16 * eps * (std::abs(xLo) + std::abs(xHi) + lb.dx[d]);
-      ab.lo[d] = xLo + tol;
-      ab.hi[d] = xHi - tol;
+      ab.lo[d] = std::max(lb.plo[d], xLo + tol);
+      ab.hi[d] = std::min(lb.phi[d], xHi - tol);
     }
 
     return ab;
@@ -994,12 +994,23 @@ public:
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
   // tallies; `reflect` mirrors; `ambipolar` gates absorption by local cell
   // charge. Only acts at iLev == 0.
-  inline bool reflect_or_delete_particle(
+  AMREX_FORCE_INLINE bool reflect_or_delete_particle(
       ParticleType& p, amrex::Array4<int const> const& status,
       const ActiveRegionBox& ab,
       amrex::Array4<amrex::Real const> const& bodyQNet = {},
       amrex::Array4<amrex::Real> const& bodyQNetInc = {},
       MoveTallyDelta* tally = nullptr) {
+    if ((grid == nullptr || !grid->use_body()) && is_inside_valid_box(p, ab))
+      return false;
+    return reflect_or_delete_particle_slow(p, status, ab, bodyQNet, bodyQNetInc,
+                                           tally);
+  }
+
+  AMREX_NO_INLINE bool reflect_or_delete_particle_slow(
+      ParticleType& p, amrex::Array4<int const> const& status,
+      const ActiveRegionBox& ab,
+      amrex::Array4<amrex::Real const> const& bodyQNet,
+      amrex::Array4<amrex::Real> const& bodyQNetInc, MoveTallyDelta* tally) {
     // The cell location is computed at most once and shared by the #BODY test
     // and the active-region test; a reflection moves the particle and
     // invalidates it (see `isLocateValid`).
