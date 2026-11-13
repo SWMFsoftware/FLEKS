@@ -472,7 +472,72 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     const auto items = collect_cell_tiles(*this, iLev);
     std::vector<Real> tileEnergy(items.size(), 0.0);
 
-    deposit_cell_tiles_colored(
+    const bool ranThreadPrivate = deposit_cell_tiles_thread_private(
+        items, momentsMF[iLev], nMoments,
+        [&](const auto& item, int ord, const Array4<Real>& momentsArr) {
+          const Dim3 lo = init_dim3(0);
+          const Dim3 hi = init_dim3(1);
+          const AoS& particles = item.ptile->GetArrayOfStructs();
+          Real localEnergy = 0.0;
+
+          for (const auto& p : particles) {
+            if (p.id() < 0)
+              continue;
+
+            const Real up = p.rdata(iup_);
+            const Real vp = p.rdata(ivp_);
+            const Real wp = p.rdata(iwp_);
+            const Real qp = p.rdata(iqp_);
+            localEnergy += qp * (up * up + vp * vp + wp * wp);
+
+            IntVect loIdx;
+            RealVect dShift;
+            Real coef[2][2][2];
+            find_node_interpolation(p.pos(), ploLev, invDxLev, loIdx, dShift,
+                                    coef);
+
+            Real pMoments[nMoments];
+            pMoments[iNum_] = 1;
+            pMoments[iRho_] = qp;
+            {
+              const Real mx = qp * up;
+              const Real my = qp * vp;
+              const Real mz = qp * wp;
+              pMoments[iMx_] = mx;
+              pMoments[iMy_] = my;
+              pMoments[iMz_] = mz;
+              pMoments[iPxx_] = mx * up;
+              pMoments[iPyy_] = my * vp;
+              pMoments[iPzz_] = mz * wp;
+              pMoments[iPxy_] = mx * vp;
+              pMoments[iPxz_] = mx * wp;
+              pMoments[iPyz_] = my * wp;
+            }
+
+            const int i0 = loIdx[ix_];
+            const int j0 = loIdx[iy_];
+#if (AMREX_SPACEDIM > 2)
+            const int k0 = loIdx[iz_];
+#else
+            constexpr int k0 = 0;
+#endif
+            for (int iVar = 0; iVar < nMoments; iVar++) {
+              const Real mVal = pMoments[iVar];
+              for (int kk = lo.z; kk <= hi.z; ++kk) {
+                for (int jj = lo.y; jj <= hi.y; ++jj) {
+                  Real* AMREX_RESTRICT mPtr =
+                      momentsArr.ptr(i0, j0 + jj, k0 + kk, iVar);
+                  mPtr[0] += coef[0][jj][kk] * mVal;
+                  mPtr[1] += coef[1][jj][kk] * mVal;
+                }
+              }
+            }
+          }
+          tileEnergy[ord] = localEnergy;
+        });
+
+    if (!ranThreadPrivate)
+      deposit_cell_tiles_colored(
         items, 3, [&](const auto& item, int ord, bool strayPass) -> bool {
           Array4<Real> const& momentsArr = momentsMF[iLev][item.grid].array();
           const AoS& particles = item.ptile->GetArrayOfStructs();
@@ -614,8 +679,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
       energy += e;
 
     // Exclude the number density.
-    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
-                         momentsMF[iLev].nGrow());
+    mf_mult(momentsMF[iLev], invVol[iLev], 0, nMoments - 1,
+            momentsMF[iLev].nGrow());
 
     //----- Mirror boundary condition for the node-centered deposit ------------
     // A node-centered CIC deposit at a non-periodic wall leaves the boundary

@@ -241,6 +241,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           : 0.0;
   const bool useHall = useHallTerm;
 
+  FArrayBox faceJump[nDim3];
+  FArrayBox slopeFab;
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
@@ -262,11 +264,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     // the low side of each transverse direction (the cells c-1 and c around a
     // node). They read the cells i-2..i+1 along the direction, within the two
     // ghost layers of centerBin.
-    FArrayBox faceJump[nDim3];
     Array4<Real const> arrFace[nDim3];
     if (doUpwind) {
       const Array4<Real const>& arrBin = centerBin[mfi].const_array();
-      FArrayBox slopeFab;
       for (int iDir = 0; iDir < nDim; ++iDir) {
         if (!upwindDir[iDir])
           continue;
@@ -284,34 +284,34 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         const Array4<Real const>& arrSc = slopeFab.const_array();
         const Array4<Real>& arrF = faceJump[iDir].array();
         if (iDir == ix_) {
-          ParallelFor(slopeBox, nDim3,
+          parallel_for_omp(slopeBox, nDim3,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
                         arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
                             arrBin, i, j, k, iVar, limTypeUp);
                       });
-          ParallelFor(faceBox, nDim3,
+          parallel_for_omp(faceBox, nDim3,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
                         arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
                             arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
                       });
         } else if (iDir == iy_) {
-          ParallelFor(slopeBox, nDim3,
+          parallel_for_omp(slopeBox, nDim3,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
                         arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
                             arrBin, i, j, k, iVar, limTypeUp);
                       });
-          ParallelFor(faceBox, nDim3,
+          parallel_for_omp(faceBox, nDim3,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
                         arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
                             arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
                       });
         } else {
-          ParallelFor(slopeBox, nDim3,
+          parallel_for_omp(slopeBox, nDim3,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
                         arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
                             arrBin, i, j, k, iVar, limTypeUp);
                       });
-          ParallelFor(faceBox, nDim3,
+          parallel_for_omp(faceBox, nDim3,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
                         arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
                             arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
@@ -324,7 +324,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrFaceY = arrFace[iy_];
     const Array4<Real const> arrFaceZ = arrFace[iz_];
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rhoCur = moments(i, j, k, iRho_);
       const Real rhoPrev = usePrevMoments ? momentsPrev(i, j, k, iRho_) : 0.0;
       Real rho = wCurRho * rhoCur;
@@ -535,7 +535,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         const Array4<Real const> arrHyperReg =
             nodeEtaHyperRegional[iLev][mfi].array();
 
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           Real f = fGlobal + arrHyperReg(i, j, k) * invFourPI;
           if (f > 0.0) {
             arrE(i, j, k, ix_) -= f * arrHyp(i, j, k, ix_);
@@ -612,7 +612,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         arrPe(i, j, k) =
             polytropic_closure(arrPe(i, j, k), p0, invRho0, gamma, Te);
       });
@@ -643,7 +643,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = moments(i, j, k, iRho_);
       if (rho > 0) {
         const Real invRhoEff = -1.0 / amrex::max(rho, rhoMinOhm);
@@ -668,7 +668,7 @@ void Pic::compute_ambipolar_E(int iLev) {
       Array4<Real> const& arr = nodeEambi[iLev][mfi].array();
       const Dim3 vLo = bxValid.smallEnd().dim3();
       const Dim3 vHi = bxValid.bigEnd().dim3();
-      ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         const int ijk[3] = { i, j, k };
         const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
         const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
@@ -703,7 +703,7 @@ void Pic::compute_ambipolar_E(int iLev) {
       auto arr = nodeEambi[iLev][mfi].array();
       const int klo = vbox.smallEnd(2);
       const int khi = vbox.bigEnd(2);
-      amrex::ParallelFor(fbox,
+      parallel_for_omp(fbox,
                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                            const int k_src = std::clamp(k, klo, khi);
                            if (k != k_src) {
@@ -769,7 +769,7 @@ void Pic::smooth_moments() {
         Array4<Real> const& arr = moments[mfi].array();
         const Dim3 vLo = bxValid.smallEnd().dim3();
         const Dim3 vHi = bxValid.bigEnd().dim3();
-        ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const int ijk[3] = { i, j, k };
           const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
           const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
@@ -899,7 +899,7 @@ void Pic::apply_fake2d_k_clamp(MultiFab& mf) {
     auto arr = mf[mfi].array();
     const int klo = vbox.smallEnd(2);
     const int khi = vbox.bigEnd(2);
-    ParallelFor(fbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(fbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       const int k_src = std::clamp(k, klo, khi);
       if (k != k_src)
         arr(i, j, k) = arr(i, j, k_src);
@@ -954,7 +954,7 @@ void Pic::compute_node_electron_pressure(int iLev, const MultiFab& nodeNe,
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = nodePe[mfi].array();
     const Array4<Real const>& arrNe = nodeNe[mfi].const_array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       arrPe(i, j, k) =
           polytropic_closure(arrNe(i, j, k), p0, invRho0, gamma, Te);
     });
@@ -986,7 +986,7 @@ void Pic::init_electron_pressure(int iLev) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (fromShockTube) {
         Real xPlane = prob_lo[0] + (i + 0.5) * dx[0];
 #if AMREX_SPACEDIM > 1
@@ -1034,7 +1034,7 @@ void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
       const Box& box = useGrownTile ? mfi.growntilebox() : mfi.validbox();
       const Array4<Real>& arrRho = nodalRho[mfi].array();
       const Array4<Real const>& moments = nodePlasma[s][iLev][mfi].array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         arrRho(i, j, k) += qomFactor * moments(i, j, k, iRho_);
       });
     }
@@ -1056,7 +1056,7 @@ void Pic::compute_electron_temperature(int iLev) {
     const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
     const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
       arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMinLocal) / ne;
     });
@@ -1076,7 +1076,7 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPiN = nodePeRho[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       arrPiN(i, j, k) = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
                          moments(i, j, k, iPzz_)) /
                         3.0;
@@ -1102,7 +1102,7 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
     const Array4<Real const>& arrPi = centerPe[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
       const Real pe = amrex::max(arrPe(i, j, k), peMinLocal);
       const Real pi = amrex::max(arrPi(i, j, k), 0.0);
@@ -1189,7 +1189,7 @@ void Pic::electron_velocity_at_nodes(int iLev) {
     const Array4<Real>& arrUe = nodePeVec[iLev][mfi].array();
     const Array4<Real const>& arrMom = nodePlasma[nSpecies][iLev][mfi].array();
     const Array4<Real const>& arrJ = nodeJ[iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = arrMom(i, j, k, iRho_);
       if (rho > 0) {
         const Real invRho = 1.0 / amrex::max(rho, rhoFloor);
@@ -1238,7 +1238,7 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
     const Array4<Real>& arrPeNew = centerPe[iLev][mfi].array();
     const Array4<Real const>& arrUe = nodePeVec[iLev][mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       Real divFlux = 0.0;
       Real divUe = 0.0;
 
@@ -1311,7 +1311,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
           const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
           const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
           const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
             const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
             arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMin) / ne;
           });
@@ -1332,7 +1332,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
         const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
         const Array4<Real const>& arrRhoN = nodePeRho[iLev][mfi].array();
 
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
           Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
 
@@ -1446,7 +1446,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
         const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
         const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
 
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
 
           Real lambda =
@@ -1530,7 +1530,7 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB, Real timeOverride) {
       auto arr = mfB[mfi].array();
       const int klo = vbox.smallEnd(2);
       const int khi = vbox.bigEnd(2);
-      amrex::ParallelFor(fbox,
+      parallel_for_omp(fbox,
                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                            const int k_src = std::clamp(k, klo, khi);
                            if (k != k_src) {
@@ -1604,7 +1604,7 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf, Real timeOverride) {
       const auto& e = crse[mfi].array();
       const auto& ef = fromFine[mfi].const_array();
       const auto& cell = cell_status(iLev - 1)[mfi].const_array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         // An interface node touches a covered cell and an uncovered cell
         // inside the domain.
         bool hasCovered = false, hasUncovered = false;
@@ -1806,7 +1806,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
     const Box& box = mfi.validbox();
     const auto& mask = innerMask[mfi].array();
     const auto& st = cell_status(iLev)[mfi].const_array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       bool inner = true;
       for (int kk = 0; kk <= kOff && inner; ++kk)
         for (int jj = 0; jj <= 1 && inner; ++jj)
@@ -1826,7 +1826,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
       const auto& sa = s[mfi].array();
       const auto& d = r[mfi].const_array();
       const auto& mask = innerMask[mfi].const_array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         if (!mask(i, j, k)) {
           for (int iVar = 0; iVar < nDim3; ++iVar)
             sa(i, j, k, iVar) = 0.0;
@@ -1890,7 +1890,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
       const Box& box = mfi.validbox();
       const auto& qa = q[mfi].array();
       const auto& pa = p[mfi].const_array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         const Real pyAz =
             cInvDy * (pa(i, j + 1, k, iz_) + pa(i + 1, j + 1, k, iz_) -
                       pa(i, j, k, iz_) - pa(i + 1, j, k, iz_));
@@ -1914,7 +1914,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
     const auto& b = B[mfi].const_array();
     const auto& t = target[mfi].const_array();
     const auto& st = cell_status(iLev)[mfi].const_array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (bit::is_refined(st(i, j, k))) {
         for (int iVar = 0; iVar < nRelax; ++iVar)
           d(i, j, k, iVar) = t(i, j, k, iVar) - b(i, j, k, iVar);

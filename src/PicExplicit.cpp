@@ -94,7 +94,7 @@ void Pic::smooth_explicit_current(Vector<MultiFab>& J) {
         Array4<Real> const& arr = J[iLev][mfi].array();
         const Dim3 vLo = bxValid.smallEnd().dim3();
         const Dim3 vHi = bxValid.bigEnd().dim3();
-        ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const int ijk[3] = { i, j, k };
           const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
           const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };

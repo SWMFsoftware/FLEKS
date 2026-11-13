@@ -486,7 +486,7 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
                    &solverCenterLapMF[iLev]);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
-  matvecMF.mult(-delt2, 0, matvecMF.nComp(), 0);
+  mf_mult(matvecMF, -delt2, 0, matvecMF.nComp(), 0);
 
   if (useUpwindE) {
     // Explicit scheme: add the LF artificial viscosity term to the rhs
@@ -599,14 +599,14 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
 
     grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
 
-    MultiFab::Saxpy(matvecMF, delt2, tempNode3, 0, 0, matvecMF.nComp(), 0);
+    mf_saxpy(matvecMF, delt2, tempNode3, 0, 0, matvecMF.nComp(), 0);
   }
 
   update_E_M_dot_E(vecMF, tempNode3, iLev);
 
-  MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
+  mf_add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
-  MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
+  mf_add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
   // Identity rows of the tangential E on conducting walls, from the input
   // before the wall BC zeroed it.
@@ -664,64 +664,63 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
   timing_func(nameFunc);
 
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
-  for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
+  parallel_for_mf_omp(
+      outMF, [](const MFIter& mfi) { return mfi.validbox(); },
+      [&](const MFIter& mfi) {
+        const Array4<Real const> inArr = inMF[mfi].const_array();
+        const Array4<Real> outArr = outMF[mfi].array();
+        const Array4<RealMM const> mmArr = nodeMM[iLev][mfi].const_array();
+        return [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-    const Array4<Real const> inArr = inMF[mfi].const_array();
-    const Array4<Real> outArr = outMF[mfi].array();
-    const Array4<RealMM const> mmArr = nodeMM[iLev][mfi].const_array();
-
-    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
-      const auto& data0 = mmArr(ijk);
-      Real sumX = 0.0;
-      Real sumY = 0.0;
-      Real sumZ = 0.0;
+          const auto& data0 = mmArr(ijk);
+          Real sumX = 0.0;
+          Real sumY = 0.0;
+          Real sumZ = 0.0;
 
 #if (AMREX_SPACEDIM == 2)
-      for (int j2 = j - 1; j2 <= j + 1; ++j2) {
-        for (int i2 = i - 1; i2 <= i + 1; ++i2) {
-          const int gp = (j2 - j + 1) * 3 + i2 - i + 1;
-          const int idx0 = gp * 9;
+          for (int j2 = j - 1; j2 <= j + 1; ++j2) {
+            for (int i2 = i - 1; i2 <= i + 1; ++i2) {
+              const int gp = (j2 - j + 1) * 3 + i2 - i + 1;
+              const int idx0 = gp * 9;
 
-          const Real* AMREX_RESTRICT const M_I = &(data0[idx0]);
+              const Real* AMREX_RESTRICT const M_I = &(data0[idx0]);
 
-          const Real vctX = inArr(i2, j2, 0, ix_);
-          const Real vctY = inArr(i2, j2, 0, iy_);
-          const Real vctZ = inArr(i2, j2, 0, iz_);
-          sumX += vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2];
-          sumY += vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5];
-          sumZ += vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8];
-        }
-      }
-#else
-      const int kMin2 = nDim > 2 ? k - 1 : k;
-      const int kMax2 = nDim > 2 ? k + 1 : k;
-
-      for (int k2 = kMin2; k2 <= kMax2; ++k2) {
-        for (int j2 = j - 1; j2 <= j + 1; ++j2) {
-          for (int i2 = i - 1; i2 <= i + 1; ++i2) {
-            const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
-            const int idx0 = gp * 9;
-
-            const Real* AMREX_RESTRICT const M_I = &(data0[idx0]);
-
-            const Real vctX = inArr(i2, j2, k2, ix_);
-            const Real vctY = inArr(i2, j2, k2, iy_);
-            const Real vctZ = inArr(i2, j2, k2, iz_);
-            sumX += vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2];
-            sumY += vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5];
-            sumZ += vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8];
+              const Real vctX = inArr(i2, j2, 0, ix_);
+              const Real vctY = inArr(i2, j2, 0, iy_);
+              const Real vctZ = inArr(i2, j2, 0, iz_);
+              sumX += vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2];
+              sumY += vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5];
+              sumZ += vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8];
+            }
           }
-        }
-      }
+#else
+          const int kMin2 = nDim > 2 ? k - 1 : k;
+          const int kMax2 = nDim > 2 ? k + 1 : k;
+
+          for (int k2 = kMin2; k2 <= kMax2; ++k2) {
+            for (int j2 = j - 1; j2 <= j + 1; ++j2) {
+              for (int i2 = i - 1; i2 <= i + 1; ++i2) {
+                const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
+                const int idx0 = gp * 9;
+
+                const Real* AMREX_RESTRICT const M_I = &(data0[idx0]);
+
+                const Real vctX = inArr(i2, j2, k2, ix_);
+                const Real vctY = inArr(i2, j2, k2, iy_);
+                const Real vctZ = inArr(i2, j2, k2, iz_);
+                sumX += vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2];
+                sumY += vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5];
+                sumZ += vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8];
+              }
+            }
+          }
 #endif
-      outArr(i, j, k, ix_) = sumX * c0;
-      outArr(i, j, k, iy_) = sumY * c0;
-      outArr(i, j, k, iz_) = sumZ * c0;
-    });
-  }
+          outArr(i, j, k, ix_) = sumX * c0;
+          outArr(i, j, k, iy_) = sumY * c0;
+          outArr(i, j, k, iz_) = sumZ * c0;
+        };
+      });
 
   // if (doSmoothJ) {
   //   for (int icount = 0; icount < nSmoothJ; icount++) {

@@ -398,6 +398,246 @@ void parallel_for_omp(amrex::Box const& box, T ncomp, L const& f) noexcept {
 #endif
 }
 
+// Launch a box-loop across all local boxes of a MultiFab/FabArray in a single
+// OpenMP parallel region on CPU (cutting per-box fork-join overhead by nBoxes),
+// or per-box GPU kernels when AMREX_USE_GPU is enabled.
+// `makeBox(mfi)` returns the Box for `mfi`; `makeKernel(mfi)` returns the
+// `(int i, int j, int k)` functor.
+template <class MF, class MakeBox, class MakeKernel>
+void parallel_for_mf_omp(const MF& mf, MakeBox&& makeBox,
+                         MakeKernel&& makeKernel) {
+#ifdef AMREX_USE_GPU
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::ParallelFor(makeBox(mfi), makeKernel(mfi));
+  }
+#elif defined(AMREX_USE_OMP)
+  using KernelT = decltype(makeKernel(std::declval<const amrex::MFIter&>()));
+  std::vector<amrex::Box> boxes;
+  std::vector<KernelT> kernels;
+  long totalPts = 0;
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty()) {
+      totalPts += bx.numPts();
+      boxes.push_back(bx);
+      kernels.push_back(makeKernel(mfi));
+    }
+  }
+  const int nBoxes = static_cast<int>(boxes.size());
+  if (nBoxes == 0)
+    return;
+
+  if (amrex::OpenMP::in_parallel() || totalPts < kMinOmpBoxCells) {
+    for (int b = 0; b < nBoxes; ++b) {
+      const auto lo = amrex::lbound(boxes[b]);
+      const auto hi = amrex::ubound(boxes[b]);
+      const auto& kern = kernels[b];
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          AMREX_PRAGMA_SIMD
+          for (int i = lo.x; i <= hi.x; ++i) {
+            kern(i, j, k);
+          }
+        }
+      }
+    }
+  } else {
+    std::vector<int> rowOffsets(nBoxes + 1, 0);
+    for (int b = 0; b < nBoxes; ++b) {
+      const auto lo = amrex::lbound(boxes[b]);
+      const auto hi = amrex::ubound(boxes[b]);
+      rowOffsets[b + 1] =
+          rowOffsets[b] + (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+    }
+    const int totalRows = rowOffsets[nBoxes];
+#pragma omp parallel for schedule(static)
+    for (int globalRow = 0; globalRow < totalRows; ++globalRow) {
+      int b = 0;
+      while (b + 1 < nBoxes && globalRow >= rowOffsets[b + 1])
+        ++b;
+      const int localRow = globalRow - rowOffsets[b];
+      const auto lo = amrex::lbound(boxes[b]);
+      const auto hi = amrex::ubound(boxes[b]);
+      const int nj = hi.y - lo.y + 1;
+      const int j = lo.y + (localRow % nj);
+      const int k = lo.z + (localRow / nj);
+      const auto& kern = kernels[b];
+      AMREX_PRAGMA_SIMD
+      for (int i = lo.x; i <= hi.x; ++i) {
+        kern(i, j, k);
+      }
+    }
+  }
+#else
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::ParallelFor(makeBox(mfi), makeKernel(mfi));
+  }
+#endif
+}
+
+template <class MF, class MakeBox, class MakeKernel>
+void parallel_for_mf_omp(const MF& mf, int ncomp, MakeBox&& makeBox,
+                         MakeKernel&& makeKernel) {
+  if (ncomp <= 0)
+    return;
+#ifdef AMREX_USE_GPU
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::ParallelFor(makeBox(mfi), ncomp, makeKernel(mfi));
+  }
+#elif defined(AMREX_USE_OMP)
+  using KernelT = decltype(makeKernel(std::declval<const amrex::MFIter&>()));
+  std::vector<amrex::Box> boxes;
+  std::vector<KernelT> kernels;
+  long totalPts = 0;
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty()) {
+      totalPts += bx.numPts();
+      boxes.push_back(bx);
+      kernels.push_back(makeKernel(mfi));
+    }
+  }
+  const int nBoxes = static_cast<int>(boxes.size());
+  if (nBoxes == 0)
+    return;
+
+  if (amrex::OpenMP::in_parallel() ||
+      totalPts * static_cast<long>(ncomp) < kMinOmpBoxCells) {
+    for (int b = 0; b < nBoxes; ++b) {
+      const auto lo = amrex::lbound(boxes[b]);
+      const auto hi = amrex::ubound(boxes[b]);
+      const auto& kern = kernels[b];
+      for (int c = 0; c < ncomp; ++c) {
+        for (int k = lo.z; k <= hi.z; ++k) {
+          for (int j = lo.y; j <= hi.y; ++j) {
+            AMREX_PRAGMA_SIMD
+            for (int i = lo.x; i <= hi.x; ++i) {
+              kern(i, j, k, c);
+            }
+          }
+        }
+      }
+    }
+  } else {
+    std::vector<int> rowOffsets(nBoxes + 1, 0);
+    for (int b = 0; b < nBoxes; ++b) {
+      const auto lo = amrex::lbound(boxes[b]);
+      const auto hi = amrex::ubound(boxes[b]);
+      rowOffsets[b + 1] =
+          rowOffsets[b] + ncomp * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+    }
+    const int totalRows = rowOffsets[nBoxes];
+#pragma omp parallel for schedule(static)
+    for (int globalRow = 0; globalRow < totalRows; ++globalRow) {
+      int b = 0;
+      while (b + 1 < nBoxes && globalRow >= rowOffsets[b + 1])
+        ++b;
+      const int localRow = globalRow - rowOffsets[b];
+      const auto lo = amrex::lbound(boxes[b]);
+      const auto hi = amrex::ubound(boxes[b]);
+      const int nj = hi.y - lo.y + 1;
+      const int nk = hi.z - lo.z + 1;
+      const int njk = nj * nk;
+      const int c = localRow / njk;
+      const int rem = localRow % njk;
+      const int j = lo.y + (rem % nj);
+      const int k = lo.z + (rem / nj);
+      const auto& kern = kernels[b];
+      AMREX_PRAGMA_SIMD
+      for (int i = lo.x; i <= hi.x; ++i) {
+        kern(i, j, k, c);
+      }
+    }
+  }
+#else
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::ParallelFor(makeBox(mfi), ncomp, makeKernel(mfi));
+  }
+#endif
+}
+
+// OpenMP-accelerated MultiFab arithmetic helpers on CPU (since AMReX
+// MultiFab::Add/Saxpy/mult are serial when AMReX USE_OMP=FALSE).
+inline void mf_add(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
+                   int dcomp, int ncomp, int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        const auto s = src[mfi].const_array();
+        return [=](int i, int j, int k, int c) noexcept {
+          d(i, j, k, dcomp + c) += s(i, j, k, scomp + c);
+        };
+      });
+#else
+  amrex::MultiFab::Add(dst, src, scomp, dcomp, ncomp, ngrow);
+#endif
+}
+
+inline void mf_saxpy(amrex::MultiFab& dst, amrex::Real a,
+                     const amrex::MultiFab& src, int scomp, int dcomp,
+                     int ncomp, int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        const auto s = src[mfi].const_array();
+        return [=](int i, int j, int k, int c) noexcept {
+          d(i, j, k, dcomp + c) += a * s(i, j, k, scomp + c);
+        };
+      });
+#else
+  amrex::MultiFab::Saxpy(dst, a, src, scomp, dcomp, ncomp, ngrow);
+#endif
+}
+
+inline void mf_mult(amrex::MultiFab& dst, amrex::Real val, int comp, int ncomp,
+                    int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        return [=](int i, int j, int k, int c) noexcept {
+          d(i, j, k, comp + c) *= val;
+        };
+      });
+#else
+  dst.mult(val, comp, ncomp, ngrow);
+#endif
+}
+
+inline void mf_copy(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
+                    int dcomp, int ncomp, int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        const auto s = src[mfi].const_array();
+        return [=](int i, int j, int k, int c) noexcept {
+          d(i, j, k, dcomp + c) = s(i, j, k, scomp + c);
+        };
+      });
+#else
+  amrex::MultiFab::Copy(dst, src, scomp, dcomp, ncomp, ngrow);
+#endif
+}
+
 // Launch a 1D loop f(i) for i = 0..n-1 on the GPU, across OpenMP threads on
 // the CPU when n is large enough and not already inside an OpenMP parallel
 // region, or as a SIMD loop on the CPU.
@@ -625,48 +865,137 @@ void deposit_cell_tiles_colored(
   if (!amrex::OpenMP::in_parallel() &&
       (nTiles >= kMinOmpTiles * 4 ||
        (nTiles >= 4 && count_tile_particles(items) >= kMinOmpParticles))) {
-    int nColors = 1;
-    for (int d = 0; d < AMREX_SPACEDIM; ++d)
-      nColors *= stencilSpan;
+    std::vector<unsigned char> hasStray(nTiles, 0);
 
-    std::vector<int> bucketCounts(nColors, 0);
-    std::vector<int> tileColors(nTiles);
-    for (int ord = 0; ord < nTiles; ++ord) {
-      const auto& c = items[ord].cell;
-      int color = 0;
-      int stride = 1;
-      for (int d = 0; d < AMREX_SPACEDIM; ++d) {
-        const int rem = ((c[d] % stencilSpan) + stencilSpan) % stencilSpan;
-        color += rem * stride;
-        stride *= stencilSpan;
+    // Fast path: group cell tiles by (grid, highest-dim plane) and color
+    // planes by `planeCoord % stencilSpan`. This reduces OpenMP barriers from
+    // stencilSpan^nDim (27 in 3D) down to stencilSpan (3), eliminates false
+    // sharing across threads, and gives each thread contiguous in-plane cells.
+    bool usedPlaneStriping = false;
+    if constexpr (AMREX_SPACEDIM >= 2) {
+      constexpr int hiDim = AMREX_SPACEDIM - 1;
+      int minGrid = items[0].grid, maxGrid = items[0].grid;
+      int minK = items[0].cell[hiDim], maxK = items[0].cell[hiDim];
+      for (int ord = 1; ord < nTiles; ++ord) {
+        minGrid = std::min(minGrid, items[ord].grid);
+        maxGrid = std::max(maxGrid, items[ord].grid);
+        minK = std::min(minK, items[ord].cell[hiDim]);
+        maxK = std::max(maxK, items[ord].cell[hiDim]);
       }
-      tileColors[ord] = color;
-      ++bucketCounts[color];
+      const long gridSpan = static_cast<long>(maxGrid - minGrid + 1);
+      const long kSpan = static_cast<long>(maxK - minK + 1);
+      if (gridSpan * kSpan <= 65536) {
+        const int tableSize = static_cast<int>(gridSpan * kSpan);
+        std::vector<int> keyToPlane(tableSize, -1);
+        std::vector<int> planeColor;
+        std::vector<int> planeCounts;
+        std::vector<int> itemPlane(nTiles);
+        for (int ord = 0; ord < nTiles; ++ord) {
+          const int g = items[ord].grid - minGrid;
+          const int k = items[ord].cell[hiDim];
+          const int key = g * static_cast<int>(kSpan) + (k - minK);
+          int p = keyToPlane[key];
+          if (p < 0) {
+            p = static_cast<int>(planeColor.size());
+            keyToPlane[key] = p;
+            planeColor.push_back(((k % stencilSpan) + stencilSpan) %
+                                 stencilSpan);
+            planeCounts.push_back(0);
+          }
+          itemPlane[ord] = p;
+          ++planeCounts[p];
+        }
+        const int nPlanes = static_cast<int>(planeColor.size());
+        const int nThreads = omp_get_max_threads();
+        if (nPlanes >= stencilSpan * nThreads) {
+          usedPlaneStriping = true;
+          std::vector<int> planeStarts(nPlanes + 1, 0);
+          for (int p = 0; p < nPlanes; ++p)
+            planeStarts[p + 1] = planeStarts[p] + planeCounts[p];
+          std::vector<int> planeCursor(planeStarts.begin(),
+                                       planeStarts.begin() + nPlanes);
+          std::vector<int> planeOrds(nTiles);
+          for (int ord = 0; ord < nTiles; ++ord)
+            planeOrds[planeCursor[itemPlane[ord]]++] = ord;
+
+          std::vector<int> colorCounts(stencilSpan, 0);
+          for (int p = 0; p < nPlanes; ++p)
+            ++colorCounts[planeColor[p]];
+          std::vector<int> colorStarts(stencilSpan + 1, 0);
+          for (int c = 0; c < stencilSpan; ++c)
+            colorStarts[c + 1] = colorStarts[c] + colorCounts[c];
+          std::vector<int> colorCursor(colorStarts.begin(),
+                                       colorStarts.begin() + stencilSpan);
+          std::vector<int> colorPlanes(nPlanes);
+          for (int p = 0; p < nPlanes; ++p)
+            colorPlanes[colorCursor[planeColor[p]]++] = p;
+
+#pragma omp parallel
+          {
+            for (int color = 0; color < stencilSpan; ++color) {
+              const int beg = colorStarts[color];
+              const int end = colorStarts[color + 1];
+              if (beg == end)
+                continue;
+#pragma omp for schedule(dynamic, 1)
+              for (int pIdx = beg; pIdx < end; ++pIdx) {
+                const int p = colorPlanes[pIdx];
+                for (int idx = planeStarts[p]; idx < planeStarts[p + 1];
+                     ++idx) {
+                  const int ord = planeOrds[idx];
+                  if (f(items[ord], ord, false))
+                    hasStray[ord] = 1;
+                }
+              }
+            }
+          }
+        }
+      }
     }
 
-    std::vector<int> bucketStarts(nColors + 1, 0);
-    for (int c = 0; c < nColors; ++c)
-      bucketStarts[c + 1] = bucketStarts[c] + bucketCounts[c];
+    if (!usedPlaneStriping) {
+      int nColors = 1;
+      for (int d = 0; d < AMREX_SPACEDIM; ++d)
+        nColors *= stencilSpan;
 
-    std::vector<int> bucketCursor(bucketStarts.begin(),
-                                  bucketStarts.begin() + nColors);
-    std::vector<int> bucketOrds(nTiles);
-    for (int ord = 0; ord < nTiles; ++ord)
-      bucketOrds[bucketCursor[tileColors[ord]]++] = ord;
+      std::vector<int> bucketCounts(nColors, 0);
+      std::vector<int> tileColors(nTiles);
+      for (int ord = 0; ord < nTiles; ++ord) {
+        const auto& c = items[ord].cell;
+        int color = 0;
+        int stride = 1;
+        for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+          const int rem = ((c[d] % stencilSpan) + stencilSpan) % stencilSpan;
+          color += rem * stride;
+          stride *= stencilSpan;
+        }
+        tileColors[ord] = color;
+        ++bucketCounts[color];
+      }
 
-    std::vector<unsigned char> hasStray(nTiles, 0);
+      std::vector<int> bucketStarts(nColors + 1, 0);
+      for (int c = 0; c < nColors; ++c)
+        bucketStarts[c + 1] = bucketStarts[c] + bucketCounts[c];
+
+      std::vector<int> bucketCursor(bucketStarts.begin(),
+                                    bucketStarts.begin() + nColors);
+      std::vector<int> bucketOrds(nTiles);
+      for (int ord = 0; ord < nTiles; ++ord)
+        bucketOrds[bucketCursor[tileColors[ord]]++] = ord;
+
 #pragma omp parallel
-    {
-      for (int color = 0; color < nColors; ++color) {
-        const int beg = bucketStarts[color];
-        const int end = bucketStarts[color + 1];
-        if (beg == end)
-          continue;
+      {
+        for (int color = 0; color < nColors; ++color) {
+          const int beg = bucketStarts[color];
+          const int end = bucketStarts[color + 1];
+          if (beg == end)
+            continue;
 #pragma omp for schedule(guided)
-        for (int idx = beg; idx < end; ++idx) {
-          const int ord = bucketOrds[idx];
-          if (f(items[ord], ord, false))
-            hasStray[ord] = 1;
+          for (int idx = beg; idx < end; ++idx) {
+            const int ord = bucketOrds[idx];
+            if (f(items[ord], ord, false))
+              hasStray[ord] = 1;
+          }
         }
       }
     }
@@ -689,6 +1018,88 @@ template <class PC, class F>
 void deposit_cell_tiles_colored(PC& pc, int iLev, int stencilSpan, F&& f) {
   const auto items = collect_cell_tiles(pc, iLev);
   deposit_cell_tiles_colored(items, stencilSpan, std::forward<F>(f));
+}
+
+template <class TileType, class F>
+bool deposit_cell_tiles_thread_private(
+    const std::vector<CellTileItem<TileType> >& items, amrex::MultiFab& mf,
+    int nComp, F&& depositTileFn) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  const int nThreads = omp_get_max_threads();
+  if (amrex::OpenMP::in_parallel() || nThreads <= 1 ||
+      static_cast<int>(items.size()) < kMinOmpTiles * 4) {
+    return false;
+  }
+
+  const int nGrids = mf.boxArray().size();
+  std::vector<int> gridToLocal(nGrids, -1);
+  std::vector<amrex::FArrayBox*> dstFabs;
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    gridToLocal[mfi.index()] = static_cast<int>(dstFabs.size());
+    dstFabs.push_back(&mf[mfi]);
+  }
+  const int nLocal = static_cast<int>(dstFabs.size());
+  std::vector<std::vector<int> > boxItems(nLocal);
+  for (int ord = 0; ord < static_cast<int>(items.size()); ++ord) {
+    const int lb = gridToLocal[items[ord].grid];
+    if (lb >= 0)
+      boxItems[lb].push_back(ord);
+  }
+
+  std::vector<amrex::FArrayBox> threadFabs(nThreads);
+#pragma omp parallel
+  {
+    const int tid = omp_get_thread_num();
+    amrex::FArrayBox& localFab = threadFabs[tid];
+
+    for (int b = 0; b < nLocal; ++b) {
+      const auto& bItems = boxItems[b];
+      if (bItems.empty())
+        continue;
+      amrex::FArrayBox* dstFab = dstFabs[b];
+      const amrex::Box fabBox = dstFab->box();
+      localFab.resize(fabBox, nComp);
+      localFab.setVal<amrex::RunOn::Host>(0.0);
+      const amrex::Array4<amrex::Real> localArr = localFab.array();
+      const int nBItems = static_cast<int>(bItems.size());
+
+#pragma omp for schedule(guided)
+      for (int idx = 0; idx < nBItems; ++idx) {
+        const int ord = bItems[idx];
+        depositTileFn(items[ord], ord, localArr);
+      }
+
+      const amrex::Array4<amrex::Real> dstArr = dstFab->array();
+      const auto blo = amrex::lbound(fabBox);
+      const auto bhi = amrex::ubound(fabBox);
+      const int nj = bhi.y - blo.y + 1;
+      const int nk = bhi.z - blo.z + 1;
+      const int njk = nj * nk;
+      const int totalRows = nComp * njk;
+      const int ni = bhi.x - blo.x + 1;
+#pragma omp for schedule(static)
+      for (int row = 0; row < totalRows; ++row) {
+        const int c = row / njk;
+        const int rem = row % njk;
+        const int j = blo.y + (rem % nj);
+        const int k = blo.z + (rem / nj);
+        amrex::Real* AMREX_RESTRICT dPtr = dstArr.ptr(blo.x, j, k, c);
+        for (int t = 0; t < nThreads; ++t) {
+          const amrex::Real* AMREX_RESTRICT sPtr =
+              threadFabs[t].const_array().ptr(blo.x, j, k, c);
+          AMREX_PRAGMA_SIMD
+          for (int ii = 0; ii < ni; ++ii) {
+            dPtr[ii] += sPtr[ii];
+          }
+        }
+      }
+    }
+  }
+  return true;
+#else
+  amrex::ignore_unused(items, mf, nComp, depositTileFn);
+  return false;
+#endif
 }
 
 template <class F> amrex::Real deterministic_sum(int n, F&& f) {
