@@ -487,7 +487,8 @@ def write_report(results, relative, tolerance, path="performance_summary.md"):
             part_label = "Test particles" if solver_kind == "pt" else "Macroparticles"
             f.write(f"*{part_label}: {cand['particles']}, cycles: "
                     f"{cand['cycles']} (total steps: {cand['total_steps']}).*\n")
-            f.write("\n**Detailed Runs (Wall-Clock Runtime)**\n")
+            f.write("\n<details>\n")
+            f.write("<summary><b>Detailed Runs (Wall-Clock Runtime)</b></summary>\n\n")
             n_runs = len(cand["serial"]["runs"])
             f.write("| Process Count | " +
                     " | ".join(f"Run {k + 1}" for k in range(n_runs)) +
@@ -499,7 +500,7 @@ def write_report(results, relative, tolerance, path="performance_summary.md"):
                         _runs_rows(res["metrics"]["base"], ", base"))
             else:
                 rows = _runs_rows(cand, "")
-            f.write("\n".join(rows) + "\n")
+            f.write("\n".join(rows) + "\n\n</details>\n")
         f.write("\n*Note: Benchmark ran on virtualized runner.*\n")
 
 
