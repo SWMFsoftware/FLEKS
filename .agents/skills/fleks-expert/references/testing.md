@@ -66,12 +66,21 @@ back.
 python3 tests/validate_tests.py                 # all tests, serial
 python3 tests/validate_tests.py --test=beam     # one test
 python3 tests/validate_tests.py -n 2            # 2 MPI ranks (mpirun -n 2)
+python3 tests/validate_tests.py -n 2 --omp-threads 2  # 2 MPI x 2 OpenMP threads
 python3 tests/validate_tests.py --verbose       # per-check diagnostics
 python3 tests/validate_performance.py           # scaling benchmark
 ```
 
 With `-n 1` (or omitted) the executable is invoked directly as `./FLEKS.exe`;
-with `-n N > 1` via `mpirun -n N ./FLEKS.exe`.
+with `-n N > 1` via `mpirun -n N ./FLEKS.exe` (or `mpirun --bind-to none -n N`
+when `--omp-threads > 1`).
+
+> **OpenMP Thread Binding Gotcha:** OpenMPI's `mpirun` binds each MPI rank to
+> a single CPU core by default (`--bind-to core`). Whenever running
+> `OMP_NUM_THREADS > 1` under `mpirun` (including `mpirun -np 1`), you **must**
+> pass `--bind-to none` (or run `./FLEKS.exe` directly for single-rank runs);
+> otherwise all OpenMP threads will be pinned to the same core and show no
+> speedup.
 
 ### Ionization commands
 

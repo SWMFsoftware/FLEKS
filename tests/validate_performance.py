@@ -353,8 +353,12 @@ def evaluate_suite(solver_kind, targets, count, omp_threads=2):
             return None
         steps[name] = (particles, cycles)
 
+    run_omp = omp_threads > 1 and solver_kind != "fullpic"
     configs = [(1, 1), (2, 1)]
-    if omp_threads > 1:
+    # The 1D fullpic benchmark (128x1x1) is below the OpenMP size gates
+    # (kMinOmpBoxCells=2048, kMinOmp1DSize=8192); Full-PIC OpenMP scaling is
+    # covered by the 2D reconnection2d suite instead.
+    if run_omp:
         configs.append((1, omp_threads))
 
     target_items = list(targets.items())
@@ -383,7 +387,7 @@ def evaluate_suite(solver_kind, targets, count, omp_threads=2):
         serial = summarize(runs[(name, 1, 1)])
         parallel = summarize(runs[(name, 2, 1)])
         omp_res = (summarize(runs[(name, 1, omp_threads)])
-                   if omp_threads > 1 else None)
+                   if run_omp else None)
         # For test particles the mover is the computation; the total
         # wall-clock is dominated by redistributing the many attributes and
         # by trajectory output, so the speedup is that of the mover.
