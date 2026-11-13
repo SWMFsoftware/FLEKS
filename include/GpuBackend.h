@@ -263,7 +263,8 @@ void parallel_for_omp(amrex::Box const& box, L const& f) noexcept {
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(box, f);
 #elif defined(AMREX_USE_OMP)
-  if (amrex::OpenMP::in_parallel() || box.numPts() < kMinOmpBoxCells) {
+  if (omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel() ||
+      box.numPts() < kMinOmpBoxCells) {
     amrex::ParallelFor(box, f);
     return;
   }
@@ -326,7 +327,7 @@ void parallel_for_omp(amrex::Box const& box, T ncomp, L const& f) noexcept {
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(box, ncomp, f);
 #elif defined(AMREX_USE_OMP)
-  if (amrex::OpenMP::in_parallel() ||
+  if (omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel() ||
       box.numPts() * static_cast<long>(ncomp) < kMinOmpBoxCells) {
     amrex::ParallelFor(box, ncomp, f);
     return;
@@ -411,6 +412,12 @@ void parallel_for_mf_omp(const MF& mf, MakeBox&& makeBox,
     amrex::ParallelFor(makeBox(mfi), makeKernel(mfi));
   }
 #elif defined(AMREX_USE_OMP)
+  if (omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel()) {
+    for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      amrex::ParallelFor(makeBox(mfi), makeKernel(mfi));
+    }
+    return;
+  }
   using KernelT = decltype(makeKernel(std::declval<const amrex::MFIter&>()));
   std::vector<amrex::Box> boxes;
   std::vector<KernelT> kernels;
@@ -485,6 +492,12 @@ void parallel_for_mf_omp(const MF& mf, int ncomp, MakeBox&& makeBox,
     amrex::ParallelFor(makeBox(mfi), ncomp, makeKernel(mfi));
   }
 #elif defined(AMREX_USE_OMP)
+  if (omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel()) {
+    for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      amrex::ParallelFor(makeBox(mfi), ncomp, makeKernel(mfi));
+    }
+    return;
+  }
   using KernelT = decltype(makeKernel(std::declval<const amrex::MFIter&>()));
   std::vector<amrex::Box> boxes;
   std::vector<KernelT> kernels;
@@ -647,7 +660,8 @@ template <class F> void parallel_for_1d(int n, F&& f) {
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(n, std::forward<F>(f));
 #elif defined(AMREX_USE_OMP)
-  if (!amrex::OpenMP::in_parallel() && n >= kMinOmp1DSize) {
+  if (omp_get_max_threads() > 1 && !amrex::OpenMP::in_parallel() &&
+      n >= kMinOmp1DSize) {
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i)
       f(i);
@@ -670,7 +684,8 @@ template <class F> void parallel_for_host_items(int n, F&& f, bool dynamic) {
   if (n <= 0)
     return;
 #ifdef AMREX_USE_OMP
-  if (!amrex::OpenMP::in_parallel() && n >= kMinOmpTiles) {
+  if (omp_get_max_threads() > 1 && !amrex::OpenMP::in_parallel() &&
+      n >= kMinOmpTiles) {
     if (dynamic) {
 #pragma omp parallel for schedule(dynamic, 1)
       for (int i = 0; i < n; ++i)
@@ -862,7 +877,7 @@ void deposit_cell_tiles_colored(
     return;
 
 #ifdef AMREX_USE_OMP
-  if (!amrex::OpenMP::in_parallel() &&
+  if (omp_get_max_threads() > 1 && !amrex::OpenMP::in_parallel() &&
       (nTiles >= kMinOmpTiles * 4 ||
        (nTiles >= 4 && count_tile_particles(items) >= kMinOmpParticles))) {
     std::vector<unsigned char> hasStray(nTiles, 0);
