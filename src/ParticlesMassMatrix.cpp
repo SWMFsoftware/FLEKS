@@ -26,7 +26,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
   const Real* const invDxLev = Geom(iLev).InvCellSize();
 
   deposit_cell_tiles_colored(
-      *this, iLev, 2,
+      *this, iLev, 3,
       [&](const auto& item, int /*ord*/, bool strayPass) -> bool {
         Array4<Real const> const& nodeBArr = nodeBMF[item.grid].array();
         const Array4<Real const> nodeB0Arr =
@@ -54,7 +54,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                                   coef);
           //-----calculate interpolate coef end-------------
 
-          const bool isHome = (loIdx == item.cell);
+          const bool isHome = is_home_nodal(loIdx, item.cell);
           if (!strayPass) {
             if (!isHome) {
               foundStray = true;
@@ -213,34 +213,34 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const Box growBox(IntVect(AMREX_D_DECL(iMin, jMin, kMin)),
                       IntVect(AMREX_D_DECL(iMax, jMax, kMax)));
 
-    ParallelForOMP(growBox,
-                   [=] AMREX_GPU_DEVICE(int i1, int j1, int k1) noexcept {
-                     const int kp = 2;
-                     const int kr = nDim > 2 ? k1 + kp - 1 : 0;
-                     if (kr > kMax || kr < kMin)
-                       return;
-                     auto& datas0 = mmArr(i1, j1, k1);
-                     for (int jp = 0; jp < 3; jp++) {
-                       const int jr = j1 + jp - 1;
-                       if (jr > jMax || jr < jMin)
-                         continue;
-                       const int jpr = 2 - jp;
-                       for (int ip = 0; ip < 3; ip++) {
-                         const int ir = i1 + ip - 1;
-                         if (ir > iMax || ir < iMin)
+    parallel_for_omp(growBox,
+                     [=] AMREX_GPU_DEVICE(int i1, int j1, int k1) noexcept {
+                       const int kp = 2;
+                       const int kr = nDim > 2 ? k1 + kp - 1 : 0;
+                       if (kr > kMax || kr < kMin)
+                         return;
+                       auto& datas0 = mmArr(i1, j1, k1);
+                       for (int jp = 0; jp < 3; jp++) {
+                         const int jr = j1 + jp - 1;
+                         if (jr > jMax || jr < jMin)
                            continue;
-                         const int ipr = 2 - ip;
-                         const int gpr = jpr * 3 + ipr;
-                         const int gps = 18 + jp * 3 + ip;
+                         const int jpr = 2 - jp;
+                         for (int ip = 0; ip < 3; ip++) {
+                           const int ir = i1 + ip - 1;
+                           if (ir > iMax || ir < iMin)
+                             continue;
+                           const int ipr = 2 - ip;
+                           const int gpr = jpr * 3 + ipr;
+                           const int gps = 18 + jp * 3 + ip;
 
-                         Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
-                         const Real* const datas = &(datas0[gps * 9]);
-                         for (int idx = 0; idx < 9; idx++) {
-                           datar[idx] = datas[idx];
-                         } // idx
-                       } // kp
-                     } // jp
-                   });
+                           Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
+                           const Real* const datas = &(datas0[gps * 9]);
+                           for (int idx = 0; idx < 9; idx++) {
+                             datar[idx] = datas[idx];
+                           } // idx
+                         } // kp
+                       } // jp
+                     });
   }
 #endif
 }
@@ -481,7 +481,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   const Real* const invDxLev = Geom(iLev).InvCellSize();
 
   deposit_cell_tiles_colored(
-      *this, iLev, 2,
+      *this, iLev, 3,
       [&](const auto& item, int /*ord*/, bool strayPass) -> bool {
         Array4<Real const> const& nodeBArr = nodeBMF[item.grid].array();
         const Array4<Real const> nodeB0Arr =
@@ -504,7 +504,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
                                   coef);
           //-----calculate interpolate coef end-------------
 
-          const bool isHome = (loIdx == item.cell);
+          const bool isHome = is_home_nodal(loIdx, item.cell);
           if (!strayPass) {
             if (!isHome) {
               foundStray = true;
@@ -627,16 +627,16 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
           const int dj = (iDim == 1) ? (isLo ? 1 : -1) : 0;
           const int dk = (iDim == 2) ? (isLo ? 1 : -1) : 0;
 
-          ParallelForOMP(strip, nCompJ,
-                         [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-                           const int ei = i + di, ej = j + dj, ek = k + dk;
-                           if (isReflect && c == iDim) {
-                             jArr(ei, ej, ek, c) = 0.0;
-                           } else {
-                             jArr(ei, ej, ek, c) *= 2.0;
-                           }
-                           jArr(i, j, k, c) = 0.0;
-                         });
+          parallel_for_omp(strip, nCompJ,
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+                             const int ei = i + di, ej = j + dj, ek = k + dk;
+                             if (isReflect && c == iDim) {
+                               jArr(ei, ej, ek, c) = 0.0;
+                             } else {
+                               jArr(ei, ej, ek, c) *= 2.0;
+                             }
+                             jArr(i, j, k, c) = 0.0;
+                           });
         }
       }
     }

@@ -31,6 +31,7 @@ LAUNCHERS = (
     "ParallelFor",
     "ParallelForRNG",
     "ParallelForOMP",
+    "parallel_for_omp",
     "parallel_for_1d",
     "deterministic_sum",
     "deterministic_sum_to",
@@ -63,7 +64,7 @@ LAMBDA_RE = re.compile(
     r"\[([^\[\]]*)\]\s*(AMREX_GPU_DEVICE|AMREX_GPU_HOST_DEVICE)?\s*\(")
 GPU_IFDEF_RE = re.compile(
     r"^\s*#\s*(if|ifdef|ifndef|elif)\b.*\b(AMREX_USE_(GPU|CUDA|OMP)|_OPENMP)\b")
-OMP_PRAGMA_RE = re.compile(r"^\s*#\s*pragma\s+omp\b")
+OMP_PRAGMA_RE = re.compile(r"^\s*#\s*pragma\s+omp\b(?!\s+simd\b)")
 
 
 def strip_comments(text):

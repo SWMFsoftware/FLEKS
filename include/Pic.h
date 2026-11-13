@@ -1435,8 +1435,8 @@ public:
         const amrex::Array4<int const> status =
             cell_status(iLev)[mfi].const_array();
 
-        amrex::ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j,
-                                                        int k) noexcept {
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j,
+                                                   int k) noexcept {
           error(i, j, k) =
               sqrt(pow((4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k)), 2));
           if (bit::is_refined(status(i, j, k))) {
@@ -1458,11 +1458,11 @@ public:
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.fabbox();
         const auto ppcArr = targetPPC[iLev][mfi].array();
-        amrex::ParallelForOMP(
-            box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-              amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-              ppcArr(ijk, 0) = basePPC;
-            });
+        parallel_for_omp(box,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+                           ppcArr(ijk, 0) = basePPC;
+                         });
       }
     }
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1486,7 +1486,7 @@ public:
         const amrex::Box &box = mfi.validbox();
         const auto ppcArr = targetPPC[iLev][mfi].array();
         const auto status = cell_status(iLev)[mfi].const_array();
-        amrex::ParallelForOMP(
+        parallel_for_omp(
             box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
               amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
               ppcArr(ijk, 0) = levelPPC;

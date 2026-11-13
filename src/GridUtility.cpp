@@ -57,11 +57,10 @@ void mask_body_vars(amrex::MultiFab& dst, const amrex::iMultiFab& fstatus,
       auto data = dst[mfi].array();
       const auto statusArr = fstatus[mfi].array();
 
-      amrex::ParallelForOMP(box,
-                            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                              if (bit::is_body(statusArr(i, j, k)))
-                                data(i, j, k, iVar) = 0.0;
-                            });
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (bit::is_body(statusArr(i, j, k)))
+          data(i, j, k, iVar) = 0.0;
+      });
     }
   }
 }
@@ -104,7 +103,7 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real> center = centerMF[mfi].array();
     const Array4<Real const> node = nodeMF[mfi].const_array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       center(i, j, k, ix_) =
           0.25 * invDx_x *
@@ -142,7 +141,7 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real> node = nodeMF[mfi].array();
     const Array4<Real const> center = centerMF[mfi].const_array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
 
       node(i, j, k, ix_) = 0.25 * invDx_x *
@@ -190,7 +189,7 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real const> center = centerMF[mfi].const_array();
     const Array4<Real> node = nodeMF[mfi].array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real compX =
           0.25 * invDx_x *
@@ -231,7 +230,7 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real const> node = nodeMF[mfi].const_array();
     const Array4<Real> center = centerMF[mfi].array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
 
       const Real compX =
@@ -274,7 +273,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
     const Array4<Real const> srcArr = srcMF[mfi].const_array();
     const Array4<Real> dstArr = dstMF[mfi].array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       int kp1 = nDim > 2 ? k + 1 : k;
       Real compX = 0;
@@ -468,7 +467,7 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real> nodeArr = nodeMF[mfi].array();
     const Array4<Real const> centerArr = centerMF[mfi].const_array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real cZDY =
           0.25 * invDx_y *
@@ -538,7 +537,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real> centerArr = centerMF[mfi].array();
     const Array4<Real const> nodeArr = nodeMF[mfi].const_array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       const Real cZDY =
           0.25 * invDx_y *
@@ -604,7 +603,7 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
     const Array4<Real> nodeArr = nodeMF[mfi].array();
     const Array4<Real const> centerArr = centerMF[mfi].const_array();
 
-    ParallelForOMP(
+    parallel_for_omp(
         box, centerMF.nComp(),
         [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
           int km1 = nDim > 2 ? k - 1 : k;
@@ -631,7 +630,7 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
     const Array4<Real> centerArr = centerMF[mfi].array();
     const Array4<Real const> nodeArr = nodeMF[mfi].const_array();
 
-    ParallelForOMP(
+    parallel_for_omp(
         box, centerMF.nComp(),
         [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
           if (nDim > 2) {
@@ -667,7 +666,7 @@ void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
     const Array4<Real> outArr = centerMFout[mfi].array();
     const Array4<Real const> inArr = centerMF[mfi].const_array();
 
-    ParallelForOMP(
+    parallel_for_omp(
         box, centerMF.nComp(),
         [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
           Real lap =

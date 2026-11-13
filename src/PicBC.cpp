@@ -172,7 +172,7 @@ void Pic::apply_field_bc_homogeneous(const iMultiFab& status, MultiFab& mf,
       Array4<Real> const& arr = mf[mfi].array();
       const Array4<const int>& statusArr = status[mfi].array();
 
-      ParallelForOMP(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
           return;
 
@@ -255,7 +255,7 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
     Array4<const int> const statusArr = status.array(mfi);
     MFIter* const mfiPtr = &mfi;
 
-    ParallelForOMP(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
@@ -389,7 +389,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       const Array4<const int> statusArr = status[mfi].const_array();
       Box box = bxValid;
       box.grow(1);
-      ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
           if (skipCoarseFineGhosts &&
               !is_outside_active(activeView, periodic, domainLen, bnd, nDimLoc,
@@ -444,7 +444,7 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
     const Dim3 vLo = bxValid.smallEnd().dim3();
     const Dim3 vHi = bxValid.bigEnd().dim3();
 
-    ParallelForOMP(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const int ijk[3] = { i, j, k };
       const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
       const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
@@ -578,7 +578,7 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
 
-    ParallelForOMP(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
@@ -667,7 +667,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
     const bool hasFunc = (func != nullptr);
 
     // 1. Boundary nodes on physical inflow wall (node-centered only).
-    ParallelForOMP(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const int ijk[3] = { i, j, k };
       for (int d = 0; d < nDim; ++d) {
         if (!bnd.isNode[d])
@@ -737,7 +737,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
     if (hasFunc)
       continue;
 
-    ParallelForOMP(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
       const int ijk[3] = { i, j, k };
@@ -927,7 +927,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
     const auto* const wavePtr = &waveBC;
     MFIter* const mfiPtr = &mfi;
 
-    ParallelForOMP(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const int ijk[3] = { i, j, k };
       const bool isGhost = bit::is_lev_boundary(statusArr(i, j, k, 0));
 
@@ -1182,7 +1182,7 @@ void Pic::project_body_E(amrex::MultiFab& mf, const int iLev) {
     auto arr = mf[mfi].array();
     const auto statusArr = status[mfi].array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (!bit::is_body(statusArr(i, j, k)) ||
           bit::is_body_interior(statusArr(i, j, k)))
         return;
@@ -1246,7 +1246,7 @@ void Pic::project_body_B(amrex::MultiFab& mf, const int iLev) {
     const Array4<amrex::Real const> b0Arr =
         b0 ? (*b0)[mfi].array() : Array4<amrex::Real const>();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (!bit::is_body(statusArr(i, j, k)) ||
           bit::is_body_interior(statusArr(i, j, k)))
         return;
@@ -1313,7 +1313,7 @@ void Pic::fill_body_E_insulating(amrex::MultiFab& mf, const int iLev) {
       const auto arrOld = mfOld[mfi].array();
       const auto statusArr = status[mfi].array();
 
-      ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         if (!bit::is_body(statusArr(i, j, k)))
           return;
 

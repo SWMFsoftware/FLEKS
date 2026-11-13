@@ -737,15 +737,15 @@ void interp_from_coarse_to_fine(amrex::FabArray<FAB>& coarse,
       auto farr = f[mfi].array();
       const int klo = vbox.smallEnd(2);
       const int khi = vbox.bigEnd(2);
-      amrex::ParallelForOMP(fbox,
-                            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                              const int k_src = std::clamp(k, klo, khi);
-                              if (k != k_src) {
-                                for (int n = 0; n < numComp; ++n) {
-                                  farr(i, j, k, n) = farr(i, j, k_src, n);
-                                }
-                              }
-                            });
+      parallel_for_omp(fbox,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         const int k_src = std::clamp(k, klo, khi);
+                         if (k != k_src) {
+                           for (int n = 0; n < numComp; ++n) {
+                             farr(i, j, k, n) = farr(i, j, k_src, n);
+                           }
+                         }
+                       });
     }
   }
 }
@@ -779,10 +779,10 @@ inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
     const auto arr = fa[mfi].array();
     const auto& bx = mfi.fabbox();
     const int ncomp = fa.nComp();
-    amrex::ParallelForOMP(bx, ncomp,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-                            arr(i, j, k, c) *= m;
-                          });
+    parallel_for_omp(bx, ncomp,
+                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+                       arr(i, j, k, c) *= m;
+                     });
   }
   return fa;
 }
@@ -797,15 +797,14 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
       auto data = dst[mfi].array();
       const auto statusArr = fstatus[mfi].array();
 
-      amrex::ParallelForOMP(box,
-                            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                              if (bit::is_lev_boundary(statusArr(i, j, k)) ||
-                                  bit::is_refined(statusArr(i, j, k))) {
-                                for (int iVar = 0; iVar < nComp; ++iVar) {
-                                  data(i, j, k, iVar) = 0.0;
-                                }
-                              }
-                            });
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (bit::is_lev_boundary(statusArr(i, j, k)) ||
+            bit::is_refined(statusArr(i, j, k))) {
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            data(i, j, k, iVar) = 0.0;
+          }
+        }
+      });
     }
   } else if (iLev == 0) {
     for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
@@ -813,15 +812,14 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
       auto data = dst[mfi].array();
       const auto statusArr = fstatus[mfi].array();
 
-      amrex::ParallelForOMP(box,
-                            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                              if (bit::is_lev_edge(statusArr(i, j, k)) ||
-                                  bit::is_refined(statusArr(i, j, k))) {
-                                for (int iVar = 0; iVar < nComp; ++iVar) {
-                                  data(i, j, k, iVar) = 0.0;
-                                }
-                              }
-                            });
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (bit::is_lev_edge(statusArr(i, j, k)) ||
+            bit::is_refined(statusArr(i, j, k))) {
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            data(i, j, k, iVar) = 0.0;
+          }
+        }
+      });
     }
   }
 }
@@ -837,14 +835,13 @@ void mask_body(amrex::FabArray<FAB>& dst, const amrex::iMultiFab& fstatus) {
     auto data = dst[mfi].array();
     const auto statusArr = fstatus[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (bit::is_body(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < nComp; ++iVar) {
-                                data(i, j, k, iVar) = 0.0;
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_body(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          data(i, j, k, iVar) = 0.0;
+        }
+      }
+    });
   }
 }
 
@@ -878,14 +875,13 @@ void mask_body_interior(amrex::FabArray<FAB>& dst,
     auto data = dst[mfi].array();
     const auto statusArr = fstatus[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (bit::is_body_interior(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < nComp; ++iVar) {
-                                data(i, j, k, iVar) = 0.0;
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_body_interior(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          data(i, j, k, iVar) = 0.0;
+        }
+      }
+    });
   }
 }
 
@@ -923,38 +919,37 @@ void rescale_body_surface_nodes(amrex::FabArray<FAB>& dst,
     const auto cHi = amrex::ubound(cellStatus[mfi].box());
     const auto nodeArr = nodeStatus[mfi].array();
 
-    amrex::ParallelForOMP(
-        box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          // The nodes inside the body are not part of the plasma domain.
-          if (bit::is_body(nodeArr(i, j, k)))
-            return;
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      // The nodes inside the body are not part of the plasma domain.
+      if (bit::is_body(nodeArr(i, j, k)))
+        return;
 
-          const int nCombo = 1 << nDim;
-          int nOut = 0;
-          for (int iCombo = 0; iCombo < nCombo; ++iCombo) {
-            int ii = i - ((iCombo & 1) != 0 ? 1 : 0);
-            int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
-            int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
+      const int nCombo = 1 << nDim;
+      int nOut = 0;
+      for (int iCombo = 0; iCombo < nCombo; ++iCombo) {
+        int ii = i - ((iCombo & 1) != 0 ? 1 : 0);
+        int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
+        int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
 
-            ii = amrex::min(amrex::max(ii, amrex::max(clo[0], cLo.x)),
-                            amrex::min(chi[0], cHi.x));
-            jj = amrex::min(amrex::max(jj, amrex::max(clo[1], cLo.y)),
-                            amrex::min(chi[1], cHi.y));
-            kk = amrex::min(amrex::max(kk, amrex::max(clo[2], cLo.z)),
-                            amrex::min(chi[2], cHi.z));
+        ii = amrex::min(amrex::max(ii, amrex::max(clo[0], cLo.x)),
+                        amrex::min(chi[0], cHi.x));
+        jj = amrex::min(amrex::max(jj, amrex::max(clo[1], cLo.y)),
+                        amrex::min(chi[1], cHi.y));
+        kk = amrex::min(amrex::max(kk, amrex::max(clo[2], cLo.z)),
+                        amrex::min(chi[2], cHi.z));
 
-            if (!bit::is_body(cellArr(ii, jj, kk)))
-              ++nOut;
-          }
+        if (!bit::is_body(cellArr(ii, jj, kk)))
+          ++nOut;
+      }
 
-          if (nOut == 0 || nOut == nCombo)
-            return;
+      if (nOut == 0 || nOut == nCombo)
+        return;
 
-          const amrex::Real scale = amrex::Real(nCombo) / nOut;
-          for (int iVar = 0; iVar < nComp; ++iVar) {
-            data(i, j, k, iVar) *= scale;
-          }
-        });
+      const amrex::Real scale = amrex::Real(nCombo) / nOut;
+      for (int iVar = 0; iVar < nComp; ++iVar) {
+        data(i, j, k, iVar) *= scale;
+      }
+    });
   }
 }
 
@@ -985,33 +980,32 @@ void scale_by_body_outside_fraction(amrex::FabArray<FAB>& dst,
     const auto cHi = amrex::ubound(cellStatus[mfi].box());
     const auto nodeArr = nodeStatus[mfi].array();
 
-    amrex::ParallelForOMP(
-        box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          if (onlyBodyNodes && !bit::is_body(nodeArr(i, j, k)))
-            return;
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (onlyBodyNodes && !bit::is_body(nodeArr(i, j, k)))
+        return;
 
-          const int nCombo = 1 << nDim;
-          int nOut = 0;
-          for (int iCombo = 0; iCombo < nCombo; ++iCombo) {
-            int ii = i - ((iCombo & 1) != 0 ? 1 : 0);
-            int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
-            int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
-            ii = amrex::min(amrex::max(ii, amrex::max(clo[0], cLo.x)),
-                            amrex::min(chi[0], cHi.x));
-            jj = amrex::min(amrex::max(jj, amrex::max(clo[1], cLo.y)),
-                            amrex::min(chi[1], cHi.y));
-            kk = amrex::min(amrex::max(kk, amrex::max(clo[2], cLo.z)),
-                            amrex::min(chi[2], cHi.z));
-            if (!bit::is_body(cellArr(ii, jj, kk)))
-              ++nOut;
-          }
+      const int nCombo = 1 << nDim;
+      int nOut = 0;
+      for (int iCombo = 0; iCombo < nCombo; ++iCombo) {
+        int ii = i - ((iCombo & 1) != 0 ? 1 : 0);
+        int jj = j - ((iCombo & 2) != 0 ? 1 : 0);
+        int kk = k - ((iCombo & 4) != 0 ? 1 : 0);
+        ii = amrex::min(amrex::max(ii, amrex::max(clo[0], cLo.x)),
+                        amrex::min(chi[0], cHi.x));
+        jj = amrex::min(amrex::max(jj, amrex::max(clo[1], cLo.y)),
+                        amrex::min(chi[1], cHi.y));
+        kk = amrex::min(amrex::max(kk, amrex::max(clo[2], cLo.z)),
+                        amrex::min(chi[2], cHi.z));
+        if (!bit::is_body(cellArr(ii, jj, kk)))
+          ++nOut;
+      }
 
-          if (nOut == nCombo)
-            return;
-          const amrex::Real scale = nOut > 0 ? amrex::Real(nCombo) / nOut : 0.0;
-          for (int iVar = 0; iVar < nComp; ++iVar)
-            data(i, j, k, iVar) *= scale;
-        });
+      if (nOut == nCombo)
+        return;
+      const amrex::Real scale = nOut > 0 ? amrex::Real(nCombo) / nOut : 0.0;
+      for (int iVar = 0; iVar < nComp; ++iVar)
+        data(i, j, k, iVar) *= scale;
+    });
   }
 }
 
@@ -1042,14 +1036,13 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
     const auto statusArr = fstatus[mfi].array();
     const auto tmp = ftmp[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (bit::is_lev_boundary(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < numComp; ++iVar) {
-                                data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_lev_boundary(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -1085,15 +1078,14 @@ void fill_fine_lev_outer_bny_from_coarse(
     const auto statusArr = fstatus[mfi].array();
     const auto tmp = ftmp[mfi].array();
 
-    amrex::ParallelForOMP(
-        box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          if (bit::is_lev_boundary(statusArr(i, j, k)) &&
-              !keepBox.contains(amrex::IntVect(AMREX_D_DECL(i, j, k)))) {
-            for (int iVar = 0; iVar < numComp; ++iVar) {
-              data(i, j, k, iVar) = tmp(i, j, k, iVar);
-            }
-          }
-        });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_lev_boundary(statusArr(i, j, k)) &&
+          !keepBox.contains(amrex::IntVect(AMREX_D_DECL(i, j, k)))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -1122,14 +1114,13 @@ void fill_fine_lev_new_from_coarse(
     const auto statusArr = fstatus[mfi].array();
     const auto tmp = ftmp[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (fillAll || bit::is_new(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < numComp; ++iVar) {
-                                data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (fillAll || bit::is_new(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -1158,14 +1149,13 @@ void fill_fine_lev_edge_from_coarse(
     const auto statusArr = fstatus[mfi].array();
     const auto tmp = ftmp[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (bit::is_lev_edge(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < numComp; ++iVar) {
-                                data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_lev_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -1197,14 +1187,13 @@ void sum_coarse_to_fine_lev_bny_node(
     const auto statusArr = fstatus[mfi].array();
     const auto tmp = ftmp[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (bit::is_lev_edge(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < numComp; ++iVar) {
-                                data(i, j, k, iVar) = tmp(i, j, k, iVar);
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_lev_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -1257,14 +1246,13 @@ void sum_coarse_to_fine_lev_bny_cell(
     const auto statusArr = fstatus[mfi].array();
     const auto tmp = ftmp[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (bit::is_lev_edge(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < numComp; ++iVar) {
-                                data(i, j, k, iVar) = tmp(i, j, k, iVar);
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_lev_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 
@@ -1292,14 +1280,13 @@ void interp_from_coarse_to_fine_for_domain_edge(
     const auto statusArr = fstatus[mfi].array();
     const auto tmp = ftmp[mfi].array();
 
-    amrex::ParallelForOMP(box,
-                          [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                            if (bit::is_domain_edge(statusArr(i, j, k))) {
-                              for (int iVar = 0; iVar < numComp; ++iVar) {
-                                data(i, j, k, iVar) = tmp(i, j, k, iVar);
-                              }
-                            }
-                          });
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_domain_edge(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < numComp; ++iVar) {
+          data(i, j, k, iVar) = tmp(i, j, k, iVar);
+        }
+      }
+    });
   }
 }
 

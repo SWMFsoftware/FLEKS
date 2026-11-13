@@ -203,7 +203,7 @@ void Pic::divE_accurate_matvec_impl(MultiFab& inMF, MultiFab& outMF, int iLev) {
     const Array4<Real const> rArr = inMF[mfi].const_array();
     const Array4<RealCMM const> mmArr = centerMM[iLev][mfi].const_array();
 
-    ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       Real sum = 0.0;
 #if (AMREX_SPACEDIM == 2)
       for (int dj = jMin; dj <= jMax; ++dj) {

@@ -397,7 +397,7 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
 
         const bool isReflect = (faceBc == ParticleBC::reflect);
 
-        ParallelForOMP(
+        parallel_for_omp(
             strip, nCompMF, [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
               // Odd parity components relative to iDim under
               // specular reflection: normal momentum and
@@ -473,7 +473,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     std::vector<Real> tileEnergy(items.size(), 0.0);
 
     deposit_cell_tiles_colored(
-        items, 2, [&](const auto& item, int ord, bool strayPass) -> bool {
+        items, 3, [&](const auto& item, int ord, bool strayPass) -> bool {
           Array4<Real> const& momentsArr = momentsMF[iLev][item.grid].array();
           const AoS& particles = item.ptile->GetArrayOfStructs();
 
@@ -481,7 +481,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           const Dim3 hi = init_dim3(1);
           bool foundStray = false;
           Real localEnergy = 0.0;
-          Real localMom[2][2][2][nMoments] = {};
+          Real localMom[3][3][3][nMoments] = {};
           bool hasLocalMom = false;
 
           for (const auto& p : particles) {
@@ -505,7 +505,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
                                     coef);
             //-----calculate interpolate coef end-------------
 
-            const bool isHome = (loIdx == item.cell);
+            const bool isHome = is_home_nodal(loIdx, item.cell);
             if (!strayPass) {
               if (!isHome) {
                 foundStray = true;
@@ -540,24 +540,44 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
             if (!strayPass) {
               hasLocalMom = true;
-              for (int kk = lo.z; kk <= hi.z; ++kk)
-                for (int jj = lo.y; jj <= hi.y; ++jj)
+              const int ox = loIdx[ix_] - (item.cell[ix_] - 1);
+              const int oy = loIdx[iy_] - (item.cell[iy_] - 1);
+#if (AMREX_SPACEDIM > 2)
+              const int oz = loIdx[iz_] - (item.cell[iz_] - 1);
+#else
+              constexpr int oz = 0;
+#endif
+              for (int kk = lo.z; kk <= hi.z; ++kk) {
+                for (int jj = lo.y; jj <= hi.y; ++jj) {
                   for (int ii = lo.x; ii <= hi.x; ++ii) {
                     const Real c = coef[ii][jj][kk];
+                    Real* AMREX_RESTRICT dst = localMom[ox + ii][oy + jj][oz + kk];
+                    AMREX_PRAGMA_SIMD
                     for (int iVar = 0; iVar < nMoments; iVar++) {
-                      localMom[ii][jj][kk][iVar] += c * pMoments[iVar];
+                      dst[iVar] += c * pMoments[iVar];
                     }
                   }
+                }
+              }
             } else {
-              for (int iVar = 0; iVar < nMoments; iVar++)
-                for (int kk = lo.z; kk <= hi.z; ++kk)
-                  for (int jj = lo.y; jj <= hi.y; ++jj)
-                    for (int ii = lo.x; ii <= hi.x; ++ii) {
-                      const IntVect ijk = { AMREX_D_DECL(
-                          loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-                      momentsArr(ijk, iVar) +=
-                          coef[ii][jj][kk] * pMoments[iVar];
-                    }
+              const int i0 = loIdx[ix_];
+              const int j0 = loIdx[iy_];
+#if (AMREX_SPACEDIM > 2)
+              const int k0 = loIdx[iz_];
+#else
+              constexpr int k0 = 0;
+#endif
+              for (int iVar = 0; iVar < nMoments; iVar++) {
+                const Real mVal = pMoments[iVar];
+                for (int kk = lo.z; kk <= hi.z; ++kk) {
+                  for (int jj = lo.y; jj <= hi.y; ++jj) {
+                    Real* AMREX_RESTRICT mPtr =
+                        momentsArr.ptr(i0, j0 + jj, k0 + kk, iVar);
+                    mPtr[0] += coef[0][jj][kk] * mVal;
+                    mPtr[1] += coef[1][jj][kk] * mVal;
+                  }
+                }
+              }
             }
             //-------nodePlasma end---------
           } // for p
@@ -565,15 +585,26 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           if (!strayPass) {
             tileEnergy[ord] = localEnergy;
             if (hasLocalMom) {
-              for (int iVar = 0; iVar < nMoments; iVar++)
-                for (int kk = lo.z; kk <= hi.z; ++kk)
-                  for (int jj = lo.y; jj <= hi.y; ++jj)
-                    for (int ii = lo.x; ii <= hi.x; ++ii) {
-                      const IntVect ijk = { AMREX_D_DECL(item.cell[ix_] + ii,
-                                                         item.cell[iy_] + jj,
-                                                         item.cell[iz_] + kk) };
-                      momentsArr(ijk, iVar) += localMom[ii][jj][kk][iVar];
-                    }
+              const int baseI = item.cell[ix_] - 1;
+              const int baseJ = item.cell[iy_] - 1;
+#if (AMREX_SPACEDIM > 2)
+              const int baseK = item.cell[iz_] - 1;
+              constexpr int kRange = 3;
+#else
+              constexpr int baseK = 0;
+              constexpr int kRange = 1;
+#endif
+              for (int iVar = 0; iVar < nMoments; iVar++) {
+                for (int kk = 0; kk < kRange; ++kk) {
+                  for (int jj = 0; jj < 3; ++jj) {
+                    Real* AMREX_RESTRICT mPtr =
+                        momentsArr.ptr(baseI, baseJ + jj, baseK + kk, iVar);
+                    mPtr[0] += localMom[0][jj][kk][iVar];
+                    mPtr[1] += localMom[1][jj][kk][iVar];
+                    mPtr[2] += localMom[2][jj][kk][iVar];
+                  }
+                }
+              }
             }
           }
           return foundStray;
@@ -679,7 +710,7 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
       const Box& box = mfi.fabbox();
       const Array4<Real>& arr = fab.array();
 
-      ParallelForOMP(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         const Real rho = arr(i, j, k, iRho_);
         if (rho > 0) {
           const Real invRho = 1.0 / rho;
