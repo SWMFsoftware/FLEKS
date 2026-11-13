@@ -108,6 +108,15 @@ runs:
         ldd ../bin/FLEKS.exe
         python3 validate_tests.py -n 2 -j ${{ inputs.jobs }} --summary-file ${{ inputs.parallel-summary }} --summary-title "${{ inputs.summary-title }}"
 
+    - name: Run Standalone FLEKS Tests (MPI + OpenMP, 2 Procs x 2 Threads)
+      working-directory: SWMF/PC/FLEKS/tests
+      shell: bash
+      run: |
+        for test_name in whistler beam reconnection_amr amr_divb langmuir; do
+          python3 validate_tests.py -n 2 --omp-threads 2 --test "$test_name" --run-dir "run_test_omp_${test_name}"
+          rm -rf "run_test_omp_${test_name}"
+        done
+
     - name: Write Job Summary
       if: always()
       shell: bash
