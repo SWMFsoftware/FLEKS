@@ -150,6 +150,10 @@ python3 tests/validate_tests.py --test beam
 python3 tests/validate_tests.py -n 2
 python3 tests/validate_tests.py --nprocs 2
 
+# Run with OpenMP threads (single-rank or mixed MPI+OpenMP):
+python3 tests/validate_tests.py --omp-threads 4
+python3 tests/validate_tests.py -n 2 --omp-threads 2
+
 # Run tests concurrently across worker processes (-j / --jobs):
 python3 tests/validate_tests.py -j 4             # 4 concurrent test workers (serial tests)
 python3 tests/validate_tests.py -n 2 -j 2        # 2 concurrent tests, each with 2 MPI ranks (4 cores total)
@@ -176,7 +180,8 @@ every test is validated.
 
 When `-n 1` (or the flag is omitted), the executable is invoked directly as
 `./FLEKS.exe` without `mpirun`. When `-n N` with `N > 1`, it uses
-`mpirun -n N ./FLEKS.exe`.
+`mpirun -n N ./FLEKS.exe` (or `mpirun --bind-to none -n N` when
+`--omp-threads > 1` so OpenMP threads are not pinned to one core).
 
 The `--test NAME` (or `--test=NAME`) option selects a single test to run from
 the available test subdirectories (`beam`, `photoionization`, `electronimpact`,
@@ -216,7 +221,10 @@ The script benchmarks the full-PIC beam test (`performance/PARAM.in`), the
 hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), the particle tracker
 test (`performance/PARAM.in.pt`) and the 2D reconnection test
 (`performance/PARAM.in.reconnection2d`) on 1 and 2 processes, and writes the
-results to `tests/performance_summary.md`.
+results to `tests/performance_summary.md`. When the candidate binary is built
+with `./Config.pl -openmp`, it also benchmarks `1 MPI x 2 OpenMP` threads
+(`--omp-threads 2`, disabled with `--omp-threads 1` or automatically skipped
+for non-OpenMP builds).
 
 Absolute timings are not comparable across GitHub runners, whose hardware
 differs by up to a factor of two between jobs. The CI therefore builds the

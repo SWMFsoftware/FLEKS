@@ -292,9 +292,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
   const Real invDt = 1.0 / dt;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const Real* const ploLoc = plo[iLev].begin();
-    const Real* const invDxLoc = invDx[iLev].begin();
-    const Real* const dxLoc = Geom(iLev).CellSize();
     const LevelGeomBox lb = make_level_geom_box(iLev);
     const BoxArray& ba = this->ParticleBoxArray(iLev);
     const bool hasBodyQNet = grid && grid->has_body_net_charge(iLev);

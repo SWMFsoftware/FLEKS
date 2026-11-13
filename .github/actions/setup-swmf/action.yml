@@ -186,7 +186,7 @@ runs:
         AMREX_DIM_FLAG=""
         case "${{ inputs.amrex-cache-suffix }}" in
           2d|2D|2d-*) AMREX_DIM_FLAG="-amrex2d" ;;
-          3d|3D)      AMREX_DIM_FLAG="-amrex3d" ;;
+          3d|3D|3d-*) AMREX_DIM_FLAG="-amrex3d" ;;
         esac
 
         # Configure the SWMF component tree, which populates the share/ and
@@ -210,7 +210,7 @@ runs:
         # incomplete; an install dir with AMREX_DEBUG defined is an unoptimized
         # debug build. Remove either so Config.pl rebuilds a clean optimized
         # release install, then recreate the InstallDir symlink.
-        for d in InstallDir2D InstallDir3D; do
+        for d in InstallDir2D InstallDir3D InstallDir3D_omp; do
           if [ -f "$d/lib/libamrex.a" ] && [ ! -f "$d/include/AMReX_Config.H" ]; then
             echo "WARNING: $d has libamrex.a but is missing include/AMReX_Config.H; removing to force a clean rebuild"
             rm -rf "$d"
@@ -219,18 +219,23 @@ runs:
             rm -rf "$d"
           fi
         done
-        # Prefer the dimension this job actually builds (from amrex-cache-suffix),
-        # so the InstallDir symlink points at the right install (e.g. the 2D job
-        # must point at InstallDir2D, not a leftover InstallDir3D).
+        # Prefer the dimension and threading variant this job actually builds
+        # (from amrex-cache-suffix), so the InstallDir symlink points at the
+        # right install (e.g. the 2D job must point at InstallDir2D, and the
+        # OpenMP job must point at InstallDir3D_omp when present).
         case "${{ inputs.amrex-cache-suffix }}" in
           *2d*|*2D*) PREFER=2 ;;
           *) PREFER=3 ;;
+        esac
+        case "${{ inputs.amrex-cache-suffix }}" in
+          *omp*|*OMP*) CANDIDATES="InstallDir${PREFER}D_omp InstallDir${PREFER}D InstallDir3D InstallDir2D" ;;
+          *) CANDIDATES="InstallDir${PREFER}D InstallDir3D InstallDir2D" ;;
         esac
         # Recreate InstallDir as a symlink to a complete install, preferring the
         # dimension this job builds. Never delete a complete install directory;
         # only replace the (possibly broken/corrupted) symlink itself.
         rm -f InstallDir
-        for d in "InstallDir${PREFER}D" InstallDir3D InstallDir2D; do
+        for d in $CANDIDATES; do
           if [ -f "$d/lib/libamrex.a" ] && [ -f "$d/include/AMReX_Config.H" ]; then
             ln -s "$d" InstallDir
             echo "InstallDir -> $d (recreated)"
@@ -244,7 +249,7 @@ runs:
             echo "InstallDir is a complete real directory; keeping"
           else
             rm -rf InstallDir
-            for d in "InstallDir${PREFER}D" InstallDir3D InstallDir2D; do
+            for d in $CANDIDATES; do
               if [ -f "$d/lib/libamrex.a" ] && [ -f "$d/include/AMReX_Config.H" ]; then
                 ln -s "$d" InstallDir
                 break
@@ -253,7 +258,7 @@ runs:
           fi
         fi
         echo "AMReX build-cache status:"
-        for d in InstallDir2D InstallDir3D; do
+        for d in InstallDir2D InstallDir3D InstallDir3D_omp; do
           if [ -f "$d/lib/libamrex.a" ] && [ -f "$d/include/AMReX_Config.H" ]; then
             if grep -q "#define AMREX_DEBUG" "$d/include/AMReX_Config.H"; then
               echo "  $d: DEBUG (AMREX_DEBUG is defined)"
