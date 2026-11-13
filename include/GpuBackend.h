@@ -257,14 +257,25 @@ inline constexpr int kMinOmp1DSize = 8192;
 inline constexpr int kMinOmpTiles = 32;
 inline constexpr int kMinOmpParticles = 4096;
 
+// True when CPU OpenMP threading should be bypassed in favor of direct serial
+// execution (1 thread or already inside an active OpenMP parallel region).
+AMREX_FORCE_INLINE bool use_serial_fast_path() noexcept {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  return omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel();
+#elif defined(AMREX_USE_GPU)
+  return false;
+#else
+  return true;
+#endif
+}
+
 // Performance-portable box kernel launch with size-gated OpenMP threading.
 template <class L>
 void parallel_for_omp(amrex::Box const& box, L const& f) noexcept {
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(box, f);
 #elif defined(AMREX_USE_OMP)
-  if (omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel() ||
-      box.numPts() < kMinOmpBoxCells) {
+  if (box.numPts() < kMinOmpBoxCells || use_serial_fast_path()) {
     amrex::ParallelFor(box, f);
     return;
   }
@@ -327,8 +338,8 @@ void parallel_for_omp(amrex::Box const& box, T ncomp, L const& f) noexcept {
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(box, ncomp, f);
 #elif defined(AMREX_USE_OMP)
-  if (omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel() ||
-      box.numPts() * static_cast<long>(ncomp) < kMinOmpBoxCells) {
+  if (box.numPts() * static_cast<long>(ncomp) < kMinOmpBoxCells ||
+      use_serial_fast_path()) {
     amrex::ParallelFor(box, ncomp, f);
     return;
   }
@@ -453,8 +464,7 @@ void parallel_for_mf_omp(const MF& mf, MakeBox&& makeBox,
     for (int b = 0; b < nBoxes; ++b) {
       const auto lo = amrex::lbound(boxes[b]);
       const auto hi = amrex::ubound(boxes[b]);
-      rowOffsets[b + 1] =
-          rowOffsets[b] + (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+      rowOffsets[b + 1] = rowOffsets[b] + (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
     }
     const int totalRows = rowOffsets[nBoxes];
 #pragma omp parallel for schedule(static)
@@ -574,6 +584,10 @@ void parallel_for_mf_omp(const MF& mf, int ncomp, MakeBox&& makeBox,
 inline void mf_add(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
                    int dcomp, int ncomp, int ngrow) {
 #if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    amrex::MultiFab::Add(dst, src, scomp, dcomp, ncomp, ngrow);
+    return;
+  }
   parallel_for_mf_omp(
       dst, ncomp,
       [ngrow](const amrex::MFIter& mfi) {
@@ -582,9 +596,8 @@ inline void mf_add(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
       [&](const amrex::MFIter& mfi) {
         const auto d = dst[mfi].array();
         const auto s = src[mfi].const_array();
-        return [=](int i, int j, int k, int c) noexcept {
-          d(i, j, k, dcomp + c) += s(i, j, k, scomp + c);
-        };
+        return [=](int i, int j, int k, int c)
+                   noexcept { d(i, j, k, dcomp + c) += s(i, j, k, scomp + c); };
       });
 #else
   amrex::MultiFab::Add(dst, src, scomp, dcomp, ncomp, ngrow);
@@ -595,6 +608,10 @@ inline void mf_saxpy(amrex::MultiFab& dst, amrex::Real a,
                      const amrex::MultiFab& src, int scomp, int dcomp,
                      int ncomp, int ngrow) {
 #if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    amrex::MultiFab::Saxpy(dst, a, src, scomp, dcomp, ncomp, ngrow);
+    return;
+  }
   parallel_for_mf_omp(
       dst, ncomp,
       [ngrow](const amrex::MFIter& mfi) {
@@ -615,6 +632,10 @@ inline void mf_saxpy(amrex::MultiFab& dst, amrex::Real a,
 inline void mf_mult(amrex::MultiFab& dst, amrex::Real val, int comp, int ncomp,
                     int ngrow) {
 #if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    dst.mult(val, comp, ncomp, ngrow);
+    return;
+  }
   parallel_for_mf_omp(
       dst, ncomp,
       [ngrow](const amrex::MFIter& mfi) {
@@ -622,9 +643,8 @@ inline void mf_mult(amrex::MultiFab& dst, amrex::Real val, int comp, int ncomp,
       },
       [&](const amrex::MFIter& mfi) {
         const auto d = dst[mfi].array();
-        return [=](int i, int j, int k, int c) noexcept {
-          d(i, j, k, comp + c) *= val;
-        };
+        return [=](int i, int j, int k, int c)
+                   noexcept { d(i, j, k, comp + c) *= val; };
       });
 #else
   dst.mult(val, comp, ncomp, ngrow);
@@ -634,6 +654,10 @@ inline void mf_mult(amrex::MultiFab& dst, amrex::Real val, int comp, int ncomp,
 inline void mf_copy(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
                     int dcomp, int ncomp, int ngrow) {
 #if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    amrex::MultiFab::Copy(dst, src, scomp, dcomp, ncomp, ngrow);
+    return;
+  }
   parallel_for_mf_omp(
       dst, ncomp,
       [ngrow](const amrex::MFIter& mfi) {
@@ -642,9 +666,8 @@ inline void mf_copy(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
       [&](const amrex::MFIter& mfi) {
         const auto d = dst[mfi].array();
         const auto s = src[mfi].const_array();
-        return [=](int i, int j, int k, int c) noexcept {
-          d(i, j, k, dcomp + c) = s(i, j, k, scomp + c);
-        };
+        return [=](int i, int j, int k, int c)
+                   noexcept { d(i, j, k, dcomp + c) = s(i, j, k, scomp + c); };
       });
 #else
   amrex::MultiFab::Copy(dst, src, scomp, dcomp, ncomp, ngrow);
@@ -660,8 +683,7 @@ template <class F> void parallel_for_1d(int n, F&& f) {
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(n, std::forward<F>(f));
 #elif defined(AMREX_USE_OMP)
-  if (omp_get_max_threads() > 1 && !amrex::OpenMP::in_parallel() &&
-      n >= kMinOmp1DSize) {
+  if (n >= kMinOmp1DSize && !use_serial_fast_path()) {
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i)
       f(i);
@@ -1137,8 +1159,11 @@ template <class F> amrex::Real deterministic_sum(int n, F&& f) {
 #else
   if (n <= 0)
     return 0;
-  if (n <= kDetSumBlockSize) {
+  if (use_serial_fast_path() || n < kMinOmp1DSize) {
     amrex::Real sum = 0;
+#ifdef AMREX_USE_OMP
+#pragma omp simd reduction(+ : sum)
+#endif
     for (int i = 0; i < n; ++i)
       sum += f(i);
     return sum;
@@ -1152,13 +1177,15 @@ template <class F> amrex::Real deterministic_sum(int n, F&& f) {
   amrex::Real* const blockSums =
       (nBlocks <= kMaxStackBlocks) ? stackBlocks : heapBlocks.data();
 #ifdef AMREX_USE_OMP
-#pragma omp parallel for schedule(static) if (!amrex::OpenMP::in_parallel() && \
-                                                  n >= kMinOmp1DSize)
+#pragma omp parallel for schedule(static)
 #endif
   for (int b = 0; b < nBlocks; ++b) {
     const int iStart = b * kDetSumBlockSize;
     const int iEnd = std::min(n, iStart + kDetSumBlockSize);
     amrex::Real localSum = 0;
+#ifdef AMREX_USE_OMP
+#pragma omp simd reduction(+ : localSum)
+#endif
     for (int i = iStart; i < iEnd; ++i)
       localSum += f(i);
     blockSums[b] = localSum;
@@ -1204,6 +1231,14 @@ inline amrex::Real mf_dot(const amrex::MultiFab& x, int xcomp,
                           const amrex::MultiFab& y, int ycomp, int numcomp,
                           int nghost, const amrex::iMultiFab* mask = nullptr,
                           bool local = false) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    return mask ? amrex::MultiFab::Dot(*mask, x, xcomp, y, ycomp, numcomp,
+                                       nghost, local)
+                : amrex::MultiFab::Dot(x, xcomp, y, ycomp, numcomp, nghost,
+                                       local);
+  }
+#endif
   amrex::Real sum = 0;
   for (amrex::MFIter mfi(x, false); mfi.isValid(); ++mfi) {
     const amrex::Box bx = amrex::grow(mfi.validbox(), nghost);

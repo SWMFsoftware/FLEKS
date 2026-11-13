@@ -285,37 +285,37 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         const Array4<Real>& arrF = faceJump[iDir].array();
         if (iDir == ix_) {
           parallel_for_omp(slopeBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
-                            arrBin, i, j, k, iVar, limTypeUp);
-                      });
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                             arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
+                                 arrBin, i, j, k, iVar, limTypeUp);
+                           });
           parallel_for_omp(faceBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
-                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                      });
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                             arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                                 arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                           });
         } else if (iDir == iy_) {
           parallel_for_omp(slopeBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
-                            arrBin, i, j, k, iVar, limTypeUp);
-                      });
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                             arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
+                                 arrBin, i, j, k, iVar, limTypeUp);
+                           });
           parallel_for_omp(faceBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
-                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                      });
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                             arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                                 arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                           });
         } else {
           parallel_for_omp(slopeBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
-                            arrBin, i, j, k, iVar, limTypeUp);
-                      });
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                             arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
+                                 arrBin, i, j, k, iVar, limTypeUp);
+                           });
           parallel_for_omp(faceBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
-                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                      });
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                             arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                                 arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                           });
         }
         arrFace[iDir] = faceJump[iDir].const_array();
       }
@@ -704,14 +704,14 @@ void Pic::compute_ambipolar_E(int iLev) {
       const int klo = vbox.smallEnd(2);
       const int khi = vbox.bigEnd(2);
       parallel_for_omp(fbox,
-                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                           const int k_src = std::clamp(k, klo, khi);
-                           if (k != k_src) {
-                             for (int n = 0; n < nDim3; ++n) {
-                               arr(i, j, k, n) = arr(i, j, k_src, n);
-                             }
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         const int k_src = std::clamp(k, klo, khi);
+                         if (k != k_src) {
+                           for (int n = 0; n < nDim3; ++n) {
+                             arr(i, j, k, n) = arr(i, j, k_src, n);
                            }
-                         });
+                         }
+                       });
     }
   }
 
@@ -1531,14 +1531,14 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB, Real timeOverride) {
       const int klo = vbox.smallEnd(2);
       const int khi = vbox.bigEnd(2);
       parallel_for_omp(fbox,
-                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                           const int k_src = std::clamp(k, klo, khi);
-                           if (k != k_src) {
-                             for (int n = 0; n < nComp; ++n) {
-                               arr(i, j, k, n) = arr(i, j, k_src, n);
-                             }
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         const int k_src = std::clamp(k, klo, khi);
+                         if (k != k_src) {
+                           for (int n = 0; n < nComp; ++n) {
+                             arr(i, j, k, n) = arr(i, j, k_src, n);
                            }
-                         });
+                         }
+                       });
     }
   }
 }

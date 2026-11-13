@@ -126,13 +126,35 @@ int gmres(std::function<void(const Real *, Real *, const int)> matvec,
     // Krylov_II[1]:=A*sol
     if (isInit || its > 0) {
       matvec(sol, Krylov_II, iLev);
-      parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) {
-        Krylov_II[i] = rhs[i] - Krylov_II[i];
-      });
+      if (use_serial_fast_path() || n < kMinOmp1DSize) {
+        Real *AMREX_RESTRICT v0 = Krylov_II;
+        const Real *AMREX_RESTRICT r = rhs;
+#ifdef AMREX_USE_OMP
+#pragma omp simd
+#endif
+        for (int i = 0; i < n; ++i) {
+          v0[i] = r[i] - v0[i];
+        }
+      } else {
+        parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) {
+          Krylov_II[i] = rhs[i] - Krylov_II[i];
+        });
+      }
     } else {
       // Save a matvec when starting from zero initial condition
-      parallel_for_1d(n,
-                      [=] AMREX_GPU_DEVICE(int i) { Krylov_II[i] = rhs[i]; });
+      if (use_serial_fast_path() || n < kMinOmp1DSize) {
+        Real *AMREX_RESTRICT v0 = Krylov_II;
+        const Real *AMREX_RESTRICT r = rhs;
+#ifdef AMREX_USE_OMP
+#pragma omp simd
+#endif
+        for (int i = 0; i < n; ++i) {
+          v0[i] = r[i];
+        }
+      } else {
+        parallel_for_1d(n,
+                        [=] AMREX_GPU_DEVICE(int i) { Krylov_II[i] = rhs[i]; });
+      }
     }
     //-------------------------------------------------------------
     ro = sqrt(dot_product_mpi(Krylov_II, Krylov_II, n, iComm));
@@ -195,17 +217,35 @@ int gmres(std::function<void(const Real *, Real *, const int)> matvec,
         const Real *AMREX_RESTRICT v_j = &Krylov_II[j * n];
         Real t = dot_product_mpi(v_j, v_i1, n, iComm);
         hh[i * nKrylov1 + j] = t;
-        Real *const vNew = &Krylov_II[i1 * n];
-        const Real *const vOld = &Krylov_II[j * n];
-        parallel_for_1d(
-            n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] -= t * vOld[k]; });
+        Real *const AMREX_RESTRICT vNew = &Krylov_II[i1 * n];
+        const Real *const AMREX_RESTRICT vOld = &Krylov_II[j * n];
+        if (use_serial_fast_path() || n < kMinOmp1DSize) {
+#ifdef AMREX_USE_OMP
+#pragma omp simd
+#endif
+          for (int k = 0; k < n; ++k) {
+            vNew[k] -= t * vOld[k];
+          }
+        } else {
+          parallel_for_1d(
+              n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] -= t * vOld[k]; });
+        }
       }
       Real cDot = sqrt(dot_product_mpi(v_i1, v_i1, n, iComm));
       hh[i * nKrylov1 + i1] = cDot;
       if (cDot != 0.0) {
         cDot = 1.0 / cDot;
-        Real *const vNew = &Krylov_II[i1 * n];
-        parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] *= cDot; });
+        Real *const AMREX_RESTRICT vNew = &Krylov_II[i1 * n];
+        if (use_serial_fast_path() || n < kMinOmp1DSize) {
+#ifdef AMREX_USE_OMP
+#pragma omp simd
+#endif
+          for (int k = 0; k < n; ++k) {
+            vNew[k] *= cDot;
+          }
+        } else {
+          parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] *= cDot; });
+        }
       }
       // Done with modified Gram-Schmidt and Arnoldi step.
       // Update factorization of hh.
@@ -258,8 +298,19 @@ int gmres(std::function<void(const Real *, Real *, const int)> matvec,
     // Form linear combination to get solution.
     for (int j = 0; j < i; ++j) {
       const Real rsj = rs[j];
-      const Real *const v = &Krylov_II[j * n];
-      parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int k) { sol[k] += rsj * v[k]; });
+      const Real *const AMREX_RESTRICT v = &Krylov_II[j * n];
+      if (use_serial_fast_path() || n < kMinOmp1DSize) {
+        Real *const AMREX_RESTRICT s_ptr = sol;
+#ifdef AMREX_USE_OMP
+#pragma omp simd
+#endif
+        for (int k = 0; k < n; ++k) {
+          s_ptr[k] += rsj * v[k];
+        }
+      } else {
+        parallel_for_1d(n,
+                        [=] AMREX_GPU_DEVICE(int k) { sol[k] += rsj * v[k]; });
+      }
     }
   } while (ro > Tol1 && its < nIter);
 

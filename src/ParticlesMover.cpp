@@ -245,33 +245,14 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     if (currentMF)
       (*currentMF)[iLev].setVal(0.0);
 
-    const auto items = collect_cell_tiles(*this, iLev);
-    const int nTiles = static_cast<int>(items.size());
-    std::vector<MoveTallyDelta> tallies(nTiles);
-    std::vector<unsigned char> tileMovedTooFar(nTiles, 0);
-
-    auto processTile = [&](const auto& item, int ord, bool checkHome,
-                           bool strayPass) -> bool {
-      const Array4<Real> jArr =
-          currentMF ? (*currentMF)[iLev][item.grid].array() : Array4<Real>();
-      const Array4<Real const> bodyQNet =
-          hasBodyQNet ? grid->body_net_charge(iLev)[item.grid].array()
-                      : Array4<Real const>();
-      const Array4<Real> bodyQNetInc =
-          hasBodyQNetInc ? grid->body_net_charge_inc(iLev)[item.grid].array()
-                         : Array4<Real>();
-      const Array4<Real const>& EArr = nodeE[iLev][item.grid].array();
-      const Array4<Real const>& BArr = nodeB[iLev][item.grid].array();
-      const Array4<Real const>& B0Arr =
-          useB0 ? nodeB0[iLev][item.grid].array() : Array4<Real const>();
-
-      const Box& bx = cell_status(iLev)[item.grid].box();
-      const ActiveRegionBox ab = make_active_region_box(lb, ba[item.grid], bx);
-      const Array4<int const>& status = cell_status(iLev)[item.grid].array();
-
-      AoS& particles = item.ptile->GetArrayOfStructs();
-      MoveTallyDelta& tally = tallies[ord];
-
+    auto pushParticles =
+        [&](AoS& particles, const Array4<Real>& jArr,
+            const Array4<Real const>& bodyQNet, const Array4<Real>& bodyQNetInc,
+            const Array4<Real const>& EArr, const Array4<Real const>& BArr,
+            const Array4<Real const>& B0Arr, const ActiveRegionBox& ab,
+            const Array4<int const>& status, MoveTallyDelta& tally,
+            unsigned char& movedTooFarFlag, bool checkHome, bool strayPass,
+            const IntVect& tileCell) -> bool {
       const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
       bool foundStray = false;
@@ -285,7 +266,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           for (int d = 0; d < nDim; ++d) {
             const int i0 = static_cast<int>(
                 std::floor((p.pos(d) - ploLoc[d]) * invDxLoc[d]));
-            if (i0 != item.cell[d]) {
+            if (i0 != tileCell[d]) {
               isHome = false;
               break;
             }
@@ -389,7 +370,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
             !deposit_esirkepov(jArr, xOld, xNew, qFactor * p.rdata(iqp_),
                                wDrift * dtLoc * invDt, ploLoc, invDxLoc, dxLoc,
                                invDt, invVol[iLev]))
-          tileMovedTooFar[ord] = 1;
+          movedTooFarFlag = 1;
 
         // A trial push only deposits the current of the trial state.
         if (trialOnly)
@@ -419,28 +400,97 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       return foundStray;
     };
 
-    if (hasBodyQNetInc) {
-      for (int ord = 0; ord < nTiles; ++ord)
-        processTile(items[ord], ord, false, false);
-    } else if (currentMF) {
-      deposit_cell_tiles_colored(
-          items, 4, [&](const auto& item, int ord, bool strayPass) -> bool {
-            return processTile(item, ord, true, strayPass);
-          });
-    } else {
-      parallel_for_cell_tiles(items, [&](const auto& item, int ord) {
-        processTile(item, ord, false, false);
-      });
-    }
-
-    for (const auto& t : tallies)
-      apply_move_tally_delta(t);
-
     bool movedTooFar = false;
-    for (unsigned char flag : tileMovedTooFar) {
-      if (flag) {
-        movedTooFar = true;
-        break;
+    if (use_serial_fast_path()) {
+      int lastFab = -1;
+      ActiveRegionBox ab;
+      Array4<Real> jArr;
+      Array4<Real const> bodyQNet;
+      Array4<Real> bodyQNetInc;
+      Array4<Real const> EArr;
+      Array4<Real const> BArr;
+      Array4<Real const> B0Arr;
+      Array4<int const> status;
+      MoveTallyDelta tally;
+      unsigned char movedFlag = 0;
+      const IntVect zeroCell(0);
+
+      for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+        if (pti.index() != lastFab) {
+          lastFab = pti.index();
+          jArr = currentMF ? (*currentMF)[iLev][pti].array() : Array4<Real>();
+          bodyQNet = hasBodyQNet ? grid->body_net_charge(iLev)[pti].array()
+                                 : Array4<Real const>();
+          bodyQNetInc = hasBodyQNetInc
+                            ? grid->body_net_charge_inc(iLev)[pti].array()
+                            : Array4<Real>();
+          EArr = nodeE[iLev][pti].array();
+          BArr = nodeB[iLev][pti].array();
+          B0Arr = useB0 ? nodeB0[iLev][pti].array() : Array4<Real const>();
+          const Box& bx = cell_status(iLev)[pti].box();
+          ab = make_active_region_box(lb, ba[pti.index()], bx);
+          status = cell_status(iLev)[pti].array();
+        }
+        pushParticles(pti.GetArrayOfStructs(), jArr, bodyQNet, bodyQNetInc,
+                      EArr, BArr, B0Arr, ab, status, tally, movedFlag, false,
+                      false, zeroCell);
+      }
+      apply_move_tally_delta(tally);
+      movedTooFar = (movedFlag != 0);
+    } else {
+      const auto items = collect_cell_tiles(*this, iLev);
+      const int nTiles = static_cast<int>(items.size());
+      std::vector<MoveTallyDelta> tallies(nTiles);
+      std::vector<unsigned char> tileMovedTooFar(nTiles, 0);
+
+      auto processTile = [&](const auto& item, int ord, bool checkHome,
+                             bool strayPass) -> bool {
+        const Array4<Real> jArr =
+            currentMF ? (*currentMF)[iLev][item.grid].array() : Array4<Real>();
+        const Array4<Real const> bodyQNet =
+            hasBodyQNet ? grid->body_net_charge(iLev)[item.grid].array()
+                        : Array4<Real const>();
+        const Array4<Real> bodyQNetInc =
+            hasBodyQNetInc ? grid->body_net_charge_inc(iLev)[item.grid].array()
+                           : Array4<Real>();
+        const Array4<Real const>& EArr = nodeE[iLev][item.grid].array();
+        const Array4<Real const>& BArr = nodeB[iLev][item.grid].array();
+        const Array4<Real const>& B0Arr =
+            useB0 ? nodeB0[iLev][item.grid].array() : Array4<Real const>();
+
+        const Box& bx = cell_status(iLev)[item.grid].box();
+        const ActiveRegionBox ab =
+            make_active_region_box(lb, ba[item.grid], bx);
+        const Array4<int const>& status = cell_status(iLev)[item.grid].array();
+
+        return pushParticles(item.ptile->GetArrayOfStructs(), jArr, bodyQNet,
+                             bodyQNetInc, EArr, BArr, B0Arr, ab, status,
+                             tallies[ord], tileMovedTooFar[ord], checkHome,
+                             strayPass, item.cell);
+      };
+
+      if (hasBodyQNetInc) {
+        for (int ord = 0; ord < nTiles; ++ord)
+          processTile(items[ord], ord, false, false);
+      } else if (currentMF) {
+        deposit_cell_tiles_colored(
+            items, 4, [&](const auto& item, int ord, bool strayPass) -> bool {
+              return processTile(item, ord, true, strayPass);
+            });
+      } else {
+        parallel_for_cell_tiles(items, [&](const auto& item, int ord) {
+          processTile(item, ord, false, false);
+        });
+      }
+
+      for (const auto& t : tallies)
+        apply_move_tally_delta(t);
+
+      for (unsigned char flag : tileMovedTooFar) {
+        if (flag) {
+          movedTooFar = true;
+          break;
+        }
       }
     }
 

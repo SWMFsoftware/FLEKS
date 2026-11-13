@@ -39,20 +39,44 @@ inline amrex::Real finite_difference_epsilon(amrex::Real normBase,
 // Vector operations of the Jacobian-free matvec. They are not templates:
 // nvcc does not allow device lambdas in a function template instantiated with
 // a local lambda type (the nonlinear matvec below).
-inline void set_zero(amrex::Real *out, const int n) {
+inline void set_zero(amrex::Real *AMREX_RESTRICT out, const int n) {
+  if (use_serial_fast_path() || n < kMinOmp1DSize) {
+    std::fill(out, out + n, 0.0);
+    return;
+  }
   parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) { out[i] = 0.0; });
 }
 
-inline void perturb(const amrex::Real *base, const amrex::Real *direction,
-                    amrex::Real epsilon, amrex::Real *work, const int n) {
+inline void perturb(const amrex::Real *AMREX_RESTRICT base,
+                    const amrex::Real *AMREX_RESTRICT direction,
+                    amrex::Real epsilon, amrex::Real *AMREX_RESTRICT work,
+                    const int n) {
+  if (use_serial_fast_path() || n < kMinOmp1DSize) {
+#ifdef AMREX_USE_OMP
+#pragma omp simd
+#endif
+    for (int i = 0; i < n; ++i) {
+      work[i] = base[i] + epsilon * direction[i];
+    }
+    return;
+  }
   parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) {
     work[i] = base[i] + epsilon * direction[i];
   });
 }
 
-inline void difference_quotient(const amrex::Real *baseMatvec,
-                                amrex::Real invEpsilon, amrex::Real *out,
-                                const int n) {
+inline void difference_quotient(const amrex::Real *AMREX_RESTRICT baseMatvec,
+                                amrex::Real invEpsilon,
+                                amrex::Real *AMREX_RESTRICT out, const int n) {
+  if (use_serial_fast_path() || n < kMinOmp1DSize) {
+#ifdef AMREX_USE_OMP
+#pragma omp simd
+#endif
+    for (int i = 0; i < n; ++i) {
+      out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
+    }
+    return;
+  }
   parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) {
     out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
   });

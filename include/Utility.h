@@ -91,8 +91,18 @@ inline std::string normalize_string_token(std::string name,
 inline amrex::Real dot_product_mpi(const amrex::Real* AMREX_RESTRICT a,
                                    const amrex::Real* AMREX_RESTRICT b,
                                    const int n, const MPI_Comm iComm) {
-  const amrex::Real c = deterministic_sum(
-      n, [=] AMREX_GPU_DEVICE(int i) -> amrex::Real { return a[i] * b[i]; });
+  amrex::Real c = 0.0;
+  if (use_serial_fast_path() || n < kMinOmp1DSize) {
+#ifdef AMREX_USE_OMP
+#pragma omp simd reduction(+ : c)
+#endif
+    for (int i = 0; i < n; ++i) {
+      c += a[i] * b[i];
+    }
+  } else {
+    c = deterministic_sum(
+        n, [=] AMREX_GPU_DEVICE(int i) -> amrex::Real { return a[i] * b[i]; });
+  }
 
   if (iComm == MPI_COMM_SELF) {
     return c;
