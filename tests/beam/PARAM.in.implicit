@@ -105,6 +105,8 @@ auto                    precondType
 #DIVE
 T
 1
+amrex                   solverType
+jacobi                  precondType
 
 #SAVEPLOT
 1                       nPlot
