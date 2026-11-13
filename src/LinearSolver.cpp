@@ -23,7 +23,7 @@ void LinearSolver::solve(
 
   // Initialize solution vector to zero
   Real *const x = xLeft;
-  parallel_for_1d(nSolve, [=] AMREX_GPU_DEVICE(int i) { x[i] = 0.0; });
+  parallel_for_host_1d(nSolve, [=](int i) { x[i] = 0.0; });
 
   // Initialize stopping conditions. Solver will return actual values.
   int nMatvec = nIter;
@@ -128,12 +128,12 @@ int gmres(std::function<void(const Real *, Real *, const int)> matvec,
       matvec(sol, Krylov_II, iLev);
       Real *const AMREX_RESTRICT v0 = Krylov_II;
       const Real *const AMREX_RESTRICT r = rhs;
-      parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) { v0[i] = r[i] - v0[i]; });
+      parallel_for_host_1d(n, [=](int i) { v0[i] = r[i] - v0[i]; });
     } else {
       // Save a matvec when starting from zero initial condition
       Real *const AMREX_RESTRICT v0 = Krylov_II;
       const Real *const AMREX_RESTRICT r = rhs;
-      parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) { v0[i] = r[i]; });
+      parallel_for_host_1d(n, [=](int i) { v0[i] = r[i]; });
     }
     //-------------------------------------------------------------
     ro = sqrt(dot_product_mpi(Krylov_II, Krylov_II, n, iComm));
@@ -176,7 +176,7 @@ int gmres(std::function<void(const Real *, Real *, const int)> matvec,
     }
 
     auto coef = 1.0 / ro;
-    parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) { Krylov_II[i] *= coef; });
+    parallel_for_host_1d(n, [=](int i) { Krylov_II[i] *= coef; });
 
     // Initialize 1st term of RHS of Hessenberg system
     rs[0] = ro;
@@ -198,15 +198,14 @@ int gmres(std::function<void(const Real *, Real *, const int)> matvec,
         hh[i * nKrylov1 + j] = t;
         Real *const AMREX_RESTRICT vNew = &Krylov_II[i1 * n];
         const Real *const AMREX_RESTRICT vOld = &Krylov_II[j * n];
-        parallel_for_1d(
-            n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] -= t * vOld[k]; });
+        parallel_for_host_1d(n, [=](int k) { vNew[k] -= t * vOld[k]; });
       }
       Real cDot = sqrt(dot_product_mpi(v_i1, v_i1, n, iComm));
       hh[i * nKrylov1 + i1] = cDot;
       if (cDot != 0.0) {
         cDot = 1.0 / cDot;
         Real *const AMREX_RESTRICT vNew = &Krylov_II[i1 * n];
-        parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int k) { vNew[k] *= cDot; });
+        parallel_for_host_1d(n, [=](int k) { vNew[k] *= cDot; });
       }
       // Done with modified Gram-Schmidt and Arnoldi step.
       // Update factorization of hh.
@@ -261,8 +260,7 @@ int gmres(std::function<void(const Real *, Real *, const int)> matvec,
       const Real rsj = rs[j];
       const Real *const AMREX_RESTRICT v = &Krylov_II[j * n];
       Real *const AMREX_RESTRICT s_ptr = sol;
-      parallel_for_1d(n,
-                      [=] AMREX_GPU_DEVICE(int k) { s_ptr[k] += rsj * v[k]; });
+      parallel_for_host_1d(n, [=](int k) { s_ptr[k] += rsj * v[k]; });
     }
   } while (ro > Tol1 && its < nIter);
 

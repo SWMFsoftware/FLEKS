@@ -154,6 +154,7 @@ jobs:
         shell: bash
         run: |
           ldd ../bin/FLEKS.exe | grep -E 'gomp|omp'
+          nm -u ../bin/FLEKS.exe | grep -E 'GOMP_parallel|__kmpc_fork_call'
           TESTS=(whistler beam reconnection_amr amr_divb langmuir hybrid_upwind bc_absorb dynamic_amr)
           for test_name in "${TESTS[@]}"; do
             OMP_PROC_BIND=close OMP_PLACES=cores \

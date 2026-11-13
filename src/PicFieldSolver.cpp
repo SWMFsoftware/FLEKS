@@ -4,7 +4,6 @@
 
 #include <AMReX_Algorithm.H>
 #include <AMReX_MultiFabUtil.H>
-#include <AMReX_Scan.H>
 
 #include "GridUtility.h"
 #include "LinearSolver.h"
@@ -178,7 +177,7 @@ void Pic::solve_E_gmres(int iLev) {
   Real* const r = eSolver.rhs;
   const Real* const m = eSolver.matvec;
   Real* const x = eSolver.xLeft;
-  parallel_for_1d(eSolver.get_nSolve(), [=] AMREX_GPU_DEVICE(int i) {
+  parallel_for_host_1d(eSolver.get_nSolve(), [=](int i) {
     r[i] -= m[i];
     x[i] = 0;
   });
@@ -316,7 +315,7 @@ void Pic::solve_E_newton_krylov(int iLev) {
   Real* const r = eSolver.rhs;
   const Real* const bm = baseMatvec.data();
   Real* const x = eSolver.xLeft;
-  parallel_for_1d(nSolve, [=] AMREX_GPU_DEVICE(int i) {
+  parallel_for_host_1d(nSolve, [=](int i) {
     r[i] -= bm[i];
     x[i] = 0;
   });
@@ -1052,22 +1051,10 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
 }
 
 //==========================================================
-const Pic::LinearSystemLayout& Pic::linear_system_layout(const MultiFab& MF,
-                                                         int iLev) {
-  const bool isCenter = MF.ixType().cellCentered();
-  auto& layouts = isCenter ? centerLayout : nodeLayout;
-  if (static_cast<int>(layouts.size()) < n_lev_max())
-    layouts.resize(n_lev_max());
-
-  // The selection depends only on the grid (node ownership) and on the body,
-  // which is static, so the layout is rebuilt only after a regrid.
-  LinearSystemLayout& layout = layouts[iLev];
-  if (!layout.localIdx.empty() && layout.localIdx.boxArray() == MF.boxArray() &&
-      layout.localIdx.DistributionMap() == MF.DistributionMap())
-    return layout;
-
-  layout.localIdx.define(MF.boxArray(), MF.DistributionMap(), 1, 0);
-  layout.nBoxUnknown.assign(layout.localIdx.local_size(), 0);
+const Pic::NodeSystemLayout& Pic::node_system_layout(const MultiFab& MF,
+                                                     int iLev) {
+  if (static_cast<int>(nodeLayout.size()) < n_lev_max())
+    nodeLayout.resize(n_lev_max());
 
   // A 'linetied' body drops all its nodes from the linear system (E = 0),
   // a 'conducting' body only drops the interior ones (E = 0 inside, E_t = 0
@@ -1075,39 +1062,53 @@ const Pic::LinearSystemLayout& Pic::linear_system_layout(const MultiFab& MF,
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
 
-  for (MFIter mfi(layout.localIdx, stream_ordered_mfi()); mfi.isValid();
-       ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<int> idx = layout.localIdx[mfi].array();
-    const Array4<int const> nodeArr =
-        isCenter ? Array4<int const>() : node_status(iLev)[mfi].const_array();
-    const Dim3 lo = lbound(box);
-    const Dim3 len = length(box);
+  // The selection depends only on the grid (node ownership) and on the body,
+  // which is static, so the layout is rebuilt only after a regrid.
+  NodeSystemLayout& layout = nodeLayout[iLev];
+  if (layout.boxes.size() == static_cast<size_t>(MF.local_size()) &&
+      layout.ba == MF.boxArray() && layout.dm == MF.DistributionMap() &&
+      layout.skipAllBody == skipAllBody &&
+      layout.skipInterior == skipInterior) {
+    return layout;
+  }
 
-    auto is_unknown = [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      return isCenter ||
-             (bit::is_owner(nodeArr(i, j, k)) &&
-              !(skipAllBody && bit::is_body(nodeArr(i, j, k))) &&
-              !(skipInterior && bit::is_body_interior(nodeArr(i, j, k))));
+  layout.ba = MF.boxArray();
+  layout.dm = MF.DistributionMap();
+  layout.skipAllBody = skipAllBody;
+  layout.skipInterior = skipInterior;
+  layout.boxes.assign(MF.local_size(), {});
+
+  HostFabCache statusCache;
+  for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<int const> nodeArr = statusCache.array(node_status(iLev), mfi);
+    const Dim3 lo = lbound(box);
+    const Dim3 hi = ubound(box);
+
+    auto is_unknown = [&](int i, int j, int k) {
+      const int st = nodeArr(i, j, k);
+      return bit::is_owner(st) && !(skipAllBody && bit::is_body(st)) &&
+             !(skipInterior && bit::is_body_interior(st));
     };
 
-    // Number the unknowns of the box in x-fastest order.
-    layout.nBoxUnknown[mfi.LocalIndex()] = Scan::PrefixSum<int>(
-        static_cast<int>(box.numPts()),
-        [=] AMREX_GPU_DEVICE(int l) -> int {
-          const int k = l / (len.x * len.y);
-          const int j = (l - k * len.x * len.y) / len.x;
-          const int i = l - (k * len.y + j) * len.x;
-          return is_unknown(lo.x + i, lo.y + j, lo.z + k) ? 1 : 0;
-        },
-        [=] AMREX_GPU_DEVICE(int l, int nBefore) {
-          const int k = l / (len.x * len.y);
-          const int j = (l - k * len.x * len.y) / len.x;
-          const int i = l - (k * len.y + j) * len.x;
-          idx(lo.x + i, lo.y + j, lo.z + k) =
-              is_unknown(lo.x + i, lo.y + j, lo.z + k) ? nBefore : -1;
-        },
-        Scan::Type::exclusive, Scan::retSum);
+    NodeSystemLayout::BoxLayout& boxLayout = layout.boxes[mfi.LocalIndex()];
+    for (int k = lo.z; k <= hi.z; ++k) {
+      for (int j = lo.y; j <= hi.y; ++j) {
+        int i = lo.x;
+        while (i <= hi.x) {
+          while (i <= hi.x && !is_unknown(i, j, k))
+            ++i;
+          if (i > hi.x)
+            break;
+          const int iBeg = i;
+          while (i <= hi.x && is_unknown(i, j, k))
+            ++i;
+          const int iEnd = i - 1;
+          boxLayout.runs.push_back({ iBeg, iEnd, j, k, boxLayout.nUnknown });
+          boxLayout.nUnknown += iEnd - iBeg + 1;
+        }
+      }
+    }
   }
 
   return layout;
@@ -1118,24 +1119,73 @@ void Pic::convert_1d_to_3d(const Real* const p, MultiFab& MF, int iLev) {
   std::string nameFunc = "Pic::convert_1d_to_3d";
   timing_func(nameFunc);
 
-  const LinearSystemLayout& layout = linear_system_layout(MF, iLev);
-
   MF.setVal(0.0);
+  HostStaging<FArrayBox> stageMF(MF);
 
   const int nComp = MF.nComp();
   int offset = 0;
-  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
-    const Array4<Real> arr = MF[mfi].array();
-    const Array4<int const> idx = layout.localIdx[mfi].const_array();
-    const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];
-    const Real* const pBox = p + offset;
+  if (MF.ixType().cellCentered()) {
+    for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Dim3 lo = lbound(box);
+      const Dim3 hi = ubound(box);
+      const int ni = hi.x - lo.x + 1;
+      const int nj = hi.y - lo.y + 1;
+      const int nk = hi.z - lo.z + 1;
+      const int nUnknown = ni * nj * nk;
+      const Array4<Real> arr = MF[mfi].array();
+      const Real* const pBox = p + offset;
+      const int totalRows = nComp * nk * nj;
 
-    parallel_for_omp(mfi.validbox(), nComp,
-                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                       const int l = idx(i, j, k);
-                       if (l >= 0)
-                         arr(i, j, k, iVar) = pBox[iVar * nUnknown + l];
-                     });
+      auto copyRow = [&](int row) {
+        const int iVar = row / (nk * nj);
+        const int rem = row - iVar * (nk * nj);
+        const int k = lo.z + rem / nj;
+        const int j = lo.y + rem % nj;
+        Real* AMREX_RESTRICT dst = arr.ptr(lo.x, j, k, iVar);
+        const Real* AMREX_RESTRICT src =
+            pBox + iVar * nUnknown + ((k - lo.z) * nj + (j - lo.y)) * ni;
+        fleks_omp_detail::eval_simd_1d(0, ni,
+                                       [&](int ii) { dst[ii] = src[ii]; });
+      };
+
+      if (nComp * nUnknown >= kMinOmp1DSize) {
+        parallel_for_host_items(totalRows, copyRow, false);
+      } else {
+        for (int row = 0; row < totalRows; ++row)
+          copyRow(row);
+      }
+      offset += nComp * nUnknown;
+    }
+    return;
+  }
+
+  const NodeSystemLayout& layout = node_system_layout(MF, iLev);
+  for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+    const NodeSystemLayout::BoxLayout& boxLayout =
+        layout.boxes[mfi.LocalIndex()];
+    const int nUnknown = boxLayout.nUnknown;
+    const int nRuns = static_cast<int>(boxLayout.runs.size());
+    const Array4<Real> arr = MF[mfi].array();
+    const Real* const pBox = p + offset;
+    const int totalTasks = nComp * nRuns;
+
+    auto copyRun = [&](int task) {
+      const int iVar = task / nRuns;
+      const NodeSystemLayout::XRun& run = boxLayout.runs[task - iVar * nRuns];
+      const int len = run.iEnd - run.iBeg + 1;
+      Real* AMREX_RESTRICT dst = arr.ptr(run.iBeg, run.j, run.k, iVar);
+      const Real* AMREX_RESTRICT src = pBox + iVar * nUnknown + run.vecOffset;
+      fleks_omp_detail::eval_simd_1d(0, len,
+                                     [&](int ii) { dst[ii] = src[ii]; });
+    };
+
+    if (nComp * nUnknown >= kMinOmp1DSize) {
+      parallel_for_host_items(totalTasks, copyRun, false);
+    } else {
+      for (int task = 0; task < totalTasks; ++task)
+        copyRun(task);
+    }
     offset += nComp * nUnknown;
   }
 }
@@ -1145,34 +1195,81 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, Real* const p, int iLev) {
   std::string nameFunc = "Pic::convert_3d_to_1d";
   timing_func(nameFunc);
 
-  const LinearSystemLayout& layout = linear_system_layout(MF, iLev);
-
+  HostFabCache mfCache;
   const int nComp = MF.nComp();
   int offset = 0;
-  for (MFIter mfi(MF, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
-    const Array4<Real const> arr = MF[mfi].const_array();
-    const Array4<int const> idx = layout.localIdx[mfi].const_array();
-    const int nUnknown = layout.nBoxUnknown[mfi.LocalIndex()];
-    Real* const pBox = p + offset;
 
-    parallel_for_omp(mfi.validbox(), nComp,
-                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                       const int l = idx(i, j, k);
-                       if (l >= 0)
-                         pBox[iVar * nUnknown + l] = arr(i, j, k, iVar);
-                     });
+  if (MF.ixType().cellCentered()) {
+    for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Dim3 lo = lbound(box);
+      const Dim3 hi = ubound(box);
+      const int ni = hi.x - lo.x + 1;
+      const int nj = hi.y - lo.y + 1;
+      const int nk = hi.z - lo.z + 1;
+      const int nUnknown = ni * nj * nk;
+      const Array4<Real const> arr = mfCache.array(MF, mfi);
+      Real* const pBox = p + offset;
+      const int totalRows = nComp * nk * nj;
+
+      auto copyRow = [&](int row) {
+        const int iVar = row / (nk * nj);
+        const int rem = row - iVar * (nk * nj);
+        const int k = lo.z + rem / nj;
+        const int j = lo.y + rem % nj;
+        const Real* AMREX_RESTRICT src = arr.ptr(lo.x, j, k, iVar);
+        Real* AMREX_RESTRICT dst =
+            pBox + iVar * nUnknown + ((k - lo.z) * nj + (j - lo.y)) * ni;
+        fleks_omp_detail::eval_simd_1d(0, ni,
+                                       [&](int ii) { dst[ii] = src[ii]; });
+      };
+
+      if (nComp * nUnknown >= kMinOmp1DSize) {
+        parallel_for_host_items(totalRows, copyRow, false);
+      } else {
+        for (int row = 0; row < totalRows; ++row)
+          copyRow(row);
+      }
+      offset += nComp * nUnknown;
+    }
+    return;
+  }
+
+  const NodeSystemLayout& layout = node_system_layout(MF, iLev);
+  for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+    const NodeSystemLayout::BoxLayout& boxLayout =
+        layout.boxes[mfi.LocalIndex()];
+    const int nUnknown = boxLayout.nUnknown;
+    const int nRuns = static_cast<int>(boxLayout.runs.size());
+    const Array4<Real const> arr = mfCache.array(MF, mfi);
+    Real* const pBox = p + offset;
+    const int totalTasks = nComp * nRuns;
+
+    auto copyRun = [&](int task) {
+      const int iVar = task / nRuns;
+      const NodeSystemLayout::XRun& run = boxLayout.runs[task - iVar * nRuns];
+      const int len = run.iEnd - run.iBeg + 1;
+      const Real* AMREX_RESTRICT src = arr.ptr(run.iBeg, run.j, run.k, iVar);
+      Real* AMREX_RESTRICT dst = pBox + iVar * nUnknown + run.vecOffset;
+      fleks_omp_detail::eval_simd_1d(0, len,
+                                     [&](int ii) { dst[ii] = src[ii]; });
+    };
+
+    if (nComp * nUnknown >= kMinOmp1DSize) {
+      parallel_for_host_items(totalTasks, copyRun, false);
+    } else {
+      for (int task = 0; task < totalTasks; ++task)
+        copyRun(task);
+    }
     offset += nComp * nUnknown;
   }
 
   // Explicitly zero trailing slots up to the solver dimension to prevent
   // uninitialized or stale memory from polluting GMRES Arnoldi inner products.
-  if (!MF.ixType().cellCentered()) {
-    const int nSolve = eSolver.get_nSolve();
-    if (offset < nSolve) {
-      Real* const pTail = p + offset;
-      parallel_for_1d(nSolve - offset,
-                      [=] AMREX_GPU_DEVICE(int i) { pTail[i] = 0.0; });
-    }
+  const int nSolve = eSolver.get_nSolve();
+  if (offset < nSolve) {
+    Real* const pTail = p + offset;
+    parallel_for_host_1d(nSolve - offset, [=](int i) { pTail[i] = 0.0; });
   }
 }
 

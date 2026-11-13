@@ -96,38 +96,40 @@ _OMP_LINK_CACHE = {}
 
 
 def binary_has_openmp(exe):
-    """Return True if *exe* is linked against an OpenMP runtime."""
+    """Return True if *exe* was compiled with OpenMP parallel regions."""
     key = os.path.realpath(exe)
     if key in _OMP_LINK_CACHE:
         return _OMP_LINK_CACHE[key]
 
     has_omp = False
-    inspectors = (
-        ["readelf", "-d", key],
-        ["ldd", key],
-        ["otool", "-L", key],
-    )
-    omp_lib_re = re.compile(r"\blib(?:g?omp|iomp5)\b")
-    for cmd in inspectors:
+    nm_ran = False
+    for cmd in (["nm", "-u", key], ["nm", "-D", key], ["nm", key]):
         try:
             res = subprocess.run(cmd, stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL, text=True)
         except OSError:
             continue
-        if res.returncode == 0 and omp_lib_re.search(res.stdout):
-            has_omp = True
-            break
-
-    if not has_omp:
-        try:
-            res = subprocess.run(["nm", key], stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, text=True)
-            if res.returncode == 0 and (
-                "GOMP_parallel" in res.stdout or "__kmpc_fork_call" in res.stdout
-            ):
+        if res.returncode == 0:
+            nm_ran = True
+            if "GOMP_parallel" in res.stdout or "__kmpc_fork_call" in res.stdout:
                 has_omp = True
-        except OSError:
-            pass
+                break
+
+    if not nm_ran:
+        # Check only direct dependencies (not transitive libs via ldd, which can
+        # pull libgomp through MPI or BLAS on a -noopenmp binary).
+        for cmd, pat in (
+            (["readelf", "-d", key], r"NEEDED.*lib(?:g?omp|iomp5)\b"),
+            (["otool", "-L", key], r"\blib(?:g?omp|iomp5)\b"),
+        ):
+            try:
+                res = subprocess.run(cmd, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, text=True)
+            except OSError:
+                continue
+            if res.returncode == 0 and re.search(pat, res.stdout):
+                has_omp = True
+                break
 
     _OMP_LINK_CACHE[key] = has_omp
     return has_omp
@@ -720,11 +722,6 @@ def main():
 
     print("=" * 80)
     print("                 FLEKS ROBUST PERFORMANCE REGRESSION TEST")
-    if args.omp_threads > 1 and not binary_has_openmp(exe):
-        print("Note: candidate executable is built without OpenMP; "
-              "skipping multithreading benchmark.")
-        args.omp_threads = 1
-
     print("=" * 80)
     if base_exe:
         print(f"Candidate: {exe}\nReference: {base_exe}\n"

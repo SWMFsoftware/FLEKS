@@ -311,19 +311,28 @@ auto build_local_fab_table(const amrex::FabArrayBase& fa, BuildFn&& build) {
 
 namespace fleks_omp_detail {
 
+#define FLEKS_DO_PRAGMA(x) _Pragma(#x)
+#ifndef AMREX_USE_GPU
+#define FLEKS_PRAGMA_SIMD _Pragma("omp simd")
+#define FLEKS_PRAGMA_SIMD_SUM(var) FLEKS_DO_PRAGMA(omp simd reduction(+ : var))
+#else
+#define FLEKS_PRAGMA_SIMD AMREX_PRAGMA_SIMD
+#define FLEKS_PRAGMA_SIMD_SUM(var)
+#endif
+
 template <class L>
 AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_box(amrex::Box const& box,
                                                  L const& f) noexcept {
   const auto lo = amrex::lbound(box);
   const auto hi = amrex::ubound(box);
 #if (AMREX_SPACEDIM == 1)
-  AMREX_PRAGMA_SIMD
+  FLEKS_PRAGMA_SIMD
   for (int i = lo.x; i <= hi.x; ++i) {
     f(i, 0, 0);
   }
 #elif (AMREX_SPACEDIM == 2)
   for (int j = lo.y; j <= hi.y; ++j) {
-    AMREX_PRAGMA_SIMD
+    FLEKS_PRAGMA_SIMD
     for (int i = lo.x; i <= hi.x; ++i) {
       f(i, j, 0);
     }
@@ -331,7 +340,7 @@ AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_box(amrex::Box const& box,
 #else
   for (int k = lo.z; k <= hi.z; ++k) {
     for (int j = lo.y; j <= hi.y; ++j) {
-      AMREX_PRAGMA_SIMD
+      FLEKS_PRAGMA_SIMD
       for (int i = lo.x; i <= hi.x; ++i) {
         f(i, j, k);
       }
@@ -348,13 +357,13 @@ AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_box_n(amrex::Box const& box,
   const auto hi = amrex::ubound(box);
   for (T n = 0; n < ncomp; ++n) {
 #if (AMREX_SPACEDIM == 1)
-    AMREX_PRAGMA_SIMD
+    FLEKS_PRAGMA_SIMD
     for (int i = lo.x; i <= hi.x; ++i) {
       f(i, 0, 0, n);
     }
 #elif (AMREX_SPACEDIM == 2)
     for (int j = lo.y; j <= hi.y; ++j) {
-      AMREX_PRAGMA_SIMD
+      FLEKS_PRAGMA_SIMD
       for (int i = lo.x; i <= hi.x; ++i) {
         f(i, j, 0, n);
       }
@@ -362,7 +371,7 @@ AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_box_n(amrex::Box const& box,
 #else
     for (int k = lo.z; k <= hi.z; ++k) {
       for (int j = lo.y; j <= hi.y; ++j) {
-        AMREX_PRAGMA_SIMD
+        FLEKS_PRAGMA_SIMD
         for (int i = lo.x; i <= hi.x; ++i) {
           f(i, j, k, n);
         }
@@ -376,7 +385,7 @@ template <class L>
 AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_row_mt(int iLo, int iHi, int j,
                                                     int k,
                                                     L const& f) noexcept {
-  AMREX_PRAGMA_SIMD
+  FLEKS_PRAGMA_SIMD
   for (int i = iLo; i <= iHi; ++i) {
     f(i, j, k);
   }
@@ -386,7 +395,7 @@ template <class T, class L>
 AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_row_n_mt(int iLo, int iHi, int j,
                                                       int k, T n,
                                                       L const& f) noexcept {
-  AMREX_PRAGMA_SIMD
+  FLEKS_PRAGMA_SIMD
   for (int i = iLo; i <= iHi; ++i) {
     f(i, j, k, n);
   }
@@ -395,11 +404,7 @@ AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_row_n_mt(int iLo, int iHi, int j,
 template <class F>
 AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_1d(int iBeg, int iEnd,
                                                 F const& f) noexcept {
-#ifdef AMREX_USE_OMP
-#pragma omp simd
-#else
-  AMREX_PRAGMA_SIMD
-#endif
+  FLEKS_PRAGMA_SIMD
   for (int i = iBeg; i < iEnd; ++i) {
     f(i);
   }
@@ -409,11 +414,7 @@ template <class F>
 AMREX_FLATTEN AMREX_NO_INLINE amrex::Real eval_simd_sum(int iBeg, int iEnd,
                                                         F const& f) noexcept {
   amrex::Real sum = 0;
-#ifdef AMREX_USE_OMP
-#pragma omp simd reduction(+ : sum)
-#else
-  AMREX_PRAGMA_SIMD
-#endif
+  FLEKS_PRAGMA_SIMD_SUM(sum)
   for (int i = iBeg; i < iEnd; ++i) {
     sum += f(i);
   }
@@ -642,21 +643,32 @@ AMREX_NO_INLINE amrex::Real deterministic_sum_mt(int n, F const& f) {
 
 } // namespace fleks_omp_detail
 
+// Host-only 3D box loop f(i, j, k) with size-gated OpenMP + SIMD on CPU.
+// Never launches a GPU kernel (safe for host callbacks in CPU builds).
+template <class L>
+AMREX_FORCE_INLINE void parallel_for_host_box(amrex::Box const& box,
+                                              L const& f) noexcept {
+  if (!box.ok() || box.isEmpty())
+    return;
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path() || box.numPts() < kMinOmpBoxCells) {
+    fleks_omp_detail::eval_simd_box(box, f);
+  } else {
+    fleks_omp_detail::parallel_for_omp_mt(box, f);
+  }
+#else
+  fleks_omp_detail::eval_simd_box(box, f);
+#endif
+}
+
 // Performance-portable box kernel launch with size-gated OpenMP threading.
 template <class L>
 AMREX_FORCE_INLINE void parallel_for_omp(amrex::Box const& box,
                                          L const& f) noexcept {
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(box, f);
-#elif defined(AMREX_USE_OMP)
-  if (use_serial_fast_path() || box.numPts() < kMinOmpBoxCells) {
-    if (box.ok() && !box.isEmpty())
-      fleks_omp_detail::eval_simd_box(box, f);
-  } else {
-    fleks_omp_detail::parallel_for_omp_mt(box, f);
-  }
 #else
-  amrex::ParallelFor(box, f);
+  parallel_for_host_box(box, f);
 #endif
 }
 
@@ -676,7 +688,8 @@ AMREX_FORCE_INLINE void parallel_for_omp(amrex::Box const& box, T ncomp,
     fleks_omp_detail::parallel_for_omp_n_mt(box, ncomp, f);
   }
 #else
-  amrex::ParallelFor(box, ncomp, f);
+  if (ncomp > 0 && box.ok() && !box.isEmpty())
+    fleks_omp_detail::eval_simd_box_n(box, ncomp, f);
 #endif
 }
 
@@ -706,7 +719,9 @@ AMREX_FORCE_INLINE void parallel_for_mf_omp(const MF& mf, MakeBox&& makeBox,
   }
 #else
   for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    amrex::ParallelFor(makeBox(mfi), makeKernel(mfi));
+    const amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty())
+      fleks_omp_detail::eval_simd_box(bx, makeKernel(mfi));
   }
 #endif
 }
@@ -735,7 +750,9 @@ AMREX_FORCE_INLINE void parallel_for_mf_omp(const MF& mf, int ncomp,
   }
 #else
   for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    amrex::ParallelFor(makeBox(mfi), ncomp, makeKernel(mfi));
+    const amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty())
+      fleks_omp_detail::eval_simd_box_n(bx, ncomp, makeKernel(mfi));
   }
 #endif
 }
@@ -835,6 +852,21 @@ inline void mf_copy(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
 #endif
 }
 
+// Host-only 1D loop f(i) for i = 0..n-1 on CPU memory (e.g. std::vector Krylov
+// buffers). Uses OpenMP + SIMD on CPU when n >= kMinOmp1DSize and never
+// launches a GPU kernel.
+template <class F> AMREX_FORCE_INLINE void parallel_for_host_1d(int n, F&& f) {
+  if (n <= 0)
+    return;
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (!use_serial_fast_path() && n >= kMinOmp1DSize) {
+    fleks_omp_detail::parallel_for_1d_mt(n, f);
+    return;
+  }
+#endif
+  fleks_omp_detail::eval_simd_1d(0, n, f);
+}
+
 // Launch a 1D loop f(i) for i = 0..n-1 on the GPU, across OpenMP threads on
 // the CPU when n is large enough and not already inside an OpenMP parallel
 // region, or as a SIMD loop on the CPU.
@@ -843,14 +875,8 @@ template <class F> AMREX_FORCE_INLINE void parallel_for_1d(int n, F&& f) {
     return;
 #ifdef AMREX_USE_GPU
   amrex::ParallelFor(n, std::forward<F>(f));
-#elif defined(AMREX_USE_OMP)
-  if (use_serial_fast_path() || n < kMinOmp1DSize) {
-    fleks_omp_detail::eval_simd_1d(0, n, f);
-  } else {
-    fleks_omp_detail::parallel_for_1d_mt(n, f);
-  }
 #else
-  amrex::ParallelFor(n, std::forward<F>(f));
+  parallel_for_host_1d(n, std::forward<F>(f));
 #endif
 }
 
@@ -1097,13 +1123,21 @@ AMREX_FORCE_INLINE void parallel_for_cell_tiles(PC& pc, int iLev, F&& f,
 namespace fleks_omp_detail {
 
 template <class CheckHomeTag, class F, class Item>
-AMREX_FORCE_INLINE bool invoke_colored_tile(F& f, const Item& item, int ord,
-                                            bool strayPass) {
-  if constexpr (std::is_invocable_v<F&, const Item&, int, CheckHomeTag, bool>) {
+AMREX_FORCE_INLINE bool invoke_colored_tile(
+    F& f, const Item& item, int ord, bool strayPass,
+    std::vector<int>* strayIndices = nullptr) {
+  if constexpr (std::is_invocable_v<F&, const Item&, int, CheckHomeTag, bool,
+                                    std::vector<int>*>) {
+    return f(item, ord, CheckHomeTag{}, strayPass, strayIndices);
+  } else if constexpr (std::is_invocable_v<F&, const Item&, int, CheckHomeTag,
+                                           bool>) {
+    amrex::ignore_unused(strayIndices);
     return f(item, ord, CheckHomeTag{}, strayPass);
   } else if constexpr (CheckHomeTag::value) {
+    amrex::ignore_unused(strayIndices);
     return f(item, ord, strayPass);
   } else {
+    amrex::ignore_unused(strayIndices);
     if (f(item, ord, false))
       f(item, ord, true);
     return false;
@@ -1117,6 +1151,10 @@ AMREX_FORCE_INLINE bool invoke_colored_tile(F& f, const Item& item, int ord,
 // Esirkepov current, or <= 1 when tiles are independent and need no coloring).
 //
 // Accepts either:
+//   - 5-arg functor `f(item, ord, checkHomeTag, strayPass, strayIndices) ->
+//   bool`,
+//     where `strayIndices` records the stray particle indices in Pass 0 so
+//     Pass 1 processes only those initial strays;
 //   - 4-arg functor `f(item, ord, checkHomeTag, strayPass) -> bool`, where
 //     `decltype(checkHomeTag)::value` is `false` on the serial/uncolored path
 //     (compiling away home/stray checks into a single pass) and `true` during
@@ -1145,7 +1183,11 @@ AMREX_NO_INLINE void deposit_cell_tiles_colored(
   if (!forceSerial && !use_serial_fast_path() &&
       (nTiles >= kMinOmpTiles * 4 ||
        (nTiles >= 4 && count_tile_particles(items) >= kMinOmpParticles))) {
+    constexpr bool kUsesStrayList =
+        std::is_invocable_v<F&, const CellTileItem<TileType>&, int,
+                            std::true_type, bool, std::vector<int>*>;
     std::vector<unsigned char> hasStray(nTiles, 0);
+    std::vector<std::vector<int> > strayByTile(kUsesStrayList ? nTiles : 0);
 
     // Fast path: group cell tiles by (grid, highest-dim plane) and color
     // planes by `planeCoord % stencilSpan`. This reduces OpenMP barriers from
@@ -1223,8 +1265,10 @@ AMREX_NO_INLINE void deposit_cell_tiles_colored(
                 for (int idx = planeStarts[p]; idx < planeStarts[p + 1];
                      ++idx) {
                   const int ord = planeOrds[idx];
+                  std::vector<int>* const strayPtr =
+                      kUsesStrayList ? &strayByTile[ord] : nullptr;
                   if (fleks_omp_detail::invoke_colored_tile<std::true_type>(
-                          f, items[ord], ord, false))
+                          f, items[ord], ord, false, strayPtr))
                     hasStray[ord] = 1;
                 }
               }
@@ -1274,8 +1318,10 @@ AMREX_NO_INLINE void deposit_cell_tiles_colored(
 #pragma omp for schedule(guided)
           for (int idx = beg; idx < end; ++idx) {
             const int ord = bucketOrds[idx];
+            std::vector<int>* const strayPtr =
+                kUsesStrayList ? &strayByTile[ord] : nullptr;
             if (fleks_omp_detail::invoke_colored_tile<std::true_type>(
-                    f, items[ord], ord, false))
+                    f, items[ord], ord, false, strayPtr))
               hasStray[ord] = 1;
           }
         }
@@ -1283,9 +1329,12 @@ AMREX_NO_INLINE void deposit_cell_tiles_colored(
     }
 
     for (int ord = 0; ord < nTiles; ++ord) {
-      if (hasStray[ord])
-        fleks_omp_detail::invoke_colored_tile<std::true_type>(f, items[ord],
-                                                              ord, true);
+      if (hasStray[ord]) {
+        std::vector<int>* const strayPtr =
+            kUsesStrayList ? &strayByTile[ord] : nullptr;
+        fleks_omp_detail::invoke_colored_tile<std::true_type>(
+            f, items[ord], ord, true, strayPtr);
+      }
     }
     return;
   }
@@ -1386,7 +1435,7 @@ AMREX_NO_INLINE amrex::Real deposit_moments_omp_mt(PC& pc, int iLev, int nComp,
         for (int t = 0; t < nThreads; ++t) {
           const amrex::Real* AMREX_RESTRICT sPtr =
               threadFabs[t].const_array().ptr(blo.x, j, k, c);
-          AMREX_PRAGMA_SIMD
+          FLEKS_PRAGMA_SIMD
           for (int ii = 0; ii < ni; ++ii) {
             dPtr[ii] += sPtr[ii];
           }
@@ -1431,6 +1480,19 @@ AMREX_FORCE_INLINE amrex::Real deposit_moments_omp(PC& pc, int iLev,
   return total;
 }
 
+// Host-only deterministic sum of f(i) for i = 0..n-1 on CPU memory. Never
+// launches a GPU kernel.
+template <class F>
+AMREX_FORCE_INLINE amrex::Real deterministic_host_sum(int n, F&& f) {
+  if (n <= 0)
+    return 0;
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (!use_serial_fast_path() && n >= kMinOmp1DSize)
+    return fleks_omp_detail::deterministic_sum_mt(n, f);
+#endif
+  return fleks_omp_detail::eval_simd_sum(0, n, f);
+}
+
 template <class F>
 AMREX_FORCE_INLINE amrex::Real deterministic_sum(int n, F&& f) {
   if (n <= 0)
@@ -1449,12 +1511,8 @@ AMREX_FORCE_INLINE amrex::Real deterministic_sum(int n, F&& f) {
                          n, amrex::Gpu::gpuStream());
   amrex::Gpu::streamSynchronize();
   return *result;
-#elif defined(AMREX_USE_OMP)
-  if (use_serial_fast_path() || n < kMinOmp1DSize)
-    return fleks_omp_detail::eval_simd_sum(0, n, f);
-  return fleks_omp_detail::deterministic_sum_mt(n, f);
 #else
-  return fleks_omp_detail::eval_simd_sum(0, n, f);
+  return deterministic_host_sum(n, std::forward<F>(f));
 #endif
 }
 
@@ -1693,6 +1751,26 @@ void host_fill_fab(amrex::FabArray<FAB>& fa, amrex::MFIter& mfi,
 #else
   const auto arr = fa[mfi].array();
   amrex::LoopOnCpu(box, [&](int i, int j, int k) { f(mfi, i, j, k, arr); });
+#endif
+}
+
+// Parallel host-only variant of host_fill_fab: each (i, j, k) in `box` must
+// be independent so `f(i, j, k, arr)` can run across OpenMP threads on CPU
+// builds while staging through pinned host memory on GPU builds.
+template <class FAB, class F>
+void parallel_host_fill_fab(amrex::FabArray<FAB>& fa, const amrex::MFIter& mfi,
+                            const amrex::Box& box, F&& f) {
+#ifdef AMREX_USE_GPU
+  using T = typename FAB::value_type;
+  FAB& fab = fa[mfi];
+  amrex::BaseFab<T> host(fab.box(), fab.nComp(), amrex::The_Pinned_Arena());
+  amrex::Gpu::dtoh_memcpy(host.dataPtr(), fab.dataPtr(), fab.nBytes());
+  const auto arr = host.array();
+  amrex::LoopOnCpu(box, [&](int i, int j, int k) { f(i, j, k, arr); });
+  amrex::Gpu::htod_memcpy(fab.dataPtr(), host.dataPtr(), fab.nBytes());
+#else
+  const auto arr = fa[mfi].array();
+  parallel_for_host_box(box, [&](int i, int j, int k) { f(i, j, k, arr); });
 #endif
 }
 

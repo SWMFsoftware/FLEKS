@@ -134,8 +134,8 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       }
       amrexDivESolver[iLev]->define(this, iLev, fsolver.divEPrecondType);
 
-      const Real res0 = std::sqrt(MultiFab::Dot(
-          amrexDivESolver[iLev]->dot_mask(), residual, 0, residual, 0, 1, 0));
+      const Real res0 = std::sqrt(mf_dot(residual, 0, residual, 0, 1, 0,
+                                         &amrexDivESolver[iLev]->dot_mask()));
       if (reportSolver) {
         Print() << "Before 0 nMatVec, relative tol: " << solver.get_nIter()
                 << " " << solver.get_tol() << std::endl;
@@ -261,13 +261,13 @@ void Pic::build_divE_preconditioner(MultiFab& invDiagMF,
   constexpr int centerGp = 13;
 #endif
 
-  for (MFIter mfi(invDiagMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
-    const Array4<Real>& invArr = invDiagMF[mfi].array();
-    const Array4<RealCMM const>& mmArr = centerMM[iLev][mfi].const_array();
-    const Array4<int const>& maskArr = dotMask[mfi].const_array();
+  for (MFIter mfi(invDiagMF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real> invArr = invDiagMF[mfi].array();
+    const Array4<RealCMM const> mmArr = centerMM[iLev][mfi].const_array();
+    const Array4<int const> maskArr = dotMask[mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (maskArr(i, j, k) == 0) {
         invArr(i, j, k) = 0.0;
         return;

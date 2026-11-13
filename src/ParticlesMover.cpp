@@ -331,7 +331,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     std::atomic<bool> movedTooFar{ false };
 
     auto processTile = [&](const auto& item, int ord, auto checkHomeTag,
-                           bool strayPass) -> bool {
+                           bool strayPass,
+                           std::vector<int>* strayIndices) -> bool {
       AoS& particles = item.ptile->GetArrayOfStructs();
       const auto& ctx = fabTable[item.grid];
       const Real ploTile[3] = { lb.plo[0], lb.plo[1], lb.plo[2] };
@@ -362,28 +363,38 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       MoveTallyDelta localTally;
       MoveTallyDelta* tally = singleTally ? tallies.single_ptr() : &localTally;
 
-      for (auto& p : particles) {
+      ParticleType* const pData = particles().data();
+      const int np = static_cast<int>(particles.numParticles());
+      const int nIter = (decltype(checkHomeTag)::value && strayPass)
+                            ? static_cast<int>(strayIndices->size())
+                            : np;
+
+      for (int idx = 0; idx < nIter; ++idx) {
+        ParticleType& p = pData[(decltype(checkHomeTag)::value && strayPass)
+                                    ? (*strayIndices)[idx]
+                                    : idx];
         if (p.id() < 0)
           continue;
 
         if constexpr (decltype(checkHomeTag)::value) {
-          bool isHome = true;
-          for (int d = 0; d < nDim; ++d) {
-            const int i0 = static_cast<int>(
-                std::floor((p.pos(d) - ploTile[d]) * invDxTile[d]));
-            if (i0 != item.cell[d]) {
-              isHome = false;
-              break;
-            }
-          }
           if (!strayPass) {
+            bool isHome = true;
+            for (int d = 0; d < nDim; ++d) {
+              const int i0 = static_cast<int>(
+                  std::floor((p.pos(d) - ploTile[d]) * invDxTile[d]));
+              if (i0 != item.cell[d]) {
+                isHome = false;
+                break;
+              }
+            }
             if (!isHome) {
+              strayIndices->push_back(idx);
               foundStray = true;
               continue;
             }
-          } else if (isHome) {
-            continue;
           }
+        } else {
+          amrex::ignore_unused(strayPass, strayIndices);
         }
 
         const Real u_start = p.rdata(iup);
@@ -500,7 +511,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
                                        ctx.bodyQNetInc, tally)) {
           p.id() = -1;
         }
-      } // for p
+      } // for idx
 
       if (!singleTally)
         tallies.record(ord * 2 + (strayPass ? 1 : 0), localTally);

@@ -242,256 +242,268 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           : 0.0;
   const bool useHall = useHallTerm;
 
-  struct UpwindScratch {
-    FArrayBox faceJump[nDim3];
-    FArrayBox slopeFab;
-  };
-  std::optional<UpwindScratch> upwindScratch;
-  if (doUpwind)
-    upwindScratch.emplace();
-  for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrE = Eout[mfi].array();
-    const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
-    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-    const Array4<Real const> momentsPrev =
-        usePrevMoments ? nodePlasmaPrev[nSpecies][iLev][mfi].array()
-                       : Array4<Real const>();
-    const Array4<Real const> arrJ =
-        needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
-    const Array4<Real const> arrEambi = (electronTemperature > 0)
-                                            ? nodeEambi[iLev][mfi].array()
-                                            : Array4<Real const>();
-    const Array4<Real const> arrEtaReg =
-        hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
-                                : Array4<Real const>();
-    // Upwind face jumps, one array per direction over the faces the nodes of
-    // this box use: the node range along the direction, and one more cell on
-    // the low side of each transverse direction (the cells c-1 and c around a
-    // node). They read the cells i-2..i+1 along the direction, within the two
-    // ghost layers of centerBin.
-    Array4<Real const> arrFace[nDim3];
-    if (doUpwind) {
-      FArrayBox(&faceJump)[nDim3] = upwindScratch->faceJump;
-      FArrayBox& slopeFab = upwindScratch->slopeFab;
-      const Array4<Real const>& arrBin = centerBin[mfi].const_array();
-      for (int iDir = 0; iDir < nDim; ++iDir) {
-        if (!upwindDir[iDir])
-          continue;
-        Box faceBox(box.smallEnd(), box.bigEnd());
-        for (int t = 0; t < nDim; ++t) {
-          if (t != iDir)
-            faceBox.growLo(t, 1);
-        }
-        // A face uses the slopes of the cells on both of its sides.
-        Box slopeBox = faceBox;
-        slopeBox.growLo(iDir, 1);
-        slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
-        faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
-        const Array4<Real>& arrS = slopeFab.array();
-        const Array4<Real const>& arrSc = slopeFab.const_array();
-        const Array4<Real>& arrF = faceJump[iDir].array();
-        if (iDir == ix_) {
-          parallel_for_omp(slopeBox, nDim3,
-                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                             arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
-                                 arrBin, i, j, k, iVar, limTypeUp);
-                           });
-          parallel_for_omp(faceBox, nDim3,
-                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                             arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
-                                 arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                           });
-        } else if (iDir == iy_) {
-          parallel_for_omp(slopeBox, nDim3,
-                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                             arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
-                                 arrBin, i, j, k, iVar, limTypeUp);
-                           });
-          parallel_for_omp(faceBox, nDim3,
-                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                             arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
-                                 arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                           });
-        } else {
-          parallel_for_omp(slopeBox, nDim3,
-                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                             arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
-                                 arrBin, i, j, k, iVar, limTypeUp);
-                           });
-          parallel_for_omp(faceBox, nDim3,
-                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                             arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
-                                 arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                           });
-        }
-        arrFace[iDir] = faceJump[iDir].const_array();
-      }
-    }
-    const Array4<Real const> arrFaceX = arrFace[ix_];
-    const Array4<Real const> arrFaceY = arrFace[iy_];
-    const Array4<Real const> arrFaceZ = arrFace[iz_];
-
-    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      const Real rhoCur = moments(i, j, k, iRho_);
-      const Real rhoPrev = usePrevMoments ? momentsPrev(i, j, k, iRho_) : 0.0;
-      Real rho = wCurRho * rhoCur;
-      if (usePrevMoments) {
-        rho += wPrevRho * rhoPrev;
-      }
-      Real ui = 0.0, vi = 0.0, wi = 0.0;
-      const Real invRhoEff =
-          (rho > 0.0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
-
-      if (usePredictorCorrector) {
-        Real mx = wCurM * moments(i, j, k, iMx_);
-        Real my = wCurM * moments(i, j, k, iMy_);
-        Real mz = wCurM * moments(i, j, k, iMz_);
-        if (usePrevMoments) {
-          mx += wPrevM * momentsPrev(i, j, k, iMx_);
-          my += wPrevM * momentsPrev(i, j, k, iMy_);
-          mz += wPrevM * momentsPrev(i, j, k, iMz_);
-        }
-        if (rho > 0.0) {
-          ui = mx * invRhoEff;
-          vi = my * invRhoEff;
-          wi = mz * invRhoEff;
-        }
-      } else {
-        // Single-pass hybrid leapfrog:
-        // moments(iMx_) carries momentum deposited at post-drift positions
-        // x^{n+1} with half-step velocities v^{n+1/2}, i.e. rho_cur *
-        // u^{n+1/2}. momentsPrev(iMx_) carries rho_prev * u^{n-1/2} at
-        // positions x^n. Directly interpolating raw momentum and dividing by
-        // time-interpolated density gives u_i = U * rho_next / ((rho_prev +
-        // rho_next)/2) != U for nonuniform density advecting at uniform U,
-        // introducing an O(dt) error. Instead, reconstruct ion fluid velocity
-        // u_i at target time hstep:
-        Real uiCur = 0.0, viCur = 0.0, wiCur = 0.0;
-        if (rhoCur > 0.0) {
-          const Real invRhoCur = 1.0 / amrex::max(rhoCur, rhoMinOhm);
-          uiCur = moments(i, j, k, iMx_) * invRhoCur;
-          viCur = moments(i, j, k, iMy_) * invRhoCur;
-          wiCur = moments(i, j, k, iMz_) * invRhoCur;
-        }
-        ui = uiCur;
-        vi = viCur;
-        wi = wiCur;
-        if (usePrevMoments && wPrevM != 0.0) {
-          Real uiPrev = 0.0, viPrev = 0.0, wiPrev = 0.0;
-          if (rhoPrev > 0.0) {
-            const Real invRhoPrev = 1.0 / amrex::max(rhoPrev, rhoMinOhm);
-            uiPrev = momentsPrev(i, j, k, iMx_) * invRhoPrev;
-            viPrev = momentsPrev(i, j, k, iMy_) * invRhoPrev;
-            wiPrev = momentsPrev(i, j, k, iMz_) * invRhoPrev;
-          }
-          ui = wCurM * uiCur + wPrevM * uiPrev;
-          vi = wCurM * viCur + wPrevM * viPrev;
-          wi = wCurM * wiCur + wPrevM * wiPrev;
-        }
-      }
-
-      Real bx = arrB(i, j, k, ix_);
-      Real by = arrB(i, j, k, iy_);
-      Real bz = arrB(i, j, k, iz_);
-
-      // Convection term: E = -U_i x B
-      Real ex = -(vi * bz - wi * by);
-      Real ey = -(wi * bx - ui * bz);
-      Real ez = -(ui * by - vi * bx);
-
-      // J = curl(B)/(4*pi)
-      Real jx = 0.0, jy = 0.0, jz = 0.0;
-      if (needJ) {
-        jx = arrJ(i, j, k, ix_) * invFourPI;
-        jy = arrJ(i, j, k, iy_) * invFourPI;
-        jz = arrJ(i, j, k, iz_) * invFourPI;
-      }
-
-      // eta * J (global + regional resistivity)
-      Real etaTotal = etaResistivity;
-      if (hasRegionalResistivity_) {
-        etaTotal += arrEtaReg(i, j, k);
-      }
-      if (etaTotal > 0.0) {
-        ex += etaTotal * jx;
-        ey += etaTotal * jy;
-        ez += etaTotal * jz;
-      }
-
-      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
-      // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
-      if (includeAmbi && electronTemperature > 0) {
-        ex += arrEambi(i, j, k, ix_);
-        ey += arrEambi(i, j, k, iy_);
-        ez += arrEambi(i, j, k, iz_);
-      }
-
-      // Hall term: (J x B) / rho_q
-      if (rho > 0 && useHallTerm) {
-        Real hall_x = (jy * bz - jz * by) * invRhoEff;
-        Real hall_y = (jz * bx - jx * bz) * invRhoEff;
-        Real hall_z = (jx * by - jy * bx) * invRhoEff;
-
-        ex += hall_x;
-        ey += hall_y;
-        ez += hall_z;
-      }
-
-      // Upwind (Rusanov) dissipation: E += sum_d (a_d/2) e_d x (B^R - B^L).
-      // The jumps use the evolved B only (no intrinsic B0), the speeds the
-      // total B and the electron velocity u_e = u_i - J/rho.
-      if (doUpwind && (rho > 0 || fixedSpeedUp > 0)) {
-        Real cFast = 0.0, bAbs = 0.0;
-        Real ue[nDim3] = { ui, vi, wi };
-        if (fixedSpeedUp <= 0) {
-          const Real b2 = bx * bx + by * by + bz * bz;
-          bAbs = std::sqrt(b2);
-          cFast = std::sqrt(b2 * invRhoEff * invFourPI + cs2Up);
-          if (useHall) {
-            ue[ix_] -= jx * invRhoEff;
-            ue[iy_] -= jy * invRhoEff;
-            ue[iz_] -= jz * invRhoEff;
-          }
-        }
-
-        Real jump[nDim3];
+  {
+    struct UpwindScratch {
+      FArrayBox faceJump[nDim3];
+      FArrayBox slopeFab;
+    };
+    std::optional<UpwindScratch> upwindScratch;
+    if (doUpwind)
+      upwindScratch.emplace();
+    for (MFIter mfi(Eout, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrE = Eout[mfi].array();
+      const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
+      const Array4<Real const>& moments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const> momentsPrev =
+          usePrevMoments ? nodePlasmaPrev[nSpecies][iLev][mfi].array()
+                         : Array4<Real const>();
+      const Array4<Real const> arrJ =
+          needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
+      const Array4<Real const> arrEambi = (electronTemperature > 0)
+                                              ? nodeEambi[iLev][mfi].array()
+                                              : Array4<Real const>();
+      const Array4<Real const> arrEtaReg =
+          hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
+                                  : Array4<Real const>();
+      // Upwind face jumps, one array per direction over the faces the nodes of
+      // this box use: the node range along the direction, and one more cell on
+      // the low side of each transverse direction (the cells c-1 and c around a
+      // node). They read the cells i-2..i+1 along the direction, within the two
+      // ghost layers of centerBin.
+      Array4<Real const> arrFace[nDim3];
+      if (doUpwind) {
+        FArrayBox(&faceJump)[nDim3] = upwindScratch->faceJump;
+        FArrayBox& slopeFab = upwindScratch->slopeFab;
+        const Array4<Real const>& arrBin = centerBin[mfi].const_array();
         for (int iDir = 0; iDir < nDim; ++iDir) {
           if (!upwindDir[iDir])
             continue;
-          if (iDir == ix_) {
-            upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
-          } else if (iDir == iy_) {
-            upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
-          } else {
-            upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
+          Box faceBox(box.smallEnd(), box.bigEnd());
+          for (int t = 0; t < nDim; ++t) {
+            if (t != iDir)
+              faceBox.growLo(t, 1);
           }
-
-          // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).
-          const Real a = (fixedSpeedUp > 0) ? fixedSpeedUp
-                                            : std::abs(ue[iDir]) + cFast +
-                                                  coefWhistlerUp * 0.25 * bAbs *
-                                                      invRhoEff * invDxUp[iDir];
-          const Real halfA = 0.5 * a;
-
-          // e_d x jump
+          // A face uses the slopes of the cells on both of its sides.
+          Box slopeBox = faceBox;
+          slopeBox.growLo(iDir, 1);
+          slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
+          faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
+          const Array4<Real>& arrS = slopeFab.array();
+          const Array4<Real const>& arrSc = slopeFab.const_array();
+          const Array4<Real>& arrF = faceJump[iDir].array();
           if (iDir == ix_) {
-            ey -= halfA * jump[iz_];
-            ez += halfA * jump[iy_];
+            parallel_for_omp(
+                slopeBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrS(i, j, k, iVar) =
+                      upwind_cell_slope<ix_>(arrBin, i, j, k, iVar, limTypeUp);
+                });
+            parallel_for_omp(
+                faceBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                      arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                });
           } else if (iDir == iy_) {
-            ex += halfA * jump[iz_];
-            ez -= halfA * jump[ix_];
+            parallel_for_omp(
+                slopeBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrS(i, j, k, iVar) =
+                      upwind_cell_slope<iy_>(arrBin, i, j, k, iVar, limTypeUp);
+                });
+            parallel_for_omp(
+                faceBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                      arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                });
           } else {
-            ex -= halfA * jump[iy_];
-            ey += halfA * jump[ix_];
+            parallel_for_omp(
+                slopeBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrS(i, j, k, iVar) =
+                      upwind_cell_slope<iz_>(arrBin, i, j, k, iVar, limTypeUp);
+                });
+            parallel_for_omp(
+                faceBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                      arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                });
           }
+          arrFace[iDir] = faceJump[iDir].const_array();
         }
       }
+      const Array4<Real const> arrFaceX = arrFace[ix_];
+      const Array4<Real const> arrFaceY = arrFace[iy_];
+      const Array4<Real const> arrFaceZ = arrFace[iz_];
 
-      arrE(i, j, k, ix_) = ex;
-      arrE(i, j, k, iy_) = ey;
-      arrE(i, j, k, iz_) = ez;
-    });
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        const Real rhoCur = moments(i, j, k, iRho_);
+        const Real rhoPrev = usePrevMoments ? momentsPrev(i, j, k, iRho_) : 0.0;
+        Real rho = wCurRho * rhoCur;
+        if (usePrevMoments) {
+          rho += wPrevRho * rhoPrev;
+        }
+        Real ui = 0.0, vi = 0.0, wi = 0.0;
+        const Real invRhoEff =
+            (rho > 0.0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
+
+        if (usePredictorCorrector) {
+          Real mx = wCurM * moments(i, j, k, iMx_);
+          Real my = wCurM * moments(i, j, k, iMy_);
+          Real mz = wCurM * moments(i, j, k, iMz_);
+          if (usePrevMoments) {
+            mx += wPrevM * momentsPrev(i, j, k, iMx_);
+            my += wPrevM * momentsPrev(i, j, k, iMy_);
+            mz += wPrevM * momentsPrev(i, j, k, iMz_);
+          }
+          if (rho > 0.0) {
+            ui = mx * invRhoEff;
+            vi = my * invRhoEff;
+            wi = mz * invRhoEff;
+          }
+        } else {
+          // Single-pass hybrid leapfrog:
+          // moments(iMx_) carries momentum deposited at post-drift positions
+          // x^{n+1} with half-step velocities v^{n+1/2}, i.e. rho_cur *
+          // u^{n+1/2}. momentsPrev(iMx_) carries rho_prev * u^{n-1/2} at
+          // positions x^n. Directly interpolating raw momentum and dividing by
+          // time-interpolated density gives u_i = U * rho_next / ((rho_prev +
+          // rho_next)/2) != U for nonuniform density advecting at uniform U,
+          // introducing an O(dt) error. Instead, reconstruct ion fluid velocity
+          // u_i at target time hstep:
+          Real uiCur = 0.0, viCur = 0.0, wiCur = 0.0;
+          if (rhoCur > 0.0) {
+            const Real invRhoCur = 1.0 / amrex::max(rhoCur, rhoMinOhm);
+            uiCur = moments(i, j, k, iMx_) * invRhoCur;
+            viCur = moments(i, j, k, iMy_) * invRhoCur;
+            wiCur = moments(i, j, k, iMz_) * invRhoCur;
+          }
+          ui = uiCur;
+          vi = viCur;
+          wi = wiCur;
+          if (usePrevMoments && wPrevM != 0.0) {
+            Real uiPrev = 0.0, viPrev = 0.0, wiPrev = 0.0;
+            if (rhoPrev > 0.0) {
+              const Real invRhoPrev = 1.0 / amrex::max(rhoPrev, rhoMinOhm);
+              uiPrev = momentsPrev(i, j, k, iMx_) * invRhoPrev;
+              viPrev = momentsPrev(i, j, k, iMy_) * invRhoPrev;
+              wiPrev = momentsPrev(i, j, k, iMz_) * invRhoPrev;
+            }
+            ui = wCurM * uiCur + wPrevM * uiPrev;
+            vi = wCurM * viCur + wPrevM * viPrev;
+            wi = wCurM * wiCur + wPrevM * wiPrev;
+          }
+        }
+
+        Real bx = arrB(i, j, k, ix_);
+        Real by = arrB(i, j, k, iy_);
+        Real bz = arrB(i, j, k, iz_);
+
+        // Convection term: E = -U_i x B
+        Real ex = -(vi * bz - wi * by);
+        Real ey = -(wi * bx - ui * bz);
+        Real ez = -(ui * by - vi * bx);
+
+        // J = curl(B)/(4*pi)
+        Real jx = 0.0, jy = 0.0, jz = 0.0;
+        if (needJ) {
+          jx = arrJ(i, j, k, ix_) * invFourPI;
+          jy = arrJ(i, j, k, iy_) * invFourPI;
+          jz = arrJ(i, j, k, iz_) * invFourPI;
+        }
+
+        // eta * J (global + regional resistivity)
+        Real etaTotal = etaResistivity;
+        if (hasRegionalResistivity_) {
+          etaTotal += arrEtaReg(i, j, k);
+        }
+        if (etaTotal > 0.0) {
+          ex += etaTotal * jx;
+          ey += etaTotal * jy;
+          ez += etaTotal * jz;
+        }
+
+        // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
+        // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
+        if (includeAmbi && electronTemperature > 0) {
+          ex += arrEambi(i, j, k, ix_);
+          ey += arrEambi(i, j, k, iy_);
+          ez += arrEambi(i, j, k, iz_);
+        }
+
+        // Hall term: (J x B) / rho_q
+        if (rho > 0 && useHallTerm) {
+          Real hall_x = (jy * bz - jz * by) * invRhoEff;
+          Real hall_y = (jz * bx - jx * bz) * invRhoEff;
+          Real hall_z = (jx * by - jy * bx) * invRhoEff;
+
+          ex += hall_x;
+          ey += hall_y;
+          ez += hall_z;
+        }
+
+        // Upwind (Rusanov) dissipation: E += sum_d (a_d/2) e_d x (B^R - B^L).
+        // The jumps use the evolved B only (no intrinsic B0), the speeds the
+        // total B and the electron velocity u_e = u_i - J/rho.
+        if (doUpwind && (rho > 0 || fixedSpeedUp > 0)) {
+          Real cFast = 0.0, bAbs = 0.0;
+          Real ue[nDim3] = { ui, vi, wi };
+          if (fixedSpeedUp <= 0) {
+            const Real b2 = bx * bx + by * by + bz * bz;
+            bAbs = std::sqrt(b2);
+            cFast = std::sqrt(b2 * invRhoEff * invFourPI + cs2Up);
+            if (useHall) {
+              ue[ix_] -= jx * invRhoEff;
+              ue[iy_] -= jy * invRhoEff;
+              ue[iz_] -= jz * invRhoEff;
+            }
+          }
+
+          Real jump[nDim3];
+          for (int iDir = 0; iDir < nDim; ++iDir) {
+            if (!upwindDir[iDir])
+              continue;
+            if (iDir == ix_) {
+              upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
+            } else if (iDir == iy_) {
+              upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
+            } else {
+              upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
+            }
+
+            // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).
+            const Real a = (fixedSpeedUp > 0)
+                               ? fixedSpeedUp
+                               : std::abs(ue[iDir]) + cFast +
+                                     coefWhistlerUp * 0.25 * bAbs * invRhoEff *
+                                         invDxUp[iDir];
+            const Real halfA = 0.5 * a;
+
+            // e_d x jump
+            if (iDir == ix_) {
+              ey -= halfA * jump[iz_];
+              ez += halfA * jump[iy_];
+            } else if (iDir == iy_) {
+              ex += halfA * jump[iz_];
+              ez -= halfA * jump[ix_];
+            } else {
+              ex -= halfA * jump[iy_];
+              ey += halfA * jump[ix_];
+            }
+          }
+        }
+
+        arrE(i, j, k, ix_) = ex;
+        arrE(i, j, k, iy_) = ey;
+        arrE(i, j, k, iz_) = ez;
+      });
+    }
+    if (doUpwind)
+      sync_before_free();
   }
 
   // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B).

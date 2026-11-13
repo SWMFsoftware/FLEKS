@@ -36,28 +36,26 @@ inline amrex::Real finite_difference_epsilon(amrex::Real normBase,
          (1.0 + normBase) / normDirection;
 }
 
-// Vector operations of the Jacobian-free matvec and Krylov solvers. They are
-// not templates: nvcc does not allow device lambdas in a function template
-// instantiated with a local lambda type (the nonlinear matvec below).
+// Vector operations of the Jacobian-free matvec and Krylov solvers on host
+// buffers (also not templates so non-host nonlinearMatvec lambdas never cross
+// into device instantiation).
 inline void set_zero(amrex::Real *AMREX_RESTRICT out, const int n) {
-  parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) { out[i] = 0.0; });
+  parallel_for_host_1d(n, [=](int i) { out[i] = 0.0; });
 }
 
 inline void perturb(const amrex::Real *AMREX_RESTRICT base,
                     const amrex::Real *AMREX_RESTRICT direction,
                     amrex::Real epsilon, amrex::Real *AMREX_RESTRICT work,
                     const int n) {
-  parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) {
-    work[i] = base[i] + epsilon * direction[i];
-  });
+  parallel_for_host_1d(
+      n, [=](int i) { work[i] = base[i] + epsilon * direction[i]; });
 }
 
 inline void difference_quotient(const amrex::Real *AMREX_RESTRICT baseMatvec,
                                 amrex::Real invEpsilon,
                                 amrex::Real *AMREX_RESTRICT out, const int n) {
-  parallel_for_1d(n, [=] AMREX_GPU_DEVICE(int i) {
-    out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
-  });
+  parallel_for_host_1d(
+      n, [=](int i) { out[i] = (out[i] - baseMatvec[i]) * invEpsilon; });
 }
 
 template <typename NonlinearMatvec>
@@ -167,7 +165,7 @@ public:
     amrex::Real *const r = rhs;
     amrex::Real *const x = xLeft;
     amrex::Real *const m = matvec;
-    parallel_for_1d(nSolve, [=] AMREX_GPU_DEVICE(int i) {
+    parallel_for_host_1d(nSolve, [=](int i) {
       r[i] = 0;
       x[i] = 0;
       m[i] = 0;

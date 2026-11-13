@@ -91,8 +91,8 @@ inline std::string normalize_string_token(std::string name,
 inline amrex::Real dot_product_mpi(const amrex::Real* AMREX_RESTRICT a,
                                    const amrex::Real* AMREX_RESTRICT b,
                                    const int n, const MPI_Comm iComm) {
-  const amrex::Real c = deterministic_sum(
-      n, [=] AMREX_GPU_DEVICE(int i) -> amrex::Real { return a[i] * b[i]; });
+  const amrex::Real c = deterministic_host_sum(
+      n, [=](int i) -> amrex::Real { return a[i] * b[i]; });
 
   if (iComm == MPI_COMM_SELF) {
     return c;
@@ -130,7 +130,8 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void a_cross_b(T (&a)[3], T (&b)[3],
 }
 
 template <class T> inline void zero_array(T* arr, int nSize) {
-  parallel_for_1d(nSize, [=] AMREX_GPU_DEVICE(int i) { arr[i] = 0; });
+  for (int i = 0; i < nSize; ++i)
+    arr[i] = 0;
 }
 
 // rand1, rand2 are random numbers in [0,1].
@@ -147,10 +148,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void random_vector(
 }
 
 inline amrex::Real l2_norm(amrex::Real* vec, int n) {
-  const amrex::Real sum =
-      deterministic_sum(n, [=] AMREX_GPU_DEVICE(int i) -> amrex::Real {
-        return vec[i] * vec[i];
-      });
+  amrex::Real sum = 0.0;
+  for (int i = 0; i < n; ++i)
+    sum += vec[i] * vec[i];
   return sqrt(sum);
 }
 

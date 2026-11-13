@@ -1038,19 +1038,31 @@ public:
   void convert_3d_to_1d(const amrex::MultiFab &MF, amrex::Real *const p,
                         int iLev);
 
-  // Where the unknowns of a linear system (the implicit E field, or the
-  // cell-centered divE correction) are stored in the 1D solver vectors. The
-  // vector holds the boxes in MFIter order; inside a box, the components one
-  // after the other, each with the selected nodes (cells) in x-fastest order.
-  // localIdx is the position of a node within its box and component block,
-  // or -1 if the node is not an unknown.
-  struct LinearSystemLayout {
-    amrex::iMultiFab localIdx;
-    amrex::Vector<int> nBoxUnknown; // per local box
+  // Where the unknowns of the nodal linear system (the implicit E field) are
+  // stored in the 1D solver vectors. The vector holds the boxes in MFIter
+  // order; inside a box, the components one after the other, each with the
+  // owned active nodes grouped into contiguous x-runs in x-fastest order.
+  struct NodeSystemLayout {
+    struct XRun {
+      int iBeg;
+      int iEnd;
+      int j;
+      int k;
+      int vecOffset;
+    };
+    struct BoxLayout {
+      std::vector<XRun> runs;
+      int nUnknown = 0;
+    };
+    amrex::BoxArray ba;
+    amrex::DistributionMapping dm;
+    bool skipAllBody = false;
+    bool skipInterior = false;
+    std::vector<BoxLayout> boxes;
   };
-  amrex::Vector<LinearSystemLayout> nodeLayout, centerLayout;
-  const LinearSystemLayout &linear_system_layout(const amrex::MultiFab &MF,
-                                                 int iLev);
+  std::vector<NodeSystemLayout> nodeLayout;
+  const NodeSystemLayout &node_system_layout(const amrex::MultiFab &MF,
+                                             int iLev);
 
   void smooth_E(amrex::MultiFab &mfE, int iLev);
   void project_down_E();
