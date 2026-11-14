@@ -542,12 +542,14 @@ public:
     std::string restartDir = component + "/restartIN/";
 
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      amrex::VisMF::Read(nodeFluid[iLev], restartDir + gridName +
-                                              "_Interface_nodeFluid" +
-                                              lev_string(iLev));
-      amrex::VisMF::Read(centerB[iLev], restartDir + gridName +
-                                            "_Interface_centerB" +
-                                            lev_string(iLev));
+      amrex::VisMF::Read(
+          nodeFluid[iLev],
+          restart_file_name(restartDir + gridName + "_Interface_nodeFluid",
+                            iLev));
+      amrex::VisMF::Read(
+          centerB[iLev],
+          restart_file_name(restartDir + gridName + "_Interface_centerB",
+                            iLev));
     }
     isnodeFluidReady = true;
   }

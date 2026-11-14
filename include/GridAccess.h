@@ -79,6 +79,9 @@ public:
   bool has_refinement_regions() const { return grid.has_refinement_regions(); }
   amrex::BoxArray get_base_grid() const { return grid.get_base_grid(); }
   std::string lev_string(int iLev) const { return grid.lev_string(iLev); }
+  std::string restart_file_name(const std::string& baseName, int iLev) const {
+    return grid.restart_file_name(baseName, iLev);
+  }
   bool is_inside_domain(const amrex::Real* loc) const {
     return grid.is_inside_domain(loc);
   }
