@@ -173,6 +173,7 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       solver.solve(iLev, reportSolver);
       BL_PROFILE_VAR_STOP(solve);
 
+      centerPhi[iLev].setVal(0.0);
       convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
       centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
     }
@@ -232,6 +233,7 @@ void Pic::divE_accurate_matvec(const Real* vecIn, Real* vecOut, int iLev) {
   MultiFab& inMF = divEInMF[iLev];
   MultiFab& outMF = divEOutMF[iLev];
 
+  inMF.setVal(0.0);
   convert_1d_to_3d(vecIn, inMF, iLev);
   divE_accurate_matvec_impl(inMF, outMF, iLev);
   convert_3d_to_1d(outMF, vecOut, iLev);
@@ -240,6 +242,7 @@ void Pic::divE_accurate_matvec(const Real* vecIn, Real* vecOut, int iLev) {
 //==========================================================
 void Pic::divE_accurate_matvec(const MultiFab& inMF, MultiFab& outMF,
                                int iLev) {
+  divEInMF[iLev].setVal(0.0);
   MultiFab::Copy(divEInMF[iLev], inMF, 0, 0, 1, 0);
   divE_accurate_matvec_impl(divEInMF[iLev], outMF, iLev);
 }
