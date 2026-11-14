@@ -27,7 +27,7 @@ runs:
         # Configure a debug, unoptimized build so the compiler emits every
         # warning it can. This build is compile-only: nothing here is ever used
         # to run the tests.
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -debug -O0
+        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -debug -O0 -simd=x86-64-v3
 
         # Compile, capturing ALL output (both stdout and stderr) to a log file.
         LOG="warning_check_build.log"

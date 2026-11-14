@@ -59,9 +59,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: SWMF/PC/FLEKS/bin/FLEKS.exe
-          key: ${{ runner.os }}-fleks-standalone-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
+          key: ${{ runner.os }}-fleks-standalone-v2-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
           restore-keys: |
-            ${{ runner.os }}-fleks-standalone-
+            ${{ runner.os }}-fleks-standalone-v2-
 
       - name: Build Standalone FLEKS
         if: steps.cache-standalone.outputs.cache-hit != 'true'
@@ -97,7 +97,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/perf_base/FLEKS.exe
-          key: ${{ runner.os }}-fleks-perf-base-v1-${{ steps.setup.outputs.amrex-hash }}-${{ steps.base.outputs.sha }}
+          key: ${{ runner.os }}-fleks-perf-base-v2-${{ steps.setup.outputs.amrex-hash }}-${{ steps.base.outputs.sha }}
 
       - name: Build the base executable
         if: steps.cache-base.outputs.cache-hit != 'true'
@@ -105,15 +105,17 @@ jobs:
         run: |
           set -euo pipefail
           HEAD_SHA=$(git rev-parse HEAD)
+          git checkout -- src/Makefile
           git checkout --detach "${{ steps.base.outputs.sha }}"
           # The generated UserSource.h must match the base commit's sources;
           # the PR build used the same default user source.
-          ./Config.pl -u=Default
+          ./Config.pl -u=Default -simd=x86-64-v3
           make EXE -j$(nproc)
           mkdir -p "$RUNNER_TEMP/perf_base"
           cp bin/FLEKS.exe "$RUNNER_TEMP/perf_base/FLEKS.exe"
+          git checkout -- src/Makefile
           git checkout --detach "$HEAD_SHA"
-          ./Config.pl -u=Default
+          ./Config.pl -u=Default -simd=x86-64-v3
           # The standalone-build cache saves bin/FLEKS.exe at the end of the
           # job under the PR's key, so put the PR executable back.
           cp "$RUNNER_TEMP/FLEKS_pr.exe" bin/FLEKS.exe
