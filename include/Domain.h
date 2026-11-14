@@ -87,6 +87,7 @@ private:
   // Set from init()'s argument, not from a command.
   bool isStandalone = false;
 
+  static PicSolverMode parse_solver_mode(const std::string &modeStr);
   void set_field_solver_mode(const std::string &modeStr);
 
   ReadParam readParam;

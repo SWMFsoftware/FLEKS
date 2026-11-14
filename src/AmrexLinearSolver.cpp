@@ -16,15 +16,22 @@ void AmrexLinearSolver::ensure_mask() {
   m_dotMask.define(ba, dm, 1, 0);
   const bool skipAllBody = m_pic->is_body_linetied();
   const bool skipInterior = m_pic->is_body_conducting();
+  const bool isMultiSolver = m_pic->is_multi_solver();
   const auto& statusMF = m_pic->node_status(m_iLev);
+  const auto& solvMF = m_pic->node_solver_status(m_iLev);
 
   for (MFIter mfi(m_dotMask, doTiling); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.tilebox();
     const Array4<int>& mskArr = m_dotMask[mfi].array();
     const Array4<int const>& nodeArr = statusMF[mfi].const_array();
+    const Array4<int const> nsArr =
+        isMultiSolver ? solvMF[mfi].const_array() : Array4<int const>{};
     ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       const int st = nodeArr(i, j, k);
-      const bool isActive = bit::is_owner(st) &&
+      const bool isActiveSolver =
+          !isMultiSolver ||
+          ((nsArr(i, j, k) & solver_bit::kTouchImplicit) != 0);
+      const bool isActive = isActiveSolver && bit::is_owner(st) &&
                             !(skipAllBody && bit::is_body(st)) &&
                             !(skipInterior && bit::is_body_interior(st));
       mskArr(i, j, k) = isActive ? 1 : 0;
@@ -386,6 +393,41 @@ void AmrexDivESolver::ensure_mask() {
   }
   if (m_pic->use_body() && !m_pic->is_body_insulating()) {
     mask_body(m_dotMask, m_pic->cell_status(m_iLev));
+  }
+  if (m_pic->is_multi_solver()) {
+    const int implCode = static_cast<int>(PicSolverMode::Implicit);
+    const int explCode = static_cast<int>(PicSolverMode::Explicit);
+    const int jMinOff = (nDim > 1) ? -1 : 0;
+    const int jMaxOff = (nDim > 1) ? 1 : 0;
+    const int kMinOff = (nDim > 2) ? -1 : 0;
+    const int kMaxOff = (nDim > 2) ? 1 : 0;
+    const auto& csMF = m_pic->cell_solver(m_iLev);
+    for (MFIter mfi(m_dotMask, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<int>& mskArr = m_dotMask[mfi].array();
+      const Array4<int const>& csArr = csMF[mfi].const_array();
+      const Box csBox = csMF[mfi].box();
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        bool fullPicPatch = true;
+        for (int kk = k + kMinOff; kk <= k + kMaxOff && fullPicPatch; ++kk) {
+          for (int jj = j + jMinOff; jj <= j + jMaxOff && fullPicPatch; ++jj) {
+            for (int ii = i - 1; ii <= i + 1; ++ii) {
+              const IntVect idx(AMREX_D_DECL(ii, jj, kk));
+              if (csBox.contains(idx)) {
+                const int m = csArr(idx);
+                if (m != implCode && m != explCode) {
+                  fullPicPatch = false;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (!fullPicPatch) {
+          mskArr(i, j, k) = 0;
+        }
+      });
+    }
   }
 }
 

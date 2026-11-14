@@ -11,6 +11,33 @@
 
 using namespace amrex;
 
+namespace {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_divE_active_fullpic_cell(
+    const Array4<int const>& csArr, const Box& csBox, int i, int j,
+    int k) noexcept {
+  const int implCode = static_cast<int>(PicSolverMode::Implicit);
+  const int explCode = static_cast<int>(PicSolverMode::Explicit);
+  const int jMinOff = (nDim > 1) ? -1 : 0;
+  const int jMaxOff = (nDim > 1) ? 1 : 0;
+  const int kMinOff = (nDim > 2) ? -1 : 0;
+  const int kMaxOff = (nDim > 2) ? 1 : 0;
+  for (int kk = k + kMinOff; kk <= k + kMaxOff; ++kk) {
+    for (int jj = j + jMinOff; jj <= j + jMaxOff; ++jj) {
+      for (int ii = i - 1; ii <= i + 1; ++ii) {
+        const IntVect idx(AMREX_D_DECL(ii, jj, kk));
+        if (csBox.contains(idx)) {
+          const int m = csArr(idx);
+          if (m != implCode && m != explCode) {
+            return false;
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
+} // namespace
+
 //==========================================================
 void Pic::divE_correction() {
   std::string nameFunc = "Pic::divE_correction";
@@ -125,6 +152,22 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
       mask_body(residual, cell_status(iLev));
     }
 
+    if (is_multi_solver()) {
+      const auto& csMF = cell_solver(iLev);
+      for (MFIter mfi(residual); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real> resArr = residual[mfi].array();
+        const Array4<int const> csArr = csMF[mfi].const_array();
+        const Box csBox = csMF[mfi].box();
+        parallel_for_omp(
+            box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              if (!is_divE_active_fullpic_cell(csArr, csBox, i, j, k)) {
+                resArr(i, j, k) = 0.0;
+              }
+            });
+      }
+    }
+
     if (fsolver.divESolverBackend == ESolverBackend::AmrexGMRES) {
       if (static_cast<int>(amrexDivESolver.size()) < n_lev_max()) {
         amrexDivESolver.resize(n_lev_max());
@@ -196,14 +239,25 @@ void Pic::divE_accurate_matvec_impl(MultiFab& inMF, MultiFab& outMF, int iLev) {
   constexpr int kMin = -1, kMax = 1;
 #endif
 
+  const bool isMultiSolver = is_multi_solver();
+  const auto* csMF = isMultiSolver ? &cell_solver(iLev) : nullptr;
+
   for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Array4<Real> lArr = outMF[mfi].array();
     const Array4<Real const> rArr = inMF[mfi].const_array();
     const Array4<RealCMM const> mmArr = centerMM[iLev][mfi].const_array();
+    const Array4<int const> csArr =
+        isMultiSolver ? (*csMF)[mfi].const_array() : Array4<int const>{};
+    const Box csBox = isMultiSolver ? (*csMF)[mfi].box() : Box{};
 
     parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (isMultiSolver &&
+          !is_divE_active_fullpic_cell(csArr, csBox, i, j, k)) {
+        lArr(i, j, k) = rArr(i, j, k);
+        return;
+      }
       Real sum = 0.0;
 #if (AMREX_SPACEDIM == 2)
       for (int dj = jMin; dj <= jMax; ++dj) {

@@ -628,6 +628,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   const int nD = get_dim();
 #endif
   const bool useBody = (grid != nullptr && grid->use_body());
+  const bool isMultiSolver = (grid != nullptr && grid->is_multi_solver_grid());
   const LevelGeomBox lb = make_level_geom_box(iLev);
   const BoxArray& ba = this->ParticleBoxArray(iLev);
 
@@ -635,13 +636,19 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     ActiveRegionBox ab;
     Array4<Real const> phiArr;
     Array4<int const> status;
+    Array4<int const> csArr;
+    Box csBox;
   };
   const auto fabTable =
       build_local_fab_table(cell_status(iLev), [&](const MFIter& mfi) {
         const Box& bx = cell_status(iLev)[mfi].box();
-        return DivEFabCtx{ make_active_region_box(lb, ba[mfi.index()], bx),
-                           phiMF[iLev][mfi].const_array(),
-                           cell_status(iLev)[mfi].const_array() };
+        return DivEFabCtx{
+          make_active_region_box(lb, ba[mfi.index()], bx),
+          phiMF[iLev][mfi].const_array(), cell_status(iLev)[mfi].const_array(),
+          isMultiSolver ? grid->cell_solver(iLev)[mfi].const_array()
+                        : Array4<int const>{},
+          isMultiSolver ? grid->cell_solver(iLev)[mfi].box() : Box{}
+        };
       });
 
   parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int /*ord*/) {
@@ -649,6 +656,10 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     const Array4<Real const>& phiArr = ctx.phiArr;
     const Array4<int const>& status = ctx.status;
     const ActiveRegionBox& ab = ctx.ab;
+    const Array4<int const>& csArr = ctx.csArr;
+    const Box csBox = ctx.csBox;
+    const int implCode = static_cast<int>(PicSolverMode::Implicit);
+    const int explCode = static_cast<int>(PicSolverMode::Explicit);
 
     AoS& particles = item.ptile->GetArrayOfStructs();
 
@@ -687,6 +698,29 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
                 isBoundaryPhysicalCell = true;
             }
         if (isBoundaryPhysicalCell)
+          continue;
+      }
+
+      if (isMultiSolver) {
+        bool nonFullPic = false;
+        const int izMax = (nDim > 2) ? 1 : 0;
+        const int iyMax = (nDim > 1) ? 1 : 0;
+        for (int iz = 0; iz <= izMax && !nonFullPic; ++iz) {
+          for (int iy = 0; iy <= iyMax && !nonFullPic; ++iy) {
+            for (int ix = 0; ix <= 1; ++ix) {
+              const IntVect cIdx(AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy,
+                                              loIdx[iz_] + iz));
+              if (csBox.contains(cIdx)) {
+                const int m = csArr(cIdx);
+                if (m != implCode && m != explCode) {
+                  nonFullPic = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (nonFullPic)
           continue;
       }
 

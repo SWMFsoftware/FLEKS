@@ -358,6 +358,33 @@ Select the electromagnetic field solver mode for FLEKS:
   without updating the electromagnetic fields.
 </command>
 
+<command name="REGIONSOLVER" alias="REGIONSOLVER_FLEKS0,REGIONSOLVER_FLEKS1,REGIONSOLVER_FLEKS2" multiple="T">
+  <parameter name="sRegion" type="string" required="T"/>
+  <parameter name="fieldSolverMode" type="string" input="select" required="T">
+    <option value="implicit"/>
+    <option value="explicit"/>
+    <option value="hybrid"/>
+    <option value="none"/>
+  </parameter>
+  <parameter name="nBlendCell" type="integer" default="0"/>
+  <parameter name="fieldIntegrator" type="string" default="default"/>
+  <parameter name="nSubcycle" type="integer" default="-1"/>
+
+#REGIONSOLVER
++leftBox			sRegion
+implicit			fieldSolverMode
+0				nBlendCell
+default				fieldIntegrator
+-1				nSubcycle
+
+Assign a field solver mode to a spatial region defined by #REGION (the last matching
+REGIONSOLVER command wins; uncovered cells use #FIELDSOLVER). Boxes are aligned to the
+blocking factor along region boundaries. Optional parameters:
+- nBlendCell: cosine EMF transition width in cells (0 = sharp block-face seam).
+- fieldIntegrator: per-solver integrator override (rk4, ssprk3, leapfrog, pc).
+- nSubcycle: per-solver subcycle count override.
+</command>
+
 <command name="COMOVING" alias="COMOVING_FLEKS0,COMOVING_FLEKS1,COMOVING_FLEKS2" multiple="T">
   <parameter name="solveFieldInCoMov" type="logical" default="F"/>
   <parameter name="nSmoothBackGroundU" type="integer" default="0"/>

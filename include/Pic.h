@@ -30,13 +30,6 @@
 class ParticleTracker;
 class Pic;
 
-enum class PicSolverMode {
-  Implicit, // Semi-implicit full PIC (default)
-  Explicit, // Explicit full PIC
-  Hybrid,   // Hybrid PIC (fluid electrons + kinetic ions)
-  None      // No field solve (particle tracer / test particles)
-};
-
 class FieldSolver {
 public:
   amrex::Real theta;
@@ -254,13 +247,17 @@ private:
   bool peStateInitialized_ = false; // centerPeState holds a valid field
 
   bool useExplicitPIC = false;
+  bool useExplicitPredictorCorrector = false;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
   bool reportParticleQuality = false;
 
   // Command presence tracking flags for cross-solver validation.
   bool hasFieldIntegrator_ = false;
+  bool hasExplicitIntegrator_ = false;
+  bool hasHybridIntegrator_ = false;
   bool hasFieldSubcycle_ = false;
+  bool hasDivE_ = false;
   bool hasDiscretization_ = false;
   bool hasEFieldSolver_ = false;
   bool hasHallTerm_ = false;
@@ -382,13 +379,21 @@ private:
   int iTot;
 
   // Hybrid species IDs
-  // iElectron_ (-1 if none); kineticSpecies_ = non-electron species.
+  // iElectron_ (-1 if none); kineticSpecies_ = kinetic particle species;
+  // ionSpecies_ = kinetic ion species (positive charge).
   int iElectron_ = -1;
   std::vector<int> kineticSpecies_;
+  std::vector<int> ionSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
   // Ion moments at J^{n-1/2}; interpolated with current nodePlasma
   // by hstep inside assemble_ohm_E.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
+  // Mixed Full-PIC + Hybrid coupling arrays (empty in single-solver runs).
+  amrex::Vector<amrex::MultiFab> nodeIonMoments;
+  amrex::Vector<amrex::MultiFab> nodeIonMomentsPrev;
+  amrex::Vector<amrex::MultiFab> nodeEmfUnified;
+  amrex::Vector<amrex::MultiFab> nodeEPush;
+  amrex::Vector<amrex::MultiFab> nodeBPush;
   // ---- Staggered hybrid solver fields ----
   amrex::Vector<amrex::MultiFab> nodeEstage; // E at a stage B (nodal)
   amrex::Vector<amrex::MultiFab> nodeJ;      // total current J = curl(B)/(4*pi)
@@ -496,6 +501,8 @@ private:
   amrex::Real coefSmoothMoments = 0.5;
 
   std::string fieldIntegrator = "ssprk3"; // B integrator
+  std::string hybridFieldIntegrator = "ssprk3";
+  std::string explicitFieldIntegrator = "leapfrog";
   bool useRK4 = false;
   bool usePredictorCorrector = false;
 
@@ -801,6 +808,11 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
+    nodeIonMoments.resize(n_lev_max());
+    nodeIonMomentsPrev.resize(n_lev_max());
+    nodeEmfUnified.resize(n_lev_max());
+    nodeEPush.resize(n_lev_max());
+    nodeBPush.resize(n_lev_max());
 
     solverVecMF.resize(n_lev_max());
     solverMatvecMF.resize(n_lev_max());
@@ -860,13 +872,44 @@ public:
     return fieldSolverMode != PicSolverMode::None;
   }
 
+  // Regional multi-solver queries (#FIELDSOLVER + #REGIONSOLVER).
+  bool has_solver(PicSolverMode mode) const {
+    return grid.has_active_solver(mode);
+  }
+  bool has_full_pic() const {
+    return has_solver(PicSolverMode::Implicit) ||
+           has_solver(PicSolverMode::Explicit);
+  }
+  bool is_multi_solver() const { return grid.is_multi_solver_grid(); }
+
+  const amrex::MultiFab &ion_moments_mf(int iLev) const {
+    return (has_solver(PicSolverMode::Hybrid) && has_full_pic())
+               ? nodeIonMoments[iLev]
+               : nodePlasma[nSpecies][iLev];
+  }
+  amrex::MultiFab &ion_moments_mf(int iLev) {
+    return (has_solver(PicSolverMode::Hybrid) && has_full_pic())
+               ? nodeIonMoments[iLev]
+               : nodePlasma[nSpecies][iLev];
+  }
+  const amrex::MultiFab &ion_moments_prev_mf(int iLev) const {
+    return (has_solver(PicSolverMode::Hybrid) && has_full_pic())
+               ? nodeIonMomentsPrev[iLev]
+               : nodePlasmaPrev[nSpecies][iLev];
+  }
+  amrex::MultiFab &ion_moments_prev_mf(int iLev) {
+    return (has_solver(PicSolverMode::Hybrid) && has_full_pic())
+               ? nodeIonMomentsPrev[iLev]
+               : nodePlasmaPrev[nSpecies][iLev];
+  }
+
   // Returns the cell-centered coarse-to-fine interpolater to use.  For the
-  // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
-  // 2nd-order conservative with slope limiting) for higher accuracy at
-  // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
-  // (cell_bilinear_interp).
+  // hybrid solver (or curl upwind B), uses CellConservativeLinear
+  // (lincc_interp, 2nd-order conservative with slope limiting) for higher
+  // accuracy at coarse-fine interfaces.  For the full-PIC solver, keeps
+  // CellBilinear (cell_bilinear_interp).
   amrex::Interpolater *get_cell_interp() const {
-    return (useHybridPIC || useCurlUpwindB)
+    return (has_solver(PicSolverMode::Hybrid) || useCurlUpwindB)
                ? static_cast<amrex::Interpolater *>(&amrex::lincc_interp)
                : static_cast<amrex::Interpolater *>(
                      &amrex::cell_bilinear_interp);
@@ -929,7 +972,8 @@ public:
   void fill_intrinsic_B();
   // Regional resistivity / hyper-resistivity setup and update methods.
   void set_region_shapes(const amrex::Vector<std::shared_ptr<Shape> > &shapes) {
-    if (useHybridPIC && (hasRegionalResistivity_ || hasRegionalHyper_)) {
+    if (has_solver(PicSolverMode::Hybrid) &&
+        (hasRegionalResistivity_ || hasRegionalHyper_)) {
       regionShapes = shapes;
     }
   }
@@ -1074,7 +1118,7 @@ public:
 
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   void smooth_moments();
-  void update_B_hybrid();
+  void update_B_hybrid(amrex::Vector<amrex::MultiFab> *emfAvgOut = nullptr);
   void calc_hybrid_dt_and_subcycle(amrex::Real &dtNext, int &nSubNext,
                                    bool doReport);
   // Largest damping rate sum_d 2 a_d / dx_d of the #HYBRIDUPWIND term on
@@ -1120,7 +1164,9 @@ public:
       amrex::Vector<amrex::MultiFab> &nodeEmf, amrex::Real timeOverride = -1.0);
   // Number of ghost layers advanced by the Faraday stage update on iLev.
   int faraday_ngrow(int iLev) const {
-    return ((useHybridPIC || useCurlUpwindB) && iLev > 0) ? 1 : 0;
+    return ((has_solver(PicSolverMode::Hybrid) || useCurlUpwindB) && iLev > 0)
+               ? 1
+               : 0;
   }
   // True when Bz does not enter div(B), i.e. when the grid has no z extent:
   // either a true-2D AMReX build or a 3D build with a single cell in z
@@ -1142,8 +1188,9 @@ public:
   //-------------Explicit Full PIC solver (kinetic ions + kinetic electrons)---
   void advance_explicit_full_pic();
   // Subcycled Maxwell advance over dt with the current J in every sub-step.
-  void update_EB_explicit_leapfrog(amrex::Real dt, int nSub,
-                                   const amrex::Vector<amrex::MultiFab> &J);
+  void update_EB_explicit_leapfrog(
+      amrex::Real dt, int nSub, const amrex::Vector<amrex::MultiFab> &J,
+      amrex::Vector<amrex::MultiFab> *emfAvgOut = nullptr);
   // Push the kinetic species (pushStage as in Particles::mover) and set J to
   // their charge-conserving current, smoothed with #SMOOTHJ. trialOnly: the
   // particles are not changed.
@@ -1194,6 +1241,15 @@ public:
   void add_electron_ion_heating(int iLev, amrex::Real dt);
 
   //-------------Electric field solver end-------------
+
+  //-------------Spatial multi-solver coupling (#REGIONSOLVER)---------------
+  void advance_coupled_solvers(bool doReport);
+  void update_coupled_dt(bool doReport);
+  void deposit_ion_moments(bool copyToOld = false, bool trialOnly = false,
+                           amrex::Real dtTrial = 0.0);
+  void refresh_hybrid_electron_collar();
+  void sync_fullpic_Pe_to_hybrid();
+  void synthesize_hybrid_electron_moments();
 
   void update_B();
 

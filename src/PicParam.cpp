@@ -276,6 +276,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#PRESPLITTING") {
     param.read_var("doPreSplitting", pInfo.doPreSplitting);
   } else if (command == "#DIVE") {
+    hasDivE_ = true;
     param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {
       param.read_var("nDivECorrection", nDivECorrection);
@@ -699,6 +700,23 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#FIELDINTEGRATOR") {
     hasFieldIntegrator_ = true;
     param.read_var("fieldIntegrator", fieldIntegrator);
+    std::string lower = fieldIntegrator;
+    for (char& c : lower)
+      c = std::tolower(c);
+    fieldIntegrator = lower;
+    if (lower == "leapfrog" || lower == "pc" || lower == "rk2") {
+      explicitFieldIntegrator = lower;
+      hasExplicitIntegrator_ = true;
+    } else if (lower == "rk4" || lower == "ssprk3" || lower == "rk4-pc" ||
+               lower == "pc-rk4" || lower == "ssprk3-pc" ||
+               lower == "pc-ssprk3") {
+      hybridFieldIntegrator = lower;
+      hasHybridIntegrator_ = true;
+    } else {
+      Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+            "': expected 'leapfrog', 'pc', 'rk2', 'rk4', 'ssprk3', "
+            "'rk4-pc', or 'ssprk3-pc'.");
+    }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
@@ -870,7 +888,7 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
 
   // In hybrid PIC, only centerB is evolved; wall BCs constrain B and close
   // the ghost ring for E.
-  if (useHybridPIC) {
+  if (has_solver(PicSolverMode::Hybrid)) {
     bool hasWall = false;
     for (int d = 0; d < nDim && !hasWall; ++d) {
       for (int side = 0; side < 2; ++side) {
@@ -905,16 +923,61 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
 
 //==========================================================
 void Pic::post_process_param() {
+  const bool hasImpl = has_solver(PicSolverMode::Implicit);
+  const bool hasExpl = has_solver(PicSolverMode::Explicit);
+  const bool hasHyb = has_solver(PicSolverMode::Hybrid);
+  const bool hasFullPic = hasImpl || hasExpl;
+  useHybridPIC = hasHyb && !hasFullPic;
+  useExplicitPIC = hasExpl;
+  solveEM = hasImpl;
+  if (!hasDivE_) {
+    doCorrectDivE = hasImpl;
+  }
+
+  // Apply optional per-region overrides from #REGIONSOLVER.
+  for (const auto& spec : get_region_solvers()) {
+    if (!spec.fieldIntegrator.empty() && spec.fieldIntegrator != "default") {
+      const std::string& integ = spec.fieldIntegrator;
+      if (spec.solver == PicSolverMode::Explicit) {
+        if (integ != "leapfrog" && integ != "pc" && integ != "rk2")
+          Abort("Invalid #REGIONSOLVER fieldIntegrator '" + integ +
+                "' for explicit solver.");
+        explicitFieldIntegrator = integ;
+        hasExplicitIntegrator_ = true;
+      } else if (spec.solver == PicSolverMode::Hybrid) {
+        if (integ != "rk4" && integ != "ssprk3" && integ != "rk4-pc" &&
+            integ != "pc-rk4" && integ != "ssprk3-pc" && integ != "pc-ssprk3")
+          Abort("Invalid #REGIONSOLVER fieldIntegrator '" + integ +
+                "' for hybrid solver.");
+        hybridFieldIntegrator = integ;
+        hasHybridIntegrator_ = true;
+      } else {
+        Abort("Invalid #REGIONSOLVER fieldIntegrator '" + integ +
+              "': only explicit and hybrid solvers use fieldIntegrator.");
+      }
+    }
+    if (spec.nSubcycle > 0) {
+      if (spec.solver == PicSolverMode::Hybrid) {
+        nBSubcycle = spec.nSubcycle;
+      } else if (spec.solver == PicSolverMode::Explicit) {
+        nEMSubcycle = spec.nSubcycle;
+      } else {
+        Abort("Invalid #REGIONSOLVER nSubcycle: only explicit and hybrid "
+              "solvers support subcycling.");
+      }
+    }
+  }
+
   // Validate raw user input before deriving defaults or converting units.
   // These values are used in denominators and dispatch solver branches, so
   // silently correcting them can produce a run with different physics than
   // the input deck describes.
-  if (nSubcycle < 1)
+  if (nSubcycle < 1 || nBSubcycle < 1 || nEMSubcycle < 1)
     Abort("Invalid #FIELDSUBCYCLE: nSubcycle must be at least 1.");
-  if (isAutoSubcycle && !useHybridPIC)
+  if (isAutoSubcycle && !hasHyb)
     Abort("Auto-subcycling (#FIELDSUBCYCLE isAutoSubcycle=T) is currently "
-          "only supported for the hybrid PIC solver.");
-  if (isAutoSubcycle && nBSubcycleMax < nSubcycle)
+          "only supported when a hybrid PIC solver is active.");
+  if (isAutoSubcycle && nBSubcycleMax < nBSubcycle)
     Abort("Invalid #FIELDSUBCYCLE: nSubcycleMax must be >= nSubcycle.");
   if (electronGamma <= 0)
     Abort("Invalid #ELECTRONTEMPERATURE: electronGamma must be > 0.");
@@ -939,10 +1002,9 @@ void Pic::post_process_param() {
   }
 
   if (useElectronPressureEq) {
-    if (!useHybridPIC)
+    if (!hasHyb)
       Abort("Invalid #ELECTRONPRESSURE: the evolved electron pressure "
-            "equation is only supported by the hybrid PIC solver "
-            "(#HYBRIDPIC T).");
+            "equation requires an active hybrid PIC solver.");
     // gamma_e - 1 multiplies both the pdV term and every source term, so an
     // isothermal index would silently reduce the equation to pure advection.
     if (electronGamma <= 1.0)
@@ -1013,9 +1075,9 @@ void Pic::post_process_param() {
       Abort("Invalid #BODY: radius must be positive.");
 
     if (body_particle_bc() == ParticleBC::ambipolar) {
-      if (useHybridPIC)
+      if (!hasFullPic)
         Abort("Invalid #BODYBOUNDARY: particleBoundary 'ambipolar' requires "
-              "kinetic electrons and is not supported with #HYBRIDPIC.");
+              "kinetic electrons and is not supported with pure hybrid PIC.");
       bool hasNegativeSpecies = false;
       if (fi) {
         for (int i = 0; i < fi->get_nS(); ++i) {
@@ -1074,14 +1136,14 @@ void Pic::post_process_param() {
   hasRegionalHyper_ = !regionalHyperResistivityConfigs.empty();
 
   if (hasRegionalResistivity_ || hasRegionalHyper_) {
-    if (!useHybridPIC) {
+    if (!hasHyb) {
       Abort("Invalid configuration: #REGIONRESISTIVITY and "
             "#REGIONHYPERRESISTIVITY "
-            "are only supported for the hybrid PIC solver (#HYBRIDPIC T).");
+            "require an active hybrid PIC solver.");
     }
   }
 
-  if (useHybridPIC) {
+  if (hasHyb) {
     if (hasRegionalResistivity_)
       nodeEtaRegional.resize(n_lev_max());
     if (hasRegionalHyper_)
@@ -1172,96 +1234,122 @@ void Pic::post_process_param() {
   // The charge comes from fi because the particle containers do not exist yet
   // when the parameters are post-processed.
   kineticSpecies_.clear();
+  ionSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
-    if (useHybridPIC && fi->get_species_charge(i) < 0) {
+    const Real q = fi->get_species_charge(i);
+    if (q < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
+      if (!useHybridPIC) {
+        kineticSpecies_.push_back(i);
+      }
     } else {
       kineticSpecies_.push_back(i);
+      if (q > 0)
+        ionSpecies_.push_back(i);
     }
   }
 
+  if (hasFullPic && hasHyb && iElectron_ < 0) {
+    Abort("Invalid #PLASMA species: coupling Full-PIC and Hybrid regions "
+          "requires a negative-charge electron species.");
+  }
+
   // Cross-solver command validation
-  if (fieldSolverMode != PicSolverMode::Implicit) {
+  if (!hasImpl) {
     if (hasDiscretization_)
-      Abort("Invalid command: #DISCRETIZATION is only valid for implicit full "
-            "PIC (#FIELDSOLVER implicit).");
+      Abort("Invalid command: #DISCRETIZATION requires an active implicit "
+            "full PIC solver (#FIELDSOLVER implicit or #REGIONSOLVER).");
     if (hasEFieldSolver_)
-      Abort("Invalid command: #EFIELDSOLVER is only valid for implicit full "
-            "PIC (#FIELDSOLVER implicit).");
+      Abort("Invalid command: #EFIELDSOLVER requires an active implicit "
+            "full PIC solver (#FIELDSOLVER implicit or #REGIONSOLVER).");
   }
 
-  if (fieldSolverMode != PicSolverMode::Hybrid) {
+  if (!hasHyb) {
     if (hasHallTerm_)
-      Abort("Invalid command: #HALLTERM is only valid for hybrid PIC "
-            "(#FIELDSOLVER hybrid).");
+      Abort("Invalid command: #HALLTERM requires an active hybrid PIC "
+            "solver (#FIELDSOLVER hybrid or #REGIONSOLVER).");
     if (hasResistivity_)
-      Abort("Invalid command: #RESISTIVITY is only valid for hybrid PIC "
-            "(#FIELDSOLVER hybrid).");
+      Abort("Invalid command: #RESISTIVITY requires an active hybrid PIC "
+            "solver (#FIELDSOLVER hybrid or #REGIONSOLVER).");
     if (hasHyperResistivity_)
-      Abort("Invalid command: #HYPERRESISTIVITY is only valid for hybrid PIC "
-            "(#FIELDSOLVER hybrid).");
+      Abort("Invalid command: #HYPERRESISTIVITY requires an active hybrid PIC "
+            "solver (#FIELDSOLVER hybrid or #REGIONSOLVER).");
     if (hasHybridUpwind_)
-      Abort("Invalid command: #HYBRIDUPWIND is only valid for hybrid PIC "
-            "(#FIELDSOLVER hybrid).");
+      Abort("Invalid command: #HYBRIDUPWIND requires an active hybrid PIC "
+            "solver (#FIELDSOLVER hybrid or #REGIONSOLVER).");
     if (hasElectronPressure_)
-      Abort("Invalid command: electron pressure commands (#ELECTRON*) are only "
-            "valid for hybrid PIC (#FIELDSOLVER hybrid).");
+      Abort("Invalid command: electron pressure commands (#ELECTRON*) "
+            "require an active hybrid PIC solver (#FIELDSOLVER hybrid or "
+            "#REGIONSOLVER).");
     if (hasMinimumDensity_)
-      Abort("Invalid command: #MINIMUMDENSITY is only valid for hybrid PIC "
-            "(#FIELDSOLVER hybrid).");
+      Abort("Invalid command: #MINIMUMDENSITY requires an active hybrid PIC "
+            "solver (#FIELDSOLVER hybrid or #REGIONSOLVER).");
   }
 
-  if (fieldSolverMode == PicSolverMode::Implicit ||
-      fieldSolverMode == PicSolverMode::None) {
+  if (!hasExpl && !hasHyb) {
     if (hasFieldIntegrator_)
-      Abort("Invalid command: #FIELDINTEGRATOR is only valid for explicit full "
-            "PIC or hybrid PIC.");
+      Abort("Invalid command: #FIELDINTEGRATOR is only valid when explicit "
+            "or hybrid PIC is active.");
     if (hasFieldSubcycle_)
-      Abort("Invalid command: #FIELDSUBCYCLE is only valid for explicit full "
-            "PIC or hybrid PIC.");
+      Abort("Invalid command: #FIELDSUBCYCLE is only valid when explicit "
+            "or hybrid PIC is active.");
+  }
+
+  if (useHybridPIC && hasDivE_ && doCorrectDivE) {
+    Abort("Invalid command: #DIVE is not used in pure hybrid PIC.");
   }
 
   // Convert input units to normalized code units and configure solver branches.
-  if (fieldSolverMode == PicSolverMode::Explicit) {
-    if (fieldIntegrator.empty())
-      fieldIntegrator = "leapfrog";
-    if (fieldIntegrator != "leapfrog" && fieldIntegrator != "pc" &&
-        fieldIntegrator != "rk2")
-      Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+  if (hasExpl) {
+    if (!hasExplicitIntegrator_)
+      explicitFieldIntegrator = "leapfrog";
+    if (explicitFieldIntegrator != "leapfrog" &&
+        explicitFieldIntegrator != "pc" && explicitFieldIntegrator != "rk2")
+      Abort("Invalid #FIELDINTEGRATOR '" + explicitFieldIntegrator +
             "' for explicit full PIC. Expected 'leapfrog' or 'pc'.");
-    usePredictorCorrector =
-        (fieldIntegrator == "pc" || fieldIntegrator == "rk2");
-    Print() << "  fieldSolverMode: explicit\n"
-            << "  fieldIntegrator: " << fieldIntegrator
-            << (usePredictorCorrector ? " (2nd-order Predictor-Corrector)"
-                                      : " (leapfrog)")
-            << "\n"
-            << "  fieldSubcycle: " << nSubcycle << "\n";
-  } else if (fieldSolverMode == PicSolverMode::Hybrid) {
-    if (fieldIntegrator.empty())
-      fieldIntegrator = "ssprk3";
-    if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3" &&
-        fieldIntegrator != "rk4-pc" && fieldIntegrator != "pc-rk4" &&
-        fieldIntegrator != "ssprk3-pc" && fieldIntegrator != "pc-ssprk3")
-      Abort("Invalid #FIELDINTEGRATOR '" + fieldIntegrator +
+    useExplicitPredictorCorrector =
+        (explicitFieldIntegrator == "pc" || explicitFieldIntegrator == "rk2");
+    if (!hasHyb) {
+      fieldIntegrator = explicitFieldIntegrator;
+      usePredictorCorrector = useExplicitPredictorCorrector;
+    }
+    Print() << "  activeSolver[explicit]: fieldIntegrator = "
+            << explicitFieldIntegrator
+            << (useExplicitPredictorCorrector
+                    ? " (2nd-order Predictor-Corrector)"
+                    : " (leapfrog)")
+            << ", nEMSubcycle = " << nEMSubcycle << "\n";
+  }
+
+  if (hasHyb) {
+    if (!hasHybridIntegrator_)
+      hybridFieldIntegrator = "ssprk3";
+    if (hybridFieldIntegrator != "rk4" && hybridFieldIntegrator != "ssprk3" &&
+        hybridFieldIntegrator != "rk4-pc" &&
+        hybridFieldIntegrator != "pc-rk4" &&
+        hybridFieldIntegrator != "ssprk3-pc" &&
+        hybridFieldIntegrator != "pc-ssprk3")
+      Abort("Invalid #FIELDINTEGRATOR '" + hybridFieldIntegrator +
             "' for hybrid PIC. Expected 'rk4', 'ssprk3', 'rk4-pc', or "
             "'ssprk3-pc'.");
     if (etaHyperMode != "si" && etaHyperMode != "grid")
       Abort("Invalid #HYPERRESISTIVITY etaHyperMode '" + etaHyperMode +
             "'. Expected 'si' or 'grid'.");
 
-    usePredictorCorrector =
-        (fieldIntegrator == "rk4-pc" || fieldIntegrator == "pc-rk4" ||
-         fieldIntegrator == "ssprk3-pc" || fieldIntegrator == "pc-ssprk3");
-    useRK4 = (fieldIntegrator == "rk4" || fieldIntegrator == "rk4-pc" ||
-              fieldIntegrator == "pc-rk4");
-    Print() << "  fieldSolverMode: hybrid\n"
-            << "  fieldIntegrator: " << fieldIntegrator
+    usePredictorCorrector = (hybridFieldIntegrator == "rk4-pc" ||
+                             hybridFieldIntegrator == "pc-rk4" ||
+                             hybridFieldIntegrator == "ssprk3-pc" ||
+                             hybridFieldIntegrator == "pc-ssprk3");
+    useRK4 =
+        (hybridFieldIntegrator == "rk4" || hybridFieldIntegrator == "rk4-pc" ||
+         hybridFieldIntegrator == "pc-rk4");
+    fieldIntegrator = hybridFieldIntegrator;
+    Print() << "  activeSolver[hybrid]: fieldIntegrator = "
+            << hybridFieldIntegrator
             << (usePredictorCorrector ? " (2nd-order Predictor-Corrector)" : "")
-            << "\n"
-            << "  fieldSubcycle: " << nSubcycle << "\n";
+            << ", nBSubcycle = " << nBSubcycle << "\n";
     if (electronTemperatureEV > 0) {
       Real unormSI = fi->get_unorm_si();
       electronTemperature = electronTemperatureEV * cUnitChargeSI /
@@ -1272,10 +1360,13 @@ void Pic::post_process_param() {
 
     if (rhoMinOhm <= 0)
       rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
-  } else if (fieldSolverMode == PicSolverMode::Implicit) {
-    Print() << "  fieldSolverMode: implicit (theta = " << fsolver.theta
-            << ")\n";
-  } else {
+  }
+
+  if (hasImpl) {
+    Print() << "  activeSolver[implicit]: theta = " << fsolver.theta << "\n";
+  }
+
+  if (!hasImpl && !hasExpl && !hasHyb) {
     Print() << "  fieldSolverMode: none (particle tracer / static field)\n";
   }
   // report_bc_warnings() is called by Domain after BC autofill and validation.
@@ -1366,7 +1457,7 @@ void Pic::convert_intrinsic_B() {
 
 //==========================================================
 void Pic::convert_resistivity() {
-  if (!useHybridPIC)
+  if (!has_solver(PicSolverMode::Hybrid))
     return;
 
   const Real Si2NoV = fi->get_Si2NoV();

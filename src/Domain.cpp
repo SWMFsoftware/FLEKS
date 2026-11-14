@@ -120,6 +120,7 @@ void Domain::init(Real time, const int iDomain, const std::string &paramString,
   prepare_grid_info(paramRegion, geometry, amrInfo);
 
   grid = std::make_unique<Grid>(geometry, amrInfo, nGst, gridID);
+  grid->set_default_solver_mode(fieldSolverMode);
 
   if (receiveICOnly) {
     fi = std::make_unique<FluidInterface>(*grid, "fi", useHybridPIC);
@@ -948,10 +949,23 @@ void Domain::read_construction_parameters() {
   // the caller rolls back the stream and read_param() reads the rest.
   std::string command;
   bool hasFieldSolver = false;
+  bool regionHasFullPIC = false;
   readParam.set_verbose(false);
   readParam.set_command_suffix(gridName);
   readParam.set_component(component);
   while (readParam.get_next_command(command)) {
+    if (command == "#REGIONSOLVER") {
+      std::string regionStr, modeStr;
+      readParam.read_var("sRegion", regionStr);
+      readParam.read_var("fieldSolverMode", modeStr);
+      const PicSolverMode rMode = parse_solver_mode(modeStr);
+      if (rMode == PicSolverMode::Implicit ||
+          rMode == PicSolverMode::Explicit) {
+        regionHasFullPIC = true;
+      }
+      continue;
+    }
+
     if (!is_construction_command(command))
       continue;
 
@@ -1038,6 +1052,13 @@ void Domain::read_construction_parameters() {
 
   if (doRestart && receiveICOnly)
     Abort("#RESTART and #RECEIVEICONLY cannot both be enabled.");
+
+  // If any subdomain uses a kinetic-electron full-PIC solver (implicit or
+  // explicit), FluidInterface must allocate the electron species slot even when
+  // #FIELDSOLVER defaults to hybrid.
+  if (regionHasFullPIC) {
+    useHybridPIC = false;
+  }
 }
 
 //========================================================
@@ -1047,6 +1068,7 @@ void Domain::read_param() {
   std::string command;
   bool refineSelectorsChanged = false;
   bool gridEfficiencyChanged = false;
+  bool regionSolverClearedInSession = false;
   readParam.set_verbose(false);
   bool sourceParamsSynced = false;
   readParam.set_command_suffix(gridName);
@@ -1208,6 +1230,39 @@ void Domain::read_param() {
       readParam.read_var("regions", s);
       refineSelectorsChanged |= grid->set_refine_region(iLev, s);
 
+    } else if (command == "#REGIONSOLVER") {
+      if (readingSessionUpdate && !regionSolverClearedInSession) {
+        grid->clear_region_solvers();
+        regionSolverClearedInSession = true;
+      }
+      RegionSolverSpec spec;
+      std::string modeStr;
+      readParam.read_var("sRegion", spec.regionStr);
+      readParam.read_var("fieldSolverMode", modeStr);
+      spec.solver = parse_solver_mode(modeStr);
+      bool progress = true;
+      while (progress) {
+        progress = false;
+        if (readParam.read_optional("nBlendCell", spec.nBlendCell)) {
+          progress = true;
+          if (spec.nBlendCell < 0)
+            Abort("Invalid #REGIONSOLVER: nBlendCell must be >= 0.");
+        }
+        if (readParam.read_optional("fieldIntegrator", spec.fieldIntegrator)) {
+          progress = true;
+          for (char &c : spec.fieldIntegrator)
+            c = std::tolower(c);
+        }
+        if (readParam.read_optional("nSubcycle", spec.nSubcycle)) {
+          progress = true;
+          if (spec.nSubcycle < 1)
+            Abort("Invalid #REGIONSOLVER: nSubcycle must be >= 1.");
+        }
+      }
+      grid->add_region_solver(spec);
+      if (readingSessionUpdate)
+        refineSelectorsChanged = true;
+
     } else if (command == "#TIMESTEP" || command == "#TIMESTEPPING") {
       bool useFixedDt;
       readParam.read_var("useFixedDt", useFixedDt);
@@ -1362,6 +1417,7 @@ void Domain::read_param() {
   // New #REGION definitions become available to selectors, but defining a
   // shape alone must not change the current AMR mesh.
   grid->rebuild_refine_regions(shapeList, shapeNames);
+  grid->rebuild_solver_regions(shapeList, shapeNames);
   if (readingSessionUpdate && (refineSelectorsChanged || gridEfficiencyChanged))
     grid->mark_refinement_modified();
 
@@ -1405,26 +1461,28 @@ void Domain::read_param() {
   pp.add("particles_nfiles", nFileParticle);
 }
 
-void Domain::set_field_solver_mode(const std::string &modeStr) {
+PicSolverMode Domain::parse_solver_mode(const std::string &modeStr) {
   std::string s = modeStr;
   for (char &c : s)
     c = std::tolower(c);
   if (s == "implicit" || s == "semi-implicit") {
-    fieldSolverMode = PicSolverMode::Implicit;
-    useHybridPIC = false;
+    return PicSolverMode::Implicit;
   } else if (s == "explicit" || s == "explicit-pic") {
-    fieldSolverMode = PicSolverMode::Explicit;
-    useHybridPIC = false;
+    return PicSolverMode::Explicit;
   } else if (s == "hybrid" || s == "hybrid-pic") {
-    fieldSolverMode = PicSolverMode::Hybrid;
-    useHybridPIC = true;
+    return PicSolverMode::Hybrid;
   } else if (s == "none" || s == "off" || s == "false") {
-    fieldSolverMode = PicSolverMode::None;
-    useHybridPIC = false;
+    return PicSolverMode::None;
   } else {
-    Abort("Invalid #FIELDSOLVER mode '" + modeStr +
+    Abort("Invalid #FIELDSOLVER / #REGIONSOLVER mode '" + modeStr +
           "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
+    return PicSolverMode::Implicit;
   }
+}
+
+void Domain::set_field_solver_mode(const std::string &modeStr) {
+  fieldSolverMode = parse_solver_mode(modeStr);
+  useHybridPIC = (fieldSolverMode == PicSolverMode::Hybrid);
 }
 
 //========================================================

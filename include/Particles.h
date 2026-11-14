@@ -389,6 +389,8 @@ protected:
 
   bool isRelativistic = false;
 
+  bool isKineticElectron_ = false;
+
   bool isParticleLocationRandom = true;
 
   bool isPPVconstant = false;
@@ -1583,6 +1585,9 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
+  int get_qom_sign() const { return qomSign; }
+  amrex::IntVect get_n_part_per_cell() const { return nPartPerCell; }
+  bool is_target_ppc_defined() const { return isTargetPPCDefined; }
 
   // Particle budget per face (2*d + {0=lo,1=hi}).
   amrex::Real get_face_in_mass(int face) const { return faceInMass[face]; }
@@ -1596,6 +1601,9 @@ public:
   amrex::Real get_body_inject_mass() const { return bodyInjectMass; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
+
+  void set_is_electron(bool in) { isKineticElectron_ = in; }
+  bool is_electron() const { return isKineticElectron_; }
 
   void Write_Paraview(std::string folder = "Particles",
                       std::string particletype = "1") {

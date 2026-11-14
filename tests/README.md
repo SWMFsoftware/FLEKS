@@ -31,6 +31,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Oblique shock         | `shock/`              | Oblique magnetized shock: 1D full PIC and hybrid; 2D hybrid with hyper-resistivity or upwind dissipation | [README](shock/README.md) |
 | Inner body            | `body/`               | Absorbing spherical inner boundary (`#BODY`): particle absorption, empty interior, wake | [README](body/README.md) |
 | Intrinsic field       | `intrinsic_field/`    | Static planetary magnetic field (`#DIPOLE`, `#CRUSTALFIELD`): analytic dipole, spherical harmonic crustal field | [README](intrinsic_field/README.md) |
+| Solver coupling       | `solver_coupling/`    | Spatial multi-solver domain coupling via `#REGIONSOLVER` (`Implicit`, `Explicit`, `Hybrid`, 3-way, blended 2D AMR) | [README](solver_coupling/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |
 
 ### Ionization Parameter Commands
