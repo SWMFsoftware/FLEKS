@@ -1750,7 +1750,53 @@ void Pic::calc_mass_matrix_amr() {
   auto& jhf = amrJhf;
   auto& nmmc = amrNmmc;
   auto& nmmf = amrNmmf;
-  if (static_cast<int>(jhc.size()) != n_lev()) {
+  auto needRebuildScratch = [&]() -> bool {
+    if (static_cast<int>(jhc.size()) != n_lev() ||
+        static_cast<int>(jhf.size()) != n_lev() ||
+        static_cast<int>(nmmc.size()) != n_lev() ||
+        static_cast<int>(nmmf.size()) != n_lev()) {
+      return true;
+    }
+    const int nGst = get_n_ghost();
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      if (static_cast<int>(jhc[iLev].size()) != iLev ||
+          static_cast<int>(nmmc[iLev].size()) != iLev) {
+        return true;
+      }
+      BoxArray bac = nodeB[iLev].boxArray();
+      for (int i = iLev - 1; i >= 0; i--) {
+        bac.coarsen(refRatio(i));
+        if (jhc[iLev][i].empty() || jhc[iLev][i].boxArray() != bac ||
+            jhc[iLev][i].DistributionMap() != nodeB[iLev].DistributionMap() ||
+            jhc[iLev][i].nGrow() != nGst || nmmc[iLev][i].empty() ||
+            nmmc[iLev][i].boxArray() != bac ||
+            nmmc[iLev][i].DistributionMap() != nodeB[iLev].DistributionMap() ||
+            nmmc[iLev][i].nGrow() != nGst) {
+          return true;
+        }
+      }
+    }
+    for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+      BoxArray baf = nodeB[iLev].boxArray();
+      baf.refine(refRatio(iLev));
+      if (jhf[iLev].empty() || jhf[iLev].boxArray() != baf ||
+          jhf[iLev].DistributionMap() != nodeB[iLev].DistributionMap() ||
+          jhf[iLev].nGrow() != nGst || nmmf[iLev].empty() ||
+          nmmf[iLev].boxArray() != baf ||
+          nmmf[iLev].DistributionMap() != nodeB[iLev].DistributionMap() ||
+          nmmf[iLev].nGrow() != nGst) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (needRebuildScratch()) {
+    const int nGst = get_n_ghost();
+    jhc.clear();
+    jhf.clear();
+    nmmc.clear();
+    nmmf.clear();
     jhc.resize(n_lev());
     jhf.resize(n_lev());
     nmmc.resize(n_lev());
@@ -1758,22 +1804,20 @@ void Pic::calc_mass_matrix_amr() {
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       jhc[iLev].resize(iLev);
       nmmc[iLev].resize(iLev);
-    }
-    for (int iLev = 1; iLev < n_lev(); iLev++) {
       BoxArray bac = nodeB[iLev].boxArray();
       for (int i = iLev - 1; i >= 0; i--) {
-        bac.coarsen(refRatio(iLev));
-        jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
+        bac.coarsen(refRatio(i));
+        jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, nGst);
         nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
-                             nodeMM[iLev].nComp(), 0);
+                             nodeMM[iLev].nComp(), nGst);
       }
     }
     for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
       BoxArray baf = nodeB[iLev].boxArray();
       baf.refine(refRatio(iLev));
-      jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
+      jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, nGst);
       nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(),
-                        nodeMM[iLev].nComp(), 0);
+                        nodeMM[iLev].nComp(), nGst);
     }
   }
   for (int iLev = 1; iLev < n_lev(); iLev++) {
@@ -1800,6 +1844,9 @@ void Pic::calc_mass_matrix_amr() {
   }
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (nSpecies > 0) {
+      parts[0]->apply_jhat_mirror(jHat[iLev], iLev);
+    }
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
     sum_boundary_node_mm(iLev);
   }
@@ -1825,12 +1872,31 @@ void Pic::calc_mass_matrix_amr() {
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    Real invVol = 1;
-    for (int i = 0; i < nDim; ++i) {
-      invVol *= Geom(iLev).InvCellSize(i);
-    }
-    jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
+    jHat[iLev].mult(invVol[iLev], 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
     jHat[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    if (use_body()) {
+      rescale_body_surface_nodes(jHat[iLev], cell_status(iLev),
+                                 node_status(iLev), Geom(iLev).Domain(), nDim);
+      if (!useExplicitPIC) {
+        rescale_body_surface_nodes(nodeMM[iLev], cell_status(iLev),
+                                   node_status(iLev), Geom(iLev).Domain(),
+                                   nDim);
+      }
+    }
+
+    if (doSmoothJ) {
+      for (int icount = 0; icount < nSmoothJ; icount++) {
+        if (iLev > 0) {
+          fill_fine_lev_bny_from_coarse(
+              jHat[iLev - 1], jHat[iLev], 0, jHat[iLev].nComp(),
+              refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+              node_bilinear_interp);
+          jHat[iLev].FillBoundary(Geom(iLev).periodicity());
+        }
+        smooth_multifab(jHat[iLev], iLev, icount % 2 + 1, coefSmoothJ);
+      }
+    }
   }
 }
 
@@ -2433,8 +2499,6 @@ void Pic::update_U0_E0() {
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
-
       // Fill in the physical nodes
       ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         const Real rho = arrMoments(i, j, k, iRho_);
@@ -2444,8 +2508,21 @@ void Pic::update_U0_E0() {
             arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
         }
       });
+    }
 
-      // Fill in ghost nodes
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          uBg[iLev - 1], uBg[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      uBg[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real>& arrU = uBg[iLev][mfi].array();
+      const Array4<const int>& status = node_status(iLev)[mfi].array();
+
+      // Fill in physical outer-domain boundary ghost nodes after coarse-fine
+      // interpolation so shared boundary bits retain the domain BC value.
       ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_domain_boundary(status(ijk))) {
@@ -2468,8 +2545,6 @@ void Pic::update_U0_E0() {
       const Array4<Real>& arrE = eBg[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
-
       // Fill in the physical nodes
       ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         const Real& bx = arrB(i, j, k, ix_);
@@ -2484,6 +2559,18 @@ void Pic::update_U0_E0() {
         arrE(i, j, k, iy_) = -uz * bx + ux * bz;
         arrE(i, j, k, iz_) = -ux * by + uy * bx;
       });
+    }
+
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          eBg[iLev - 1], eBg[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      eBg[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    for (MFIter mfi(eBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real>& arrE = eBg[iLev][mfi].array();
+      const Array4<const int>& status = node_status(iLev)[mfi].array();
 
       // Fill in boundary nodes
       ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {

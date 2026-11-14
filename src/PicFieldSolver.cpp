@@ -147,6 +147,20 @@ void Pic::update_E_impl() {
                      iLev, false);
       apply_field_bc(node_status(iLev), nodeEth[iLev], 0, nDim3,
                      &Pic::get_node_E, iLev, false);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          nodeE[iLev - 1], nodeE[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+      apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+                     iLev, false);
+
+      fill_fine_lev_bny_from_coarse(
+          nodeEth[iLev - 1], nodeEth[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+      apply_field_bc(node_status(iLev), nodeEth[iLev], 0, nDim3,
+                     &Pic::get_node_E, iLev, false);
     }
 
     if (doSmoothE) {
@@ -396,7 +410,7 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
                         DistributionMap(iLev), 3, 1);
   }
 
-  const bool hasWallEt = iLev == 0 && hasConductingBC_;
+  const bool hasWallEt = hasConductingBC_;
   if (hasWallEt && solverWallInMF[iLev].empty())
     distribute_FabArray(solverWallInMF[iLev], node_box_array(iLev),
                         DistributionMap(iLev), 3, 0);
@@ -465,8 +479,7 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
     // on outflow faces. Without it GMRES solved with zero ghosts, a different
     // boundary than the one imposed on E afterwards, and the solver went
     // unstable above c*dt/dx ~ 2-3.
-    if (iLev == 0)
-      apply_field_bc_homogeneous(node_status(iLev), vecMF, iLev);
+    apply_field_bc_homogeneous(node_status(iLev), vecMF, iLev);
   } else {
     // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
@@ -478,6 +491,9 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
           refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
+      vecMF.FillBoundary(Geom(iLev).periodicity());
+      apply_field_bc(node_status(iLev), vecMF, 0, nDim3, &Pic::get_node_E, iLev,
+                     false);
     }
   }
 
@@ -825,7 +841,7 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
 
   if (hasDirichlet) {
     const MultiFab* dirichletE = &nodeE[iLev];
-    if (iLev == 0 && hasInflowBC_) {
+    if (hasInflowBC_) {
       MultiFab::Copy(tempNode, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                      tempNode.nGrow());
       apply_field_bc(node_status(iLev), tempNode, 0, nDim3, &Pic::get_node_E,
@@ -856,7 +872,7 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
   }
 
   // Tangential E on conducting walls: rhs = E^n (zero after the wall BC).
-  if (iLev == 0 && hasConductingBC_) {
+  if (hasConductingBC_) {
     for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       const Array4<Real> arrRHS = temp2Node[mfi].array();
@@ -919,7 +935,7 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
 
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
-  const bool hasWallEt = iLev == 0 && hasConductingBC_;
+  const bool hasWallEt = hasConductingBC_;
   const BoundaryBounds bnd(Geom(iLev), ba.ixType(), &bcField);
   const auto& statusMF = node_status(iLev);
 
@@ -1364,12 +1380,10 @@ void Pic::update_B() {
       add_curl_upwind_E(nodeEmf[iLev], iLev);
       nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
       nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
-      if (iLev == 0) {
-        apply_field_bc(node_status(0), nodeEmf[0], 0, nDim3, &Pic::get_node_E,
-                       0, false);
-        if (use_body()) {
-          apply_body_E_bc(nodeEmf[0], 0);
-        }
+      apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3,
+                     &Pic::get_node_E, iLev, false);
+      if (use_body()) {
+        apply_body_E_bc(nodeEmf[iLev], iLev);
       }
     }
     if (finestLevel() > 0) {

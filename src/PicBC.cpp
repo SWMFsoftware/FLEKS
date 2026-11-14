@@ -115,7 +115,7 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   // stay out of them. The full-PIC solver still relies on this fill there.
   if (func != nullptr) {
     fill_ext_dir(status, mf, iStart, nComp, func, iLev, &bcField,
-                 useHybridPIC || useCurlUpwindB, t);
+                 iLev > 0 || useHybridPIC || useCurlUpwindB, t);
   }
 
   // Node-centered conducting wall requires zeroing boundary wall nodes
@@ -158,7 +158,10 @@ void Pic::apply_field_bc_homogeneous(const iMultiFab& status, MultiFab& mf,
   // absorbing weights are unstable above c*dt/dx = 1 anyway).
   if (bcField.has(FieldBC::outflow) || bcField.has(FieldBC::vacuum)) {
     const BoxArray ba =
-        get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
+        (iLev > 0) ? get_level_active_ba(active_region_ref(), mf, Geom(iLev),
+                                         Geom(0), nDim, iz_)
+                   : get_boundary_active_ba(active_region_ref(), mf, Geom(iLev),
+                                            nDim, iz_);
     const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bcField);
     auto isOpen = [] AMREX_GPU_HOST_DEVICE(int type) {
       return type == FieldBC::outflow || type == FieldBC::vacuum;

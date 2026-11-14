@@ -36,6 +36,8 @@ CUBE_HALF = 1.0 * CODE_TO_PLOT
 DX_COARSE = 0.25 * CODE_TO_PLOT
 DX_FINE = 0.125 * CODE_TO_PLOT
 MAX_DIVB_TOL = 1e-10
+MAX_INFLOW_EE_RATIO = 3.0
+MAX_INFLOW_STD_EX = 100.0
 NHEADER = 5
 
 _DIVB_LINE_RE = re.compile(r"divB-AMR\s+n=(\d+)\s+(.*)")
@@ -80,17 +82,20 @@ def validate_log(pic_diags=None, test_name=None):
     if not pic_diags or len(pic_diags) < 2:
         return False, f"Insufficient log entries (expected >=2, got {len(pic_diags) if pic_diags else 0})"
 
+    is_inflow_variant = bool(test_name and "inflow" in test_name)
     e0 = pic_diags[0].get("Etot", 0.0)
+    ee0 = pic_diags[0].get("Ee", 0.0)
     eb0 = pic_diags[0].get("Eb", 0.0)
     max_drift = 0.10  # 10% max energy drift
 
     for r in pic_diags:
         cyc = r["cycle"]
         etot = r.get("Etot", 0.0)
+        ee = r.get("Ee", 0.0)
         eb = r.get("Eb", 0.0)
         ep = r.get("Epart", 0.0)
 
-        for name, val in [("Etot", etot), ("Eb", eb), ("Epart", ep)]:
+        for name, val in [("Etot", etot), ("Ee", ee), ("Eb", eb), ("Epart", ep)]:
             if not math.isfinite(val):
                 return False, f"Non-finite {name} at cycle {cyc}"
 
@@ -103,6 +108,12 @@ def validate_log(pic_diags=None, test_name=None):
 
         if eb0 > 0 and eb > eb0 * 3.0:
             return False, f"Magnetic energy grew unphysically at cycle {cyc}: Eb={eb:.3e} vs Eb0={eb0:.3e}"
+
+        if is_inflow_variant and ee0 > 0 and ee > ee0 * MAX_INFLOW_EE_RATIO:
+            return False, (
+                f"Electric energy grew unphysically at cycle {cyc}: "
+                f"Ee={ee:.3e} vs Ee0={ee0:.3e} (limit {MAX_INFLOW_EE_RATIO:g}x)"
+            )
 
     final_drift = abs(pic_diags[-1].get("Etot", 0.0) - e0) / e0
     logger.debug("  All %d cycles completed: initial Etot=%.5g, final Etot=%.5g (drift=%.2f%%)",
@@ -161,10 +172,10 @@ def validate_divb(run_dir=None, test_name=None):
     return True, f"div(B) verified: max={max_divb_seen:.2e}"
 
 
-def validate_plot(test_name=None, run_dir=RUN_DIR):
+def validate_plot(test_name=None, run_dir=None):
     """Validate fluid .out spatial profile."""
     is_scalar_variant = test_name and "scalar" in test_name
-    is_uniform_variant = test_name and "uniform" in test_name
+    is_inflow_variant = bool(test_name and "inflow" in test_name)
 
     rd = run_dir or RUN_DIR
     plots_dir = os.path.join(rd, "PC", "plots")
@@ -189,15 +200,36 @@ def validate_plot(test_name=None, run_dir=RUN_DIR):
     if x is None or y is None or div is None or bmag is None:
         return False, "Missing required columns (x, y, divB, B/Bx) in plot frame"
 
-    r = np.maximum(np.abs(x), np.abs(y)) / CUBE_HALF
+    if is_inflow_variant:
+        # Exclude the 1-cell physical outer boundary collar where inflow/outflow
+        # BCs set B directly rather than the Faraday curl update.
+        dom_half = 2.0 * CODE_TO_PLOT - 1.1 * DX_COARSE
+        mask = (np.abs(x) < dom_half) & (np.abs(y) < dom_half)
+        if not np.any(mask):
+            return False, "No interior points found inside non-periodic domain mask"
+    else:
+        mask = slice(None)
+
+    x_chk = x[mask]
+    y_chk = y[mask]
+    div_chk = div[mask]
+    bmag_chk = bmag[mask]
+
+    r = np.maximum(np.abs(x_chk), np.abs(y_chk)) / CUBE_HALF
     h = np.where(r < 1.0, DX_FINE, DX_COARSE)
-    err = np.abs(div) * h / np.maximum(bmag, 1e-6)
+    err = np.abs(div_chk) * h / np.maximum(bmag_chk, 1e-6)
 
     max_err = float(np.max(err))
-    logger.debug("  Frame verified: %d points, max dimensionless div(B) error = %.3e", len(x), max_err)
+    logger.debug("  Frame verified: %d points, max dimensionless div(B) error = %.3e", len(x_chk), max_err)
 
     if not is_scalar_variant and max_err > MAX_DIVB_TOL:
         return False, f"Dimensionless div(B) error too high: {max_err:.3e} (expected < {MAX_DIVB_TOL})"
+
+    if is_inflow_variant and "Ex" in frame:
+        std_ex = float(np.std(frame["Ex"][mask]))
+        logger.debug("  Inflow variant interior/interface std(Ex) = %.3g uV/m", std_ex)
+        if not math.isfinite(std_ex) or std_ex > MAX_INFLOW_STD_EX:
+            return False, f"Interior std(Ex) too large: {std_ex:.3g} uV/m (limit {MAX_INFLOW_STD_EX:g})"
 
     return True, f"Plot verified: max error={max_err:.2e}"
 

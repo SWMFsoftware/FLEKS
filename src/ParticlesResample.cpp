@@ -424,10 +424,15 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
     const Real vol = dx[iLev].product();
     const Real vacuumMass = vacuum * vol;
+    const bool useTargetForPreSplit =
+        usePreSplitting && doPreSplitting && isTargetPPCDefined && !isFake2D;
     const auto* statusFab =
-        usePreSplitting && doPreSplitting ? &cell_status(iLev) : nullptr;
+        (usePreSplitting && doPreSplitting && !useTargetForPreSplit)
+            ? &cell_status(iLev)
+            : nullptr;
     const auto* tppcFab =
-        (!usePreSplitting && isPPVconstant && isTargetPPCDefined && !isFake2D)
+        (useTargetForPreSplit ||
+         (!usePreSplitting && isPPVconstant && isTargetPPCDefined && !isFake2D))
             ? &target_PPC(iLev)
             : nullptr;
 
@@ -438,7 +443,22 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       int nLowerLimit = 0;
       int nGoal = 0;
 
-      if (usePreSplitting) {
+      if (tppcFab != nullptr) {
+        // Both #PRESPLITTING (2-cell collar via target_PPC) and #CONSTANTPPV
+        // use the per-cell target count from target_PPC(iLev).
+        const auto tppc = (*tppcFab)[item.grid].const_array();
+        const int target = tppc(item.cell);
+        nLowerLimit = target * limit;
+        nGoal = target;
+        if (useTargetForPreSplit) {
+          if (target > nInitial) {
+            dl = dl / get_ref_ratio(iLev).max();
+          }
+        } else {
+          dl = 0.1 * Geom(iLev).CellSize()[ix_] /
+               std::max(1.0, std::cbrt(static_cast<Real>(target)));
+        }
+      } else if (usePreSplitting) {
         nLowerLimit = nInitial * limit;
         nGoal = nInitial;
         if (doPreSplitting) {
@@ -452,16 +472,6 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             dl = dl / refMax;
           }
         }
-      } else if (tppcFab != nullptr) {
-        // #CONSTANTPPV: the goal is the target of this level, not the
-        // particles per cell of the base grid (that would split the refined
-        // levels back up to the base number in a few steps).
-        const auto tppc = (*tppcFab)[item.grid].const_array();
-        const int target = tppc(item.cell);
-        nLowerLimit = target * limit;
-        nGoal = target;
-        dl = 0.1 * Geom(iLev).CellSize()[ix_] /
-             std::max(1.0, std::cbrt(static_cast<Real>(target)));
       } else {
         nLowerLimit = nInitial * limit * pow(pLevRatio, iLev);
         nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
