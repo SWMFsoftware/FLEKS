@@ -79,6 +79,7 @@ jobs:
           git fetch --no-tags --depth=1 origin \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}"
+          git checkout -- src/Makefile
           git checkout "${{ github.event.pull_request.head.sha }}"
 
       - name: Build candidate (PR head)
@@ -86,7 +87,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
+          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
           make EXE -j$(nproc)
           cp bin/FLEKS.exe "$RUNNER_TEMP/FLEKS_pr.exe"
 
@@ -101,11 +102,13 @@ jobs:
           git fetch --no-tags --depth=1 origin \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}"
+          git checkout -- src/Makefile
           git checkout "${{ github.event.pull_request.base.sha }}"
-          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug
+          ./Config.pl -amrex3d -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
           make EXE -j$(nproc)
           cp bin/FLEKS.exe "$RUNNER_TEMP/FLEKS_base.exe"
           # Back to the PR tree, whose tests/ holds the capture scripts.
+          git checkout -- src/Makefile
           git checkout "${{ github.event.pull_request.head.sha }}"
 
       - name: Capture reference memory

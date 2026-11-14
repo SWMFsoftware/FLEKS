@@ -47,7 +47,7 @@ runs:
       run: |
         # Link the AMReX library, enable AMR (nLevMax>=2), and build a fully
         # optimized release executable (-O4 -nodebug) for running the tests.
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
+        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
 
         # Verify that the AMReX library linked against is indeed an optimized
         # release build (AMREX_DEBUG must not be defined).

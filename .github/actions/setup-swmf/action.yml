@@ -106,9 +106,9 @@ runs:
       uses: actions/cache@v5
       with:
         path: .ccache
-        key: ${{ runner.os }}-ccache-v1-${{ hashFiles('SWMF/Config.pl', 'SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PT/FLEKS/**/*.cpp', 'SWMF/PT/FLEKS/**/*.h') }}
+        key: ${{ runner.os }}-ccache-v2-${{ hashFiles('SWMF/Config.pl', 'SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PT/FLEKS/**/*.cpp', 'SWMF/PT/FLEKS/**/*.h') }}
         restore-keys: |
-          ${{ runner.os }}-ccache-v1-
+          ${{ runner.os }}-ccache-v2-
 
     - name: Install or Update SWMF Components
       working-directory: SWMF
@@ -200,6 +200,11 @@ runs:
         else
           ./Config.pl -install="$INSTALL_MODELS" $AMREX_DIM_FLAG -v=Empty,${{ inputs.config-components }}
         fi
+
+        # Use a portable x86-64-v3 (AVX2+FMA+BMI2) SIMD target in CI instead of
+        # -march=native so cached binaries and ccache objects run safely across
+        # heterogeneous GitHub Actions runners (e.g. Zen 4 AVX-512 vs Zen 3 AVX2).
+        (cd "$GITHUB_WORKSPACE/${{ inputs.fleks-path }}" && ./Config.pl -simd=x86-64-v3)
 
     - name: Verify & Fix AMReX Build Cache
       if: inputs.verify-amrex == 'true'

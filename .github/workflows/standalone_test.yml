@@ -49,7 +49,7 @@ jobs:
         uses: ./.github/actions/build-test-standalone
         with:
           amrex-dim: 3d
-          cache-key: fleks-standalone-v3
+          cache-key: fleks-standalone-v4
           jobs: '2'
           parallel-summary: summary_parallel.md
           summary-title: Standalone FLEKS Test Results
@@ -78,7 +78,7 @@ jobs:
         uses: ./.github/actions/build-test-standalone
         with:
           amrex-dim: 2d
-          cache-key: fleks-standalone-2d-v3
+          cache-key: fleks-standalone-2d-v4
           jobs: '2'
           parallel-summary: summary_2d_parallel.md
           summary-title: Standalone FLEKS 2D AMReX Test Results
@@ -107,7 +107,7 @@ jobs:
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
-          ./Config.pl -amrex3d -openmp -lev=2 -u=Exo -O4 -nodebug
+          ./Config.pl -amrex3d -openmp -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
 
           AMREX_CONFIG="../../util/AMREX/InstallDir/include/AMReX_Config.H"
           if [ ! -f "$AMREX_CONFIG" ] || ! grep -qE "^#define\s+AMREX_USE_OMP\s+1" "$AMREX_CONFIG"; then
@@ -130,9 +130,9 @@ jobs:
           path: |
             SWMF/PC/FLEKS/bin/FLEKS.exe
             SWMF/bin/PostIDL.exe
-          key: ${{ runner.os }}-fleks-standalone-omp-v1-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
+          key: ${{ runner.os }}-fleks-standalone-omp-v2-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
           restore-keys: |
-            ${{ runner.os }}-fleks-standalone-omp-v1-
+            ${{ runner.os }}-fleks-standalone-omp-v2-
 
       - name: Build Standalone FLEKS (OpenMP)
         if: steps.cache-standalone-omp.outputs.cache-hit != 'true'
