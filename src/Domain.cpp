@@ -641,8 +641,6 @@ void Domain::read_restart() {
 
   std::string headerFileName(restartDir + gridName + "_amrex_restart.H");
 
-  VisMF::IO_Buffer ioBuffer(VisMF::GetIOBufferSize());
-
   Vector<char> fileCharPtr;
   ParallelDescriptor::ReadAndBcastFile(headerFileName, fileCharPtr);
   std::string fileCharPtrString(fileCharPtr.dataPtr());

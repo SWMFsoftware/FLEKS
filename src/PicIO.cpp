@@ -714,37 +714,20 @@ void Pic::save_restart_data() {
   if (is_grid_empty())
     return;
 
-  std::string restartDir = fi->get_restart_out_dir();
+  const std::string restartDir = fi->get_restart_out_dir();
+  const std::string prefix = restartDir + gridName;
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    VisMF::Write(nodeE[iLev],
-                 restartDir + gridName + "_nodeE" + lev_string(iLev));
-    VisMF::Write(nodeB[iLev],
-                 restartDir + gridName + "_nodeB" + lev_string(iLev));
-    VisMF::Write(centerB[iLev],
-                 restartDir + gridName + "_centerB" + lev_string(iLev));
-    if (useElectronPressureEq) {
-      VisMF::Write(centerPeState[iLev],
-                   restartDir + gridName + "_centerPeState" + lev_string(iLev));
-    }
-    if (useHybridPIC) {
-      VisMF::Write(nodePlasmaPrev[nSpecies][iLev], restartDir + gridName +
-                                                       "_nodePlasmaPrev" +
-                                                       lev_string(iLev));
-    }
-    if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar &&
-        grid.has_body_net_charge(iLev)) {
-      VisMF::Write(grid.body_net_charge(iLev),
-                   restartDir + gridName + "_bodyNetCharge" + lev_string(iLev));
-    }
+  write_restart_mf(nodeE, prefix + "_nodeE");
+  write_restart_mf(nodeB, prefix + "_nodeB");
+  write_restart_mf(centerB, prefix + "_centerB");
+  if (useElectronPressureEq) {
+    write_restart_mf(centerPeState, prefix + "_centerPeState");
   }
-
-  if (useHybridPIC && ParallelDescriptor::IOProcessor()) {
-    std::string stateFile = restartDir + gridName + "_hybrid_state.txt";
-    std::ofstream ofs(stateFile);
-    if (ofs.good()) {
-      ofs << (isFirstHybridStep ? 1 : 0) << " " << dtPrevHybrid << "\n";
-    }
+  if (useHybridPIC) {
+    write_restart_mf(nodePlasmaPrev[nSpecies], prefix + "_nodePlasmaPrev");
+  }
+  if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
+    write_restart_mf(grid.bodyNetCharge, prefix + "_bodyNetCharge");
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -784,36 +767,21 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
 void Pic::read_restart() {
   Print() << "Pic::read_restart() start....." << std::endl;
 
-  std::string restartDir = component + "/restartIN/";
+  const std::string restartDir = component + "/restartIN/";
+  const std::string prefix = restartDir + gridName;
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    VisMF::Read(nodeE[iLev],
-                restart_file_name(restartDir + gridName + "_nodeE", iLev));
-    VisMF::Read(nodeB[iLev],
-                restart_file_name(restartDir + gridName + "_nodeB", iLev));
-    VisMF::Read(centerB[iLev],
-                restart_file_name(restartDir + gridName + "_centerB", iLev));
-    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-  }
+  read_restart_mf(nodeE, prefix + "_nodeE");
+  read_restart_mf(nodeB, prefix + "_nodeB");
+  read_restart_mf(centerB, prefix + "_centerB");
 
   // The evolved electron pressure is only present in restarts written by a run
   // that had #ELECTRONPRESSURE on. Older files start without it and the field
   // is then seeded from the polytropic closure on the first step.
   if (useElectronPressureEq) {
-    std::vector<std::string> peFiles(n_lev());
-    bool havePe = true;
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      peFiles[iLev] =
-          restart_file_name(restartDir + gridName + "_centerPeState", iLev);
-      if (!FileExists(peFiles[iLev]) && !FileExists(peFiles[iLev] + "_H"))
-        havePe = false;
-    }
-    if (havePe) {
+    if (read_restart_mf(centerPeState, prefix + "_centerPeState", false,
+                        true)) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        VisMF::Read(centerPeState[iLev], peFiles[iLev]);
-        centerPeState[iLev].FillBoundary(Geom(iLev).periodicity());
+        apply_pe_zero_gradient_bc(iLev, centerPeState[iLev]);
       }
       peStateInitialized_ = true;
     } else {
@@ -841,23 +809,7 @@ void Pic::read_restart() {
   inject_particles_for_boundary_cells();
 
   if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
-    std::vector<std::string> chargeFiles(n_lev());
-    bool haveCharge = true;
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      chargeFiles[iLev] =
-          restart_file_name(restartDir + gridName + "_bodyNetCharge", iLev);
-      if (!FileExists(chargeFiles[iLev]) &&
-          !FileExists(chargeFiles[iLev] + "_H"))
-        haveCharge = false;
-    }
-    if (haveCharge) {
-      for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        if (grid.has_body_net_charge(iLev)) {
-          VisMF::Read(grid.body_net_charge(iLev), chargeFiles[iLev]);
-          grid.body_net_charge(iLev).FillBoundary(Geom(iLev).periodicity());
-        }
-      }
-    }
+    read_restart_mf(grid.bodyNetCharge, prefix + "_bodyNetCharge", true, true);
   }
 
   sum_moments();
@@ -872,51 +824,12 @@ void Pic::read_restart() {
     }
   } else {
     smooth_moments();
-    // Restore or initialize the hybrid staggering state and previous moments.
     // Checkpointed velocities are already staggered at t^n - dt_prev/2, so a
-    // restarted run must advance them by dt (not dt/2) to preserve trajectory.
-    int haveHybridState = 0;
-    int isFirstInt = 0;
-    Real dtPrev = 0.0;
-    if (ParallelDescriptor::IOProcessor()) {
-      std::string stateFile = restartDir + gridName + "_hybrid_state.txt";
-      if (FileExists(stateFile)) {
-        std::ifstream ifs(stateFile);
-        if (ifs >> isFirstInt >> dtPrev) {
-          haveHybridState = 1;
-        }
-      }
-    }
-    ParallelDescriptor::Bcast(&haveHybridState, 1,
-                              ParallelDescriptor::IOProcessorNumber());
-    if (haveHybridState != 0) {
-      ParallelDescriptor::Bcast(&isFirstInt, 1,
-                                ParallelDescriptor::IOProcessorNumber());
-      ParallelDescriptor::Bcast(&dtPrev, 1,
-                                ParallelDescriptor::IOProcessorNumber());
-      isFirstHybridStep = (isFirstInt != 0);
-      dtPrevHybrid = dtPrev;
-    } else {
-      isFirstHybridStep = false;
-      dtPrevHybrid = tc ? tc->get_dt() : 0.0;
-    }
-
-    std::vector<std::string> plasmaPrevFiles(n_lev());
-    bool havePlasmaPrev = true;
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      plasmaPrevFiles[iLev] =
-          restart_file_name(restartDir + gridName + "_nodePlasmaPrev", iLev);
-      if (!FileExists(plasmaPrevFiles[iLev]) &&
-          !FileExists(plasmaPrevFiles[iLev] + "_H")) {
-        havePlasmaPrev = false;
-      }
-    }
-    if (havePlasmaPrev) {
-      for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        VisMF::Read(nodePlasmaPrev[nSpecies][iLev], plasmaPrevFiles[iLev]);
-        nodePlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
-      }
-    } else {
+    // restarted run continues without taking another half-step seed.
+    isFirstHybridStep = false;
+    dtPrevHybrid = tc ? tc->get_dt() : 0.0;
+    if (!read_restart_mf(nodePlasmaPrev[nSpecies], prefix + "_nodePlasmaPrev",
+                         true, true)) {
       seed_first_hybrid_step();
     }
   }

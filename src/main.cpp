@@ -46,48 +46,27 @@ void OH_get_solar_wind(double* /*x*/, double* /*y*/, double* /*z*/,
 
 namespace {
 
-std::string first_token(const std::string& line) {
-  const std::string::size_type start = line.find_first_not_of(" \t\r");
-  if (start == std::string::npos) {
-    return "";
-  }
-  const std::string::size_type end = line.find_first_of(" \t\r", start);
-  return line.substr(start, end - start);
-}
-
-void read_param_file_recursive(const std::string& filename, int depth,
-                               std::string& paramString) {
-  constexpr int kMaxIncludeDepth = 10;
-  if (depth > kMaxIncludeDepth) {
-    std::cerr << "Error: #INCLUDE nesting exceeded " << kMaxIncludeDepth
-              << " levels at '" << filename << "'" << std::endl;
-    amrex::ParallelDescriptor::Abort();
-  }
+void load_param_file(const std::string& filename, std::string& paramString,
+                     int depth = 0) {
+  if (depth > 10)
+    amrex::Abort("Error: #INCLUDE nesting exceeded 10 levels at " + filename);
 
   std::ifstream infile(filename);
-  if (!infile.is_open()) {
-    std::cerr << "Error: Could not open parameter file '" << filename << "'"
-              << std::endl;
-    amrex::ParallelDescriptor::Abort();
-  }
+  if (!infile.is_open())
+    amrex::Abort("Error: Could not open parameter file " + filename);
 
-  std::string line;
+  std::string line, token;
   while (std::getline(infile, line)) {
-    const std::string cmd = first_token(line);
-    if (cmd == "#INCLUDE" || cmd == "#INCLUDE_FLEKS1") {
-      std::string nextLine;
-      if (!std::getline(infile, nextLine)) {
-        std::cerr << "Error: Missing filename after " << cmd << " in '"
-                  << filename << "'" << std::endl;
-        amrex::ParallelDescriptor::Abort();
+    token.clear();
+    std::istringstream(line) >> token;
+    if (token == "#INCLUDE" || token == "#INCLUDE_FLEKS1") {
+      std::string nextLine, includeFile;
+      if (!std::getline(infile, nextLine) ||
+          !(std::istringstream(nextLine) >> includeFile)) {
+        amrex::Abort("Error: Missing filename after " + token + " in " +
+                     filename);
       }
-      const std::string includeFile = first_token(nextLine);
-      if (includeFile.empty()) {
-        std::cerr << "Error: Empty filename after " << cmd << " in '"
-                  << filename << "'" << std::endl;
-        amrex::ParallelDescriptor::Abort();
-      }
-      read_param_file_recursive(includeFile, depth + 1, paramString);
+      load_param_file(includeFile, paramString, depth + 1);
     } else {
       paramString += line + "\n";
     }
@@ -98,7 +77,7 @@ std::string prepare_standalone_run() {
   std::string paramString;
 
   if (amrex::ParallelDescriptor::MyProc() == 0) {
-    read_param_file_recursive("PARAM.in", 0, paramString);
+    load_param_file("PARAM.in", paramString);
   }
 
   int paramLen = static_cast<int>(paramString.length());
