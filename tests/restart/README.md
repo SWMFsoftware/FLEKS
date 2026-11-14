@@ -17,7 +17,7 @@ to `#STOP 10` with `#SAVERESTART F`). `validate.py` then:
 
 1. Verifies the cycle-5 checkpoint header (`PC/restartOUT/FLEKS1_restart.H`,
    `FLEKS1_amrex_restart.H`) and solver MultiFab/particle checkpoint files.
-2. Copies `PC/restartOUT/` to `PC/restartIN/` and launches a fresh `FLEKS.exe`
+2. Copies `PC/restartOUT` to `PC/restartIN` and launches a fresh `FLEKS.exe`
    restart run driven by `#INCLUDE PC/restartIN/FLEKS1_restart.H` from cycle 5 to
    cycle 10 (matching the initial run's MPI rank count).
 3. Asserts relative difference `< 1e-10` between the restarted and uninterrupted
