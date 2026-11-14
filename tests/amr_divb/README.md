@@ -21,6 +21,7 @@ refined cube:
 | File | Upwind Scheme | Cleaning | Expected $\max \|\nabla \cdot \mathbf{B}\|$ | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
 | `PARAM.in` | Curl upwind (`typeUpwindB = curl`) | None | $< 10^{-10}$ (machine zero, $\sim 10^{-15}$) | Standard CI regression test for AMR solenoidal preservation |
+| `PARAM.in.inflow` | Curl upwind (`typeUpwindB = curl`) | None | $< 10^{-10}$ (interior/interface) | Non-periodic inflow/outflow AMR regression test with `#PRESPLITTING` and `#RESAMPLING` verifying suppression of refinement-boundary $E$-field artifacts |
 | `PARAM.in.scalar` | Legacy scalar diffusion (`typeUpwindB = scalar`) | Hyperbolic (`hypDecay = 0.1`) | $\sim 4 \times 10^{-2}$ | Negative control demonstrating coarse-fine interface artifact |
 | `PARAM.in.uniform` | Curl upwind (`typeUpwindB = curl`) | None | $< 10^{-10}$ ($\sim 10^{-15}$) | Verifies divergence-free evolution on uniform mesh |
 
@@ -48,6 +49,7 @@ $\nabla \cdot \mathbf{B} = 0$ to machine precision without requiring any hyperbo
 python3 tests/validate_tests.py --test=amr_divb -v
 
 # Run side-by-side comparison variants:
+python3 tests/validate_tests.py --test=amr_divb.inflow -v
 python3 tests/validate_tests.py --test=amr_divb.scalar -v
 python3 tests/validate_tests.py --test=amr_divb.uniform -v
 ```
