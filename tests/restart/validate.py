@@ -66,16 +66,24 @@ def set_run_dir(run_dir):
 
 
 def _rel_close(a, b, rtol=RTOL, atol=ATOL):
-    """Return True if arrays/scalars a and b match within rtol/atol."""
-    diff = np.abs(a - b)
-    scale = np.maximum(np.abs(a), np.abs(b))
+    """Return True if arrays/scalars a and b are finite and match within rtol/atol."""
+    a_arr = np.asarray(a, dtype=np.float64)
+    b_arr = np.asarray(b, dtype=np.float64)
+    if not (np.all(np.isfinite(a_arr)) and np.all(np.isfinite(b_arr))):
+        return False
+    diff = np.abs(a_arr - b_arr)
+    scale = np.maximum(np.abs(a_arr), np.abs(b_arr))
     return bool(np.all(diff <= atol + rtol * scale))
 
 
 def _max_rel_err(a, b):
-    """Return max relative difference with ATOL floor."""
-    diff = np.abs(a - b)
-    denom = np.maximum(np.maximum(np.abs(a), np.abs(b)), ATOL)
+    """Return max relative difference with ATOL floor, or inf if non-finite."""
+    a_arr = np.asarray(a, dtype=np.float64)
+    b_arr = np.asarray(b, dtype=np.float64)
+    if not (np.all(np.isfinite(a_arr)) and np.all(np.isfinite(b_arr))):
+        return float("inf")
+    diff = np.abs(a_arr - b_arr)
+    denom = np.maximum(np.maximum(np.abs(a_arr), np.abs(b_arr)), ATOL)
     return float(np.max(diff / denom))
 
 
@@ -366,22 +374,27 @@ def validate_log(pic_diags=None, test_name=None):
             return False, f"Restarted run ended at cycle {last_c} (expected 10)"
 
         ref_by_cycle = {r["cycle"]: r for r in pic_diags}
-        overlap_cycles = [r["cycle"] for r in rst_rows if r["cycle"] >= 5]
-        if len(overlap_cycles) < 5:
-            return False, f"Too few restarted log cycles ({overlap_cycles})"
+        expected_cycles = list(range(5, 11))
+        overlap_cycles = [r["cycle"] for r in rst_rows]
+        if overlap_cycles != expected_cycles:
+            return (
+                False,
+                f"Expected restarted log cycles {expected_cycles}, got {overlap_cycles}",
+            )
 
         max_log_err = 0.0
         for rrow in rst_rows:
             cyc = rrow["cycle"]
-            if cyc < 5:
-                continue
             if cyc not in ref_by_cycle:
                 return False, f"Cycle {cyc} missing from uninterrupted reference log"
             urow = ref_by_cycle[cyc]
             for key in ("Etot", "Eb", "Ee", "Epart"):
                 if key not in rrow or key not in urow:
-                    continue
-                err_val = _max_rel_err(np.array(rrow[key]), np.array(urow[key]))
+                    return (
+                        False,
+                        f"Missing required energy column '{key}' at cycle {cyc}",
+                    )
+                err_val = _max_rel_err(rrow[key], urow[key])
                 max_log_err = max(max_log_err, err_val)
                 if not _rel_close(rrow[key], urow[key]):
                     return (
