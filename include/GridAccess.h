@@ -101,6 +101,43 @@ public:
   int get_finest_lev(const amrex::RealVect& xyz) const {
     return grid.get_finest_lev(xyz);
   }
+
+  // ---- Spatial solver partitioning queries ----
+  PicSolverMode get_default_solver_mode() const {
+    return grid.get_default_solver_mode();
+  }
+  const amrex::Vector<RegionSolverSpec>& get_region_solvers() const {
+    return grid.get_region_solvers();
+  }
+  int max_blend_cells() const { return grid.max_blend_cells(); }
+  bool has_configured_solver(PicSolverMode mode) const {
+    return grid.has_configured_solver(mode);
+  }
+  bool has_active_solver(PicSolverMode mode) const {
+    return grid.has_active_solver(mode);
+  }
+  bool is_multi_solver_grid() const { return grid.is_multi_solver_grid(); }
+  PicSolverMode box_solver(int iLev, int boxIdx) const {
+    return grid.box_solver(iLev, boxIdx);
+  }
+  const amrex::Vector<PicSolverMode>& box_solver(int iLev) const {
+    return grid.box_solver(iLev);
+  }
+  const amrex::iMultiFab& cell_solver(int iLev) const {
+    return grid.cell_solver(iLev);
+  }
+  const amrex::iMultiFab& hybrid_collar_mask(int iLev) const {
+    return grid.hybrid_collar_mask(iLev);
+  }
+  const amrex::iMultiFab& node_solver_status(int iLev) const {
+    return grid.node_solver_status(iLev);
+  }
+  bool has_node_blend_weight(int iLev) const {
+    return grid.has_node_blend_weight(iLev);
+  }
+  const amrex::MultiFab& node_blend_weight(int iLev) const {
+    return grid.node_blend_weight(iLev);
+  }
 };
 
 #endif

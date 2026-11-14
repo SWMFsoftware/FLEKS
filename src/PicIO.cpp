@@ -435,6 +435,23 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   if (varLower == "body")
     return isInsideBody ? 1.0 : 0.0;
 
+  if (varLower == "solver") {
+    if (!isValidMFI)
+      return static_cast<Real>(static_cast<int>(get_default_solver_mode()));
+    IntVect cIdx = ijk;
+    const Box domBox = Geom(iLev).Domain();
+    for (int d = 0; d < nDim; ++d) {
+      if (!Geom(iLev).isPeriodic(d)) {
+        cIdx[d] = std::clamp(cIdx[d], domBox.smallEnd(d), domBox.bigEnd(d));
+      }
+    }
+    const Box csBox = cell_solver(iLev)[mfi].box();
+    for (int d = 0; d < nDim; ++d) {
+      cIdx[d] = std::clamp(cIdx[d], csBox.smallEnd(d), csBox.bigEnd(d));
+    }
+    return static_cast<Real>(cell_solver(iLev)[mfi].const_array()(cIdx));
+  }
+
   // Staircase masks of the one-cell-thick surface shell, where the field
   // boundary condition acts, and of the frozen interior. Unlike 'body', these
   // are the cell masks, i.e. the index div(B) is stored at; the 'N' variants
@@ -727,10 +744,10 @@ void Pic::save_restart_data() {
       VisMF::Write(centerPeState[iLev],
                    restartDir + gridName + "_centerPeState" + lev_string(iLev));
     }
-    if (useHybridPIC) {
-      VisMF::Write(nodePlasmaPrev[nSpecies][iLev], restartDir + gridName +
-                                                       "_nodePlasmaPrev" +
-                                                       lev_string(iLev));
+    if (has_solver(PicSolverMode::Hybrid)) {
+      VisMF::Write(ion_moments_prev_mf(iLev), restartDir + gridName +
+                                                  "_nodePlasmaPrev" +
+                                                  lev_string(iLev));
     }
     if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar &&
         grid.has_body_net_charge(iLev)) {
@@ -739,7 +756,7 @@ void Pic::save_restart_data() {
     }
   }
 
-  if (useHybridPIC && ParallelDescriptor::IOProcessor()) {
+  if (has_solver(PicSolverMode::Hybrid) && ParallelDescriptor::IOProcessor()) {
     std::string stateFile = restartDir + gridName + "_hybrid_state.txt";
     std::ofstream ofs(stateFile);
     if (ofs.good()) {
@@ -796,6 +813,28 @@ void Pic::read_restart() {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
+  }
+
+  if (need_divB()) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      compute_divB(iLev);
+    }
+    for (int iLev = 1; iLev < n_lev(); ++iLev) {
+      fill_fine_lev_bny_from_coarse(
+          divB[iLev - 1], divB[iLev], 0, divB[iLev].nComp(), refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          centerDivB[iLev - 1], centerDivB[iLev], 0, centerDivB[iLev].nComp(),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
+    }
+  }
+  if (has_full_pic()) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      div_node_to_center(nodeE[iLev], centerDivE[iLev],
+                         Geom(iLev).InvCellSize());
+    }
   }
 
   // The evolved electron pressure is only present in restarts written by a run
@@ -863,9 +902,16 @@ void Pic::read_restart() {
 
   sum_moments();
   // div(E)-correction fields are full-PIC only.
-  if (!useHybridPIC) {
-    sum_to_center(false);
-  } else {
+  if (has_full_pic()) {
+    if (finestLevel() == 0) {
+      sum_to_center(false);
+    } else if (doCorrectDivE) {
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        sum_to_center_amr(false, iLev);
+      }
+    }
+  }
+  if (has_solver(PicSolverMode::Hybrid)) {
     // Restore or initialize the hybrid staggering state and previous moments.
     // Checkpointed velocities are already staggered at t^n - dt_prev/2, so a
     // restarted run must advance them by dt (not dt/2) to preserve trajectory.
@@ -903,12 +949,13 @@ void Pic::read_restart() {
         havePlasmaPrev = false;
       }
     }
+    smooth_moments();
     if (havePlasmaPrev) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        VisMF::Read(nodePlasmaPrev[nSpecies][iLev], restartDir + gridName +
-                                                        "_nodePlasmaPrev" +
-                                                        lev_string(iLev));
-        nodePlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+        VisMF::Read(ion_moments_prev_mf(iLev), restartDir + gridName +
+                                                   "_nodePlasmaPrev" +
+                                                   lev_string(iLev));
+        ion_moments_prev_mf(iLev).FillBoundary(Geom(iLev).periodicity());
       }
     } else {
       seed_first_hybrid_step();
@@ -1406,6 +1453,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
   if (saveBody)
     nVarOut += 1;
 
+  const bool saveSolver = is_multi_solver();
+  if (saveSolver)
+    nVarOut += 1;
+
   // The evolved electron pressure and temperature (#ELECTRONPRESSURE). They
   // are cell-centered, so they are only meaningful in the cell-centered output.
   const bool savePeVars = useElectronPressureEq && !saveNode;
@@ -1607,6 +1658,36 @@ void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
 
       iStart += 1;
       varNames.push_back("body");
+    }
+
+    if (saveSolver) {
+      //-------------solver mode map----------------
+      const Box domBox = Geom(iLev).Domain();
+      GpuArray<bool, 3> clampDom = { false, false, false };
+      for (int d = 0; d < nDim; ++d) {
+        clampDom[d] = saveNode && !Geom(iLev).isPeriodic(d);
+      }
+      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& outArr = out[iLev][mfi].array();
+        const Array4<int const>& csArr = cell_solver(iLev)[mfi].const_array();
+        const Box csBox = cell_solver(iLev)[mfi].box();
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          IntVect cIdx(AMREX_D_DECL(i, j, k));
+          for (int d = 0; d < nDim; ++d) {
+            if (clampDom[d]) {
+              cIdx[d] =
+                  amrex::Clamp(cIdx[d], domBox.smallEnd(d), domBox.bigEnd(d));
+            }
+            cIdx[d] = amrex::Clamp(cIdx[d], csBox.smallEnd(d), csBox.bigEnd(d));
+          }
+          outArr(i, j, k, iStart) = static_cast<Real>(csArr(cIdx));
+        });
+      }
+
+      iStart += 1;
+      varNames.push_back("solver");
     }
 
     if (savePeVars) {

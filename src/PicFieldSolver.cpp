@@ -15,7 +15,7 @@ using namespace amrex;
 
 //==========================================================
 void Pic::update_E() {
-  if (useExplicitPIC) {
+  if (useExplicitPIC && !solveEM) {
     update_E_expl();
   } else {
     update_E_impl();
@@ -136,6 +136,26 @@ void Pic::update_E_impl() {
     MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
                   get_n_ghost());
 
+    if (is_multi_solver() && !nodeEmfUnified.empty() &&
+        !nodeEmfUnified[iLev].empty()) {
+      const auto& solvMF = node_solver_status(iLev);
+      for (MFIter mfi(nodeEth[iLev], doTiling); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.tilebox();
+        const Array4<Real> ethArr = nodeEth[iLev][mfi].array();
+        const Array4<Real const> emfArr =
+            nodeEmfUnified[iLev][mfi].const_array();
+        const Array4<int const> nsArr = solvMF[mfi].const_array();
+        parallel_for_omp(
+            bx, nDim3,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+              if ((nsArr(i, j, k) & solver_bit::kTouchImplicit) == 0) {
+                ethArr(i, j, k, c) = emfArr(i, j, k, c);
+              }
+            });
+      }
+      nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
     MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
                       nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
                       nodeE[iLev].nComp(), get_n_ghost());
@@ -195,21 +215,27 @@ void Pic::solve_E_gmres(int iLev) {
 void Pic::sync_nodal_solver_vec(MultiFab& vecMF, int iLev) {
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
+  const bool isMultiSolver = is_multi_solver();
   const auto& statusMF = node_status(iLev);
+  const auto& solvMF = node_solver_status(iLev);
 
   for (MFIter mfi(vecMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.tilebox();
     const Array4<Real> arr = vecMF[mfi].array();
     const Array4<int const> nodeArr = statusMF[mfi].const_array();
-    parallel_for_omp(bx, vecMF.nComp(),
-                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                       const int st = nodeArr(i, j, k);
-                       if (!bit::is_owner(st) ||
-                           (skipAllBody && bit::is_body(st)) ||
-                           (skipInterior && bit::is_body_interior(st))) {
-                         arr(i, j, k, c) = 0.0;
-                       }
-                     });
+    const Array4<int const> nsArr =
+        isMultiSolver ? solvMF[mfi].const_array() : Array4<int const>{};
+    parallel_for_omp(
+        bx, vecMF.nComp(),
+        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+          const int st = nodeArr(i, j, k);
+          if (!bit::is_owner(st) || (skipAllBody && bit::is_body(st)) ||
+              (skipInterior && bit::is_body_interior(st)) ||
+              (isMultiSolver &&
+               (nsArr(i, j, k) & solver_bit::kTouchImplicit) == 0)) {
+            arr(i, j, k, c) = 0.0;
+          }
+        });
   }
 
   vecMF.SumBoundary(0, vecMF.nComp(), IntVect(0), IntVect(0),
@@ -649,6 +675,27 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
     }
   }
 
+  // Multi-solver seam Dirichlet & inactive non-Implicit nodes: enforce
+  // identity rows A_ii = 1, A_ij = 0.
+  if (is_multi_solver()) {
+    const auto& solvMF = node_solver_status(iLev);
+    for (MFIter mfi(matvecMF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real> arrOut = matvecMF[mfi].array();
+      const Array4<Real const> arrIn = vecMF[mfi].const_array();
+      const Array4<int const> nsArr = solvMF[mfi].const_array();
+      parallel_for_omp(
+          bx, matvecMF.nComp(),
+          [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+            const int ns = nsArr(i, j, k);
+            if ((ns & solver_bit::kImplicitSeamDirichlet) != 0 ||
+                (ns & solver_bit::kTouchImplicit) == 0) {
+              arrOut(i, j, k, c) = arrIn(i, j, k, c);
+            }
+          });
+    }
+  }
+
   // 'conducting' body: keep the Krylov vectors inside the constrained space
   // by removing the tangential electric field on the body nodes. Together with
   // the same projection of the right-hand side and of the solution, this makes
@@ -871,6 +918,35 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
     }
   }
 
+  // Multi-solver seam Dirichlet nodes take the unified secondary EMF
+  // (so nodeEth = E^{n+theta} equals nodeEmfUnified on the seam), and
+  // non-Implicit nodes are zeroed to match sync_nodal_solver_vec().
+  if (is_multi_solver()) {
+    const bool hasSeamEmf =
+        !nodeEmfUnified.empty() && !nodeEmfUnified[iLev].empty();
+    const auto& solvMF = node_solver_status(iLev);
+    for (MFIter mfi(temp2Node); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      const Array4<Real> arrRHS = temp2Node[mfi].array();
+      const Array4<Real const> arrE = nodeE[iLev][mfi].const_array();
+      const Array4<Real const> arrEmf =
+          hasSeamEmf ? nodeEmfUnified[iLev][mfi].const_array()
+                     : Array4<Real const>{};
+      const Array4<int const> nsArr = solvMF[mfi].const_array();
+      parallel_for_omp(
+          bx, temp2Node.nComp(),
+          [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+            const int ns = nsArr(i, j, k);
+            if ((ns & solver_bit::kImplicitSeamDirichlet) != 0) {
+              arrRHS(i, j, k, c) =
+                  hasSeamEmf ? arrEmf(i, j, k, c) : arrE(i, j, k, c);
+            } else if ((ns & solver_bit::kTouchImplicit) == 0) {
+              arrRHS(i, j, k, c) = 0.0;
+            }
+          });
+    }
+  }
+
   // 'conducting' body: project the right-hand side onto the radial direction
   // so that the Krylov space stays inside the constrained space.
   if (is_body_conducting())
@@ -920,14 +996,18 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
   const bool hasWallEt = iLev == 0 && hasConductingBC_;
+  const bool isMultiSolver = is_multi_solver();
   const BoundaryBounds bnd(Geom(iLev), ba.ixType(), &bcField);
   const auto& statusMF = node_status(iLev);
+  const auto& solvMF = node_solver_status(iLev);
 
   for (MFIter mfi(invDiagMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.tilebox();
     const Array4<Real> invArr = invDiagMF[mfi].array();
     const Array4<RealMM const> mmArr = nodeMM[iLev][mfi].const_array();
     const Array4<int const> statusArr = statusMF[mfi].const_array();
+    const Array4<int const> nsArr =
+        isMultiSolver ? solvMF[mfi].const_array() : Array4<int const>{};
     const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
 
     parallel_for_omp(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -941,6 +1021,13 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
           continue;
         if ((FieldBC::is_dirichlet(bnd.bcLo[d]) && ijk[d] == bnd.loBnd[d]) ||
             (FieldBC::is_dirichlet(bnd.bcHi[d]) && ijk[d] == bnd.hiBnd[d])) {
+          isDirichletNode = true;
+        }
+      }
+      if (isMultiSolver) {
+        const int ns = nsArr(i, j, k);
+        if ((ns & solver_bit::kImplicitSeamDirichlet) != 0 ||
+            (ns & solver_bit::kTouchImplicit) == 0) {
           isDirichletNode = true;
         }
       }
@@ -1078,16 +1165,25 @@ const Pic::NodeSystemLayout& Pic::node_system_layout(const MultiFab& MF,
   layout.skipInterior = skipInterior;
   layout.boxes.assign(MF.local_size(), {});
 
+  const bool isMultiSolver = is_multi_solver();
   HostFabCache statusCache;
+  HostFabCache solvCache;
   for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<int const> nodeArr = statusCache.array(node_status(iLev), mfi);
+    const Array4<int const> nsArr =
+        isMultiSolver ? solvCache.array(node_solver_status(iLev), mfi)
+                      : Array4<int const>{};
     const Dim3 lo = lbound(box);
     const Dim3 hi = ubound(box);
 
     auto is_unknown = [&](int i, int j, int k) {
       const int st = nodeArr(i, j, k);
-      return bit::is_owner(st) && !(skipAllBody && bit::is_body(st)) &&
+      const bool activeSolver =
+          !isMultiSolver ||
+          ((nsArr(i, j, k) & solver_bit::kTouchImplicit) != 0);
+      return activeSolver && bit::is_owner(st) &&
+             !(skipAllBody && bit::is_body(st)) &&
              !(skipInterior && bit::is_body_interior(st));
     };
 

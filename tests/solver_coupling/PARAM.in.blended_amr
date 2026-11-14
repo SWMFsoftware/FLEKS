@@ -1,0 +1,155 @@
+#DESCRIPTION
+2D AMR coupled solver test: Implicit Full-PIC (x < 0) coupled to
+RK4 Hybrid-PIC (x >= 0) with cosine blending (nBlendCell = 2) and an
+AMR refinement patch straddling the solver seam at x = 0.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-6.4                    xMin
+ 6.4                    xMax
+-3.2                    yMin
+ 3.2                    yMax
+-0.1                    zMin
+ 0.1                    zMax
+
+#NCELL
+32                      nCellX
+16                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI
+5.0e5                   uNormSI
+
+#FIELDSOLVER
+implicit
+
+#DISCRETIZATION
+0.55                    theta
+0.0                     ratioDivC2C
+
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
+#REGION
+right_half              name
+box                     shape
+ 0.0                    xMin
+ 6.4                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#REGION
+seam_patch              name
+box                     shape
+-1.6                    xMin
+ 1.6                    xMax
+-1.6                    yMin
+ 1.6                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#REFINEREGION
+0                       refineLev
++seam_patch             StringRegion
+
+#GRIDEFFICIENCY
+0.9                     gridEfficiency
+
+#REGIONSOLVER
++right_half             sRegion
+hybrid                  fieldSolverMode
+2                       nBlendCell
+rk4                     fieldIntegrator
+8                       nSubcycle
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+4.3087                  electronTemperature
+1.666667                electronGamma
+5.0                     electronDensity0
+
+#PLASMA
+2                       nS
+1.0                     mass
+1.0                     charge
+0.04                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+10000.0                 T
+5.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+50000.0                 T
+1.0439e-8               bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#TESTCASE
+HybridWave
+
+#WAVEIC
+T                       rightHand
+1                       waveMode
+T                       seedE
+0.02                    frac
+
+#PARTICLES
+16                      nParticle per cell in X
+4                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#MONITOR
+20                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+20                      dnSavePlot
+-1                      dtSavePlot
+-1                      dxSavePlot
+{fluid} divB divBc solver    varName
+
+#STOP
+-1                      MaxIter
+1.6                     TimeMax

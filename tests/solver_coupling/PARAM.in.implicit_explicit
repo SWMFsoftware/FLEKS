@@ -1,0 +1,129 @@
+#DESCRIPTION
+Coupled multi-solver whistler-Alfven wave test: Implicit Full-PIC (x < 0)
+coupled to Explicit Leapfrog Full-PIC (x >= 0) across a sharp seam.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-6.4                    xMin
+ 6.4                    xMax
+-0.1                    yMin
+ 0.1                    yMax
+-0.1                    zMin
+ 0.1                    zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI
+5.0e5                   uNormSI
+
+#FIELDSOLVER
+implicit
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     ratioDivC2C
+
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
+#REGION
+right_half              name
+box                     shape
+ 0.0                    xMin
+ 6.4                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#REGIONSOLVER
++right_half             sRegion
+explicit                fieldSolverMode
+0                       nBlendCell
+leapfrog                fieldIntegrator
+2                       nSubcycle
+
+#PLASMA
+2                       nS
+1.0                     mass
+1.0                     charge
+0.04                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+10000.0                 T
+5.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+50000.0                 T
+1.0439e-8               bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#TESTCASE
+HybridWave
+
+#WAVEIC
+T                       rightHand
+1                       waveMode
+T                       seedE
+0.02                    frac
+
+#PARTICLES
+128                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+30                      dnSavePlot
+-1                      dtSavePlot
+1                       dxSavePlot
+{fluid} divB divBc solver    varName
+
+#STOP
+-1                      MaxIter
+6.0                     TimeMax

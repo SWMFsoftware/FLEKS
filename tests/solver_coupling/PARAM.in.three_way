@@ -1,0 +1,166 @@
+#DESCRIPTION
+Three-way coupled whistler-Alfven wave test: Implicit Full-PIC (x < -3.2),
+Explicit Leapfrog Full-PIC (-3.2 <= x < 3.2), and RK4 Hybrid-PIC with
+evolved electron pressure (x >= 3.2) across sharp block-face seams.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-9.6                    xMin  [code units; Lx = 19.2 d_i]
+ 9.6                    xMax
+-0.1                    yMin
+ 0.1                    yMax
+-0.1                    zMin
+ 0.1                    zMax
+
+#NCELL
+96                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+5.0e5                   uNormSI   [m/s] tNorm = 0.2 s; sets c/v_A ~ 5
+
+#FIELDSOLVER
+implicit
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     ratioDivC2C
+
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
+#REGION
+mid_third               name
+box                     shape
+-3.2                    xMin
+ 3.2                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#REGION
+right_third             name
+box                     shape
+ 3.2                    xMin
+ 9.6                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#REGIONSOLVER
++mid_third              sRegion
+explicit                fieldSolverMode
+0                       nBlendCell
+leapfrog                fieldIntegrator
+5                       nSubcycle
+
+#REGIONSOLVER
++right_third            sRegion
+hybrid                  fieldSolverMode
+0                       nBlendCell
+rk4                     fieldIntegrator
+4                       nSubcycle
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+4.3087                  electronTemperature  [eV; T_e = 50000 K]
+1.666667                electronGamma
+5.0                     electronDensity0
+
+#ELECTRONPRESSURE
+T                       useElectronPressureEq
+0.0                     heatCondKappa0SI
+10.0                    coulombLog
+F                       fieldAlignedConduction
+0.0                     fieldAlignedFraction
+1.0e-12                 fieldAlignedBMinSI
+0.0                     heatFluxLimiter
+1.0e-12                 peMin
+T                       ambipolarInStages
+
+#PLASMA
+2                       nS
+1.0                     mass        Species 0: ions
+1.0                     charge
+0.04                    mass        Species 1: electrons
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: ions
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [/cc]   Species 1: electrons
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+50000.0                 T [K]
+1.0439e-8               bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+HybridWave
+
+#WAVEIC
+T                       rightHand
+1                       waveMode
+T                       seedE
+0.02                    frac
+
+#PARTICLES
+128                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#DIVB
+F                       useHyperbolicCleaning
+T                       alwaysComputeDivB
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+30                      dnSavePlot
+-1                      dtSavePlot
+1                       dxSavePlot
+{fluid} Pe divB divBc solver    varName
+
+#STOP
+-1                      MaxIter
+6.0                     TimeMax

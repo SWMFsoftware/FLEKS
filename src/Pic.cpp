@@ -63,7 +63,7 @@ void Pic::fill_new_cells() {
     // through the InitialCondition plugin during fill_particles().
     fill_particles();
     sum_moments(true);
-    if (useHybridPIC) {
+    if (useHybridPIC && !is_multi_solver()) {
       seed_first_hybrid_step();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         average_center_to_node(centerB[iLev], nodeB[iLev]);
@@ -99,9 +99,94 @@ void Pic::fill_new_cells() {
           }
         }
       }
+    } else if (is_multi_solver() && has_solver(PicSolverMode::Hybrid)) {
+      if (has_full_pic()) {
+        deposit_ion_moments(false);
+        smooth_moments();
+      }
+      seed_first_hybrid_step();
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        average_center_to_node(centerB[iLev], nodeB[iLev]);
+        nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
+                         iLev, true);
+        } else {
+          fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0, nDim3,
+                                        refRatio(iLev - 1), Geom(iLev - 1),
+                                        Geom(iLev), node_status(iLev),
+                                        node_bilinear_interp);
+        }
+      }
+      if (useElectronPressureEq && !peStateInitialized_) {
+        init_electron_pressure();
+      }
+      sync_fullpic_Pe_to_hybrid();
+      compute_ambipolar_E();
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
+                       nodeEstage[iLev], iLev, 0.0);
+        nodeEstage[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), nodeEstage[iLev], 0, nDim3,
+                         &Pic::get_node_E, iLev, false);
+        }
+        if (doSmoothE) {
+          smooth_E(nodeEstage[iLev], iLev);
+          if (iLev == 0) {
+            apply_field_bc(node_status(iLev), nodeEstage[iLev], 0, nDim3,
+                           &Pic::get_node_E, iLev, false);
+          }
+          if (use_body()) {
+            apply_body_E_bc(nodeEstage[iLev], iLev);
+          }
+        }
+        const bool hasBlend = has_node_blend_weight(iLev);
+        for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+          const Box& bx = mfi.validbox();
+          const Array4<Real> arrE = nodeE[iLev][mfi].array();
+          const Array4<Real const> arrEhyb =
+              nodeEstage[iLev][mfi].const_array();
+          const Array4<int const> nsArr =
+              node_solver_status(iLev)[mfi].const_array();
+          const Array4<Real const> wArr =
+              hasBlend ? node_blend_weight(iLev)[mfi].const_array()
+                       : Array4<Real const>{};
+          parallel_for_omp(
+              bx, nDim3,
+              [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                const int ns = nsArr(i, j, k);
+                if (ns == solver_bit::kTouchNone)
+                  return;
+                if (hasBlend) {
+                  const Real w = wArr(i, j, k);
+                  arrE(i, j, k, c) =
+                      w * arrE(i, j, k, c) + (1.0 - w) * arrEhyb(i, j, k, c);
+                } else if (ns & solver_bit::kTouchHybrid) {
+                  arrE(i, j, k, c) = arrEhyb(i, j, k, c);
+                }
+              });
+        }
+        nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
+                         &Pic::get_node_E, iLev, false);
+        } else {
+          fill_fine_lev_bny_from_coarse(nodeE[iLev - 1], nodeE[iLev], 0, nDim3,
+                                        refRatio(iLev - 1), Geom(iLev - 1),
+                                        Geom(iLev), node_status(iLev),
+                                        node_bilinear_interp);
+        }
+        if (use_body()) {
+          apply_body_E_bc(nodeE[iLev], iLev);
+        }
+        MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
+      }
+      refresh_hybrid_electron_collar();
+      sum_moments(true);
     }
     // div(E)-correction fields are full-PIC only.
-    if (!useHybridPIC) {
+    if (has_full_pic()) {
       if (finestLevel() == 0) {
         sum_to_center(false);
       } else if (doCorrectDivE) {
@@ -114,6 +199,16 @@ void Pic::fill_new_cells() {
     if (need_divB()) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         compute_divB(iLev);
+      }
+      for (int iLev = 1; iLev < n_lev(); iLev++) {
+        fill_fine_lev_bny_from_coarse(divB[iLev - 1], divB[iLev], 0,
+                                      divB[iLev].nComp(), refRatio(iLev - 1),
+                                      Geom(iLev - 1), Geom(iLev),
+                                      cell_status(iLev), cell_bilinear_interp);
+        fill_fine_lev_bny_from_coarse(
+            centerDivB[iLev - 1], centerDivB[iLev], 0, centerDivB[iLev].nComp(),
+            refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+            cell_bilinear_interp);
       }
     }
   }
@@ -132,7 +227,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // The relaxation workspace is needed only on coarse levels with an active
   // fine level. The active-level loop below cannot release a workspace on a
   // level that disappeared during coarsening, so clear those slots explicitly.
-  if ((useHybridPIC || useCurlUpwindB) && !relaxTarget.empty()) {
+  if ((has_solver(PicSolverMode::Hybrid) || useCurlUpwindB) &&
+      !relaxTarget.empty()) {
     for (int iLev = std::max(0, finestLevel()); iLev < n_lev_max(); ++iLev) {
       relaxTarget[iLev].clear();
       relaxResidual[iLev].clear();
@@ -140,6 +236,22 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       relaxCurlT[iLev].clear();
       relaxDir[iLev].clear();
     }
+  }
+  for (int iLev = n_lev(); iLev < n_lev_max(); ++iLev) {
+    if (!centerBstar.empty())
+      centerBstar[iLev].clear();
+    if (!centerBstage.empty())
+      centerBstage[iLev].clear();
+    if (!nodeIonMoments.empty())
+      nodeIonMoments[iLev].clear();
+    if (!nodeIonMomentsPrev.empty())
+      nodeIonMomentsPrev[iLev].clear();
+    if (!nodeEmfUnified.empty())
+      nodeEmfUnified[iLev].clear();
+    if (!nodeEPush.empty())
+      nodeEPush[iLev].clear();
+    if (!nodeBPush.empty())
+      nodeBPush[iLev].clear();
   }
 
   // Clear persistent AMR scratch buffers so they are rebuilt on the new grids.
@@ -151,6 +263,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   amrNmmf.clear();
   amrexESolver.clear();
   amrexDivESolver.clear();
+  nodeLayout.clear();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {
@@ -180,7 +293,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // introduced by AMR before the next field solve.
     distribute_FabArray(nodeEth[iLev], node_box_array(iLev),
                         DistributionMap(iLev), 3, get_n_ghost(), true, 0.0);
-    if (useUpwindB && useCurlUpwindB && !useHybridPIC) {
+    if (useUpwindB && useCurlUpwindB && has_solver(PicSolverMode::Implicit)) {
       distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
     } else {
@@ -189,7 +302,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     bool doMoveData = false;
     // div(E)/div(B) correction and implicit E-solver arrays (full-PIC only).
-    if (!useHybridPIC) {
+    if (has_full_pic()) {
       distribute_FabArray(centerNetChargeOld[iLev], boxArray(iLev),
                           DistributionMap(iLev), 1, get_n_ghost());
       distribute_FabArray(centerNetChargeN[iLev], boxArray(iLev),
@@ -215,7 +328,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, 0, doMoveData);
       }
 
-      if (!useExplicitPIC && !useHybridPIC) {
+      if (has_solver(PicSolverMode::Implicit)) {
         distribute_FabArray(nodeMM[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 1, 1, doMoveData);
         if (nodeMM_comm_data.size() != n_lev()) {
@@ -250,7 +363,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
       }
-      if (useExplicitPIC) {
+      if (has_solver(PicSolverMode::Explicit)) {
         distribute_FabArray(nodeCurlB[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
@@ -273,8 +386,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // Allocate it only for coarse levels with an active fine level. Using
     // n_lev_max() here would allocate the AMR-only buffers in single-level
     // runs that merely allow AMR, which needlessly regresses memory use.
-    if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0 &&
-        iLev < finestLevel()) {
+    if ((has_solver(PicSolverMode::Hybrid) || useCurlUpwindB) &&
+        finestLevel() > 0 && iLev < finestLevel()) {
       distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
                           DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
       distribute_FabArray(relaxResidual[iLev], boxArray(iLev),
@@ -288,12 +401,20 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     }
 
     if (useHybridPIC) {
-      // Previous-step moments for the Ohm's-law interpolation.
+      // Previous-step moments for the Ohm's-law interpolation (pure hybrid
+      // and Hybrid + None).
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
+      for (auto& pl : nodePlasmaPrev) {
+        if (pl.empty())
+          pl.resize(n_lev_max());
+        distribute_FabArray(pl[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), nHybridMomentsComps,
+                            get_n_ghost(), doMoveData);
+      }
     }
-    if (useHybridPIC) {
+    if (has_solver(PicSolverMode::Hybrid)) {
       // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE
       // node-centered.
       distribute_FabArray(centerLapB[iLev], boxArray(iLev),
@@ -359,16 +480,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 1, get_n_ghost(), false);
       }
     }
-    if (useHybridPIC) {
-      // Node-grid previous-step moments (J^{n-1/2}), slim layout.
-      for (auto& pl : nodePlasmaPrev) {
-        if (pl.empty())
-          pl.resize(n_lev_max());
-        distribute_FabArray(pl[iLev], node_box_array(iLev),
-                            DistributionMap(iLev), nHybridMomentsComps,
-                            get_n_ghost(), doMoveData);
-      }
-    }
     distribute_FabArray(dBdt[iLev], node_box_array(iLev), DistributionMap(iLev),
                         3, get_n_ghost(), doMoveData);
 
@@ -378,7 +489,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
     // E current (jHat), and node-centered moments (nodePlasma): full-PIC only.
-    if (!useHybridPIC) {
+    if (has_full_pic()) {
       distribute_FabArray(eBg[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
 
@@ -396,6 +507,39 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
       distribute_FabArray(jHat[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+    }
+
+    if (is_multi_solver()) {
+      if (!has_solver(PicSolverMode::Hybrid)) {
+        distribute_FabArray(centerBstar[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+        distribute_FabArray(centerBstage[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(),
+                            doMoveData);
+      }
+      distribute_FabArray(nodeEmfUnified[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
+      distribute_FabArray(nodeEPush[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
+      distribute_FabArray(nodeBPush[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
+    } else {
+      nodeEmfUnified[iLev].clear();
+      nodeEPush[iLev].clear();
+      nodeBPush[iLev].clear();
+    }
+
+    if (has_solver(PicSolverMode::Hybrid) && has_full_pic()) {
+      distribute_FabArray(nodeIonMoments[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), nMoments, get_n_ghost(), true,
+                          0.0);
+      distribute_FabArray(nodeIonMomentsPrev[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), nHybridMomentsComps,
+                          get_n_ghost(), true, 0.0);
+    } else {
+      nodeIonMoments[iLev].clear();
+      nodeIonMomentsPrev[iLev].clear();
     }
 
     for (auto& pl : nodePlasma) {
@@ -458,6 +602,7 @@ void Pic::post_regrid(MeshChangeReason reason) {
           &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           pInfo, pMode, ic_.get());
       ptr->set_target_ppc_source(targetPPC);
+      ptr->set_is_electron(i == iElectron_ && fi->get_species_charge(i) < 0);
 
       parts.push_back(std::move(ptr));
 
@@ -465,6 +610,8 @@ void Pic::post_regrid(MeshChangeReason reason) {
           &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           pInfo, pMode, ic_.get());
       ptrSource->set_target_ppc_source(targetPPC);
+      ptrSource->set_is_electron(i == iElectron_ &&
+                                 fi->get_species_charge(i) < 0);
 
       sourceParts.push_back(std::move(ptrSource));
     }
@@ -538,10 +685,12 @@ void Pic::post_regrid(MeshChangeReason reason) {
   // This part does not really work for multi-level.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     int n = get_local_node_or_cell_number(nodeE[iLev]);
-    eSolver.init(n, nDim3, nDim, matvec_E_solver);
+    if (has_solver(PicSolverMode::Implicit)) {
+      eSolver.init(n, nDim3, nDim, matvec_E_solver);
+    }
 
     // divESolver uses the full-PIC-only centerDivE array.
-    if (!useHybridPIC) {
+    if (has_full_pic()) {
       n = get_local_node_or_cell_number(centerDivE[iLev]);
       divESolver.init(n, 1, nDim, matvec_divE_accurate);
     }
@@ -732,8 +881,8 @@ void Pic::fill_E_B_fields(bool fillAll) {
                    nodeE[iLev].nGrow());
   }
 
-  // In hybrid PIC, sync nodeB from centerB at initialization.
-  if (useHybridPIC) {
+  // In hybrid PIC (pure or coupled), sync nodeB from centerB at initialization.
+  if (has_solver(PicSolverMode::Hybrid)) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       average_center_to_node(centerB[iLev], nodeB[iLev]);
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1383,7 +1532,9 @@ void Pic::particle_mover(int pushStage) {
   Real dtnext = tc->get_next_dt();
 
   const Vector<MultiFab>& nodeEpush =
-      (useHybridPIC || useExplicitPIC) ? nodeE : nodeEth;
+      is_multi_solver() ? nodeEPush
+                        : ((useHybridPIC || useExplicitPIC) ? nodeE : nodeEth);
+  const Vector<MultiFab>& nodeBpush = is_multi_solver() ? nodeBPush : nodeB;
 
   // In single-pass hybrid PIC (!usePredictorCorrector), fields (E^n, B^n) and
   // particle positions x^n live at integer time t^n, while particle velocities
@@ -1407,7 +1558,7 @@ void Pic::particle_mover(int pushStage) {
 
   for (int i : kineticSpecies_) {
     const bool isCharged = (parts[i]->get_charge() != 0.0);
-    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg,
+    parts[i]->mover(nodeEpush, nodeBpush, nodeB0, eBg, uBg,
                     (isCharged ? dtVel : dt), (isCharged ? dtNextVel : dtnext),
                     pushStage);
   }
@@ -1660,7 +1811,7 @@ void Pic::calc_mass_matrix() {
 
     jHat[iLev].setVal(0.0);
 
-    if (!useExplicitPIC) {
+    if (solveEM) {
       const RealMM mm0(0.0);
       nodeMM[iLev].setVal(mm0);
     }
@@ -1669,7 +1820,7 @@ void Pic::calc_mass_matrix() {
         (use_intrinsic_B() && !nodeB0[iLev].empty()) ? &nodeB0[iLev] : nullptr;
 
     for (int i = 0; i < nSpecies; ++i) {
-      if (useExplicitPIC) {
+      if (!solveEM) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], nodeB0Lev, tc->get_dt());
       } else {
         parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
@@ -1704,7 +1855,7 @@ void Pic::calc_mass_matrix() {
       }
     }
 
-    if (!useExplicitPIC) {
+    if (solveEM) {
       sum_boundary_node_mm(iLev);
 
       // Same correction as jHat above: the mass matrix of the plasma next to
@@ -1871,6 +2022,30 @@ void Pic::sum_moments(bool updateDt) {
       parts[i]->convert_to_fluid_moments(nodePlasma[i]);
     }
 
+    if (has_solver(PicSolverMode::Hybrid) && has_full_pic()) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        nodeIonMoments[iLev].setVal(0.0);
+      }
+      for (const int s : ionSpecies_) {
+        for (int iLev = 0; iLev < n_lev(); iLev++) {
+          MultiFab::Add(nodeIonMoments[iLev], nodePlasma[s][iLev], 0, 0,
+                        nMoments, get_n_ghost());
+        }
+      }
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        nodeIonMoments[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev > 0) {
+          fill_fine_lev_bny_from_coarse(
+              nodeIonMoments[iLev - 1], nodeIonMoments[iLev], 0, nMoments,
+              refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+              node_bilinear_interp);
+        }
+      }
+      if (is_multi_solver()) {
+        synthesize_hybrid_electron_moments();
+      }
+    }
+
     for (int i : kineticSpecies_) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         // nodePlasma[nSpecies] holds the sum of all kinetic species.
@@ -1893,13 +2068,14 @@ void Pic::sum_moments(bool updateDt) {
             Geom(iLev - 1), Geom(iLev), node_status(iLev),
             node_bilinear_interp);
 
-        if (useHybridPIC) {
-          fill_fine_lev_bny_from_coarse(nodePlasmaPrev[nSpecies][iLev - 1],
-                                        nodePlasmaPrev[nSpecies][iLev], 0,
-                                        nodePlasmaPrev[nSpecies][iLev].nComp(),
-                                        refRatio(iLev - 1), Geom(iLev - 1),
-                                        Geom(iLev), node_status(iLev),
-                                        node_bilinear_interp);
+        if (has_solver(PicSolverMode::Hybrid) &&
+            !ion_moments_prev_mf(iLev).empty() &&
+            !ion_moments_prev_mf(iLev - 1).empty()) {
+          fill_fine_lev_bny_from_coarse(
+              ion_moments_prev_mf(iLev - 1), ion_moments_prev_mf(iLev), 0,
+              ion_moments_prev_mf(iLev).nComp(), refRatio(iLev - 1),
+              Geom(iLev - 1), Geom(iLev), node_status(iLev),
+              node_bilinear_interp);
         }
       }
     }
@@ -1958,7 +2134,23 @@ void Pic::sum_moments(bool updateDt) {
                                        : std::numeric_limits<Real>::max();
     }
 
-    if (useHybridPIC && (tc->get_cfl() > 0 || isAutoSubcycle)) {
+    if (is_multi_solver()) {
+      if (tc->get_cfl() > 0) {
+        Real dt0 = *std::min_element(dtMax.begin(), dtMax.end());
+        Real dt = tc->get_cfl() * dt0;
+        tc->set_next_dt(dt);
+        if (tc->get_dt() < 0) {
+          tc->set_dt(dt);
+        }
+      }
+      if (!useHybridPIC) {
+        convert_and_sum_moments();
+        if (has_solver(PicSolverMode::Hybrid)) {
+          smooth_moments();
+        }
+      }
+      update_coupled_dt(doReport);
+    } else if (useHybridPIC && (tc->get_cfl() > 0 || isAutoSubcycle)) {
       Real dtNext = tc->get_next_dt();
       int nSubNext = nBSubcycle;
       calc_hybrid_dt_and_subcycle(dtNext, nSubNext, doReport);
@@ -2004,7 +2196,7 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  if (!useHybridPIC) {
+  if (!useHybridPIC && !(is_multi_solver() && updateDt)) {
     convert_and_sum_moments();
   }
 
@@ -2059,14 +2251,23 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
           grid.cell_cost()[iLev].nComp(), grid.cell_cost()[iLev].nGrow());
     }
 
+    const bool isMultiSolver = is_multi_solver();
+    const int implCode = static_cast<int>(PicSolverMode::Implicit);
+    const int explCode = static_cast<int>(PicSolverMode::Explicit);
+    const int hybCode = static_cast<int>(PicSolverMode::Hybrid);
+    const int noneCode = static_cast<int>(PicSolverMode::None);
     for (MFIter mfi(grid.cell_cost()[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       const Array4<Real>& cost = grid.cell_cost()[iLev][mfi].array();
       const Array4<int const> status = cell_status(iLev)[mfi].array();
+      const Array4<int const> csArr = isMultiSolver
+                                          ? cell_solver(iLev)[mfi].const_array()
+                                          : Array4<int const>{};
 
       ParallelFor(box, [&](int i, int j, int k) {
-        if (bit::is_refined(status(i, j, k))) {
+        const bool isRefined = bit::is_refined(status(i, j, k));
+        if (isRefined) {
           cost(i, j, k) = 0;
         } else if (bit::is_domain_edge(status(i, j, k))) {
           // When calculating cost for each cell, the ghost cells are
@@ -2084,6 +2285,19 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
           // interpolating between levels.
           // 3. The number 10 is chosen by experience.
           cost(i, j, k) += cellWeight;
+        }
+
+        if (isMultiSolver && !isRefined) {
+          const int cs = csArr(i, j, k);
+          if (cs == implCode) {
+            cost(i, j, k) *= 1.5;
+          } else if (cs == explCode) {
+            cost(i, j, k) *= 1.0;
+          } else if (cs == hybCode) {
+            cost(i, j, k) *= 0.6;
+          } else if (cs == noneCode) {
+            cost(i, j, k) *= 0.1;
+          }
         }
       });
     }
@@ -2137,6 +2351,737 @@ void Pic::finish_particle_push() {
 }
 
 //==========================================================
+void Pic::update_coupled_dt(bool doReport) {
+  std::string nameFunc = "Pic::update_coupled_dt";
+  timing_func(nameFunc);
+
+  const bool fixedDt = (tc->get_cfl() <= 0.0);
+  Real dtCandidate = fixedDt ? tc->get_dt() : tc->get_next_dt();
+  if (dtCandidate <= 0.0) {
+    dtCandidate = std::numeric_limits<Real>::max();
+  }
+
+  if (has_solver(PicSolverMode::Explicit) && !fixedDt) {
+    Real dtEmBaseMin = std::numeric_limits<Real>::max();
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      bool hasExplOnLev = false;
+      for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+        if (box_solver(iLev, mfi.index()) == PicSolverMode::Explicit) {
+          hasExplOnLev = true;
+          break;
+        }
+      }
+      if (!hasExplOnLev)
+        continue;
+      const auto& invDx = Geom(iLev).InvCellSize();
+      Real invDx2 = 0.0;
+      for (int d = 0; d < nDim; ++d) {
+        invDx2 += invDx[d] * invDx[d];
+      }
+      if (invDx2 > 0.0) {
+        const Real dtSubEmMax = 1.0 / std::sqrt(invDx2);
+        dtEmBaseMin = amrex::min(dtEmBaseMin, dtSubEmMax);
+      }
+    }
+    ParallelDescriptor::ReduceRealMin(dtEmBaseMin);
+    if (dtEmBaseMin < std::numeric_limits<Real>::max()) {
+      const Real emCfl = amrex::min(static_cast<Real>(0.8), tc->get_cfl());
+      dtCandidate = amrex::min(dtCandidate, emCfl * dtEmBaseMin *
+                                                static_cast<Real>(nEMSubcycle));
+    }
+  }
+
+  if (has_solver(PicSolverMode::Hybrid) && (!fixedDt || isAutoSubcycle)) {
+    Real dtHyb = tc->get_next_dt();
+    int nSubNext = nBSubcycle;
+    calc_hybrid_dt_and_subcycle(dtHyb, nSubNext, doReport);
+    if (!fixedDt && dtHyb > 0.0) {
+      dtCandidate = amrex::min(dtCandidate, dtHyb);
+    }
+    if (isAutoSubcycle) {
+      nBSubcycle = nSubNext;
+    }
+  }
+
+  if (!fixedDt && dtCandidate > 0.0 &&
+      dtCandidate < std::numeric_limits<Real>::max()) {
+    if (tc->get_dt_max() > 0.0) {
+      dtCandidate = amrex::min(dtCandidate, tc->get_dt_max());
+    }
+    tc->set_next_dt(dtCandidate);
+    if (tc->get_dt() < 0.0 || dtCandidate < tc->get_dt()) {
+      tc->set_dt(dtCandidate);
+    }
+  }
+}
+
+//==========================================================
+void Pic::advance_coupled_solvers(bool doReport) {
+  amrex::ignore_unused(doReport);
+  std::string nameFunc = "Pic::advance_coupled_solvers";
+  timing_func(nameFunc);
+
+  const int nLev = n_lev();
+  const int nG = get_n_ghost();
+  const Real dt = tc->get_dt();
+  const Real t0 = tc->get_time();
+  const bool hasImpl = has_solver(PicSolverMode::Implicit);
+  const bool hasExpl = has_solver(PicSolverMode::Explicit);
+  const bool hasHyb = has_solver(PicSolverMode::Hybrid);
+  const bool hasFullPic = has_full_pic();
+
+  // Stage A: Snapshot base fields at t^n before trial sub-solves.
+  Vector<MultiFab> nodeEBase(nLev), centerBBase(nLev), nodeBBase(nLev);
+  for (int iLev = 0; iLev < nLev; ++iLev) {
+    const auto& nba = node_box_array(iLev);
+    const auto& dm = DistributionMap(iLev);
+    nodeEBase[iLev].define(nba, dm, nDim3, nG);
+    centerBBase[iLev].define(boxArray(iLev), dm, nDim3, nG);
+    nodeBBase[iLev].define(nba, dm, nDim3, nG);
+    MultiFab::Copy(nodeEBase[iLev], nodeE[iLev], 0, 0, nDim3, nG);
+    MultiFab::Copy(centerBBase[iLev], centerB[iLev], 0, 0, nDim3, nG);
+    MultiFab::Copy(nodeBBase[iLev], nodeB[iLev], 0, 0, nDim3, nG);
+    MultiFab::Copy(nodeEPush[iLev], nodeEBase[iLev], 0, 0, nDim3, nG);
+    MultiFab::Copy(nodeBPush[iLev], nodeBBase[iLev], 0, 0, nDim3, nG);
+    MultiFab::Copy(nodeEmfUnified[iLev], nodeEBase[iLev], 0, 0, nDim3, nG);
+  }
+
+  auto restore_base_fields = [&]() {
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      MultiFab::Copy(nodeE[iLev], nodeEBase[iLev], 0, 0, nDim3, nG);
+      MultiFab::Copy(centerB[iLev], centerBBase[iLev], 0, 0, nDim3, nG);
+      MultiFab::Copy(nodeB[iLev], nodeBBase[iLev], 0, 0, nDim3, nG);
+    }
+  };
+
+  auto sync_nodal_vector = [&](Vector<MultiFab>& mf) {
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      mf[iLev].OverrideSync(Geom(iLev).periodicity());
+      mf[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  };
+
+  // Stage B: Explicit trial field advance (time-averaged EMF + push fields).
+  Vector<MultiFab> emfExpl, eExplEnd, eExplPush, bExplPush;
+  if (hasExpl) {
+    emfExpl.resize(nLev);
+    eExplEnd.resize(nLev);
+    eExplPush.resize(nLev);
+    bExplPush.resize(nLev);
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      const auto& nba = node_box_array(iLev);
+      const auto& dm = DistributionMap(iLev);
+      emfExpl[iLev].define(nba, dm, nDim3, nG);
+      eExplEnd[iLev].define(nba, dm, nDim3, nG);
+      eExplPush[iLev].define(nba, dm, nDim3, nG);
+      bExplPush[iLev].define(nba, dm, nDim3, nG);
+    }
+
+    restore_base_fields();
+    if (useExplicitPredictorCorrector) {
+      push_and_deposit_explicit_current(PicParticles::kPushPredictor, nodeJexpl,
+                                        true);
+      update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexpl, nullptr);
+
+      for (int iLev = 0; iLev < nLev; ++iLev) {
+        MultiFab::LinComb(eExplPush[iLev], 0.5, nodeE[iLev], 0, 0.5,
+                          nodeEBase[iLev], 0, 0, nDim3, nG);
+        eExplPush[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), eExplPush[iLev], 0, nDim3,
+                         &Pic::get_node_E, iLev, false, -1.0, t0 + 0.5 * dt);
+        } else {
+          fill_fine_lev_bny_from_coarse(
+              eExplPush[iLev - 1], eExplPush[iLev], 0, nDim3,
+              refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+              node_bilinear_interp);
+        }
+
+        MultiFab::LinComb(centerBstage[iLev], 0.5, centerB[iLev], 0, 0.5,
+                          centerBBase[iLev], 0, 0, nDim3, nG);
+        average_center_to_node(centerBstage[iLev], bExplPush[iLev]);
+        bExplPush[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), bExplPush[iLev], 0, nDim3,
+                         &Pic::get_node_B, iLev, true, -1.0, t0 + 0.5 * dt);
+        } else {
+          fill_fine_lev_bny_from_coarse(
+              bExplPush[iLev - 1], bExplPush[iLev], 0, nDim3,
+              refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+              node_bilinear_interp);
+        }
+
+        MultiFab::Copy(nodeE[iLev], eExplPush[iLev], 0, 0, nDim3, nG);
+        MultiFab::Copy(nodeB[iLev], bExplPush[iLev], 0, 0, nDim3, nG);
+      }
+
+      push_and_deposit_explicit_current(PicParticles::kPushCorrector, nodeJexpl,
+                                        true);
+      restore_base_fields();
+      update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexpl, &emfExpl);
+      for (int iLev = 0; iLev < nLev; ++iLev) {
+        MultiFab::Copy(eExplEnd[iLev], nodeE[iLev], 0, 0, nDim3, nG);
+      }
+    } else {
+      push_and_deposit_explicit_current(PicParticles::kPushLeapfrog, nodeJexpl,
+                                        true);
+      update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexpl, &emfExpl);
+      for (int iLev = 0; iLev < nLev; ++iLev) {
+        MultiFab::Copy(eExplEnd[iLev], nodeE[iLev], 0, 0, nDim3, nG);
+        MultiFab::Copy(eExplPush[iLev], nodeEBase[iLev], 0, 0, nDim3, nG);
+        MultiFab::Copy(bExplPush[iLev], nodeBBase[iLev], 0, 0, nDim3, nG);
+      }
+    }
+
+    sync_nodal_vector(emfExpl);
+    sync_nodal_vector(eExplEnd);
+    restore_base_fields();
+  }
+
+  // Stage C: Hybrid trial field advance (time-averaged EMF + Ohm E^{n+1}).
+  Vector<MultiFab> emfHyb, eHybEnd, eHybPush, bHybPush;
+  if (hasHyb) {
+    emfHyb.resize(nLev);
+    eHybEnd.resize(nLev);
+    eHybPush.resize(nLev);
+    bHybPush.resize(nLev);
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      const auto& nba = node_box_array(iLev);
+      const auto& dm = DistributionMap(iLev);
+      emfHyb[iLev].define(nba, dm, nDim3, nG);
+      eHybEnd[iLev].define(nba, dm, nDim3, nG);
+      eHybPush[iLev].define(nba, dm, nDim3, nG);
+      bHybPush[iLev].define(nba, dm, nDim3, nG);
+      MultiFab::Copy(nodeEPush[iLev], nodeEBase[iLev], 0, 0, nDim3, nG);
+      MultiFab::Copy(nodeBPush[iLev], nodeBBase[iLev], 0, 0, nDim3, nG);
+    }
+
+    restore_base_fields();
+    if (isFirstHybridStep) {
+      seed_first_hybrid_step();
+    } else {
+      save_current_moments_to_prev();
+    }
+
+    if (hasFullPic) {
+      deposit_ion_moments(false, true, dt);
+    } else {
+      for (const int s : ionSpecies_) {
+        parts[s]->backup_particle_state();
+        parts[s]->mover(nodeEBase, nodeBBase, nodeB0, eBg, uBg, dt, dt,
+                        PicParticles::kPushLeapfrog, nullptr, false);
+        parts[s]->redistribute_particles();
+      }
+      sum_moments(false);
+      for (const int s : ionSpecies_) {
+        parts[s]->restore_particle_state();
+      }
+    }
+
+    smooth_moments();
+    update_Pe_hybrid();
+    update_B_hybrid(&emfHyb);
+
+    const bool useHybHalfB =
+        usePredictorCorrector || (!hasImpl && useExplicitPredictorCorrector);
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      emfHyb[iLev].OverrideSync(Geom(iLev).periodicity());
+      emfHyb[iLev].FillBoundary(Geom(iLev).periodicity());
+      MultiFab::Copy(eHybEnd[iLev], nodeE[iLev], 0, 0, nDim3, nG);
+      MultiFab::Copy(eHybPush[iLev], emfHyb[iLev], 0, 0, nDim3, nG);
+      if (useHybHalfB) {
+        MultiFab::LinComb(bHybPush[iLev], 0.5, nodeB[iLev], 0, 0.5,
+                          nodeBBase[iLev], 0, 0, nDim3, nG);
+        bHybPush[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), bHybPush[iLev], 0, nDim3,
+                         &Pic::get_node_B, iLev, true, -1.0, t0 + 0.5 * dt);
+        } else {
+          fill_fine_lev_bny_from_coarse(
+              bHybPush[iLev - 1], bHybPush[iLev], 0, nDim3, refRatio(iLev - 1),
+              Geom(iLev - 1), Geom(iLev), node_status(iLev),
+              node_bilinear_interp);
+        }
+      } else {
+        MultiFab::Copy(bHybPush[iLev], nodeBBase[iLev], 0, 0, nDim3, nG);
+      }
+    }
+    sync_nodal_vector(eHybEnd);
+    restore_base_fields();
+  }
+
+  // Stage D: Compose Secondary fields and solve Implicit E with seam Dirichlet.
+  Vector<MultiFab> compEmf, compEnd, compEPush, compBPush;
+  const Vector<MultiFab>* secEmf = nullptr;
+  const Vector<MultiFab>* secEnd = nullptr;
+  const Vector<MultiFab>* secEPush = nullptr;
+  const Vector<MultiFab>* secBPush = nullptr;
+  int secTouchBit = 0;
+
+  if (hasImpl && hasExpl && hasHyb) {
+    compEmf.resize(nLev);
+    compEnd.resize(nLev);
+    compEPush.resize(nLev);
+    compBPush.resize(nLev);
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      const auto& nba = node_box_array(iLev);
+      const auto& dm = DistributionMap(iLev);
+      compEmf[iLev].define(nba, dm, nDim3, nG);
+      compEnd[iLev].define(nba, dm, nDim3, nG);
+      compEPush[iLev].define(nba, dm, nDim3, nG);
+      compBPush[iLev].define(nba, dm, nDim3, nG);
+
+      const auto& solvMF = node_solver_status(iLev);
+      for (MFIter mfi(compEmf[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        const Array4<int const> nsArr = solvMF[mfi].const_array();
+        const Array4<Real> cEmfArr = compEmf[iLev][mfi].array();
+        const Array4<Real> cEndArr = compEnd[iLev][mfi].array();
+        const Array4<Real> cEPArr = compEPush[iLev][mfi].array();
+        const Array4<Real> cBPArr = compBPush[iLev][mfi].array();
+        const Array4<Real const> xEmf = emfExpl[iLev][mfi].const_array();
+        const Array4<Real const> xEnd = eExplEnd[iLev][mfi].const_array();
+        const Array4<Real const> xEP = eExplPush[iLev][mfi].const_array();
+        const Array4<Real const> xBP = bExplPush[iLev][mfi].const_array();
+        const Array4<Real const> hEmf = emfHyb[iLev][mfi].const_array();
+        const Array4<Real const> hEnd = eHybEnd[iLev][mfi].const_array();
+        const Array4<Real const> hEP = eHybPush[iLev][mfi].const_array();
+        const Array4<Real const> hBP = bHybPush[iLev][mfi].const_array();
+
+        parallel_for_omp(
+            bx, nDim3,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+              const int ns = nsArr(i, j, k);
+              const bool touchExpl = (ns & solver_bit::kTouchExplicit) != 0;
+              const bool touchHyb = (ns & solver_bit::kTouchHybrid) != 0;
+              Real w2 = Real(0.0);
+              if (!touchHyb) {
+                w2 = Real(1.0);
+              } else if (touchExpl) {
+                w2 = Real(0.5);
+              }
+              const Real oneMinusW2 = Real(1.0) - w2;
+              cEmfArr(i, j, k, c) =
+                  w2 * xEmf(i, j, k, c) + oneMinusW2 * hEmf(i, j, k, c);
+              cEndArr(i, j, k, c) =
+                  w2 * xEnd(i, j, k, c) + oneMinusW2 * hEnd(i, j, k, c);
+              cEPArr(i, j, k, c) =
+                  w2 * xEP(i, j, k, c) + oneMinusW2 * hEP(i, j, k, c);
+              cBPArr(i, j, k, c) =
+                  w2 * xBP(i, j, k, c) + oneMinusW2 * hBP(i, j, k, c);
+            });
+      }
+    }
+    sync_nodal_vector(compEmf);
+    sync_nodal_vector(compEnd);
+    sync_nodal_vector(compEPush);
+    sync_nodal_vector(compBPush);
+    secEmf = &compEmf;
+    secEnd = &compEnd;
+    secEPush = &compEPush;
+    secBPush = &compBPush;
+    secTouchBit = solver_bit::kTouchExplicit | solver_bit::kTouchHybrid;
+  } else if (hasImpl && hasHyb) {
+    secEmf = &emfHyb;
+    secEnd = &eHybEnd;
+    secEPush = &eHybPush;
+    secBPush = &bHybPush;
+    secTouchBit = solver_bit::kTouchHybrid;
+  } else if (hasImpl && hasExpl) {
+    secEmf = &emfExpl;
+    secEnd = &eExplEnd;
+    secEPush = &eExplPush;
+    secBPush = &bExplPush;
+    secTouchBit = solver_bit::kTouchExplicit;
+  } else if (!hasImpl && hasExpl && hasHyb) {
+    secEmf = &emfHyb;
+    secEnd = &eHybEnd;
+    secEPush = &eHybPush;
+    secBPush = &bHybPush;
+    secTouchBit = solver_bit::kTouchHybrid;
+  }
+
+  if (hasImpl) {
+    if (secTouchBit != 0 && secEmf != nullptr) {
+      for (int iLev = 0; iLev < nLev; ++iLev) {
+        const auto& solvMF = node_solver_status(iLev);
+        for (MFIter mfi(nodeEmfUnified[iLev]); mfi.isValid(); ++mfi) {
+          const Box& bx = mfi.validbox();
+          const Array4<Real> uArr = nodeEmfUnified[iLev][mfi].array();
+          const Array4<Real const> sArr = (*secEmf)[iLev][mfi].const_array();
+          const Array4<int const> nsArr = solvMF[mfi].const_array();
+          parallel_for_omp(bx, nDim3,
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int c)
+                               noexcept {
+                                 if ((nsArr(i, j, k) & secTouchBit) != 0) {
+                                   uArr(i, j, k, c) = sArr(i, j, k, c);
+                                 }
+                               });
+        }
+      }
+      sync_nodal_vector(nodeEmfUnified);
+    }
+
+    if (finestLevel() == 0) {
+      calc_mass_matrix();
+    } else {
+      calc_mass_matrix_amr();
+    }
+    update_E();
+  }
+
+  // Stage E: Assemble unified nodal fields across solvers.
+  const bool hasPair =
+      (hasImpl && (hasExpl || hasHyb)) || (!hasImpl && hasExpl && hasHyb);
+  if (hasPair) {
+    const Vector<MultiFab>& primEmf = hasImpl ? nodeEth : emfExpl;
+    const Vector<MultiFab>& primEnd = hasImpl ? nodeE : eExplEnd;
+    const Vector<MultiFab>& primEPush = hasImpl ? nodeEth : eExplPush;
+    const Vector<MultiFab>& primBPush = hasImpl ? nodeBBase : bExplPush;
+
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      const bool hasBlend = has_node_blend_weight(iLev);
+      const auto& solvMF = node_solver_status(iLev);
+      for (MFIter mfi(nodeEmfUnified[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        const Array4<int const> nsArr = solvMF[mfi].const_array();
+        const Array4<Real const> wArr =
+            hasBlend ? node_blend_weight(iLev)[mfi].const_array()
+                     : Array4<Real const>{};
+        const Array4<Real> outEmf = nodeEmfUnified[iLev][mfi].array();
+        const Array4<Real> outEnd = nodeE[iLev][mfi].array();
+        const Array4<Real> outEP = nodeEPush[iLev][mfi].array();
+        const Array4<Real> outBP = nodeBPush[iLev][mfi].array();
+        const Array4<Real const> baseE = nodeEBase[iLev][mfi].const_array();
+        const Array4<Real const> baseB = nodeBBase[iLev][mfi].const_array();
+        const Array4<Real const> pEmf = primEmf[iLev][mfi].const_array();
+        const Array4<Real const> pEnd = primEnd[iLev][mfi].const_array();
+        const Array4<Real const> pEP = primEPush[iLev][mfi].const_array();
+        const Array4<Real const> pBP = primBPush[iLev][mfi].const_array();
+        const Array4<Real const> sEmf = (*secEmf)[iLev][mfi].const_array();
+        const Array4<Real const> sEnd = (*secEnd)[iLev][mfi].const_array();
+        const Array4<Real const> sEP = (*secEPush)[iLev][mfi].const_array();
+        const Array4<Real const> sBP = (*secBPush)[iLev][mfi].const_array();
+
+        parallel_for_omp(
+            bx, nDim3,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+              const int ns = nsArr(i, j, k);
+              if (ns == solver_bit::kTouchNone) {
+                outEmf(i, j, k, c) = baseE(i, j, k, c);
+                outEnd(i, j, k, c) = baseE(i, j, k, c);
+                outEP(i, j, k, c) = baseE(i, j, k, c);
+                outBP(i, j, k, c) = baseB(i, j, k, c);
+                return;
+              }
+              const Real w = hasBlend ? wArr(i, j, k)
+                                      : (((ns & secTouchBit) != 0) ? Real(0.0)
+                                                                   : Real(1.0));
+              const Real oneMinusW = Real(1.0) - w;
+              outEmf(i, j, k, c) =
+                  w * pEmf(i, j, k, c) + oneMinusW * sEmf(i, j, k, c);
+              outEnd(i, j, k, c) =
+                  w * pEnd(i, j, k, c) + oneMinusW * sEnd(i, j, k, c);
+              outEP(i, j, k, c) =
+                  w * pEP(i, j, k, c) + oneMinusW * sEP(i, j, k, c);
+              outBP(i, j, k, c) =
+                  w * pBP(i, j, k, c) + oneMinusW * sBP(i, j, k, c);
+            });
+      }
+    }
+  } else {
+    // Single active solver combined with None.
+    const Vector<MultiFab>& actEmf =
+        hasImpl ? nodeEth : (hasExpl ? emfExpl : emfHyb);
+    const Vector<MultiFab>& actEnd =
+        hasImpl ? nodeE : (hasExpl ? eExplEnd : eHybEnd);
+    const Vector<MultiFab>& actEPush =
+        hasImpl ? nodeEth : (hasExpl ? eExplPush : eHybPush);
+    const Vector<MultiFab>& actBPush =
+        hasImpl ? nodeBBase : (hasExpl ? bExplPush : bHybPush);
+    const int activeBit = hasImpl ? solver_bit::kTouchImplicit
+                                  : (hasExpl ? solver_bit::kTouchExplicit
+                                             : solver_bit::kTouchHybrid);
+
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      const auto& solvMF = node_solver_status(iLev);
+      for (MFIter mfi(nodeEmfUnified[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        const Array4<int const> nsArr = solvMF[mfi].const_array();
+        const Array4<Real> outEmf = nodeEmfUnified[iLev][mfi].array();
+        const Array4<Real> outEnd = nodeE[iLev][mfi].array();
+        const Array4<Real> outEP = nodeEPush[iLev][mfi].array();
+        const Array4<Real> outBP = nodeBPush[iLev][mfi].array();
+        const Array4<Real const> baseE = nodeEBase[iLev][mfi].const_array();
+        const Array4<Real const> baseB = nodeBBase[iLev][mfi].const_array();
+        const Array4<Real const> aEmf = actEmf[iLev][mfi].const_array();
+        const Array4<Real const> aEnd = actEnd[iLev][mfi].const_array();
+        const Array4<Real const> aEP = actEPush[iLev][mfi].const_array();
+        const Array4<Real const> aBP = actBPush[iLev][mfi].const_array();
+
+        parallel_for_omp(bx, nDim3,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k, int c)
+                             noexcept {
+                               if ((nsArr(i, j, k) & activeBit) != 0) {
+                                 outEmf(i, j, k, c) = aEmf(i, j, k, c);
+                                 outEnd(i, j, k, c) = aEnd(i, j, k, c);
+                                 outEP(i, j, k, c) = aEP(i, j, k, c);
+                                 outBP(i, j, k, c) = aBP(i, j, k, c);
+                               } else {
+                                 outEmf(i, j, k, c) = baseE(i, j, k, c);
+                                 outEnd(i, j, k, c) = baseE(i, j, k, c);
+                                 outEP(i, j, k, c) = baseE(i, j, k, c);
+                                 outBP(i, j, k, c) = baseB(i, j, k, c);
+                               }
+                             });
+      }
+    }
+  }
+
+  for (Vector<MultiFab>* mf : { &nodeEmfUnified, &nodeE, &nodeEPush }) {
+    sync_nodal_vector(*mf);
+    apply_field_bc(node_status(0), (*mf)[0], 0, nDim3, &Pic::get_node_E, 0,
+                   false);
+    if (use_body()) {
+      for (int iLev = 0; iLev < nLev; ++iLev) {
+        apply_body_E_bc((*mf)[iLev], iLev);
+      }
+    }
+  }
+  sync_nodal_vector(nodeBPush);
+  apply_field_bc(node_status(0), nodeBPush[0], 0, nDim3, &Pic::get_node_B, 0,
+                 true);
+
+  if (finestLevel() > 0) {
+    sync_emf_at_interface(nodeEmfUnified);
+    fill_ghost_emf_from_coarse(nodeEmfUnified);
+    sync_emf_at_interface(nodeE);
+    for (int iLev = 1; iLev < nLev; ++iLev) {
+      for (Vector<MultiFab>* mf : { &nodeE, &nodeEPush, &nodeBPush }) {
+        fill_fine_lev_bny_from_coarse((*mf)[iLev - 1], (*mf)[iLev], 0, nDim3,
+                                      refRatio(iLev - 1), Geom(iLev - 1),
+                                      Geom(iLev), node_status(iLev),
+                                      node_bilinear_interp);
+      }
+    }
+  }
+
+  // Stage F: Unified particle push.
+  const int pushStage = (!hasImpl && (useExplicitPredictorCorrector ||
+                                      (hasHyb && usePredictorCorrector)))
+                            ? PicParticles::kPushCorrector
+                            : PicParticles::kPushLeapfrog;
+  advance_particles_and_sources(pushStage);
+
+  // Stage G: Unified divergence-free Faraday B advance.
+  const int noneCode = static_cast<int>(PicSolverMode::None);
+  const bool hasNone = has_solver(PicSolverMode::None);
+  for (int iLev = 0; iLev < nLev; ++iLev) {
+    MultiFab::Copy(centerB[iLev], centerBBase[iLev], 0, 0, nDim3, nG);
+    if (centerDB[iLev].empty()) {
+      distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
+                          nDim3, nG);
+    }
+    MultiFab& dB = centerDB[iLev];
+    dB.setVal(0.0);
+    curl_node_to_center(nodeEmfUnified[iLev], dB, Geom(iLev).InvCellSize());
+
+    if (is_body_interior_frozen()) {
+      mask_body_interior(dB, cell_status(iLev));
+    }
+    if (hasNone) {
+      const auto& csMF = cell_solver(iLev);
+      for (MFIter mfi(dB, doTiling); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.growntilebox(faraday_ngrow(iLev));
+        const Array4<Real> dbArr = dB[mfi].array();
+        const Array4<int const> csArr = csMF[mfi].const_array();
+        const Box csBox = csMF[mfi].box();
+        parallel_for_omp(
+            bx, nDim3,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+              const IntVect iv(AMREX_D_DECL(i, j, k));
+              if (csBox.contains(iv) && csArr(i, j, k) == noneCode) {
+                dbArr(i, j, k, c) = 0.0;
+              }
+            });
+      }
+    }
+
+    MultiFab::Saxpy(centerB[iLev], -dt, dB, 0, 0, nDim3, faraday_ngrow(iLev));
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  if (finestLevel() > 0) {
+    if (hasHyb || useCurlUpwindB) {
+      for (int iLev = finestLevel() - 1; iLev >= 0; --iLev) {
+        measure_covered_B_drift(iLev);
+      }
+      for (int iLev = finestLevel() - 1; iLev >= 0; --iLev) {
+        relax_covered_B_to_fine(iLev);
+      }
+    } else if (projectDownEmFields) {
+      for (int iLev = finestLevel(); iLev > 0; --iLev) {
+        average_down(centerB[iLev], centerB[iLev - 1], 0, nDim3,
+                     refRatio(iLev - 1));
+      }
+    }
+  }
+
+  const Real invDt = 1.0 / dt;
+  for (int iLev = 0; iLev < nLev; ++iLev) {
+    if (hasHyb || useCurlUpwindB) {
+      apply_centerB_BC(iLev);
+    } else {
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(cell_status(0), centerB[0], 0, nDim3, &Pic::get_center_B,
+                       0, true);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            centerB[iLev - 1], centerB[iLev], 0, nDim3, refRatio(iLev - 1),
+            Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+      }
+    }
+
+    MultiFab::Copy(dBdt[iLev], nodeBBase[iLev], 0, 0, nDim3, nG);
+
+    if (useUpwindB || useHyperbolicCleaning) {
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+      ensure_divB(iLev);
+      div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
+      correct_B(iLev);
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    average_center_to_node(centerB[iLev], nodeB[iLev]);
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    if (iLev == 0) {
+      apply_field_bc(node_status(0), nodeB[0], 0, nDim3, &Pic::get_node_B, 0,
+                     true);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          nodeB[iLev - 1], nodeB[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    }
+
+    if (is_body_conducting()) {
+      project_body_B(centerB[iLev], iLev);
+      project_body_B(nodeB[iLev], iLev);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    MultiFab::LinComb(dBdt[iLev], -invDt, dBdt[iLev], 0, invDt, nodeB[iLev], 0,
+                      0, nDim3, nG);
+  }
+
+  if (need_divB()) {
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      compute_divB(iLev);
+    }
+    for (int iLev = 1; iLev < nLev; ++iLev) {
+      fill_fine_lev_bny_from_coarse(
+          divB[iLev - 1], divB[iLev], 0, divB[iLev].nComp(), refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          centerDivB[iLev - 1], centerDivB[iLev], 0, centerDivB[iLev].nComp(),
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
+    }
+    if (n_lev() > 1 && doReport) {
+      report_divB_amr();
+    }
+  }
+
+  // Stage H: Post-step Hybrid Ohm refresh and electron collar replenishment.
+  if (hasHyb) {
+    if (hasFullPic) {
+      deposit_ion_moments(false);
+    } else {
+      sum_moments(false);
+    }
+    smooth_moments();
+    compute_ambipolar_E();
+
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
+                     nodeEstage[iLev], iLev, 1.0);
+      nodeEstage[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(node_status(iLev), nodeEstage[iLev], 0, nDim3,
+                       &Pic::get_node_E, iLev, false);
+      }
+      if (doSmoothE) {
+        smooth_E(nodeEstage[iLev], iLev);
+        if (iLev == 0) {
+          apply_field_bc(node_status(iLev), nodeEstage[iLev], 0, nDim3,
+                         &Pic::get_node_E, iLev, false);
+        }
+        if (use_body()) {
+          apply_body_E_bc(nodeEstage[iLev], iLev);
+        }
+      }
+
+      const bool hasBlend = has_node_blend_weight(iLev);
+      const auto& solvMF = node_solver_status(iLev);
+      for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        const Array4<Real> arrE = nodeE[iLev][mfi].array();
+        const Array4<Real const> arrEhyb = nodeEstage[iLev][mfi].const_array();
+        const Array4<int const> nsArr = solvMF[mfi].const_array();
+        const Array4<Real const> wArr =
+            hasBlend ? node_blend_weight(iLev)[mfi].const_array()
+                     : Array4<Real const>{};
+        parallel_for_omp(
+            bx, nDim3,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+              const int ns = nsArr(i, j, k);
+              if (ns == solver_bit::kTouchNone)
+                return;
+              const Real w =
+                  hasBlend ? wArr(i, j, k)
+                           : ((ns & solver_bit::kTouchHybrid) ? Real(0.0)
+                                                              : Real(1.0));
+              arrE(i, j, k, c) =
+                  w * arrE(i, j, k, c) + (Real(1.0) - w) * arrEhyb(i, j, k, c);
+            });
+      }
+      nodeE[iLev].OverrideSync(Geom(iLev).periodicity());
+      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
+                       &Pic::get_node_E, iLev, false);
+      }
+      if (use_body()) {
+        apply_body_E_bc(nodeE[iLev], iLev);
+      }
+    }
+
+    if (finestLevel() > 0) {
+      sync_emf_at_interface(nodeE);
+      for (int iLev = 1; iLev < nLev; ++iLev) {
+        fill_fine_lev_bny_from_coarse(nodeE[iLev - 1], nodeE[iLev], 0, nDim3,
+                                      refRatio(iLev - 1), Geom(iLev - 1),
+                                      Geom(iLev), node_status(iLev),
+                                      node_bilinear_interp);
+      }
+    }
+
+    refresh_hybrid_electron_collar();
+    dtPrevHybrid = dt;
+    isFirstHybridStep = false;
+  }
+
+  if (hasFullPic) {
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      div_node_to_center(nodeE[iLev], centerDivE[iLev],
+                         Geom(iLev).InvCellSize());
+    }
+  }
+}
+
+//==========================================================
 void Pic::update(bool doReportIn) {
   std::string nameFunc = "Pic::update";
 
@@ -2156,12 +3101,12 @@ void Pic::update(bool doReportIn) {
   }
 
   // Co-moving frame solver is full-PIC only.
-  if (!useHybridPIC &&
+  if (has_full_pic() &&
       (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE <= 0))) {
     update_U0_E0();
   }
 
-  if (solveEM) {
+  if (!is_multi_solver() && solveEM) {
     if (finestLevel() == 0) {
       calc_mass_matrix();
     } else {
@@ -2169,13 +3114,15 @@ void Pic::update(bool doReportIn) {
     }
   }
 
-  if (solveEM) {
+  if (!is_multi_solver() && solveEM) {
     update_E();
   }
 
   isMomentsUpdated = false;
 
-  if (useExplicitPIC) {
+  if (is_multi_solver()) {
+    advance_coupled_solvers(doReport);
+  } else if (useExplicitPIC) {
     advance_explicit_full_pic();
   } else if (solveEM) {
     advance_particles_and_sources(0);
@@ -2272,7 +3219,7 @@ void Pic::update(bool doReportIn) {
     advance_particles_and_sources(0);
   }
 
-  if ((solveEM || useExplicitPIC) && doCorrectDivE) {
+  if (has_full_pic() && doCorrectDivE) {
     if (finestLevel() == 0) {
       divE_correction();
     } else {
@@ -2287,7 +3234,7 @@ void Pic::update(bool doReportIn) {
   tc->restore_unconstrained_dt();
 
 #ifdef _PC_COMPONENT_
-  if (useHybridPIC) {
+  if (useHybridPIC && !is_multi_solver()) {
     // For hybrid PIC, accepted moments were already deposited and smoothed in
     // advance_hybrid(). We update hybrid dt and subcycle directly without a
     // redundant sum_moments() particle pass that would overwrite smoothed
@@ -2421,8 +3368,8 @@ void Pic::update_U0_E0() {
   std::string nameFunc = "Pic::update_U0_E0";
   timing_func(nameFunc);
 
-  // Full-PIC only: eBg/uBg and nodePlasma are not allocated for hybrid.
-  if (useHybridPIC)
+  // Co-moving frame solver is full-PIC only.
+  if (!has_full_pic())
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -2711,7 +3658,8 @@ void Pic::charge_exchange() {
 
 //==========================================================
 void Pic::init_regional_fields() {
-  if (!useHybridPIC || (!hasRegionalResistivity_ && !hasRegionalHyper_))
+  if (!has_solver(PicSolverMode::Hybrid) ||
+      (!hasRegionalResistivity_ && !hasRegionalHyper_))
     return;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     init_regional_fields(iLev);
@@ -2720,7 +3668,8 @@ void Pic::init_regional_fields() {
 
 //==========================================================
 void Pic::init_regional_fields(int iLev) {
-  if (!useHybridPIC || (!hasRegionalResistivity_ && !hasRegionalHyper_))
+  if (!has_solver(PicSolverMode::Hybrid) ||
+      (!hasRegionalResistivity_ && !hasRegionalHyper_))
     return;
   fill_regional_resistivity_field(iLev);
   fill_regional_hyper_field(iLev);
@@ -2822,7 +3771,7 @@ void Pic::fill_regional_hyper_field(int iLev) {
 
 //==========================================================
 void Pic::update_regional_hyper_grid_mode(Real dt) {
-  if (!useHybridPIC || !hasRegionalHyper_ || dt <= 0.0)
+  if (!has_solver(PicSolverMode::Hybrid) || !hasRegionalHyper_ || dt <= 0.0)
     return;
 
   bool changed = false;

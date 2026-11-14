@@ -25,6 +25,9 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
   if (!(do_tiling && tile_size == iv))
     return;
 
+  const bool skipHybrid = isKineticElectron_ && grid != nullptr &&
+                          grid->has_active_solver(PicSolverMode::Hybrid);
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto items = collect_cell_tiles(*this, iLev);
     const int nTiles = static_cast<int>(items.size());
@@ -35,6 +38,9 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
     Vector<Vector<ParticleType> > tileNewParticles(nTiles);
 
     parallel_for_cell_tiles(items, [&](const auto& item, int ord) {
+      if (skipHybrid &&
+          grid->box_solver(iLev, item.grid) == PicSolverMode::Hybrid)
+        return;
       AoS& particles = item.ptile->GetArrayOfStructs();
       if (particles.empty())
         return;
@@ -416,6 +422,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
   if (!(do_tiling && tile_size == iv))
     return;
 
+  const bool skipHybrid = isKineticElectron_ && grid != nullptr &&
+                          grid->has_active_solver(PicSolverMode::Hybrid);
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto items = collect_cell_tiles(*this, iLev);
     const int nTiles = static_cast<int>(items.size());
@@ -434,6 +443,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
     Vector<Vector<ParticleType> > tileNewParticles(nTiles);
 
     parallel_for_cell_tiles(items, [&](const auto& item, int ord) {
+      if (skipHybrid &&
+          grid->box_solver(iLev, item.grid) == PicSolverMode::Hybrid)
+        return;
       Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / (nPartPerCell.max());
       int nLowerLimit = 0;
       int nGoal = 0;
@@ -972,10 +984,16 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
   if (!(do_tiling && tile_size == iv))
     return;
 
+  const bool skipHybrid = isKineticElectron_ && grid != nullptr &&
+                          grid->has_active_solver(PicSolverMode::Hybrid);
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto* tppcFab = useTargetPPC ? &target_PPC(iLev) : nullptr;
 
     parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int) {
+      if (skipHybrid &&
+          grid->box_solver(iLev, item.grid) == PicSolverMode::Hybrid)
+        return;
       int nPartGoal = 0;
       if (tppcFab != nullptr) {
         const auto tppc = (*tppcFab)[item.grid].const_array();

@@ -320,6 +320,11 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       ParticleTileType& particles = get_particle_tile(iLev, mfi);
+      const bool filterHybrid = isKineticElectron_ && grid != nullptr &&
+                                grid->has_active_solver(PicSolverMode::Hybrid);
+      const auto hcArr = filterHybrid
+                             ? grid->hybrid_collar_mask(iLev)[mfi].const_array()
+                             : Array4<const int>{};
 
       for (int iDim = 0; iDim < nDim; ++iDim) {
         const int t1 = (iDim + 1) % nDim;
@@ -353,6 +358,15 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
                     ? probLo[t2] + (c2 - domain.smallEnd(t2)) * cellSize[t2]
                     : 0.0;
             for (int c1 = lo1; c1 <= hi1; ++c1) {
+              if (filterHybrid) {
+                IntVect cellIdx;
+                cellIdx[iDim] = domEdge;
+                cellIdx[t1] = c1;
+                if (nDim > 2)
+                  cellIdx[t2] = c2;
+                if (hcArr(cellIdx) != 0)
+                  continue;
+              }
               const Real base1 =
                   probLo[t1] + (c1 - domain.smallEnd(t1)) * cellSize[t1];
 
@@ -478,6 +492,11 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real* cellSize = geom.CellSize();
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+    if (isKineticElectron_ && grid != nullptr &&
+        grid->has_active_solver(PicSolverMode::Hybrid) &&
+        grid->box_solver(iLev, mfi.index()) == PicSolverMode::Hybrid) {
+      continue;
+    }
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
 
@@ -661,6 +680,11 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
   };
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+    if (isKineticElectron_ && grid != nullptr &&
+        grid->has_active_solver(PicSolverMode::Hybrid) &&
+        grid->box_solver(iLev, mfi.index()) == PicSolverMode::Hybrid) {
+      continue;
+    }
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
     const auto mom = nodeMom[mfi].const_array();

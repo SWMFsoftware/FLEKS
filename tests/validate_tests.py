@@ -404,7 +404,7 @@ EXO_SOURCE_TESTS = {
 # Tests that require AMR (nLevMax >= 2).
 AMR_TESTS = {
     "amr_divb", "amr_equilibrium", "dynamic_amr", "lightwave", "reconnection_amr",
-    "wave_amr_3d", "constantppv",
+    "solver_coupling", "wave_amr_3d", "constantppv",
 }
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
@@ -442,16 +442,30 @@ def configured_amrex_dim():
     """AMReX dimension (2 or 3) the binary was built with, or None.
 
     Reads AMREX_SPACEDIM from the linked library's AMReX_Config.H in either the
-    standalone (util/AMREX) or SWMF-component (../../util/AMREX) layout,
-    checking the InstallDir symlink and its 2D/3D targets so a broken symlink
-    does not prevent detection.
+    standalone (util/AMREX) or SWMF-component (Makefile.def include /
+    ../../util/AMREX) layout, checking the InstallDir symlink and its 2D/3D
+    targets so a broken symlink does not prevent detection.
     """
+    import re
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     # (path-to-AMReX-root, candidates-to-check) per layout.
-    layouts = [
+    layouts = []
+    makefile_def = os.path.join(root, "Makefile.def")
+    try:
+        with open(makefile_def, "r") as f:
+            for line in f:
+                m = re.match(r"^\s*include\s+(.*)/Makefile\.def\s*$", line)
+                if m:
+                    swmf_amrex = os.path.join(m.group(1).strip(), "util", "AMREX")
+                    if os.path.isdir(swmf_amrex):
+                        layouts.append(swmf_amrex)
+                    break
+    except (OSError, IOError):
+        pass
+    layouts.extend([
         os.path.join(root, "util", "AMREX"),
         os.path.join(root, "..", "..", "util", "AMREX"),
-    ]
+    ])
     for base in layouts:
         for sub in ("InstallDir", "InstallDir3D", "InstallDir2D"):
             dim = _read_amrex_spacedim(

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <sstream>
 
 #include <AMReX_PlotFileUtil.H>
@@ -135,9 +136,10 @@ void Grid::regrid(const BoxArray& region) {
   std::string nameFunc = "Grid::regrid_base";
   BL_PROFILE(nameFunc);
 
-  // The base boxes can be identical while new refinement tags require a
-  // different fine hierarchy. isNewGrid also forces first initialization.
-  if (region == activeRegion && !isNewGrid && !refineRegions.is_modified())
+  // The base boxes can be identical while new refinement tags or solver regions
+  // require a different hierarchy. isNewGrid also forces first initialization.
+  if (region == activeRegion && !isNewGrid && !refineRegions.is_modified() &&
+      !solverRegionsModified)
     return;
 
   cGridsOld = cGrids;
@@ -167,10 +169,13 @@ void Grid::regrid(const Grid* const grid, bool doLoadBalance) {
   if (!doLoadBalance) {
     refineRegionsStr = grid->refineRegionsStr;
     refineRegions = grid->refineRegions;
+    defaultSolverMode = grid->defaultSolverMode;
+    regionSolvers = grid->regionSolvers;
     SetGridEff(grid->gridEff());
 
     const BoxArray& region = grid->get_base_grid();
-    if (region == activeRegion && !isNewGrid && !refineRegions.is_modified())
+    if (region == activeRegion && !isNewGrid && !refineRegions.is_modified() &&
+        !solverRegionsModified)
       return;
 
     cGridsOld = cGrids;
@@ -216,6 +221,7 @@ void Grid::restore_grid(const Vector<BoxArray>& boxes) {
     ClearDistributionMap(iLev);
   }
   finish_regrid();
+  clear_refinement_modified();
 }
 
 void Grid::finish_regrid() {
@@ -227,6 +233,20 @@ void Grid::finish_regrid() {
        iLev < n_lev_max() && iLev < static_cast<int>(cGrids.size()); ++iLev) {
     ClearBoxArray(iLev);
     ClearDistributionMap(iLev);
+  }
+
+  // Split refined levels (iLev >= 1) along solver region boundaries so every
+  // fine Box also belongs 100% to a single PicSolverMode.
+  if (!regionSolvers.empty() && !isGridEmpty) {
+    for (int iLev = 1; iLev < n_lev(); ++iLev) {
+      if (cGrids[iLev].empty())
+        continue;
+      BoxArray splitBA = split_boxes_by_solver_regions(cGrids[iLev], iLev);
+      if (splitBA != cGrids[iLev]) {
+        SetBoxArray(iLev, splitBA);
+        SetDistributionMap(iLev, DistributionMapping(splitBA));
+      }
+    }
   }
 
   calc_node_grids();
@@ -299,6 +319,7 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
   }
 
   update_grid_status(cGridsOld);
+  update_solver_masks();
 }
 
 //============================================================================//
@@ -724,4 +745,502 @@ void Grid::write_mf(Vector<MultiFab>& mf, int nlev, std::string st,
   }
   Vector<int> tmpVint(nlev + 1, 0);
   WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint, ref_ratio);
+}
+
+//============================================================================//
+void Grid::rebuild_solver_regions(const Vector<std::shared_ptr<Shape> >& shapes,
+                                  const std::set<std::string>& shapeNames) {
+  for (auto& spec : regionSolvers) {
+    std::stringstream input(spec.regionStr);
+    std::string token;
+    bool hasInclude = false;
+    while (input >> token) {
+      if (token.size() < 2 || (token[0] != '+' && token[0] != '-'))
+        Abort("Invalid shape prefix in #REGIONSOLVER: '" + token +
+              "' (must start with '+' or '-')");
+      if (token[0] == '+')
+        hasInclude = true;
+      if (shapeNames.count(token.substr(1)) == 0)
+        Abort("Unknown shape in #REGIONSOLVER: '" + token.substr(1) + "'");
+    }
+    if (!hasInclude)
+      Abort("Invalid #REGIONSOLVER region '" + spec.regionStr +
+            "': must specify at least one '+shape'.");
+    spec.region.define(shapes, spec.regionStr);
+  }
+}
+
+PicSolverMode Grid::eval_region_solver(const Real* xyz) const {
+  PicSolverMode mode = defaultSolverMode;
+  for (const auto& spec : regionSolvers) {
+    if (spec.region.is_inside(xyz)) {
+      mode = spec.solver;
+    }
+  }
+  return mode;
+}
+
+bool Grid::has_configured_solver(PicSolverMode mode) const {
+  if (defaultSolverMode == mode)
+    return true;
+  for (const auto& spec : regionSolvers) {
+    if (spec.solver == mode)
+      return true;
+  }
+  return false;
+}
+
+bool Grid::has_active_solver(PicSolverMode mode) const {
+  if (cGrids.empty() || cGrids[0].empty() || boxSolver.empty() ||
+      boxSolver[0].empty()) {
+    return has_configured_solver(mode);
+  }
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (iLev >= static_cast<int>(boxSolver.size()))
+      break;
+    for (PicSolverMode m : boxSolver[iLev]) {
+      if (m == mode)
+        return true;
+    }
+  }
+  return false;
+}
+
+bool Grid::is_multi_solver_grid() const {
+  int nActive = 0;
+  for (PicSolverMode m : { PicSolverMode::Implicit, PicSolverMode::Explicit,
+                           PicSolverMode::Hybrid, PicSolverMode::None }) {
+    if (has_active_solver(m))
+      ++nActive;
+  }
+  return nActive >= 2;
+}
+
+BoxArray Grid::split_boxes_by_solver_regions(const BoxArray& inputBA,
+                                             int iLev) const {
+  const int maxGridLev =
+      std::min(iLev, static_cast<int>(max_grid_size.size()) - 1);
+  if (regionSolvers.empty() || inputBA.empty()) {
+    BoxArray ba = inputBA;
+    if (!ba.empty())
+      ba.maxSize(max_grid_size[maxGridLev]);
+    return ba;
+  }
+
+  const int bfLev =
+      std::min(iLev, static_cast<int>(blocking_factor.size()) - 1);
+  IntVect bf = blocking_factor[bfLev];
+  if (iLev > 0 && (iLev - 1) < static_cast<int>(ref_ratio.size())) {
+    bf = amrex::max(bf, ref_ratio[iLev - 1]);
+  }
+  if (isFake2D && nDim > 2) {
+    bf[iz_] = 1;
+  }
+  for (int d = 0; d < nDim; ++d) {
+    IntVect test(1);
+    test[d] = bf[d];
+    while (test[d] > 1 && !inputBA.coarsenable(test)) {
+      test[d] /= 2;
+    }
+    bf[d] = test[d];
+  }
+
+  BoxArray coarseBA = inputBA;
+  coarseBA.coarsen(bf);
+
+  const Real* dx = Geom(iLev).CellSize();
+  const Real* probLo = Geom(iLev).ProbLo();
+  Real dxCoarse[3] = { 1.0, 1.0, 1.0 };
+  for (int d = 0; d < nDim; ++d) {
+    dxCoarse[d] = dx[d] * bf[d];
+  }
+
+  BoxList bl;
+  for (int iBox = 0; iBox < coarseBA.size(); ++iBox) {
+    const Box& cbx = coarseBA[iBox];
+    const IntVect lo = cbx.smallEnd();
+    const IntVect hi = cbx.bigEnd();
+    const int nx = hi[0] - lo[0] + 1;
+    const int ny = (nDim > 1) ? (hi[1] - lo[1] + 1) : 1;
+    const int nz = (nDim > 2) ? (hi[2] - lo[2] + 1) : 1;
+    const int jLo = (nDim > 1) ? lo[1] : 0;
+    const int kLo = (nDim > 2) ? lo[2] : 0;
+
+    std::vector<int> modes(static_cast<std::size_t>(nx) * ny * nz);
+    auto idx3 = [nx, ny](int ii, int jj, int kk) -> std::size_t {
+      return (static_cast<std::size_t>(kk) * ny + jj) * nx + ii;
+    };
+
+    bool uniform = true;
+    int firstMode = -1;
+    for (int kk = 0; kk < nz; ++kk) {
+      for (int jj = 0; jj < ny; ++jj) {
+        for (int ii = 0; ii < nx; ++ii) {
+          Real xyz[3] = { 0.0, 0.0, 0.0 };
+          xyz[0] = probLo[0] + (lo[0] + ii + Real(0.5)) * dxCoarse[0];
+          if (nDim > 1)
+            xyz[1] = probLo[1] + (jLo + jj + Real(0.5)) * dxCoarse[1];
+          if (nDim > 2)
+            xyz[2] = probLo[2] + (kLo + kk + Real(0.5)) * dxCoarse[2];
+          const int m = static_cast<int>(eval_region_solver(xyz));
+          modes[idx3(ii, jj, kk)] = m;
+          if (firstMode < 0)
+            firstMode = m;
+          else if (m != firstMode)
+            uniform = false;
+        }
+      }
+    }
+
+    if (uniform) {
+      Box fineBx = cbx;
+      fineBx.refine(bf);
+      bl.push_back(fineBx);
+      continue;
+    }
+
+    // Partition non-uniform coarse box into maximal contiguous rectangular
+    // super-boxes of homogeneous PicSolverMode, then refine by bf.
+    std::vector<unsigned char> visited(modes.size(), 0);
+    for (int kk = 0; kk < nz; ++kk) {
+      for (int jj = 0; jj < ny; ++jj) {
+        for (int ii = 0; ii < nx; ++ii) {
+          if (visited[idx3(ii, jj, kk)])
+            continue;
+          const int target = modes[idx3(ii, jj, kk)];
+
+          int iEnd = ii;
+          while (iEnd + 1 < nx && !visited[idx3(iEnd + 1, jj, kk)] &&
+                 modes[idx3(iEnd + 1, jj, kk)] == target) {
+            ++iEnd;
+          }
+
+          int jEnd = jj;
+          while (jEnd + 1 < ny) {
+            bool rowOk = true;
+            for (int x = ii; x <= iEnd; ++x) {
+              if (visited[idx3(x, jEnd + 1, kk)] ||
+                  modes[idx3(x, jEnd + 1, kk)] != target) {
+                rowOk = false;
+                break;
+              }
+            }
+            if (!rowOk)
+              break;
+            ++jEnd;
+          }
+
+          int kEnd = kk;
+          while (kEnd + 1 < nz) {
+            bool planeOk = true;
+            for (int y = jj; y <= jEnd && planeOk; ++y) {
+              for (int x = ii; x <= iEnd; ++x) {
+                if (visited[idx3(x, y, kEnd + 1)] ||
+                    modes[idx3(x, y, kEnd + 1)] != target) {
+                  planeOk = false;
+                  break;
+                }
+              }
+            }
+            if (!planeOk)
+              break;
+            ++kEnd;
+          }
+
+          for (int z = kk; z <= kEnd; ++z)
+            for (int y = jj; y <= jEnd; ++y)
+              for (int x = ii; x <= iEnd; ++x)
+                visited[idx3(x, y, z)] = 1;
+
+          IntVect sLo(AMREX_D_DECL(lo[0] + ii, jLo + jj, kLo + kk));
+          IntVect sHi(AMREX_D_DECL(lo[0] + iEnd, jLo + jEnd, kLo + kEnd));
+          Box superBx(sLo, sHi);
+          superBx.refine(bf);
+          bl.push_back(superBx);
+        }
+      }
+    }
+  }
+
+  BoxArray splitBA(std::move(bl));
+  splitBA.maxSize(max_grid_size[maxGridLev]);
+  return splitBA;
+}
+
+void Grid::update_solver_masks() {
+  std::string nameFunc = "Grid::update_solver_masks";
+  BL_PROFILE(nameFunc);
+
+  const int maxLev = static_cast<int>(boxSolver.size());
+  for (int iLev = n_lev(); iLev < maxLev; ++iLev) {
+    boxSolver[iLev].clear();
+    cellSolver[iLev].clear();
+    hybridCollarMask[iLev].clear();
+    nodeSolverStatus[iLev].clear();
+    nodeBlendWeight[iLev].clear();
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    boxSolver[iLev].clear();
+    if (cGrids[iLev].empty()) {
+      cellSolver[iLev].clear();
+      hybridCollarMask[iLev].clear();
+      nodeSolverStatus[iLev].clear();
+      nodeBlendWeight[iLev].clear();
+      continue;
+    }
+
+    const int nBoxes = cGrids[iLev].size();
+    boxSolver[iLev].resize(nBoxes, defaultSolverMode);
+    if (!regionSolvers.empty()) {
+      const Real* dx = Geom(iLev).CellSize();
+      const Real* probLo = Geom(iLev).ProbLo();
+      for (int iBox = 0; iBox < nBoxes; ++iBox) {
+        const Box& bx = cGrids[iLev][iBox];
+        Real center[3] = { 0.0, 0.0, 0.0 };
+        for (int d = 0; d < nDim; ++d) {
+          center[d] = probLo[d] +
+                      Real(0.5) * (bx.smallEnd(d) + bx.bigEnd(d) + 1) * dx[d];
+        }
+        boxSolver[iLev][iBox] = eval_region_solver(center);
+      }
+    }
+
+    distribute_FabArray(cellSolver[iLev], cGrids[iLev], DistributionMap(iLev),
+                        1, nGst, false);
+    distribute_FabArray(hybridCollarMask[iLev], cGrids[iLev],
+                        DistributionMap(iLev), 1, nGst, false);
+    distribute_FabArray(nodeSolverStatus[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 1, nGst, false);
+
+    // Fill cellSolver valid cells from owning boxSolver, and initialize ghosts.
+    for (MFIter mfi(cellSolver[iLev]); mfi.isValid(); ++mfi) {
+      const Box& fbox = mfi.fabbox();
+      const Box& vbox = mfi.validbox();
+      const auto csArr = cellSolver[iLev][mfi].array();
+      const auto cStat = cellStatus[iLev][mfi].array();
+      const int boxMode = static_cast<int>(boxSolver[iLev][mfi.index()]);
+      if (regionSolvers.empty()) {
+        ParallelFor(fbox, [&](int i, int j, int k)
+                              noexcept { csArr(i, j, k) = boxMode; });
+      } else {
+        ParallelFor(fbox, [&](int i, int j, int k) noexcept {
+          if (vbox.contains(IntVect(AMREX_D_DECL(i, j, k)))) {
+            csArr(i, j, k) = boxMode;
+          } else if (bit::is_domain_boundary(cStat(i, j, k))) {
+            csArr(i, j, k) = boxMode;
+          } else {
+            Real xyz[3] = { 0.0, 0.0, 0.0 };
+            Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+            csArr(i, j, k) = static_cast<int>(eval_region_solver(xyz));
+          }
+        });
+      }
+    }
+    cellSolver[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (isFake2D && !cellSolver[iLev].empty()) {
+      for (MFIter mfi(cellSolver[iLev]); mfi.isValid(); ++mfi) {
+        const Box& fbox = mfi.fabbox();
+        const auto csArr = cellSolver[iLev][mfi].array();
+        ParallelFor(fbox, [&](int i, int j, int k) noexcept {
+          if (k != 0)
+            csArr(i, j, k) = csArr(i, j, 0);
+        });
+      }
+    }
+
+    // Build nodeSolverStatus by inspecting active adjacent cells around each
+    // node (valid up to nGst - 1 ghosts via cellSolver ghosts).
+    const int activeDim = get_dim();
+    for (MFIter mfi(nodeSolverStatus[iLev]); mfi.isValid(); ++mfi) {
+      const Box& fbox = mfi.fabbox();
+      const Box& vbox = mfi.validbox();
+      const auto nsArr = nodeSolverStatus[iLev][mfi].array();
+      const auto csArr = cellSolver[iLev][mfi].array();
+      const auto cStat = cellStatus[iLev][mfi].array();
+      const auto csBox = cellSolver[iLev][mfi].box();
+      const Box safeBox = Box(vbox).grow(std::max(0, nGst - 1));
+      const int kMinOff = (activeDim > 2) ? -1 : 0;
+      const int jMinOff = (activeDim > 1) ? -1 : 0;
+
+      ParallelFor(fbox, [&](int i, int j, int k) noexcept {
+        if (!safeBox.contains(IntVect(AMREX_D_DECL(i, j, k)))) {
+          nsArr(i, j, k) = 0;
+          return;
+        }
+        int bits = 0;
+        for (int kk = kMinOff; kk <= 0; ++kk) {
+          for (int jj = jMinOff; jj <= 0; ++jj) {
+            for (int ii = -1; ii <= 0; ++ii) {
+              const IntVect cIdx(AMREX_D_DECL(i + ii, j + jj, k + kk));
+              if (!csBox.contains(cIdx))
+                continue;
+              if (bit::is_domain_boundary(cStat(cIdx)))
+                continue;
+              const int m = csArr(cIdx);
+              if (m == static_cast<int>(PicSolverMode::Implicit))
+                bits |= solver_bit::kTouchImplicit;
+              else if (m == static_cast<int>(PicSolverMode::Explicit))
+                bits |= solver_bit::kTouchExplicit;
+              else if (m == static_cast<int>(PicSolverMode::Hybrid))
+                bits |= solver_bit::kTouchHybrid;
+              else
+                bits |= solver_bit::kTouchNone;
+            }
+          }
+        }
+        if ((bits & solver_bit::kTouchImplicit) &&
+            (bits & (solver_bit::kTouchExplicit | solver_bit::kTouchHybrid))) {
+          bits |= solver_bit::kImplicitSeamDirichlet;
+        }
+        nsArr(i, j, k) = bits;
+      });
+    }
+    nodeSolverStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  // Second pass over levels now that boxSolver is populated across all levels:
+  // build hybridCollarMask and optional nodeBlendWeight.
+  const bool multiSolver = is_multi_solver_grid();
+  const int blendWidth = max_blend_cells();
+  const int collarRadius = std::max(nGst, blendWidth + 2);
+  const int activeDim = get_dim();
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (cGrids[iLev].empty())
+      continue;
+
+    if (!multiSolver || !has_active_solver(PicSolverMode::Hybrid)) {
+      const int val = has_active_solver(PicSolverMode::Hybrid) ? 2 : 0;
+      hybridCollarMask[iLev].setVal(val);
+    } else {
+      iMultiFab isFullPic(cGrids[iLev], DistributionMap(iLev), 1, collarRadius);
+      isFullPic.setVal(0);
+      for (MFIter mfi(isFullPic); mfi.isValid(); ++mfi) {
+        const Box& vbox = mfi.validbox();
+        const auto fpArr = isFullPic[mfi].array();
+        const auto csArr = cellSolver[iLev][mfi].array();
+        ParallelFor(vbox, [&](int i, int j, int k) noexcept {
+          const int m = csArr(i, j, k);
+          fpArr(i, j, k) = (m == static_cast<int>(PicSolverMode::Implicit) ||
+                            m == static_cast<int>(PicSolverMode::Explicit))
+                               ? 1
+                               : 0;
+        });
+      }
+      isFullPic.FillBoundary(Geom(iLev).periodicity());
+
+      for (MFIter mfi(hybridCollarMask[iLev]); mfi.isValid(); ++mfi) {
+        const Box& vbox = mfi.validbox();
+        const auto hcArr = hybridCollarMask[iLev][mfi].array();
+        const auto csArr = cellSolver[iLev][mfi].array();
+        const auto fpArr = isFullPic[mfi].array();
+        const Box fpBox = isFullPic[mfi].box();
+        const int rK = (activeDim > 2) ? collarRadius : 0;
+        const int rJ = (activeDim > 1) ? collarRadius : 0;
+
+        ParallelFor(vbox, [&](int i, int j, int k) noexcept {
+          if (csArr(i, j, k) != static_cast<int>(PicSolverMode::Hybrid)) {
+            hcArr(i, j, k) = 0;
+            return;
+          }
+          bool nearFullPic = false;
+          for (int kk = k - rK; kk <= k + rK && !nearFullPic; ++kk) {
+            for (int jj = j - rJ; jj <= j + rJ && !nearFullPic; ++jj) {
+              for (int ii = i - collarRadius; ii <= i + collarRadius; ++ii) {
+                const IntVect nIdx(AMREX_D_DECL(ii, jj, kk));
+                if (fpBox.contains(nIdx) && fpArr(nIdx) == 1) {
+                  nearFullPic = true;
+                  break;
+                }
+              }
+            }
+          }
+          hcArr(i, j, k) = nearFullPic ? 1 : 2;
+        });
+      }
+      hybridCollarMask[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (isFake2D) {
+        for (MFIter mfi(hybridCollarMask[iLev]); mfi.isValid(); ++mfi) {
+          const Box& fbox = mfi.fabbox();
+          const auto hcArr = hybridCollarMask[iLev][mfi].array();
+          ParallelFor(fbox, [&](int i, int j, int k) noexcept {
+            if (k != 0)
+              hcArr(i, j, k) = hcArr(i, j, 0);
+          });
+        }
+      }
+    }
+
+    if (multiSolver && blendWidth > 0) {
+      distribute_FabArray(nodeBlendWeight[iLev], nGrids[iLev],
+                          DistributionMap(iLev), 1, 1, false);
+      const int secMode = static_cast<int>(
+          has_active_solver(PicSolverMode::Hybrid) ? PicSolverMode::Hybrid
+                                                   : PicSolverMode::Explicit);
+      const int rad = blendWidth + 1;
+      iMultiFab isSecondary(cGrids[iLev], DistributionMap(iLev), 1, rad);
+      isSecondary.setVal(0);
+      for (MFIter mfi(isSecondary); mfi.isValid(); ++mfi) {
+        const Box& vbox = mfi.validbox();
+        const auto secArr = isSecondary[mfi].array();
+        const auto csArr = cellSolver[iLev][mfi].array();
+        ParallelFor(vbox, [&](int i, int j, int k) noexcept {
+          secArr(i, j, k) = (csArr(i, j, k) == secMode) ? 1 : 0;
+        });
+      }
+      isSecondary.FillBoundary(Geom(iLev).periodicity());
+
+      const Real pi = Real(4.0) * std::atan(Real(1.0));
+      const int rK = (activeDim > 2) ? rad : 0;
+      const int rJ = (activeDim > 1) ? rad : 0;
+      for (MFIter mfi(nodeBlendWeight[iLev]); mfi.isValid(); ++mfi) {
+        const Box& vbox = mfi.validbox();
+        const auto wArr = nodeBlendWeight[iLev][mfi].array();
+        const auto secArr = isSecondary[mfi].array();
+        const Box secBox = isSecondary[mfi].box();
+        nodeBlendWeight[iLev][mfi].setVal<RunOn::Device>(Real(1.0));
+
+        ParallelFor(vbox, [&](int i, int j, int k) noexcept {
+          int minDist = blendWidth;
+          for (int kk = k - rK; kk <= k + rK - (activeDim > 2 ? 1 : 0); ++kk) {
+            const int dk =
+                (activeDim > 2) ? ((kk >= k) ? (kk - k) : (k - 1 - kk)) : 0;
+            if (dk >= minDist)
+              continue;
+            for (int jj = j - rJ; jj <= j + rJ - (activeDim > 1 ? 1 : 0);
+                 ++jj) {
+              const int dj =
+                  (activeDim > 1) ? ((jj >= j) ? (jj - j) : (j - 1 - jj)) : 0;
+              const int djk = std::max(dk, dj);
+              if (djk >= minDist)
+                continue;
+              for (int ii = i - rad; ii <= i + rad - 1; ++ii) {
+                const int di = (ii >= i) ? (ii - i) : (i - 1 - ii);
+                const int dist = std::max(djk, di);
+                if (dist >= minDist)
+                  continue;
+                const IntVect cIdx(AMREX_D_DECL(ii, jj, kk));
+                if (secBox.contains(cIdx) && secArr(cIdx) == 1) {
+                  minDist = dist;
+                }
+              }
+            }
+          }
+          if (minDist <= 0) {
+            wArr(i, j, k) = Real(0.0);
+          } else if (minDist >= blendWidth) {
+            wArr(i, j, k) = Real(1.0);
+          } else {
+            wArr(i, j, k) =
+                Real(0.5) *
+                (Real(1.0) - std::cos(pi * Real(minDist) / Real(blendWidth)));
+          }
+        });
+      }
+      nodeBlendWeight[iLev].FillBoundary(Geom(iLev).periodicity());
+    } else {
+      nodeBlendWeight[iLev].clear();
+    }
+  }
 }

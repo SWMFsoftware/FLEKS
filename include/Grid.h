@@ -26,7 +26,34 @@
 #include "BC.h"
 #include "Constants.h"
 #include "RefineRegions.h"
+#include "Regions.h"
 #include "TimeCtr.h"
+
+enum class PicSolverMode : int {
+  Implicit = 0, // Semi-implicit full PIC (default)
+  Explicit = 1, // Explicit full PIC
+  Hybrid = 2,   // Hybrid PIC (fluid electrons + kinetic ions)
+  None = 3      // No field solve (particle tracer / test particles)
+};
+
+namespace solver_bit {
+constexpr int kTouchImplicit = 1 << 0;
+constexpr int kTouchExplicit = 1 << 1;
+constexpr int kTouchHybrid = 1 << 2;
+constexpr int kTouchNone = 1 << 3;
+// Node touches at least one Implicit cell and at least one active non-Implicit
+// cell (Explicit or Hybrid), so it acts as a Dirichlet seam boundary in GMRES.
+constexpr int kImplicitSeamDirichlet = 1 << 4;
+} // namespace solver_bit
+
+struct RegionSolverSpec {
+  std::string regionStr;
+  Regions region;
+  PicSolverMode solver = PicSolverMode::Implicit;
+  int nBlendCell = 0;
+  std::string fieldIntegrator; // Optional: "", "rk4", "ssprk3", "leapfrog"
+  int nSubcycle = -1;          // Optional: > 0 overrides solver subcycles
+};
 
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {
@@ -64,6 +91,18 @@ protected:
 
   amrex::Vector<std::string> refineRegionsStr;
   RefineRegions refineRegions;
+
+  // Spatial solver partitioning (#FIELDSOLVER + #REGIONSOLVER). When
+  // regionSolvers is empty, every box uses defaultSolverMode and the BoxArray
+  // layout matches single-solver runs identically.
+  PicSolverMode defaultSolverMode = PicSolverMode::Implicit;
+  amrex::Vector<RegionSolverSpec> regionSolvers;
+  bool solverRegionsModified = false;
+  amrex::Vector<amrex::Vector<PicSolverMode> > boxSolver;
+  amrex::Vector<amrex::iMultiFab> cellSolver;
+  amrex::Vector<amrex::iMultiFab> hybridCollarMask;
+  amrex::Vector<amrex::iMultiFab> nodeSolverStatus;
+  amrex::Vector<amrex::MultiFab> nodeBlendWeight;
 
   bool isNewGrid = true;
 
@@ -114,6 +153,11 @@ public:
     bodyNetChargeInc.resize(n_lev_max());
     refineRegionsStr.resize(n_lev_max());
     refineRegions.resize(n_lev_max());
+    boxSolver.resize(n_lev_max());
+    cellSolver.resize(n_lev_max());
+    hybridCollarMask.resize(n_lev_max());
+    nodeSolverStatus.resize(n_lev_max());
+    nodeBlendWeight.resize(n_lev_max());
     SetGridEff(0.7);
   };
 
@@ -174,9 +218,80 @@ public:
       const std::set<std::string>& shapeNames);
 
   const RefineRegions& refinement_regions() const { return refineRegions; }
-  bool refinement_modified() const { return refineRegions.is_modified(); }
-  void mark_refinement_modified() { refineRegions.mark_modified(); }
-  void clear_refinement_modified() { refineRegions.clear_modified(); }
+  bool refinement_modified() const {
+    return refineRegions.is_modified() || solverRegionsModified;
+  }
+  void mark_refinement_modified() {
+    refineRegions.mark_modified();
+    solverRegionsModified = true;
+  }
+  void clear_refinement_modified() {
+    refineRegions.clear_modified();
+    solverRegionsModified = false;
+  }
+
+  // ---- Spatial solver partitioning (#FIELDSOLVER + #REGIONSOLVER) ----
+  void set_default_solver_mode(PicSolverMode mode) { defaultSolverMode = mode; }
+  PicSolverMode get_default_solver_mode() const { return defaultSolverMode; }
+
+  void clear_region_solvers() { regionSolvers.clear(); }
+
+  void add_region_solver(const RegionSolverSpec& spec) {
+    regionSolvers.push_back(spec);
+  }
+
+  const amrex::Vector<RegionSolverSpec>& get_region_solvers() const {
+    return regionSolvers;
+  }
+
+  void rebuild_solver_regions(
+      const amrex::Vector<std::shared_ptr<Shape> >& shapes,
+      const std::set<std::string>& shapeNames);
+
+  PicSolverMode eval_region_solver(const amrex::Real* xyz) const;
+
+  int max_blend_cells() const {
+    int maxBlend = 0;
+    for (const auto& spec : regionSolvers) {
+      maxBlend = std::max(maxBlend, spec.nBlendCell);
+    }
+    return maxBlend;
+  }
+
+  bool has_configured_solver(PicSolverMode mode) const;
+  bool has_active_solver(PicSolverMode mode) const;
+  bool is_multi_solver_grid() const;
+
+  amrex::BoxArray split_boxes_by_solver_regions(const amrex::BoxArray& inputBA,
+                                                int iLev) const;
+  void update_solver_masks();
+
+  PicSolverMode box_solver(int iLev, int boxIdx) const {
+    if (iLev < static_cast<int>(boxSolver.size()) &&
+        boxIdx < static_cast<int>(boxSolver[iLev].size())) {
+      return boxSolver[iLev][boxIdx];
+    }
+    return defaultSolverMode;
+  }
+  const amrex::Vector<PicSolverMode>& box_solver(int iLev) const {
+    return boxSolver[iLev];
+  }
+  const amrex::iMultiFab& cell_solver(int iLev) const {
+    return cellSolver[iLev];
+  }
+  const amrex::iMultiFab& hybrid_collar_mask(int iLev) const {
+    return hybridCollarMask[iLev];
+  }
+  const amrex::iMultiFab& node_solver_status(int iLev) const {
+    return nodeSolverStatus[iLev];
+  }
+  bool has_node_blend_weight(int iLev) const {
+    return iLev < static_cast<int>(nodeBlendWeight.size()) &&
+           !nodeBlendWeight[iLev].empty();
+  }
+  const amrex::MultiFab& node_blend_weight(int iLev) const {
+    return nodeBlendWeight[iLev];
+  }
 
   const amrex::Vector<amrex::RealBox>& domain_range() const {
     return activeDomainRanges;
@@ -501,9 +616,7 @@ public:
     std::string nameFunc = "Grid::PostProcessBaseGrids";
     amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
 
-    ba = activeRegion;
-    const int iLev = 0;
-    ba.maxSize(max_grid_size[iLev]);
+    ba = split_boxes_by_solver_regions(activeRegion, 0);
   };
 
   void write_mf(amrex::Vector<amrex::MultiFab>& mf, int nlev = -1,

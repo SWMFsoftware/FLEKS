@@ -70,6 +70,23 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
       return 0;
   }
 
+  // Kinetic electrons only exist in Full-PIC regions (and temporarily in the
+  // Hybrid collar seeded explicitly by refresh_hybrid_electron_collar).
+  if (isKineticElectron_ && grid != nullptr &&
+      grid->has_active_solver(PicSolverMode::Hybrid)) {
+    const Box& vbx = mfi.validbox();
+    const auto hcArr = grid->hybrid_collar_mask(iLev)[mfi].const_array();
+    if (vbx.contains(ijk)) {
+      if (hcArr(ijk) != 0)
+        return 0;
+    } else {
+      const IntVect clamped =
+          amrex::max(amrex::min(ijk, vbx.bigEnd()), vbx.smallEnd());
+      if (hcArr(clamped) == 2)
+        return 0;
+    }
+  }
+
   // The level target (#CONSTANTPPV, pre-splitting) applies only when the
   // caller does not ask for an explicit count (the source particles do).
   if (ppc == 0 && isTargetPPCDefined && !isFake2D) {

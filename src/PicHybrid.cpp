@@ -10,6 +10,7 @@
 #include "GridUtility.h"
 #include "Pic.h"
 #include "PicUpwind.h"
+#include "RandNumHD.h"
 #include "Timer.h"
 
 using namespace amrex;
@@ -212,15 +213,15 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   //   [t^n, t^{n+1}], avoiding the secant-ramp whistler instability at
   //   omega_w * dt ~ pi, while the final nodeE evaluation at t^{n+1} passes
   //   hstep = 1.0.
+  const bool usePCInterp = usePredictorCorrector || is_multi_solver();
   const Real wPrevRho = 1.0 - hstep;
   const Real wCurRho = hstep;
   const Real dtCur = tc ? tc->get_dt() : 0.0;
   const Real dhM = (isFirstHybridStep || dtPrevHybrid <= 0.0 || dtCur <= 0.0)
                        ? 0.5
                        : (0.5 * (dtPrevHybrid + dtCur) / dtCur);
-  const Real wPrevM =
-      usePredictorCorrector ? (1.0 - hstep) : ((0.5 - hstep) / dhM);
-  const Real wCurM = usePredictorCorrector ? hstep : (1.0 - wPrevM);
+  const Real wPrevM = usePCInterp ? (1.0 - hstep) : ((0.5 - hstep) / dhM);
+  const Real wCurM = usePCInterp ? hstep : (1.0 - wPrevM);
   const bool usePrevMoments = (wPrevRho != 0.0 || wPrevM != 0.0);
   const Real invFourPI = 1.0 / fourPI;
 
@@ -254,10 +255,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = Eout[mfi].array();
       const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
-      const Array4<Real const>& moments =
-          nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const>& moments = ion_moments_mf(iLev)[mfi].array();
       const Array4<Real const> momentsPrev =
-          usePrevMoments ? nodePlasmaPrev[nSpecies][iLev][mfi].array()
+          usePrevMoments ? ion_moments_prev_mf(iLev)[mfi].array()
                          : Array4<Real const>();
       const Array4<Real const> arrJ =
           needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
@@ -351,7 +351,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         const Real invRhoEff =
             (rho > 0.0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
 
-        if (usePredictorCorrector) {
+        if (usePCInterp) {
           Real mx = wCurM * moments(i, j, k, iMx_);
           Real my = wCurM * moments(i, j, k, iMy_);
           Real mz = wCurM * moments(i, j, k, iMz_);
@@ -661,7 +661,7 @@ void Pic::compute_ambipolar_E(int iLev) {
   for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
-    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+    const Array4<Real const>& moments = ion_moments_mf(iLev)[mfi].array();
 
     parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = moments(i, j, k, iRho_);
@@ -748,35 +748,36 @@ void Pic::smooth_moments() {
   std::string nameFunc = "Pic::smooth_moments";
   timing_func(nameFunc);
 
-  const bool shouldSmooth = useExplicitPIC
+  const bool useExplFallback = useExplicitPIC && !is_multi_solver();
+  const bool shouldSmooth = useExplFallback
                                 ? ((doSmoothJ && nSmoothJ > 0) ||
                                    (doSmoothMoments && nSmoothMoments > 0))
                                 : (doSmoothMoments && nSmoothMoments > 0);
   if (!shouldSmooth)
     return;
 
-  const int nSmooth = (useExplicitPIC && doSmoothJ) ? nSmoothJ : nSmoothMoments;
+  const int nSmooth =
+      (useExplFallback && doSmoothJ) ? nSmoothJ : nSmoothMoments;
   const Real coefSmooth =
-      (useExplicitPIC && doSmoothJ) ? coefSmoothJ : coefSmoothMoments;
+      (useExplFallback && doSmoothJ) ? coefSmoothJ : coefSmoothMoments;
 
   // Smooth the total plasma moments on the node grid.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab& moments = nodePlasma[nSpecies][iLev];
+    MultiFab& moments = ion_moments_mf(iLev);
     moments.FillBoundary(Geom(iLev).periodicity());
     if (iLev > 0) {
       fill_fine_lev_bny_from_coarse(
-          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
-          nodePlasma[nSpecies][iLev].nComp(), refRatio(iLev - 1),
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+          ion_moments_mf(iLev - 1), ion_moments_mf(iLev), 0,
+          ion_moments_mf(iLev).nComp(), refRatio(iLev - 1), Geom(iLev - 1),
+          Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
     for (int icount = 0; icount < nSmooth; ++icount) {
       smooth_multifab(moments, iLev, 1, coefSmooth);
       if (iLev > 0) {
         fill_fine_lev_bny_from_coarse(
-            nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
-            nodePlasma[nSpecies][iLev].nComp(), refRatio(iLev - 1),
-            Geom(iLev - 1), Geom(iLev), node_status(iLev),
-            node_bilinear_interp);
+            ion_moments_mf(iLev - 1), ion_moments_mf(iLev), 0,
+            ion_moments_mf(iLev).nComp(), refRatio(iLev - 1), Geom(iLev - 1),
+            Geom(iLev), node_status(iLev), node_bilinear_interp);
       }
     }
     moments.FillBoundary(Geom(iLev).periodicity());
@@ -837,15 +838,15 @@ void Pic::smooth_moments() {
   if (finestLevel() > 0) {
     for (int iLev = 1; iLev < n_lev(); ++iLev) {
       fill_fine_lev_bny_from_coarse(
-          nodePlasma[nSpecies][iLev - 1], nodePlasma[nSpecies][iLev], 0,
-          nodePlasma[nSpecies][iLev].nComp(), refRatio(iLev - 1),
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+          ion_moments_mf(iLev - 1), ion_moments_mf(iLev), 0,
+          ion_moments_mf(iLev).nComp(), refRatio(iLev - 1), Geom(iLev - 1),
+          Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
 }
 
 //==========================================================
-// Copy the current summed moment deposit into nodePlasmaPrev (J^{n-1/2})
+// Copy the current summed moment deposit into ion_moments_prev_mf (J^{n-1/2})
 // before a fresh deposit (J^{n+1/2}), so assemble_ohm_E can time-interpolate
 // the two at the magnetic sub-step fraction hstep.
 void Pic::save_current_moments_to_prev() {
@@ -853,10 +854,9 @@ void Pic::save_current_moments_to_prev() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev],
-                   0, 0, nHybridMomentsComps,
-                   nodePlasma[nSpecies][iLev].nGrow());
-    nodePlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+    MultiFab::Copy(ion_moments_prev_mf(iLev), ion_moments_mf(iLev), 0, 0,
+                   nHybridMomentsComps, ion_moments_mf(iLev).nGrow());
+    ion_moments_prev_mf(iLev).FillBoundary(Geom(iLev).periodicity());
   }
 }
 
@@ -1046,7 +1046,7 @@ void Pic::fill_new_electron_pressure() {
 void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
                                    MultiFab& cellRho, const bool useGrownTile) {
   nodalRho.setVal(0.0);
-  for (int s = 0; s < nSpecies; ++s) {
+  for (const int s : ionSpecies_) {
     const Real qomFactor = (fi && s < fi->get_nS() && fi->get_MoMi(s) > 0.0)
                                ? (fi->get_QoQi(s) / fi->get_MoMi(s))
                                : 1.0;
@@ -1095,7 +1095,7 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
   for (MFIter mfi(nodePeRho[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPiN = nodePeRho[iLev][mfi].array();
-    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+    const Array4<Real const>& moments = ion_moments_mf(iLev)[mfi].array();
     parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       arrPiN(i, j, k) = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
                          moments(i, j, k, iPzz_)) /
@@ -1173,6 +1173,10 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   // calls before it established.
   //--------------------------------------------------------------------
 
+  if (is_multi_solver() && has_full_pic()) {
+    sync_fullpic_Pe_to_hybrid();
+  }
+
   electron_velocity_at_nodes(iLev);
   advect_electron_pressure(iLev, dt);
 
@@ -1187,6 +1191,9 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   // are stale until now. Only the next step's advection reads them, which makes
   // this the one place that has to restore them.
   apply_centerPe_BC(iLev);
+  if (is_multi_solver() && has_full_pic()) {
+    sync_fullpic_Pe_to_hybrid();
+  }
 }
 
 //==========================================================
@@ -1207,7 +1214,7 @@ void Pic::electron_velocity_at_nodes(int iLev) {
   for (MFIter mfi(nodePeVec[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrUe = nodePeVec[iLev][mfi].array();
-    const Array4<Real const>& arrMom = nodePlasma[nSpecies][iLev][mfi].array();
+    const Array4<Real const>& arrMom = ion_moments_mf(iLev)[mfi].array();
     const Array4<Real const>& arrJ = nodeJ[iLev][mfi].array();
     parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = arrMom(i, j, k, iRho_);
@@ -2106,9 +2113,17 @@ void Pic::report_divB_amr() {
 //==========================================================
 
 //==========================================================
-void Pic::update_B_hybrid() {
+void Pic::update_B_hybrid(Vector<MultiFab>* emfAvgOut) {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
+
+  if (emfAvgOut) {
+    for (int iLev = 0;
+         iLev < n_lev() && iLev < static_cast<int>(emfAvgOut->size()); ++iLev) {
+      if (!(*emfAvgOut)[iLev].empty())
+        (*emfAvgOut)[iLev].setVal(0.0);
+    }
+  }
 
   if (finestLevel() > 0 && nDim == 3 && !is_fake_2d()) {
     static bool isWarned = false;
@@ -2187,6 +2202,11 @@ void Pic::update_B_hybrid() {
 
   const bool hasBody = use_body();
 
+  const bool useCoupledIonMom =
+      has_solver(PicSolverMode::Hybrid) && has_full_pic();
+  const bool isMultiSolver = is_multi_solver();
+  const bool usePCInterp = usePredictorCorrector || isMultiSolver;
+
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     const bool hasFiner = (iLev < finestLevel());
     Real maxRegionalHyperLev = 0.0;
@@ -2229,6 +2249,8 @@ void Pic::update_B_hybrid() {
       const MultiFab& bForCfl = total_center_B(centerB[iLev], iLev);
       auto const& bArrays = bForCfl.const_arrays();
       auto const& cStatArrays = cell_status(iLev).const_arrays();
+      auto const& cSolvArrays =
+          isMultiSolver ? cell_solver(iLev).const_arrays() : cStatArrays;
       bMaxLev = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl,
                           IntVect(0),
                           [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
@@ -2236,6 +2258,10 @@ void Pic::update_B_hybrid() {
                                 const int st = cStatArrays[nb](i, j, k);
                                 if ((hasBody && bit::is_body(st)) ||
                                     (hasFiner && bit::is_refined(st)))
+                                  return 0.0;
+                                if (isMultiSolver &&
+                                    cSolvArrays[nb](i, j, k) !=
+                                        static_cast<int>(PicSolverMode::Hybrid))
                                   return 0.0;
                                 Array4<Real const> const& arr = bArrays[nb];
                                 Real b2 = arr(i, j, k, 0) * arr(i, j, k, 0) +
@@ -2249,7 +2275,8 @@ void Pic::update_B_hybrid() {
       // rho <= 0 (vacuum, particle-free tests, or inside #BODY), interpolates
       // cell-centered B to nodeBstage using the full 8-cell stencil (plus BC
       // and conducting-body projection), and evaluates Hall/upwind speeds from
-      // stage-interpolated densities between nodePlasmaPrev and nodePlasma.
+      // stage-interpolated densities between ion_moments_prev_mf and
+      // ion_moments_mf.
       average_center_to_node(bForCfl, nodeBstage[iLev]);
       nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
@@ -2263,24 +2290,31 @@ void Pic::update_B_hybrid() {
 
       const Real rhoFloor = amrex::max(rhoMinOhm, static_cast<Real>(1e-10));
       auto const& nbArrays = nodeBstage[iLev].const_arrays();
-      auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
+      const MultiFab& rhoMf = ion_moments_mf(iLev);
+      auto const& rhoArrays = rhoMf.const_arrays();
       const bool hasPrevMoments =
-          !nodePlasmaPrev.empty() && !nodePlasmaPrev[nSpecies][iLev].empty();
+          useCoupledIonMom ? (!nodeIonMomentsPrev.empty() &&
+                              !nodeIonMomentsPrev[iLev].empty())
+                           : (!nodePlasmaPrev.empty() &&
+                              !nodePlasmaPrev[nSpecies][iLev].empty());
       auto const& rhoPrevArrays =
-          hasPrevMoments ? nodePlasmaPrev[nSpecies][iLev].const_arrays()
-                         : rhoArrays;
-      const bool isPC = usePredictorCorrector;
+          hasPrevMoments ? ion_moments_prev_mf(iLev).const_arrays() : rhoArrays;
+      const bool isPC = usePCInterp;
       const int nSubBound =
           amrex::max(nBSubcycleMax, amrex::max(nBSubcycle, 1));
       const Real minSubW = 0.5 / static_cast<Real>(nSubBound);
       auto const& nStatArrays = node_status(iLev).const_arrays();
+      auto const& nsSolvArrays =
+          isMultiSolver ? node_solver_status(iLev).const_arrays() : nStatArrays;
       const int iRhoComp = iRho_;
       auto redTuple = ParReduce(
           TypeList<ReduceOpMin, ReduceOpMax, ReduceOpMax>{},
-          TypeList<Real, Real, Real>{}, nodePlasma[nSpecies][iLev], IntVect(0),
+          TypeList<Real, Real, Real>{}, rhoMf, IntVect(0),
           [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                                int k) noexcept -> GpuTuple<Real, Real, Real> {
-            if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j, k,
+            if ((isMultiSolver &&
+                 (nsSolvArrays[nb](i, j, k) & solver_bit::kTouchHybrid) == 0) ||
+                !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j, k,
                                     hasBody, hasFiner))
               return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
             const Real rCur = rhoArrays[nb](i, j, k, iRhoComp);
@@ -2321,11 +2355,12 @@ void Pic::update_B_hybrid() {
           auto const& jArrays = nodeJ[iLev].const_arrays();
           const Real invFourPI = 1.0 / fourPI;
           uMaxLev = ParReduce(
-              TypeList<ReduceOpMax>{}, TypeList<Real>{},
-              nodePlasma[nSpecies][iLev], IntVect(0),
+              TypeList<ReduceOpMax>{}, TypeList<Real>{}, rhoMf, IntVect(0),
               [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                                    int k) noexcept -> GpuTuple<Real> {
-                if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
+                if ((isMultiSolver && (nsSolvArrays[nb](i, j, k) &
+                                       solver_bit::kTouchHybrid) == 0) ||
+                    !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
                                         k, hasBody, hasFiner))
                   return 0.0;
                 auto eval_ue2 = [&](const Real rStage, const Real wPrevM)
@@ -2359,11 +2394,12 @@ void Pic::update_B_hybrid() {
               });
         } else {
           uMaxLev = ParReduce(
-              TypeList<ReduceOpMax>{}, TypeList<Real>{},
-              nodePlasma[nSpecies][iLev], IntVect(0),
+              TypeList<ReduceOpMax>{}, TypeList<Real>{}, rhoMf, IntVect(0),
               [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                                    int k) noexcept -> GpuTuple<Real> {
-                if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
+                if ((isMultiSolver && (nsSolvArrays[nb](i, j, k) &
+                                       solver_bit::kTouchHybrid) == 0) ||
+                    !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j,
                                         k, hasBody, hasFiner))
                   return 0.0;
                 auto eval_ui2 = [&](const Real rStage, const Real wPrevM)
@@ -2478,6 +2514,19 @@ void Pic::update_B_hybrid() {
   const bool ambiInStages = (electronTemperature > 0);
 
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
+  auto accum_stage_emf = [&](Real weight) {
+    if (!emfAvgOut)
+      return;
+    for (int iLev = 0;
+         iLev < n_lev() && iLev < static_cast<int>(emfAvgOut->size()); ++iLev) {
+      if ((*emfAvgOut)[iLev].empty())
+        continue;
+      const int nG =
+          amrex::min(nodeEstage[iLev].nGrow(), (*emfAvgOut)[iLev].nGrow());
+      MultiFab::Saxpy((*emfAvgOut)[iLev], weight * invSubcycle,
+                      nodeEstage[iLev], 0, 0, nDim3, nG);
+    }
+  };
 
   // Refresh cell-centered B ghosts at tStepStart before the first RK/SSPRK
   // stage so upwind and hyper-resistive stencils read stage-consistent ghosts.
@@ -2498,10 +2547,9 @@ void Pic::update_B_hybrid() {
     // preserves 2nd-order midpoint accuracy while eliminating the secant-ramp
     // whistler instability at omega_w * dt ~ pi.
     const Real g = static_cast<Real>(subStep) * invSubcycle;
-    const Real hstepStart = usePredictorCorrector ? g : 0.5;
-    const Real hstepHalf =
-        usePredictorCorrector ? (g + 0.5 * invSubcycle) : 0.5;
-    const Real hstepEnd = usePredictorCorrector ? (g + invSubcycle) : 0.5;
+    const Real hstepStart = usePCInterp ? g : 0.5;
+    const Real hstepHalf = usePCInterp ? (g + 0.5 * invSubcycle) : 0.5;
+    const Real hstepEnd = usePCInterp ? (g + invSubcycle) : 0.5;
     const Real tSubStart = tStepStart + static_cast<Real>(subStep) * subDt;
     const Real tSubHalf = tSubStart + 0.5 * subDt;
     const Real tSubEnd = tSubStart + subDt;
@@ -2516,9 +2564,11 @@ void Pic::update_B_hybrid() {
       const Real hStage[4] = { hstepStart, hstepHalf, hstepHalf, hstepEnd };
       const Real tStageRhs[4] = { tSubStart, tSubHalf, tSubHalf, tSubEnd };
       const Real tStageOut[3] = { tSubHalf, tSubHalf, tSubEnd };
+      const Real rk4EmfW[4] = { 1.0 / 6.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0 };
       for (int s = 0; s < 3; ++s) {
         faraday_stage_rhs(s == 0 ? centerB : centerBstage, s, hStage[s],
                           ambiInStages, tStageRhs[s]);
+        accum_stage_emf(rk4EmfW[s]);
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           const int nG = faraday_ngrow(iLev);
           MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
@@ -2532,6 +2582,7 @@ void Pic::update_B_hybrid() {
 
       // Stage 4 and the final RK4 combination.
       faraday_stage_rhs(centerBstage, 3, hStage[3], ambiInStages, tStageRhs[3]);
+      accum_stage_emf(rk4EmfW[3]);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, nDim3,
@@ -2558,6 +2609,7 @@ void Pic::update_B_hybrid() {
 
       // Stage 1: B1 = B_n - subDt * curl(E(B_n))
       faraday_stage_rhs(centerB, 0, hstepStart, ambiInStages, tSubStart);
+      accum_stage_emf(1.0 / 6.0);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
@@ -2569,6 +2621,7 @@ void Pic::update_B_hybrid() {
 
       // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(B1)))
       faraday_stage_rhs(centerBstage, 1, hstepEnd, ambiInStages, tSubEnd);
+      accum_stage_emf(1.0 / 6.0);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
@@ -2582,6 +2635,7 @@ void Pic::update_B_hybrid() {
 
       // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(B2)))
       faraday_stage_rhs(centerBstage, 2, hstepHalf, ambiInStages, tSubHalf);
+      accum_stage_emf(2.0 / 3.0);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
@@ -2808,15 +2862,23 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
     auto const& cStatArrays = cell_status(iLev).const_arrays();
     auto const& nStatArrays = node_status(iLev).const_arrays();
+    const bool isMultiSolver = is_multi_solver();
+    const bool useCoupledIonMom =
+        has_solver(PicSolverMode::Hybrid) && has_full_pic();
+    auto const& cSolvArrays =
+        isMultiSolver ? cell_solver(iLev).const_arrays() : cStatArrays;
+    auto const& nsSolvArrays =
+        isMultiSolver ? node_solver_status(iLev).const_arrays() : nStatArrays;
 
     // 1. Kinetic ion advection limit (including bulk flow + thermal spread)
     Real uMaxLev = 0.0;
     if (fixedUMax >= 0) {
       uMaxLev = fixedUMax;
-    } else {
-      Vector<Real> uMaxSpecies(nSpecies, 0.0);
-      for (int i = 0; i < nSpecies; ++i) {
-        amrex::MultiFab& momMF = nodePlasma[i][iLev];
+    } else if (!ionSpecies_.empty()) {
+      Vector<Real> uMaxSpecies(ionSpecies_.size(), 0.0);
+      for (int idx = 0; idx < static_cast<int>(ionSpecies_.size()); ++idx) {
+        const int iSp = ionSpecies_[idx];
+        amrex::MultiFab& momMF = nodePlasma[iSp][iLev];
         auto const& ma = momMF.const_arrays();
         Real uSpMax = ParReduce(
             TypeList<ReduceOpMax>{}, TypeList<Real>{}, momMF, IntVect(0),
@@ -2825,6 +2887,8 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                   Array4<Real const> const& arr = ma[nb];
                   Real rho = arr(i, j, k, iRho_);
                   if (rho <= 0.0 ||
+                      (isMultiSolver && (nsSolvArrays[nb](i, j, k) &
+                                         solver_bit::kTouchHybrid) == 0) ||
                       !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i,
                                           j, k, hasBody, hasFiner))
                     return 0.0;
@@ -2839,12 +2903,13 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                   Real vth = (p > 0.0) ? sqrt(p * invRho) : 0.0;
                   return sqrt(uBulk2) + 3.0 * vth;
                 });
-        uMaxSpecies[i] = uSpMax;
+        uMaxSpecies[idx] = uSpMax;
       }
-      ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
-      for (int i = 0; i < nSpecies; ++i) {
-        if (uMaxSpecies[i] > uMaxLev) {
-          uMaxLev = uMaxSpecies[i];
+      ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(),
+                                        static_cast<int>(uMaxSpecies.size()));
+      for (Real uSp : uMaxSpecies) {
+        if (uSp > uMaxLev) {
+          uMaxLev = uSp;
         }
       }
     }
@@ -2873,25 +2938,30 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
         hasMoverNodeB ? nodeB[iLev].const_arrays() : nbArrays;
     auto const& moverB0Arrays =
         hasMoverNodeB0 ? nodeB0[iLev].const_arrays() : nbArrays;
-    Real bMaxLev = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl,
-                             IntVect(0),
-                             [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
-                                 noexcept -> GpuTuple<Real> {
-                                   const int st = cStatArrays[nb](i, j, k);
-                                   if ((hasBody && bit::is_body(st)) ||
-                                       (hasFiner && bit::is_refined(st)))
-                                     return 0.0;
-                                   Array4<Real const> const& arr = bArrays[nb];
-                                   Real b2 = arr(i, j, k, 0) * arr(i, j, k, 0) +
-                                             arr(i, j, k, 1) * arr(i, j, k, 1) +
-                                             arr(i, j, k, 2) * arr(i, j, k, 2);
-                                   return sqrt(b2);
-                                 });
+    Real bMaxLev = ParReduce(
+        TypeList<ReduceOpMax>{}, TypeList<Real>{}, bForCfl, IntVect(0),
+        [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
+            noexcept -> GpuTuple<Real> {
+              const int st = cStatArrays[nb](i, j, k);
+              if ((hasBody && bit::is_body(st)) ||
+                  (hasFiner && bit::is_refined(st)))
+                return 0.0;
+              if (isMultiSolver && cSolvArrays[nb](i, j, k) !=
+                                       static_cast<int>(PicSolverMode::Hybrid))
+                return 0.0;
+              Array4<Real const> const& arr = bArrays[nb];
+              Real b2 = arr(i, j, k, 0) * arr(i, j, k, 0) +
+                        arr(i, j, k, 1) * arr(i, j, k, 1) +
+                        arr(i, j, k, 2) * arr(i, j, k, 2);
+              return sqrt(b2);
+            });
     Real bGyroNodeMaxLev = ParReduce(
         TypeList<ReduceOpMax>{}, TypeList<Real>{}, nodeBstage[iLev], IntVect(0),
         [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                              int k) noexcept -> GpuTuple<Real> {
-          if (!touches_active_cell(cStatArrays[nb], i, j, k, hasBody, hasFiner))
+          if ((isMultiSolver &&
+               (nsSolvArrays[nb](i, j, k) & solver_bit::kTouchHybrid) == 0) ||
+              !touches_active_cell(cStatArrays[nb], i, j, k, hasBody, hasFiner))
             return 0.0;
           Array4<Real const> const& nbArr = nbArrays[nb];
           Real b2 = nbArr(i, j, k, ix_) * nbArr(i, j, k, ix_) +
@@ -2924,7 +2994,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     Real dtGyro = std::numeric_limits<Real>::max();
     if (bGyroMaxLev > 0.0) {
       Real maxQom = 0.0;
-      for (int i = 0; i < nSpecies; ++i) {
+      for (const int i : ionSpecies_) {
         Real qom = std::abs(parts[i]->get_charge() / parts[i]->get_mass());
         maxQom = amrex::max(maxQom, qom);
       }
@@ -2958,24 +3028,29 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
 
     if (sMax > 0.0) {
       const Real rhoFloor = amrex::max(rhoMinOhm, static_cast<Real>(1e-10));
-      auto const& rhoArrays = nodePlasma[nSpecies][iLev].const_arrays();
-      const bool hasPrevMoments = !isFirstHybridStep &&
-                                  !nodePlasmaPrev.empty() &&
-                                  !nodePlasmaPrev[nSpecies][iLev].empty();
+      const MultiFab& rhoMf = ion_moments_mf(iLev);
+      auto const& rhoArrays = rhoMf.const_arrays();
+      const bool hasPrevMoments =
+          !isFirstHybridStep &&
+          (useCoupledIonMom ? (!nodeIonMomentsPrev.empty() &&
+                               !nodeIonMomentsPrev[iLev].empty())
+                            : (!nodePlasmaPrev.empty() &&
+                               !nodePlasmaPrev[nSpecies][iLev].empty()));
       auto const& rhoPrevArrays =
-          hasPrevMoments ? nodePlasmaPrev[nSpecies][iLev].const_arrays()
-                         : rhoArrays;
-      const bool isPC = usePredictorCorrector;
+          hasPrevMoments ? ion_moments_prev_mf(iLev).const_arrays() : rhoArrays;
+      const bool isPC = usePredictorCorrector || isMultiSolver;
       const int nSubBound =
           amrex::max(nBSubcycleMax, amrex::max(nBSubcycle, 1));
       const Real minSubW = 0.5 / static_cast<Real>(nSubBound);
       const int iRhoComp = iRho_;
       auto redTuple = ParReduce(
           TypeList<ReduceOpMin, ReduceOpMax, ReduceOpMax>{},
-          TypeList<Real, Real, Real>{}, nodePlasma[nSpecies][iLev], IntVect(0),
+          TypeList<Real, Real, Real>{}, rhoMf, IntVect(0),
           [=] AMREX_GPU_DEVICE(int nb, int i, int j,
                                int k) noexcept -> GpuTuple<Real, Real, Real> {
-            if (!is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j, k,
+            if ((isMultiSolver &&
+                 (nsSolvArrays[nb](i, j, k) & solver_bit::kTouchHybrid) == 0) ||
+                !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i, j, k,
                                     hasBody, hasFiner))
               return { std::numeric_limits<Real>::max(), 0.0, 0.0 };
             const Real rCur = rhoArrays[nb](i, j, k, iRhoComp);
@@ -3346,4 +3421,429 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                    << ", nSub = " << nSubNext
                    << " (limited by: " << dtLimitingReason << ")\n";
   }
+}
+
+//==========================================================
+// Deposit fluid moments from kinetic ion species into nodeIonMoments.
+// Used when Hybrid coexists with a Full-PIC region so Ohm's law receives
+// pure ion moments without kinetic electron contamination.
+void Pic::deposit_ion_moments(bool copyToOld, bool trialOnly, Real dtTrial) {
+  if (!has_solver(PicSolverMode::Hybrid) || !has_full_pic()) {
+    return;
+  }
+
+  std::string nameFunc = "Pic::deposit_ion_moments";
+  timing_func(nameFunc);
+
+  if (copyToOld && !trialOnly && !nodeIonMomentsPrev.empty() &&
+      !nodeIonMomentsPrev[0].empty()) {
+    save_current_moments_to_prev();
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    nodeIonMoments[iLev].setVal(0.0);
+  }
+
+  const Vector<MultiFab>& ePushMF =
+      (!nodeEPush.empty() && !nodeEPush[0].empty()) ? nodeEPush : nodeE;
+  const Vector<MultiFab>& bPushMF =
+      (!nodeBPush.empty() && !nodeBPush[0].empty()) ? nodeBPush : nodeB;
+
+  Vector<MultiFab> tmpSpecies(trialOnly ? n_lev() : 0);
+  if (trialOnly) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      tmpSpecies[iLev].define(node_box_array(iLev), DistributionMap(iLev),
+                              nMoments, get_n_ghost());
+    }
+  }
+
+  for (const int s : ionSpecies_) {
+    if (trialOnly) {
+      parts[s]->backup_particle_state();
+      // Pass trialOnly=false to mover() so ion positions and velocities advance
+      // temporarily before sum_moments; backup/restore rolls back the push.
+      parts[s]->mover(ePushMF, bPushMF, nodeB0, eBg, uBg, dtTrial, dtTrial,
+                      PicParticles::kPushLeapfrog, nullptr, false);
+    }
+
+    Vector<MultiFab>& targetMF = trialOnly ? tmpSpecies : nodePlasma[s];
+    parts[s]->sum_moments(targetMF, nodeB, trialOnly ? dtTrial : tc->get_dt());
+    parts[s]->convert_to_fluid_moments(targetMF);
+
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      MultiFab::Add(nodeIonMoments[iLev], targetMF[iLev], 0, 0, nMoments,
+                    get_n_ghost());
+    }
+
+    if (trialOnly) {
+      parts[s]->restore_particle_state();
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    nodeIonMoments[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          nodeIonMoments[iLev - 1], nodeIonMoments[iLev], 0, nMoments,
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+    }
+  }
+}
+
+//==========================================================
+// Copy Full-PIC kinetic electron scalar pressure into centerPeState on Full-PIC
+// cells so the Hybrid pressure equation sees accurate seam boundary data.
+void Pic::sync_fullpic_Pe_to_hybrid() {
+  if (!is_multi_solver() || !has_full_pic() ||
+      !has_solver(PicSolverMode::Hybrid) || !useElectronPressureEq ||
+      iElectron_ < 0 || !peStateInitialized_) {
+    return;
+  }
+
+  std::string nameFunc = "Pic::sync_fullpic_Pe_to_hybrid";
+  timing_func(nameFunc);
+
+  const Real peMinLocal = peMin;
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab nodePeKin(node_box_array(iLev), DistributionMap(iLev), 1, 0);
+    MultiFab centerPeKin(boxArray(iLev), DistributionMap(iLev), 1, 0);
+
+    for (MFIter mfi(nodePeKin, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real> peArr = nodePeKin[mfi].array();
+      const Array4<Real const> eArr =
+          nodePlasma[iElectron_][iLev][mfi].const_array();
+      parallel_for_omp(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        peArr(i, j, k) = (eArr(i, j, k, iPxx_) + eArr(i, j, k, iPyy_) +
+                          eArr(i, j, k, iPzz_)) /
+                         3.0;
+      });
+    }
+
+    average_node_to_center(nodePeKin, centerPeKin);
+
+    const int implCode = static_cast<int>(PicSolverMode::Implicit);
+    const int explCode = static_cast<int>(PicSolverMode::Explicit);
+    for (MFIter mfi(centerPeState[iLev], doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real> peOut = centerPeState[iLev][mfi].array();
+      const Array4<Real const> peIn = centerPeKin[mfi].const_array();
+      const Array4<int const> csArr = cell_solver(iLev)[mfi].const_array();
+      const Array4<int const> cStat = cell_status(iLev)[mfi].const_array();
+      parallel_for_omp(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const int cs = csArr(i, j, k);
+        if ((cs == implCode || cs == explCode) &&
+            !bit::is_body(cStat(i, j, k))) {
+          peOut(i, j, k) = amrex::max(peIn(i, j, k), peMinLocal);
+        }
+      });
+    }
+
+    apply_centerPe_BC(iLev);
+    centerPeState[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+//==========================================================
+// Fill fluid electron moments into nodePlasma[iElectron_] on deep Hybrid nodes
+// (where kinetic electrons are absent on at least one surrounding cell) so
+// diagnostics and total plasma moments remain continuous across the domain.
+void Pic::synthesize_hybrid_electron_moments() {
+  if (!is_multi_solver() || !has_full_pic() ||
+      !has_solver(PicSolverMode::Hybrid) || iElectron_ < 0) {
+    return;
+  }
+
+  std::string nameFunc = "Pic::synthesize_hybrid_electron_moments";
+  timing_func(nameFunc);
+
+  const Real me = parts[iElectron_]->get_mass();
+  const Real absQe = std::abs(parts[iElectron_]->get_charge());
+  const Real invAbsQe = (absQe > 0.0) ? (1.0 / absQe) : 1.0;
+  const Real invFourPILocal = 1.0 / fourPI;
+  const Real rhoFloor = rhoMinOhm;
+  const int jMinOff = (nDim > 1) ? -1 : 0;
+  const int kMinOff = (nDim > 2) ? -1 : 0;
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab nodeNe(node_box_array(iLev), DistributionMap(iLev), 1,
+                    get_n_ghost());
+    MultiFab centerNe(boxArray(iLev), DistributionMap(iLev), 1, 1);
+    compute_electron_density(iLev, nodeNe, centerNe, false);
+
+    MultiFab nodePe(node_box_array(iLev), DistributionMap(iLev), 1, 0);
+    compute_node_electron_pressure(iLev, nodeNe, nodePe);
+
+    curl_center_to_node(centerB[iLev], nodeJ[iLev], Geom(iLev).InvCellSize());
+    nodeJ[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    const MultiFab& ionMomMF = ion_moments_mf(iLev);
+    for (MFIter mfi(nodePlasma[iElectron_][iLev], doTiling); mfi.isValid();
+         ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real> eArr = nodePlasma[iElectron_][iLev][mfi].array();
+      const Array4<Real const> ionArr = ionMomMF[mfi].const_array();
+      const Array4<Real const> neArr = nodeNe[mfi].const_array();
+      const Array4<Real const> peArr = nodePe[mfi].const_array();
+      const Array4<Real const> jArr = nodeJ[iLev][mfi].const_array();
+      const Array4<int const> hcArr =
+          hybrid_collar_mask(iLev)[mfi].const_array();
+      const Box hcBox = hybrid_collar_mask(iLev)[mfi].box();
+
+      parallel_for_omp(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        bool hasCollar2 = false;
+        for (int kk = kMinOff; kk <= 0 && !hasCollar2; ++kk) {
+          for (int jj = jMinOff; jj <= 0 && !hasCollar2; ++jj) {
+            for (int ii = -1; ii <= 0; ++ii) {
+              const IntVect cIdx(AMREX_D_DECL(i + ii, j + jj, k + kk));
+              if (hcBox.contains(cIdx) && hcArr(cIdx) == 2) {
+                hasCollar2 = true;
+                break;
+              }
+            }
+          }
+        }
+        if (!hasCollar2)
+          return;
+
+        const Real ne = amrex::max(neArr(i, j, k), Real(0.0)) * invAbsQe;
+        const Real rhoE = me * ne;
+        const Real rhoIon = ionArr(i, j, k, iRho_);
+        Real uex = 0.0, uey = 0.0, uez = 0.0;
+        if (rhoIon > 0.0) {
+          const Real invRhoIon = 1.0 / amrex::max(rhoIon, rhoFloor);
+          uex = (ionArr(i, j, k, iMx_) - jArr(i, j, k, ix_) * invFourPILocal) *
+                invRhoIon;
+          uey = (ionArr(i, j, k, iMy_) - jArr(i, j, k, iy_) * invFourPILocal) *
+                invRhoIon;
+          uez = (ionArr(i, j, k, iMz_) - jArr(i, j, k, iz_) * invFourPILocal) *
+                invRhoIon;
+        }
+        const Real pe = amrex::max(peArr(i, j, k), Real(0.0));
+        eArr(i, j, k, iRho_) = rhoE;
+        eArr(i, j, k, iMx_) = rhoE * uex;
+        eArr(i, j, k, iMy_) = rhoE * uey;
+        eArr(i, j, k, iMz_) = rhoE * uez;
+        eArr(i, j, k, iPxx_) = pe;
+        eArr(i, j, k, iPyy_) = pe;
+        eArr(i, j, k, iPzz_) = pe;
+        eArr(i, j, k, iPxy_) = 0.0;
+        eArr(i, j, k, iPxz_) = 0.0;
+        eArr(i, j, k, iPyz_) = 0.0;
+        eArr(i, j, k, iNum_) = 0.0;
+      });
+    }
+
+    nodePlasma[iElectron_][iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          nodePlasma[iElectron_][iLev - 1], nodePlasma[iElectron_][iLev], 0,
+          nMoments, refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev),
+          node_status(iLev), node_bilinear_interp);
+    }
+  }
+}
+
+//==========================================================
+// Clear stale kinetic electrons inside Hybrid cells (hybrid_collar_mask != 0)
+// and re-seed antithetic drifting Maxwellian pairs in collar == 1 cells using
+// the quasineutral Hybrid fluid density, electron velocity u_e, and pressure.
+void Pic::refresh_hybrid_electron_collar() {
+  if (!is_multi_solver() || !has_full_pic() ||
+      !has_solver(PicSolverMode::Hybrid) || iElectron_ < 0) {
+    return;
+  }
+
+  std::string nameFunc = "Pic::refresh_hybrid_electron_collar";
+  timing_func(nameFunc);
+
+  const Real me = parts[iElectron_]->get_mass();
+  const Real absQe = std::abs(parts[iElectron_]->get_charge());
+  const Real invAbsQe = (absQe > 0.0) ? (1.0 / absQe) : 1.0;
+  const int qomSignE = parts[iElectron_]->get_qom_sign();
+  const Real invFourPILocal = 1.0 / fourPI;
+  const Real rhoFloor = rhoMinOhm;
+  const long cycleSeed =
+      (tc ? static_cast<long>(tc->get_cycle()) : 0L) * 1315423911L;
+
+  const bool useTargetPPC = parts[iElectron_]->is_target_ppc_defined();
+  int defaultPPC = 1;
+  {
+    const IntVect nPPC = parts[iElectron_]->get_n_part_per_cell();
+    for (int d = 0; d < nDim; ++d) {
+      defaultPPC *= nPPC[d];
+    }
+    defaultPPC = std::max(1, defaultPPC);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    const auto& geom = Geom(iLev);
+    const Real* plo = geom.ProbLo();
+    const Real* dx = geom.CellSize();
+    const Real* invDx = geom.InvCellSize();
+    const Real cellVol = geom.CellSize(0) *
+                         (nDim > 1 ? geom.CellSize(1) : Real(1.0)) *
+                         (nDim > 2 ? geom.CellSize(2) : Real(1.0));
+
+    // Compute cell-centered electron charge density, pressure, and drift u_e.
+    MultiFab nodeNe(node_box_array(iLev), DistributionMap(iLev), 1,
+                    get_n_ghost());
+    MultiFab centerNe(boxArray(iLev), DistributionMap(iLev), 1, 1);
+    compute_electron_density(iLev, nodeNe, centerNe, false);
+
+    MultiFab nodePe(node_box_array(iLev), DistributionMap(iLev), 1, 0);
+    compute_node_electron_pressure(iLev, nodeNe, nodePe);
+    MultiFab centerPeCollar(boxArray(iLev), DistributionMap(iLev), 1, 0);
+    average_node_to_center(nodePe, centerPeCollar);
+
+    curl_center_to_node(centerB[iLev], nodeJ[iLev], invDx);
+    nodeJ[iLev].FillBoundary(geom.periodicity());
+
+    MultiFab nodeUe(node_box_array(iLev), DistributionMap(iLev), 3, 0);
+    const MultiFab& ionMomMF = ion_moments_mf(iLev);
+    for (MFIter mfi(nodeUe, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<Real> ueArr = nodeUe[mfi].array();
+      const Array4<Real const> momArr = ionMomMF[mfi].const_array();
+      const Array4<Real const> jArr = nodeJ[iLev][mfi].const_array();
+      parallel_for_omp(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real rho = momArr(i, j, k, iRho_);
+        if (rho > 0.0) {
+          const Real invRho = 1.0 / amrex::max(rho, rhoFloor);
+          ueArr(i, j, k, ix_) =
+              (momArr(i, j, k, iMx_) - jArr(i, j, k, ix_) * invFourPILocal) *
+              invRho;
+          ueArr(i, j, k, iy_) =
+              (momArr(i, j, k, iMy_) - jArr(i, j, k, iy_) * invFourPILocal) *
+              invRho;
+          ueArr(i, j, k, iz_) =
+              (momArr(i, j, k, iMz_) - jArr(i, j, k, iz_) * invFourPILocal) *
+              invRho;
+        } else {
+          ueArr(i, j, k, ix_) = 0.0;
+          ueArr(i, j, k, iy_) = 0.0;
+          ueArr(i, j, k, iz_) = 0.0;
+        }
+      });
+    }
+    MultiFab centerUe(boxArray(iLev), DistributionMap(iLev), 3, 0);
+    average_node_to_center(nodeUe, centerUe);
+
+    // 1. Mark any existing kinetic electrons inside Hybrid cells (mask != 0)
+    //    for deletion across all particle tiles on this level.
+    auto& plev = parts[iElectron_]->GetParticles(iLev);
+    for (auto& kv : plev) {
+      const int gridIdx = kv.first.first;
+      auto& aos = kv.second.GetArrayOfStructs();
+      const auto hcArr = hybrid_collar_mask(iLev)[gridIdx].const_array();
+      const Box hcBox = hybrid_collar_mask(iLev)[gridIdx].box();
+      for (auto& p : aos) {
+        if (p.id() < 0)
+          continue;
+        IntVect cellIdx(AMREX_D_DECL(
+            static_cast<int>(std::floor((p.pos(0) - plo[0]) * invDx[0])),
+            static_cast<int>(std::floor((p.pos(1) - plo[1]) * invDx[1])),
+            static_cast<int>(std::floor((p.pos(2) - plo[2]) * invDx[2]))));
+        if (hcBox.contains(cellIdx) && hcArr(cellIdx) != 0) {
+          p.id() = -1;
+        }
+      }
+    }
+
+    // 2. Seed antithetic Maxwellian pairs in every active collar == 1 cell.
+    for (MFIter mfi = parts[iElectron_]->MakeMFIter(iLev, false); mfi.isValid();
+         ++mfi) {
+      const Box& vbx = mfi.validbox();
+      const auto hcArr = hybrid_collar_mask(iLev)[mfi].const_array();
+      const auto cStat = cell_status(iLev)[mfi].const_array();
+      const auto neArr = centerNe[mfi].const_array();
+      const auto peArr = centerPeCollar[mfi].const_array();
+      const auto ueArr = centerUe[mfi].const_array();
+      const Array4<const int> tppcArr =
+          useTargetPPC ? parts[iElectron_]->target_PPC(iLev)[mfi].const_array()
+                       : Array4<const int>{};
+
+      const Dim3 lo = lbound(vbx);
+      const Dim3 hi = ubound(vbx);
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const IntVect ijk(AMREX_D_DECL(i, j, k));
+            if (hcArr(ijk) != 1)
+              continue;
+            const int st = cStat(ijk);
+            if (bit::is_refined(st) || bit::is_body(st))
+              continue;
+
+            const Real ne = neArr(ijk) * invAbsQe;
+            if (ne <= 0.0)
+              continue;
+
+            const int nTarget =
+                useTargetPPC ? std::max(1, tppcArr(ijk)) : defaultPPC;
+            const int nPairs = std::max(1, nTarget / 2);
+            const Real pe = amrex::max(peArr(ijk), Real(0.0));
+            const Real uth = (me > 0.0) ? std::sqrt(pe / (me * ne)) : 0.0;
+            const Real uex = ueArr(ijk, ix_);
+            const Real uey = ueArr(ijk, iy_);
+            const Real uez = ueArr(ijk, iz_);
+            const Real qp =
+                static_cast<Real>(qomSignE) * cellVol * ne / (2.0 * nPairs);
+
+            RandNumHD rng(
+                parts[iElectron_]->calc_random_seed(iLev, ijk, IntVect(739)) +
+                cycleSeed);
+            auto& pTile = parts[iElectron_]->get_particle_tile(iLev, mfi, ijk);
+
+            for (int ip = 0; ip < nPairs; ++ip) {
+              Real r[3] = { 0.5, 0.5, 0.5 };
+              for (int d = 0; d < nDim; ++d) {
+                r[d] = rng();
+              }
+              const Real u1 = rng();
+              const Real u2 = rng();
+              const Real u3 = rng();
+              const Real u4 = rng();
+              const Real rad1 =
+                  std::sqrt(-2.0 * std::log(1.0 - 0.999999999 * u1));
+              const Real th1 = 2.0 * M_PI * u2;
+              const Real rad2 =
+                  std::sqrt(-2.0 * std::log(1.0 - 0.999999999 * u3));
+              const Real th2 = 2.0 * M_PI * u4;
+              const Real dvx = uth * rad1 * std::cos(th1);
+              const Real dvy = uth * rad1 * std::sin(th1);
+              const Real dvz = uth * rad2 * std::cos(th2);
+
+              auto pA = parts[iElectron_]->make_particle();
+              auto pB = parts[iElectron_]->make_particle();
+              for (int d = 0; d < nDim; ++d) {
+                const Real xLo = plo[d] + ijk[d] * dx[d];
+                pA.pos(d) = xLo + r[d] * dx[d];
+                pB.pos(d) = xLo + (Real(1.0) - r[d]) * dx[d];
+              }
+              pA.rdata(PicParticles::iup_) = uex + dvx;
+              pA.rdata(PicParticles::ivp_) = uey + dvy;
+              pA.rdata(PicParticles::iwp_) = uez + dvz;
+              pA.rdata(PicParticles::iqp_) = qp;
+              pB.rdata(PicParticles::iup_) = uex - dvx;
+              pB.rdata(PicParticles::ivp_) = uey - dvy;
+              pB.rdata(PicParticles::iwp_) = uez - dvz;
+              pB.rdata(PicParticles::iqp_) = qp;
+              if constexpr (nPicPartInt > PicParticles::iRecordCount_) {
+                pA.idata(PicParticles::iRecordCount_) = 0;
+                pB.idata(PicParticles::iRecordCount_) = 0;
+              }
+              parts[iElectron_]->set_ids(pA);
+              parts[iElectron_]->set_ids(pB);
+              pTile.push_back(pA);
+              pTile.push_back(pB);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  parts[iElectron_]->redistribute_particles();
 }
