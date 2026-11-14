@@ -46,20 +46,59 @@ void OH_get_solar_wind(double* /*x*/, double* /*y*/, double* /*z*/,
 
 namespace {
 
+std::string first_token(const std::string& line) {
+  const std::string::size_type start = line.find_first_not_of(" \t\r");
+  if (start == std::string::npos) {
+    return "";
+  }
+  const std::string::size_type end = line.find_first_of(" \t\r", start);
+  return line.substr(start, end - start);
+}
+
+void read_param_file_recursive(const std::string& filename, int depth,
+                               std::string& paramString) {
+  constexpr int kMaxIncludeDepth = 10;
+  if (depth > kMaxIncludeDepth) {
+    std::cerr << "Error: #INCLUDE nesting exceeded " << kMaxIncludeDepth
+              << " levels at '" << filename << "'" << std::endl;
+    amrex::ParallelDescriptor::Abort();
+  }
+
+  std::ifstream infile(filename);
+  if (!infile.is_open()) {
+    std::cerr << "Error: Could not open parameter file '" << filename << "'"
+              << std::endl;
+    amrex::ParallelDescriptor::Abort();
+  }
+
+  std::string line;
+  while (std::getline(infile, line)) {
+    const std::string cmd = first_token(line);
+    if (cmd == "#INCLUDE" || cmd == "#INCLUDE_FLEKS1") {
+      std::string nextLine;
+      if (!std::getline(infile, nextLine)) {
+        std::cerr << "Error: Missing filename after " << cmd << " in '"
+                  << filename << "'" << std::endl;
+        amrex::ParallelDescriptor::Abort();
+      }
+      const std::string includeFile = first_token(nextLine);
+      if (includeFile.empty()) {
+        std::cerr << "Error: Empty filename after " << cmd << " in '"
+                  << filename << "'" << std::endl;
+        amrex::ParallelDescriptor::Abort();
+      }
+      read_param_file_recursive(includeFile, depth + 1, paramString);
+    } else {
+      paramString += line + "\n";
+    }
+  }
+}
+
 std::string prepare_standalone_run() {
   std::string paramString;
 
   if (amrex::ParallelDescriptor::MyProc() == 0) {
-    std::ifstream infile("PARAM.in");
-    if (!infile.is_open()) {
-      std::cerr << "Error: Could not open PARAM.in" << std::endl;
-      amrex::ParallelDescriptor::Abort();
-    }
-
-    std::string line;
-    while (std::getline(infile, line)) {
-      paramString += line + "\n";
-    }
+    read_param_file_recursive("PARAM.in", 0, paramString);
   }
 
   int paramLen = static_cast<int>(paramString.length());

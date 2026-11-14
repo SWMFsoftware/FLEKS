@@ -788,11 +788,11 @@ void Pic::read_restart() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     VisMF::Read(nodeE[iLev],
-                restartDir + gridName + "_nodeE" + lev_string(iLev));
+                restart_file_name(restartDir + gridName + "_nodeE", iLev));
     VisMF::Read(nodeB[iLev],
-                restartDir + gridName + "_nodeB" + lev_string(iLev));
+                restart_file_name(restartDir + gridName + "_nodeB", iLev));
     VisMF::Read(centerB[iLev],
-                restartDir + gridName + "_centerB" + lev_string(iLev));
+                restart_file_name(restartDir + gridName + "_centerB", iLev));
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -802,18 +802,17 @@ void Pic::read_restart() {
   // that had #ELECTRONPRESSURE on. Older files start without it and the field
   // is then seeded from the polytropic closure on the first step.
   if (useElectronPressureEq) {
+    std::vector<std::string> peFiles(n_lev());
     bool havePe = true;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const std::string name =
-          restartDir + gridName + "_centerPeState" + lev_string(iLev);
-      if (!FileExists(name) && !FileExists(name + "_H"))
+      peFiles[iLev] =
+          restart_file_name(restartDir + gridName + "_centerPeState", iLev);
+      if (!FileExists(peFiles[iLev]) && !FileExists(peFiles[iLev] + "_H"))
         havePe = false;
     }
     if (havePe) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        VisMF::Read(centerPeState[iLev], restartDir + gridName +
-                                             "_centerPeState" +
-                                             lev_string(iLev));
+        VisMF::Read(centerPeState[iLev], peFiles[iLev]);
         centerPeState[iLev].FillBoundary(Geom(iLev).periodicity());
       }
       peStateInitialized_ = true;
@@ -842,19 +841,19 @@ void Pic::read_restart() {
   inject_particles_for_boundary_cells();
 
   if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
+    std::vector<std::string> chargeFiles(n_lev());
     bool haveCharge = true;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const std::string name =
-          restartDir + gridName + "_bodyNetCharge" + lev_string(iLev);
-      if (!FileExists(name) && !FileExists(name + "_H"))
+      chargeFiles[iLev] =
+          restart_file_name(restartDir + gridName + "_bodyNetCharge", iLev);
+      if (!FileExists(chargeFiles[iLev]) &&
+          !FileExists(chargeFiles[iLev] + "_H"))
         haveCharge = false;
     }
     if (haveCharge) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         if (grid.has_body_net_charge(iLev)) {
-          VisMF::Read(grid.body_net_charge(iLev), restartDir + gridName +
-                                                      "_bodyNetCharge" +
-                                                      lev_string(iLev));
+          VisMF::Read(grid.body_net_charge(iLev), chargeFiles[iLev]);
           grid.body_net_charge(iLev).FillBoundary(Geom(iLev).periodicity());
         }
       }
@@ -864,8 +863,15 @@ void Pic::read_restart() {
   sum_moments();
   // div(E)-correction fields are full-PIC only.
   if (!useHybridPIC) {
-    sum_to_center(false);
+    if (finestLevel() == 0) {
+      sum_to_center(false);
+    } else if (doCorrectDivE) {
+      for (int iLev = 0; iLev <= finestLevel(); ++iLev) {
+        sum_to_center_amr(false, iLev);
+      }
+    }
   } else {
+    smooth_moments();
     // Restore or initialize the hybrid staggering state and previous moments.
     // Checkpointed velocities are already staggered at t^n - dt_prev/2, so a
     // restarted run must advance them by dt (not dt/2) to preserve trajectory.
@@ -895,19 +901,19 @@ void Pic::read_restart() {
       dtPrevHybrid = tc ? tc->get_dt() : 0.0;
     }
 
+    std::vector<std::string> plasmaPrevFiles(n_lev());
     bool havePlasmaPrev = true;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const std::string name =
-          restartDir + gridName + "_nodePlasmaPrev" + lev_string(iLev);
-      if (!FileExists(name) && !FileExists(name + "_H")) {
+      plasmaPrevFiles[iLev] =
+          restart_file_name(restartDir + gridName + "_nodePlasmaPrev", iLev);
+      if (!FileExists(plasmaPrevFiles[iLev]) &&
+          !FileExists(plasmaPrevFiles[iLev] + "_H")) {
         havePlasmaPrev = false;
       }
     }
     if (havePlasmaPrev) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        VisMF::Read(nodePlasmaPrev[nSpecies][iLev], restartDir + gridName +
-                                                        "_nodePlasmaPrev" +
-                                                        lev_string(iLev));
+        VisMF::Read(nodePlasmaPrev[nSpecies][iLev], plasmaPrevFiles[iLev]);
         nodePlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
       }
     } else {

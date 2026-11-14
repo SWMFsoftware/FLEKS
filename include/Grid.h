@@ -19,6 +19,7 @@
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_SPACE.H>
+#include <AMReX_Utility.H>
 #include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
 
@@ -358,6 +359,30 @@ public:
       sLev = "";
     }
     return sLev;
+  }
+
+  /**
+   * @brief Resolve the MultiFab restart path for level @p iLev.
+   *
+   * Falls back between `<baseName>` and `<baseName>_lev_0` when reading a
+   * single-level restart written under a different `nLevMax` configuration.
+   */
+  std::string restart_file_name(const std::string& baseName, int iLev) const {
+    const std::string primary = baseName + lev_string(iLev);
+    auto exists = [](const std::string& name) {
+      return amrex::FileExists(name) || amrex::FileExists(name + "_H");
+    };
+    if (iLev == 0 && n_lev() == 1 && !exists(primary)) {
+      const std::string alternate =
+          n_lev_max() == 1 ? baseName + "_lev_0" : baseName;
+      if (exists(alternate)) {
+        amrex::Print() << printPrefix << "restart: '" << primary
+                       << "' not found; falling back to '" << alternate << "'."
+                       << std::endl;
+        return alternate;
+      }
+    }
+    return primary;
   }
 
   // Find the finest level that contains the cell xyz.
