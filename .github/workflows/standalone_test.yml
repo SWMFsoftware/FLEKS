@@ -84,6 +84,88 @@ jobs:
           summary-title: Standalone FLEKS 2D AMReX Test Results
           post-pr-comment: 'false'
 
+  # Standalone job building with OpenMP multithreading (-openmp) against 3D AMReX.
+  build-and-test-openmp:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout FLEKS (for local composite actions)
+        uses: actions/checkout@v6
+
+      - name: Setup SWMF dependency tree
+        uses: ./.github/actions/setup-swmf
+        with:
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          amrex-cache-suffix: 3d-omp
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'true'
+
+      - name: Configure Standalone FLEKS Source (OpenMP)
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          ./Config.pl -amrex3d -openmp -lev=2 -u=Exo -O4 -nodebug
+
+          AMREX_CONFIG="../../util/AMREX/InstallDir/include/AMReX_Config.H"
+          if [ ! -f "$AMREX_CONFIG" ] || ! grep -qE "^#define\s+AMREX_USE_OMP\s+1" "$AMREX_CONFIG"; then
+            echo "::error::AMREX_USE_OMP is not defined! OpenMP standalone build must link an OpenMP AMReX library."
+            exit 1
+          fi
+          if grep -q "#define AMREX_DEBUG" "$AMREX_CONFIG"; then
+            echo "::error::AMReX has AMREX_DEBUG defined! Standalone tests must run against an optimized AMReX library."
+            exit 1
+          fi
+          if grep -E "^DEBUGC\s*=" Makefile.conf; then
+            echo "::error::FLEKS Makefile.conf has DEBUGC enabled! Standalone tests must run with an optimized executable."
+            exit 1
+          fi
+
+      - name: Cache Standalone OpenMP Build
+        id: cache-standalone-omp
+        uses: actions/cache@v5
+        with:
+          path: |
+            SWMF/PC/FLEKS/bin/FLEKS.exe
+            SWMF/bin/PostIDL.exe
+          key: ${{ runner.os }}-fleks-standalone-omp-v1-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
+          restore-keys: |
+            ${{ runner.os }}-fleks-standalone-omp-v1-
+
+      - name: Build Standalone FLEKS (OpenMP)
+        if: steps.cache-standalone-omp.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        shell: bash
+        run: |
+          make EXE -j$(nproc)
+          make PIDL
+
+      - name: Install Python test dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-numpy
+          python3 -c "import numpy; print('numpy', numpy.__version__)"
+
+      - name: Run Standalone FLEKS Tests (Pure OpenMP & Mixed MPI+OpenMP)
+        working-directory: SWMF/PC/FLEKS/tests
+        shell: bash
+        run: |
+          ldd ../bin/FLEKS.exe | grep -E 'gomp|omp'
+          nm -u ../bin/FLEKS.exe | grep -E 'GOMP_parallel|__kmpc_fork_call'
+          TESTS=(whistler beam reconnection_amr amr_divb langmuir hybrid_upwind bc_absorb dynamic_amr)
+          for test_name in "${TESTS[@]}"; do
+            OMP_PROC_BIND=close OMP_PLACES=cores \
+              python3 validate_tests.py -n 1 --omp-threads 2 --test "$test_name" --run-dir "run_test_omp1x2_${test_name}"
+            rm -rf "run_test_omp1x2_${test_name}"
+          done
+          for test_name in "${TESTS[@]}"; do
+            python3 validate_tests.py -n 2 --omp-threads 2 --test "$test_name" --run-dir "run_test_omp2x2_${test_name}"
+            rm -rf "run_test_omp2x2_${test_name}"
+          done
+
   # Compiler warning check against the true-2D AMReX library (-amrex2d).
   # This is a separate job on purpose: it compiles FLEKS unoptimized
   # (-debug -O0), so it must never share a workspace or AMReX cache

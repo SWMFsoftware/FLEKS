@@ -9,6 +9,7 @@
 // only (tools/check_gpu_kernels.py enforces it), so the physics never forks.
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <memory>
 #include <utility>
@@ -21,9 +22,13 @@
 #include <AMReX_GpuAtomic.H>
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_Loop.H>
+#include <AMReX_MultiFab.H>
+#include <AMReX_OpenMP.H>
+#include <AMReX_ParallelReduce.H>
 #include <AMReX_Print.H>
 #include <AMReX_Reduce.H>
 #include <AMReX_Utility.H>
+#include <AMReX_iMultiFab.H>
 
 #ifdef AMREX_USE_CUDA
 #include <cub/device/device_radix_sort.cuh>
@@ -38,6 +43,13 @@
 inline constexpr bool fleksUseGpu = true;
 #else
 inline constexpr bool fleksUseGpu = false;
+#endif
+
+// True in a CPU OpenMP build.
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+inline constexpr bool fleksUseOmp = true;
+#else
+inline constexpr bool fleksUseOmp = false;
 #endif
 
 // MFIter options for a loop that only launches kernels whose results are
@@ -236,6 +248,1274 @@ inline void* reduction_scratch(std::size_t nBytes) {
 }
 #endif
 
+// Fixed block size for CPU deterministic reductions and minimum work thresholds
+// before spawning OpenMP threads (so small 1D/coarse loops stay on one thread
+// with SIMD and avoid fork-join overhead).
+inline constexpr int kDetSumBlockSize = 256;
+inline constexpr int kMinOmpBoxCells = 2048;
+inline constexpr int kMinOmp1DSize = 8192;
+inline constexpr int kMinOmpTiles = 32;
+inline constexpr int kMinOmpParticles = 4096;
+
+// True when CPU OpenMP threading should be bypassed in favor of direct serial
+// execution (1 thread or already inside an active OpenMP parallel region).
+AMREX_FORCE_INLINE bool use_serial_fast_path() noexcept {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  return omp_get_max_threads() <= 1 || amrex::OpenMP::in_parallel();
+#elif defined(AMREX_USE_GPU)
+  return false;
+#else
+  return true;
+#endif
+}
+
+// Number of thread-local accumulator slots needed by a host parallel loop (1 on
+// the serial fast path or GPU build, omp_get_max_threads() when OpenMP runs).
+AMREX_FORCE_INLINE int omp_slot_count() noexcept {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  return use_serial_fast_path() ? 1 : omp_get_max_threads();
+#else
+  return 1;
+#endif
+}
+
+// Current thread's slot index in [0, omp_slot_count()).
+AMREX_FORCE_INLINE int omp_slot_id() noexcept {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  return amrex::OpenMP::in_parallel() ? omp_get_thread_num() : 0;
+#else
+  return 0;
+#endif
+}
+
+// Precompute per-local-FAB context once via MFIter (O(1) LocalIndex) and index
+// it in O(1) by global BoxArray index `grid` inside particle tile loops.
+template <class BuildFn>
+auto build_local_fab_table(const amrex::FabArrayBase& fa, BuildFn&& build) {
+  using Ctx = decltype(build(std::declval<const amrex::MFIter&>()));
+  struct Table {
+    std::vector<int> gridToLocal;
+    std::vector<Ctx> fabs;
+    const Ctx& operator[](int grid) const noexcept {
+      return fabs[gridToLocal[grid]];
+    }
+  } table;
+  table.gridToLocal.assign(fa.boxArray().size(), -1);
+  table.fabs.reserve(fa.local_size());
+  for (amrex::MFIter mfi(fa); mfi.isValid(); ++mfi) {
+    table.gridToLocal[mfi.index()] = static_cast<int>(table.fabs.size());
+    table.fabs.push_back(build(mfi));
+  }
+  return table;
+}
+
+namespace fleks_omp_detail {
+
+#define FLEKS_DO_PRAGMA(x) _Pragma(#x)
+#ifndef AMREX_USE_GPU
+#define FLEKS_PRAGMA_SIMD _Pragma("omp simd")
+#define FLEKS_PRAGMA_SIMD_SUM(var) FLEKS_DO_PRAGMA(omp simd reduction(+ : var))
+#else
+#define FLEKS_PRAGMA_SIMD AMREX_PRAGMA_SIMD
+#define FLEKS_PRAGMA_SIMD_SUM(var)
+#endif
+
+template <class L>
+AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_box(amrex::Box const& box,
+                                                 L const& f) noexcept {
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+#if (AMREX_SPACEDIM == 1)
+  FLEKS_PRAGMA_SIMD
+  for (int i = lo.x; i <= hi.x; ++i) {
+    f(i, 0, 0);
+  }
+#elif (AMREX_SPACEDIM == 2)
+  for (int j = lo.y; j <= hi.y; ++j) {
+    FLEKS_PRAGMA_SIMD
+    for (int i = lo.x; i <= hi.x; ++i) {
+      f(i, j, 0);
+    }
+  }
+#else
+  for (int k = lo.z; k <= hi.z; ++k) {
+    for (int j = lo.y; j <= hi.y; ++j) {
+      FLEKS_PRAGMA_SIMD
+      for (int i = lo.x; i <= hi.x; ++i) {
+        f(i, j, k);
+      }
+    }
+  }
+#endif
+}
+
+template <class T, class L>
+AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_box_n(amrex::Box const& box,
+                                                   T ncomp,
+                                                   L const& f) noexcept {
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+  for (T n = 0; n < ncomp; ++n) {
+#if (AMREX_SPACEDIM == 1)
+    FLEKS_PRAGMA_SIMD
+    for (int i = lo.x; i <= hi.x; ++i) {
+      f(i, 0, 0, n);
+    }
+#elif (AMREX_SPACEDIM == 2)
+    for (int j = lo.y; j <= hi.y; ++j) {
+      FLEKS_PRAGMA_SIMD
+      for (int i = lo.x; i <= hi.x; ++i) {
+        f(i, j, 0, n);
+      }
+    }
+#else
+    for (int k = lo.z; k <= hi.z; ++k) {
+      for (int j = lo.y; j <= hi.y; ++j) {
+        FLEKS_PRAGMA_SIMD
+        for (int i = lo.x; i <= hi.x; ++i) {
+          f(i, j, k, n);
+        }
+      }
+    }
+#endif
+  }
+}
+
+template <class L>
+AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_row_mt(int iLo, int iHi, int j,
+                                                    int k,
+                                                    L const& f) noexcept {
+  FLEKS_PRAGMA_SIMD
+  for (int i = iLo; i <= iHi; ++i) {
+    f(i, j, k);
+  }
+}
+
+template <class T, class L>
+AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_row_n_mt(int iLo, int iHi, int j,
+                                                      int k, T n,
+                                                      L const& f) noexcept {
+  FLEKS_PRAGMA_SIMD
+  for (int i = iLo; i <= iHi; ++i) {
+    f(i, j, k, n);
+  }
+}
+
+template <class F>
+AMREX_FLATTEN AMREX_NO_INLINE void eval_simd_1d(int iBeg, int iEnd,
+                                                F const& f) noexcept {
+  FLEKS_PRAGMA_SIMD
+  for (int i = iBeg; i < iEnd; ++i) {
+    f(i);
+  }
+}
+
+template <class F>
+AMREX_FLATTEN AMREX_NO_INLINE amrex::Real eval_simd_sum(int iBeg, int iEnd,
+                                                        F const& f) noexcept {
+  amrex::Real sum = 0;
+  FLEKS_PRAGMA_SIMD_SUM(sum)
+  for (int i = iBeg; i < iEnd; ++i) {
+    sum += f(i);
+  }
+  return sum;
+}
+
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+template <class L>
+AMREX_NO_INLINE void parallel_for_omp_mt(amrex::Box const& box,
+                                         L const& f) noexcept {
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+  const int ni = hi.x - lo.x + 1;
+  const int nj = hi.y - lo.y + 1;
+  const int nk = hi.z - lo.z + 1;
+  const int nRows = nj * nk;
+  const int nThreads = omp_get_max_threads();
+  const int nIChunks =
+      (nRows >= 2 * nThreads)
+          ? 1
+          : std::max(1, std::min((ni + 31) / 32,
+                                 (2 * nThreads + nRows - 1) / nRows));
+  const int chunkLen = (ni + nIChunks - 1) / nIChunks;
+  const int nTasks = nRows * nIChunks;
+
+#pragma omp parallel for schedule(static)
+  for (int task = 0; task < nTasks; ++task) {
+    const int row = task / nIChunks;
+    const int ic = task % nIChunks;
+    const int j = lo.y + (row % nj);
+    const int k = lo.z + (row / nj);
+    const int iBeg = lo.x + ic * chunkLen;
+    const int iEnd = std::min(hi.x, iBeg + chunkLen - 1);
+    if (iBeg <= iEnd) {
+      eval_simd_row_mt(iBeg, iEnd, j, k, f);
+    }
+  }
+}
+
+template <class T, class L>
+AMREX_NO_INLINE void parallel_for_omp_n_mt(amrex::Box const& box, T ncomp,
+                                           L const& f) noexcept {
+  const auto lo = amrex::lbound(box);
+  const auto hi = amrex::ubound(box);
+  const int ni = hi.x - lo.x + 1;
+  const int nj = hi.y - lo.y + 1;
+  const int nk = hi.z - lo.z + 1;
+  const int njk = nj * nk;
+  const long nRows = static_cast<long>(ncomp) * njk;
+  const int nThreads = omp_get_max_threads();
+  const long nIChunks =
+      (nRows >= 2 * nThreads)
+          ? 1L
+          : std::max<long>(1,
+                           std::min<long>((ni + 31) / 32,
+                                          (2 * nThreads + nRows - 1) / nRows));
+  const int chunkLen = static_cast<int>((ni + nIChunks - 1) / nIChunks);
+  const long nTasks = nRows * nIChunks;
+
+#pragma omp parallel for schedule(static)
+  for (long task = 0; task < nTasks; ++task) {
+    const long row = task / nIChunks;
+    const int ic = static_cast<int>(task % nIChunks);
+    const T n = static_cast<T>(row / njk);
+    const int rem = static_cast<int>(row % njk);
+    const int j = lo.y + (rem % nj);
+    const int k = lo.z + (rem / nj);
+    const int iBeg = lo.x + ic * chunkLen;
+    const int iEnd = std::min(hi.x, iBeg + chunkLen - 1);
+    if (iBeg <= iEnd) {
+      eval_simd_row_n_mt(iBeg, iEnd, j, k, n, f);
+    }
+  }
+}
+
+template <class MF, class MakeBox, class MakeKernel>
+AMREX_NO_INLINE void parallel_for_mf_omp_mt(const MF& mf, MakeBox&& makeBox,
+                                            MakeKernel&& makeKernel) {
+  using KernelT = decltype(makeKernel(std::declval<const amrex::MFIter&>()));
+  std::vector<amrex::Box> boxes;
+  std::vector<KernelT> kernels;
+  long totalPts = 0;
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty()) {
+      totalPts += bx.numPts();
+      boxes.push_back(bx);
+      kernels.push_back(makeKernel(mfi));
+    }
+  }
+  const int nBoxes = static_cast<int>(boxes.size());
+  if (nBoxes == 0)
+    return;
+
+  if (totalPts < kMinOmpBoxCells) {
+    for (int b = 0; b < nBoxes; ++b) {
+      eval_simd_box(boxes[b], kernels[b]);
+    }
+    return;
+  }
+
+  std::vector<int> rowOffsets(nBoxes + 1, 0);
+  for (int b = 0; b < nBoxes; ++b) {
+    const auto lo = amrex::lbound(boxes[b]);
+    const auto hi = amrex::ubound(boxes[b]);
+    rowOffsets[b + 1] = rowOffsets[b] + (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+  }
+  const int totalRows = rowOffsets[nBoxes];
+  const int nThreads = omp_get_max_threads();
+  if (totalRows < 2 * nThreads && nBoxes == 1) {
+    parallel_for_omp_mt(boxes[0], kernels[0]);
+    return;
+  }
+
+#pragma omp parallel for schedule(static)
+  for (int globalRow = 0; globalRow < totalRows; ++globalRow) {
+    int b = 0;
+    while (b + 1 < nBoxes && globalRow >= rowOffsets[b + 1])
+      ++b;
+    const int localRow = globalRow - rowOffsets[b];
+    const auto lo = amrex::lbound(boxes[b]);
+    const auto hi = amrex::ubound(boxes[b]);
+    const int nj = hi.y - lo.y + 1;
+    const int j = lo.y + (localRow % nj);
+    const int k = lo.z + (localRow / nj);
+    eval_simd_row_mt(lo.x, hi.x, j, k, kernels[b]);
+  }
+}
+
+template <class MF, class MakeBox, class MakeKernel>
+AMREX_NO_INLINE void parallel_for_mf_omp_n_mt(const MF& mf, int ncomp,
+                                              MakeBox&& makeBox,
+                                              MakeKernel&& makeKernel) {
+  using KernelT = decltype(makeKernel(std::declval<const amrex::MFIter&>()));
+  std::vector<amrex::Box> boxes;
+  std::vector<KernelT> kernels;
+  long totalPts = 0;
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty()) {
+      totalPts += bx.numPts();
+      boxes.push_back(bx);
+      kernels.push_back(makeKernel(mfi));
+    }
+  }
+  const int nBoxes = static_cast<int>(boxes.size());
+  if (nBoxes == 0)
+    return;
+
+  if (totalPts * static_cast<long>(ncomp) < kMinOmpBoxCells) {
+    for (int b = 0; b < nBoxes; ++b) {
+      eval_simd_box_n(boxes[b], ncomp, kernels[b]);
+    }
+    return;
+  }
+
+  std::vector<int> rowOffsets(nBoxes + 1, 0);
+  for (int b = 0; b < nBoxes; ++b) {
+    const auto lo = amrex::lbound(boxes[b]);
+    const auto hi = amrex::ubound(boxes[b]);
+    rowOffsets[b + 1] =
+        rowOffsets[b] + ncomp * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+  }
+  const int totalRows = rowOffsets[nBoxes];
+  const int nThreads = omp_get_max_threads();
+  if (totalRows < 2 * nThreads && nBoxes == 1) {
+    parallel_for_omp_n_mt(boxes[0], ncomp, kernels[0]);
+    return;
+  }
+
+#pragma omp parallel for schedule(static)
+  for (int globalRow = 0; globalRow < totalRows; ++globalRow) {
+    int b = 0;
+    while (b + 1 < nBoxes && globalRow >= rowOffsets[b + 1])
+      ++b;
+    const int localRow = globalRow - rowOffsets[b];
+    const auto lo = amrex::lbound(boxes[b]);
+    const auto hi = amrex::ubound(boxes[b]);
+    const int nj = hi.y - lo.y + 1;
+    const int nk = hi.z - lo.z + 1;
+    const int njk = nj * nk;
+    const int c = localRow / njk;
+    const int rem = localRow % njk;
+    const int j = lo.y + (rem % nj);
+    const int k = lo.z + (rem / nj);
+    eval_simd_row_n_mt(lo.x, hi.x, j, k, c, kernels[b]);
+  }
+}
+
+template <class F>
+AMREX_NO_INLINE void parallel_for_1d_mt(int n, F const& f) noexcept {
+  const int nThreads = omp_get_max_threads();
+  const int chunk = (n + nThreads - 1) / nThreads;
+#pragma omp parallel for schedule(static)
+  for (int t = 0; t < nThreads; ++t) {
+    const int iBeg = t * chunk;
+    const int iEnd = std::min(n, iBeg + chunk);
+    if (iBeg < iEnd) {
+      eval_simd_1d(iBeg, iEnd, f);
+    }
+  }
+}
+
+template <class F>
+AMREX_NO_INLINE amrex::Real deterministic_sum_mt(int n, F const& f) {
+  const int nBlocks = (n + kDetSumBlockSize - 1) / kDetSumBlockSize;
+  constexpr int kMaxStackBlocks = 256;
+  amrex::Real stackBlocks[kMaxStackBlocks];
+  std::vector<amrex::Real> heapBlocks;
+  if (nBlocks > kMaxStackBlocks)
+    heapBlocks.resize(nBlocks);
+  amrex::Real* const blockSums =
+      (nBlocks <= kMaxStackBlocks) ? stackBlocks : heapBlocks.data();
+#pragma omp parallel for schedule(static)
+  for (int b = 0; b < nBlocks; ++b) {
+    const int iStart = b * kDetSumBlockSize;
+    const int iEnd = std::min(n, iStart + kDetSumBlockSize);
+    blockSums[b] = eval_simd_sum(iStart, iEnd, f);
+  }
+  amrex::Real sum = 0;
+  for (int b = 0; b < nBlocks; ++b)
+    sum += blockSums[b];
+  return sum;
+}
+#endif
+
+} // namespace fleks_omp_detail
+
+// Host-only 3D box loop f(i, j, k) with size-gated OpenMP + SIMD on CPU.
+// Never launches a GPU kernel (safe for host callbacks in CPU builds).
+template <class L>
+AMREX_FORCE_INLINE void parallel_for_host_box(amrex::Box const& box,
+                                              L const& f) noexcept {
+  if (!box.ok() || box.isEmpty())
+    return;
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path() || box.numPts() < kMinOmpBoxCells) {
+    fleks_omp_detail::eval_simd_box(box, f);
+  } else {
+    fleks_omp_detail::parallel_for_omp_mt(box, f);
+  }
+#else
+  fleks_omp_detail::eval_simd_box(box, f);
+#endif
+}
+
+// Performance-portable box kernel launch with size-gated OpenMP threading.
+template <class L>
+AMREX_FORCE_INLINE void parallel_for_omp(amrex::Box const& box,
+                                         L const& f) noexcept {
+#ifdef AMREX_USE_GPU
+  amrex::ParallelFor(box, f);
+#else
+  parallel_for_host_box(box, f);
+#endif
+}
+
+template <class T, class L, class M = std::enable_if_t<std::is_integral_v<T> > >
+AMREX_FORCE_INLINE void parallel_for_omp(amrex::Box const& box, T ncomp,
+                                         L const& f) noexcept {
+#ifdef AMREX_USE_GPU
+  amrex::ParallelFor(box, ncomp, f);
+#elif defined(AMREX_USE_OMP)
+  if (ncomp <= 0)
+    return;
+  if (use_serial_fast_path() ||
+      box.numPts() * static_cast<long>(ncomp) < kMinOmpBoxCells) {
+    if (box.ok() && !box.isEmpty())
+      fleks_omp_detail::eval_simd_box_n(box, ncomp, f);
+  } else {
+    fleks_omp_detail::parallel_for_omp_n_mt(box, ncomp, f);
+  }
+#else
+  if (ncomp > 0 && box.ok() && !box.isEmpty())
+    fleks_omp_detail::eval_simd_box_n(box, ncomp, f);
+#endif
+}
+
+// Launch a box-loop across all local boxes of a MultiFab/FabArray in a single
+// OpenMP parallel region on CPU (cutting per-box fork-join overhead by nBoxes),
+// or per-box GPU kernels when AMREX_USE_GPU is enabled.
+// `makeBox(mfi)` returns the Box for `mfi`; `makeKernel(mfi)` returns the
+// `(int i, int j, int k)` functor.
+template <class MF, class MakeBox, class MakeKernel>
+AMREX_FORCE_INLINE void parallel_for_mf_omp(const MF& mf, MakeBox&& makeBox,
+                                            MakeKernel&& makeKernel) {
+#ifdef AMREX_USE_GPU
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::ParallelFor(makeBox(mfi), makeKernel(mfi));
+  }
+#elif defined(AMREX_USE_OMP)
+  if (use_serial_fast_path()) {
+    for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const amrex::Box bx = makeBox(mfi);
+      if (bx.ok() && !bx.isEmpty())
+        fleks_omp_detail::eval_simd_box(bx, makeKernel(mfi));
+    }
+  } else {
+    fleks_omp_detail::parallel_for_mf_omp_mt(
+        mf, std::forward<MakeBox>(makeBox),
+        std::forward<MakeKernel>(makeKernel));
+  }
+#else
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty())
+      fleks_omp_detail::eval_simd_box(bx, makeKernel(mfi));
+  }
+#endif
+}
+
+template <class MF, class MakeBox, class MakeKernel>
+AMREX_FORCE_INLINE void parallel_for_mf_omp(const MF& mf, int ncomp,
+                                            MakeBox&& makeBox,
+                                            MakeKernel&& makeKernel) {
+  if (ncomp <= 0)
+    return;
+#ifdef AMREX_USE_GPU
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    amrex::ParallelFor(makeBox(mfi), ncomp, makeKernel(mfi));
+  }
+#elif defined(AMREX_USE_OMP)
+  if (use_serial_fast_path()) {
+    for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const amrex::Box bx = makeBox(mfi);
+      if (bx.ok() && !bx.isEmpty())
+        fleks_omp_detail::eval_simd_box_n(bx, ncomp, makeKernel(mfi));
+    }
+  } else {
+    fleks_omp_detail::parallel_for_mf_omp_n_mt(
+        mf, ncomp, std::forward<MakeBox>(makeBox),
+        std::forward<MakeKernel>(makeKernel));
+  }
+#else
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const amrex::Box bx = makeBox(mfi);
+    if (bx.ok() && !bx.isEmpty())
+      fleks_omp_detail::eval_simd_box_n(bx, ncomp, makeKernel(mfi));
+  }
+#endif
+}
+
+// OpenMP-accelerated MultiFab arithmetic helpers on CPU (since AMReX
+// MultiFab::Add/Saxpy/mult are serial when AMReX USE_OMP=FALSE).
+inline void mf_add(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
+                   int dcomp, int ncomp, int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    amrex::MultiFab::Add(dst, src, scomp, dcomp, ncomp, ngrow);
+    return;
+  }
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        const auto s = src[mfi].const_array();
+        return [=](int i, int j, int k, int c)
+                   noexcept { d(i, j, k, dcomp + c) += s(i, j, k, scomp + c); };
+      });
+#else
+  amrex::MultiFab::Add(dst, src, scomp, dcomp, ncomp, ngrow);
+#endif
+}
+
+inline void mf_saxpy(amrex::MultiFab& dst, amrex::Real a,
+                     const amrex::MultiFab& src, int scomp, int dcomp,
+                     int ncomp, int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    amrex::MultiFab::Saxpy(dst, a, src, scomp, dcomp, ncomp, ngrow);
+    return;
+  }
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        const auto s = src[mfi].const_array();
+        return [=](int i, int j, int k, int c) noexcept {
+          d(i, j, k, dcomp + c) += a * s(i, j, k, scomp + c);
+        };
+      });
+#else
+  amrex::MultiFab::Saxpy(dst, a, src, scomp, dcomp, ncomp, ngrow);
+#endif
+}
+
+inline void mf_mult(amrex::MultiFab& dst, amrex::Real val, int comp, int ncomp,
+                    int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    dst.mult(val, comp, ncomp, ngrow);
+    return;
+  }
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        return [=](int i, int j, int k, int c)
+                   noexcept { d(i, j, k, comp + c) *= val; };
+      });
+#else
+  dst.mult(val, comp, ncomp, ngrow);
+#endif
+}
+
+inline void mf_copy(amrex::MultiFab& dst, const amrex::MultiFab& src, int scomp,
+                    int dcomp, int ncomp, int ngrow) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    amrex::MultiFab::Copy(dst, src, scomp, dcomp, ncomp, ngrow);
+    return;
+  }
+  parallel_for_mf_omp(
+      dst, ncomp,
+      [ngrow](const amrex::MFIter& mfi) {
+        return amrex::grow(mfi.validbox(), ngrow);
+      },
+      [&](const amrex::MFIter& mfi) {
+        const auto d = dst[mfi].array();
+        const auto s = src[mfi].const_array();
+        return [=](int i, int j, int k, int c)
+                   noexcept { d(i, j, k, dcomp + c) = s(i, j, k, scomp + c); };
+      });
+#else
+  amrex::MultiFab::Copy(dst, src, scomp, dcomp, ncomp, ngrow);
+#endif
+}
+
+// Host-only 1D loop f(i) for i = 0..n-1 on CPU memory (e.g. std::vector Krylov
+// buffers). Uses OpenMP + SIMD on CPU when n >= kMinOmp1DSize and never
+// launches a GPU kernel.
+template <class F> AMREX_FORCE_INLINE void parallel_for_host_1d(int n, F&& f) {
+  if (n <= 0)
+    return;
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (!use_serial_fast_path() && n >= kMinOmp1DSize) {
+    fleks_omp_detail::parallel_for_1d_mt(n, f);
+    return;
+  }
+#endif
+  fleks_omp_detail::eval_simd_1d(0, n, f);
+}
+
+// Launch a 1D loop f(i) for i = 0..n-1 on the GPU, across OpenMP threads on
+// the CPU when n is large enough and not already inside an OpenMP parallel
+// region, or as a SIMD loop on the CPU.
+template <class F> AMREX_FORCE_INLINE void parallel_for_1d(int n, F&& f) {
+  if (n <= 0)
+    return;
+#ifdef AMREX_USE_GPU
+  amrex::ParallelFor(n, std::forward<F>(f));
+#else
+  parallel_for_host_1d(n, std::forward<F>(f));
+#endif
+}
+
+// Run host work items f(i), i = 0..n-1, across OpenMP threads (or serially
+// without OpenMP). Each item must write a disjoint set of data, so the result
+// does not depend on the thread count. Use `dynamic` when the items have very
+// different costs. This is a host-only helper (f may use host data
+// structures); it never launches a GPU kernel.
+template <class F> void parallel_for_host_items(int n, F&& f, bool dynamic) {
+  if (n <= 0)
+    return;
+#ifdef AMREX_USE_OMP
+  if (!use_serial_fast_path() && n >= kMinOmpTiles) {
+    if (dynamic) {
+#pragma omp parallel for schedule(dynamic, 1)
+      for (int i = 0; i < n; ++i)
+        f(i);
+    } else {
+#pragma omp parallel for schedule(static)
+      for (int i = 0; i < n; ++i)
+        f(i);
+    }
+    return;
+  }
+#endif
+  amrex::ignore_unused(dynamic);
+  for (int i = 0; i < n; ++i)
+    f(i);
+}
+
+// Run f() with a single OpenMP thread if cond is true (no-op otherwise, and
+// without OpenMP). Used where an AMReX CPU routine is only deterministic per
+// thread count: e.g. ParticleContainer::Redistribute gathers the particles
+// that change tile into per-thread buffers level by level, so with several
+// AMR levels the order of the particles in a destination tile (and hence the
+// summation order of every later deposit) depends on OMP_NUM_THREADS.
+template <class F> void run_single_threaded_if(bool cond, F&& f) {
+  if (!cond || fleksUseGpu || amrex::OpenMP::in_parallel()) {
+    f();
+    return;
+  }
+  const int nThreads = amrex::OpenMP::get_max_threads();
+  amrex::OpenMP::set_num_threads(1);
+  f();
+  amrex::OpenMP::set_num_threads(nThreads);
+}
+
+// Deterministic sum of N per-particle quantities over the local particles of
+// level iLev, for the CPU (host particle memory). Each particle tile is
+// summed sequentially into its own partial sum, the tiles are processed in
+// parallel, and the partial sums are added in the fixed (grid, tile) order of
+// the container, so the result does not depend on OMP_NUM_THREADS.
+// f(const ParticleType& p, std::array<Real, N>& s) adds the particle to s.
+template <int N, class PC, class F>
+std::array<amrex::Real, N> deterministic_particle_sum(const PC& pc, int iLev,
+                                                      F&& f) {
+  using TileType = typename PC::ParticleTileType;
+  std::array<amrex::Real, N> total{};
+  if (iLev >= pc.numLevels())
+    return total;
+  const auto& plev = pc.GetParticles(iLev);
+  if (use_serial_fast_path() || static_cast<int>(plev.size()) < kMinOmpTiles) {
+    for (const auto& kv : plev) {
+      std::array<amrex::Real, N> s{};
+      const TileType& ptile = kv.second;
+      const auto* pstruct = ptile.GetArrayOfStructs()().data();
+      const int np = static_cast<int>(ptile.numParticles());
+      for (int ip = 0; ip < np; ++ip)
+        f(pstruct[ip], s);
+      for (int c = 0; c < N; ++c)
+        total[c] += s[c];
+    }
+    return total;
+  }
+
+  std::vector<const TileType*> tiles;
+  tiles.reserve(plev.size());
+  for (const auto& kv : plev)
+    tiles.push_back(&kv.second);
+
+  const int nTile = static_cast<int>(tiles.size());
+  std::vector<std::array<amrex::Real, N> > partial(nTile);
+  parallel_for_host_items(
+      nTile,
+      [&](int it) {
+        std::array<amrex::Real, N> s{};
+        const TileType& ptile = *tiles[it];
+        const auto* pstruct = ptile.GetArrayOfStructs()().data();
+        const int np = static_cast<int>(ptile.numParticles());
+        for (int ip = 0; ip < np; ++ip)
+          f(pstruct[ip], s);
+        partial[it] = s;
+      },
+      true);
+
+  for (int it = 0; it < nTile; ++it)
+    for (int c = 0; c < N; ++c)
+      total[c] += partial[it][c];
+  return total;
+}
+
+// Descriptor for a non-empty cell-sized particle tile (tile_size = {1, 1, 1})
+// on the CPU. `grid` is the FAB index in ParticleBoxArray(iLev), `tile` is the
+// local tile index, `cell` is the cell IntVect of the 1x1x1 tile box, and
+// `ptile` points to the ParticleTile.
+template <class TileType> struct CellTileItem {
+  int grid = 0;
+  int tile = 0;
+  amrex::IntVect cell;
+  TileType* ptile = nullptr;
+};
+
+inline bool is_home_nodal(const amrex::IntVect& loIdx,
+                          const amrex::IntVect& cell) {
+  for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+    if (loIdx[d] < cell[d] - 1 || loIdx[d] > cell[d])
+      return false;
+  }
+  return true;
+}
+
+// Stream all non-empty particle tiles at level iLev in deterministic
+// (grid, tile) order without allocating a tile descriptor vector.
+// Marked AMREX_FLATTEN AMREX_NO_INLINE so the tile body is flattened directly
+// into the single serial loop (eliminating per-tile calls and dead-code-
+// eliminating unused `cell` integer divisions).
+template <class PC, class F>
+AMREX_FLATTEN AMREX_NO_INLINE void for_each_cell_tile_serial(PC& pc, int iLev,
+                                                             F&& f) {
+  using TileType = std::conditional_t<std::is_const_v<PC>,
+                                      const typename PC::ParticleTileType,
+                                      typename PC::ParticleTileType>;
+  if (iLev >= pc.numLevels())
+    return;
+  auto& plev = pc.GetParticles(iLev);
+  if (plev.empty())
+    return;
+  const amrex::BoxArray& ba = pc.ParticleBoxArray(iLev);
+  int lastGrid = -1;
+  amrex::IntVect sml;
+  amrex::IntVect len;
+  int ord = 0;
+  for (auto& kv : plev) {
+    if (kv.second.numParticles() == 0)
+      continue;
+    const int grid = kv.first.first;
+    const int tile = kv.first.second;
+    if (grid != lastGrid) {
+      lastGrid = grid;
+      const amrex::Box& bx = ba[grid];
+      sml = bx.smallEnd();
+      len = bx.length();
+    }
+    const amrex::IntVect cell(AMREX_D_DECL(
+        sml[0] + (tile % len[0]), sml[1] + ((tile / len[0]) % len[1]),
+        sml[2] + (tile / (len[0] * len[1]))));
+    f(CellTileItem<TileType>{ grid, tile, cell, &kv.second }, ord++);
+  }
+}
+
+// Collect all non-empty particle tiles at level iLev in deterministic
+// (grid, tile) order, computing each tile's cell IntVect without red-black
+// tree lookups per cell.
+template <class PC> auto collect_cell_tiles(PC& pc, int iLev) {
+  using TileType = std::conditional_t<std::is_const_v<PC>,
+                                      const typename PC::ParticleTileType,
+                                      typename PC::ParticleTileType>;
+  std::vector<CellTileItem<TileType> > items;
+  if (iLev >= pc.numLevels())
+    return items;
+  auto& plev = pc.GetParticles(iLev);
+  if (plev.empty())
+    return items;
+  items.reserve(plev.size());
+  const amrex::BoxArray& ba = pc.ParticleBoxArray(iLev);
+  int lastGrid = -1;
+  amrex::IntVect sml;
+  amrex::IntVect len;
+  for (auto& kv : plev) {
+    if (kv.second.numParticles() == 0)
+      continue;
+    const int grid = kv.first.first;
+    const int tile = kv.first.second;
+    if (grid != lastGrid) {
+      lastGrid = grid;
+      const amrex::Box& bx = ba[grid];
+      sml = bx.smallEnd();
+      len = bx.length();
+    }
+    const amrex::IntVect cell(AMREX_D_DECL(
+        sml[0] + (tile % len[0]), sml[1] + ((tile / len[0]) % len[1]),
+        sml[2] + (tile / (len[0] * len[1]))));
+    items.push_back(CellTileItem<TileType>{ grid, tile, cell, &kv.second });
+  }
+  return items;
+}
+
+template <class TileType>
+inline long count_tile_particles(
+    const std::vector<CellTileItem<TileType> >& items) {
+  long total = 0;
+  for (const auto& it : items)
+    total += it.ptile->numParticles();
+  return total;
+}
+
+// Run f(const CellTileItem<TileType>& item, int ord) across OpenMP threads for
+// all non-empty cell tiles in `items` (in deterministic `ord = 0..nTiles-1`),
+// or serially when `forceSerial` or `use_serial_fast_path()` is true.
+template <class TileType, class F>
+AMREX_NO_INLINE void parallel_for_cell_tiles(
+    const std::vector<CellTileItem<TileType> >& items, F&& f,
+    bool forceSerial = false) {
+  const int nTiles = static_cast<int>(items.size());
+  if (nTiles == 0)
+    return;
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (!forceSerial && !use_serial_fast_path() &&
+      (nTiles >= kMinOmpTiles * 4 ||
+       (nTiles >= 2 && count_tile_particles(items) >= kMinOmpParticles))) {
+#pragma omp parallel for schedule(guided)
+    for (int ord = 0; ord < nTiles; ++ord)
+      f(items[ord], ord);
+    return;
+  }
+#else
+  amrex::ignore_unused(forceSerial);
+#endif
+  for (int ord = 0; ord < nTiles; ++ord)
+    f(items[ord], ord);
+}
+
+template <class PC, class F>
+AMREX_FORCE_INLINE void parallel_for_cell_tiles(PC& pc, int iLev, F&& f,
+                                                bool forceSerial = false) {
+  if (forceSerial || use_serial_fast_path()) {
+    for_each_cell_tile_serial(pc, iLev, std::forward<F>(f));
+    return;
+  }
+  const auto items = collect_cell_tiles(pc, iLev);
+  parallel_for_cell_tiles(items, std::forward<F>(f), false);
+}
+
+namespace fleks_omp_detail {
+
+template <class CheckHomeTag, class F, class Item>
+AMREX_FORCE_INLINE bool invoke_colored_tile(
+    F& f, const Item& item, int ord, bool strayPass,
+    std::vector<int>* strayIndices = nullptr) {
+  if constexpr (std::is_invocable_v<F&, const Item&, int, CheckHomeTag, bool,
+                                    std::vector<int>*>) {
+    return f(item, ord, CheckHomeTag{}, strayPass, strayIndices);
+  } else if constexpr (std::is_invocable_v<F&, const Item&, int, CheckHomeTag,
+                                           bool>) {
+    amrex::ignore_unused(strayIndices);
+    return f(item, ord, CheckHomeTag{}, strayPass);
+  } else if constexpr (CheckHomeTag::value) {
+    amrex::ignore_unused(strayIndices);
+    return f(item, ord, strayPass);
+  } else {
+    amrex::ignore_unused(strayIndices);
+    if (f(item, ord, false))
+      f(item, ord, true);
+    return false;
+  }
+}
+
+} // namespace fleks_omp_detail
+
+// Deterministic colored cell-tile deposition over `items` with stencil span
+// `stencilSpan` per dimension (e.g. 2 for 2-node CIC, 3 for 3-cell CIC, 4 for
+// Esirkepov current, or <= 1 when tiles are independent and need no coloring).
+//
+// Accepts either:
+//   - 5-arg functor `f(item, ord, checkHomeTag, strayPass, strayIndices) ->
+//   bool`,
+//     where `strayIndices` records the stray particle indices in Pass 0 so
+//     Pass 1 processes only those initial strays;
+//   - 4-arg functor `f(item, ord, checkHomeTag, strayPass) -> bool`, where
+//     `decltype(checkHomeTag)::value` is `false` on the serial/uncolored path
+//     (compiling away home/stray checks into a single pass) and `true` during
+//     2-pass OpenMP coloring; or
+//   - 3-arg functor `f(item, ord, strayPass) -> bool`.
+template <class TileType, class F>
+AMREX_NO_INLINE void deposit_cell_tiles_colored(
+    const std::vector<CellTileItem<TileType> >& items, int stencilSpan, F&& f,
+    bool forceSerial = false) {
+  const int nTiles = static_cast<int>(items.size());
+  if (nTiles == 0)
+    return;
+
+  if (stencilSpan <= 1) {
+    parallel_for_cell_tiles(
+        items,
+        [&](const CellTileItem<TileType>& item, int ord) {
+          fleks_omp_detail::invoke_colored_tile<std::false_type>(f, item, ord,
+                                                                 false);
+        },
+        forceSerial);
+    return;
+  }
+
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (!forceSerial && !use_serial_fast_path() &&
+      (nTiles >= kMinOmpTiles * 4 ||
+       (nTiles >= 4 && count_tile_particles(items) >= kMinOmpParticles))) {
+    constexpr bool kUsesStrayList =
+        std::is_invocable_v<F&, const CellTileItem<TileType>&, int,
+                            std::true_type, bool, std::vector<int>*>;
+    std::vector<unsigned char> hasStray(nTiles, 0);
+    std::vector<std::vector<int> > strayByTile(kUsesStrayList ? nTiles : 0);
+
+    // Fast path: group cell tiles by (grid, highest-dim plane) and color
+    // planes by `planeCoord % stencilSpan`. This reduces OpenMP barriers from
+    // stencilSpan^nDim (27 in 3D) down to stencilSpan (3), eliminates false
+    // sharing across threads, and gives each thread contiguous in-plane cells.
+    bool usedPlaneStriping = false;
+    if constexpr (AMREX_SPACEDIM >= 2) {
+      constexpr int hiDim = AMREX_SPACEDIM - 1;
+      int minGrid = items[0].grid, maxGrid = items[0].grid;
+      int minK = items[0].cell[hiDim], maxK = items[0].cell[hiDim];
+      for (int ord = 1; ord < nTiles; ++ord) {
+        minGrid = std::min(minGrid, items[ord].grid);
+        maxGrid = std::max(maxGrid, items[ord].grid);
+        minK = std::min(minK, items[ord].cell[hiDim]);
+        maxK = std::max(maxK, items[ord].cell[hiDim]);
+      }
+      const long gridSpan = static_cast<long>(maxGrid - minGrid + 1);
+      const long kSpan = static_cast<long>(maxK - minK + 1);
+      if (gridSpan * kSpan <= 65536) {
+        const int tableSize = static_cast<int>(gridSpan * kSpan);
+        std::vector<int> keyToPlane(tableSize, -1);
+        std::vector<int> planeColor;
+        std::vector<int> planeCounts;
+        std::vector<int> itemPlane(nTiles);
+        for (int ord = 0; ord < nTiles; ++ord) {
+          const int g = items[ord].grid - minGrid;
+          const int k = items[ord].cell[hiDim];
+          const int key = g * static_cast<int>(kSpan) + (k - minK);
+          int p = keyToPlane[key];
+          if (p < 0) {
+            p = static_cast<int>(planeColor.size());
+            keyToPlane[key] = p;
+            planeColor.push_back(((k % stencilSpan) + stencilSpan) %
+                                 stencilSpan);
+            planeCounts.push_back(0);
+          }
+          itemPlane[ord] = p;
+          ++planeCounts[p];
+        }
+        const int nPlanes = static_cast<int>(planeColor.size());
+        const int nThreads = omp_get_max_threads();
+        if (nPlanes >= stencilSpan * nThreads) {
+          usedPlaneStriping = true;
+          std::vector<int> planeStarts(nPlanes + 1, 0);
+          for (int p = 0; p < nPlanes; ++p)
+            planeStarts[p + 1] = planeStarts[p] + planeCounts[p];
+          std::vector<int> planeCursor(planeStarts.begin(),
+                                       planeStarts.begin() + nPlanes);
+          std::vector<int> planeOrds(nTiles);
+          for (int ord = 0; ord < nTiles; ++ord)
+            planeOrds[planeCursor[itemPlane[ord]]++] = ord;
+
+          std::vector<int> colorCounts(stencilSpan, 0);
+          for (int p = 0; p < nPlanes; ++p)
+            ++colorCounts[planeColor[p]];
+          std::vector<int> colorStarts(stencilSpan + 1, 0);
+          for (int c = 0; c < stencilSpan; ++c)
+            colorStarts[c + 1] = colorStarts[c] + colorCounts[c];
+          std::vector<int> colorCursor(colorStarts.begin(),
+                                       colorStarts.begin() + stencilSpan);
+          std::vector<int> colorPlanes(nPlanes);
+          for (int p = 0; p < nPlanes; ++p)
+            colorPlanes[colorCursor[planeColor[p]]++] = p;
+
+#pragma omp parallel
+          {
+            for (int color = 0; color < stencilSpan; ++color) {
+              const int beg = colorStarts[color];
+              const int end = colorStarts[color + 1];
+              if (beg == end)
+                continue;
+#pragma omp for schedule(dynamic, 1)
+              for (int pIdx = beg; pIdx < end; ++pIdx) {
+                const int p = colorPlanes[pIdx];
+                for (int idx = planeStarts[p]; idx < planeStarts[p + 1];
+                     ++idx) {
+                  const int ord = planeOrds[idx];
+                  std::vector<int>* const strayPtr =
+                      kUsesStrayList ? &strayByTile[ord] : nullptr;
+                  if (fleks_omp_detail::invoke_colored_tile<std::true_type>(
+                          f, items[ord], ord, false, strayPtr))
+                    hasStray[ord] = 1;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (!usedPlaneStriping) {
+      int nColors = 1;
+      for (int d = 0; d < AMREX_SPACEDIM; ++d)
+        nColors *= stencilSpan;
+
+      std::vector<int> bucketCounts(nColors, 0);
+      std::vector<int> tileColors(nTiles);
+      for (int ord = 0; ord < nTiles; ++ord) {
+        const auto& c = items[ord].cell;
+        int color = 0;
+        int stride = 1;
+        for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+          const int rem = ((c[d] % stencilSpan) + stencilSpan) % stencilSpan;
+          color += rem * stride;
+          stride *= stencilSpan;
+        }
+        tileColors[ord] = color;
+        ++bucketCounts[color];
+      }
+
+      std::vector<int> bucketStarts(nColors + 1, 0);
+      for (int c = 0; c < nColors; ++c)
+        bucketStarts[c + 1] = bucketStarts[c] + bucketCounts[c];
+
+      std::vector<int> bucketCursor(bucketStarts.begin(),
+                                    bucketStarts.begin() + nColors);
+      std::vector<int> bucketOrds(nTiles);
+      for (int ord = 0; ord < nTiles; ++ord)
+        bucketOrds[bucketCursor[tileColors[ord]]++] = ord;
+
+#pragma omp parallel
+      {
+        for (int color = 0; color < nColors; ++color) {
+          const int beg = bucketStarts[color];
+          const int end = bucketStarts[color + 1];
+          if (beg == end)
+            continue;
+#pragma omp for schedule(guided)
+          for (int idx = beg; idx < end; ++idx) {
+            const int ord = bucketOrds[idx];
+            std::vector<int>* const strayPtr =
+                kUsesStrayList ? &strayByTile[ord] : nullptr;
+            if (fleks_omp_detail::invoke_colored_tile<std::true_type>(
+                    f, items[ord], ord, false, strayPtr))
+              hasStray[ord] = 1;
+          }
+        }
+      }
+    }
+
+    for (int ord = 0; ord < nTiles; ++ord) {
+      if (hasStray[ord]) {
+        std::vector<int>* const strayPtr =
+            kUsesStrayList ? &strayByTile[ord] : nullptr;
+        fleks_omp_detail::invoke_colored_tile<std::true_type>(
+            f, items[ord], ord, true, strayPtr);
+      }
+    }
+    return;
+  }
+#else
+  amrex::ignore_unused(stencilSpan, forceSerial);
+#endif
+
+  for (int ord = 0; ord < nTiles; ++ord) {
+    fleks_omp_detail::invoke_colored_tile<std::false_type>(f, items[ord], ord,
+                                                           false);
+  }
+}
+
+template <class PC, class F>
+AMREX_FORCE_INLINE void deposit_cell_tiles_colored(PC& pc, int iLev,
+                                                   int stencilSpan, F&& f,
+                                                   bool forceSerial = false) {
+  if (forceSerial || use_serial_fast_path()) {
+    for_each_cell_tile_serial(pc, iLev, [&](const auto& item, int ord) {
+      fleks_omp_detail::invoke_colored_tile<std::false_type>(f, item, ord,
+                                                             false);
+    });
+    return;
+  }
+  const auto items = collect_cell_tiles(pc, iLev);
+  deposit_cell_tiles_colored(items, stencilSpan, std::forward<F>(f), false);
+}
+
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+namespace fleks_omp_detail {
+template <class PC, class F, class FabTable>
+AMREX_NO_INLINE amrex::Real deposit_moments_omp_mt(PC& pc, int iLev, int nComp,
+                                                   const FabTable& localFabs,
+                                                   F&& depositTileFn) {
+  const auto items = collect_cell_tiles(pc, iLev);
+  const int nTiles = static_cast<int>(items.size());
+  if (nTiles == 0)
+    return 0.0;
+
+  if (!(nTiles >= kMinOmpTiles * 4 ||
+        (nTiles >= 4 && count_tile_particles(items) >= kMinOmpParticles))) {
+    amrex::Real total = 0.0;
+    for (int ord = 0; ord < nTiles; ++ord) {
+      total +=
+          depositTileFn(*items[ord].ptile, localFabs[items[ord].grid]->array());
+    }
+    return total;
+  }
+
+  const int nThreads = omp_get_max_threads();
+  const int nLocal = static_cast<int>(localFabs.fabs.size());
+  std::vector<std::vector<int> > boxItems(nLocal);
+  for (int ord = 0; ord < nTiles; ++ord) {
+    const int lb = localFabs.gridToLocal[items[ord].grid];
+    if (lb >= 0)
+      boxItems[lb].push_back(ord);
+  }
+
+  std::vector<amrex::Real> tileVals(nTiles, 0.0);
+  std::vector<amrex::FArrayBox> threadFabs(nThreads);
+#pragma omp parallel
+  {
+    const int tid = omp_get_thread_num();
+    amrex::FArrayBox& localFab = threadFabs[tid];
+
+    for (int b = 0; b < nLocal; ++b) {
+      const auto& bItems = boxItems[b];
+      if (bItems.empty())
+        continue;
+      amrex::FArrayBox* dstFab = localFabs.fabs[b];
+      const amrex::Box fabBox = dstFab->box();
+      localFab.resize(fabBox, nComp);
+      localFab.setVal<amrex::RunOn::Host>(0.0);
+      const amrex::Array4<amrex::Real> localArr = localFab.array();
+      const int nBItems = static_cast<int>(bItems.size());
+
+#pragma omp for schedule(guided)
+      for (int idx = 0; idx < nBItems; ++idx) {
+        const int ord = bItems[idx];
+        tileVals[ord] = depositTileFn(*items[ord].ptile, localArr);
+      }
+
+      const amrex::Array4<amrex::Real> dstArr = dstFab->array();
+      const auto blo = amrex::lbound(fabBox);
+      const auto bhi = amrex::ubound(fabBox);
+      const int nj = bhi.y - blo.y + 1;
+      const int nk = bhi.z - blo.z + 1;
+      const int njk = nj * nk;
+      const int totalRows = nComp * njk;
+      const int ni = bhi.x - blo.x + 1;
+#pragma omp for schedule(static)
+      for (int row = 0; row < totalRows; ++row) {
+        const int c = row / njk;
+        const int rem = row % njk;
+        const int j = blo.y + (rem % nj);
+        const int k = blo.z + (rem / nj);
+        amrex::Real* AMREX_RESTRICT dPtr = dstArr.ptr(blo.x, j, k, c);
+        for (int t = 0; t < nThreads; ++t) {
+          const amrex::Real* AMREX_RESTRICT sPtr =
+              threadFabs[t].const_array().ptr(blo.x, j, k, c);
+          FLEKS_PRAGMA_SIMD
+          for (int ii = 0; ii < ni; ++ii) {
+            dPtr[ii] += sPtr[ii];
+          }
+        }
+      }
+    }
+  }
+
+  amrex::Real total = 0.0;
+  for (int ord = 0; ord < nTiles; ++ord)
+    total += tileVals[ord];
+  return total;
+}
+} // namespace fleks_omp_detail
+#endif
+
+// Unified particle-to-MultiFab moment deposition with deterministic scalar
+// accumulation (e.g. kinetic energy): streams directly into `mf` on the serial
+// fast path or small tile counts, and uses thread-private FABs + SIMD row
+// reduction across OpenMP threads otherwise.
+template <class PC, class F>
+AMREX_FORCE_INLINE amrex::Real deposit_moments_omp(PC& pc, int iLev,
+                                                   amrex::MultiFab& mf,
+                                                   int nComp,
+                                                   F&& depositTileFn) {
+  const auto localFabs = build_local_fab_table(
+      mf, [&](const amrex::MFIter& mfi) { return &mf[mfi]; });
+
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (!use_serial_fast_path()) {
+    return fleks_omp_detail::deposit_moments_omp_mt(
+        pc, iLev, nComp, localFabs, std::forward<F>(depositTileFn));
+  }
+#else
+  amrex::ignore_unused(nComp);
+#endif
+
+  amrex::Real total = 0.0;
+  for_each_cell_tile_serial(pc, iLev, [&](const auto& item, int) {
+    total += depositTileFn(*item.ptile, localFabs[item.grid]->array());
+  });
+  return total;
+}
+
+// Host-only deterministic sum of f(i) for i = 0..n-1 on CPU memory. Never
+// launches a GPU kernel.
+template <class F>
+AMREX_FORCE_INLINE amrex::Real deterministic_host_sum(int n, F&& f) {
+  if (n <= 0)
+    return 0;
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (!use_serial_fast_path() && n >= kMinOmp1DSize)
+    return fleks_omp_detail::deterministic_sum_mt(n, f);
+#endif
+  return fleks_omp_detail::eval_simd_sum(0, n, f);
+}
+
+template <class F>
+AMREX_FORCE_INLINE amrex::Real deterministic_sum(int n, F&& f) {
+  if (n <= 0)
+    return 0;
+#ifdef AMREX_USE_CUDA
+  // CUB reads the values from f directly (no temporary array); the result
+  // goes to pinned memory, so one stream synchronization returns it.
+  auto values = cuda::make_transform_iterator(
+      cuda::counting_iterator<int>(0),
+      cuda::proclaim_return_type<amrex::Real>(std::decay_t<F>(f)));
+  amrex::Real* const result = deterministic_sum_result();
+  std::size_t tmpBytes = 0;
+  cub::DeviceReduce::Sum(nullptr, tmpBytes, values, result, n,
+                         amrex::Gpu::gpuStream());
+  cub::DeviceReduce::Sum(reduction_scratch(tmpBytes), tmpBytes, values, result,
+                         n, amrex::Gpu::gpuStream());
+  amrex::Gpu::streamSynchronize();
+  return *result;
+#else
+  return deterministic_host_sum(n, std::forward<F>(f));
+#endif
+}
+
 // Sum of f(i), i = 0..n-1, written to *result, which is device memory in a
 // GPU build: unlike deterministic_sum() this does not wait for the GPU, so
 // later kernels can read the result without a round trip to the host. The
@@ -256,36 +1536,56 @@ void deterministic_sum_to(int n, F&& f, amrex::Real* result) {
   cub::DeviceReduce::Sum(reduction_scratch(tmpBytes), tmpBytes, values, result,
                          n, amrex::Gpu::gpuStream());
 #else
-  amrex::Real sum = 0;
-  for (int i = 0; i < n; ++i)
-    sum += f(i);
-  *result = sum;
+  *result = deterministic_sum(n, std::forward<F>(f));
 #endif
 }
 
-template <class F> amrex::Real deterministic_sum(int n, F&& f) {
-#ifdef AMREX_USE_CUDA
-  if (n <= 0)
-    return 0;
-  // CUB reads the values from f directly (no temporary array); the result
-  // goes to pinned memory, so one stream synchronization returns it.
-  auto values = cuda::make_transform_iterator(
-      cuda::counting_iterator<int>(0),
-      cuda::proclaim_return_type<amrex::Real>(std::decay_t<F>(f)));
-  amrex::Real* const result = deterministic_sum_result();
-  std::size_t tmpBytes = 0;
-  cub::DeviceReduce::Sum(nullptr, tmpBytes, values, result, n,
-                         amrex::Gpu::gpuStream());
-  cub::DeviceReduce::Sum(reduction_scratch(tmpBytes), tmpBytes, values, result,
-                         n, amrex::Gpu::gpuStream());
-  amrex::Gpu::streamSynchronize();
-  return *result;
-#else
-  amrex::Real sum = 0;
-  for (int i = 0; i < n; ++i)
-    sum += f(i);
-  return sum;
+// Deterministic replacement for amrex::MultiFab::Dot (whose OpenMP / GPU
+// reduction order depends on the thread count): sum over the local FABs, in
+// local index order, of sum_n x(i,j,k,xcomp+n) * y(i,j,k,ycomp+n) on the valid
+// box grown by nghost, using deterministic_sum() inside each FAB. Cells where
+// mask is 0 are skipped (mask may be nullptr). Unless local, the result is
+// summed over all MPI ranks.
+inline amrex::Real mf_dot(const amrex::MultiFab& x, int xcomp,
+                          const amrex::MultiFab& y, int ycomp, int numcomp,
+                          int nghost, const amrex::iMultiFab* mask = nullptr,
+                          bool local = false) {
+#if defined(AMREX_USE_OMP) && !defined(AMREX_USE_GPU)
+  if (use_serial_fast_path()) {
+    return mask ? amrex::MultiFab::Dot(*mask, x, xcomp, y, ycomp, numcomp,
+                                       nghost, local)
+                : amrex::MultiFab::Dot(x, xcomp, y, ycomp, numcomp, nghost,
+                                       local);
+  }
 #endif
+  amrex::Real sum = 0;
+  for (amrex::MFIter mfi(x, false); mfi.isValid(); ++mfi) {
+    const amrex::Box bx = amrex::grow(mfi.validbox(), nghost);
+    const auto xa = x.const_array(mfi);
+    const auto ya = y.const_array(mfi);
+    const bool hasMask = (mask != nullptr);
+    const amrex::Array4<const int> ma =
+        hasMask ? mask->const_array(mfi) : amrex::Array4<const int>();
+    const auto lo = amrex::lbound(bx);
+    const int nx = bx.length(0);
+    const int ny = (AMREX_SPACEDIM > 1) ? bx.length(1) : 1;
+    const int nPts = static_cast<int>(bx.numPts());
+    sum += deterministic_sum(nPts, [=] AMREX_GPU_HOST_DEVICE(int idx) {
+      const int i = lo.x + idx % nx;
+      const int j = lo.y + (idx / nx) % ny;
+      const int k = lo.z + idx / (nx * ny);
+      if (hasMask && !ma(i, j, k))
+        return amrex::Real(0);
+      amrex::Real t = 0;
+      for (int n = 0; n < numcomp; ++n)
+        t += xa(i, j, k, xcomp + n) * ya(i, j, k, ycomp + n);
+      return t;
+    });
+  }
+  if (!local)
+    amrex::ParallelAllReduce::Sum(sum,
+                                  amrex::ParallelContext::CommunicatorSub());
+  return sum;
 }
 
 // Several deterministic_sum() results returned to the host together: add()
@@ -327,10 +1627,7 @@ public:
     // The result goes straight to pinned host memory.
     deterministic_sum_to(n, std::forward<F>(f), buf + nPending++);
 #else
-    amrex::Real sum = 0;
-    for (int i = 0; i < n; ++i)
-      sum += f(i);
-    done.push_back(sum);
+    done.push_back(deterministic_sum(n, std::forward<F>(f)));
 #endif
   }
 
@@ -454,6 +1751,26 @@ void host_fill_fab(amrex::FabArray<FAB>& fa, amrex::MFIter& mfi,
 #else
   const auto arr = fa[mfi].array();
   amrex::LoopOnCpu(box, [&](int i, int j, int k) { f(mfi, i, j, k, arr); });
+#endif
+}
+
+// Parallel host-only variant of host_fill_fab: each (i, j, k) in `box` must
+// be independent so `f(i, j, k, arr)` can run across OpenMP threads on CPU
+// builds while staging through pinned host memory on GPU builds.
+template <class FAB, class F>
+void parallel_host_fill_fab(amrex::FabArray<FAB>& fa, const amrex::MFIter& mfi,
+                            const amrex::Box& box, F&& f) {
+#ifdef AMREX_USE_GPU
+  using T = typename FAB::value_type;
+  FAB& fab = fa[mfi];
+  amrex::BaseFab<T> host(fab.box(), fab.nComp(), amrex::The_Pinned_Arena());
+  amrex::Gpu::dtoh_memcpy(host.dataPtr(), fab.dataPtr(), fab.nBytes());
+  const auto arr = host.array();
+  amrex::LoopOnCpu(box, [&](int i, int j, int k) { f(i, j, k, arr); });
+  amrex::Gpu::htod_memcpy(fab.dataPtr(), host.dataPtr(), fab.nBytes());
+#else
+  const auto arr = fa[mfi].array();
+  parallel_for_host_box(box, [&](int i, int j, int k) { f(i, j, k, arr); });
 #endif
 }
 

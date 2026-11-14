@@ -525,7 +525,8 @@ public:
                          const FluidInterface* interface, bool doVacuumLimit,
                          amrex::IntVect ppc = amrex::IntVect(),
                          const Vel& tpVel = Vel(), amrex::Real dt = -1,
-                         amrex::Real weightScale = 1.0);
+                         amrex::Real weightScale = 1.0,
+                         amrex::Vector<ParticleType>* outParticles = nullptr);
   void inject_particles_at_boundary();
 
   // Inflow (ParticleBC::inflow) particle boundary
@@ -915,8 +916,8 @@ public:
       const amrex::Real xHi = lb.plo[d] + (validBox.bigEnd(d) + 1) * lb.dx[d];
       const amrex::Real tol =
           16 * eps * (std::abs(xLo) + std::abs(xHi) + lb.dx[d]);
-      ab.lo[d] = xLo + tol;
-      ab.hi[d] = xHi - tol;
+      ab.lo[d] = std::max(lb.plo[d], xLo + tol);
+      ab.hi[d] = std::min(lb.phi[d], xHi - tol);
     }
 
     return ab;
@@ -965,14 +966,51 @@ public:
     locate_particle_cell(p, ab, status, isInside, idx, mask);
   }
 
+  struct MoveTallyDelta {
+    amrex::Real faceOutMass[6] = { 0, 0, 0, 0, 0, 0 };
+    amrex::Real absorbCount[6] = { 0, 0, 0, 0, 0, 0 };
+    amrex::Real absorbCharge[6] = { 0, 0, 0, 0, 0, 0 };
+    amrex::Real absorbMass[6] = { 0, 0, 0, 0, 0, 0 };
+    amrex::Real bodyCount = 0;
+    amrex::Real bodyCharge = 0;
+    amrex::Real bodyMass = 0;
+    bool active = false;
+  };
+
+  inline void apply_move_tally_delta(const MoveTallyDelta& d) {
+    if (!d.active)
+      return;
+    for (int f = 0; f < 6; ++f) {
+      faceOutMass[f] += d.faceOutMass[f];
+      absorbTallyCount[f] += d.absorbCount[f];
+      absorbTallyCharge[f] += d.absorbCharge[f];
+      absorbTallyMass[f] += d.absorbMass[f];
+    }
+    bodyAbsorbCount += d.bodyCount;
+    bodyAbsorbCharge += d.bodyCharge;
+    bodyAbsorbMass += d.bodyMass;
+  }
+
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
   // tallies; `reflect` mirrors; `ambipolar` gates absorption by local cell
   // charge. Only acts at iLev == 0.
-  inline bool reflect_or_delete_particle(
+  AMREX_FORCE_INLINE bool reflect_or_delete_particle(
       ParticleType& p, amrex::Array4<int const> const& status,
       const ActiveRegionBox& ab,
       amrex::Array4<amrex::Real const> const& bodyQNet = {},
-      amrex::Array4<amrex::Real> const& bodyQNetInc = {}) {
+      amrex::Array4<amrex::Real> const& bodyQNetInc = {},
+      MoveTallyDelta* tally = nullptr) {
+    if ((grid == nullptr || !grid->use_body()) && is_inside_valid_box(p, ab))
+      return false;
+    return reflect_or_delete_particle_slow(p, status, ab, bodyQNet, bodyQNetInc,
+                                           tally);
+  }
+
+  AMREX_NO_INLINE bool reflect_or_delete_particle_slow(
+      ParticleType& p, amrex::Array4<int const> const& status,
+      const ActiveRegionBox& ab,
+      amrex::Array4<amrex::Real const> const& bodyQNet,
+      amrex::Array4<amrex::Real> const& bodyQNetInc, MoveTallyDelta* tally) {
     // The cell location is computed at most once and shared by the #BODY test
     // and the active-region test; a reflection moves the particle and
     // invalidates it (see `isLocateValid`).
@@ -1004,7 +1042,7 @@ public:
           // Neutrals carry no electric charge; absorb freely without altering
           // the charge budget.
           if (charge == 0.0) {
-            body_absorb_tally(p.rdata(iqp_));
+            body_absorb_tally(p.rdata(iqp_), tally);
             return true;
           }
 
@@ -1036,7 +1074,7 @@ public:
           }
 
           if (doAbsorb) {
-            body_absorb_tally(p.rdata(iqp_));
+            body_absorb_tally(p.rdata(iqp_), tally);
             return true;
           } else {
             // Reflect specularly off the cylinder/sphere surface
@@ -1049,7 +1087,7 @@ public:
         isLocateValid = true;
 
         if (isInsideBox && bit::is_body(cellMask)) {
-          body_absorb_tally(p.rdata(iqp_));
+          body_absorb_tally(p.rdata(iqp_), tally);
           return true;
         }
       }
@@ -1062,12 +1100,12 @@ public:
       // tallying the lost charge/mass per face.
       if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
           p.pos(d) < ploLoc[d]) {
-        absorb_tally(2 * d, p.rdata(iqp_));
+        absorb_tally(2 * d, p.rdata(iqp_), tally);
         return true;
       }
       if ((bcHi == ParticleBC::absorb || bcHi == ParticleBC::inflow) &&
           p.pos(d) > phiLoc[d]) {
-        absorb_tally(2 * d + 1, p.rdata(iqp_));
+        absorb_tally(2 * d + 1, p.rdata(iqp_), tally);
         return true;
       }
       // Specular reflection: mirror position and normal velocity.
@@ -1087,35 +1125,57 @@ public:
                            : (isInsideBox ? bit::is_domain_boundary(cellMask)
                                           : is_outside_active_region(p, ab));
     if (isOut)
-      face_exit_tally(p);
+      face_exit_tally(p, tally);
     return isOut;
   }
 
   // Tally the mass of a particle deleted beyond a domain face. A periodic
   // direction is skipped: crossing it wraps, it is not a loss.
-  inline void face_exit_tally(const ParticleType& p) {
+  inline void face_exit_tally(const ParticleType& p,
+                              MoveTallyDelta* tally = nullptr) {
     const amrex::Real* lo = Geom(0).ProbLo();
     const amrex::Real* hi = Geom(0).ProbHi();
     for (int d = 0; d < nDim; ++d) {
       if (Geom(0).isPeriodic(d))
         continue;
       if (p.pos(d) < lo[d]) {
-        faceOutMass[2 * d] += qomSign * p.rdata(iqp_) * mass;
+        const amrex::Real dm = qomSign * p.rdata(iqp_) * mass;
+        if (tally) {
+          tally->faceOutMass[2 * d] += dm;
+          tally->active = true;
+        } else {
+          faceOutMass[2 * d] += dm;
+        }
         return;
       }
       if (p.pos(d) > hi[d]) {
-        faceOutMass[2 * d + 1] += qomSign * p.rdata(iqp_) * mass;
+        const amrex::Real dm = qomSign * p.rdata(iqp_) * mass;
+        if (tally) {
+          tally->faceOutMass[2 * d + 1] += dm;
+          tally->active = true;
+        } else {
+          faceOutMass[2 * d + 1] += dm;
+        }
         return;
       }
     }
   }
 
   // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
-  inline void absorb_tally(int face, amrex::Real weight) {
-    faceOutMass[face] += qomSign * weight * mass;
-    absorbTallyCount[face] += 1.0;
-    absorbTallyCharge[face] += weight * charge;
-    absorbTallyMass[face] += weight * mass;
+  inline void absorb_tally(int face, amrex::Real weight,
+                           MoveTallyDelta* tally = nullptr) {
+    if (tally) {
+      tally->faceOutMass[face] += qomSign * weight * mass;
+      tally->absorbCount[face] += 1.0;
+      tally->absorbCharge[face] += weight * charge;
+      tally->absorbMass[face] += weight * mass;
+      tally->active = true;
+    } else {
+      faceOutMass[face] += qomSign * weight * mass;
+      absorbTallyCount[face] += 1.0;
+      absorbTallyCharge[face] += weight * charge;
+      absorbTallyMass[face] += weight * mass;
+    }
   }
 
   // Specular reflection on the smooth body sphere (#BODYBOUNDARY reflect);
@@ -1163,10 +1223,18 @@ public:
   }
 
   // Tally a particle absorbed by the inner body (see #BODY).
-  inline void body_absorb_tally(amrex::Real weight) {
-    bodyAbsorbCount += 1.0;
-    bodyAbsorbCharge += qomSign * weight * charge;
-    bodyAbsorbMass += qomSign * weight * mass;
+  inline void body_absorb_tally(amrex::Real weight,
+                                MoveTallyDelta* tally = nullptr) {
+    if (tally) {
+      tally->bodyCount += 1.0;
+      tally->bodyCharge += qomSign * weight * charge;
+      tally->bodyMass += qomSign * weight * mass;
+      tally->active = true;
+    } else {
+      bodyAbsorbCount += 1.0;
+      bodyAbsorbCharge += qomSign * weight * charge;
+      bodyAbsorbMass += qomSign * weight * mass;
+    }
   }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
@@ -1271,7 +1339,10 @@ public:
 
     if (!gdb->boxArray(0).empty()) {
       // It will crash if there is no active cells.
-      Redistribute();
+      // With several levels AMReX's threaded Redistribute orders the moved
+      // particles by thread; run it single-threaded so the result does not
+      // depend on OMP_NUM_THREADS (see run_single_threaded_if).
+      run_single_threaded_if(gdb->finestLevel() > 0, [&]() { Redistribute(); });
     }
   }
 
@@ -1406,23 +1477,21 @@ public:
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         const LevelGeomBox lb = make_level_geom_box(iLev);
-        int lastFab = -1;
-        ActiveRegionBox ab;
+        const amrex::BoxArray& ba = this->ParticleBoxArray(iLev);
+        const bool emptyStatus = cell_status(iLev).empty();
 
-        for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-          AoS& particles = pti.GetArrayOfStructs();
-          if (cell_status(iLev).empty()) {
+        parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int) {
+          AoS& particles = item.ptile->GetArrayOfStructs();
+          if (emptyStatus) {
             for (auto& p : particles) {
               p.id() = -1;
             }
           } else {
-            if (pti.index() != lastFab) {
-              lastFab = pti.index();
-              const amrex::Box& bx = cell_status(iLev)[pti].box();
-              ab = make_active_region_box(lb, pti.validbox(), bx);
-            }
+            const amrex::Box& bx = cell_status(iLev)[item.grid].box();
+            const ActiveRegionBox ab =
+                make_active_region_box(lb, ba[item.grid], bx);
             const amrex::Array4<int const>& status =
-                cell_status(iLev)[pti].array();
+                cell_status(iLev)[item.grid].array();
 
             for (auto& p : particles) {
               if (is_outside_active_region(p, status, ab)) {
@@ -1430,7 +1499,7 @@ public:
               }
             }
           }
-        }
+        });
       }
   }
 
@@ -1438,14 +1507,24 @@ public:
     for (int iLev = 0; iLev < n_lev_max(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         const LevelGeomBox lb = make_level_geom_box(iLev);
-        for (auto& kv : this->GetParticles(iLev)) {
-          AoS& particles = kv.second.GetArrayOfStructs();
-          for (auto& p : particles) {
-            if (p.id().is_valid() && is_outside_active_region(p, lb)) {
-              p.id() = -1;
-            }
-          }
+        std::vector<ParticleTileType*> tiles;
+        auto& plev = this->GetParticles(iLev);
+        tiles.reserve(plev.size());
+        for (auto& kv : plev) {
+          if (kv.second.numParticles() > 0)
+            tiles.push_back(&kv.second);
         }
+        parallel_for_host_items(
+            static_cast<int>(tiles.size()),
+            [&](int idx) {
+              AoS& particles = tiles[idx]->GetArrayOfStructs();
+              for (auto& p : particles) {
+                if (p.id().is_valid() && is_outside_active_region(p, lb)) {
+                  p.id() = -1;
+                }
+              }
+            },
+            true);
       }
   }
 
@@ -1466,9 +1545,13 @@ public:
              bool useTargetPPC = false);
 
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
-                                   amrex::Vector<ParticleType>& newparticles);
+                                   amrex::Vector<ParticleType>& newparticles,
+                                   RandNum* rng = nullptr,
+                                   bool assignIds = true);
   bool split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
-                                  ParticleType& p3, ParticleType& p4);
+                                  ParticleType& p3, ParticleType& p4,
+                                  RandNum* rng = nullptr,
+                                  bool assignIds = true);
 
   void merge(amrex::Real limit, bool useTargetPPC = false);
 

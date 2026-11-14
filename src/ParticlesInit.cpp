@@ -2,6 +2,7 @@
 
 #include <AMReX_ParReduce.H>
 
+#include "GpuBackend.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -35,7 +36,8 @@ template <int NStructReal, int NStructInt>
 int Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
-    const Vel& tpVel, Real dt, Real weightScale) {
+    const Vel& tpVel, Real dt, Real weightScale,
+    Vector<ParticleType>* outParticles) {
 
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
@@ -80,14 +82,21 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
       }
     }
   }
-  set_random_seed(iLev, ijk, nPPC);
+  RandNum localRng;
+  if (outParticles != nullptr) {
+    localRng.set_seed(calc_random_seed(iLev, ijk, nPPC));
+  } else {
+    set_random_seed(iLev, ijk, nPPC);
+  }
+  RandNum& rng = (outParticles != nullptr) ? localRng : randNum;
 
   const Real vol = dx[iLev].product();
   const int npcel = product(nPPC);
 
   const Real vol2Npcel = qomSign * vol / npcel;
 
-  ParticleTileType& particles = get_particle_tile(iLev, mfi, ijk);
+  ParticleTileType* particlesPtr =
+      (outParticles == nullptr) ? &get_particle_tile(iLev, mfi, ijk) : nullptr;
 
   // Hoist wave boundary face-mask and time checks outside the per-particle
   // loop so interior cells do zero extra work while boundary ghost cells
@@ -131,7 +140,7 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
         IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
 
         for (int iDim = 0; iDim < nDim; iDim++) {
-          xyz[iDim] = (ijk0[iDim] + randNum()) * (dx[iLev][iDim] / nPPC[iDim]) +
+          xyz[iDim] = (ijk0[iDim] + rng()) * (dx[iLev][iDim] / nPPC[iDim]) +
                       ijk[iDim] * dx[iLev][iDim] + plo[iLev][iDim];
 
           // If the particle weight is sampled in a random location, the sum of
@@ -144,7 +153,7 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
 
         if (nDim == 2) {
           // For comparison with the 3D case only.
-          randNum();
+          rng();
         }
 
         if (!isParticleLocationRandom) {
@@ -182,10 +191,10 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
 
         if (q != 0) {
           Real u, v, w;
-          Real rand1 = randNum();
-          Real rand2 = randNum();
-          Real rand3 = randNum();
-          Real rand4 = randNum();
+          Real rand1 = rng();
+          Real rand2 = rng();
+          Real rand3 = rng();
+          Real rand4 = rng();
 
           Real uth = (userState ? tpVel.vth : -1);
 
@@ -278,7 +287,6 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
           w += wBulk;
 
           auto p = make_particle();
-          set_ids(p);
           for (int iDim = 0; iDim < nDim; iDim++) {
             p.pos(iDim) = xyz[iDim];
           }
@@ -293,7 +301,12 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
             p.idata(iRecordCount_) = 0;
           }
 
-          particles.push_back(p);
+          if (outParticles != nullptr) {
+            outParticles->push_back(p);
+          } else {
+            set_ids(p);
+            particlesPtr->push_back(p);
+          }
 
           icount++;
         }
@@ -324,15 +337,24 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
       const Box& tile_box = mfi.validbox();
       const auto lo = lbound(tile_box);
       const auto hi = ubound(tile_box);
+      const auto& status = cell_status(iLev)[mfi].const_array();
 
+      Vector<IntVect> activeCells;
+      activeCells.reserve(tile_box.numPts());
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            const auto& status = cell_status(iLev)[mfi].array();
-            if (bit::is_refined(status(i, j, k)))
-              continue;
+            if (!bit::is_refined(status(i, j, k)))
+              activeCells.push_back(IntVect{ AMREX_D_DECL(i, j, k) });
+          }
 
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      const int nActive = static_cast<int>(activeCells.size());
+      Vector<Vector<ParticleType> > cellParticles(nActive);
+
+      parallel_for_host_items(
+          nActive,
+          [&](int idx) {
+            const IntVect ijk = activeCells[idx];
 
             bool doAdd = true;
 #ifdef _PT_COMPONENT_
@@ -342,77 +364,89 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
               doAdd = (iRegion == speciesID);
             }
 #endif
-            if (doAdd) {
-              IntVect ppcCell = ppc;
-              if (adaptivePPC) {
-                // Adjust ppc so that the weight of the
-                // source particles is not too small.
-                const int initPPC = product(nPartPerCell);
-                const int sourcePPC = product(ppc);
+            if (!doAdd)
+              return;
 
-                Real rho = fi->get_number_density(mfi, ijk, speciesID, iLev);
-                Real rhoSource =
-                    interface->get_number_density(mfi, ijk, speciesID, iLev);
-                if (dt > 0)
-                  rhoSource *= dt;
+            IntVect ppcCell = ppc;
+            if (adaptivePPC) {
+              // Adjust ppc so that the weight of the
+              // source particles is not too small.
+              const int initPPC = product(nPartPerCell);
+              const int sourcePPC = product(ppc);
 
-                Real avgInitW = rho / initPPC;
-                Real avgSourceW = rhoSource / sourcePPC;
+              Real rho = fi->get_number_density(mfi, ijk, speciesID, iLev);
+              Real rhoSource =
+                  interface->get_number_density(mfi, ijk, speciesID, iLev);
+              if (dt > 0)
+                rhoSource *= dt;
 
-                Real targetSourceW = avgInitW * 0.1;
+              Real avgInitW = rho / initPPC;
+              Real avgSourceW = rhoSource / sourcePPC;
 
-                if (avgSourceW < targetSourceW) {
-                  Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
-                  for (int iDim = 0; iDim < nDim; iDim++) {
-                    ppcCell[iDim] = std::max(1, int(ppc[iDim] * ratio));
-                  }
+              Real targetSourceW = avgInitW * 0.1;
+
+              if (avgSourceW < targetSourceW) {
+                Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  ppcCell[iDim] = std::max(1, int(ppc[iDim] * ratio));
                 }
               }
-
-              Real weightScale = 1.0;
-              if (useWeightFloor) {
-                RealVect xyzC;
-                for (int iDim = 0; iDim < nDim; iDim++)
-                  xyzC[iDim] =
-                      (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
-
-                // Number density of the step's source and of the reference
-                // plasma, in code units.
-                Real nSource =
-                    interface->get_number_density(mfi, xyzC, speciesID, iLev);
-                if (dt > 0)
-                  nSource *= dt;
-                Real nRef = 0;
-                for (int iS = 0; iS < fi->get_nS(); iS++)
-                  if (fi->get_species_charge(iS) > 0)
-                    nRef += fi->get_number_density(mfi, xyzC, iS, iLev);
-                // The reference particle of the cell: with #CONSTANTPPV a
-                // refined cell has fewer particles per cell than the base.
-                const Real ppcRef =
-                    (isTargetPPCDefined && !isFake2D)
-                        ? static_cast<Real>(target_PPC(iLev)[mfi].array()(ijk))
-                        : initPPCFloor;
-                const Real wMin = minWeightRatio * nRef / ppcRef;
-
-                if (nSource <= 0.0)
-                  continue;
-                const Real ppcSource =
-                    (ppcCell == 0) ? ppcRef : product(ppcCell);
-                if (nSource / ppcSource < wMin) {
-                  ppcCell = IntVect(1);
-                  if (nSource < wMin) {
-                    set_random_seed(iLev, ijk, IntVect(919));
-                    if (randNum() * wMin >= nSource)
-                      continue;
-                    weightScale = wMin / nSource;
-                  }
-                }
-              }
-
-              add_particles_cell(iLev, mfi, ijk, interface, false, ppcCell,
-                                 Vel(), dt, weightScale);
             }
-          }
+
+            Real weightScale = 1.0;
+            if (useWeightFloor) {
+              RealVect xyzC;
+              for (int iDim = 0; iDim < nDim; iDim++)
+                xyzC[iDim] =
+                    (ijk[iDim] + 0.5) * dx[iLev][iDim] + plo[iLev][iDim];
+
+              // Number density of the step's source and of the reference
+              // plasma, in code units.
+              Real nSource =
+                  interface->get_number_density(mfi, xyzC, speciesID, iLev);
+              if (dt > 0)
+                nSource *= dt;
+              Real nRef = 0;
+              for (int iS = 0; iS < fi->get_nS(); iS++)
+                if (fi->get_species_charge(iS) > 0)
+                  nRef += fi->get_number_density(mfi, xyzC, iS, iLev);
+              // The reference particle of the cell: with #CONSTANTPPV a
+              // refined cell has fewer particles per cell than the base.
+              const Real ppcRef =
+                  (isTargetPPCDefined && !isFake2D)
+                      ? static_cast<Real>(target_PPC(iLev)[mfi].array()(ijk))
+                      : initPPCFloor;
+              const Real wMin = minWeightRatio * nRef / ppcRef;
+
+              if (nSource <= 0.0)
+                return;
+              const Real ppcSource = (ppcCell == 0) ? ppcRef : product(ppcCell);
+              if (nSource / ppcSource < wMin) {
+                ppcCell = IntVect(1);
+                if (nSource < wMin) {
+                  RandNum rng919;
+                  rng919.set_seed(calc_random_seed(iLev, ijk, IntVect(919)));
+                  if (rng919() * wMin >= nSource)
+                    return;
+                  weightScale = wMin / nSource;
+                }
+              }
+            }
+
+            add_particles_cell(iLev, mfi, ijk, interface, false, ppcCell, Vel(),
+                               dt, weightScale, &cellParticles[idx]);
+          },
+          true);
+
+      for (int idx = 0; idx < nActive; ++idx) {
+        if (cellParticles[idx].empty())
+          continue;
+        auto& tile = get_particle_tile(iLev, mfi, activeCells[idx]);
+        for (auto& p : cellParticles[idx]) {
+          set_ids(p);
+          tile.push_back(p);
+        }
+      }
     }
   }
 }
@@ -431,17 +465,45 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(bool fillAll) {
   const int nLev = fillAll ? n_lev() : 1;
   for (int iLev = 0; iLev < nLev; iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const Box& vbx = mfi.validbox();
+      const auto lo = lbound(vbx);
+      const auto hi = ubound(vbx);
+      const auto& status = cell_status(iLev)[mfi].const_array();
 
-      const auto& status = cell_status(iLev)[mfi].array();
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) noexcept {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        // A fluid-only restart can retain mesh cells without restoring any
-        // particles. The first particle fill must seed every leaf cell.
-        if ((fillAll || bit::is_new(status(ijk))) &&
-            !bit::is_refined(status(ijk))) {
-          add_particles_cell(iLev, mfi, ijk, fi, true);
+      Vector<IntVect> activeCells;
+      activeCells.reserve(vbx.numPts());
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            // A fluid-only restart can retain mesh cells without restoring any
+            // particles. The first particle fill must seed every leaf cell.
+            if ((fillAll || bit::is_new(status(ijk))) &&
+                !bit::is_refined(status(ijk))) {
+              activeCells.push_back(ijk);
+            }
+          }
+
+      const int nActive = static_cast<int>(activeCells.size());
+      Vector<Vector<ParticleType> > cellParticles(nActive);
+
+      parallel_for_host_items(
+          nActive,
+          [&](int idx) {
+            add_particles_cell(iLev, mfi, activeCells[idx], fi, true, IntVect(),
+                               Vel(), -1, 1.0, &cellParticles[idx]);
+          },
+          true);
+
+      for (int idx = 0; idx < nActive; ++idx) {
+        if (cellParticles[idx].empty())
+          continue;
+        auto& tile = get_particle_tile(iLev, mfi, activeCells[idx]);
+        for (auto& p : cellParticles[idx]) {
+          set_ids(p);
+          tile.push_back(p);
         }
-      });
+      }
     }
   }
 }
@@ -647,9 +709,9 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
 
 #define INSTANTIATE_PARTICLES_INIT(T)                                          \
   template void T::add_particles_domain(bool);                                 \
-  template int T::add_particles_cell(const int, const MFIter&, const IntVect,  \
-                                     const FluidInterface*, bool, IntVect,     \
-                                     const Vel&, Real, Real);                  \
+  template int T::add_particles_cell(                                          \
+      const int, const MFIter&, const IntVect, const FluidInterface*, bool,    \
+      IntVect, const Vel&, Real, Real, Vector<T::ParticleType>*);              \
   template void T::inject_emission_shell(                                      \
       const Vector<MultiFab>&, Real, int, const Real*, const std::vector<T*>&, \
       const std::vector<Real>&, const std::vector<Real>&);                     \

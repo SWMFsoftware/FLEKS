@@ -10,6 +10,8 @@
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_REAL.H>
 
+#include "GpuBackend.h"
+
 typedef void (*MATVEC)(const amrex::Real *vecIn, amrex::Real *vecOut, int n);
 
 enum KrylovType { GMRES, BICGSTAB, CG };
@@ -34,6 +36,28 @@ inline amrex::Real finite_difference_epsilon(amrex::Real normBase,
          (1.0 + normBase) / normDirection;
 }
 
+// Vector operations of the Jacobian-free matvec and Krylov solvers on host
+// buffers (also not templates so non-host nonlinearMatvec lambdas never cross
+// into device instantiation).
+inline void set_zero(amrex::Real *AMREX_RESTRICT out, const int n) {
+  parallel_for_host_1d(n, [=](int i) { out[i] = 0.0; });
+}
+
+inline void perturb(const amrex::Real *AMREX_RESTRICT base,
+                    const amrex::Real *AMREX_RESTRICT direction,
+                    amrex::Real epsilon, amrex::Real *AMREX_RESTRICT work,
+                    const int n) {
+  parallel_for_host_1d(
+      n, [=](int i) { work[i] = base[i] + epsilon * direction[i]; });
+}
+
+inline void difference_quotient(const amrex::Real *AMREX_RESTRICT baseMatvec,
+                                amrex::Real invEpsilon,
+                                amrex::Real *AMREX_RESTRICT out, const int n) {
+  parallel_for_host_1d(
+      n, [=](int i) { out[i] = (out[i] - baseMatvec[i]) * invEpsilon; });
+}
+
 template <typename NonlinearMatvec>
 void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec,
                           const amrex::Real *base,
@@ -42,32 +66,17 @@ void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec,
                           amrex::Real *work, const int n, const int iLev,
                           const amrex::Real epsilon) {
   if (epsilon == 0.0) {
-    std::fill(out, out + n, 0.0);
+    set_zero(out, n);
     return;
   }
 
   // Evaluate (F(base + epsilon * direction) - F(base)) / epsilon.
-  {
-    amrex::Real *AMREX_RESTRICT w = work;
-    const amrex::Real *AMREX_RESTRICT b = base;
-    const amrex::Real *AMREX_RESTRICT d = direction;
-#pragma omp simd
-    for (int i = 0; i < n; ++i) {
-      w[i] = b[i] + epsilon * d[i];
-    }
-  }
+  perturb(base, direction, epsilon, work, n);
 
   nonlinearMatvec(work, out, iLev);
 
   const amrex::Real invEpsilon = 1.0 / epsilon;
-  {
-    amrex::Real *AMREX_RESTRICT o = out;
-    const amrex::Real *AMREX_RESTRICT bm = baseMatvec;
-#pragma omp simd
-    for (int i = 0; i < n; ++i) {
-      o[i] = (o[i] - bm[i]) * invEpsilon;
-    }
-  }
+  difference_quotient(baseMatvec, invEpsilon, out, n);
 }
 
 } // namespace fleks_jfnk
@@ -153,11 +162,14 @@ public:
       }
     }
 
-    for (int i = 0; i < nSolve; ++i) {
-      rhs[i] = 0;
-      xLeft[i] = 0;
-      matvec[i] = 0;
-    }
+    amrex::Real *const r = rhs;
+    amrex::Real *const x = xLeft;
+    amrex::Real *const m = matvec;
+    parallel_for_host_1d(nSolve, [=](int i) {
+      r[i] = 0;
+      x[i] = 0;
+      m[i] = 0;
+    });
     actualMatvec = 0;
     initialResidual = 0.0;
     achievedError = 0.0;

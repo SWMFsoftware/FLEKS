@@ -15,6 +15,7 @@
 ./Config.pl -u               # list available user sources
 ./Config.pl -tp=PBE          # test-particle output (P, PB, PBE, PBEG)
 ./Config.pl -amrex2d         # true-2D AMReX build (-amrex3d to switch back)
+./Config.pl -openmp          # OpenMP CPU build (-noopenmp to switch back)
 ```
 
 `Config.pl` locates `share`, `util`, `lib` and AMReX. Inside an SWMF tree

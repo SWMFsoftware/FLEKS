@@ -224,14 +224,22 @@ def run_test(test_dir, nprocs=1, param_text=None, run_dir=None):
         if os.path.isfile(src):
             shutil.copy(src, os.path.join(run_dir, entry))
 
+    omp_threads = int(os.environ.get("OMP_NUM_THREADS", "1"))
     if nprocs <= 1:
         cmd = ["./FLEKS.exe"]
-        logger.debug("  Running in serial mode (no MPI)...")
+        logger.debug("  Running in serial MPI mode (omp_threads=%d)...", omp_threads)
     else:
-        cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
-        logger.debug("  Running with %d MPI processes...", nprocs)
+        if omp_threads > 1:
+            cmd = ["mpirun", "--bind-to", "none", "-n", str(nprocs), "./FLEKS.exe"]
+        else:
+            cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
+        logger.debug("  Running with %d MPI processes (omp_threads=%d)...",
+                     nprocs, omp_threads)
 
-    result = subprocess.run(cmd, cwd=run_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = str(omp_threads)
+    result = subprocess.run(cmd, cwd=run_dir, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result.stdout = (result.stdout or b"").decode("utf-8", errors="replace")
     result.stderr = (result.stderr or b"").decode("utf-8", errors="replace")
     # Keep FLEKS's stdout on disk. Several per-cycle diagnostics (notably the
@@ -1250,6 +1258,15 @@ def main():
             continue
         if arg.startswith("--run-dir="):
             RUN_DIR = arg[len("--run-dir="):]
+            continue
+
+    # Parse --omp-threads N: set OMP_NUM_THREADS for FLEKS.exe runs
+    for i, arg in enumerate(sys.argv):
+        if arg == "--omp-threads" and i + 1 < len(sys.argv):
+            os.environ["OMP_NUM_THREADS"] = sys.argv[i + 1]
+            continue
+        if arg.startswith("--omp-threads="):
+            os.environ["OMP_NUM_THREADS"] = arg[len("--omp-threads="):]
             continue
 
     # Parse --verbose / -v: show DEBUG diagnostics from each validator.

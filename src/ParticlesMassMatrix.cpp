@@ -22,165 +22,210 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
-  const Real* const ploLoc = Geom(iLev).ProbLo();
-  const Real* const invDxLoc = Geom(iLev).InvCellSize();
+  const Real* const ploLev = Geom(iLev).ProbLo();
+  const Real* const invDxLev = Geom(iLev).InvCellSize();
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
-    const Array4<Real const> nodeB0Arr =
-        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
-    Array4<Real> const& jArr = jHat[pti].array();
-    Array4<RealMM> const& mmArr = nodeMM[pti].array();
+  struct MassMatrixFabCtx {
+    Array4<Real const> nodeBArr;
+    Array4<Real const> nodeB0Arr;
+    Array4<Real> jArr;
+    Array4<RealMM> mmArr;
+    Array4<Real const> u0Arr;
+  };
+  const auto fabTable = build_local_fab_table(nodeMM, [&](const MFIter& mfi) {
+    return MassMatrixFabCtx{ nodeBMF[mfi].const_array(),
+                             useB0 ? (*nodeB0MF)[mfi].const_array()
+                                   : Array4<Real const>(),
+                             jHat[mfi].array(), nodeMM[mfi].array(),
+                             u0MF[mfi].const_array() };
+  });
 
-    Array4<Real const> const& u0Arr = u0MF[pti].array();
+  deposit_cell_tiles_colored(
+      *this, iLev, 3,
+      [&](const auto& item, int /*ord*/, auto checkHomeTag,
+          bool strayPass) -> bool {
+        const auto& ctx = fabTable[item.grid];
+        const Array4<Real const>& nodeBArr = ctx.nodeBArr;
+        const Array4<Real const>& nodeB0Arr = ctx.nodeB0Arr;
+        const Array4<Real>& jArr = ctx.jArr;
+        const Array4<RealMM>& mmArr = ctx.mmArr;
+        const Array4<Real const>& u0Arr = ctx.u0Arr;
+        const AoS& particles = item.ptile->GetArrayOfStructs();
+        const Real ploTile[3] = { ploLev[0], ploLev[1],
+                                  nDim > 2 ? ploLev[2] : 0.0 };
+        const Real invDxTile[3] = { invDxLev[0], invDxLev[1],
+                                    nDim > 2 ? invDxLev[2] : 0.0 };
+        const Real qdto2mcTile = qdto2mc;
+        const Real invVolTile = invVol[iLev];
+        const bool coMovTile = solveInCoMov;
+        const bool useB0Tile = useB0;
+        const int iup = iup_;
+        const int ivp = ivp_;
+        const int iwp = iwp_;
+        const int iqp = iqp_;
+        const Array4<Real const> fieldsCoMovB0[3] = { nodeBArr, u0Arr,
+                                                      nodeB0Arr };
+        const Array4<Real const> fieldsCoMov[2] = { nodeBArr, u0Arr };
+        const Array4<Real const> fieldsB0[2] = { nodeBArr, nodeB0Arr };
 
-    const AoS& particles = pti.GetArrayOfStructs();
+        const Dim3 lo = init_dim3(0);
+        const Dim3 hi = init_dim3(1);
+        bool foundStray = false;
 
-    const Dim3 lo = init_dim3(0);
-    const Dim3 hi = init_dim3(1);
+        for (const auto& p : particles) {
+          if (p.id() < 0)
+            continue;
 
-    for (const auto& p : particles) {
-      if (p.id() < 0)
-        continue;
+          //-----calculate interpolation coef begin-------------
+          IntVect loIdx;
+          RealVect dShift;
 
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
+          Real coef[2][2][2];
+          find_node_interpolation(p.pos(), ploTile, invDxTile, loIdx, dShift,
+                                  coef);
+          //-----calculate interpolate coef end-------------
 
-      //-----calculate interpolation coef begin-------------
-      IntVect loIdx;
-      RealVect dShift;
+          if constexpr (decltype(checkHomeTag)::value) {
+            const bool isHome = is_home_nodal(loIdx, item.cell);
+            if (!strayPass) {
+              if (!isHome) {
+                foundStray = true;
+                continue;
+              }
+            } else if (isHome) {
+              continue;
+            }
+          }
 
-      Real coef[2][2][2];
-      find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
-      //-----calculate interpolate coef end-------------
+          const Real up = p.rdata(iup);
+          const Real vp = p.rdata(ivp);
+          const Real wp = p.rdata(iwp);
+          const Real qp = p.rdata(iqp);
 
-      //----- Mass matrix calculation begin--------------
-      Real u0[3] = { 0, 0, 0 };
-      Real bp[3] = { 0, 0, 0 };
+          //----- Mass matrix calculation begin--------------
+          Real u0[3] = { 0, 0, 0 };
+          Real bp[3] = { 0, 0, 0 };
 
-      if (solveInCoMov && useB0) {
-        // The gyro frequency that enters the mass matrix is the one of the
-        // total field B1 + B0.
-        const Array4<Real const> fields[3] = { nodeBArr, u0Arr, nodeB0Arr };
-        Real b0[3] = { 0, 0, 0 };
-        Real* values[3] = { bp, u0, b0 };
-        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-        bp[ix_] += b0[ix_];
-        bp[iy_] += b0[iy_];
-        bp[iz_] += b0[iz_];
-      } else if (solveInCoMov) {
-        const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
-        Real* values[2] = { bp, u0 };
-        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-      } else if (useB0) {
-        const Array4<Real const> fields[2] = { nodeBArr, nodeB0Arr };
-        Real b0[3] = { 0, 0, 0 };
-        Real* values[2] = { bp, b0 };
-        interpolate_vector_fields(fields, loIdx, coef, lo, hi, values);
-        bp[ix_] += b0[ix_];
-        bp[iy_] += b0[iy_];
-        bp[iz_] += b0[iz_];
-      } else {
-        interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
-      }
+          if (coMovTile && useB0Tile) {
+            // The gyro frequency that enters the mass matrix is the one of the
+            // total field B1 + B0.
+            Real b0[3] = { 0, 0, 0 };
+            Real* values[3] = { bp, u0, b0 };
+            interpolate_vector_fields(fieldsCoMovB0, loIdx, coef, lo, hi,
+                                      values);
+            bp[ix_] += b0[ix_];
+            bp[iy_] += b0[iy_];
+            bp[iz_] += b0[iz_];
+          } else if (coMovTile) {
+            Real* values[2] = { bp, u0 };
+            interpolate_vector_fields(fieldsCoMov, loIdx, coef, lo, hi, values);
+          } else if (useB0Tile) {
+            Real b0[3] = { 0, 0, 0 };
+            Real* values[2] = { bp, b0 };
+            interpolate_vector_fields(fieldsB0, loIdx, coef, lo, hi, values);
+            bp[ix_] += b0[ix_];
+            bp[iy_] += b0[iy_];
+            bp[iz_] += b0[iz_];
+          } else {
+            interpolate_vector_field(nodeBArr, loIdx, coef, lo, hi, bp);
+          }
 
-      const Real omx = qdto2mc * bp[ix_];
-      const Real omy = qdto2mc * bp[iy_];
-      const Real omz = qdto2mc * bp[iz_];
+          const Real omx = qdto2mcTile * bp[ix_];
+          const Real omy = qdto2mcTile * bp[iy_];
+          const Real omz = qdto2mcTile * bp[iz_];
 
-      // end interpolation
-      const Real omx2 = omx * omx;
-      const Real omy2 = omy * omy;
-      const Real omz2 = omz * omz;
-      const Real omxomy = omx * omy;
-      const Real omxomz = omx * omz;
-      const Real omyomz = omy * omz;
-      const Real omsq = omx2 + omy2 + omz2;
-      const Real denom = 1.0 / (1.0 + omsq);
+          // end interpolation
+          const Real omx2 = omx * omx;
+          const Real omy2 = omy * omy;
+          const Real omz2 = omz * omz;
+          const Real omxomy = omx * omy;
+          const Real omxomz = omx * omz;
+          const Real omyomz = omy * omz;
+          const Real omsq = omx2 + omy2 + omz2;
+          const Real denom = 1.0 / (1.0 + omsq);
 
-      const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
+          const Real c0 = denom * invVolTile * qp * qdto2mcTile;
 
-      Real alpha[9];
-      alpha[0] = (1 + omx2) * c0;
-      alpha[1] = (omz + omxomy) * c0;
-      alpha[2] = (-omy + omxomz) * c0;
-      alpha[3] = (-omz + omxomy) * c0;
-      alpha[4] = (1 + omy2) * c0;
-      alpha[5] = (omx + omyomz) * c0;
-      alpha[6] = (omy + omxomz) * c0;
-      alpha[7] = (-omx + omyomz) * c0;
-      alpha[8] = (1 + omz2) * c0;
+          Real alpha[9];
+          alpha[0] = (1 + omx2) * c0;
+          alpha[1] = (omz + omxomy) * c0;
+          alpha[2] = (-omy + omxomz) * c0;
+          alpha[3] = (-omz + omxomy) * c0;
+          alpha[4] = (1 + omy2) * c0;
+          alpha[5] = (omx + omyomz) * c0;
+          alpha[6] = (omy + omxomz) * c0;
+          alpha[7] = (-omx + omyomz) * c0;
+          alpha[8] = (1 + omz2) * c0;
 
-      {
-        // jHat
-        Real currents[3];
+          {
+            // jHat
+            Real currents[3];
 
-        const Real up1 = up - u0[0];
-        const Real vp1 = vp - u0[1];
-        const Real wp1 = wp - u0[2];
+            const Real up1 = up - u0[0];
+            const Real vp1 = vp - u0[1];
+            const Real wp1 = wp - u0[2];
 
-        const Real udotOm1 = up1 * omx + vp1 * omy + wp1 * omz;
+            const Real udotOm1 = up1 * omx + vp1 * omy + wp1 * omz;
 
-        {
-          const Real coef1 = denom * qp;
-          currents[ix_] =
-              (up1 + (vp1 * omz - wp1 * omy + udotOm1 * omx)) * coef1;
-          currents[iy_] =
-              (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
-          currents[iz_] =
-              (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
-        }
+            {
+              const Real coef1 = denom * qp;
+              currents[ix_] =
+                  (up1 + (vp1 * omz - wp1 * omy + udotOm1 * omx)) * coef1;
+              currents[iy_] =
+                  (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
+              currents[iz_] =
+                  (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
+            }
 
-        deposit_vector_field(jArr, loIdx, coef, lo, hi, currents, 3);
-      }
+            deposit_vector_field(jArr, loIdx, coef, lo, hi, currents, 3);
+          }
 
-      const int iMin = loIdx[ix_];
-      const int jMin = loIdx[iy_];
-      const int kMin = nDim > 2 ? loIdx[iz_] : 0;
-      const int iMax = iMin + 1;
-      const int jMax = jMin + 1;
-      const int kMax = nDim > 2 ? kMin + 1 : 0;
+          const int iMin = loIdx[ix_];
+          const int jMin = loIdx[iy_];
+          const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+          const int iMax = iMin + 1;
+          const int jMax = jMin + 1;
+          const int kMax = nDim > 2 ? kMin + 1 : 0;
 
-      for (int k1 = kMin; k1 <= kMax; k1++)
-        for (int j1 = jMin; j1 <= jMax; j1++) {
-          const int jp0 = 1 - (j1 - jMin);
-          for (int i1 = iMin; i1 <= iMax; i1++) {
-            const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-            auto& data0 = mmArr(i1, j1, k1);
-            const int iBase = (1 - (i1 - iMin)) * 9;
-            for (int k2 = kMin; k2 <= kMax; k2++) {
-              const int kp = k2 - k1 + 1;
-              if (kp > 0) {
-                const int dk2 = k2 - kMin;
-                const Real w00 = wg * coef[0][0][dk2];
-                const Real w01 = wg * coef[1][0][dk2];
-                const Real w10 = wg * coef[0][1][dk2];
-                const Real w11 = wg * coef[1][1][dk2];
+          for (int k1 = kMin; k1 <= kMax; k1++)
+            for (int j1 = jMin; j1 <= jMax; j1++) {
+              const int jp0 = 1 - (j1 - jMin);
+              for (int i1 = iMin; i1 <= iMax; i1++) {
+                const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
+                auto& data0 = mmArr(i1, j1, k1);
+                const int iBase = (1 - (i1 - iMin)) * 9;
+                for (int k2 = kMin; k2 <= kMax; k2++) {
+                  const int kp = k2 - k1 + 1;
+                  if (kp > 0) {
+                    const int dk2 = k2 - kMin;
+                    const Real w00 = wg * coef[0][0][dk2];
+                    const Real w01 = wg * coef[1][0][dk2];
+                    const Real w10 = wg * coef[0][1][dk2];
+                    const Real w11 = wg * coef[1][1][dk2];
 #if (AMREX_SPACEDIM == 2)
-                const int idxBase = jp0 * 27 + iBase;
+                    const int idxBase = jp0 * 27 + iBase;
 #else
-                const int idxBase = kp * 81 + jp0 * 27 + iBase;
+                    const int idxBase = kp * 81 + jp0 * 27 + iBase;
 #endif
-                Real* AMREX_RESTRICT d00 = &(data0[idxBase]);
+                    Real* AMREX_RESTRICT d00 = &(data0[idxBase]);
 #pragma omp simd
-                for (int idx = 0; idx < 9; idx++) {
-                  const Real a = alpha[idx];
-                  d00[idx] += a * w00;
-                  d00[idx + 9] += a * w01;
-                  d00[idx + 27] += a * w10;
-                  d00[idx + 36] += a * w11;
-                }
-              } // if (kp > 0)
-            } // k2
-          } // i1
-        } // j1
+                    for (int idx = 0; idx < 9; idx++) {
+                      const Real a = alpha[idx];
+                      d00[idx] += a * w00;
+                      d00[idx + 9] += a * w01;
+                      d00[idx + 27] += a * w10;
+                      d00[idx + 36] += a * w11;
+                    }
+                  } // if (kp > 0)
+                } // k2
+              } // i1
+            } // j1
 
-      //----- Mass matrix calculation end--------------
+          //----- Mass matrix calculation end--------------
 
-    } // for p
-  }
+        } // for p
+        return foundStray;
+      });
 
 #if (AMREX_SPACEDIM != 2)
   for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
@@ -196,37 +241,37 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     // node constributes as a sender). So, we need the '-1' and '+1' staff.
     const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
     const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
+    const Box growBox(IntVect(AMREX_D_DECL(iMin, jMin, kMin)),
+                      IntVect(AMREX_D_DECL(iMax, jMax, kMax)));
 
-    int gps, gpr; // gp_send, gp_receive
-    for (int k1 = kMin; k1 <= kMax; k1++)
-      for (int j1 = jMin; j1 <= jMax; j1++)
-        for (int i1 = iMin; i1 <= iMax; i1++) {
-          const int kp = 2;
-          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
-          if (kr > kMax || kr < kMin)
-            continue;
-          auto& datas0 = mmArr(i1, j1, k1);
-          for (int jp = 0; jp < 3; jp++) {
-            const int jr = j1 + jp - 1;
-            if (jr > jMax || jr < jMin)
-              continue;
-            const int jpr = 2 - jp;
-            for (int ip = 0; ip < 3; ip++) {
-              const int ir = i1 + ip - 1;
-              if (ir > iMax || ir < iMin)
-                continue;
-              const int ipr = 2 - ip;
-              gpr = jpr * 3 + ipr;
-              gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
+    parallel_for_omp(growBox,
+                     [=] AMREX_GPU_DEVICE(int i1, int j1, int k1) noexcept {
+                       const int kp = 2;
+                       const int kr = nDim > 2 ? k1 + kp - 1 : 0;
+                       if (kr > kMax || kr < kMin)
+                         return;
+                       auto& datas0 = mmArr(i1, j1, k1);
+                       for (int jp = 0; jp < 3; jp++) {
+                         const int jr = j1 + jp - 1;
+                         if (jr > jMax || jr < jMin)
+                           continue;
+                         const int jpr = 2 - jp;
+                         for (int ip = 0; ip < 3; ip++) {
+                           const int ir = i1 + ip - 1;
+                           if (ir > iMax || ir < iMin)
+                             continue;
+                           const int ipr = 2 - ip;
+                           const int gpr = jpr * 3 + ipr;
+                           const int gps = 18 + jp * 3 + ip;
 
-              Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
-              const Real* const datas = &(datas0[gps * 9]);
-              for (int idx = 0; idx < 9; idx++) {
-                datar[idx] = datas[idx];
-              } // idx
-            } // kp
-          } // jp
-        } // k1
+                           Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
+                           const Real* const datas = &(datas0[gps * 9]);
+                           for (int idx = 0; idx < 9; idx++) {
+                             datar[idx] = datas[idx];
+                           } // idx
+                         } // kp
+                       } // jp
+                     });
   }
 #endif
 }
@@ -245,190 +290,214 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
-    const Array4<Real const> nodeB0Arr =
-        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
-    Array4<Real> const& jArr = jHat[pti].array();
-    Array4<RealMM> const& mmArr = nodeMM[pti].array();
-    Array4<Real const> const& u0Arr = u0MF[pti].array();
-    const Array4<int const>& status = cellstatus[iLev][pti].array();
-    Box bx = pti.tilebox();
-    IntVect ibx = bx.smallEnd();
-    bool refinedneighbour = false;
-    if (bit::is_refined_neighbour(status(ibx))) {
-      refinedneighbour = true;
-    }
-    const int nCoef = iLev + 1 + refinedneighbour;
-    constexpr int maxCoef = 8;
-    AMREX_ALWAYS_ASSERT(nCoef <= maxCoef);
+  deposit_cell_tiles_colored(
+      *this, iLev, 2 << iLev,
+      [&](const auto& item, int /*ord*/, auto checkHomeTag,
+          bool strayPass) -> bool {
+        Array4<Real const> const& nodeBArr = nodeBMF[item.grid].array();
+        const Array4<Real const> nodeB0Arr =
+            useB0 ? (*nodeB0MF)[item.grid].array() : Array4<Real const>();
+        Array4<Real> const& jArr = jHat[item.grid].array();
+        Array4<RealMM> const& mmArr = nodeMM[item.grid].array();
+        Array4<Real const> const& u0Arr = u0MF[item.grid].array();
+        const Array4<int const>& status = cellstatus[iLev][item.grid].array();
+        const IntVect ibx = item.cell;
+        bool refinedneighbour = false;
+        if (bit::is_refined_neighbour(status(ibx))) {
+          refinedneighbour = true;
+        }
+        const int nCoef = iLev + 1 + refinedneighbour;
+        constexpr int maxCoef = 8;
+        AMREX_ALWAYS_ASSERT(nCoef <= maxCoef);
 
-    Array4<Real> jArrt[maxCoef];
-    Array4<RealMM> mmArrt[maxCoef];
-    int count = 0;
-    if (iLev > 0) {
-      for (int i = 0; i < iLev; i++) {
-        jArrt[count] = jhc[iLev][i][pti].array();
-        mmArrt[count] = nmmc[iLev][i][pti].array();
+        Array4<Real> jArrt[maxCoef];
+        Array4<RealMM> mmArrt[maxCoef];
+        int count = 0;
+        if (iLev > 0) {
+          for (int i = 0; i < iLev; i++) {
+            jArrt[count] = jhc[iLev][i][item.grid].array();
+            mmArrt[count] = nmmc[iLev][i][item.grid].array();
+            count++;
+          }
+        }
+        jArrt[count] = jArr;
+        mmArrt[count] = mmArr;
         count++;
-      }
-    }
-    jArrt[count] = jArr;
-    mmArrt[count] = mmArr;
-    count++;
 
-    if (refinedneighbour) {
-      jArrt[count] = jhf[iLev][pti].array();
-      mmArrt[count] = nmmf[iLev][pti].array();
-      count++;
-    }
+        if (refinedneighbour) {
+          jArrt[count] = jhf[iLev][item.grid].array();
+          mmArrt[count] = nmmf[iLev][item.grid].array();
+          count++;
+        }
 
-    IntVect loIdx[maxCoef];
-    RealVect dShift[maxCoef];
-    Real coef[maxCoef][2][2][2];
+        IntVect loIdx[maxCoef];
+        RealVect dShift[maxCoef];
+        Real coef[maxCoef][2][2][2];
 
-    const AoS& particles = pti.GetArrayOfStructs();
+        const AoS& particles = item.ptile->GetArrayOfStructs();
 
-    const Dim3 lo = init_dim3(0);
-    const Dim3 hi = init_dim3(1);
+        const Dim3 lo = init_dim3(0);
+        const Dim3 hi = init_dim3(1);
+        bool foundStray = false;
 
-    for (const auto& p : particles) {
-      if (p.id() < 0)
-        continue;
+        for (const auto& p : particles) {
+          if (p.id() < 0)
+            continue;
 
-      // Print()<<"p = "<<p<<std::endl;
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
+          //-----calculate interpolate coef begin-------------
+          for (int i = 0; i < nCoef; i++) {
+            find_node_interpolation(p.pos(), Geom(i).ProbLo(),
+                                    Geom(i).InvCellSize(), loIdx[i], dShift[i],
+                                    coef[i]);
+          }
+          //-----calculate interpolate coef end-------------
 
-      //-----calculate interpolate coef begin-------------
-      for (int i = 0; i < nCoef; i++) {
-        find_node_interpolation(p.pos(), Geom(i).ProbLo(),
-                                Geom(i).InvCellSize(), loIdx[i], dShift[i],
-                                coef[i]);
-      }
+          if constexpr (decltype(checkHomeTag)::value) {
+            bool isHome = (loIdx[iLev] == item.cell);
+            for (int i = 0; i < iLev && isHome; ++i) {
+              isHome = (loIdx[i] == amrex::coarsen(item.cell, 1 << (iLev - i)));
+            }
+            if (refinedneighbour && isHome) {
+              isHome = (amrex::coarsen(loIdx[iLev + 1], 2) == item.cell);
+            }
+            if (!strayPass) {
+              if (!isHome) {
+                foundStray = true;
+                continue;
+              }
+            } else if (isHome) {
+              continue;
+            }
+          }
 
-      //-----calculate interpolate coef end-------------
+          const Real up = p.rdata(iup_);
+          const Real vp = p.rdata(ivp_);
+          const Real wp = p.rdata(iwp_);
+          const Real qp = p.rdata(iqp_);
 
-      //----- Mass matrix calculation begin--------------
-      Real u0[3] = { 0, 0, 0 };
-      Real bp[3] = { 0, 0, 0 };
+          //----- Mass matrix calculation begin--------------
+          Real u0[3] = { 0, 0, 0 };
+          Real bp[3] = { 0, 0, 0 };
 
-      if (solveInCoMov && useB0) {
-        const Array4<Real const> fields[3] = { nodeBArr, u0Arr, nodeB0Arr };
-        Real b0[3] = { 0, 0, 0 };
-        Real* values[3] = { bp, u0, b0 };
-        interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
-                                  values);
-        bp[ix_] += b0[ix_];
-        bp[iy_] += b0[iy_];
-        bp[iz_] += b0[iz_];
-      } else if (solveInCoMov) {
-        const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
-        Real* values[2] = { bp, u0 };
-        interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
-                                  values);
-      } else if (useB0) {
-        const Array4<Real const> fields[2] = { nodeBArr, nodeB0Arr };
-        Real b0[3] = { 0, 0, 0 };
-        Real* values[2] = { bp, b0 };
-        interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
-                                  values);
-        bp[ix_] += b0[ix_];
-        bp[iy_] += b0[iy_];
-        bp[iz_] += b0[iz_];
-      } else {
-        interpolate_vector_field(nodeBArr, loIdx[iLev], coef[iLev], lo, hi, bp);
-      }
+          if (solveInCoMov && useB0) {
+            const Array4<Real const> fields[3] = { nodeBArr, u0Arr, nodeB0Arr };
+            Real b0[3] = { 0, 0, 0 };
+            Real* values[3] = { bp, u0, b0 };
+            interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
+                                      values);
+            bp[ix_] += b0[ix_];
+            bp[iy_] += b0[iy_];
+            bp[iz_] += b0[iz_];
+          } else if (solveInCoMov) {
+            const Array4<Real const> fields[2] = { nodeBArr, u0Arr };
+            Real* values[2] = { bp, u0 };
+            interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
+                                      values);
+          } else if (useB0) {
+            const Array4<Real const> fields[2] = { nodeBArr, nodeB0Arr };
+            Real b0[3] = { 0, 0, 0 };
+            Real* values[2] = { bp, b0 };
+            interpolate_vector_fields(fields, loIdx[iLev], coef[iLev], lo, hi,
+                                      values);
+            bp[ix_] += b0[ix_];
+            bp[iy_] += b0[iy_];
+            bp[iz_] += b0[iz_];
+          } else {
+            interpolate_vector_field(nodeBArr, loIdx[iLev], coef[iLev], lo, hi,
+                                     bp);
+          }
 
-      const Real omx = qdto2mc * bp[ix_];
-      const Real omy = qdto2mc * bp[iy_];
-      const Real omz = qdto2mc * bp[iz_];
+          const Real omx = qdto2mc * bp[ix_];
+          const Real omy = qdto2mc * bp[iy_];
+          const Real omz = qdto2mc * bp[iz_];
 
-      // end interpolation
-      const Real omx2 = omx * omx;
-      const Real omy2 = omy * omy;
-      const Real omz2 = omz * omz;
-      const Real omxomy = omx * omy;
-      const Real omxomz = omx * omz;
-      const Real omyomz = omy * omz;
-      const Real omsq = omx2 + omy2 + omz2;
-      const Real denom = 1.0 / (1.0 + omsq);
+          // end interpolation
+          const Real omx2 = omx * omx;
+          const Real omy2 = omy * omy;
+          const Real omz2 = omz * omz;
+          const Real omxomy = omx * omy;
+          const Real omxomz = omx * omz;
+          const Real omyomz = omy * omz;
+          const Real omsq = omx2 + omy2 + omz2;
+          const Real denom = 1.0 / (1.0 + omsq);
 
-      const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
+          const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
 
-      Real alpha[9];
-      alpha[0] = (1 + omx2) * c0;
-      alpha[1] = (omz + omxomy) * c0;
-      alpha[2] = (-omy + omxomz) * c0;
-      alpha[3] = (-omz + omxomy) * c0;
-      alpha[4] = (1 + omy2) * c0;
-      alpha[5] = (omx + omyomz) * c0;
-      alpha[6] = (omy + omxomz) * c0;
-      alpha[7] = (-omx + omyomz) * c0;
-      alpha[8] = (1 + omz2) * c0;
+          Real alpha[9];
+          alpha[0] = (1 + omx2) * c0;
+          alpha[1] = (omz + omxomy) * c0;
+          alpha[2] = (-omy + omxomz) * c0;
+          alpha[3] = (-omz + omxomy) * c0;
+          alpha[4] = (1 + omy2) * c0;
+          alpha[5] = (omx + omyomz) * c0;
+          alpha[6] = (omy + omxomz) * c0;
+          alpha[7] = (-omx + omyomz) * c0;
+          alpha[8] = (1 + omz2) * c0;
 
-      // jHat
-      Real currents[3];
+          // jHat
+          Real currents[3];
 
-      const Real up1 = up - u0[0];
-      const Real vp1 = vp - u0[1];
-      const Real wp1 = wp - u0[2];
+          const Real up1 = up - u0[0];
+          const Real vp1 = vp - u0[1];
+          const Real wp1 = wp - u0[2];
 
-      const Real udotOm1 = up1 * omx + vp1 * omy + wp1 * omz;
+          const Real udotOm1 = up1 * omx + vp1 * omy + wp1 * omz;
 
-      const Real coef1 = denom * qp;
-      currents[ix_] = (up1 + (vp1 * omz - wp1 * omy + udotOm1 * omx)) * coef1;
-      currents[iy_] = (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
-      currents[iz_] = (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
+          const Real coef1 = denom * qp;
+          currents[ix_] =
+              (up1 + (vp1 * omz - wp1 * omy + udotOm1 * omx)) * coef1;
+          currents[iy_] =
+              (vp1 + (wp1 * omx - up1 * omz + udotOm1 * omy)) * coef1;
+          currents[iz_] =
+              (wp1 + (up1 * omy - vp1 * omx + udotOm1 * omz)) * coef1;
 
-      for (int i = 0; i < nCoef; ++i)
-        deposit_vector_field(jArrt[i], loIdx[i], coef[i], lo, hi, currents, 3);
+          for (int i = 0; i < nCoef; ++i)
+            deposit_vector_field(jArrt[i], loIdx[i], coef[i], lo, hi, currents,
+                                 3);
 
-      for (int i = 0; i < nCoef; i++) {
-        const int iMin = loIdx[i][ix_];
-        const int jMin = loIdx[i][iy_];
-        const int kMin = nDim > 2 ? loIdx[i][iz_] : 0;
-        const int iMax = iMin + 1;
-        const int jMax = jMin + 1;
-        const int kMax = nDim > 2 ? kMin + 1 : 0;
+          for (int i = 0; i < nCoef; i++) {
+            const int iMin = loIdx[i][ix_];
+            const int jMin = loIdx[i][iy_];
+            const int kMin = nDim > 2 ? loIdx[i][iz_] : 0;
+            const int iMax = iMin + 1;
+            const int jMax = jMin + 1;
+            const int kMax = nDim > 2 ? kMin + 1 : 0;
 
-        for (int k1 = kMin; k1 <= kMax; k1++)
-          for (int j1 = jMin; j1 <= jMax; j1++)
-            for (int i1 = iMin; i1 <= iMax; i1++) {
-              const Real wg = coef[i][i1 - iMin][j1 - jMin][k1 - kMin];
-              auto& data0 = mmArrt[i](i1, j1, k1);
-              const int iBase = (1 - (i1 - iMin)) * 9;
-              for (int k2 = kMin; k2 <= kMax; k2++) {
+            for (int k1 = kMin; k1 <= kMax; k1++)
+              for (int j1 = jMin; j1 <= jMax; j1++)
+                for (int i1 = iMin; i1 <= iMax; i1++) {
+                  const Real wg = coef[i][i1 - iMin][j1 - jMin][k1 - kMin];
+                  auto& data0 = mmArrt[i](i1, j1, k1);
+                  const int iBase = (1 - (i1 - iMin)) * 9;
+                  for (int k2 = kMin; k2 <= kMax; k2++) {
 #if (AMREX_SPACEDIM == 3)
-                const int kp = k2 - k1 + 1;
+                    const int kp = k2 - k1 + 1;
 #endif
-                // if (kp > 0)
-                if (true) {
-                  for (int j2 = jMin; j2 <= jMax; j2++) {
-                    const int jp = j2 - j1 + 1;
-                    const Real w0 = wg * coef[i][0][j2 - jMin][k2 - kMin];
-                    const Real w1 = wg * coef[i][1][j2 - jMin][k2 - kMin];
+                    if (true) {
+                      for (int j2 = jMin; j2 <= jMax; j2++) {
+                        const int jp = j2 - j1 + 1;
+                        const Real w0 = wg * coef[i][0][j2 - jMin][k2 - kMin];
+                        const Real w1 = wg * coef[i][1][j2 - jMin][k2 - kMin];
 #if (AMREX_SPACEDIM == 2)
-                    const int idxBase = jp * 27 + iBase;
+                        const int idxBase = jp * 27 + iBase;
 #else
-                    const int idxBase = kp * 81 + jp * 27 + iBase;
+                        const int idxBase = kp * 81 + jp * 27 + iBase;
 #endif
-                    Real* AMREX_RESTRICT data = &(data0[idxBase]);
+                        Real* AMREX_RESTRICT data = &(data0[idxBase]);
 #pragma omp simd
-                    for (int idx = 0; idx < 9; idx++) {
-                      const Real a = alpha[idx];
-                      data[idx] += a * w0;
-                      data[idx + 9] += a * w1;
-                    }
-                  } // j2
-                } // if (kp > 0)
-              } // k2
-            } // i1
-      }
-    } // for p
-  }
+                        for (int idx = 0; idx < 9; idx++) {
+                          const Real a = alpha[idx];
+                          data[idx] += a * w0;
+                          data[idx + 9] += a * w1;
+                        }
+                      } // j2
+                    } // if (kp > 0)
+                  } // k2
+                } // i1
+          }
+        } // for p
+        return foundStray;
+      });
 }
 //==========================================================
 
@@ -442,93 +511,136 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
   const int iLev = 0;
-  const Real* const ploLoc = Geom(iLev).ProbLo();
-  const Real* const invDxLoc = Geom(iLev).InvCellSize();
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
-    const Array4<Real const> nodeB0Arr =
-        useB0 ? (*nodeB0MF)[pti].array() : Array4<Real const>();
-    Array4<Real> const& jArr = jHat[pti].array();
+  const Real* const ploLev = Geom(iLev).ProbLo();
+  const Real* const invDxLev = Geom(iLev).InvCellSize();
 
-    const AoS& particles = pti.GetArrayOfStructs();
+  struct JHatFabCtx {
+    Array4<Real const> nodeBArr;
+    Array4<Real const> nodeB0Arr;
+    Array4<Real> jArr;
+  };
+  const auto fabTable = build_local_fab_table(jHat, [&](const MFIter& mfi) {
+    return JHatFabCtx{ nodeBMF[mfi].const_array(),
+                       useB0 ? (*nodeB0MF)[mfi].const_array()
+                             : Array4<Real const>(),
+                       jHat[mfi].array() };
+  });
 
-    for (const auto& p : particles) {
-      if (p.id() < 0)
-        continue;
+  deposit_cell_tiles_colored(
+      *this, iLev, 3,
+      [&](const auto& item, int /*ord*/, auto checkHomeTag,
+          bool strayPass) -> bool {
+        const auto& ctx = fabTable[item.grid];
+        const Array4<Real const>& nodeBArr = ctx.nodeBArr;
+        const Array4<Real const>& nodeB0Arr = ctx.nodeB0Arr;
+        const Array4<Real>& jArr = ctx.jArr;
 
-      // Print()<<"p = "<<p<<std::endl;
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
+        const AoS& particles = item.ptile->GetArrayOfStructs();
+        const Real ploTile[3] = { ploLev[0], ploLev[1],
+                                  nDim > 2 ? ploLev[2] : 0.0 };
+        const Real invDxTile[3] = { invDxLev[0], invDxLev[1],
+                                    nDim > 2 ? invDxLev[2] : 0.0 };
+        const Real qdto2mcTile = qdto2mc;
+        const bool useB0Tile = useB0;
+        const int iup = iup_;
+        const int ivp = ivp_;
+        const int iwp = iwp_;
+        const int iqp = iqp_;
+        bool foundStray = false;
 
-      //-----calculate interpolate coef begin-------------
-      IntVect loIdx;
-      RealVect dShift;
+        for (const auto& p : particles) {
+          if (p.id() < 0)
+            continue;
 
-      Real coef[2][2][2];
-      find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
-      //-----calculate interpolate coef end-------------
+          //-----calculate interpolate coef begin-------------
+          IntVect loIdx;
+          RealVect dShift;
 
-      Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
+          Real coef[2][2][2];
+          find_node_interpolation(p.pos(), ploTile, invDxTile, loIdx, dShift,
+                                  coef);
+          //-----calculate interpolate coef end-------------
 
-      for (int kk = 0; kk < 2; ++kk)
-        for (int jj = 0; jj < 2; ++jj)
-          for (int ii = 0; ii < 2; ++ii) {
-            Bxl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                            ix_) *
-                   coef[ii][jj][kk];
-            Byl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                            iy_) *
-                   coef[ii][jj][kk];
-            Bzl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                            iz_) *
-                   coef[ii][jj][kk];
+          if constexpr (decltype(checkHomeTag)::value) {
+            const bool isHome = is_home_nodal(loIdx, item.cell);
+            if (!strayPass) {
+              if (!isHome) {
+                foundStray = true;
+                continue;
+              }
+            } else if (isHome) {
+              continue;
+            }
           }
 
-      if (useB0) {
-        // Same gather for the frozen intrinsic field.
-        for (int kk = 0; kk < 2; ++kk)
-          for (int jj = 0; jj < 2; ++jj)
-            for (int ii = 0; ii < 2; ++ii) {
-              Bxl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                               loIdx[iz_] + kk, ix_) *
-                     coef[ii][jj][kk];
-              Byl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                               loIdx[iz_] + kk, iy_) *
-                     coef[ii][jj][kk];
-              Bzl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                               loIdx[iz_] + kk, iz_) *
-                     coef[ii][jj][kk];
+          const Real up = p.rdata(iup);
+          const Real vp = p.rdata(ivp);
+          const Real wp = p.rdata(iwp);
+          const Real qp = p.rdata(iqp);
+
+          Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
+
+          for (int kk = 0; kk < 2; ++kk)
+            for (int jj = 0; jj < 2; ++jj)
+              for (int ii = 0; ii < 2; ++ii) {
+                Bxl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                loIdx[iz_] + kk, ix_) *
+                       coef[ii][jj][kk];
+                Byl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                loIdx[iz_] + kk, iy_) *
+                       coef[ii][jj][kk];
+                Bzl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                loIdx[iz_] + kk, iz_) *
+                       coef[ii][jj][kk];
+              }
+
+          if (useB0Tile) {
+            // Same gather for the frozen intrinsic field.
+            for (int kk = 0; kk < 2; ++kk)
+              for (int jj = 0; jj < 2; ++jj)
+                for (int ii = 0; ii < 2; ++ii) {
+                  Bxl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                   loIdx[iz_] + kk, ix_) *
+                         coef[ii][jj][kk];
+                  Byl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                   loIdx[iz_] + kk, iy_) *
+                         coef[ii][jj][kk];
+                  Bzl += nodeB0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                   loIdx[iz_] + kk, iz_) *
+                         coef[ii][jj][kk];
+                }
+          }
+
+          const Real omx = qdto2mcTile * Bxl;
+          const Real omy = qdto2mcTile * Byl;
+          const Real omz = qdto2mcTile * Bzl;
+
+          // end interpolation
+          const Real omsq = (omx * omx + omy * omy + omz * omz);
+          const Real denom = 1.0 / (1.0 + omsq);
+          const Real udotOm = up * omx + vp * omy + wp * omz;
+
+          {
+            // jHat
+            Real currents[3];
+
+            {
+              const Real coef1 = denom * qp;
+              currents[ix_] =
+                  (up + (vp * omz - wp * omy + udotOm * omx)) * coef1;
+              currents[iy_] =
+                  (vp + (wp * omx - up * omz + udotOm * omy)) * coef1;
+              currents[iz_] =
+                  (wp + (up * omy - vp * omx + udotOm * omz)) * coef1;
             }
-      }
 
-      const Real omx = qdto2mc * Bxl;
-      const Real omy = qdto2mc * Byl;
-      const Real omz = qdto2mc * Bzl;
+            deposit_vector_field(jArr, loIdx, coef, init_dim3(0), init_dim3(1),
+                                 currents, nDim);
+          }
 
-      // end interpolation
-      const Real omsq = (omx * omx + omy * omy + omz * omz);
-      const Real denom = 1.0 / (1.0 + omsq);
-      const Real udotOm = up * omx + vp * omy + wp * omz;
-
-      {
-        // jHat
-        Real currents[3];
-
-        {
-          const Real coef1 = denom * qp;
-          currents[ix_] = (up + (vp * omz - wp * omy + udotOm * omx)) * coef1;
-          currents[iy_] = (vp + (wp * omx - up * omz + udotOm * omy)) * coef1;
-          currents[iz_] = (wp + (up * omy - vp * omx + udotOm * omz)) * coef1;
-        }
-
-        deposit_vector_field(jArr, loIdx, coef, init_dim3(0), init_dim3(1),
-                             currents, nDim);
-      }
-
-    } // for p
-  }
+        } // for p
+        return foundStray;
+      });
 }
 
 //==========================================================
@@ -574,16 +686,16 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
           const int dj = (iDim == 1) ? (isLo ? 1 : -1) : 0;
           const int dk = (iDim == 2) ? (isLo ? 1 : -1) : 0;
 
-          ParallelFor(strip, nCompJ,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-                        const int ei = i + di, ej = j + dj, ek = k + dk;
-                        if (isReflect && c == iDim) {
-                          jArr(ei, ej, ek, c) = 0.0;
-                        } else {
-                          jArr(ei, ej, ek, c) *= 2.0;
-                        }
-                        jArr(i, j, k, c) = 0.0;
-                      });
+          parallel_for_omp(strip, nCompJ,
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+                             const int ei = i + di, ej = j + dj, ek = k + dk;
+                             if (isReflect && c == iDim) {
+                               jArr(ei, ej, ek, c) = 0.0;
+                             } else {
+                               jArr(ei, ej, ek, c) *= 2.0;
+                             }
+                             jArr(i, j, k, c) = 0.0;
+                           });
         }
       }
     }

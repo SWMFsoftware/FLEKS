@@ -2,6 +2,7 @@
 
 #include <AMReX_ParReduce.H>
 
+#include "GpuBackend.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -25,11 +26,18 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    const auto items = collect_cell_tiles(*this, iLev);
+    const int nTiles = static_cast<int>(items.size());
+    if (nTiles == 0)
+      continue;
 
-      AoS& particles = pti.GetArrayOfStructs();
+    const auto tppcFab = useTargetPPC ? &target_PPC(iLev) : nullptr;
+    Vector<Vector<ParticleType> > tileNewParticles(nTiles);
+
+    parallel_for_cell_tiles(items, [&](const auto& item, int ord) {
+      AoS& particles = item.ptile->GetArrayOfStructs();
       if (particles.empty())
-        continue;
+        return;
 
       Real totalMass = 0;
       for (const auto& p : particles) {
@@ -39,12 +47,11 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
       Real avg = 0;
       Real dl = 0;
       if (useTargetPPC) {
-        const auto tppc = target_PPC(iLev)[pti].array();
-        const Box& bx = pti.tilebox();
-        IntVect ibx = bx.smallEnd();
+        const auto tppc = (*tppcFab)[item.grid].const_array();
+        const IntVect ibx = item.cell;
         int target = tppc(ibx);
         if (target <= 0)
-          continue;
+          return;
         avg = totalMass / target;
         // Pre-splitting spreads the fragments over the cell; with #CONSTANTPPV
         // they stay close (a large shift can leave the domain).
@@ -60,16 +67,15 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
       Real maxWeight = avg * maxRatio;
 
-      Vector<ParticleType> newparticles;
-      auto& pTile = get_particle_tile(iLev, pti);
+      Vector<ParticleType>& newparticles = tileNewParticles[ord];
 
       // Sort the particles first to make sure the results
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       if (seperateVelocity) {
-        Box bx = pti.tilebox();
-        set_random_seed(iLev, bx.smallEnd(), IntVect(444));
+        RandNum localRng;
+        localRng.set_seed(calc_random_seed(iLev, item.cell, IntVect(444)));
         Vector<ParticleType*> pold;
         for (size_t ip = 0; ip < particles.size(); ip++) {
           Real qp1 = particles[ip].rdata(iqp_);
@@ -77,31 +83,28 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
             continue;
           pold.push_back(&(particles[ip]));
         }
-        split_particles_by_velocity(pold, newparticles);
+        split_particles_by_velocity(pold, newparticles, &localRng, false);
       } else {
-        const auto lo = lbound(pti.tilebox());
-        const auto hi = ubound(pti.tilebox());
-
-        const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+        const Real xMin = Geom(iLev).LoEdge(item.cell[ix_], ix_) +
                           Geom(iLev).CellSize()[ix_] * 1e-10,
-                   xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                   xMax = Geom(iLev).HiEdge(item.cell[ix_], ix_) -
                           Geom(iLev).CellSize()[ix_] * 1e-10;
 
-        const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+        const Real yMin = Geom(iLev).LoEdge(item.cell[iy_], iy_) +
                           Geom(iLev).CellSize()[iy_] * 1e-10,
-                   yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                   yMax = Geom(iLev).HiEdge(item.cell[iy_], iy_) -
                           Geom(iLev).CellSize()[iy_] * 1e-10;
 
-        const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
+        const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(item.cell[iz_], iz_) +
                                          Geom(iLev).CellSize()[iz_] * 1e-10
                                    : 0.0,
-                   zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
+                   zMax = nDim > 2 ? Geom(iLev).HiEdge(item.cell[iz_], iz_) -
                                          Geom(iLev).CellSize()[iz_] * 1e-10
                                    : 0.0;
 
+        RandNum localRng;
         if (is_neutral()) {
-          Box bx = pti.tilebox();
-          set_random_seed(iLev, bx.smallEnd(), IntVect(999));
+          localRng.set_seed(calc_random_seed(iLev, item.cell, IntVect(999)));
         }
 
         for (auto& p : particles) {
@@ -145,7 +148,6 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
             // attributes, but diverges from legacy test references (e.g. SWMF
             // test22).
             auto pnew = make_particle();
-            set_ids(pnew);
             pnew.pos(ix_) = xp2;
             pnew.pos(iy_) = yp2;
             if (nDim > 2)
@@ -163,14 +165,13 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
               // attributes, but diverges from legacy test references (e.g. SWMF
               // test22).
               auto pnew = make_particle();
-              set_ids(pnew);
               pnew.rdata(iup_) = up1;
               pnew.rdata(ivp_) = vp1;
               pnew.rdata(iwp_) = wp1;
 
-              Real xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
-              Real yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
-              Real zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+              Real xp2 = xp1 + (xMax - xMin) * (localRng() - 0.5);
+              Real yp2 = yp1 + (yMax - yMin) * (localRng() - 0.5);
+              Real zp2 = zp1 + (zMax - zMin) * (localRng() - 0.5);
 
               pnew.pos(ix_) = std::clamp(xp2, xMin, xMax);
               pnew.pos(iy_) = std::clamp(yp2, yMin, yMax);
@@ -183,8 +184,14 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
           }
         }
       }
+    });
 
-      for (auto& p : newparticles) {
+    for (int ord = 0; ord < nTiles; ++ord) {
+      if (tileNewParticles[ord].empty())
+        continue;
+      auto& pTile = *items[ord].ptile;
+      for (auto& p : tileNewParticles[ord]) {
+        set_ids(p);
         pTile.push_back(p);
       }
     }
@@ -193,7 +200,8 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
-    Vector<ParticleType*>& plist, Vector<ParticleType>& newparticles) {
+    Vector<ParticleType*>& plist, Vector<ParticleType>& newparticles,
+    RandNum* rng, bool assignIds) {
 
   if (plist.size() < 2)
     return;
@@ -277,7 +285,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     if (dspeed / dvCell > 2)
       continue;
 
-    bool doSucceed = split_by_seperate_velocity(p1, p2, p3, p4);
+    bool doSucceed = split_by_seperate_velocity(p1, p2, p3, p4, rng, assignIds);
     if (doSucceed) {
       newparticles.push_back(p3);
       newparticles.push_back(p4);
@@ -287,7 +295,8 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
 
 template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
-    ParticleType& p1, ParticleType& p2, ParticleType& p3, ParticleType& p4) {
+    ParticleType& p1, ParticleType& p2, ParticleType& p3, ParticleType& p4,
+    RandNum* rng, bool assignIds) {
 
   Real mt = p1.rdata(iqp_) + p2.rdata(iqp_);
   Real wavg = mt / 4.0;
@@ -333,8 +342,9 @@ bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   {
     // Get the direction of du2
     Real utmp[nDim3];
-    const Real r1 = randNum();
-    const Real r2 = randNum();
+    RandNum& activeRng = (rng != nullptr) ? *rng : randNum;
+    const Real r1 = activeRng();
+    const Real r2 = activeRng();
     random_vector(r1, r2, utmp);
 
     // Correct the amplitude of du2
@@ -348,8 +358,10 @@ bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   // secondary/PT attributes, but diverges from legacy SWMF regression
   // references (e.g. test22). Preserved legacy make_particle() initialization
   // for regression parity.
-  set_ids(p3);
-  set_ids(p4);
+  if (assignIds) {
+    set_ids(p3);
+    set_ids(p4);
+  }
 
   p1.rdata(iqp_) = wavg;
   p2.rdata(iqp_) = wavg;
@@ -405,11 +417,23 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto items = collect_cell_tiles(*this, iLev);
+    const int nTiles = static_cast<int>(items.size());
+    if (nTiles == 0)
+      continue;
 
     const Real vol = dx[iLev].product();
     const Real vacuumMass = vacuum * vol;
+    const auto* statusFab =
+        usePreSplitting && doPreSplitting ? &cell_status(iLev) : nullptr;
+    const auto* tppcFab =
+        (!usePreSplitting && isPPVconstant && isTargetPPCDefined && !isFake2D)
+            ? &target_PPC(iLev)
+            : nullptr;
 
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    Vector<Vector<ParticleType> > tileNewParticles(nTiles);
+
+    parallel_for_cell_tiles(items, [&](const auto& item, int ord) {
       Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / (nPartPerCell.max());
       int nLowerLimit = 0;
       int nGoal = 0;
@@ -418,10 +442,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
         nLowerLimit = nInitial * limit;
         nGoal = nInitial;
         if (doPreSplitting) {
-          const Array4<int const>& status = cell_status(iLev)[pti].array();
-          Box bx = pti.tilebox();
-          IntVect ibx = bx.smallEnd();
-          if (bit::is_refined_neighbour(status(ibx))) {
+          const Array4<int const>& status =
+              (*statusFab)[item.grid].const_array();
+          if (bit::is_refined_neighbour(status(item.cell))) {
             const int refMax = get_ref_ratio(iLev).max();
             const Real refFactor = pow(refMax, nDim);
             nLowerLimit = nLowerLimit * refFactor;
@@ -429,13 +452,12 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             dl = dl / refMax;
           }
         }
-      } else if (isPPVconstant && isTargetPPCDefined && !isFake2D) {
+      } else if (tppcFab != nullptr) {
         // #CONSTANTPPV: the goal is the target of this level, not the
         // particles per cell of the base grid (that would split the refined
         // levels back up to the base number in a few steps).
-        const auto tppc = target_PPC(iLev)[pti].array();
-        const Box tbx = pti.tilebox();
-        const int target = tppc(tbx.smallEnd());
+        const auto tppc = (*tppcFab)[item.grid].const_array();
+        const int target = tppc(item.cell);
         nLowerLimit = target * limit;
         nGoal = target;
         dl = 0.1 * Geom(iLev).CellSize()[ix_] /
@@ -445,17 +467,16 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
         nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
       }
 
-      auto& pTile = get_particle_tile(iLev, pti);
-      AoS& particles = pTile.GetArrayOfStructs();
+      AoS& particles = item.ptile->GetArrayOfStructs();
 
       const int nPartOrig = particles.size();
       if (nPartOrig > nLowerLimit || nPartOrig == 0)
-        continue;
+        return;
 
       const int nSplit =
           nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
       if (nSplit <= 0)
-        continue;
+        return;
 
       Real totalMass = 0;
       for (auto& p : particles) {
@@ -463,9 +484,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
         totalMass += qomSign * p.rdata(iqp_);
       }
       if (totalMass < vacuumMass)
-        continue;
+        return;
 
-      Vector<ParticleType> newparticles;
+      Vector<ParticleType>& newparticles = tileNewParticles[ord];
 
       // Sort the particles by the location first to make sure the results
       // are the same for different number of processors
@@ -487,29 +508,26 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                   return false;
                 });
 
-      const auto lo = lbound(pti.tilebox());
-      const auto hi = ubound(pti.tilebox());
-
-      const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+      const Real xMin = Geom(iLev).LoEdge(item.cell[ix_], ix_) +
                         Geom(iLev).CellSize()[ix_] * 1e-10,
-                 xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                 xMax = Geom(iLev).HiEdge(item.cell[ix_], ix_) -
                         Geom(iLev).CellSize()[ix_] * 1e-10;
 
-      const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+      const Real yMin = Geom(iLev).LoEdge(item.cell[iy_], iy_) +
                         Geom(iLev).CellSize()[iy_] * 1e-10,
-                 yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                 yMax = Geom(iLev).HiEdge(item.cell[iy_], iy_) -
                         Geom(iLev).CellSize()[iy_] * 1e-10;
 
-      const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
+      const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(item.cell[iz_], iz_) +
                                        Geom(iLev).CellSize()[iz_] * 1e-10
                                  : 0.0,
-                 zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
+                 zMax = nDim > 2 ? Geom(iLev).HiEdge(item.cell[iz_], iz_) -
                                        Geom(iLev).CellSize()[iz_] * 1e-10
                                  : 0.0;
 
+      RandNum localRng;
       if (is_neutral() || seperateVelocity) {
-        Box bx = pti.tilebox();
-        set_random_seed(iLev, bx.smallEnd(), IntVect(888));
+        localRng.set_seed(calc_random_seed(iLev, item.cell, IntVect(888)));
       }
 
       if (seperateVelocity) {
@@ -518,7 +536,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
         for (int ip = 0; ip < nSplit; ip++) {
           pold.push_back(&(particles[ip]));
         }
-        split_particles_by_velocity(pold, newparticles);
+        split_particles_by_velocity(pold, newparticles, &localRng, false);
       } else {
         for (int ip = 0; ip < nSplit; ip++) {
           auto& p = particles[ip];
@@ -546,9 +564,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
           for (int iNew = 0; iNew < nNew; iNew++) {
             if (is_neutral()) {
-              xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
-              yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
-              zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+              xp2 = xp1 + (xMax - xMin) * (localRng() - 0.5);
+              yp2 = yp1 + (yMax - yMin) * (localRng() - 0.5);
+              zp2 = zp1 + (zMax - zMin) * (localRng() - 0.5);
             } else {
               xp1 -= dpx;
               yp1 -= dpy;
@@ -573,7 +591,6 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             // attributes, but diverges from legacy test references (e.g. SWMF
             // test22).
             auto pnew = make_particle();
-            set_ids(pnew);
 
             pnew.pos(ix_) = xp2;
             pnew.pos(iy_) = yp2;
@@ -587,8 +604,14 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
           }
         }
       }
+    });
 
-      for (auto& p : newparticles) {
+    for (int ord = 0; ord < nTiles; ++ord) {
+      if (tileNewParticles[ord].empty())
+        continue;
+      auto& pTile = *items[ord].ptile;
+      for (auto& p : tileNewParticles[ord]) {
+        set_ids(p);
         pTile.push_back(p);
       }
     }
@@ -843,12 +866,14 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     if (pheavy / plight > mergePartRatioMax)
       return false;
 
-    randNum.set_seed(seed);
-    shuffle_fish_yates(idx_I, randNum);
+    RandNum localRng;
+    localRng.set_seed(seed);
+    shuffle_fish_yates(idx_I, localRng);
 
   } else {
-    randNum.set_seed(seed);
-    shuffle_fish_yates(partIdx, randNum);
+    RandNum localRng;
+    localRng.set_seed(seed);
+    shuffle_fish_yates(partIdx, localRng);
 
     idx_I.resize(nPartCombine, 0);
     for (int ip = 0; ip < nPartCombine; ip++) {
@@ -948,27 +973,28 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    const auto* tppcFab = useTargetPPC ? &target_PPC(iLev) : nullptr;
+
+    parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int) {
       int nPartGoal = 0;
-      if (useTargetPPC) {
-        const auto tppc = target_PPC(iLev)[pti].array();
-        const Box& bx = pti.tilebox();
-        IntVect ibx = bx.smallEnd();
-        int target = tppc(ibx);
+      if (tppcFab != nullptr) {
+        const auto tppc = (*tppcFab)[item.grid].const_array();
+        int target = tppc(item.cell);
         nPartGoal = target * limit;
       } else {
         nPartGoal = product(nPartPerCell) * limit * pow(pLevRatio, iLev);
       }
 
       // It is assumed the tile size is 1x1x1.
-      Box bx = pti.tilebox();
-      long seed = set_random_seed(iLev, bx.smallEnd(), IntVect(777));
+      long seed = calc_random_seed(iLev, item.cell, IntVect(777));
+      RandNum localRng;
+      localRng.set_seed(seed);
 
-      AoS& particles = pti.GetArrayOfStructs();
+      AoS& particles = item.ptile->GetArrayOfStructs();
       const int nPartOrig = particles.size();
 
       if (nPartOrig <= nPartGoal || nPartOrig == 0)
-        continue;
+        return;
 
       // The range of the velocity domain:
       // [-r0,r0]*thermal_velocity+bulk_velocity
@@ -983,7 +1009,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
       }
 
       if (nCell < 3)
-        continue;
+        return;
 
       // Sort the particles by the location first to make sure the results
       // are the same for different number of processors
@@ -1032,7 +1058,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
       // Velocity domain range.
       Real velMin_D[nDim3], velMax_D[nDim3];
       for (int iDir = 0; iDir < nDim3; iDir++) {
-        Real dvshift = (randNum() - 0.5) * dv;
+        Real dvshift = (localRng() - 0.5) * dv;
         velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
         velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
       }
@@ -1155,7 +1181,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
               merged[idx_I[ip]] = true;
             }
           }
-    }
+    });
   }
 }
 
@@ -1166,10 +1192,11 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
   template void T::limit_weight(Real, bool, bool);                             \
   template void T::split(Real, bool, bool);                                    \
   template void T::merge(Real, bool);                                          \
-  template void T::split_particles_by_velocity(Vector<T::ParticleType*>&,      \
-                                               Vector<T::ParticleType>&);      \
+  template void T::split_particles_by_velocity(                                \
+      Vector<T::ParticleType*>&, Vector<T::ParticleType>&, RandNum*, bool);    \
   template bool T::split_by_seperate_velocity(                                 \
-      T::ParticleType&, T::ParticleType&, T::ParticleType&, T::ParticleType&); \
+      T::ParticleType&, T::ParticleType&, T::ParticleType&, T::ParticleType&,  \
+      RandNum*, bool);                                                         \
   template bool T::merge_particles_accurate(int, T::AoS&, Vector<int>&,        \
                                             Vector<int>&, int, int,            \
                                             Vector<Real>&, Real);              \

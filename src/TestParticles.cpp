@@ -222,28 +222,24 @@ void TestParticles::move_and_save_charged_particles(
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
   const LevelGeomBox lb = make_level_geom_box(iLev);
-  int lastFab = -1;
-  ActiveRegionBox ab;
+  const BoxArray& ba = ParticleBoxArray(iLev);
+  const bool hasJacB = (nodeJacBMF != nullptr);
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
-    const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
-    const bool hasJacB = (nodeJacBMF != nullptr);
+  parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int /*ord*/) {
+    const Array4<Real const>& nodeEArr = nodeEMF[item.grid].array();
+    const Array4<Real const>& nodeBArr = nodeBMF[item.grid].array();
     const Array4<Real const> nodeJacBArr =
-        hasJacB ? (*nodeJacBMF)[pti].array() : Array4<Real const>{};
+        hasJacB ? (*nodeJacBMF)[item.grid].array() : Array4<Real const>{};
     // NOTE: nodeBMF is the *total* field: ParticleTracker::update_field() adds
     // the frozen intrinsic field B0 to its copy of pic.nodeB, so the gather
     // below needs no extra term.
 
-    auto& particles = pti.GetArrayOfStructs();
+    auto& particles = item.ptile->GetArrayOfStructs();
 
-    if (pti.index() != lastFab) {
-      lastFab = pti.index();
-      const Box& bx = cell_status(iLev)[pti].box();
-      ab = make_active_region_box(lb, pti.validbox(), bx);
-    }
+    const Box& bx = cell_status(iLev)[item.grid].box();
+    const ActiveRegionBox ab = make_active_region_box(lb, ba[item.grid], bx);
 
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Array4<int const>& status = cell_status(iLev)[item.grid].array();
 
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
@@ -419,7 +415,7 @@ void TestParticles::move_and_save_charged_particles(
         p.id() = -1;
       }
     } // for p
-  } // for pti
+  }); // parallel_for_cell_tiles
 
   redistribute_particles();
 }
@@ -430,19 +426,15 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
   timing_func("TestParticles::move_neutrals");
 
   const LevelGeomBox lb = make_level_geom_box(iLev);
-  int lastFab = -1;
-  ActiveRegionBox ab;
+  const BoxArray& ba = ParticleBoxArray(iLev);
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    auto& particles = pti.GetArrayOfStructs();
+  parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int /*ord*/) {
+    auto& particles = item.ptile->GetArrayOfStructs();
 
-    if (pti.index() != lastFab) {
-      lastFab = pti.index();
-      const Box& bx = cell_status(iLev)[pti].box();
-      ab = make_active_region_box(lb, pti.validbox(), bx);
-    }
+    const Box& bx = cell_status(iLev)[item.grid].box();
+    const ActiveRegionBox ab = make_active_region_box(lb, ba[item.grid], bx);
 
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Array4<int const>& status = cell_status(iLev)[item.grid].array();
 
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
@@ -475,7 +467,7 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
         p.id() = -1;
       }
     }
-  }
+  });
 
   redistribute_particles();
 }

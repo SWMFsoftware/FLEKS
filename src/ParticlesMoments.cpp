@@ -4,6 +4,7 @@
 #include <AMReX_ParticleInterpolators.H>
 #include <AMReX_ParticleReduce.H>
 
+#include "GpuBackend.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -41,36 +42,59 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
   const Real invV = invVol[iLev];
   const int iqp = iqp_;
 
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real> const& chargeArr = netChargeMF[pti].array();
-    Array4<RealCMM> const& mmArr = centerMM[pti].array();
-    const AoS& particles = pti.GetArrayOfStructs();
+  const auto fabTable =
+      build_local_fab_table(netChargeMF, [&](const MFIter& mfi) {
+        return std::pair{ netChargeMF[mfi].array(), centerMM[mfi].array() };
+      });
 
-    for (const auto& p : particles) {
-      /*
-      Q: Why do not check p.id() < 0?
-      A: IDs of ghost cell particles are set to -1 inside
-      divE_correct_position(), but these particles should be take into account
-      here.
-      */
-      ParticleInterpolator::Linear interp(p, plo, dxi);
-      interp.ParticleToMesh(
-          p, chargeArr, 0, 0, 1,
-          [=] AMREX_GPU_DEVICE(const ParticleType& part, int /*comp*/) {
-            return part.rdata(iqp) * invV;
-          });
+  deposit_cell_tiles_colored(
+      *this, iLev, 3,
+      [&](const auto& item, int /*ord*/, auto checkHomeTag,
+          bool strayPass) -> bool {
+        const auto& [chargeArr, mmArr] = fabTable[item.grid];
+        const AoS& particles = item.ptile->GetArrayOfStructs();
+        bool foundStray = false;
 
-      if (!doNetChargeOnly) {
-        const IntVect loIdx(
-            AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
-        const RealVect dShift(
-            AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
-        accumulate_mass_matrix_contribution(iLev, loIdx, dShift, p.rdata(iqp),
-                                            mmArr);
-      } // if doChargeOnly
+        for (const auto& p : particles) {
+          /*
+          Q: Why do not check p.id() < 0?
+          A: IDs of ghost cell particles are set to -1 inside
+          divE_correct_position(), but these particles should be take into
+          account here.
+          */
+          ParticleInterpolator::Linear interp(p, plo, dxi);
+          const IntVect loIdx(
+              AMREX_D_DECL(interp.index[0], interp.index[1], interp.index[2]));
+          if constexpr (decltype(checkHomeTag)::value) {
+            const bool isHome = AMREX_D_TERM(
+                (loIdx[0] == item.cell[0] - 1 || loIdx[0] == item.cell[0]),
+                &&(loIdx[1] == item.cell[1] - 1 || loIdx[1] == item.cell[1]),
+                &&(loIdx[2] == item.cell[2] - 1 || loIdx[2] == item.cell[2]));
+            if (!strayPass) {
+              if (!isHome) {
+                foundStray = true;
+                continue;
+              }
+            } else if (isHome) {
+              continue;
+            }
+          }
 
-    } // for p
-  }
+          interp.ParticleToMesh(
+              p, chargeArr, 0, 0, 1,
+              [=] AMREX_GPU_DEVICE(const ParticleType& part, int /*comp*/) {
+                return part.rdata(iqp) * invV;
+              });
+
+          if (!doNetChargeOnly) {
+            const RealVect dShift(
+                AMREX_D_DECL(interp.w[1], interp.w[3], interp.w[5]));
+            accumulate_mass_matrix_contribution(iLev, loIdx, dShift,
+                                                p.rdata(iqp), mmArr);
+          }
+        } // for p
+        return foundStray;
+      });
 }
 
 //==========================================================
@@ -91,96 +115,144 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
   }
   for (int nLev = finer_level; nLev >= coarser_level; nLev--) {
     if (iLev == nLev) {
-      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
-        Array4<Real> const& chargeArr = netChargeMF[pti].array();
+      deposit_cell_tiles_colored(
+          *this, nLev, 3,
+          [&](const auto& item, int /*ord*/, bool strayPass) -> bool {
+            Array4<Real> const& chargeArr = netChargeMF[item.grid].array();
+            Array4<RealCMM> const& mmArr = centerMM[item.grid].array();
+            const Array4<int const>& status =
+                cell_status(nLev)[item.grid].array();
+            const AoS& particles = item.ptile->GetArrayOfStructs();
+            const Dim3 lo = init_dim3(0);
+            const Dim3 hi = init_dim3(1);
+            bool foundStray = false;
+            for (const auto& p : particles) {
+              const Real qp = p.rdata(iqp_);
+              IntVect loIdx;
+              RealVect dShift;
+              Real coef[2][2][2];
+              find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                      Geom(iLev).InvCellSize(), loIdx, dShift,
+                                      coef);
+              const bool isHome = AMREX_D_TERM(
+                  (loIdx[0] == item.cell[0] - 1 || loIdx[0] == item.cell[0]),
+                  &&(loIdx[1] == item.cell[1] - 1 || loIdx[1] == item.cell[1]),
+                  &&(loIdx[2] == item.cell[2] - 1 || loIdx[2] == item.cell[2]));
+              if (!strayPass) {
+                if (!isHome) {
+                  foundStray = true;
+                  continue;
+                }
+              } else if (isHome) {
+                continue;
+              }
+              const Real cTmp = qp * invVol[iLev];
+              deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
 
-        Array4<RealCMM> const& mmArr = centerMM[pti].array();
-        const Array4<int const>& status = cell_status(nLev)[pti].array();
-        const AoS& particles = pti.GetArrayOfStructs();
-        const Dim3 lo = init_dim3(0);
-        const Dim3 hi = init_dim3(1);
-        for (const auto& p : particles) {
-          const Real qp = p.rdata(iqp_);
-          IntVect loIdx;
-          RealVect dShift;
-          IntVect realIdx;
-          RealVect tmprv;
-          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
-                              Geom(nLev).InvCellSize(), realIdx, tmprv);
-          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
-                               bit::is_lev_edge(status(realIdx)))) {
-            Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                    Geom(iLev).InvCellSize(), loIdx, dShift,
-                                    coef);
-            const Real cTmp = qp * invVol[iLev];
-            deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
-          }
-
-          bool skipParticle = false;
-          if (n_lev() > 1) {
-            skipParticle = skip_particle_for_dive_cleaning(p.pos(), Geom(iLev),
-                                                           iLev, status);
-          }
-          if (!doNetChargeOnly && !skipParticle) {
-            accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp, mmArr);
-          }
-        }
-      }
+              bool skipParticle = false;
+              if (n_lev() > 1) {
+                skipParticle = skip_particle_for_dive_cleaning(
+                    p.pos(), Geom(iLev), iLev, status);
+              }
+              if (!doNetChargeOnly && !skipParticle) {
+                accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp,
+                                                    mmArr);
+              }
+            }
+            return foundStray;
+          });
     }
     if (nLev > iLev) {
-      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
-        Array4<Real> const& chargeArr = jf[pti].array();
-        const Array4<int const>& status = cell_status(nLev)[pti].array();
-        const AoS& particles = pti.GetArrayOfStructs();
-        const Dim3 lo = init_dim3(0);
-        const Dim3 hi = init_dim3(1);
-        for (const auto& p : particles) {
-          const Real qp = p.rdata(iqp_);
-          IntVect loIdx;
-          RealVect dShift;
-          IntVect realIdx;
-          RealVect tmprv;
-          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
-                              Geom(nLev).InvCellSize(), realIdx, tmprv);
-          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
-                               bit::is_lev_edge(status(realIdx)))) {
-            Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                    Geom(iLev).InvCellSize(), loIdx, dShift,
-                                    coef);
-            const Real cTmp = qp * invVol[iLev];
-            deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
-          }
-        }
-      }
+      deposit_cell_tiles_colored(
+          *this, nLev, 6,
+          [&](const auto& item, int /*ord*/, bool strayPass) -> bool {
+            Array4<Real> const& chargeArr = jf[item.grid].array();
+            const Array4<int const>& status =
+                cell_status(nLev)[item.grid].array();
+            const AoS& particles = item.ptile->GetArrayOfStructs();
+            const Dim3 lo = init_dim3(0);
+            const Dim3 hi = init_dim3(1);
+            const IntVect cCell = amrex::coarsen(item.cell, 2);
+            bool foundStray = false;
+            for (const auto& p : particles) {
+              const Real qp = p.rdata(iqp_);
+              IntVect loIdx;
+              RealVect dShift;
+              IntVect realIdx;
+              RealVect tmprv;
+              find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
+                                  Geom(nLev).InvCellSize(), realIdx, tmprv);
+              if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
+                                   bit::is_lev_edge(status(realIdx)))) {
+                Real coef[2][2][2];
+                find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                        Geom(iLev).InvCellSize(), loIdx, dShift,
+                                        coef);
+                const bool isHome = AMREX_D_TERM(
+                    (loIdx[0] == cCell[0] - 1 || loIdx[0] == cCell[0]),
+                    &&(loIdx[1] == cCell[1] - 1 || loIdx[1] == cCell[1]),
+                    &&(loIdx[2] == cCell[2] - 1 || loIdx[2] == cCell[2]));
+                if (!strayPass) {
+                  if (!isHome) {
+                    foundStray = true;
+                    continue;
+                  }
+                } else if (isHome) {
+                  continue;
+                }
+                const Real cTmp = qp * invVol[iLev];
+                deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
+              }
+            }
+            return foundStray;
+          });
     }
     if (nLev < iLev) {
-      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
-        Array4<Real> const& chargeArr = jc[pti].array();
-        const Array4<int const>& status = cell_status(nLev)[pti].array();
-        const AoS& particles = pti.GetArrayOfStructs();
-        const Dim3 lo = init_dim3(0);
-        const Dim3 hi = init_dim3(1);
-        for (const auto& p : particles) {
-          const Real qp = p.rdata(iqp_);
-          IntVect loIdx;
-          RealVect dShift;
-          IntVect realIdx;
-          RealVect tmprv;
-          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
-                              Geom(nLev).InvCellSize(), realIdx, tmprv);
-          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
-                               bit::is_lev_edge(status(realIdx)))) {
-            Real coef[2][2][2];
-            find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
-                                    Geom(iLev).InvCellSize(), loIdx, dShift,
-                                    coef);
-            const Real cTmp = qp * invVol[iLev];
-            deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
-          }
-        }
-      }
+      deposit_cell_tiles_colored(
+          *this, nLev, 3,
+          [&](const auto& item, int /*ord*/, bool strayPass) -> bool {
+            Array4<Real> const& chargeArr = jc[item.grid].array();
+            const Array4<int const>& status =
+                cell_status(nLev)[item.grid].array();
+            const AoS& particles = item.ptile->GetArrayOfStructs();
+            const Dim3 lo = init_dim3(0);
+            const Dim3 hi = init_dim3(1);
+            bool foundStray = false;
+            for (const auto& p : particles) {
+              const Real qp = p.rdata(iqp_);
+              IntVect loIdx;
+              RealVect dShift;
+              IntVect realIdx;
+              RealVect tmprv;
+              find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
+                                  Geom(nLev).InvCellSize(), realIdx, tmprv);
+              if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
+                                   bit::is_lev_edge(status(realIdx)))) {
+                Real coef[2][2][2];
+                find_cell_interpolation(p.pos(), Geom(iLev).ProbLo(),
+                                        Geom(iLev).InvCellSize(), loIdx, dShift,
+                                        coef);
+                const bool isHome =
+                    AMREX_D_TERM((loIdx[0] >= 2 * item.cell[0] - 1 &&
+                                  loIdx[0] <= 2 * item.cell[0] + 1),
+                                 &&(loIdx[1] >= 2 * item.cell[1] - 1 &&
+                                    loIdx[1] <= 2 * item.cell[1] + 1),
+                                 &&(loIdx[2] >= 2 * item.cell[2] - 1 &&
+                                    loIdx[2] <= 2 * item.cell[2] + 1));
+                if (!strayPass) {
+                  if (!isHome) {
+                    foundStray = true;
+                    continue;
+                  }
+                } else if (isHome) {
+                  continue;
+                }
+                const Real cTmp = qp * invVol[iLev];
+                deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
+              }
+            }
+            return foundStray;
+          });
     }
   }
 }
@@ -204,6 +276,29 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
   Real sum0 = 0.0, sum1 = 0.0, sum2 = 0.0, sum3 = 0.0, sum4 = 0.0;
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if constexpr (!fleksUseGpu) {
+      // CPU: thread-count independent summation order.
+      const auto r = deterministic_particle_sum<5>(
+          *this, iLev, [=](const ParticleType& p, std::array<Real, 5>& s) {
+            if (p.id() < 0)
+              return;
+            const Real up = p.rdata(iup);
+            const Real vp = p.rdata(ivp);
+            const Real wp = p.rdata(iwp);
+            const Real qp = p.rdata(iqp);
+            s[0] += qp;
+            s[1] += qp * up;
+            s[2] += qp * vp;
+            s[3] += qp * wp;
+            s[4] += 0.5 * qp * (up * up + vp * vp + wp * wp);
+          });
+      sum0 += r[0];
+      sum1 += r[1];
+      sum2 += r[2];
+      sum3 += r[3];
+      sum4 += r[4];
+      continue;
+    }
     auto r = amrex::ParticleReduce<ReduceData<Real, Real, Real, Real, Real> >(
         *this, iLev,
         [=] AMREX_GPU_DEVICE(const ParticleType& p)
@@ -308,7 +403,7 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
 
         const bool isReflect = (faceBc == ParticleBC::reflect);
 
-        ParallelFor(
+        parallel_for_omp(
             strip, nCompMF, [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
               // Odd parity components relative to iDim under
               // specular reflection: normal momentum and
@@ -371,47 +466,49 @@ void Particles<NStructReal, NStructInt>::fold_wall_ghost_nodes(MultiFab& mf,
 //==========================================================
 template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::sum_moments(
-    Vector<MultiFab>& momentsMF, Vector<MultiFab>& nodeBMF, Real dt) {
+    Vector<MultiFab>& momentsMF, Vector<MultiFab>& /*nodeBMF*/, Real /*dt*/) {
   timing_func("Pts::sum_moments");
 
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     timing_func("Pts::sum_moments_node_deposit");
     momentsMF[iLev].setVal(0.0);
-    const Real* const ploLoc = Geom(iLev).ProbLo();
-    const Real* const invDxLoc = Geom(iLev).InvCellSize();
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
+    const Real* const ploLev = Geom(iLev).ProbLo();
+    const Real* const invDxLev = Geom(iLev).InvCellSize();
 
-      const AoS& particles = pti.GetArrayOfStructs();
-
+    auto depositDirect = [&](const AoS& particles,
+                             const Array4<Real>& momentsArr) -> Real {
+      const Real ploTile[3] = { ploLev[0], ploLev[1],
+                                nDim > 2 ? ploLev[2] : 0.0 };
+      const Real invDxTile[3] = { invDxLev[0], invDxLev[1],
+                                  nDim > 2 ? invDxLev[2] : 0.0 };
+      const int iup = iup_;
+      const int ivp = ivp_;
+      const int iwp = iwp_;
+      const int iqp = iqp_;
       const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
+      Real localEnergy = 0.0;
 
-      // Print() << "iLev = " << iLev << std::endl;
       for (const auto& p : particles) {
         if (p.id() < 0)
           continue;
 
-        // Print() << "p = " << p << std::endl;
-        const Real up = p.rdata(iup_);
-        const Real vp = p.rdata(ivp_);
-        const Real wp = p.rdata(iwp_);
-        const Real qp = p.rdata(iqp_);
+        const Real up = p.rdata(iup);
+        const Real vp = p.rdata(ivp);
+        const Real wp = p.rdata(iwp);
+        const Real qp = p.rdata(iqp);
+        localEnergy += qp * (up * up + vp * vp + wp * wp);
 
-        //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
         Real coef[2][2][2];
-        find_node_interpolation(p.pos(), ploLoc, invDxLoc, loIdx, dShift, coef);
-        //-----calculate interpolate coef end-------------
+        find_node_interpolation(p.pos(), ploTile, invDxTile, loIdx, dShift,
+                                coef);
 
-        //-------nodePlasma begin---------
         Real pMoments[nMoments];
-
         pMoments[iNum_] = 1;
         pMoments[iRho_] = qp;
-
         {
           const Real mx = qp * up;
           const Real my = qp * vp;
@@ -419,11 +516,9 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           pMoments[iMx_] = mx;
           pMoments[iMy_] = my;
           pMoments[iMz_] = mz;
-
           pMoments[iPxx_] = mx * up;
           pMoments[iPyy_] = my * vp;
           pMoments[iPzz_] = mz * wp;
-
           pMoments[iPxy_] = mx * vp;
           pMoments[iPxz_] = mx * wp;
           pMoments[iPyz_] = my * wp;
@@ -447,16 +542,19 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
             }
           }
         }
+      }
+      return localEnergy;
+    };
 
-        //-------nodePlasma end---------
-
-        energy += qp * (up * up + vp * vp + wp * wp);
-      } // for p
-    }
+    energy += deposit_moments_omp(
+        *this, iLev, momentsMF[iLev], nMoments,
+        [&](const auto& ptile, const Array4<Real>& momentsArr) -> Real {
+          return depositDirect(ptile.GetArrayOfStructs(), momentsArr);
+        });
 
     // Exclude the number density.
-    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
-                         momentsMF[iLev].nGrow());
+    mf_mult(momentsMF[iLev], invVol[iLev], 0, nMoments - 1,
+            momentsMF[iLev].nGrow());
 
     //----- Mirror boundary condition for the node-centered deposit ------------
     // A node-centered CIC deposit at a non-periodic wall leaves the boundary
@@ -551,7 +649,7 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
       const Box& box = mfi.fabbox();
       const Array4<Real>& arr = fab.array();
 
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         const Real rho = arr(i, j, k, iRho_);
         if (rho > 0) {
           const Real invRho = 1.0 / rho;

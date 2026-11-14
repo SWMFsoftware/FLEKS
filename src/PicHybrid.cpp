@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include <AMReX_MultiFabUtil.H>
@@ -241,249 +242,268 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           : 0.0;
   const bool useHall = useHallTerm;
 
-  for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrE = Eout[mfi].array();
-    const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
-    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-    const Array4<Real const> momentsPrev =
-        usePrevMoments ? nodePlasmaPrev[nSpecies][iLev][mfi].array()
-                       : Array4<Real const>();
-    const Array4<Real const> arrJ =
-        needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
-    const Array4<Real const> arrEambi = (electronTemperature > 0)
-                                            ? nodeEambi[iLev][mfi].array()
-                                            : Array4<Real const>();
-    const Array4<Real const> arrEtaReg =
-        hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
-                                : Array4<Real const>();
-    // Upwind face jumps, one array per direction over the faces the nodes of
-    // this box use: the node range along the direction, and one more cell on
-    // the low side of each transverse direction (the cells c-1 and c around a
-    // node). They read the cells i-2..i+1 along the direction, within the two
-    // ghost layers of centerBin.
-    FArrayBox faceJump[nDim3];
-    Array4<Real const> arrFace[nDim3];
-    if (doUpwind) {
-      const Array4<Real const>& arrBin = centerBin[mfi].const_array();
+  {
+    struct UpwindScratch {
+      FArrayBox faceJump[nDim3];
       FArrayBox slopeFab;
-      for (int iDir = 0; iDir < nDim; ++iDir) {
-        if (!upwindDir[iDir])
-          continue;
-        Box faceBox(box.smallEnd(), box.bigEnd());
-        for (int t = 0; t < nDim; ++t) {
-          if (t != iDir)
-            faceBox.growLo(t, 1);
-        }
-        // A face uses the slopes of the cells on both of its sides.
-        Box slopeBox = faceBox;
-        slopeBox.growLo(iDir, 1);
-        slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
-        faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
-        const Array4<Real>& arrS = slopeFab.array();
-        const Array4<Real const>& arrSc = slopeFab.const_array();
-        const Array4<Real>& arrF = faceJump[iDir].array();
-        if (iDir == ix_) {
-          ParallelFor(slopeBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrS(i, j, k, iVar) = upwind_cell_slope<ix_>(
-                            arrBin, i, j, k, iVar, limTypeUp);
-                      });
-          ParallelFor(faceBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
-                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                      });
-        } else if (iDir == iy_) {
-          ParallelFor(slopeBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrS(i, j, k, iVar) = upwind_cell_slope<iy_>(
-                            arrBin, i, j, k, iVar, limTypeUp);
-                      });
-          ParallelFor(faceBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
-                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                      });
-        } else {
-          ParallelFor(slopeBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrS(i, j, k, iVar) = upwind_cell_slope<iz_>(
-                            arrBin, i, j, k, iVar, limTypeUp);
-                      });
-          ParallelFor(faceBox, nDim3,
-                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-                        arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
-                            arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
-                      });
-        }
-        arrFace[iDir] = faceJump[iDir].const_array();
-      }
-    }
-    const Array4<Real const> arrFaceX = arrFace[ix_];
-    const Array4<Real const> arrFaceY = arrFace[iy_];
-    const Array4<Real const> arrFaceZ = arrFace[iz_];
-
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      const Real rhoCur = moments(i, j, k, iRho_);
-      const Real rhoPrev = usePrevMoments ? momentsPrev(i, j, k, iRho_) : 0.0;
-      Real rho = wCurRho * rhoCur;
-      if (usePrevMoments) {
-        rho += wPrevRho * rhoPrev;
-      }
-      Real ui = 0.0, vi = 0.0, wi = 0.0;
-      const Real invRhoEff =
-          (rho > 0.0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
-
-      if (usePredictorCorrector) {
-        Real mx = wCurM * moments(i, j, k, iMx_);
-        Real my = wCurM * moments(i, j, k, iMy_);
-        Real mz = wCurM * moments(i, j, k, iMz_);
-        if (usePrevMoments) {
-          mx += wPrevM * momentsPrev(i, j, k, iMx_);
-          my += wPrevM * momentsPrev(i, j, k, iMy_);
-          mz += wPrevM * momentsPrev(i, j, k, iMz_);
-        }
-        if (rho > 0.0) {
-          ui = mx * invRhoEff;
-          vi = my * invRhoEff;
-          wi = mz * invRhoEff;
-        }
-      } else {
-        // Single-pass hybrid leapfrog:
-        // moments(iMx_) carries momentum deposited at post-drift positions
-        // x^{n+1} with half-step velocities v^{n+1/2}, i.e. rho_cur *
-        // u^{n+1/2}. momentsPrev(iMx_) carries rho_prev * u^{n-1/2} at
-        // positions x^n. Directly interpolating raw momentum and dividing by
-        // time-interpolated density gives u_i = U * rho_next / ((rho_prev +
-        // rho_next)/2) != U for nonuniform density advecting at uniform U,
-        // introducing an O(dt) error. Instead, reconstruct ion fluid velocity
-        // u_i at target time hstep:
-        Real uiCur = 0.0, viCur = 0.0, wiCur = 0.0;
-        if (rhoCur > 0.0) {
-          const Real invRhoCur = 1.0 / amrex::max(rhoCur, rhoMinOhm);
-          uiCur = moments(i, j, k, iMx_) * invRhoCur;
-          viCur = moments(i, j, k, iMy_) * invRhoCur;
-          wiCur = moments(i, j, k, iMz_) * invRhoCur;
-        }
-        ui = uiCur;
-        vi = viCur;
-        wi = wiCur;
-        if (usePrevMoments && wPrevM != 0.0) {
-          Real uiPrev = 0.0, viPrev = 0.0, wiPrev = 0.0;
-          if (rhoPrev > 0.0) {
-            const Real invRhoPrev = 1.0 / amrex::max(rhoPrev, rhoMinOhm);
-            uiPrev = momentsPrev(i, j, k, iMx_) * invRhoPrev;
-            viPrev = momentsPrev(i, j, k, iMy_) * invRhoPrev;
-            wiPrev = momentsPrev(i, j, k, iMz_) * invRhoPrev;
-          }
-          ui = wCurM * uiCur + wPrevM * uiPrev;
-          vi = wCurM * viCur + wPrevM * viPrev;
-          wi = wCurM * wiCur + wPrevM * wiPrev;
-        }
-      }
-
-      Real bx = arrB(i, j, k, ix_);
-      Real by = arrB(i, j, k, iy_);
-      Real bz = arrB(i, j, k, iz_);
-
-      // Convection term: E = -U_i x B
-      Real ex = -(vi * bz - wi * by);
-      Real ey = -(wi * bx - ui * bz);
-      Real ez = -(ui * by - vi * bx);
-
-      // J = curl(B)/(4*pi)
-      Real jx = 0.0, jy = 0.0, jz = 0.0;
-      if (needJ) {
-        jx = arrJ(i, j, k, ix_) * invFourPI;
-        jy = arrJ(i, j, k, iy_) * invFourPI;
-        jz = arrJ(i, j, k, iz_) * invFourPI;
-      }
-
-      // eta * J (global + regional resistivity)
-      Real etaTotal = etaResistivity;
-      if (hasRegionalResistivity_) {
-        etaTotal += arrEtaReg(i, j, k);
-      }
-      if (etaTotal > 0.0) {
-        ex += etaTotal * jx;
-        ey += etaTotal * jy;
-        ez += etaTotal * jz;
-      }
-
-      // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
-      // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
-      if (includeAmbi && electronTemperature > 0) {
-        ex += arrEambi(i, j, k, ix_);
-        ey += arrEambi(i, j, k, iy_);
-        ez += arrEambi(i, j, k, iz_);
-      }
-
-      // Hall term: (J x B) / rho_q
-      if (rho > 0 && useHallTerm) {
-        Real hall_x = (jy * bz - jz * by) * invRhoEff;
-        Real hall_y = (jz * bx - jx * bz) * invRhoEff;
-        Real hall_z = (jx * by - jy * bx) * invRhoEff;
-
-        ex += hall_x;
-        ey += hall_y;
-        ez += hall_z;
-      }
-
-      // Upwind (Rusanov) dissipation: E += sum_d (a_d/2) e_d x (B^R - B^L).
-      // The jumps use the evolved B only (no intrinsic B0), the speeds the
-      // total B and the electron velocity u_e = u_i - J/rho.
-      if (doUpwind && (rho > 0 || fixedSpeedUp > 0)) {
-        Real cFast = 0.0, bAbs = 0.0;
-        Real ue[nDim3] = { ui, vi, wi };
-        if (fixedSpeedUp <= 0) {
-          const Real b2 = bx * bx + by * by + bz * bz;
-          bAbs = std::sqrt(b2);
-          cFast = std::sqrt(b2 * invRhoEff * invFourPI + cs2Up);
-          if (useHall) {
-            ue[ix_] -= jx * invRhoEff;
-            ue[iy_] -= jy * invRhoEff;
-            ue[iz_] -= jz * invRhoEff;
-          }
-        }
-
-        Real jump[nDim3];
+    };
+    std::optional<UpwindScratch> upwindScratch;
+    if (doUpwind)
+      upwindScratch.emplace();
+    for (MFIter mfi(Eout, stream_ordered_mfi()); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrE = Eout[mfi].array();
+      const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
+      const Array4<Real const>& moments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const> momentsPrev =
+          usePrevMoments ? nodePlasmaPrev[nSpecies][iLev][mfi].array()
+                         : Array4<Real const>();
+      const Array4<Real const> arrJ =
+          needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
+      const Array4<Real const> arrEambi = (electronTemperature > 0)
+                                              ? nodeEambi[iLev][mfi].array()
+                                              : Array4<Real const>();
+      const Array4<Real const> arrEtaReg =
+          hasRegionalResistivity_ ? nodeEtaRegional[iLev][mfi].array()
+                                  : Array4<Real const>();
+      // Upwind face jumps, one array per direction over the faces the nodes of
+      // this box use: the node range along the direction, and one more cell on
+      // the low side of each transverse direction (the cells c-1 and c around a
+      // node). They read the cells i-2..i+1 along the direction, within the two
+      // ghost layers of centerBin.
+      Array4<Real const> arrFace[nDim3];
+      if (doUpwind) {
+        FArrayBox(&faceJump)[nDim3] = upwindScratch->faceJump;
+        FArrayBox& slopeFab = upwindScratch->slopeFab;
+        const Array4<Real const>& arrBin = centerBin[mfi].const_array();
         for (int iDir = 0; iDir < nDim; ++iDir) {
           if (!upwindDir[iDir])
             continue;
-          if (iDir == ix_) {
-            upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
-          } else if (iDir == iy_) {
-            upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
-          } else {
-            upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
+          Box faceBox(box.smallEnd(), box.bigEnd());
+          for (int t = 0; t < nDim; ++t) {
+            if (t != iDir)
+              faceBox.growLo(t, 1);
           }
-
-          // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).
-          const Real a = (fixedSpeedUp > 0) ? fixedSpeedUp
-                                            : std::abs(ue[iDir]) + cFast +
-                                                  coefWhistlerUp * 0.25 * bAbs *
-                                                      invRhoEff * invDxUp[iDir];
-          const Real halfA = 0.5 * a;
-
-          // e_d x jump
+          // A face uses the slopes of the cells on both of its sides.
+          Box slopeBox = faceBox;
+          slopeBox.growLo(iDir, 1);
+          slopeFab.resize(slopeBox, nDim3, The_Async_Arena());
+          faceJump[iDir].resize(faceBox, nDim3, The_Async_Arena());
+          const Array4<Real>& arrS = slopeFab.array();
+          const Array4<Real const>& arrSc = slopeFab.const_array();
+          const Array4<Real>& arrF = faceJump[iDir].array();
           if (iDir == ix_) {
-            ey -= halfA * jump[iz_];
-            ez += halfA * jump[iy_];
+            parallel_for_omp(
+                slopeBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrS(i, j, k, iVar) =
+                      upwind_cell_slope<ix_>(arrBin, i, j, k, iVar, limTypeUp);
+                });
+            parallel_for_omp(
+                faceBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrF(i, j, k, iVar) = upwind_face_jump<ix_>(
+                      arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                });
           } else if (iDir == iy_) {
-            ex += halfA * jump[iz_];
-            ez -= halfA * jump[ix_];
+            parallel_for_omp(
+                slopeBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrS(i, j, k, iVar) =
+                      upwind_cell_slope<iy_>(arrBin, i, j, k, iVar, limTypeUp);
+                });
+            parallel_for_omp(
+                faceBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrF(i, j, k, iVar) = upwind_face_jump<iy_>(
+                      arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                });
           } else {
-            ex -= halfA * jump[iy_];
-            ey += halfA * jump[ix_];
+            parallel_for_omp(
+                slopeBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrS(i, j, k, iVar) =
+                      upwind_cell_slope<iz_>(arrBin, i, j, k, iVar, limTypeUp);
+                });
+            parallel_for_omp(
+                faceBox, nDim3,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+                  arrF(i, j, k, iVar) = upwind_face_jump<iz_>(
+                      arrBin, arrSc, i, j, k, iVar, sensorFloorUp);
+                });
           }
+          arrFace[iDir] = faceJump[iDir].const_array();
         }
       }
+      const Array4<Real const> arrFaceX = arrFace[ix_];
+      const Array4<Real const> arrFaceY = arrFace[iy_];
+      const Array4<Real const> arrFaceZ = arrFace[iz_];
 
-      arrE(i, j, k, ix_) = ex;
-      arrE(i, j, k, iy_) = ey;
-      arrE(i, j, k, iz_) = ez;
-    });
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        const Real rhoCur = moments(i, j, k, iRho_);
+        const Real rhoPrev = usePrevMoments ? momentsPrev(i, j, k, iRho_) : 0.0;
+        Real rho = wCurRho * rhoCur;
+        if (usePrevMoments) {
+          rho += wPrevRho * rhoPrev;
+        }
+        Real ui = 0.0, vi = 0.0, wi = 0.0;
+        const Real invRhoEff =
+            (rho > 0.0) ? (1.0 / amrex::max(rho, rhoMinOhm)) : 0.0;
+
+        if (usePredictorCorrector) {
+          Real mx = wCurM * moments(i, j, k, iMx_);
+          Real my = wCurM * moments(i, j, k, iMy_);
+          Real mz = wCurM * moments(i, j, k, iMz_);
+          if (usePrevMoments) {
+            mx += wPrevM * momentsPrev(i, j, k, iMx_);
+            my += wPrevM * momentsPrev(i, j, k, iMy_);
+            mz += wPrevM * momentsPrev(i, j, k, iMz_);
+          }
+          if (rho > 0.0) {
+            ui = mx * invRhoEff;
+            vi = my * invRhoEff;
+            wi = mz * invRhoEff;
+          }
+        } else {
+          // Single-pass hybrid leapfrog:
+          // moments(iMx_) carries momentum deposited at post-drift positions
+          // x^{n+1} with half-step velocities v^{n+1/2}, i.e. rho_cur *
+          // u^{n+1/2}. momentsPrev(iMx_) carries rho_prev * u^{n-1/2} at
+          // positions x^n. Directly interpolating raw momentum and dividing by
+          // time-interpolated density gives u_i = U * rho_next / ((rho_prev +
+          // rho_next)/2) != U for nonuniform density advecting at uniform U,
+          // introducing an O(dt) error. Instead, reconstruct ion fluid velocity
+          // u_i at target time hstep:
+          Real uiCur = 0.0, viCur = 0.0, wiCur = 0.0;
+          if (rhoCur > 0.0) {
+            const Real invRhoCur = 1.0 / amrex::max(rhoCur, rhoMinOhm);
+            uiCur = moments(i, j, k, iMx_) * invRhoCur;
+            viCur = moments(i, j, k, iMy_) * invRhoCur;
+            wiCur = moments(i, j, k, iMz_) * invRhoCur;
+          }
+          ui = uiCur;
+          vi = viCur;
+          wi = wiCur;
+          if (usePrevMoments && wPrevM != 0.0) {
+            Real uiPrev = 0.0, viPrev = 0.0, wiPrev = 0.0;
+            if (rhoPrev > 0.0) {
+              const Real invRhoPrev = 1.0 / amrex::max(rhoPrev, rhoMinOhm);
+              uiPrev = momentsPrev(i, j, k, iMx_) * invRhoPrev;
+              viPrev = momentsPrev(i, j, k, iMy_) * invRhoPrev;
+              wiPrev = momentsPrev(i, j, k, iMz_) * invRhoPrev;
+            }
+            ui = wCurM * uiCur + wPrevM * uiPrev;
+            vi = wCurM * viCur + wPrevM * viPrev;
+            wi = wCurM * wiCur + wPrevM * wiPrev;
+          }
+        }
+
+        Real bx = arrB(i, j, k, ix_);
+        Real by = arrB(i, j, k, iy_);
+        Real bz = arrB(i, j, k, iz_);
+
+        // Convection term: E = -U_i x B
+        Real ex = -(vi * bz - wi * by);
+        Real ey = -(wi * bx - ui * bz);
+        Real ez = -(ui * by - vi * bx);
+
+        // J = curl(B)/(4*pi)
+        Real jx = 0.0, jy = 0.0, jz = 0.0;
+        if (needJ) {
+          jx = arrJ(i, j, k, ix_) * invFourPI;
+          jy = arrJ(i, j, k, iy_) * invFourPI;
+          jz = arrJ(i, j, k, iz_) * invFourPI;
+        }
+
+        // eta * J (global + regional resistivity)
+        Real etaTotal = etaResistivity;
+        if (hasRegionalResistivity_) {
+          etaTotal += arrEtaReg(i, j, k);
+        }
+        if (etaTotal > 0.0) {
+          ex += etaTotal * jx;
+          ey += etaTotal * jy;
+          ez += etaTotal * jz;
+        }
+
+        // Ambipolar electric field: E_ambi = -grad(p_e)/(e*n_e)
+        // Analytically curl(E_ambi) == 0 for isothermal/polytropic electrons.
+        if (includeAmbi && electronTemperature > 0) {
+          ex += arrEambi(i, j, k, ix_);
+          ey += arrEambi(i, j, k, iy_);
+          ez += arrEambi(i, j, k, iz_);
+        }
+
+        // Hall term: (J x B) / rho_q
+        if (rho > 0 && useHallTerm) {
+          Real hall_x = (jy * bz - jz * by) * invRhoEff;
+          Real hall_y = (jz * bx - jx * bz) * invRhoEff;
+          Real hall_z = (jx * by - jy * bx) * invRhoEff;
+
+          ex += hall_x;
+          ey += hall_y;
+          ez += hall_z;
+        }
+
+        // Upwind (Rusanov) dissipation: E += sum_d (a_d/2) e_d x (B^R - B^L).
+        // The jumps use the evolved B only (no intrinsic B0), the speeds the
+        // total B and the electron velocity u_e = u_i - J/rho.
+        if (doUpwind && (rho > 0 || fixedSpeedUp > 0)) {
+          Real cFast = 0.0, bAbs = 0.0;
+          Real ue[nDim3] = { ui, vi, wi };
+          if (fixedSpeedUp <= 0) {
+            const Real b2 = bx * bx + by * by + bz * bz;
+            bAbs = std::sqrt(b2);
+            cFast = std::sqrt(b2 * invRhoEff * invFourPI + cs2Up);
+            if (useHall) {
+              ue[ix_] -= jx * invRhoEff;
+              ue[iy_] -= jy * invRhoEff;
+              ue[iz_] -= jz * invRhoEff;
+            }
+          }
+
+          Real jump[nDim3];
+          for (int iDir = 0; iDir < nDim; ++iDir) {
+            if (!upwindDir[iDir])
+              continue;
+            if (iDir == ix_) {
+              upwind_node_jump<ix_>(arrFaceX, i, j, k, jump);
+            } else if (iDir == iy_) {
+              upwind_node_jump<iy_>(arrFaceY, i, j, k, jump);
+            } else {
+              upwind_node_jump<iz_>(arrFaceZ, i, j, k, jump);
+            }
+
+            // Whistler phase speed at k = pi/dx: pi |B| / (4 pi rho dx).
+            const Real a = (fixedSpeedUp > 0)
+                               ? fixedSpeedUp
+                               : std::abs(ue[iDir]) + cFast +
+                                     coefWhistlerUp * 0.25 * bAbs * invRhoEff *
+                                         invDxUp[iDir];
+            const Real halfA = 0.5 * a;
+
+            // e_d x jump
+            if (iDir == ix_) {
+              ey -= halfA * jump[iz_];
+              ez += halfA * jump[iy_];
+            } else if (iDir == iy_) {
+              ex += halfA * jump[iz_];
+              ez -= halfA * jump[ix_];
+            } else {
+              ex -= halfA * jump[iy_];
+              ey += halfA * jump[ix_];
+            }
+          }
+        }
+
+        arrE(i, j, k, ix_) = ex;
+        arrE(i, j, k, iy_) = ey;
+        arrE(i, j, k, iz_) = ez;
+      });
+    }
+    if (doUpwind)
+      sync_before_free();
   }
 
   // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B).
@@ -535,7 +555,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         const Array4<Real const> arrHyperReg =
             nodeEtaHyperRegional[iLev][mfi].array();
 
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           Real f = fGlobal + arrHyperReg(i, j, k) * invFourPI;
           if (f > 0.0) {
             arrE(i, j, k, ix_) -= f * arrHyp(i, j, k, ix_);
@@ -612,7 +632,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         arrPe(i, j, k) =
             polytropic_closure(arrPe(i, j, k), p0, invRho0, gamma, Te);
       });
@@ -643,7 +663,7 @@ void Pic::compute_ambipolar_E(int iLev) {
     const Array4<Real>& arrEambi = nodeEambi[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = moments(i, j, k, iRho_);
       if (rho > 0) {
         const Real invRhoEff = -1.0 / amrex::max(rho, rhoMinOhm);
@@ -668,7 +688,7 @@ void Pic::compute_ambipolar_E(int iLev) {
       Array4<Real> const& arr = nodeEambi[iLev][mfi].array();
       const Dim3 vLo = bxValid.smallEnd().dim3();
       const Dim3 vHi = bxValid.bigEnd().dim3();
-      ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         const int ijk[3] = { i, j, k };
         const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
         const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
@@ -703,15 +723,15 @@ void Pic::compute_ambipolar_E(int iLev) {
       auto arr = nodeEambi[iLev][mfi].array();
       const int klo = vbox.smallEnd(2);
       const int khi = vbox.bigEnd(2);
-      amrex::ParallelFor(fbox,
-                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                           const int k_src = std::clamp(k, klo, khi);
-                           if (k != k_src) {
-                             for (int n = 0; n < nDim3; ++n) {
-                               arr(i, j, k, n) = arr(i, j, k_src, n);
-                             }
+      parallel_for_omp(fbox,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         const int k_src = std::clamp(k, klo, khi);
+                         if (k != k_src) {
+                           for (int n = 0; n < nDim3; ++n) {
+                             arr(i, j, k, n) = arr(i, j, k_src, n);
                            }
-                         });
+                         }
+                       });
     }
   }
 
@@ -769,7 +789,7 @@ void Pic::smooth_moments() {
         Array4<Real> const& arr = moments[mfi].array();
         const Dim3 vLo = bxValid.smallEnd().dim3();
         const Dim3 vHi = bxValid.bigEnd().dim3();
-        ParallelFor(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(bxValid, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const int ijk[3] = { i, j, k };
           const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
           const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
@@ -899,7 +919,7 @@ void Pic::apply_fake2d_k_clamp(MultiFab& mf) {
     auto arr = mf[mfi].array();
     const int klo = vbox.smallEnd(2);
     const int khi = vbox.bigEnd(2);
-    ParallelFor(fbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(fbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       const int k_src = std::clamp(k, klo, khi);
       if (k != k_src)
         arr(i, j, k) = arr(i, j, k_src);
@@ -954,7 +974,7 @@ void Pic::compute_node_electron_pressure(int iLev, const MultiFab& nodeNe,
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = nodePe[mfi].array();
     const Array4<Real const>& arrNe = nodeNe[mfi].const_array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       arrPe(i, j, k) =
           polytropic_closure(arrNe(i, j, k), p0, invRho0, gamma, Te);
     });
@@ -986,7 +1006,7 @@ void Pic::init_electron_pressure(int iLev) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (fromShockTube) {
         Real xPlane = prob_lo[0] + (i + 0.5) * dx[0];
 #if AMREX_SPACEDIM > 1
@@ -1034,7 +1054,7 @@ void Pic::compute_electron_density(int iLev, MultiFab& nodalRho,
       const Box& box = useGrownTile ? mfi.growntilebox() : mfi.validbox();
       const Array4<Real>& arrRho = nodalRho[mfi].array();
       const Array4<Real const>& moments = nodePlasma[s][iLev][mfi].array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         arrRho(i, j, k) += qomFactor * moments(i, j, k, iRho_);
       });
     }
@@ -1056,7 +1076,7 @@ void Pic::compute_electron_temperature(int iLev) {
     const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
     const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
       arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMinLocal) / ne;
     });
@@ -1076,7 +1096,7 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPiN = nodePeRho[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       arrPiN(i, j, k) = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
                          moments(i, j, k, iPzz_)) /
                         3.0;
@@ -1102,7 +1122,7 @@ void Pic::add_electron_ion_heating(int iLev, Real dt) {
     const Array4<Real const>& arrPi = centerPe[iLev][mfi].array();
     const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
       const Real pe = amrex::max(arrPe(i, j, k), peMinLocal);
       const Real pi = amrex::max(arrPi(i, j, k), 0.0);
@@ -1189,7 +1209,7 @@ void Pic::electron_velocity_at_nodes(int iLev) {
     const Array4<Real>& arrUe = nodePeVec[iLev][mfi].array();
     const Array4<Real const>& arrMom = nodePlasma[nSpecies][iLev][mfi].array();
     const Array4<Real const>& arrJ = nodeJ[iLev][mfi].array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const Real rho = arrMom(i, j, k, iRho_);
       if (rho > 0) {
         const Real invRho = 1.0 / amrex::max(rho, rhoFloor);
@@ -1238,7 +1258,7 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
     const Array4<Real>& arrPeNew = centerPe[iLev][mfi].array();
     const Array4<Real const>& arrUe = nodePeVec[iLev][mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       Real divFlux = 0.0;
       Real divUe = 0.0;
 
@@ -1311,7 +1331,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
           const Array4<Real>& arrTe = centerPeTe[iLev][mfi].array();
           const Array4<Real const>& arrPe = centerPeState[iLev][mfi].array();
           const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
-          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
             const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
             arrTe(i, j, k) = amrex::max(arrPe(i, j, k), peMin) / ne;
           });
@@ -1332,7 +1352,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
         const Array4<Real const>& arrB = nodeBstage[iLev][mfi].array();
         const Array4<Real const>& arrRhoN = nodePeRho[iLev][mfi].array();
 
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const Real teN = amrex::max(arrAux(i, j, k, 0), 0.0);
           Real kappa = (teN > 0.0) ? heatCondKappa0 * std::pow(teN, 2.5) : 0.0;
 
@@ -1446,7 +1466,7 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
         const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].array();
         const Array4<Real const>& arrK = nodePeAux[iLev][mfi].array();
 
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           const Real ne = amrex::max(arrRho(i, j, k), rhoMinOhm);
 
           Real lambda =
@@ -1530,15 +1550,15 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB, Real timeOverride) {
       auto arr = mfB[mfi].array();
       const int klo = vbox.smallEnd(2);
       const int khi = vbox.bigEnd(2);
-      amrex::ParallelFor(fbox,
-                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                           const int k_src = std::clamp(k, klo, khi);
-                           if (k != k_src) {
-                             for (int n = 0; n < nComp; ++n) {
-                               arr(i, j, k, n) = arr(i, j, k_src, n);
-                             }
+      parallel_for_omp(fbox,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         const int k_src = std::clamp(k, klo, khi);
+                         if (k != k_src) {
+                           for (int n = 0; n < nComp; ++n) {
+                             arr(i, j, k, n) = arr(i, j, k_src, n);
                            }
-                         });
+                         }
+                       });
     }
   }
 }
@@ -1604,7 +1624,7 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf, Real timeOverride) {
       const auto& e = crse[mfi].array();
       const auto& ef = fromFine[mfi].const_array();
       const auto& cell = cell_status(iLev - 1)[mfi].const_array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         // An interface node touches a covered cell and an uncovered cell
         // inside the domain.
         bool hasCovered = false, hasUncovered = false;
@@ -1806,7 +1826,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
     const Box& box = mfi.validbox();
     const auto& mask = innerMask[mfi].array();
     const auto& st = cell_status(iLev)[mfi].const_array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       bool inner = true;
       for (int kk = 0; kk <= kOff && inner; ++kk)
         for (int jj = 0; jj <= 1 && inner; ++jj)
@@ -1826,7 +1846,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
       const auto& sa = s[mfi].array();
       const auto& d = r[mfi].const_array();
       const auto& mask = innerMask[mfi].const_array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         if (!mask(i, j, k)) {
           for (int iVar = 0; iVar < nDim3; ++iVar)
             sa(i, j, k, iVar) = 0.0;
@@ -1890,7 +1910,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
       const Box& box = mfi.validbox();
       const auto& qa = q[mfi].array();
       const auto& pa = p[mfi].const_array();
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         const Real pyAz =
             cInvDy * (pa(i, j + 1, k, iz_) + pa(i + 1, j + 1, k, iz_) -
                       pa(i, j, k, iz_) - pa(i + 1, j, k, iz_));
@@ -1914,7 +1934,7 @@ void Pic::relax_covered_B_to_fine(int iLev) {
     const auto& b = B[mfi].const_array();
     const auto& t = target[mfi].const_array();
     const auto& st = cell_status(iLev)[mfi].const_array();
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (bit::is_refined(st(i, j, k))) {
         for (int iVar = 0; iVar < nRelax; ++iVar)
           d(i, j, k, iVar) = t(i, j, k, iVar) - b(i, j, k, iVar);
@@ -1926,20 +1946,20 @@ void Pic::relax_covered_B_to_fine(int iLev) {
   // and r tracks the residual.
   apply_curlT();
   MultiFab::Copy(p, s, 0, 0, nDim3, 0);
-  Real gamma = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
+  Real gamma = mf_dot(s, 0, s, 0, nDim3, 0, owner.get());
   const Real gamma0 = gamma;
 
   for (int iter = 0; iter < maxIter && gamma > relTol * relTol * gamma0;
        ++iter) {
     apply_curl();
-    const Real qq = MultiFab::Dot(q, 0, q, 0, nRelax, 0);
+    const Real qq = mf_dot(q, 0, q, 0, nRelax, 0);
     if (qq <= 0)
       break;
     const Real a = gamma / qq;
     MultiFab::Saxpy(B, a, q, 0, 0, nRelax, 0);
     MultiFab::Saxpy(r, -a, q, 0, 0, nRelax, 0);
     apply_curlT();
-    const Real gammaNew = MultiFab::Dot(*owner, s, 0, s, 0, nDim3, 0);
+    const Real gammaNew = mf_dot(s, 0, s, 0, nDim3, 0, owner.get());
     MultiFab::Xpay(p, gammaNew / gamma, s, 0, 0, nDim3, 0);
     gamma = gammaNew;
   }

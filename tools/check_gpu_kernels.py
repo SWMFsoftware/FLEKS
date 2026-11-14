@@ -31,6 +31,10 @@ LAUNCHERS = (
     "ParallelFor",
     "ParallelForRNG",
     "ParallelForOMP",
+    "parallel_for_omp",
+    "parallel_for_1d",
+    "deterministic_sum",
+    "deterministic_sum_to",
     "ParticleReduce",
     "ParticleToMesh",
     "MeshToParticle",
@@ -40,7 +44,7 @@ LAUNCHERS = (
     "AMREX_HOST_DEVICE_PARALLEL_FOR_4D",
 )
 
-# Files that may contain GPU-only preprocessor branches.
+# Files that may contain GPU-only or OpenMP-only preprocessor branches/pragmas.
 GPU_BACKEND_FILES = {
     "include/GpuBackend.h",
 }
@@ -48,14 +52,9 @@ GPU_BACKEND_FILES = {
 # Files whose ParallelFor lambdas will be ported in upcoming progressive PRs.
 # Entries are removed as each PR lands until this set is empty.
 UNPORTED_FILES = {
-    "include/Pic.h",
     "src/FluidInterface.cpp",
     "src/Grid.cpp",
-    "src/ParticlesBC.cpp",
-    "src/ParticlesInit.cpp",
     "src/Pic.cpp",
-    "src/PicBC.cpp",
-    "src/PicFieldSolver.cpp",
     "src/ic/WaveIC.cpp",
 }
 
@@ -64,7 +63,8 @@ LAUNCH_RE = re.compile(r"\b(?:amrex::)?(" + "|".join(LAUNCHERS) +
 LAMBDA_RE = re.compile(
     r"\[([^\[\]]*)\]\s*(AMREX_GPU_DEVICE|AMREX_GPU_HOST_DEVICE)?\s*\(")
 GPU_IFDEF_RE = re.compile(
-    r"^\s*#\s*(if|ifdef|ifndef|elif)\b.*\bAMREX_USE_(GPU|CUDA)\b")
+    r"^\s*#\s*(if|ifdef|ifndef|elif)\b.*\b(AMREX_USE_(GPU|CUDA|OMP)|_OPENMP)\b")
+OMP_PRAGMA_RE = re.compile(r"^\s*#\s*pragma\s+omp\b(?!\s+simd\b)")
 
 
 def strip_comments(text):
@@ -157,8 +157,11 @@ def check_file(path, check_launches=True):
     if rel not in GPU_BACKEND_FILES:
         for line_no, line in enumerate(text.splitlines(), 1):
             if GPU_IFDEF_RE.match(line):
-                problems.append(f"{rel}:{line_no}: GPU-only preprocessor "
+                problems.append(f"{rel}:{line_no}: GPU/OpenMP-only preprocessor "
                                 "branch outside the GPU backend files")
+            elif OMP_PRAGMA_RE.match(line):
+                problems.append(f"{rel}:{line_no}: OpenMP pragma outside the "
+                                "GPU backend files")
     return problems
 
 

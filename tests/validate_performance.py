@@ -57,25 +57,29 @@ BASELINES = {
         "total_pps": 6.2,    # total wall-clock
         "mover_pps": 0.105,  # isolated particle mover
         "solver_pps": 4.7,   # isolated implicit field solver
-        "speedup": 1.5,      # 2-core scaling floor
+        "speedup": 1.5,      # 2-core MPI scaling floor
+        "omp_speedup": 1.0,  # tiny 1D deck; relative CI checks against base
     },
     "hybrid": {
         "total_pps": 0.31,   # total wall-clock
         "mover_pps": 0.052,  # isolated particle mover
         "solver_pps": 0.105, # explicit hybrid field advance is cheaper
-        "speedup": 1.45,     # 2-core scaling floor
+        "speedup": 1.45,     # 2-core MPI scaling floor
+        "omp_speedup": 1.25, # 2-thread OpenMP scaling floor
     },
     "pt": {
         "total_pps": 3.2,    # total wall-clock rate
         "mover_pps": 0.14,   # isolated test particle mover rate
         "solver_pps": 0.001, # EM solver disabled
-        "speedup": 1.9,      # 2-core mover speedup floor
+        "speedup": 1.9,      # 2-core MPI mover speedup floor
+        "omp_speedup": 1.5,  # 2-thread OpenMP mover speedup floor
     },
     "reconnection2d": {
         "total_pps": 0.97,   # total wall-clock rate
         "mover_pps": 0.056,  # isolated particle mover rate
         "solver_pps": 0.02,  # isolated implicit field solver rate
-        "speedup": 1.85,     # 2-core scaling floor
+        "speedup": 1.85,     # 2-core MPI scaling floor
+        "omp_speedup": 1.4,  # 2-thread OpenMP scaling floor
     },
 }
 
@@ -86,6 +90,49 @@ def safe_symlink(src, dst):
         elif os.path.isdir(dst):
             shutil.rmtree(dst)
     os.symlink(src, dst)
+
+
+_OMP_LINK_CACHE = {}
+
+
+def binary_has_openmp(exe):
+    """Return True if *exe* was compiled with OpenMP parallel regions."""
+    key = os.path.realpath(exe)
+    if key in _OMP_LINK_CACHE:
+        return _OMP_LINK_CACHE[key]
+
+    has_omp = False
+    nm_ran = False
+    for cmd in (["nm", "-u", key], ["nm", "-D", key], ["nm", key]):
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True)
+        except OSError:
+            continue
+        if res.returncode == 0:
+            nm_ran = True
+            if "GOMP_parallel" in res.stdout or "__kmpc_fork_call" in res.stdout:
+                has_omp = True
+                break
+
+    if not nm_ran:
+        # Check only direct dependencies (not transitive libs via ldd, which can
+        # pull libgomp through MPI or BLAS on a -noopenmp binary).
+        for cmd, pat in (
+            (["readelf", "-d", key], r"NEEDED.*lib(?:g?omp|iomp5)\b"),
+            (["otool", "-L", key], r"\blib(?:g?omp|iomp5)\b"),
+        ):
+            try:
+                res = subprocess.run(cmd, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, text=True)
+            except OSError:
+                continue
+            if res.returncode == 0 and re.search(pat, res.stdout):
+                has_omp = True
+                break
+
+    _OMP_LINK_CACHE[key] = has_omp
+    return has_omp
 
 def prepare_run_dir(run_dir, exe):
     os.makedirs(run_dir, exist_ok=True)
@@ -246,7 +293,8 @@ METRICS = (
     ("total", "Total Wall-Clock Rate", "μs/pt"),
     ("mover", "Particle Mover Rate", "μs/pt"),
     ("solver", "Field Solver Rate", "μs/pt"),
-    ("speedup", "Parallel Speedup (2 Cores)", "x"),
+    ("speedup", "Parallel Speedup (2 MPI)", "x"),
+    ("omp_speedup", "OpenMP Speedup (2 Threads)", "x"),
 )
 
 # Below this a rate is a disabled component (the tracker has no field solver),
@@ -254,7 +302,7 @@ METRICS = (
 RATE_FLOOR = 1e-6
 
 
-def run_once(exe, n_proc, run_dir, param_file, solver_kind):
+def run_once(exe, n_proc, run_dir, param_file, solver_kind, omp_threads=1):
     """Run one benchmark and return its wall-clock, mover and solver times
     (seconds). Raises RuntimeError if FLEKS fails."""
     if solver_kind == "hybrid":
@@ -267,9 +315,22 @@ def run_once(exe, n_proc, run_dir, param_file, solver_kind):
     prepare_run_dir(run_dir, exe)
     shutil.copy(param_file, os.path.join(run_dir, "PARAM.in"))
 
+    if n_proc <= 1:
+        cmd = ["./FLEKS.exe"]
+    elif omp_threads > 1:
+        cmd = ["mpirun", "--bind-to", "none", "-n", str(n_proc), "./FLEKS.exe"]
+    else:
+        cmd = ["mpirun", "-n", str(n_proc), "./FLEKS.exe"]
+
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = str(omp_threads)
+    if n_proc <= 1 and omp_threads > 1:
+        env.setdefault("OMP_PROC_BIND", "close")
+        env.setdefault("OMP_PLACES", "cores")
+
     start_time = time.perf_counter()
-    result = subprocess.run(["mpirun", "-n", str(n_proc), "./FLEKS.exe"],
-                            cwd=run_dir, stdout=subprocess.PIPE,
+    result = subprocess.run(cmd,
+                            cwd=run_dir, env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
     duration = time.perf_counter() - start_time
     if result.returncode != 0:
@@ -322,10 +383,11 @@ def summarize(runs):
     }
 
 
-def evaluate_suite(solver_kind, targets, count):
-    """Benchmark one suite for every target {name: (exe, param_file)} on 1 and
-    2 processes, alternating the targets run by run so drift of the machine
-    affects them alike. Returns {name: metrics} or None on a failed run."""
+def evaluate_suite(solver_kind, targets, count, omp_threads=2):
+    """Benchmark one suite for every target {name: (exe, param_file)} on
+    (1 MPI, 1 OMP), (2 MPI, 1 OMP), and optionally (1 MPI, omp_threads OMP),
+    alternating the targets run by run so drift of the machine affects them
+    alike. Returns {name: metrics} or None on a failed run."""
     label = LABELS[solver_kind]
     steps = {}
     for name, (exe, param_file) in targets.items():
@@ -337,20 +399,37 @@ def evaluate_suite(solver_kind, targets, count):
             return None
         steps[name] = (particles, cycles)
 
+    # The 1D fullpic benchmark (128x1x1) is below the OpenMP size gates
+    # (kMinOmpBoxCells=2048, kMinOmp1DSize=8192); Full-PIC OpenMP scaling is
+    # covered by the 2D reconnection2d suite instead.
+    has_omp = {
+        name: (omp_threads > 1 and solver_kind != "fullpic" and
+               binary_has_openmp(exe))
+        for name, (exe, _) in targets.items()
+    }
+    configs = [(1, 1), (2, 1)]
+    if any(has_omp.values()):
+        configs.append((1, omp_threads))
+
     target_items = list(targets.items())
-    runs = {(name, n_proc): [] for name in targets for n_proc in (1, 2)}
-    for n_proc in (1, 2):
-        print(f"Running {label} on {n_proc} MPI process(es), {count} runs "
-              f"per executable ({', '.join(targets)})...")
+    runs = {(name, n_proc, omp): []
+            for name in targets for (n_proc, omp) in configs}
+    for n_proc, omp in configs:
+        active_items = (
+            target_items if omp <= 1
+            else [(name, t) for name, t in target_items if has_omp[name]]
+        )
+        print(f"Running {label} on {n_proc} MPI x {omp} OMP, {count} runs "
+              f"per executable ({', '.join(name for name, _ in active_items)})...")
         for i in range(count):
-            round_items = (target_items if i % 2 == 0
-                           else list(reversed(target_items)))
+            round_items = (active_items if i % 2 == 0
+                           else list(reversed(active_items)))
             for name, (exe, param_file) in round_items:
                 print(f"  Run {i + 1}/{count} [{name}]...")
                 try:
-                    runs[(name, n_proc)].append(run_once(
-                        exe, n_proc, f"run_perf_{name}_{n_proc}", param_file,
-                        solver_kind))
+                    runs[(name, n_proc, omp)].append(run_once(
+                        exe, n_proc, f"run_perf_{name}_{n_proc}_{omp}",
+                        param_file, solver_kind, omp_threads=omp))
                 except RuntimeError as exc:
                     print(f"FAIL: {label}: {exc}")
                     return None
@@ -359,25 +438,34 @@ def evaluate_suite(solver_kind, targets, count):
     for name in targets:
         particles, cycles = steps[name]
         total_steps = particles * cycles
-        serial = summarize(runs[(name, 1)])
-        parallel = summarize(runs[(name, 2)])
+        serial = summarize(runs[(name, 1, 1)])
+        parallel = summarize(runs[(name, 2, 1)])
+        omp_res = (summarize(runs[(name, 1, omp_threads)])
+                   if has_omp[name] else None)
         # For test particles the mover is the computation; the total
         # wall-clock is dominated by redistributing the many attributes and
         # by trajectory output, so the speedup is that of the mover.
         if solver_kind == "pt" and parallel["mover_median"] > 0:
             speedup = serial["mover_median"] / parallel["mover_median"]
+            omp_speedup = (serial["mover_median"] / omp_res["mover_median"]
+                           if omp_res and omp_res["mover_median"] > 0 else 1.0)
         else:
             speedup = serial["duration_median"] / parallel["duration_median"]
+            omp_speedup = (serial["duration_median"] / omp_res["duration_median"]
+                           if omp_res and omp_res["duration_median"] > 0 else 1.0)
         metrics[name] = {
             "particles": particles,
             "cycles": cycles,
             "total_steps": total_steps,
             "serial": serial,
             "parallel": parallel,
+            "omp": omp_res,
+            "omp_threads": omp_threads,
             "total": serial["duration_median"] * 1e6 / total_steps,
             "mover": serial["mover_median"] * 1e6 / total_steps,
             "solver": serial["solver_median"] * 1e6 / total_steps,
             "speedup": speedup,
+            "omp_speedup": omp_speedup,
         }
     return metrics
 
@@ -385,26 +473,40 @@ def evaluate_suite(solver_kind, targets, count):
 def judge_absolute(solver_kind, m):
     """Pass flags against the absolute targets (no reference executable)."""
     base = BASELINES[solver_kind]
-    return {
+    res = {
         "total": m["total"] <= base["total_pps"],
         "mover": m["mover"] <= base["mover_pps"],
         "solver": m["solver"] <= base["solver_pps"],
         "speedup": m["speedup"] >= base["speedup"],
+        "omp_speedup": (m["omp_speedup"] >= base["omp_speedup"]
+                        if m.get("omp") else True),
     }
+    return res
 
 
-def judge_relative(cand, ref, tolerance):
+def judge_relative(solver_kind, cand, ref, tolerance):
     """Pass flags and candidate/reference ratios. A rate fails if it is more
     than `tolerance` above the reference; the speedup fails if it is more than
     `tolerance` below it. A rate the reference does not have (a disabled
-    component) is not compared."""
+    component) is not compared; if the candidate uses OpenMP while the
+    reference does not, `omp_speedup` is checked against the absolute target."""
     passed, ratio = {}, {}
     for key, _, _ in METRICS:
-        if key != "speedup" and ref[key] < RATE_FLOOR:
+        if key == "omp_speedup":
+            if not cand.get("omp"):
+                passed[key], ratio[key] = True, None
+                continue
+            if not ref.get("omp"):
+                target = BASELINES[solver_kind]["omp_speedup"]
+                passed[key] = cand[key] >= target
+                ratio[key] = None
+                continue
+        if key not in ("speedup", "omp_speedup") and ref[key] < RATE_FLOOR:
             passed[key], ratio[key] = True, None
             continue
         ratio[key] = cand[key] / ref[key]
-        passed[key] = (ratio[key] >= 1.0 - tolerance if key == "speedup"
+        passed[key] = (ratio[key] >= 1.0 - tolerance
+                       if key in ("speedup", "omp_speedup")
                        else ratio[key] <= 1.0 + tolerance)
     return passed, ratio
 
@@ -417,19 +519,28 @@ def _status_console(flag):
     return "PASSED" if flag else "FAILED"
 
 
-def _speedup_label(solver_kind):
-    return ("Parallel Speedup (Mover, 2 Cores)" if solver_kind == "pt"
-            else "Parallel Speedup (2 Cores)")
+def _speedup_label(solver_kind, key="speedup", omp_threads=2):
+    if key == "omp_speedup":
+        return (f"OpenMP Speedup (Mover, {omp_threads} Threads)"
+                if solver_kind == "pt"
+                else f"OpenMP Speedup ({omp_threads} Threads)")
+    return ("Parallel Speedup (Mover, 2 MPI)" if solver_kind == "pt"
+            else "Parallel Speedup (2 MPI)")
 
 
 def _fmt(key, value):
-    return f"{value:.2f}x" if key == "speedup" else f"{value:.3f} μs/pt"
+    return (f"{value:.2f}x" if key in ("speedup", "omp_speedup")
+            else f"{value:.3f} μs/pt")
 
 
 def _runs_rows(m, tag):
     rows = []
-    for title, s in ((f"1 MPI Process (Serial){tag}", m["serial"]),
-                     (f"2 MPI Processes (Parallel){tag}", m["parallel"])):
+    entries = [(f"1 MPI Process (Serial){tag}", m["serial"]),
+               (f"2 MPI Processes (Parallel){tag}", m["parallel"])]
+    if m.get("omp"):
+        entries.append(
+            (f"1 MPI x {m['omp_threads']} OpenMP Threads{tag}", m["omp"]))
+    for title, s in entries:
         cells = " | ".join(f"{r['duration']:.3f}s" for r in s["runs"])
         rows.append(f"| {title} | {cells} | {s['duration_median']:.3f}s | "
                     f"{s['duration_min']:.3f}s |")
@@ -459,17 +570,26 @@ def write_report(results, relative, tolerance, path="performance_summary.md"):
                         "PR / Base | Status |\n")
                 f.write("| :--- | :--- | :--- | :--- | :--- |\n")
                 for key, name, _ in METRICS:
-                    if key == "speedup":
-                        name = _speedup_label(solver_kind)
+                    if key == "omp_speedup" and not cand.get("omp"):
+                        continue
+                    if key in ("speedup", "omp_speedup"):
+                        name = _speedup_label(solver_kind, key,
+                                              cand.get("omp_threads", 2))
                     r = res["ratio"][key]
+                    base_cell = (
+                        f">= {BASELINES[solver_kind]['omp_speedup']:.2f}x"
+                        if key == "omp_speedup" and not ref.get("omp")
+                        else _fmt(key, ref[key])
+                    )
                     f.write(f"| {name} | {_fmt(key, cand[key])} | "
-                            f"{_fmt(key, ref[key])} | "
+                            f"{base_cell} | "
                             f"{'n/a' if r is None else f'{r:.3f}'} | "
                             f"{_status_markdown(res['passed'][key])} |\n")
             else:
                 base = BASELINES[solver_kind]
                 targets = {"total": base["total_pps"], "mover": base["mover_pps"],
-                           "solver": base["solver_pps"], "speedup": base["speedup"]}
+                           "solver": base["solver_pps"], "speedup": base["speedup"],
+                           "omp_speedup": base["omp_speedup"]}
                 if relative:
                     f.write("*No base deck for this benchmark: compared with "
                             "the absolute targets.*\n\n")
@@ -477,8 +597,11 @@ def write_report(results, relative, tolerance, path="performance_summary.md"):
                         "Status |\n")
                 f.write("| :--- | :--- | :--- | :--- |\n")
                 for key, name, _ in METRICS:
-                    if key == "speedup":
-                        name = _speedup_label(solver_kind)
+                    if key == "omp_speedup" and not cand.get("omp"):
+                        continue
+                    if key in ("speedup", "omp_speedup"):
+                        name = _speedup_label(solver_kind, key,
+                                              cand.get("omp_threads", 2))
                         target = f">= {targets[key]:.2f}x"
                     else:
                         target = f"<= {targets[key]:.3f} μs/pt"
@@ -515,24 +638,36 @@ def print_profile(solver_kind, res, tolerance):
               f"{'PR/Base':<7} | Status")
         print("-" * 85)
         for key, name, _ in METRICS:
-            if key == "speedup":
-                name = _speedup_label(solver_kind)
+            if key == "omp_speedup" and not cand.get("omp"):
+                continue
+            if key in ("speedup", "omp_speedup"):
+                name = _speedup_label(solver_kind, key,
+                                      cand.get("omp_threads", 2))
             r = res["ratio"][key]
+            base_cell = (
+                f">= {BASELINES[solver_kind]['omp_speedup']:.2f}x"
+                if key == "omp_speedup" and not ref.get("omp")
+                else _fmt(key, ref[key])
+            )
             print(f" {name:<30} | {_fmt(key, cand[key]):<14} | "
-                  f"{_fmt(key, ref[key]):<14} | "
+                  f"{base_cell:<14} | "
                   f"{'n/a' if r is None else f'{r:.3f}':<7} | "
                   f"{_status_console(res['passed'][key])}")
         print(f" (fails beyond {tolerance:.0%} slower than the base)")
     else:
         base = BASELINES[solver_kind]
         targets = {"total": base["total_pps"], "mover": base["mover_pps"],
-                   "solver": base["solver_pps"], "speedup": base["speedup"]}
+                   "solver": base["solver_pps"], "speedup": base["speedup"],
+                   "omp_speedup": base["omp_speedup"]}
         print(f" {'Metric / Component':<30} | {'Measured':<16} | "
               f"{'Target':<18} | Status")
         print("-" * 85)
         for key, name, _ in METRICS:
-            if key == "speedup":
-                name = _speedup_label(solver_kind)
+            if key == "omp_speedup" and not cand.get("omp"):
+                continue
+            if key in ("speedup", "omp_speedup"):
+                name = _speedup_label(solver_kind, key,
+                                      cand.get("omp_threads", 2))
                 target = f">= {targets[key]:.2f}x"
             else:
                 target = f"<= {targets[key]:.3f} μs/pt"
@@ -564,6 +699,9 @@ def main():
     parser.add_argument("--tolerance", type=float, default=0.15,
                         help="Allowed slowdown relative to the reference "
                              "(default: 0.15)")
+    parser.add_argument("--omp-threads", type=int, default=2,
+                        help="OpenMP thread count for the multithreading "
+                             "benchmark (1 disables it; default: 2)")
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -577,6 +715,11 @@ def main():
             print(f"Error: executable {path} not found. Please compile it "
                   f"first.")
             sys.exit(1)
+
+    if args.omp_threads > 1 and not binary_has_openmp(exe):
+        print("Note: candidate executable is built without OpenMP; "
+              "skipping multithreading benchmark.")
+        args.omp_threads = 1
 
     print("=" * 80)
     print("                 FLEKS ROBUST PERFORMANCE REGRESSION TEST")
@@ -613,14 +756,15 @@ def main():
         print("\n" + "#" * 85)
         print(f"#  SOLVER: {LABELS[solver_kind]}")
         print("#" * 85)
-        metrics = evaluate_suite(solver_kind, targets, args.count)
+        metrics = evaluate_suite(solver_kind, targets, args.count,
+                                 omp_threads=args.omp_threads)
         if metrics is None:
             all_passed = False
             continue
         res = {"metrics": metrics, "relative": "base" in metrics}
         if res["relative"]:
             res["passed"], res["ratio"] = judge_relative(
-                metrics["pr"], metrics["base"], args.tolerance)
+                solver_kind, metrics["pr"], metrics["base"], args.tolerance)
         else:
             res["passed"] = judge_absolute(solver_kind, metrics["pr"])
         results[solver_kind] = res
