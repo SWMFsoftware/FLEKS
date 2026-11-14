@@ -610,12 +610,22 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
   // full-PIC, or local fast magnetosonic speed in hybrid-PIC (defaulting to 1
   // in vacuum).
   const Real csFixed = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
-  const bool autoHybridSpeed = (useHybridPIC && absorbCharSpeed <= 0.0);
-  const bool hasHybridSources =
-      autoHybridSpeed && !nodePlasma.empty() &&
-      nSpecies < static_cast<int>(nodePlasma.size()) &&
-      !nodePlasma[nSpecies][iLev].empty() && !centerB[iLev].empty() &&
-      (mf.boxArray().size() == boxArray(iLev).size());
+  const bool autoHybridSpeed =
+      (has_solver(PicSolverMode::Hybrid) && absorbCharSpeed <= 0.0);
+  const MultiFab* hybridIonPtr = nullptr;
+  if (autoHybridSpeed) {
+    if (has_full_pic()) {
+      if (!nodeIonMoments.empty() && !nodeIonMoments[iLev].empty())
+        hybridIonPtr = &nodeIonMoments[iLev];
+    } else if (!nodePlasma.empty() &&
+               nSpecies < static_cast<int>(nodePlasma.size()) &&
+               !nodePlasma[nSpecies][iLev].empty()) {
+      hybridIonPtr = &nodePlasma[nSpecies][iLev];
+    }
+  }
+  const bool hasHybridSources = (hybridIonPtr != nullptr) &&
+                                !centerB[iLev].empty() &&
+                                (mf.boxArray().size() == boxArray(iLev).size());
   const bool hasB0 =
       hasHybridSources && use_intrinsic_B() && !centerB0[iLev].empty();
   const MultiFab& hybridBMF =
@@ -651,13 +661,18 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
+    const bool boxHybridSources =
+        hasHybridSources &&
+        (!is_multi_solver() ||
+         grid.box_solver(iLev, mfi.index()) == PicSolverMode::Hybrid);
     const Array4<const Real> bArr =
-        hasHybridSources ? hybridBMF[mfi].const_array() : Array4<const Real>();
-    const Array4<const Real> b0Arr =
-        hasB0 ? centerB0[iLev][mfi].const_array() : Array4<const Real>();
-    const Array4<const Real> rhoArr =
-        hasHybridSources ? nodePlasma[nSpecies][iLev][mfi].const_array()
-                         : Array4<const Real>();
+        boxHybridSources ? hybridBMF[mfi].const_array() : Array4<const Real>();
+    const Array4<const Real> b0Arr = (boxHybridSources && hasB0)
+                                         ? centerB0[iLev][mfi].const_array()
+                                         : Array4<const Real>();
+    const Array4<const Real> rhoArr = boxHybridSources
+                                          ? (*hybridIonPtr)[mfi].const_array()
+                                          : Array4<const Real>();
 
     parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
@@ -692,7 +707,7 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
       Real cellDecay = 1.0;
       Real cellDrive = 0.0;
 
-      if (hasHybridSources) {
+      if (boxHybridSources) {
         const int cm0 = std::clamp(m[0], domLo[0], domHi[0]);
         const int cm1 = std::clamp(m[1], domLo[1], domHi[1]);
         const int cm2 = (nDim > 2) ? std::clamp(m[2], domLo[2], domHi[2]) : 0;

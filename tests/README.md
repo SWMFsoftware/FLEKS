@@ -33,6 +33,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Inner body            | `body/`               | Absorbing spherical inner boundary (`#BODY`): particle absorption, empty interior, wake | [README](body/README.md) |
 | Intrinsic field       | `intrinsic_field/`    | Static planetary magnetic field (`#DIPOLE`, `#CRUSTALFIELD`): analytic dipole, spherical harmonic crustal field | [README](intrinsic_field/README.md) |
 | Restart               | `restart/`            | Standalone checkpoint/restart continuity across semi-implicit, explicit, and hybrid PIC solvers | [README](restart/README.md) |
+| Solver coupling       | `solver_coupling/`    | Spatial multi-solver domain coupling via `#REGIONSOLVER` (`Implicit`, `Explicit`, `Hybrid`, 3-way, blended 2D AMR) | [README](solver_coupling/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |
 
 ### Ionization Parameter Commands
