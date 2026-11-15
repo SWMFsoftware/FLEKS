@@ -103,6 +103,8 @@ def _check_wave_in_interior(vidx, rows, field, interior_thresh=0.1):
 def validate_plot(test_name):
     logger.debug("Validating %s (plot)...", test_name)
     vidx, rows = _read_plot()
+    if test_name and ("alfven_inflow" in test_name):
+        return _check_alfven_inflow(vidx, rows)
     if test_name and ("alfven" in test_name):
         return _check_alfven(vidx, rows)
     if test_name and ("window" in test_name):
@@ -300,3 +302,42 @@ def _check_alfven(vidx, rows):
                        f"{DB_OVER_B_MAX*100:.0f}% -- not a linear Alfven wave")
 
     return True, "Passed (By wave present in interior, dB/B small, Bx guide preserved)"
+
+
+def _check_alfven_inflow(vidx, rows):
+    """Verify combined wave + inflow boundary injects By AND Walen uyS0."""
+    ok, msg = _check_alfven(vidx, rows)
+    if not ok:
+        return False, msg
+
+    xi = vidx.get("X")
+    byi = vidx.get("BY")
+    uyi = vidx.get("UYS0")
+    if None in (xi, byi, uyi):
+        return False, "X/BY/UYS0 missing from .out"
+
+    xmin = min(r[xi] for r in rows)
+    xmax = max(r[xi] for r in rows)
+    lo = xmin + 0.15 * (xmax - xmin)
+    hi = xmin + 0.70 * (xmax - xmin)
+    sel = [r for r in rows if lo <= r[xi] <= hi]
+    if len(sel) < 4:
+        return False, "Insufficient interior points for Walen correlation"
+
+    bys = [r[byi] for r in sel]
+    uys = [r[uyi] for r in sel]
+    if max(abs(u) for u in uys) <= 1e-4:
+        return False, "uyS0 zero in interior (waveVelocityKick missing on inflow face)"
+
+    m_by = sum(bys) / len(bys)
+    m_uy = sum(uys) / len(uys)
+    sbb = sum((b - m_by) ** 2 for b in bys)
+    suu = sum((u - m_uy) ** 2 for u in uys)
+    sbu = sum((b - m_by) * (u - m_uy) for b, u in zip(bys, uys))
+    corr = sbu / math.sqrt(sbb * suu) if (sbb > 0.0 and suu > 0.0) else 0.0
+    logger.debug("    [ALFVEN_INFLOW] corr(By, uyS0) = %.4f, max|uyS0| = %.4e",
+                 corr, max(abs(u) for u in uys))
+    if corr > -0.80:
+        return False, f"Walen anti-correlation corr(By, uyS0) = {corr:.3f} > -0.80"
+
+    return True, f"Passed (wave+inflow By & Walen uyS0 propagated: corr={corr:.3f})"

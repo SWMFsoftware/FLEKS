@@ -26,9 +26,10 @@ logger = logging.getLogger(__name__)
 set_run_dir = _run_dir.set_run_dir
 
 
-EM_FINAL_FRAC = 0.25      # fields: Etot_final < 25% of initial (decay = absorb)
-EPART_MAX_FRAC = 0.01     # particles: Epart_final < 1% of initial (complete drain)
-ETOT_GROWTH_MAX = 1e3     # hybrid fields: Etot may not grow by more than 1e3x (no instability)
+EM_FINAL_FRAC = 0.25          # fields: Etot_final < 25% of initial (decay = absorb)
+EPART_MAX_FRAC = 0.01         # particles: Epart_final < 1% of initial (complete drain)
+HYBRID_ETOT_GROWTH_MAX = 1.02 # hybrid fields: Etot may not grow above 1.02x initial
+HYBRID_BY_FINAL_FRAC = 0.20   # hybrid fields: late max|By| < 20% of initial pulse peak
 
 
 def validate_log(pic_diags=None, test_name=None):
@@ -94,13 +95,24 @@ def _validate_log_particles(e0, e1, first, last):
 
 
 def _validate_log_hybrid_fields(pic_diags):
-    """Hybrid fields: run stays finite, positive, and energy remains bounded."""
-    return validate_hybrid_energy_bounded(
+    """Hybrid fields: Etot stays finite/bounded and decreases as pulse exits."""
+    ok, msg = validate_hybrid_energy_bounded(
         pic_diags,
-        growth_max=ETOT_GROWTH_MAX,
+        growth_max=HYBRID_ETOT_GROWTH_MAX,
         test_label="Absorbing Field Wall",
         logger=logger,
     )
+    if not ok:
+        return False, msg
+
+    e0 = pic_diags[0].get("Etot", 0.0)
+    e1 = pic_diags[-1].get("Etot", 0.0)
+    if e1 >= e0:
+        return False, (
+            f"Total energy did not decrease as Alfven pulse exited "
+            f"(Etot {e0:.6e} -> {e1:.6e})"
+        )
+    return True, f"Passed (Absorbing Field Wall Etot {e0:.6e} -> {e1:.6e})"
 
 
 # ---------------------------------------------------------------------------
@@ -128,17 +140,53 @@ def validate_plot(test_name):
 
 
 def _check_hybrid_fields_plot(vidx, rows):
-    """Hybrid fields: check By, Bz, Ey, Ez remain finite and bounded."""
-    for var in ("BY", "BZ", "EY", "EZ"):
-        col = _col(vidx, rows, var)
-        if col is None:
+    """Hybrid fields: verify outgoing AlfvenPulse is absorbed without blow-up."""
+    out_files = _run_dir.plot_files()
+    if not out_files:
+        return True, "No .out frames (skipped)"
+
+    frames = []
+    for frame_idx, fpath in enumerate(out_files):
+        f_vidx, f_rows = _run_dir._read_out_file(fpath)
+        if f_vidx is None or not f_rows:
             continue
-        if not all(math.isfinite(v) for v in col):
-            return False, f"{var} not finite (NaN)"
-        peak = max(abs(v) for v in col)
-        if peak > 1e6:
-            return False, f"{var} blew up (peak {peak:.2e})"
-    return True, "Passed (hybrid fields finite and bounded near walls)"
+        frames.append((f_vidx, f_rows))
+        for var in ("BX", "BY", "BZ", "EX", "EY", "EZ"):
+            col = _col(f_vidx, f_rows, var)
+            if col is None:
+                continue
+            if not all(math.isfinite(v) for v in col):
+                return False, f"[frame {frame_idx}] {var} not finite (NaN)"
+            peak = max(abs(v) for v in col)
+            if peak > 1e6:
+                return False, f"[frame {frame_idx}] {var} blew up (peak {peak:.2e})"
+
+    if len(frames) < 2:
+        return False, "Expected >= 2 plot frames to verify Alfven pulse absorption"
+
+    by0 = _col(frames[0][0], frames[0][1], "BY")
+    by1 = _col(frames[-1][0], frames[-1][1], "BY")
+    if by0 is None or by1 is None:
+        return False, "BY column missing in .out frames"
+
+    peak0 = max(abs(v) for v in by0)
+    peak1 = max(abs(v) for v in by1)
+    if peak0 <= 1e-12:
+        return False, "Initial AlfvenPulse By is zero (pulse not seeded)"
+
+    frac = peak1 / peak0
+    logger.debug("    [HYB-ABS] max |By|: %.4e -> %.4e (ratio %.4f)",
+                 peak0, peak1, frac)
+    if frac >= HYBRID_BY_FINAL_FRAC:
+        return False, (
+            f"Alfven pulse not absorbed at x walls: late/initial max|By| = "
+            f"{frac:.3f} >= {HYBRID_BY_FINAL_FRAC}"
+        )
+
+    return True, (
+        f"Passed (AlfvenPulse absorbed: max|By| ratio {frac:.3f} < "
+        f"{HYBRID_BY_FINAL_FRAC})"
+    )
 
 
 def _check_fields_plot(vidx, rows):

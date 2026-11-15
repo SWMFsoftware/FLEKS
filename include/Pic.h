@@ -1087,9 +1087,14 @@ public:
   // Apply periodic and physical boundary conditions (and coarse-fine interface
   // ghosts on refined levels) to the cell-centered B, e.g. for intermediate RK
   // trial states that need fresh ghosts for the Ohm's law stencils.
-  void apply_centerB_BC(int iLev, amrex::Real timeOverride = -1.0);
+  // dtOverride = -2.0 preserves stateful absorbing ghosts on read-only calls;
+  // dtOverride = 0.0 initializes absorbing ghosts by zero-gradient clamping;
+  // dtOverride > 0.0 advances absorbing ghosts over that stage/substep size.
+  void apply_centerB_BC(int iLev, amrex::Real timeOverride = -1.0,
+                        amrex::Real dtOverride = -2.0);
   void apply_centerB_BC(int iLev, amrex::MultiFab &mfB,
-                        amrex::Real timeOverride = -1.0);
+                        amrex::Real timeOverride = -1.0,
+                        amrex::Real dtOverride = -2.0);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
   // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
   // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion

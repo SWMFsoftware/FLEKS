@@ -15,15 +15,15 @@ logger = logging.getLogger(__name__)
 # Loose energy tolerances: the state is steady but the open boundaries inject
 # and remove particles every step, so Epart is not strictly conserved.  We
 # guard against gross non-conservation / blow-up rather than tight drift.
-EPART_RATIO_MIN = 0.5
-EPART_RATIO_MAX = 2.0
-EB_RATIO_TOL = 0.20          # Bx0 is uniform => Eb should stay within +/-20%
+EPART_RATIO_MIN = 0.95
+EPART_RATIO_MAX = 1.05
+EB_RATIO_TOL = 0.02          # Bx0 is uniform => Eb should stay within +/-2%
 EE_MAX_FRAC = 0.10           # Ee <= 10% of Eb (no spurious E build-up)
-RHO_TOL = 0.10                # upstream density preserved to +/-10%
-VEL_TOL = 0.10               # bulk velocity preserved to +/-10%
-T_TOL = 0.15                 # per-species temperature preserved to +/-15%
-RHO_RATIO_TOL = 0.10         # cross-species density ratio
-T_RATIO_TOL = 0.15           # cross-species temperature ratio
+RHO_TOL = 0.03               # upstream density preserved to +/-3%
+VEL_TOL = 0.03               # bulk velocity preserved to +/-3%
+T_TOL = 0.05                 # per-species temperature preserved to +/-5%
+RHO_RATIO_TOL = 0.03         # cross-species density ratio
+T_RATIO_TOL = 0.05           # cross-species temperature ratio
 B_SPREAD_TOL = 0.10          # Bx spatially uniform to 10% of mean
 E_SPURIOUS_TOL = 0.10        # mean spurious E <= 10% of guide-field scale
 ANISO_TOL = 0.25             # Pxx/Pyy/Pzz isotropy (finite-particle noise)

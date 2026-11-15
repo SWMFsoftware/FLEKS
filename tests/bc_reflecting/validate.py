@@ -45,7 +45,8 @@ EPART_MIN_FRAC = 0.5       # particles: Epart may not fall below 50% of initial
 RHO_MIN = 1e-3             # particles: deposited rhoS0 must stay > this fraction of peak
 ETOT_CONDUCTING_MIN = 0.8  # full-PIC fields: Etot_final / Etot_initial >= 0.8 (conserved)
 ETOT_CONDUCTING_MAX = 1.25 # full-PIC fields: Etot_final / Etot_initial <= 1.25 (conserved)
-ETOT_HYBRID_GROWTH = 1e3   # hybrid fields: Etot may not grow by more than 1e3x (stable)
+ETOT_HYBRID_MIN = 0.90     # hybrid fields: Etot_final / Etot_initial >= 0.90 (conserved)
+ETOT_HYBRID_MAX = 1.10     # hybrid fields: max Etot / Etot_initial <= 1.10 (conserved)
 # large-dt fields: max |Etot/Etot_initial - 1| over all steps. The theta = 0.5
 # scheme conserves energy to the GMRES tolerance (~3e-6 over 80 steps); an
 # inconsistent wall BC in the GMRES operator is off by 5e-3 after 10 steps.
@@ -158,13 +159,28 @@ def _validate_log_largedt_fields(pic_diags):
 
 
 def _validate_log_hybrid_fields(pic_diags):
-    """Hybrid-PIC conducting wall: advance stays finite, positive, and bounded."""
-    return validate_hybrid_energy_bounded(
+    """Hybrid-PIC conducting wall: total energy remains conserved across reflections."""
+    ok, msg = validate_hybrid_energy_bounded(
         pic_diags,
-        growth_max=ETOT_HYBRID_GROWTH,
+        growth_max=ETOT_HYBRID_MAX,
         test_label="PEC Field Wall",
         logger=logger,
     )
+    if not ok:
+        return False, msg
+
+    e0 = pic_diags[0].get("Etot", 0.0)
+    e1 = pic_diags[-1].get("Etot", 0.0)
+    if e0 <= 0.0:
+        return False, "PEC Field Wall initial Etot is non-positive"
+    min_ratio = min(d.get("Etot", 0.0) / e0 for d in pic_diags)
+    max_ratio = max(d.get("Etot", 0.0) / e0 for d in pic_diags)
+    if min_ratio < ETOT_HYBRID_MIN or max_ratio > ETOT_HYBRID_MAX:
+        return False, (
+            f"PEC Field Wall Etot/Etot0 left [{ETOT_HYBRID_MIN}, {ETOT_HYBRID_MAX}]: "
+            f"min={min_ratio:.4f}, max={max_ratio:.4f}, final={e1/e0:.4f}"
+        )
+    return True, f"Passed (PEC Field Wall Etot ratio {e1/e0:.4f})"
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +300,7 @@ _HYBRID_WALL_ET_TOL = 0.5
 # enough to tolerate phase-mixing and numerical dispersion over many bounces
 # while still failing if the wall is absorbing most of the energy.
 _HYBRID_PULSE_AMPLITUDE_RATIO_MIN = 0.3
+_HYBRID_PULSE_AMPLITUDE_RATIO_MAX = 1.35
 
 
 def _check_hybrid_fields_plot(out_files):
@@ -377,6 +394,11 @@ def _check_hybrid_fields_plot(out_files):
             return False, (
                 f"Alfven pulse was absorbed (not reflected) by the conducting "
                 f"wall: |By| ratio = {ratio:.3f} < {_HYBRID_PULSE_AMPLITUDE_RATIO_MIN}"
+            )
+        if ratio > _HYBRID_PULSE_AMPLITUDE_RATIO_MAX:
+            return False, (
+                f"Alfven pulse grew unphysically across reflections: "
+                f"|By| ratio = {ratio:.3f} > {_HYBRID_PULSE_AMPLITUDE_RATIO_MAX}"
             )
 
     return True, (

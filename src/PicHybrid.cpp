@@ -189,7 +189,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
     apply_field_bc(node_status(iLev), nodeBstage[iLev], 0, 3, &Pic::get_node_B,
-                   iLev, true, -1.0, timeOverride);
+                   iLev, true, 0.0, timeOverride);
   }
   if (is_body_conducting()) {
     project_body_B(nodeBstage[iLev], iLev);
@@ -527,7 +527,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     // at the boundary cell, and its curl drives a spurious hyper-resistive E
     // at the nodes next to the face. The prescribed state is uniform, so zero.
     apply_field_bc(cell_status(iLev), centerLapB[iLev], 0,
-                   centerLapB[iLev].nComp(), &Pic::get_zero, iLev, true);
+                   centerLapB[iLev].nComp(), &Pic::get_zero, iLev, true, 0.0);
 
     curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
                         Geom(iLev).InvCellSize());
@@ -541,7 +541,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     // Likewise curl(nabla^2 B) of the prescribed state is zero, not the
     // prescribed (motional) E.
     apply_field_bc(node_status(iLev), nodeHyperE[iLev], 0,
-                   nodeHyperE[iLev].nComp(), &Pic::get_zero, iLev, false);
+                   nodeHyperE[iLev].nComp(), &Pic::get_zero, iLev, false, 0.0);
 
     const Real fGlobal = etaHyperLev[iLev] / fourPI;
 
@@ -569,7 +569,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   Eout.FillBoundary(Geom(iLev).periodicity());
   apply_field_bc(node_status(iLev), Eout, 0, nDim3, &Pic::get_node_E, iLev,
-                 false, -1.0, timeOverride);
+                 false, 0.0, timeOverride);
   if (use_body()) {
     apply_body_E_bc(Eout, iLev);
   }
@@ -737,7 +737,7 @@ void Pic::compute_ambipolar_E(int iLev) {
 
   nodeEambi[iLev].FillBoundary(Geom(iLev).periodicity());
   apply_field_bc(node_status(iLev), nodeEambi[iLev], 0, nDim3, &Pic::get_node_E,
-                 iLev, false);
+                 iLev, false, 0.0);
   if (use_body()) {
     apply_body_E_bc(nodeEambi[iLev], iLev);
   }
@@ -1499,15 +1499,16 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 // interpolated from the coarse level, and physical boundary conditions are
 // applied. When faraday_ngrow > 0, the first fine ghost layer is updated by
 // the Faraday stage instead of being overwritten by coarse interpolation.
-void Pic::apply_centerB_BC(int iLev, Real timeOverride) {
-  apply_centerB_BC(iLev, centerB[iLev], timeOverride);
+void Pic::apply_centerB_BC(int iLev, Real timeOverride, Real dtOverride) {
+  apply_centerB_BC(iLev, centerB[iLev], timeOverride, dtOverride);
 }
 
-void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB, Real timeOverride) {
+void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB, Real timeOverride,
+                           Real dtOverride) {
   mfB.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
     apply_field_bc(cell_status(iLev), mfB, 0, mfB.nComp(), &Pic::get_center_B,
-                   iLev, true, -1.0, timeOverride);
+                   iLev, true, dtOverride, timeOverride);
   } else {
     MultiFab& coarseB = (&mfB == &centerBstage[iLev])  ? centerBstage[iLev - 1]
                         : (&mfB == &centerBstar[iLev]) ? centerBstar[iLev - 1]
@@ -1535,7 +1536,7 @@ void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB, Real timeOverride) {
           Geom(iLev), cell_status(iLev), *get_cell_interp());
     }
     apply_field_bc(cell_status(iLev), mfB, 0, mfB.nComp(), &Pic::get_center_B,
-                   iLev, true, -1.0, timeOverride);
+                   iLev, true, dtOverride, timeOverride);
   }
 
   if (is_body_conducting()) {
@@ -1653,7 +1654,7 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf, Real timeOverride) {
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
-                   iLev, false, -1.0, timeOverride);
+                   iLev, false, 0.0, timeOverride);
     if (use_body()) {
       apply_body_E_bc(nodeEmf[iLev], iLev);
     }
@@ -1674,7 +1675,7 @@ void Pic::fill_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf,
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
-                   iLev, false, -1.0, timeOverride);
+                   iLev, false, 0.0, timeOverride);
     if (use_body()) {
       apply_body_E_bc(nodeEmf[iLev], iLev);
     }
@@ -1694,7 +1695,7 @@ void Pic::fill_interface_and_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf,
     nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
-                   iLev, false, -1.0, timeOverride);
+                   iLev, false, 0.0, timeOverride);
     if (use_body()) {
       apply_body_E_bc(nodeEmf[iLev], iLev);
     }
@@ -2254,7 +2255,7 @@ void Pic::update_B_hybrid() {
       nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
         apply_field_bc(node_status(iLev), nodeBstage[iLev], 0, 3,
-                       &Pic::get_node_B, iLev, true);
+                       &Pic::get_node_B, iLev, true, 0.0);
       }
       if (is_body_conducting()) {
         project_body_B(nodeBstage[iLev], iLev);
@@ -2521,12 +2522,15 @@ void Pic::update_B_hybrid() {
                           ambiInStages, tStageRhs[s]);
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           const int nG = faraday_ngrow(iLev);
+          MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, nDim3,
+                         centerBstage[iLev].nGrow());
           MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
                             -cStage[s] * subDt, kStage[iLev][s], 0, 0, nDim3,
                             nG);
         }
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
-          apply_centerB_BC(iLev, centerBstage[iLev], tStageOut[s]);
+          apply_centerB_BC(iLev, centerBstage[iLev], tStageOut[s],
+                           cStage[s] * subDt);
         }
       }
 
@@ -2544,7 +2548,7 @@ void Pic::update_B_hybrid() {
                         nG);
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        apply_centerB_BC(iLev, tSubEnd);
+        apply_centerB_BC(iLev, tSubEnd, subDt);
       }
       continue;
     }
@@ -2560,37 +2564,47 @@ void Pic::update_B_hybrid() {
       faraday_stage_rhs(centerB, 0, hstepStart, ambiInStages, tSubStart);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
+        MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, nDim3,
+                       centerBstage[iLev].nGrow());
         MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
                           kStage[iLev][0], 0, 0, nDim3, nG);
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        apply_centerB_BC(iLev, centerBstage[iLev], tSubEnd);
+        apply_centerB_BC(iLev, centerBstage[iLev], tSubEnd, subDt);
       }
 
       // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(B1)))
       faraday_stage_rhs(centerBstage, 1, hstepEnd, ambiInStages, tSubEnd);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
-        MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
-                          centerBstart[iLev], 0, 0, nDim3, nG);
-        MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
-                        0, nDim3, nG);
+        MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][1], 0, 0,
+                        nDim3, nG);
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        apply_centerB_BC(iLev, centerBstage[iLev], tSubHalf);
+        apply_centerB_BC(iLev, centerBstage[iLev], tSubEnd, subDt);
+        MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
+                          centerBstart[iLev], 0, 0, nDim3,
+                          centerBstage[iLev].nGrow());
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        apply_centerB_BC(iLev, centerBstage[iLev], tSubHalf, -2.0);
       }
 
       // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(B2)))
       faraday_stage_rhs(centerBstage, 2, hstepHalf, ambiInStages, tSubHalf);
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         const int nG = faraday_ngrow(iLev);
-        MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
-                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3, nG);
-        MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
-                        0, nDim3, nG);
+        MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][2], 0, 0,
+                        nDim3, nG);
       }
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        apply_centerB_BC(iLev, tSubEnd);
+        apply_centerB_BC(iLev, centerBstage[iLev], tSubEnd, subDt);
+        MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
+                          1.0 / 3.0, centerBstart[iLev], 0, 0, nDim3,
+                          centerB[iLev].nGrow());
+      }
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        apply_centerB_BC(iLev, tSubEnd, -2.0);
       }
       continue;
     }
@@ -2627,7 +2641,7 @@ void Pic::update_B_hybrid() {
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
         apply_field_bc(node_status(iLev), nodeB[iLev], 0, nDim3,
-                       &Pic::get_node_B, iLev, true);
+                       &Pic::get_node_B, iLev, true, 0.0);
       }
       ensure_divB(iLev);
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
@@ -2642,7 +2656,7 @@ void Pic::update_B_hybrid() {
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
       apply_field_bc(node_status(iLev), nodeB[iLev], 0, nDim3, &Pic::get_node_B,
-                     iLev, true);
+                     iLev, true, 0.0);
     }
     if (is_body_conducting()) {
       project_body_B(nodeB[iLev], iLev);
@@ -2705,7 +2719,7 @@ void Pic::update_B_hybrid() {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
         apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
-                       &Pic::get_node_E, iLev, false);
+                       &Pic::get_node_E, iLev, false, 0.0);
         if (use_body()) {
           apply_body_E_bc(nodeE[iLev], iLev);
         }
@@ -2858,7 +2872,7 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     nodeBstage[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
       apply_field_bc(node_status(iLev), nodeBstage[iLev], 0, 3,
-                     &Pic::get_node_B, iLev, true);
+                     &Pic::get_node_B, iLev, true, 0.0);
     }
     if (is_body_conducting()) {
       project_body_B(nodeBstage[iLev], iLev);

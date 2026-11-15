@@ -55,6 +55,17 @@ void Pic::fill_new_cells() {
   if (ic_) {
     PicICFields icf = ic_fields();
     ic_->set_fields(icf);
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      apply_centerB_BC(iLev, centerB[iLev], 0.0, 0.0);
+    }
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
+                       iLev, true, 0.0, 0.0);
+      }
+    }
   }
 
   if (usePIC) {
@@ -70,7 +81,7 @@ void Pic::fill_new_cells() {
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
           apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
-                         iLev, true);
+                         iLev, true, 0.0);
         }
       }
       if (useElectronPressureEq && !peStateInitialized_) {
@@ -83,7 +94,7 @@ void Pic::fill_new_cells() {
         nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
           apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
-                         &Pic::get_node_E, iLev, false);
+                         &Pic::get_node_E, iLev, false, 0.0);
         }
       }
       if (doSmoothE) {
@@ -92,7 +103,7 @@ void Pic::fill_new_cells() {
           smooth_E(nodeE[iLev], iLev);
           if (iLev == 0) {
             apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3,
-                           &Pic::get_node_E, iLev, false);
+                           &Pic::get_node_E, iLev, false, 0.0);
           }
           if (use_body()) {
             apply_body_E_bc(nodeE[iLev], iLev);
@@ -704,11 +715,12 @@ void Pic::fill_E_B_fields(bool fillAll) {
   nodeB[0].FillBoundary(Geom(0).periodicity());
   centerB[0].FillBoundary(Geom(0).periodicity());
   // NOTE: apply_field_bc() also applies the wave hard source.
-  apply_field_bc(node_status(0), nodeB[0], 0, nDim3, &Pic::get_node_B, 0, true);
-  apply_field_bc(node_status(0), nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
-                 false);
+  apply_field_bc(node_status(0), nodeB[0], 0, nDim3, &Pic::get_node_B, 0, true,
+                 0.0);
+  apply_field_bc(node_status(0), nodeE[0], 0, nDim3, &Pic::get_node_E, 0, false,
+                 0.0);
   apply_field_bc(cell_status(0), centerB[0], 0, centerB[0].nComp(),
-                 &Pic::get_center_B, 0, true);
+                 &Pic::get_center_B, 0, true, 0.0);
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   auto& cellInterp = *get_cell_interp();
@@ -747,7 +759,7 @@ void Pic::fill_E_B_fields(bool fillAll) {
       nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
         apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
-                       iLev, true);
+                       iLev, true, 0.0);
       }
     }
   }
@@ -2252,7 +2264,7 @@ void Pic::update(bool doReportIn) {
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
         if (iLev == 0) {
           apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
-                         iLev, true);
+                         iLev, true, 0.0);
         }
       }
 

@@ -1155,6 +1155,38 @@ public:
   }
 
   template <typename Type>
+  void get_hybrid_ui(const amrex::MFIter& mfi, const Type xyz, const int iLev,
+                     amrex::Real& ux, amrex::Real& uy, amrex::Real& uz) const {
+    if (nS <= 1) {
+      ux = get_ux(mfi, xyz, 0, iLev);
+      uy = get_uy(mfi, xyz, 0, iLev);
+      uz = get_uz(mfi, xyz, 0, iLev);
+      return;
+    }
+    amrex::Real qSum = 0.0, uxSum = 0.0, uySum = 0.0, uzSum = 0.0;
+    for (int s = 0; s < nS; ++s) {
+      const amrex::Real qs =
+          (s < static_cast<int>(QoQi_S.size())) ? QoQi_S[s] : 1.0;
+      const amrex::Real qn = qs * get_number_density(mfi, xyz, s, iLev);
+      if (qn != 0.0) {
+        qSum += qn;
+        uxSum += qn * get_ux(mfi, xyz, s, iLev);
+        uySum += qn * get_uy(mfi, xyz, s, iLev);
+        uzSum += qn * get_uz(mfi, xyz, s, iLev);
+      }
+    }
+    if (qSum != 0.0) {
+      ux = uxSum / qSum;
+      uy = uySum / qSum;
+      uz = uzSum / qSum;
+    } else {
+      ux = get_ux(mfi, xyz, 0, iLev);
+      uy = get_uy(mfi, xyz, 0, iLev);
+      uz = get_uz(mfi, xyz, 0, iLev);
+    }
+  }
+
+  template <typename Type>
   amrex::Real get_ex(const amrex::MFIter& mfi, const Type xyz,
                      const int iLev = 0) const {
     amrex::Real Ex;
@@ -1166,8 +1198,8 @@ public:
       amrex::Real uz = 0, uy = 0;
 
       if (useHybridPIC) {
-        uz = get_uz(mfi, xyz, 0, iLev);
-        uy = get_uy(mfi, xyz, 0, iLev);
+        amrex::Real ux = 0;
+        get_hybrid_ui(mfi, xyz, iLev, ux, uy, uz);
       } else if (OhmU == OhmUe_) {
         uz = get_uz(mfi, xyz, 0, iLev);
         uy = get_uy(mfi, xyz, 0, iLev);
@@ -1208,8 +1240,8 @@ public:
       amrex::Real ux = 0, uz = 0;
 
       if (useHybridPIC) {
-        uz = get_uz(mfi, xyz, 0, iLev);
-        ux = get_ux(mfi, xyz, 0, iLev);
+        amrex::Real uy = 0;
+        get_hybrid_ui(mfi, xyz, iLev, ux, uy, uz);
       } else if (OhmU == OhmUe_) {
         uz = get_uz(mfi, xyz, 0, iLev);
         ux = get_ux(mfi, xyz, 0, iLev);
@@ -1251,8 +1283,8 @@ public:
       amrex::Real ux = 0, uy = 0;
 
       if (useHybridPIC) {
-        ux = get_ux(mfi, xyz, 0, iLev);
-        uy = get_uy(mfi, xyz, 0, iLev);
+        amrex::Real uz = 0;
+        get_hybrid_ui(mfi, xyz, iLev, ux, uy, uz);
       } else if (OhmU == OhmUe_) {
         ux = get_ux(mfi, xyz, 0, iLev);
         uy = get_uy(mfi, xyz, 0, iLev);

@@ -1,9 +1,9 @@
 #DESCRIPTION
-Hybrid-PIC absorbing-field-wall test: a transverse shear-Alfven wave (HybridWave
-testcase) lives in a finite-x domain whose x faces are ABSORBING (outgoing
-characteristic) field boundaries and REFLECTING particle boundaries.  Validates
-that the absorbing field BC is wired into the hybrid field advance and
-that the run stays finite/stable (no NaN).
+Hybrid-PIC absorbing-field-wall test: a spatially localised Gaussian Alfven
+pulse (AlfvenPulse testcase) is seeded at the center of a finite-x domain whose
+x faces are ABSORBING (Mur characteristic) field boundaries and REFLECTING
+particle boundaries.  Both +/-x wave packets propagate out of the domain and
+are absorbed cleanly without reflection.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -17,12 +17,12 @@ F                       initFromSWMF
  0.05                   zMax
 
 #NCELL
-32                      nCellX
+64                      nCellX
 1                       nCellY
 1                       nCellZ
 
 #MAXBLOCKSIZE
-8                       maxBlockSizeX
+16                      maxBlockSizeX
 1                       maxBlockSizeY
 1                       maxBlockSizeZ
 
@@ -39,8 +39,7 @@ periodic                fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 
-Reflecting particle walls keep the ions (and hence the hybrid Ohm's-law moments)
-inside the cavity.
+Reflecting particle walls keep the ions inside the cavity while fields absorb.
 #PARTICLEBOXBOUNDARY
 reflect                 particleBoxBoundaryLo
 reflect                 particleBoxBoundaryHi
@@ -55,13 +54,11 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-Ideal frozen-in Ohm's law (Hall OFF) so the wave is a driven by the motional
-field alone.
 #HALLTERM
-F                       useHallTerm
+T                       useHallTerm
 
 #BSUBCYCLE
-1                       nBSubcycle
+8                       nBSubcycle
 
 #RESISTIVITY
 0.0                     etaResistivity
@@ -71,8 +68,6 @@ F                       useHallTerm
 1.0                     electronGamma
 1.0                     electronDensity0
 
-Single kinetic ion species (q = m = 1); the electron is the implicit massless
-neutralizing fluid.
 #PLASMA
 1                       nSpecies
 1.0                     mass
@@ -83,7 +78,7 @@ neutralizing fluid.
 0.0                     ux
 0.0                     uy
 0.0                     uz
-10000.0                 T
+1.0                     T
 1.0439e-8               bx
 0.0                     by
 0.0                     bz
@@ -92,25 +87,29 @@ neutralizing fluid.
 0.0                     ez
 
 #TESTCASE
-HybridWave
+AlfvenPulse
+
+#WAVEIC
+0.10                    frac
+0.6                     gaussWidth
 
 #TIMESTEPPING
 T                       useFixedDt
-0.02                    dt
+0.01                    dt
 
 #NORMALIZATION
 1.0e5                   lNormSI
 1.0e5                   uNormSI
 
 #MONITOR
-50                      dnReport
+100                     dnReport
 
 #SAVELOG
 10                      dnSavePic
 10                      dnSavePT
 
 #PARTICLES
-2000                    npcelx
+256                     npcelx
 1                       npcely
 1                       npcelz
 
@@ -124,4 +123,4 @@ rhoS0 uxS0 uyS0 uzS0 Bx By Bz Ex Ey Ez   plotVar
 
 #STOP
 -1                      MaxIter
-13.0                    TimeMax
+12.0                    TimeMax
