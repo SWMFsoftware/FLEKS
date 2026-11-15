@@ -1,0 +1,131 @@
+#DESCRIPTION
+Time-dependent crowbar_rlc COILWAVEFORM coupled into the Hybrid PIC solver exercising inductive Faraday splitting and damped RLC current evolution.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-0.6                    xMin [m]
+ 0.6                    xMax [m]
+-0.6                    yMin [m]
+ 0.6                    yMax [m]
+-0.05                   zMin [m]
+ 0.05                   zMax [m]
+
+#NCELL
+24                      nCellX
+24                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+12                      maxBlockSizeX
+12                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+hybrid
+
+#FIELDINTEGRATOR
+rk4
+
+#HALLTERM
+F                       useHallTerm
+
+#FIELDSUBCYCLE
+2                       nSubcycle
+F                       isAutoSubcycle
+
+#RESISTIVITY
+10.0                    etaResistivity [m^2/s]
+
+#ELECTRONTEMPERATURE
+10.0                    electronTemperature [eV]
+1.6666666666666667      electronGamma
+1.0e12                  electronDensity0 [amu/cc]
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+1                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#PLASMA
+1                       nS
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+1.0e12                  rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e5                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#COIL
+filament2d              type
+pulse                   group
+-0.20                   x0 [m]
+ 0.0                    y0 [m]
+ 400.0                  current [A]
+ 0.06                   coreRadius [m]
+
+#COIL
+filament2d              type
+pulse                   group
+ 0.20                   x0 [m]
+ 0.0                    y0 [m]
+-400.0                  current [A]
+ 0.06                   coreRadius [m]
+
+#COILWAVEFORM
+pulse                   group
+crowbar_rlc             type
+0.0                     tStart [s]
+0.4e-5                  tRise [s]
+2.0e-5                  tauDecay [s]
+T                       doCrowbar
+1.0e-5                  tauCrowbar [s]
+
+#TIMESTEPPING
+T                       useFixedDt
+1.5e-6                  dt [s]
+
+#NORMALIZATION
+1.0                     lNormSI [m]
+1.0e5                   uNormSI [m/s]
+
+#MONITOR
+10                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#PARTICLES
+4                       npcelx
+4                       npcely
+1                       npcelz
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var real8 si        plotString
+1                       dn
+-1.0                    dt
+1                       dx
+B0x B0y B0z Bx By Bz Ex Ey Ez Eindx Eindy Eindz E0x E0y E0z rhoS0   plotVar
+
+#STOP
+5                       MaxIter
+-1.0                    TimeMax

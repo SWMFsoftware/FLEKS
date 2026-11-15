@@ -2050,6 +2050,179 @@ length unit is then one planetary radius.
 Only rank zero reads the file and the coefficients are then broadcast.
 </command>
 
+<command name="COIL" alias="COIL_FLEKS0,COIL_FLEKS1,COIL_FLEKS2" multiple="T">
+  <parameter name="type" type="string" input="select" default="loop">
+    <option value="loop"/>
+    <option value="solenoid"/>
+    <option value="segment"/>
+    <option value="filament2d"/>
+  </parameter>
+  <parameter name="group" type="string" default="default"/>
+  <if expr="$type =~ /loop|solenoid/">
+    <parameter name="centerX" type="real" default="0.0"/>
+    <parameter name="centerY" type="real" default="0.0"/>
+    <parameter name="centerZ" type="real" default="0.0"/>
+    <parameter name="axisX" type="real" default="0.0"/>
+    <parameter name="axisY" type="real" default="0.0"/>
+    <parameter name="axisZ" type="real" default="1.0"/>
+    <parameter name="radius" type="real" min="0" default="1.0"/>
+    <if expr="$type =~ /solenoid/">
+      <parameter name="length" type="real" min="0" default="1.0"/>
+      <parameter name="nTurns" type="integer" min="1" default="1"/>
+    </if>
+  </if>
+  <if expr="$type =~ /segment/">
+    <parameter name="x1" type="real" default="0.0"/>
+    <parameter name="y1" type="real" default="0.0"/>
+    <parameter name="z1" type="real" default="0.0"/>
+    <parameter name="x2" type="real" default="0.0"/>
+    <parameter name="y2" type="real" default="0.0"/>
+    <parameter name="z2" type="real" default="1.0"/>
+  </if>
+  <if expr="$type =~ /filament2d/">
+    <parameter name="x0" type="real" default="0.0"/>
+    <parameter name="y0" type="real" default="0.0"/>
+  </if>
+  <parameter name="current" type="real" default="0.0"/>
+  <parameter name="coreRadius" type="real" min="0" default="0.0"/>
+
+#COIL
+loop                    type
+default                 group
+0.0                     centerX
+0.0                     centerY
+-0.5                    centerZ
+0.0                     axisX
+0.0                     axisY
+1.0                     axisZ
+0.5                     radius
+1000.0                  current
+0.0                     coreRadius
+
+This command adds an analytic current-carrying magnetic coil element (in SI
+units: meters and amperes) to the background magnetic field B0, and to the
+inductive electric field E0(t) = -dA0/dt when paired with a time-dependent
+#COILWAVEFORM. Multiple #COIL commands accumulate additively and can coexist
+with #DIPOLE, #CRUSTALFIELD, and #TOROIDALFIELD.
+
+Four geometry types are supported:
+- loop: circular filament of given radius centered at (centerX, centerY, centerZ)
+  with right-handed current positive around (axisX, axisY, axisZ).
+- solenoid: uniform stack of nTurns coaxial loops distributed across length
+  centered at (centerX, centerY, centerZ).
+- segment: straight Biot-Savart current segment from (x1, y1, z1) to
+  (x2, y2, z2), carrying current along that direction (uses Coulomb-gauge
+  potential A0 for inductive E0).
+- filament2d: infinite straight wire along +z at (x0, y0) producing in-plane
+  B = (Bx, By, 0) and out-of-plane inductive Ez.
+
+All coordinates and lengths are in meters [m], current is in amperes [A],
+and coreRadius [m] applies algebraic Biot-Savart/Biot-potential core
+regularization when positive (0 gives the unregularized analytic filament).
+The group label selects the #COILWAVEFORM time envelope applied to this coil.
+</command>
+
+<command name="TOROIDALFIELD" alias="TOROIDALFIELD_FLEKS0,TOROIDALFIELD_FLEKS1,TOROIDALFIELD_FLEKS2" multiple="T">
+  <parameter name="group" type="string" default="default"/>
+  <parameter name="centerX" type="real" default="0.0"/>
+  <parameter name="centerY" type="real" default="0.0"/>
+  <parameter name="centerZ" type="real" default="0.0"/>
+  <parameter name="axisX" type="real" default="0.0"/>
+  <parameter name="axisY" type="real" default="0.0"/>
+  <parameter name="axisZ" type="real" default="1.0"/>
+  <parameter name="bRef" type="real" default="0.0"/>
+  <parameter name="rRef" type="real" min="0" default="1.0"/>
+  <parameter name="rCore" type="real" min="0" default="0.0"/>
+
+#TOROIDALFIELD
+default                 group
+0.0                     centerX
+0.0                     centerY
+0.0                     centerZ
+0.0                     axisX
+0.0                     axisY
+1.0                     axisZ
+0.1                     bRef
+0.5                     rRef
+0.05                    rCore
+
+This command adds an axisymmetric 1/R toroidal (azimuthal) guide magnetic field
+to B0: centered at (centerX, centerY, centerZ) with symmetry axis
+(axisX, axisY, axisZ) [m], yielding amplitude B_phi(R) = bRef * rRef / R in the
+right-handed azimuthal direction about the axis.
+
+bRef is in tesla [T] at cylindrical radius rRef [m] (must be positive). When
+rCore [m] is positive, R in the denominator is regularized as sqrt(R*R + rCore*rCore)
+to remain finite on the axis. For time-dependent toroidal-field waveforms, an
+associated axisymmetric poloidal vector potential A0 is also accumulated so
+that curl(E0) = -dB0/dt holds analytically away from the core.
+</command>
+
+<command name="COILWAVEFORM" alias="COILWAVEFORM_FLEKS0,COILWAVEFORM_FLEKS1,COILWAVEFORM_FLEKS2" multiple="T">
+  <parameter name="group" type="string" default="default"/>
+  <parameter name="type" type="string" input="select" default="constant">
+    <option value="constant"/>
+    <option value="linear_ramp"/>
+    <option value="cosine_ramp"/>
+    <option value="sinusoid"/>
+    <option value="crowbar_rlc"/>
+    <option value="table"/>
+  </parameter>
+  <if expr="$type =~ /constant/">
+    <parameter name="scale" type="real" default="1.0"/>
+  </if>
+  <if expr="$type =~ /linear_ramp|cosine_ramp/">
+    <parameter name="tStart" type="real" default="0.0"/>
+    <parameter name="tEnd" type="real" default="1.0"/>
+    <parameter name="fStart" type="real" default="0.0"/>
+    <parameter name="fEnd" type="real" default="1.0"/>
+  </if>
+  <if expr="$type =~ /sinusoid/">
+    <parameter name="tStart" type="real" default="0.0"/>
+    <parameter name="fOffset" type="real" default="0.0"/>
+    <parameter name="fAmp" type="real" default="1.0"/>
+    <parameter name="freqHz" type="real" min="0" default="1.0"/>
+    <parameter name="phaseDeg" type="real" default="0.0"/>
+  </if>
+  <if expr="$type =~ /crowbar_rlc/">
+    <parameter name="tStart" type="real" default="0.0"/>
+    <parameter name="tRise" type="real" min="0" default="1.0"/>
+    <parameter name="tauDecay" type="real" min="0" default="0.0"/>
+    <parameter name="doCrowbar" type="logical" default="F"/>
+    <parameter name="tauCrowbar" type="real" min="0" default="0.0"/>
+  </if>
+  <if expr="$type =~ /table/">
+    <parameter name="fileName" type="string" default="waveform.txt"/>
+  </if>
+
+#COILWAVEFORM
+default                 group
+cosine_ramp             type
+0.0                     tStart
+1.0e-4                  tEnd
+0.0                     fStart
+1.0                     fEnd
+
+This command attaches a dimensionless current/field amplitude multiplier f(t)
+(with time t in SI seconds [s]) to any #COIL and #TOROIDALFIELD elements sharing
+the same group name. Both B0(t) = f(t) B_ref and the analytic inductive electric
+field E0(t) = -df/dt * A_ref are updated automatically during the simulation.
+
+Six waveform types are supported:
+- constant: fixed scale factor (zero inductive E0).
+- linear_ramp: piecewise linear transition from fStart to fEnd over
+  [tStart, tEnd].
+- cosine_ramp: C1 smooth raised-cosine ramp from fStart to fEnd over
+  [tStart, tEnd].
+- sinusoid: fOffset + fAmp * sin(2*pi*freqHz*(t - tStart) + phaseDeg) for
+  t greater than or equal to tStart.
+- crowbar_rlc: damped RLC pulse normalized to unit peak with quarter-period
+  tRise and decay time tauDecay; when doCrowbar is T, switches at peak to
+  exponential decay with time constant tauCrowbar (0 holds constant at 1).
+- table: piecewise linear interpolation from a two-column (t_s, scale) ASCII
+  file read on rank 0 and broadcast to all ranks.
+</command>
+
 <command name="INNERBOUNDARY" alias="BODYBOUNDARY,BODYBOUNDARY_FLEKS0,BODYBOUNDARY_FLEKS1,BODYBOUNDARY_FLEKS2,INNERBOUNDARY_FLEKS0,INNERBOUNDARY_FLEKS1,INNERBOUNDARY_FLEKS2" multiple="T">
   <parameter name="particleBoundary" type="string" default="absorb"/>
   <parameter name="fieldBoundary" type="string" default="linetied"/>

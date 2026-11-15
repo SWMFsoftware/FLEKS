@@ -820,6 +820,13 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
                   tempNode.nGrow());
   }
 
+  if (has_inductive_E0() && !nodeE0[iLev].empty()) {
+    tempNode.setVal(0.0);
+    update_E_M_dot_E(nodeE0[iLev], tempNode, iLev);
+    MultiFab::Subtract(temp2Node, tempNode, 0, 0, tempNode.nComp(),
+                       std::min(temp2Node.nGrow(), tempNode.nGrow()));
+  }
+
   // Dirichlet physical boundaries (inflow, fixed, wave): the right-hand side
   // for the total field must equal the boundary value that update_E_matvec()
   // puts into A(E_old), so that the initial residual rhs - A(E_old) is exactly
@@ -2032,12 +2039,13 @@ void Pic::project_down_E() {
 
 //==========================================================
 Real Pic::calc_E_field_energy() {
+  const Vector<MultiFab>& eTot = total_node_E(nodeE);
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       const Array4<int const> status = cell_status(iLev)[mfi].const_array();
       Box box = mfi.validbox();
-      const Array4<Real const> arr = nodeE[iLev][mfi].const_array();
+      const Array4<Real const> arr = eTot[iLev][mfi].const_array();
 
       const Dim3 lo = lbound(box);
       const Dim3 len = length(box);

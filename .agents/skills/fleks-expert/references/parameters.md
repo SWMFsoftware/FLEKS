@@ -14,6 +14,7 @@
 | Particles | `#PARTICLES`, `#RESAMPLING`, `#FASTMERGE`, `#VACUUM`, `#PARTICLETRACKER` |
 | Initial / boundary | `#GEOMETRY`, `#NCELL`, `#REGION`, `#BC` |
 | Coupling | `#OHION`, `#CHARGEEXCHANGE`, `#MAXCHARGEEXCHANGERATE` |
+| External coils & waveforms | `#COIL`, `#TOROIDALFIELD`, `#COILWAVEFORM` |
 
 ## Conventions
 

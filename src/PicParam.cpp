@@ -171,6 +171,161 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
     Print() << "  intrinsic field: crustal, file = " << fileName
             << ", nMax = " << nMax << "\n";
+  } else if (command == "#COIL") {
+    IntrinsicBField::CoilSpecSI spec;
+    std::string type;
+    param.read_var("type", type);
+    param.read_var("group", spec.group);
+
+    if (type == "loop" || type == "solenoid") {
+      spec.kind = (type == "loop") ? IntrinsicBField::CoilKind::Loop
+                                   : IntrinsicBField::CoilKind::Solenoid;
+      param.read_var("centerX", spec.p1[0]);
+      param.read_var("centerY", spec.p1[1]);
+      param.read_var("centerZ", spec.p1[2]);
+      param.read_var("axisX", spec.p2[0]);
+      param.read_var("axisY", spec.p2[1]);
+      param.read_var("axisZ", spec.p2[2]);
+      param.read_var("radius", spec.radius);
+      if (type == "solenoid") {
+        param.read_var("length", spec.length);
+        param.read_var("nTurns", spec.nTurns);
+        if (spec.length < 0.0 || spec.nTurns < 1)
+          Abort("Error: #COIL solenoid requires length >= 0 and nTurns >= 1.");
+      }
+      param.read_var("current", spec.current);
+      param.read_var("coreRadius", spec.coreRadius);
+
+      const Real axisMag2 = spec.p2[0] * spec.p2[0] + spec.p2[1] * spec.p2[1] +
+                            spec.p2[2] * spec.p2[2];
+      if (!(axisMag2 > 0.0))
+        Abort("Error: #COIL loop/solenoid axis vector must be nonzero.");
+      if (!(spec.radius > 0.0))
+        Abort("Error: #COIL loop/solenoid radius must be positive.");
+    } else if (type == "segment") {
+      spec.kind = IntrinsicBField::CoilKind::Segment;
+      param.read_var("x1", spec.p1[0]);
+      param.read_var("y1", spec.p1[1]);
+      param.read_var("z1", spec.p1[2]);
+      param.read_var("x2", spec.p2[0]);
+      param.read_var("y2", spec.p2[1]);
+      param.read_var("z2", spec.p2[2]);
+      param.read_var("current", spec.current);
+      param.read_var("coreRadius", spec.coreRadius);
+
+      const Real dx = spec.p2[0] - spec.p1[0];
+      const Real dy = spec.p2[1] - spec.p1[1];
+      const Real dz = spec.p2[2] - spec.p1[2];
+      if (!(dx * dx + dy * dy + dz * dz > 0.0))
+        Abort("Error: #COIL segment endpoints must not coincide.");
+    } else if (type == "filament2d") {
+      spec.kind = IntrinsicBField::CoilKind::Filament2D;
+      param.read_var("x0", spec.p1[0]);
+      param.read_var("y0", spec.p1[1]);
+      spec.p1[2] = 0.0;
+      param.read_var("current", spec.current);
+      param.read_var("coreRadius", spec.coreRadius);
+    } else {
+      Abort("Error: unknown #COIL type '" + type +
+            "'. Expected loop, solenoid, segment, or filament2d.");
+    }
+
+    if (spec.coreRadius < 0.0)
+      Abort("Error: #COIL coreRadius must be non-negative.");
+
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->add_coil(spec);
+
+    Print() << "  intrinsic field: coil type = " << type
+            << ", group = " << spec.group << ", I = " << spec.current
+            << " [A]\n";
+  } else if (command == "#TOROIDALFIELD") {
+    IntrinsicBField::ToroidalSpecSI spec;
+    param.read_var("group", spec.group);
+    param.read_var("centerX", spec.center[0]);
+    param.read_var("centerY", spec.center[1]);
+    param.read_var("centerZ", spec.center[2]);
+    param.read_var("axisX", spec.axis[0]);
+    param.read_var("axisY", spec.axis[1]);
+    param.read_var("axisZ", spec.axis[2]);
+    param.read_var("bRef", spec.bRefT);
+    param.read_var("rRef", spec.rRefM);
+    param.read_var("rCore", spec.rCoreM);
+
+    const Real axisMag2 = spec.axis[0] * spec.axis[0] +
+                          spec.axis[1] * spec.axis[1] +
+                          spec.axis[2] * spec.axis[2];
+    if (!(axisMag2 > 0.0))
+      Abort("Error: #TOROIDALFIELD axis vector must be nonzero.");
+    if (!(spec.rRefM > 0.0))
+      Abort("Error: #TOROIDALFIELD rRef must be positive.");
+    if (spec.rCoreM < 0.0)
+      Abort("Error: #TOROIDALFIELD rCore must be non-negative.");
+
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->add_toroidal_field(spec);
+
+    Print() << "  intrinsic field: toroidal group = " << spec.group
+            << ", bRef = " << spec.bRefT << " [T] at rRef = " << spec.rRefM
+            << " [m]\n";
+  } else if (command == "#COILWAVEFORM") {
+    std::string group;
+    std::string type;
+    param.read_var("group", group);
+    param.read_var("type", type);
+
+    IntrinsicBField::WaveformSpecSI spec;
+    if (type == "constant") {
+      spec.kind = IntrinsicBField::WaveformKind::Constant;
+      param.read_var("scale", spec.scale);
+    } else if (type == "linear_ramp" || type == "cosine_ramp") {
+      spec.kind = (type == "linear_ramp")
+                      ? IntrinsicBField::WaveformKind::LinearRamp
+                      : IntrinsicBField::WaveformKind::CosineRamp;
+      param.read_var("tStart", spec.tStart);
+      param.read_var("tEnd", spec.tEnd);
+      param.read_var("fStart", spec.fStart);
+      param.read_var("fEnd", spec.fEnd);
+      if (!(spec.tEnd > spec.tStart))
+        Abort("Error: #COILWAVEFORM " + type + " requires tEnd > tStart.");
+    } else if (type == "sinusoid") {
+      spec.kind = IntrinsicBField::WaveformKind::Sinusoid;
+      param.read_var("tStart", spec.tStart);
+      param.read_var("fOffset", spec.fOffset);
+      param.read_var("fAmp", spec.fAmp);
+      param.read_var("freqHz", spec.freqHz);
+      param.read_var("phaseDeg", spec.phaseDeg);
+      if (spec.freqHz < 0.0)
+        Abort("Error: #COILWAVEFORM sinusoid requires freqHz >= 0.");
+    } else if (type == "crowbar_rlc") {
+      spec.kind = IntrinsicBField::WaveformKind::CrowbarRLC;
+      param.read_var("tStart", spec.tStart);
+      param.read_var("tRise", spec.tRise);
+      param.read_var("tauDecay", spec.tauDecay);
+      param.read_var("doCrowbar", spec.doCrowbar);
+      param.read_var("tauCrowbar", spec.tauCrowbar);
+      if (!(spec.tRise > 0.0))
+        Abort("Error: #COILWAVEFORM crowbar_rlc requires tRise > 0.");
+      if (spec.tauDecay < 0.0 || spec.tauCrowbar < 0.0)
+        Abort("Error: #COILWAVEFORM crowbar_rlc requires non-negative decay "
+              "times.");
+    } else if (type == "table") {
+      spec.kind = IntrinsicBField::WaveformKind::Table;
+      param.read_var("fileName", spec.fileName);
+    } else {
+      Abort("Error: unknown #COILWAVEFORM type '" + type +
+            "'. Expected constant, linear_ramp, cosine_ramp, sinusoid, "
+            "crowbar_rlc, or table.");
+    }
+
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->set_waveform(group, spec);
+
+    Print() << "  intrinsic field: waveform group = " << group
+            << ", type = " << type << "\n";
   } else if (command == "#BODY") {
     std::string type;
     param.read_var("type", type);
@@ -1358,9 +1513,9 @@ void Pic::convert_intrinsic_B() {
                                   get_body_center()[iy_],
                                   get_body_center()[iz_] };
 
-  intrinsicB_->convert_units(fi->get_Si2NoB(), fi->get_Si2NoL(),
-                             fi->get_rPlanet_SI(), bodyCenterTmp,
-                             get_body_radius(), use_body(), nDim);
+  intrinsicB_->convert_units(
+      fi->get_Si2NoB(), fi->get_Si2NoL(), fi->get_Si2NoV(),
+      fi->get_rPlanet_SI(), bodyCenterTmp, get_body_radius(), use_body(), nDim);
 
   Print() << intrinsicB_->describe() << "\n";
 }

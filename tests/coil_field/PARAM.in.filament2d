@@ -1,0 +1,119 @@
+#DESCRIPTION
+Generic fake-2D filament2d + linear/table waveform verification (opposing out-of-plane 2D line currents with inductive Ez and Faraday consistency).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-0.6                    xMin [m]
+ 0.6                    xMax [m]
+-0.6                    yMin [m]
+ 0.6                    yMax [m]
+-0.05                   zMin [m]
+ 0.05                   zMax [m]
+
+#NCELL
+24                      nCellX
+24                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+12                      maxBlockSizeX
+12                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+none
+
+#PLASMA
+2                       nS
+1.0                     mass
+1.0                     charge
+0.04                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#COIL
+filament2d              type
+pos                     group
+-0.25                   x0 [m]
+ 0.0                    y0 [m]
+ 1000.0                 current [A]
+ 0.05                   coreRadius [m]
+
+#COIL
+filament2d              type
+neg                     group
+ 0.25                   x0 [m]
+ 0.0                    y0 [m]
+-1000.0                 current [A]
+ 0.05                   coreRadius [m]
+
+#COILWAVEFORM
+pos                     group
+linear_ramp             type
+0.0                     tStart [s]
+1.0e-5                  tEnd [s]
+0.0                     fStart
+1.0                     fEnd
+
+#COILWAVEFORM
+neg                     group
+table                   type
+waveform_table.txt      fileName
+
+#TIMESTEPPING
+T                       useFixedDt
+2.0e-6                  dt [s]
+
+#NORMALIZATION
+1.0                     lNormSI [m]
+1.0e5                   uNormSI [m/s]
+
+#MONITOR
+10                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#PARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+z=0 var real8 si        plotString
+1                       dn
+-1.0                    dt
+1                       dx
+B0x B0y B0z Bx By Bz Ex Ey Ez Eindx Eindy Eindz E0x E0y E0z   plotVar
+
+#STOP
+4                       MaxIter
+-1.0                    TimeMax
