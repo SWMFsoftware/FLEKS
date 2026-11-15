@@ -46,20 +46,38 @@ void OH_get_solar_wind(double* /*x*/, double* /*y*/, double* /*z*/,
 
 namespace {
 
+void load_param_file(const std::string& filename, std::string& paramString,
+                     int depth = 0) {
+  if (depth > 10)
+    amrex::Abort("Error: #INCLUDE nesting exceeded 10 levels at " + filename);
+
+  std::ifstream infile(filename);
+  if (!infile.is_open())
+    amrex::Abort("Error: Could not open parameter file " + filename);
+
+  std::string line, token;
+  while (std::getline(infile, line)) {
+    token.clear();
+    std::istringstream(line) >> token;
+    if (token == "#INCLUDE" || token == "#INCLUDE_FLEKS1") {
+      std::string nextLine, includeFile;
+      if (!std::getline(infile, nextLine) ||
+          !(std::istringstream(nextLine) >> includeFile)) {
+        amrex::Abort("Error: Missing filename after " + token + " in " +
+                     filename);
+      }
+      load_param_file(includeFile, paramString, depth + 1);
+    } else {
+      paramString += line + "\n";
+    }
+  }
+}
+
 std::string prepare_standalone_run() {
   std::string paramString;
 
   if (amrex::ParallelDescriptor::MyProc() == 0) {
-    std::ifstream infile("PARAM.in");
-    if (!infile.is_open()) {
-      std::cerr << "Error: Could not open PARAM.in" << std::endl;
-      amrex::ParallelDescriptor::Abort();
-    }
-
-    std::string line;
-    while (std::getline(infile, line)) {
-      paramString += line + "\n";
-    }
+    load_param_file("PARAM.in", paramString);
   }
 
   int paramLen = static_cast<int>(paramString.length());

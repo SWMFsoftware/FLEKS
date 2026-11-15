@@ -19,7 +19,9 @@
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_SPACE.H>
+#include <AMReX_Utility.H>
 #include <AMReX_Vector.H>
+#include <AMReX_VisMF.H>
 #include <AMReX_iMultiFab.H>
 
 #include "Array1D.h"
@@ -358,6 +360,86 @@ public:
       sLev = "";
     }
     return sLev;
+  }
+
+  /**
+   * @brief Resolve the MultiFab restart path for level @p iLev.
+   *
+   * Falls back between `<baseName>` and `<baseName>_lev_0` when reading a
+   * single-level restart written under a different `nLevMax` configuration.
+   */
+  std::string restart_file_name(const std::string& baseName, int iLev,
+                                bool* found = nullptr) const {
+    const std::string primary = baseName + lev_string(iLev);
+    const bool canFallback = (iLev == 0 && n_lev() == 1);
+    if (!canFallback && !found) {
+      return primary;
+    }
+    if (amrex::FileExists(primary + "_H")) {
+      if (found)
+        *found = true;
+      return primary;
+    }
+    if (canFallback) {
+      const std::string alternate =
+          n_lev_max() == 1 ? baseName + "_lev_0" : baseName;
+      if (amrex::FileExists(alternate + "_H")) {
+        amrex::Print() << printPrefix << "restart: '" << primary
+                       << "' not found; falling back to '" << alternate << "'."
+                       << std::endl;
+        if (found)
+          *found = true;
+        return alternate;
+      }
+    }
+    if (found)
+      *found = false;
+    return primary;
+  }
+
+  /**
+   * @brief Write all non-empty active levels of a MultiFab vector to restart
+   * files under @p baseName.
+   */
+  void write_restart_mf(const amrex::Vector<amrex::MultiFab>& mf,
+                        const std::string& baseName) const {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (iLev < static_cast<int>(mf.size()) && !mf[iLev].empty()) {
+        amrex::VisMF::Write(mf[iLev], baseName + lev_string(iLev));
+      }
+    }
+  }
+
+  /**
+   * @brief Read all non-empty active levels of a MultiFab vector from restart
+   * files under @p baseName.
+   */
+  bool read_restart_mf(amrex::Vector<amrex::MultiFab>& mf,
+                       const std::string& baseName, bool fillBoundary = true,
+                       bool optional = false) const {
+    amrex::Vector<std::string> files(n_lev());
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (iLev >= static_cast<int>(mf.size()) || mf[iLev].empty()) {
+        if (optional)
+          return false;
+        continue;
+      }
+      bool found = false;
+      files[iLev] =
+          restart_file_name(baseName, iLev, optional ? &found : nullptr);
+      if (optional && !found) {
+        return false;
+      }
+    }
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (iLev < static_cast<int>(mf.size()) && !mf[iLev].empty()) {
+        amrex::VisMF::Read(mf[iLev], files[iLev]);
+        if (fillBoundary) {
+          mf[iLev].FillBoundary(Geom(iLev).periodicity());
+        }
+      }
+    }
+    return true;
   }
 
   // Find the finest level that contains the cell xyz.

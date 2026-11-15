@@ -1,0 +1,122 @@
+#DESCRIPTION
+Restart regression test (Semi-Implicit Full PIC, FIELDSOLVER implicit).
+Session 1 runs cycles 0..5 of a 1D periodic magnetized e-i plasma with a
+HybridWave perturbation and writes a checkpoint at cycle 5; Session 2 continues
+uninterrupted to cycle 10. validate.py restarts from PC/restartIN/ at cycle 5
+via FLEKS1_restart.H and verifies exact agreement (relative diff < 1e-10) on
+cycles 5..10 energy logs and cycle-10 real8 plot fields.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin
+ 3.2                    xMax
+-0.1                    yMin
+ 0.1                    yMax
+-0.1                    zMin
+ 0.1                    zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+implicit
+
+#DISCRETIZATION
+0.50                    theta
+0.0                     coefDiff
+
+#EFIELDSOLVER
+1e-12                   EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
+#DIVE
+F                       doCorrectDivE
+
+#PLASMA
+2                       nSpecies
+0.04                    mass        Species 0: electron
+-1.0                    charge
+1.0                     mass        Species 1: ion
+1.0                     charge
+
+#UNIFORMSTATE
+0.2                     rho [/cc]   Species 0: electron
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [/cc]   Species 1: ion
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0439e-8               bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+HybridWave
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+10                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+8                       nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid real8 pic     plotString
+5                       dn
+-1.0                    dt
+1                       dx
+
+#SAVERESTART
+T                       doSaveRestart
+5                       dnSaveRestart
+-1.0                    dtSaveRestart
+
+#STOP
+5                       MaxIter
+-1.0                    TimeMax
+
+#RUN
+
+#SAVERESTART
+F                       doSaveRestart
+
+#STOP
+10                      MaxIter
+-1.0                    TimeMax

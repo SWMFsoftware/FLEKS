@@ -523,32 +523,19 @@ public:
     if (is_grid_empty())
       return;
 
-    std::string restartDir = get_restart_out_dir();
-
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      amrex::VisMF::Write(nodeFluid[iLev], restartDir + gridName +
-                                               "_Interface_nodeFluid" +
-                                               lev_string(iLev));
-      amrex::VisMF::Write(centerB[iLev], restartDir + gridName +
-                                             "_Interface_centerB" +
-                                             lev_string(iLev));
-    }
+    const std::string prefix = get_restart_out_dir() + gridName;
+    write_restart_mf(nodeFluid, prefix + "_Interface_nodeFluid");
+    write_restart_mf(centerB, prefix + "_Interface_centerB");
   }
 
   void read_restart() {
     if (is_grid_empty())
       return;
 
-    std::string restartDir = component + "/restartIN/";
-
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      amrex::VisMF::Read(nodeFluid[iLev], restartDir + gridName +
-                                              "_Interface_nodeFluid" +
-                                              lev_string(iLev));
-      amrex::VisMF::Read(centerB[iLev], restartDir + gridName +
-                                            "_Interface_centerB" +
-                                            lev_string(iLev));
-    }
+    amrex::Print() << "FluidInterface::read_restart() start....." << std::endl;
+    const std::string prefix = component + "/restartIN/" + gridName;
+    read_restart_mf(nodeFluid, prefix + "_Interface_nodeFluid", false);
+    read_restart_mf(centerB, prefix + "_Interface_centerB", false);
     isnodeFluidReady = true;
   }
 
