@@ -535,10 +535,10 @@ def _check_waveform_static(frames):
 
     coords = _coords3(frames[0])
     b_r_ref, a_r_ref = analytic_loop_ba(
-        coords, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.25, 1200.0, 0.02
+        coords, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.25, 1200.0, 0.05
     )
     b_a_ref, a_a_ref = analytic_loop_ba(
-        coords, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.20, 400.0, 0.02
+        coords, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.20, 400.0, 0.05
     )
 
     for fr in frames:
@@ -675,8 +675,8 @@ def _check_waveform_static(frames):
     t_last = frames[-1]["time"]
     framp, _ = wf_cosine_ramp(t_last, 0.0, 1.0e-5, 0.2, 1.2)
     fac, _ = wf_sinusoid(t_last, 0.0, 0.5, 0.5, 5.0e4, 0.0)
-    b_l_r, _ = analytic_loop_ba(line_pts, [0, 0, 0], [0, 1, 0], 0.25, 1200.0, 0.02)
-    b_l_a, _ = analytic_loop_ba(line_pts, [0, 0, 0], [0, 0, 1], 0.20, 400.0, 0.02)
+    b_l_r, _ = analytic_loop_ba(line_pts, [0, 0, 0], [0, 1, 0], 0.25, 1200.0, 0.05)
+    b_l_a, _ = analytic_loop_ba(line_pts, [0, 0, 0], [0, 0, 1], 0.20, 400.0, 0.05)
     b_line_ref = framp * b_l_r + fac * b_l_a
     if not np.all(np.isfinite(line_b)):
         return False, "Non-finite values in extract_probes CSV"
@@ -693,8 +693,8 @@ def _check_waveform_static(frames):
     if not np.all(np.isfinite(npz_data["Bz"])):
         return False, "Non-finite values in extract_probes NPZ"
     plane_pts = npz_data["coords"]
-    b_p_r, _ = analytic_loop_ba(plane_pts, [0, 0, 0], [0, 1, 0], 0.25, 1200.0, 0.02)
-    b_p_a, _ = analytic_loop_ba(plane_pts, [0, 0, 0], [0, 0, 1], 0.20, 400.0, 0.02)
+    b_p_r, _ = analytic_loop_ba(plane_pts, [0, 0, 0], [0, 1, 0], 0.25, 1200.0, 0.05)
+    b_p_a, _ = analytic_loop_ba(plane_pts, [0, 0, 0], [0, 0, 1], 0.20, 400.0, 0.05)
     bz_plane_ref = (framp * b_p_r + fac * b_p_a)[:, 2]
     bz_plane_err = float(
         np.max(np.abs(npz_data["Bz"][-1] - bz_plane_ref))

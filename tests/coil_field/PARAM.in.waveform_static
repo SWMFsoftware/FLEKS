@@ -66,7 +66,7 @@ ramp                    group
 0.0                     axisZ
 0.25                    radius [m]
 1200.0                  current [A]
-0.02                    coreRadius [m]
+0.05                    coreRadius [m]
 
 #COIL
 loop                    type
@@ -79,7 +79,7 @@ ac                      group
 1.0                     axisZ
 0.20                    radius [m]
 400.0                   current [A]
-0.02                    coreRadius [m]
+0.05                    coreRadius [m]
 
 #COILWAVEFORM
 ramp                    group
