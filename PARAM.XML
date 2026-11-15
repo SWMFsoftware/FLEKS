@@ -216,7 +216,7 @@ particle tracker components, respectively.
 </command>
 
 <command name="TPSAVE" alias="TPSAVE_FLEKS0,TPSAVE_FLEKS1,TPSAVE_FLEKS2" multiple="T">
-  <parameter name="iSpecies" type="integer" required="T"/>
+  <parameter name="iSpecies" type="integer" default="0"/>
   <parameter name="unit" type="string" input="select">
     <option value="si"     name="SI units"/>
     <option value="planet" name="planet units" default="T"/>
@@ -236,7 +236,7 @@ The unit and frequence of saving test particles, and the threshold for relaunchi
 </command>
 
 <command name="TPSAVEAT" alias="TPSAVEAT_FLEKS0,TPSAVEAT_FLEKS1,TPSAVEAT_FLEKS2" multiple="T">
-  <parameter name="iSpecies" type="integer" required="T"/>
+  <parameter name="iSpecies" type="integer" default="0"/>
   <parameter name="dtSave" type="real" default="-1.0"/>
 
 #TPSAVEAT
@@ -335,8 +335,8 @@ Turning on/off the PIC module.
 </command>
 
 <command name="FIELDSOLVER" alias="FIELDSOLVER_FLEKS0,FIELDSOLVER_FLEKS1,FIELDSOLVER_FLEKS2" multiple="T">
-  <parameter name="fieldSolverMode" type="string" input="select" required="T">
-    <option value="implicit"/>
+  <parameter name="fieldSolverMode" type="string" input="select">
+    <option value="implicit" default="T"/>
     <option value="explicit"/>
     <option value="hybrid"/>
     <option value="none"/>
@@ -769,12 +769,12 @@ Only used when #HYBRIDPIC is T.
 </command>
 
 <command name="FIELDINTEGRATOR" alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2" multiple="T">
-  <parameter name="fieldIntegrator" type="string" input="select" required="T">
+  <parameter name="fieldIntegrator" type="string" input="select">
     <option value="leapfrog"/>
     <option value="pc"/>
     <option value="rk2"/>
     <option value="rk4"/>
-    <option value="ssprk3"/>
+    <option value="ssprk3" default="T"/>
     <option value="rk4-pc"/>
     <option value="ssprk3-pc"/>
   </parameter>
@@ -796,9 +796,9 @@ Time integrator for field update in explicit full PIC and hybrid PIC:
 </command>
 
 <command name="PARTMODE" alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2" multiple="T">
-  <parameter name="partMode" type="string" input="select" required="T">
+  <parameter name="partMode" type="string" input="select">
     <option value="SEP"/>
-    <option value="PIC"/>
+    <option value="PIC" default="T"/>
   </parameter>
 
 #PARTMODE
@@ -923,8 +923,8 @@ recommended to set maxWeightRatio to 4-8 for OH-PT simulations.
 </command>
 
 <command name="OVERRIDESPLITTING" alias="OVERRIDESPLITTING_FLEKS0,OVERRIDESPLITTING_FLEKS1,OVERRIDESPLITTING_FLEKS2" multiple="T">
-  <parameter name="doOverRideSplitting" type="string" input="select" required="F">
-    <option value="F" name="No override"/>
+  <parameter name="doOverRideSplitting" type="string" input="select">
+    <option value="F" default="T" name="No override"/>
     <option value="V" name="Split in velocity"/>
     <option value="S" name="Split in space"/>
   </parameter>
@@ -1024,16 +1024,22 @@ for the levels of higher resolution.
 </command>
 
 <command name="LOADBALANCE" alias="LOADBALANCE_FLEKS0, LOADBALANCE_FLEKS2">
-  <parameter name="loadBalanceStrategy" type="string" input="select" required="T">
+  <parameter name="loadBalanceStrategy" type="string" input="select">
     <option value="particle" />
     <option value="cell"   />
     <option value="hybrid" />
+    <option value="off" default="T" />
   </parameter>
   <if expr="$loadBalanceStrategy =~ /hybrid/">
     <parameter name="cellWeight" type="integer" default="100" />
   </if>
-  <parameter name="dn" type="integer" default="-1" required="T" />
-  <parameter name="dt" type="real" default="-1" required="T" />
+  <if expr="$loadBalanceStrategy !~ /off/">
+    <parameter name="dn" type="integer" default="-1" />
+    <parameter name="dt" type="real" default="-1" />
+    <rule expr="($dn &gt; 0) != ($dt &gt; 0)">
+      Exactly one of dn and dt must be positive.
+    </rule>
+  </if>
 
 #LOADBALANCE
 particle                    loadBalanceStrategy
@@ -1051,6 +1057,9 @@ hybrid                      loadBalanceStrategy
 20                          dn
 -1.0                        dt
 
+#LOADBALANCE
+off                         loadBalanceStrategy
+
 Load balancing the blocks based on the work load of each cell. The work load
 is measured by the particle number per cell (ppc) when loadBalanceStrategy
 is 'particle', which is recommended for OH-PT simulations. If loadBalanceStrategy
@@ -1062,7 +1071,12 @@ the particle count and a fixed 'cellWeight'. This ensures cells
 without particles still contribute to the load balance, accounting for the
 overhead of interpolation and memory management.
 
-'dn' and 'dt' control the load balancing frequency.
+'dn' and 'dt' control the load balancing frequency: every dn steps or
+every dt time. Exactly one of them must be positive.
+
+'off' switches the load balancing off (no dn and dt lines): the blocks keep
+the default distribution made at the grid generation and at every regrid.
+This is also the default without #LOADBALANCE.
 </command>
 
 <command name="DISCRETIZATION" alias="DISCRETIZE">
@@ -1391,8 +1405,8 @@ this command should only exist in the restart file.
 
 <command name="REGION" alias="REGION_FLEKS0,REGION_FLEKS1,REGION_FLEKS2" multiple="T">
   <parameter name="regionName" type="string"/>
-  <parameter name="shape" type="string" input="select" required="T">
-    <option value="box"     />
+  <parameter name="shape" type="string" input="select">
+    <option value="box" default="T"     />
     <option value="paraboloid" />
     <option value="shell"    />
     <option value="sphere"   />
@@ -1657,7 +1671,7 @@ Cells inside the '+' shapes and outside the '-' shapes will be selected.
 
 <command name="TPSTATESI" alias="TPSTATE_FLEKS0,TPSTATE_FLEKS1,TPSTATE_FLEKS2" multiple="T">
   <parameter name="nState" type="integer" min="0" default="0"/>
-  <parameter name="iSpecies" type="integer"/>
+  <parameter name="iSpecies" type="integer" default="0"/>
   <parameter name="vth" type="real"/>
   <parameter name="vx" type="real"/>
   <parameter name="vy" type="real"/>
@@ -2844,9 +2858,9 @@ accordingly for the next step. This is only used for OH-PT coupling.
 
 <command name="PARTICLEBOXBOUNDARY" alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2" multiple="F">
   <for from="1" to="$nDim">
-    <parameter name="particleBoxBoundaryLo" type="string" input="select" required="T">
+    <parameter name="particleBoxBoundaryLo" type="string" input="select">
       <option value="periodic"/>
-      <option value="coupled"/>
+      <option value="coupled" default="T"/>
       <option value="outflow"/>
       <option value="open"/>
       <option value="vacuum"/>
@@ -2854,9 +2868,9 @@ accordingly for the next step. This is only used for OH-PT coupling.
       <option value="absorb"/>
       <option value="inflow"/>
     </parameter>
-    <parameter name="particleBoxBoundaryHi" type="string" input="select" required="T">
+    <parameter name="particleBoxBoundaryHi" type="string" input="select">
       <option value="periodic"/>
-      <option value="coupled"/>
+      <option value="coupled" default="T"/>
       <option value="outflow"/>
       <option value="open"/>
       <option value="vacuum"/>
@@ -2914,9 +2928,9 @@ deprecated.  See `#FIELDBOXBOUNDARY`.
 
 <command name="FIELDBOXBOUNDARY" alias="FIELDBOXBOUNDARY_FLEKS0,FIELDBOXBOUNDARY_FLEKS1,FIELDBOXBOUNDARY_FLEKS2" multiple="F">
   <for from="1" to="$nDim">
-    <parameter name="fieldBoxBoundaryLo" type="string" input="select" required="T">
+    <parameter name="fieldBoxBoundaryLo" type="string" input="select">
       <option value="periodic"/>
-      <option value="coupled"/>
+      <option value="coupled" default="T"/>
       <option value="outflow"/>
       <option value="open"/>
       <option value="vacuum"/>
@@ -2926,9 +2940,9 @@ deprecated.  See `#FIELDBOXBOUNDARY`.
       <option value="fixed"/>
       <option value="wave"/>
     </parameter>
-    <parameter name="fieldBoxBoundaryHi" type="string" input="select" required="T">
+    <parameter name="fieldBoxBoundaryHi" type="string" input="select">
       <option value="periodic"/>
-      <option value="coupled"/>
+      <option value="coupled" default="T"/>
       <option value="outflow"/>
       <option value="open"/>
       <option value="vacuum"/>
@@ -2989,7 +3003,7 @@ mapped to `conducting`, and reported as deprecated.
 </command>
 
 <command name="ABSORB" alias="ABSORB_FLEKS" multiple="F">
-  <parameter name="charSpeed" type="real" required="T" default="0.0"/>
+  <parameter name="charSpeed" type="real" default="0.0"/>
 
 #ABSORB
 0.0                 charSpeed
@@ -3065,8 +3079,8 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
 </command>
 
 <command name="DISCONTINUITY" alias="DISCONTINUITY_FLEKS" multiple="F">
-  <parameter name="typeDiscontinuity" type="string" input="select" required="T">
-    <option value="td"/>
+  <parameter name="typeDiscontinuity" type="string" input="select">
+    <option value="td" default="T"/>
     <option value="rd"/>
     <option value="rd+"/>
     <option value="rd-"/>
@@ -3149,13 +3163,13 @@ specified in `#DISCONTINUITY`:
   <for name="iWaveFace" from="1" to="$nWaveFace">
     <parameter name="direction" type="integer"/>
     <parameter name="side" type="string" input="select">
-      <option value="lo"/>
+      <option value="lo" default="T"/>
       <option value="hi"/>
     </parameter>
     <parameter name="nComp" type="integer"/>
     <for name="iComp" from="1" to="$nComp">
       <parameter name="iField" type="integer"/>
-      <parameter name="iSpecies" type="integer"/>
+      <parameter name="iSpecies" type="integer" default="0"/>
       <parameter name="profile" type="integer"/>
       <parameter name="amplitude" type="real"/>
       <parameter name="frequency" type="real"/>

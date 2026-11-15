@@ -428,6 +428,14 @@ void Pic::post_regrid(MeshChangeReason reason) {
     doNeedFillNewCell = true;
   distribute_arrays();
 
+  // The target particle numbers are copied by distribute_arrays together
+  // with their ghost cells, which hold the base target only (SetTargetPPC
+  // sets the pre-splitting and constant-PPV values in the valid cells), so a
+  // copy can put the base value into a valid cell at a block boundary. A load
+  // balance does not call fill_new_cells, so the targets are recomputed here.
+  if (reason == MeshChangeReason::LoadBalance && isTargetPPCDefined)
+    SetTargetPPC(2);
+
   // B0 lives on the same grids as B1 and is analytic, so the new boxes are
   // filled by re-evaluating the model rather than by interpolating the old
   // grid. This is the one place a regrid could silently leave B0 at zero.
@@ -2047,16 +2055,18 @@ void Pic::calc_mach_number() {
 
 //==========================================================
 void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
-  if (!isMomentsUpdated && balanceStrategy == BalanceStrategy::Particle) {
-    sum_moments(false);
-  }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (balanceStrategy == BalanceStrategy::Cell) {
       grid.cell_cost()[iLev].setVal(1.0);
     } else {
-      average_node_to_cellcenter(
-          grid.cell_cost()[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
-          grid.cell_cost()[iLev].nComp(), grid.cell_cost()[iLev].nGrow());
+      // The particles of every cell, counted directly. The node number
+      // density averaged to the cells was used before; at a level boundary
+      // the fine nodes carry the counts of the coarse cells (r^d times more
+      // per cell with pre-splitting), so the fine blocks at the edge of a
+      // refined region got 2-3 times their cost.
+      grid.cell_cost()[iLev].setVal(0.0);
+      for (int i = 0; i < nSpecies; i++)
+        parts[i]->add_particle_count(grid.cell_cost()[iLev], iLev);
     }
 
     for (MFIter mfi(grid.cell_cost()[iLev]); mfi.isValid(); ++mfi) {

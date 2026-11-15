@@ -1109,16 +1109,32 @@ void Domain::read_param() {
       if (strategy.empty())
         Abort("Invalid #LOADBALANCE: loadBalanceStrategy must not be empty.");
       strategy[0] = toupper(strategy[0]);
-      const auto strategyIt = stringToBalanceStrategy.find(strategy);
-      if (strategyIt == stringToBalanceStrategy.end())
-        Abort("Invalid #LOADBALANCE strategy '" + strategy +
-              "'. Check the supported load-balance strategies.");
-      balanceStrategy = strategyIt->second;
+      if (strategy == "Off") {
+        // No load balancing: the blocks keep the default distribution of
+        // the grid generation (and of every regrid).
+        tc->loadBalance.init(-1, -1);
+      } else {
+        const auto strategyIt = stringToBalanceStrategy.find(strategy);
+        if (strategyIt == stringToBalanceStrategy.end())
+          Abort("Invalid #LOADBALANCE strategy '" + strategy +
+                "'. Check the supported load-balance strategies.");
+        balanceStrategy = strategyIt->second;
 
-      if (balanceStrategy == BalanceStrategy::Hybrid) {
-        readParam.read_var("cellWeight", cellWeight);
-        if (cellWeight < 1)
-          Abort("Invalid #LOADBALANCE: cellWeight must be positive.");
+        if (balanceStrategy == BalanceStrategy::Hybrid) {
+          readParam.read_var("cellWeight", cellWeight);
+          if (cellWeight < 1)
+            Abort("Invalid #LOADBALANCE: cellWeight must be positive.");
+        }
+        // Frequency of the load balancing (see PARAM.XML). Before these lines
+        // were read, the event was never initialized and the load balancing
+        // never ran.
+        int dnLB;
+        Real dtLB;
+        readParam.read_var("dn", dnLB);
+        readParam.read_var("dt", dtLB);
+        if (dnLB <= 0 && dtLB <= 0)
+          Abort("Invalid #LOADBALANCE: dn or dt must be positive.");
+        tc->loadBalance.init(dtLB, dnLB);
       }
     } else if (command == "#GRIDEFFICIENCY") {
       const Real oldEfficiency = grid->gridEff();

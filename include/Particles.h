@@ -1473,6 +1473,23 @@ public:
                     : is_outside_active_region(p, ab);
   }
 
+  // Adds the number of particles in every cell of level iLev to component 0
+  // of cost (same box array and distribution as the particles), e.g. for the
+  // particle-based load balance.
+  void add_particle_count(amrex::MultiFab& cost, int iLev) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      const amrex::Array4<amrex::Real>& arr = cost[pti].array();
+      const amrex::Box& bx = cost[pti].box();
+      for (const auto& p : pti.GetArrayOfStructs()) {
+        if (p.id() < 0)
+          continue;
+        const amrex::IntVect iv = this->Index(p, iLev);
+        if (bx.contains(iv))
+          arr(iv, 0) += 1;
+      }
+    }
+  }
+
   inline void label_particles_outside_active_region() {
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
