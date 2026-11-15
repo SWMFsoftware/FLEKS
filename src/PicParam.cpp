@@ -840,7 +840,8 @@ void Pic::validate_bc_pairing(const Geometry& gm, bool isStandalone) {
           continue; // Field is default coupled: skip field-pairing checks.
 
         if (pType == ParticleBC::inflow && fType != FieldBC::inflow &&
-            fType != FieldBC::fixed && fType != FieldBC::outflow) {
+            fType != FieldBC::fixed && fType != FieldBC::outflow &&
+            fType != FieldBC::wave) {
           add_bc_warning(what() + " is 'inflow' but the field boundary is '" +
                          FieldBC::to_string(fType) +
                          "'; the injected flux has no upstream field to "

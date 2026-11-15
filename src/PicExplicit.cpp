@@ -284,7 +284,7 @@ void Pic::advance_explicit_pc(Real dt) {
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
       apply_field_bc(node_status(iLev), nodeB[iLev], 0, 3, &Pic::get_node_B,
-                     iLev, true, -1.0, t0 + 0.5 * dt);
+                     iLev, true, 0.0, t0 + 0.5 * dt);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, 3, refRatio(iLev - 1),

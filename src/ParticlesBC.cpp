@@ -461,7 +461,10 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
   const Real nDens = inv->nDens;
   const Real sigma = inv->vth;
+  const Real vtherm = std::sqrt(2.0) * sigma;
   const Real uIn[3] = { inv->ux, inv->uy, inv->uz };
+  const bool isHybrid = (fi != nullptr && fi->get_useHybridPIC());
+  const Real tWave = tc ? std::max(0.0, tc->get_time() - 0.5 * dt) : 0.0;
 
   // Macroparticle weight identical to the interior cell particles
   // (add_particles_cell convention): qp = qomSign * n * V / nppc.
@@ -508,18 +511,23 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         // Inward drift speed = bulk velocity dotted with the inward unit
         // normal (uOut * inward; > 0 when plasma flows into the domain).
         const Real uOut = uIn[iDim];
+        const Real uInNorm = uOut * inward;
 
-        // Mean influx per boundary-transverse cell per step, in
-        // macroparticles.
-        // For a multi-species plasma flow, the convective flux across the
-        // inflow face is determined by the bulk drift speed:
-        //   dn = nppc * (uOut * inward) * dt / dx
-        // Using the unmagnetized 1D half-space thermal flux vtherm * g(vd)
-        // causes light species (electrons, where vtherm >> uOut) to be injected
-        // at a much higher rate than heavy species (ions), creating a strong
-        // charge imbalance and electrostatic sheath that triggers lower hybrid
-        // drift instabilities.
-        const Real fluxRate = nppc * (uOut * inward) * dt / dxn;
+        // Mean influx per boundary-transverse cell per step, in macroparticles:
+        // - Hybrid-PIC has only ions and uses the exact kinetic half-space
+        //   drifting-Maxwellian flux vtherm * g(vd), matching #DISCONTINUITY
+        //   and 'open' faces.
+        // - Full-PIC uses convective bulk flux nppc * (uOut * inward) * dt / dx
+        //   to prevent light-electron charge imbalance across the face.
+        Real fluxRate = 0.0;
+        if (isHybrid) {
+          const Real vFlux =
+              (sigma > 0.0) ? (vtherm * inj_mean_inward_flux(uInNorm / vtherm))
+                            : std::max(0.0, uInNorm);
+          fluxRate = nppc * vFlux * dt / dxn;
+        } else {
+          fluxRate = nppc * uInNorm * dt / dxn;
+        }
         if (fluxRate <= 0.0)
           continue;
 
@@ -555,34 +563,69 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
             (nDim > 2) ? probLo[t2] + (lo2 - domain.smallEnd(t2)) * cellSize[t2]
                        : 0.0;
         const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
+        const bool hasWaveKick =
+            static_cast<bool>(waveVelocityKick) && isWaveFace[2 * iDim + side];
+        const int faceBit = 1 << (2 * iDim + side);
 
         for (int np = 0; np < nInject; ++np) {
-          // Velocity: normal and transverse components sampled from a 3D
-          // isotropic drifting Maxwellian with thermal std sigma.
-          Real wIn = uOut * inward;
+          // Sample transverse face position first so spatially varying #WAVEBC
+          // velocity kicks are evaluated at the particle's entry point.
+          Real facePos[3] = { 0.0, 0.0, 0.0 };
+          facePos[iDim] = xFace;
+          facePos[t1] = base1 + randNum() * span1;
+          if (nDim > 2) {
+            facePos[t2] = base2 + randNum() * span2;
+          }
+
+          Real uLocal[3] = { uIn[0], uIn[1], uIn[2] };
+          if (hasWaveKick) {
+            Real dvx = 0.0, dvy = 0.0, dvz = 0.0;
+            waveVelocityKick(facePos, tWave, dvx, dvy, dvz, faceBit, speciesID,
+                             charge);
+            uLocal[0] += dvx;
+            uLocal[1] += dvy;
+            uLocal[2] += dvz;
+          }
+
+          Real wIn = uLocal[iDim] * inward;
           Real vel[3] = { 0.0, 0.0, 0.0 };
-          if (sigma > 0) {
-            const Real r1 = randNum();
-            const Real r2 = randNum();
-            const Real R1 = std::sqrt(-2.0 * std::log(std::max(r1, 1e-300)));
-            const Real phi1 = 2.0 * injPI * r2;
-
-            const Real r3 = randNum();
-            const Real r4 = randNum();
-            const Real R2 = std::sqrt(-2.0 * std::log(std::max(r3, 1e-300)));
-            const Real phi2 = 2.0 * injPI * r4;
-
-            // Inward normal velocity with thermal spread
-            wIn += sigma * (R1 * std::cos(phi1));
-            // Inward-directed speed into the domain (reflected if moving
-            // outward)
-            wIn = std::abs(wIn);
-
-            vel[trans1] = uIn[trans1] + sigma * (R1 * std::sin(phi1));
-            vel[trans2] = uIn[trans2] + sigma * (R2 * std::cos(phi2));
+          if (isHybrid) {
+            if (sigma > 0.0) {
+              const Real vdLocal = (uLocal[iDim] * inward) / vtherm;
+              wIn = vtherm * get_inflow_speed_sampler(vdLocal).draw(randNum());
+              vel[trans1] =
+                  uLocal[trans1] + sigma * inj_gaussian(randNum(), randNum());
+              vel[trans2] =
+                  uLocal[trans2] + sigma * inj_gaussian(randNum(), randNum());
+            } else {
+              wIn = std::max(0.0, wIn);
+              vel[trans1] = uLocal[trans1];
+              vel[trans2] = uLocal[trans2];
+            }
           } else {
-            vel[trans1] = uIn[trans1];
-            vel[trans2] = uIn[trans2];
+            if (sigma > 0.0) {
+              const Real r1 = randNum();
+              const Real r2 = randNum();
+              const Real R1 = std::sqrt(-2.0 * std::log(std::max(r1, 1e-300)));
+              const Real phi1 = 2.0 * injPI * r2;
+
+              const Real r3 = randNum();
+              const Real r4 = randNum();
+              const Real R2 = std::sqrt(-2.0 * std::log(std::max(r3, 1e-300)));
+              const Real phi2 = 2.0 * injPI * r4;
+
+              // Inward normal velocity with thermal spread
+              wIn += sigma * (R1 * std::cos(phi1));
+              // Inward-directed speed into the domain (reflected if moving
+              // outward)
+              wIn = std::abs(wIn);
+
+              vel[trans1] = uLocal[trans1] + sigma * (R1 * std::sin(phi1));
+              vel[trans2] = uLocal[trans2] + sigma * (R2 * std::cos(phi2));
+            } else {
+              vel[trans1] = uLocal[trans1];
+              vel[trans2] = uLocal[trans2];
+            }
           }
           vel[iDim] = inward * wIn;
 
@@ -597,11 +640,9 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           // Position: on the boundary face, nudged into the cell according to
           // sub-step ingress distance; uniform in the transverse directions.
           RealVect pos;
+          for (int d = 0; d < nDim; ++d)
+            pos[d] = facePos[d];
           pos[iDim] = xFace + inward * pDist;
-          pos[t1] = base1 + randNum() * span1;
-          if (nDim > 2) {
-            pos[t2] = base2 + randNum() * span2;
-          }
 
           auto p = make_particle();
           set_ids(p);

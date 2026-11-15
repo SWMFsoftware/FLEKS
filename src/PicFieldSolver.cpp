@@ -52,7 +52,8 @@ void Pic::update_E_expl() {
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
         apply_field_bc(cell_status(iLev), centerB[iLev], 0,
-                       centerB[iLev].nComp(), &Pic::get_center_B, iLev, true);
+                       centerB[iLev].nComp(), &Pic::get_center_B, iLev, true,
+                       -2.0);
       } else {
         fill_fine_lev_bny_from_coarse(
             centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -472,7 +473,7 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
     // unknow. See FluidInterface::calc_current for detailed explaniation.
     if (iLev == 0) {
       apply_field_bc(node_status(iLev), vecMF, 0, nDim3, &Pic::get_node_E, iLev,
-                     false);
+                     false, 0.0);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
@@ -766,7 +767,7 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
       apply_field_bc(cell_status(iLev), centerB[iLev], 0, centerB[iLev].nComp(),
-                     &Pic::get_center_B, iLev, true);
+                     &Pic::get_center_B, iLev, true, -2.0);
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -780,7 +781,7 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
   // the implicit field solve after a regrid.
   if (iLev == 0) {
     apply_field_bc(node_status(iLev), nodeB[iLev], 0, nodeB[iLev].nComp(),
-                   &Pic::get_node_B, iLev, true);
+                   &Pic::get_node_B, iLev, true, 0.0);
   } else {
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                   nodeB[iLev - 1].nComp(), refRatio(iLev - 1),
@@ -829,7 +830,7 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
       MultiFab::Copy(tempNode, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                      tempNode.nGrow());
       apply_field_bc(node_status(iLev), tempNode, 0, nDim3, &Pic::get_node_E,
-                     iLev, false);
+                     iLev, false, 0.0);
       dirichletE = &tempNode;
     }
 
@@ -1366,7 +1367,7 @@ void Pic::update_B() {
       nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
         apply_field_bc(node_status(0), nodeEmf[0], 0, nDim3, &Pic::get_node_E,
-                       0, false);
+                       0, false, 0.0);
         if (use_body()) {
           apply_body_E_bc(nodeEmf[0], 0);
         }
@@ -1411,7 +1412,7 @@ void Pic::update_B() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (useHybridPIC || useCurlUpwindB) {
-      apply_centerB_BC(iLev);
+      apply_centerB_BC(iLev, -1.0, tc->get_dt());
     } else {
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
@@ -1455,7 +1456,7 @@ void Pic::update_B() {
 
     if (iLev == 0) {
       apply_field_bc(node_status(iLev), nodeB[iLev], 0, nodeB[iLev].nComp(),
-                     &Pic::get_node_B, iLev, true);
+                     &Pic::get_node_B, iLev, true, 0.0);
     } else {
       fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                     nodeB[iLev - 1].nComp(), refRatio(iLev - 1),

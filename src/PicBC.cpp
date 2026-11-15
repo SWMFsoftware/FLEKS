@@ -271,12 +271,12 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
             bool skipForPhysWall = false;
             bool onInflowGhost = false;
             for (int d = 0; d < nDim; ++d) {
-              if ((ijk[d] < bnd.loBnd[d] &&
-                   (bnd.bcLo[d] == FieldBC::outflow ||
-                    bnd.bcLo[d] == FieldBC::conducting)) ||
-                  (ijk[d] > bnd.hiBnd[d] &&
-                   (bnd.bcHi[d] == FieldBC::outflow ||
-                    bnd.bcHi[d] == FieldBC::conducting))) {
+              const auto isNonDirichletWall = [](int t) {
+                return t == FieldBC::outflow || t == FieldBC::vacuum ||
+                       t == FieldBC::conducting || t == FieldBC::absorb;
+              };
+              if ((ijk[d] < bnd.loBnd[d] && isNonDirichletWall(bnd.bcLo[d])) ||
+                  (ijk[d] > bnd.hiBnd[d] && isNonDirichletWall(bnd.bcHi[d]))) {
                 skipForPhysWall = true;
                 break;
               }
@@ -549,28 +549,97 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
                                const int iStart, const int nComp,
                                const int iLev, const BoxBC<FieldBC::Type>& bc,
                                bool isB, Real dtOverride) {
-  (void)isB;
-  const Real dt = (dtOverride > 0.0) ? dtOverride : (tc ? tc->get_dt() : 0.0);
-  if (dt <= 0.0)
+  // dtOverride < -1.5 signals a non-advancing refresh: keep stateful ghosts.
+  if (dtOverride < -1.5)
     return;
+
+  const Real dt = (dtOverride > 0.0) ? dtOverride : (tc ? tc->get_dt() : 0.0);
+  const bool zeroGradInit = (dtOverride == 0.0) || (dt <= 0.0);
 
   std::string nameFunc = "Pic::apply_absorbing_wall";
   timing_func(nameFunc);
-
-  // Characteristic speed; default c=1, override via #ABSORB.
-  const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
 
   const BoxArray ba =
       get_boundary_active_ba(active_region_ref(), mf, Geom(iLev), nDim, iz_);
   const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
   const Real* dx = Geom(iLev).CellSize();
 
+  if (zeroGradInit) {
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bxFab = mfi.fabbox();
+      if (ba.contains(bxFab))
+        continue;
+
+      Array4<Real> const& arr = mf[mfi].array();
+      const Array4<const int>& statusArr = status[mfi].array();
+
+      parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+          return;
+
+        const int ijk[3] = { i, j, k };
+        int m[3] = { i, j, k };
+        bool touched = false;
+
+        for (int d = 0; d < nDim; ++d) {
+          if (bnd.bcLo[d] == FieldBC::absorb && ijk[d] < bnd.loBnd[d]) {
+            m[d] = bnd.loBnd[d];
+            touched = true;
+          } else if (bnd.bcHi[d] == FieldBC::absorb && ijk[d] > bnd.hiBnd[d]) {
+            m[d] = bnd.hiBnd[d];
+            touched = true;
+          }
+        }
+
+        if (!touched)
+          return;
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          arr(i, j, k, comp) = arr(m[0], m[1], m[2], comp);
+        }
+      });
+    }
+    return;
+  }
+
+  // Characteristic speed: explicit #ABSORB value when given; otherwise c=1 in
+  // full-PIC, or local fast magnetosonic speed in hybrid-PIC (defaulting to 1
+  // in vacuum).
+  const Real csFixed = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
+  const bool autoHybridSpeed = (useHybridPIC && absorbCharSpeed <= 0.0);
+  const bool hasHybridSources =
+      autoHybridSpeed && !nodePlasma.empty() &&
+      nSpecies < static_cast<int>(nodePlasma.size()) &&
+      !nodePlasma[nSpecies][iLev].empty() && !centerB[iLev].empty() &&
+      (mf.boxArray().size() == boxArray(iLev).size());
+  const bool hasB0 =
+      hasHybridSources && use_intrinsic_B() && !centerB0[iLev].empty();
+  const MultiFab& hybridBMF =
+      (isB && mf.boxArray().ixType().cellCentered() && nComp >= 3)
+          ? mf
+          : centerB[iLev];
+  const Real cs2 =
+      (electronTemperature > 0.0)
+          ? ((electronGamma > 0.0) ? electronGamma : 1.0) * electronTemperature
+          : 0.0;
+  const Real rhoFloor = amrex::max(rhoMinOhm, static_cast<Real>(1e-10));
+  const Real invFourPI = 1.0 / fourPI;
+  const Box domBox = Geom(iLev).Domain();
+  const int domHi[3] = { domBox.bigEnd(0), domBox.bigEnd(1),
+                         (nDim > 2) ? domBox.bigEnd(2) : 0 };
+  const int domLo[3] = { domBox.smallEnd(0), domBox.smallEnd(1),
+                         (nDim > 2) ? domBox.smallEnd(2) : 0 };
+
   AbsorbWeights weights;
   for (int d = 0; d < nDim; ++d) {
-    const Real drive0 = cs * dt / dx[d];
+    const Real drive0 = csFixed * dt / dx[d];
     weights.decay[d] = (1.0 - drive0) / (1.0 + drive0);
     weights.drive[d] = 2.0 * drive0 / (1.0 + drive0);
   }
+  const Real invDx[3] = { 1.0 / dx[0], (nDim > 1) ? (1.0 / dx[1]) : 0.0,
+                          (nDim > 2) ? (1.0 / dx[2]) : 0.0 };
+  const int rhoComp = iRho_;
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
@@ -579,6 +648,13 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
+    const Array4<const Real> bArr =
+        hasHybridSources ? hybridBMF[mfi].const_array() : Array4<const Real>();
+    const Array4<const Real> b0Arr =
+        hasB0 ? centerB0[iLev][mfi].const_array() : Array4<const Real>();
+    const Array4<const Real> rhoArr =
+        hasHybridSources ? nodePlasma[nSpecies][iLev][mfi].const_array()
+                         : Array4<const Real>();
 
     parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
@@ -586,32 +662,70 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 
       const int ijk[3] = { i, j, k };
       int m[3] = { i, j, k };
-      Real cellDecay = 1.0;
-      Real cellDrive = 0.0;
+      bool isAbsorb[3] = { false, false, false };
       int nAbsorb = 0;
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow =
+        const bool isLow =
             (bnd.bcLo[d] == FieldBC::absorb) && (ijk[d] < bnd.loBnd[d]);
-        bool isHigh =
+        const bool isHigh =
             (bnd.bcHi[d] == FieldBC::absorb) && (ijk[d] > bnd.hiBnd[d]);
         if (isLow) {
           m[d] = bnd.isNode[d] ? (2 * bnd.loBnd[d] - ijk[d])
                                : (2 * bnd.loBnd[d] - 1 - ijk[d]);
-          cellDecay *= weights.decay[d];
-          cellDrive += weights.drive[d];
+          isAbsorb[d] = true;
           nAbsorb++;
         } else if (isHigh) {
           m[d] = bnd.isNode[d] ? (2 * bnd.hiBnd[d] - ijk[d])
                                : (2 * bnd.hiBnd[d] + 1 - ijk[d]);
-          cellDecay *= weights.decay[d];
-          cellDrive += weights.drive[d];
+          isAbsorb[d] = true;
           nAbsorb++;
         }
       }
 
       if (nAbsorb == 0)
         return;
+
+      Real cellDecay = 1.0;
+      Real cellDrive = 0.0;
+
+      if (hasHybridSources) {
+        const int cm0 = std::clamp(m[0], domLo[0], domHi[0]);
+        const int cm1 = std::clamp(m[1], domLo[1], domHi[1]);
+        const int cm2 = (nDim > 2) ? std::clamp(m[2], domLo[2], domHi[2]) : 0;
+        Real csLocal = 1.0;
+        if (bArr.contains(cm0, cm1, cm2) && rhoArr.contains(cm0, cm1, cm2)) {
+          const Real rhoCell = rhoArr(cm0, cm1, cm2, rhoComp);
+          if (rhoCell > 0.0) {
+            Real bx = bArr(cm0, cm1, cm2, ix_);
+            Real by = bArr(cm0, cm1, cm2, iy_);
+            Real bz = bArr(cm0, cm1, cm2, iz_);
+            if (hasB0 && b0Arr.contains(cm0, cm1, cm2)) {
+              bx += b0Arr(cm0, cm1, cm2, ix_);
+              by += b0Arr(cm0, cm1, cm2, iy_);
+              bz += b0Arr(cm0, cm1, cm2, iz_);
+            }
+            const Real b2 = bx * bx + by * by + bz * bz;
+            const Real rhoEff = amrex::max(rhoCell, rhoFloor);
+            csLocal = std::sqrt(b2 * invFourPI / rhoEff + cs2);
+          }
+        }
+        for (int d = 0; d < nDim; ++d) {
+          if (!isAbsorb[d])
+            continue;
+          const Real drive0 =
+              amrex::min(csLocal * dt * invDx[d], static_cast<Real>(1.0));
+          cellDecay *= (1.0 - drive0) / (1.0 + drive0);
+          cellDrive += 2.0 * drive0 / (1.0 + drive0);
+        }
+      } else {
+        for (int d = 0; d < nDim; ++d) {
+          if (!isAbsorb[d])
+            continue;
+          cellDecay *= weights.decay[d];
+          cellDrive += weights.drive[d];
+        }
+      }
 
       cellDrive /= static_cast<Real>(nAbsorb);
 

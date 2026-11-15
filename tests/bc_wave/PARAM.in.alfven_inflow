@@ -1,0 +1,181 @@
+#DESCRIPTION
+Wave injection (shear Alfven with flowing kinetic inflow): a By wave plus
+matching electric field and Walen velocity kick is injected at the -x
+wave+inflow face into a flowing magnetized hybrid plasma and propagates along +x
+toward the absorbing/outflow +x boundary.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+wave                    fieldBoxBoundaryLo
+absorb                  fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+inflow                  particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#BSUBCYCLE
+8                       nBSubcycle
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#INFLOW
+5.0                     rho
+20.0                    ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+100.0                   T [K]
+
+#UNIFORMSTATE
+5.0                     rho
+20.0                    ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+100.0                   T [K]
+1.0439e-8               bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#WAVEBC
+1                       nWaveFace
+0                       direction
+lo                      side
+3                       nComp
+0                       iField
+-1                      iSpecies
+0                       profile
+2.0878e-10              amplitude
+2.3562                  frequency
+3.2e5                   waveLength
+0.0                     phase
+1.0                     dir_x
+0.0                     dir_y
+0.0                     dir_z
+0.0                     pol_x
+1.0                     pol_y
+0.0                     pol_z
+0.0                     tStart
+-1.0                    tEnd
+0.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+1                       iField
+-1                      iSpecies
+0                       profile
+-2.5436e-5              amplitude
+2.3562                  frequency
+3.2e5                   waveLength
+0.0                     phase
+1.0                     dir_x
+0.0                     dir_y
+0.0                     dir_z
+0.0                     pol_x
+0.0                     pol_y
+1.0                     pol_z
+0.0                     tStart
+-1.0                    tEnd
+0.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+2                       iField
+-1                      iSpecies
+0                       profile
+-2.0366e3               amplitude
+2.3562                  frequency
+3.2e5                   waveLength
+0.0                     phase
+1.0                     dir_x
+0.0                     dir_y
+0.0                     dir_z
+0.0                     pol_x
+1.0                     pol_y
+0.0                     pol_z
+0.0                     tStart
+-1.0                    tEnd
+0.0                     rampTime
+0.0                     tCenter
+1.0                     tWidth
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+256                     nParticle
+1                       nParticle
+1                       nParticle
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+-1                      dnSavePlot
+1.0                     dtSavePlot
+-1                      dxSavePlot
+rhoS0 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0   plotVar
+
+#STOP
+-1                      MaxIter
+4.0                     TimeMax

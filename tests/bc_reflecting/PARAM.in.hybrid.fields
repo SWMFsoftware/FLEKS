@@ -64,10 +64,12 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-Ideal frozen-in Ohm's law (Hall OFF) so the Alfven pulse is driven purely by
-the motional field; the wave speed is v_A = Bx / sqrt(mu0*rho).
+Enable the Hall term so (J x B)/(e n_e) in Ohm's law supplies the magnetic
+tension restoring force on the ions, allowing the localized pulse to
+propagate and reflect cleanly off the conducting walls while conserving
+total energy.
 #HALLTERM
-F                       useHallTerm
+T                       useHallTerm
 
 nBSubcycle=8: same as the bc_wave Alfven test; subcycles the explicit B advance
 to keep the Alfven-CFL stable at the given dt.
@@ -94,7 +96,7 @@ neutralizing fluid.
 0.0                     ux
 0.0                     uy
 0.0                     uz
-10000.0                 T
+1.0                     T
 1.0439e-8               bx
 0.0                     by
 0.0                     bz
@@ -102,14 +104,16 @@ neutralizing fluid.
 0.0                     ey
 0.0                     ez
 
-alfvenpulse: Gaussian By = B1*exp(-(x/sigma)^2), no velocity kick.
-gaussWidth defaults to L/4 = 1.6 if not specified; xCenter defaults to 0.
 #TESTCASE
 AlfvenPulse
 
+#WAVEIC
+0.10                    frac
+0.6                     gaussWidth
+
 #TIMESTEPPING
 T                       useFixedDt
-0.02                    dt
+0.01                    dt
 
 #NORMALIZATION
 1.0e5                   lNormSI
@@ -123,7 +127,7 @@ T                       useFixedDt
 10                      dnSavePT
 
 #PARTICLES
-2000                    npcelx
+256                     npcelx
 1                       npcely
 1                       npcelz
 
@@ -138,4 +142,4 @@ rhoS0 uxS0 uyS0 uzS0 Bx By Bz Ex Ey Ez   plotVar
 
 #STOP
 -1                      MaxIter
-13.0                    TimeMax
+12.0                    TimeMax
