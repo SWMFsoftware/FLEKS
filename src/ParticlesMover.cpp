@@ -658,7 +658,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         continue;
       }
 
-      if (skip_particle_for_dive_cleaning(p.pos(), Geom(iLev), iLev, status) &&
+      if (skip_particle_for_dive_cleaning(p.pos(), Geom(iLev), iLev, status,
+                                          bc.has(ParticleBC::coupled)) &&
           n_lev() > 1) {
         continue;
       }
@@ -668,13 +669,18 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
 
       // Since the boundary condition for solving phi is not perfect,
-      // correcting particles that are close to the boundaries may produce
-      // artificial oscillations, which are seen in Earth's magnetotail
-      // simulations. So, it is better to skip the boundary physical cells.
-      if (iLev == 0) {
+      // correcting particles close to level boundaries or the inner body may
+      // produce artificial oscillations or boundary charge pile-up on both
+      // base and refined levels, so skip the boundary half-cell stencil.
+      if (iLev == 0 || useBody || !bc.has(ParticleBC::coupled)) {
         bool isBoundaryPhysicalCell = false;
-        for (int iz = 0; iz <= 1; iz++)
-          for (int iy = 0; iy <= 1; iy++)
+#if (AMREX_SPACEDIM > 2)
+        constexpr int izMax = 1;
+#else
+        constexpr int izMax = 0;
+#endif
+        for (int iz = 0; iz <= izMax && !isBoundaryPhysicalCell; iz++)
+          for (int iy = 0; iy <= 1 && !isBoundaryPhysicalCell; iy++)
             for (int ix = 0; ix <= 1; ix++) {
               const int st = status(loIdx[ix_] + ix, loIdx[iy_] + iy,
 #if (AMREX_SPACEDIM > 2)
@@ -683,8 +689,10 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
                                     0
 #endif
               );
-              if (bit::is_lev_boundary(st) || (useBody && bit::is_body(st)))
+              if (bit::is_lev_boundary(st) || (useBody && bit::is_body(st))) {
                 isBoundaryPhysicalCell = true;
+                break;
+              }
             }
         if (isBoundaryPhysicalCell)
           continue;

@@ -1524,6 +1524,11 @@ public:
             });
       }
     }
+    if (pInfo.doPreSplitting && finestLevel() > 0 &&
+        !hasWarnedTargetPPCClearance_) {
+      hasWarnedTargetPPCClearance_ = true;
+      warn_target_ppc_clearance(npresplitcells);
+    }
   }
 
   void WriteParticleQualityToParaView() {
@@ -1534,6 +1539,8 @@ public:
   }
   // private methods
 private:
+  bool hasWarnedTargetPPCClearance_ = false;
+  void warn_target_ppc_clearance(int npresplitcells);
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
 };

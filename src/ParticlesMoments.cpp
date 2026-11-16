@@ -152,7 +152,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
               bool skipParticle = false;
               if (n_lev() > 1) {
                 skipParticle = skip_particle_for_dive_cleaning(
-                    p.pos(), Geom(iLev), iLev, status);
+                    p.pos(), Geom(iLev), iLev, status,
+                    bc.has(ParticleBC::coupled));
               }
               if (!doNetChargeOnly && !skipParticle) {
                 accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp,

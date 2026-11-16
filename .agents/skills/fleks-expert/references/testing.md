@@ -28,6 +28,7 @@ imports another's code. Code shared by several tests lives in `tests/_shared/`.
 | PCAI | `pcai/` | Proton-cyclotron anisotropy instability (hybrid benchmark) |
 | Reconnection | `reconnection/` | Fadeev current sheet, uniform grid |
 | AMR reconnection | `reconnection_amr/` | Fadeev current sheet, two-level AMR grid |
+| AMR div(E) + inflow | `amr_dive_inflow/` | Tight L0 inflow buffer with `#DIVE`, `#PRESPLITTING`, and clearance warning |
 | Oblique shock | `shock/` | Magnetized shock; wall/inflow boundary study |
 | Single-cell Hall | `singlecell/` | 1-cell periodic; curl B = 0 ⇒ Hall term exactly 0 |
 | Zero-current wave | `zerocurrent/` | No particles (J = 0); Hall term vanishes |

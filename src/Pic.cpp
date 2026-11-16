@@ -435,8 +435,10 @@ void Pic::pre_regrid() {
 
 void Pic::post_regrid(MeshChangeReason reason) {
 
-  if (reason != MeshChangeReason::LoadBalance)
+  if (reason != MeshChangeReason::LoadBalance) {
     doNeedFillNewCell = true;
+    hasWarnedTargetPPCClearance_ = false;
+  }
   distribute_arrays();
 
   // The target particle numbers are copied by distribute_arrays together
@@ -2955,6 +2957,95 @@ void Pic::update_regional_hyper_grid_mode(Real dt) {
   if (changed) {
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       fill_regional_hyper_field(iLev);
+    }
+  }
+}
+
+//==========================================================
+// Warn when #PRESPLITTING refinement leaves too narrow a coarse buffer next
+// to a ParticleBC::inflow boundary or between nested AMR levels.
+void Pic::warn_target_ppc_clearance(int npresplitcells) {
+  if (!ParallelDescriptor::IOProcessor() || !pInfo.doPreSplitting ||
+      finestLevel() < 1 || npresplitcells < 0) {
+    return;
+  }
+
+  // With #DIVE active, div(E) skips one additional boundary/edge layer inside
+  // the inflow face beyond the #PRESPLITTING stencil (npresplitcells + 2 L0
+  // cells vs. npresplitcells + 1 without #DIVE).
+  const int minInflowClearance = npresplitcells + (doCorrectDivE ? 2 : 1);
+  const BoxArray& ba1 = boxArray(1);
+  if (!ba1.empty()) {
+    const Box domain0 = Geom(0).Domain();
+    BoxArray ba1Coarsened = ba1;
+    ba1Coarsened.coarsen(refRatio(0));
+
+    static const char* const dimNames[3] = { "x", "y", "z" };
+    const int nSpeciesBC = static_cast<int>(pInfo.pBCs.size());
+
+    for (int d = 0; d < nDim; ++d) {
+      for (int side = 0; side < 2; ++side) {
+        bool hasInflowFace = false;
+        for (int iS = 0; iS < nSpeciesBC; ++iS) {
+          const int bc =
+              (side == 0) ? pInfo.pBCs[iS].lo[d] : pInfo.pBCs[iS].hi[d];
+          if (bc == ParticleBC::inflow) {
+            hasInflowFace = true;
+            break;
+          }
+        }
+        if (!hasInflowFace)
+          continue;
+
+        int minGap = (side == 0)
+                         ? (ba1Coarsened[0].smallEnd(d) - domain0.smallEnd(d))
+                         : (domain0.bigEnd(d) - ba1Coarsened[0].bigEnd(d));
+        for (int i = 1; i < ba1Coarsened.size(); ++i) {
+          const int gap =
+              (side == 0) ? (ba1Coarsened[i].smallEnd(d) - domain0.smallEnd(d))
+                          : (domain0.bigEnd(d) - ba1Coarsened[i].bigEnd(d));
+          minGap = amrex::min(minGap, gap);
+        }
+
+        if (minGap < minInflowClearance) {
+          Print() << printPrefix
+                  << " WARNING [Pic::SetTargetPPC]: L1 refinement is only "
+                  << minGap << " L0 cell(s) from the inflow face ("
+                  << dimNames[d] << (side == 0 ? "-" : "+")
+                  << "), below the recommended minimum of "
+                  << minInflowClearance << " L0 cells (" << npresplitcells
+                  << " presplit"
+                  << (doCorrectDivE ? " + 2 div(E)/boundary" : " + 1 boundary")
+                  << ") for #PRESPLITTING.\n";
+        }
+      }
+    }
+  }
+
+  for (int iLev = 1; iLev <= finestLevel() - 1; ++iLev) {
+    const Box domainLev = Geom(iLev).Domain();
+    BoxArray baNextCoarsened = boxArray(iLev + 1);
+    if (baNextCoarsened.empty())
+      continue;
+    baNextCoarsened.coarsen(refRatio(iLev));
+
+    bool missingBuffer = false;
+    for (int i = 0; i < baNextCoarsened.size(); ++i) {
+      Box grown = baNextCoarsened[i];
+      grown.grow(npresplitcells);
+      grown &= domainLev;
+      if (!boxArray(iLev).contains(grown)) {
+        missingBuffer = true;
+        break;
+      }
+    }
+
+    if (missingBuffer) {
+      Print() << printPrefix << " WARNING [Pic::SetTargetPPC]: L" << (iLev + 1)
+              << " refinement is closer than " << npresplitcells << " L" << iLev
+              << " cell(s) to the L" << iLev
+              << " boundary; #PRESPLITTING buffer is truncated at the L" << iLev
+              << "/L" << (iLev - 1) << " boundary.\n";
     }
   }
 }
