@@ -373,12 +373,13 @@ void AmrexLinearSolver::precond(V& lhs, V const& rhs) {
 void AmrexDivESolver::ensure_mask() {
   const BoxArray& ba = m_pic->boxArray(m_iLev);
   const DistributionMapping& dm = m_pic->DistributionMap(m_iLev);
-  if (!m_dotMask.empty() && m_dotMask.boxArray() == ba &&
-      m_dotMask.DistributionMap() == dm) {
-    return;
+  if (m_dotMask.empty() || m_dotMask.boxArray() != ba ||
+      m_dotMask.DistributionMap() != dm) {
+    m_dotMask.define(ba, dm, 1, 0);
   }
 
-  m_dotMask.define(ba, dm, 1, 0);
+  // Refresh the mask contents even when m_iLev keeps the same BoxArray/DM,
+  // because dynamic regridding on m_iLev + 1 updates bit::is_refined here.
   m_dotMask.setVal(1);
 
   if (m_pic->finestLevel() > 0) {

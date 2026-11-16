@@ -628,6 +628,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   const int nD = get_dim();
 #endif
   const bool useBody = (grid != nullptr && grid->use_body());
+  const bool useSmoothBodySphere =
+      useBody && (grid->bodyParticleBC == ParticleBC::reflect ||
+                  grid->bodyParticleBC == ParticleBC::ambipolar);
   const LevelGeomBox lb = make_level_geom_box(iLev);
   const BoxArray& ba = this->ParticleBoxArray(iLev);
 
@@ -669,10 +672,13 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
 
       // Since the boundary condition for solving phi is not perfect,
-      // correcting particles close to level boundaries or the inner body may
+      // correcting particles close to physical outer-domain boundaries may
       // produce artificial oscillations or boundary charge pile-up on both
-      // base and refined levels, so skip the boundary half-cell stencil.
-      if (iLev == 0 || useBody || !bc.has(ParticleBC::coupled)) {
+      // base and refined levels, so skip the half-cell stencil touching domain
+      // boundary ghosts (without freezing coarse-fine refinement edges or the
+      // inner body, which are handled consistently by calculate_phi and the
+      // post-shift guard below).
+      if (iLev == 0 || !bc.has(ParticleBC::coupled)) {
         bool isBoundaryPhysicalCell = false;
 #if (AMREX_SPACEDIM > 2)
         constexpr int izMax = 1;
@@ -689,7 +695,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
                                     0
 #endif
               );
-              if (bit::is_lev_boundary(st) || (useBody && bit::is_body(st))) {
+              if (bit::is_domain_boundary(st)) {
                 isBoundaryPhysicalCell = true;
                 break;
               }
@@ -786,9 +792,37 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           p.pos(iDim) += eps_D[iDim];
         }
 
-        if (is_outside_active_region(p, status, ab)) {
-          // Do not allow moving particles from physical cells to ghost cells
-          // during divE correction.
+        bool enteredBody = false;
+        bool leftLevelValid = false;
+        const bool outOfValidBox = !is_inside_valid_box(p, ab);
+        bool inBox = false;
+        int cMask = 0;
+        if ((useBody && !useSmoothBodySphere) || outOfValidBox) {
+          locate_particle_cell(p, ab, status, inBox, cMask);
+        }
+        if (useBody) {
+          if (useSmoothBodySphere) {
+#if (AMREX_SPACEDIM > 2)
+            const Real xyzNew[3] = { p.pos(ix_), p.pos(iy_), p.pos(iz_) };
+#else
+            const Real xyzNew[3] = { p.pos(ix_), p.pos(iy_), 0.0 };
+#endif
+            enteredBody = grid->is_inside_body(xyzNew);
+          } else {
+            enteredBody = inBox && bit::is_body(cMask);
+          }
+        }
+        if (outOfValidBox) {
+          leftLevelValid = inBox
+                               ? (bit::is_domain_boundary(cMask) ||
+                                  (!bc.has(ParticleBC::coupled) &&
+                                   n_lev() > 1 && bit::is_lev_boundary(cMask)))
+                               : is_outside_active_region(p, ab);
+        }
+
+        if (leftLevelValid || enteredBody) {
+          // Do not allow moving particles into domain/level ghost cells or
+          // inside the inner body during divE correction.
           for (int iDim = 0; iDim < nDim; iDim++) {
             p.pos(iDim) -= eps_D[iDim];
           }

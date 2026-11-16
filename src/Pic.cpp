@@ -191,7 +191,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // introduced by AMR before the next field solve.
     distribute_FabArray(nodeEth[iLev], node_box_array(iLev),
                         DistributionMap(iLev), 3, get_n_ghost(), true, 0.0);
-    if (useUpwindB && useCurlUpwindB && !useHybridPIC) {
+    if (useCurlUpwindB && !useHybridPIC) {
       distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
     } else {
@@ -2515,6 +2515,122 @@ void Pic::update_U0_E0() {
   if (useHybridPIC)
     return;
 
+  auto fill_uBg_domain_bny = [&](int iLev) {
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real>& arrU = uBg[iLev][mfi].array();
+      const Array4<const int>& status = node_status(iLev)[mfi].array();
+
+      // Fill physical outer-domain boundary ghost nodes after coarse-fine
+      // interpolation so shared boundary bits retain the domain BC value.
+      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
+          const int iFluid = 0;
+          for (int iDir = 0; iDir < nDim3; iDir++) {
+            arrU(i, j, k, iDir) =
+                get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
+          }
+        }
+      });
+    }
+    uBg[iLev].FillBoundary(Geom(iLev).periodicity());
+  };
+
+  auto fill_uBg_bny = [&](int iLev) {
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          uBg[iLev - 1], uBg[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      uBg[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+    fill_uBg_domain_bny(iLev);
+  };
+
+  auto fill_eBg_domain_bny = [&](int iLev) {
+    const bool hasB0 = use_intrinsic_B() && !nodeB0[iLev].empty();
+    for (MFIter mfi(eBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real>& arrE = eBg[iLev][mfi].array();
+      const Array4<const Real>& arrU = uBg[iLev][mfi].array();
+      const Array4<const Real> arrB0 =
+          hasB0 ? nodeB0[iLev][mfi].const_array() : Array4<const Real>();
+      const Array4<const int>& status = node_status(iLev)[mfi].array();
+
+      // Match -uBg x (B1 + B0) at physical outer-domain ghost nodes.
+      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
+          Real ex = get_node_E(mfi, ijk, ix_, iLev);
+          Real ey = get_node_E(mfi, ijk, iy_, iLev);
+          Real ez = get_node_E(mfi, ijk, iz_, iLev);
+          if (hasB0) {
+            const Real b0x = arrB0(i, j, k, ix_);
+            const Real b0y = arrB0(i, j, k, iy_);
+            const Real b0z = arrB0(i, j, k, iz_);
+            const Real ux = arrU(i, j, k, ix_);
+            const Real uy = arrU(i, j, k, iy_);
+            const Real uz = arrU(i, j, k, iz_);
+            ex += -uy * b0z + uz * b0y;
+            ey += -uz * b0x + ux * b0z;
+            ez += -ux * b0y + uy * b0x;
+          }
+          arrE(i, j, k, ix_) = ex;
+          arrE(i, j, k, iy_) = ey;
+          arrE(i, j, k, iz_) = ez;
+        }
+      });
+    }
+    eBg[iLev].FillBoundary(Geom(iLev).periodicity());
+  };
+
+  auto restrict_covered = [&](Vector<MultiFab>& mf, auto&& fillDomainBny) {
+    for (int iLev = finestLevel(); iLev >= 1; --iLev) {
+      mf[iLev].OverrideSync(Geom(iLev).periodicity());
+      mf[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      MultiFab& crse = mf[iLev - 1];
+      MultiFab crseOfFine(
+          amrex::coarsen(mf[iLev].boxArray(), refRatio(iLev - 1)),
+          mf[iLev].DistributionMap(), nDim3, 0);
+      average_down_nodal(mf[iLev], crseOfFine, refRatio(iLev - 1));
+
+      MultiFab fromFine(crse.boxArray(), crse.DistributionMap(), nDim3, 0);
+      fromFine.setVal(0.0);
+      fromFine.ParallelCopy(crseOfFine, 0, 0, nDim3, IntVect(0), IntVect(0),
+                            Geom(iLev - 1).periodicity());
+
+      for (MFIter mfi(crse); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& cArr = crse[mfi].array();
+        const Array4<const Real>& fArr = fromFine[mfi].const_array();
+        const Array4<const int>& nStat =
+            node_status(iLev - 1)[mfi].const_array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          if (bit::is_refined(nStat(i, j, k))) {
+            for (int c = 0; c < nDim3; ++c) {
+              cArr(i, j, k, c) = fArr(i, j, k, c);
+            }
+          }
+        });
+      }
+
+      crse.OverrideSync(Geom(iLev - 1).periodicity());
+      fillDomainBny(iLev - 1);
+    }
+  };
+
+  auto sync_fine_from_coarse = [&](Vector<MultiFab>& mf, auto&& fillDomainBny) {
+    for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
+      fill_fine_lev_edge_from_coarse(
+          mf[iLev - 1], mf[iLev], 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
+          Geom(iLev), node_status(iLev), node_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          mf[iLev - 1], mf[iLev], 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
+          Geom(iLev), node_status(iLev), node_bilinear_interp);
+      mf[iLev].OverrideSync(Geom(iLev).periodicity());
+      fillDomainBny(iLev);
+    }
+  };
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     uBg[iLev].setVal(0.0);
     eBg[iLev].setVal(0.0);
@@ -2533,47 +2649,49 @@ void Pic::update_U0_E0() {
         }
       });
     }
+  }
 
-    if (iLev > 0) {
-      fill_fine_lev_bny_from_coarse(
-          uBg[iLev - 1], uBg[iLev], 0, nDim3, refRatio(iLev - 1),
-          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-      uBg[iLev].FillBoundary(Geom(iLev).periodicity());
-    }
+  // Pre-fill covered coarse nodes before smoothing so multi-pass smoothing
+  // never diffuses artificial zeros outward across coarse-fine interfaces.
+  if (finestLevel() > 0) {
+    restrict_covered(uBg, fill_uBg_domain_bny);
+  }
 
-    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
-
-      // Fill in physical outer-domain boundary ghost nodes after coarse-fine
-      // interpolation so shared boundary bits retain the domain BC value.
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_domain_boundary(status(ijk))) {
-          const int iFluid = 0;
-          for (int iDir = 0; iDir < nDim3; iDir++) {
-            arrU(i, j, k, iDir) =
-                get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
-          }
-        }
-      });
-    }
-
-    uBg[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    for (int i = 0; i < nSmoothBackGroundU; ++i)
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    fill_uBg_bny(iLev);
+    for (int i = 0; i < nSmoothBackGroundU; ++i) {
+      if (i > 0) {
+        fill_uBg_bny(iLev);
+      }
       smooth_multifab(uBg[iLev], iLev, i % 2 + 1);
+    }
+  }
 
+  if (finestLevel() > 0) {
+    restrict_covered(uBg, fill_uBg_domain_bny);
+    sync_fine_from_coarse(uBg, fill_uBg_domain_bny);
+  } else {
+    fill_uBg_domain_bny(0);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const bool hasB0 = use_intrinsic_B() && !nodeB0[iLev].empty();
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
       const Array4<Real>& arrE = eBg[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
+      const Array4<const Real> arrB0 =
+          hasB0 ? nodeB0[iLev][mfi].const_array() : Array4<const Real>();
 
-      // Fill in the physical nodes
+      // Fill in the physical nodes using total B = B1 + B0 to match
+      // ParticlesMassMatrix co-moving frame transformation.
       ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-        const Real& bx = arrB(i, j, k, ix_);
-        const Real& by = arrB(i, j, k, iy_);
-        const Real& bz = arrB(i, j, k, iz_);
+        const Real bx =
+            arrB(i, j, k, ix_) + (hasB0 ? arrB0(i, j, k, ix_) : 0.0);
+        const Real by =
+            arrB(i, j, k, iy_) + (hasB0 ? arrB0(i, j, k, iy_) : 0.0);
+        const Real bz =
+            arrB(i, j, k, iz_) + (hasB0 ? arrB0(i, j, k, iz_) : 0.0);
 
         const Real& ux = arrU(i, j, k, ix_);
         const Real& uy = arrU(i, j, k, iy_);
@@ -2584,33 +2702,21 @@ void Pic::update_U0_E0() {
         arrE(i, j, k, iz_) = -ux * by + uy * bx;
       });
     }
+  }
 
-    if (iLev > 0) {
+  if (finestLevel() > 0) {
+    restrict_covered(eBg, fill_eBg_domain_bny);
+    // Only fill coarse-fine ghost nodes (not interface midpoints) so fine
+    // interface midpoints retain exact -uBg x (B1 + B0).
+    for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
       fill_fine_lev_bny_from_coarse(
           eBg[iLev - 1], eBg[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
-      eBg[iLev].FillBoundary(Geom(iLev).periodicity());
+      eBg[iLev].OverrideSync(Geom(iLev).periodicity());
+      fill_eBg_domain_bny(iLev);
     }
-
-    for (MFIter mfi(eBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrE = eBg[iLev][mfi].array();
-      const Array4<const int>& status = node_status(iLev)[mfi].array();
-
-      // Fill in boundary nodes
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_domain_boundary(status(ijk))) {
-          arrE(i, j, k, ix_) = get_node_E(mfi, ijk, ix_, iLev);
-          arrE(i, j, k, iy_) = get_node_E(mfi, ijk, iy_, iLev);
-          arrE(i, j, k, iz_) = get_node_E(mfi, ijk, iz_, iLev);
-        }
-      });
-    }
-
-    eBg[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    // for (int i = 0; i < nSmoothE; ++i)
-    //   smooth_multifab(eBg[iLev], iLev, i % 2 + 1);
+  } else {
+    fill_eBg_domain_bny(0);
   }
 }
 
