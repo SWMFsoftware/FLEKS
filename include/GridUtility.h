@@ -455,7 +455,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
 
 inline bool skip_particle_for_dive_cleaning(
     const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
-    const amrex::Array4<int const>& status) {
+    const amrex::Array4<int const>& status, bool skipLevEdge0 = false) {
 
   bool skip = false;
   amrex::IntVect iv;
@@ -465,7 +465,7 @@ inline bool skip_particle_for_dive_cleaning(
   if (bit::is_refined(status(iv)) || bit::is_lev_boundary(status(iv))) {
     skip = true;
   }
-  if (iLev == 0 && bit::is_lev_edge(status(iv))) {
+  if (skipLevEdge0 && iLev == 0 && bit::is_lev_edge(status(iv))) {
     skip = true;
   }
 
@@ -789,38 +789,24 @@ inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
 
 template <class FAB>
 void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
-                                const amrex::iMultiFab& fstatus, int iLev) {
+                                const amrex::iMultiFab& fstatus, int iLev,
+                                bool skipLevEdge0 = false) {
   const int nComp = dst.nComp();
-  if (iLev > 0) {
-    for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-      const auto& box = mfi.fabbox();
-      auto data = dst[mfi].array();
-      const auto statusArr = fstatus[mfi].array();
+  const bool skipEdge = skipLevEdge0 && (iLev == 0);
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.fabbox();
+    auto data = dst[mfi].array();
+    const auto statusArr = fstatus[mfi].array();
 
-      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        if (bit::is_lev_boundary(statusArr(i, j, k)) ||
-            bit::is_refined(statusArr(i, j, k))) {
-          for (int iVar = 0; iVar < nComp; ++iVar) {
-            data(i, j, k, iVar) = 0.0;
-          }
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (bit::is_lev_boundary(statusArr(i, j, k)) ||
+          (skipEdge && bit::is_lev_edge(statusArr(i, j, k))) ||
+          bit::is_refined(statusArr(i, j, k))) {
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          data(i, j, k, iVar) = 0.0;
         }
-      });
-    }
-  } else if (iLev == 0) {
-    for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
-      const auto& box = mfi.fabbox();
-      auto data = dst[mfi].array();
-      const auto statusArr = fstatus[mfi].array();
-
-      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        if (bit::is_lev_edge(statusArr(i, j, k)) ||
-            bit::is_refined(statusArr(i, j, k))) {
-          for (int iVar = 0; iVar < nComp; ++iVar) {
-            data(i, j, k, iVar) = 0.0;
-          }
-        }
-      });
-    }
+      }
+    });
   }
 }
 

@@ -382,7 +382,8 @@ void AmrexDivESolver::ensure_mask() {
   m_dotMask.setVal(1);
 
   if (m_pic->finestLevel() > 0) {
-    skip_cells_divE_correction(m_dotMask, m_pic->cell_status(m_iLev), m_iLev);
+    skip_cells_divE_correction(m_dotMask, m_pic->cell_status(m_iLev), m_iLev,
+                               m_pic->bcField.has(FieldBC::coupled));
   }
   if (m_pic->use_body() && !m_pic->is_body_insulating()) {
     mask_body(m_dotMask, m_pic->cell_status(m_iLev));

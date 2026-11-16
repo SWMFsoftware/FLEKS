@@ -23,6 +23,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid; short force-free and GEM-like hybrid decks check the coarse-fine interface | [README](reconnection_amr/README.md) |
 | AMR equilibrium       | `amr_equilibrium/`    | Uniform thermal equilibrium across a stationary AMR interface | [README](amr_equilibrium/README.md) |
 | Constant PPV AMR      | `constantppv/`        | Constant particles per volume with splitting/merging on a 2-level 3D grid | [README](constantppv/README.md) |
+| AMR div(E) + inflow   | `amr_dive_inflow/`    | Tight L0 inflow buffer with `#DIVE`, `#PRESPLITTING`, and clearance warning | [README](amr_dive_inflow/README.md) |
 | 3D AMR wave           | `wave_amr_3d/`        | 3D traveling wave propagation across a central 3D AMR box (hybrid PIC) | [README](wave_amr_3d/README.md) |
 | Reflecting & PEC BC   | `bc_reflecting/`      | Specular reflecting particle walls + conducting (PEC) field walls (4 variants: full/hybrid fields/particles) | [README](bc_reflecting/README.md) |
 | Absorbing BC          | `bc_absorb/`          | Absorbing field + particle boundaries (4 variants: full/hybrid fields/particles) | [README](bc_absorb/README.md) |

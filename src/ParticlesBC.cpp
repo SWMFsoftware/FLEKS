@@ -282,6 +282,23 @@ inline const InflowSpeedSampler& get_inflow_speed_sampler(Real vd) {
   return it->second;
 }
 
+inline IntVect boundary_face_cell(const int iDim, const int domEdge,
+                                  const int t1, const int c1, const int t2,
+                                  const int c2) {
+  IntVect ijk;
+  ijk[iDim] = domEdge;
+  ijk[t1] = c1;
+  if (nDim > 2)
+    ijk[t2] = c2;
+  return ijk;
+}
+
+inline int cell_target_ppc(const bool useTargetPPC,
+                           const Array4<int const>& tppcArr, const IntVect& ijk,
+                           const int fallbackNppc) {
+  return useTargetPPC ? std::max(1, tppcArr(ijk)) : fallbackNppc;
+}
+
 } // namespace
 
 //==========================================================
@@ -300,13 +317,16 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   if (!hasInflow)
     return;
 
+  const int iLev = 0;
+  const bool useTargetPPC =
+      isTargetPPCDefined && !isFake2D && !target_PPC(iLev).empty();
+
   // Spatio-temporal planar discontinuity injection (#DISCONTINUITY):
   // Evaluates local density, bulk velocity, and thermal velocity cell-by-cell
   // along each inflow face at the step midpoint time and injects from the
   // half-space drifting Maxwellian.
   if (discontinuityBC != nullptr && discontinuityBC->active) {
     const int nppc = product(nPartPerCell);
-    const int iLev = 0;
     const auto& geom = Geom(iLev);
     const Box& domain = geom.Domain();
     const Real* probLo = geom.ProbLo();
@@ -320,6 +340,9 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
       ParticleTileType& particles = get_particle_tile(iLev, mfi);
+      const Array4<int const> tppcArr =
+          useTargetPPC ? target_PPC(iLev)[mfi].const_array()
+                       : Array4<int const>{};
 
       for (int iDim = 0; iDim < nDim; ++iDim) {
         const int t1 = (iDim + 1) % nDim;
@@ -381,7 +404,10 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
                 vFlux = std::max(0.0, uInNorm);
               }
 
-              const Real expected = nppc * vFlux * dt / dxn;
+              const int cellNppc = cell_target_ppc(
+                  useTargetPPC, tppcArr,
+                  boundary_face_cell(iDim, domEdge, t1, c1, t2, c2), nppc);
+              const Real expected = cellNppc * vFlux * dt / dxn;
               if (expected <= 0.0)
                 continue;
 
@@ -400,7 +426,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
                 continue;
               acc -= nInject;
 
-              const Real qCell = qomSign * vol * nLocal / nppc;
+              const Real qCell = qomSign * vol * nLocal / cellNppc;
 
               for (int ip = 0; ip < nInject; ++ip) {
                 Real wIn = 0.0;
@@ -473,16 +499,19 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
   // Inject on the base level only (same policy as
   // inject_particles_at_boundary).
-  const int iLev = 0;
   const auto& geom = Geom(iLev);
   const Box& domain = geom.Domain();
   const Real* probLo = geom.ProbLo();
   const Real* probHi = geom.ProbHi();
   const Real* cellSize = geom.CellSize();
+  const Real vol = dx[0].product();
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
+    const Array4<int const> tppcArr = useTargetPPC
+                                          ? target_PPC(iLev)[mfi].const_array()
+                                          : Array4<int const>{};
 
     for (int iDim = 0; iDim < nDim; ++iDim) {
       const int t1 = (iDim + 1) % nDim; // first transverse grid direction
@@ -535,48 +564,12 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         const int lo1 = bx.smallEnd(t1), hi1 = bx.bigEnd(t1);
         const int lo2 = (nDim > 2) ? bx.smallEnd(t2) : 0;
         const int hi2 = (nDim > 2) ? bx.bigEnd(t2) : 0;
-        const int numCells = (hi1 - lo1 + 1) * (hi2 - lo2 + 1);
-
-        // Tile-face accumulator: packs (iLev, iDim, side, tileLocalIndex).
-        // Accumulating over the tile face eliminates the artificial coherent
-        // "pulsing sheets" and replaces 10^4 map lookups per step with 1
-        // scalar.
-        const int64_t tileKey =
-            ((((int64_t)iLev * 3 + iDim) * 2 + side) << 40) |
-            (((int64_t)mfi.index()) << 16) |
-            (int64_t)(mfi.LocalTileIndex() & 0xFFFF);
-        Real& acc = injectFluxAcc[tileKey];
-        acc += numCells * fluxRate;
-        int nInject = static_cast<int>(acc);
-        if (nInject <= 0) {
-          if (acc < 0)
-            acc = 0;
-          continue;
-        }
-        acc -= nInject;
-
-        const Real span1 = (hi1 - lo1 + 1) * cellSize[t1];
-        const Real base1 =
-            probLo[t1] + (lo1 - domain.smallEnd(t1)) * cellSize[t1];
-        const Real span2 = (nDim > 2) ? (hi2 - lo2 + 1) * cellSize[t2] : 0.0;
-        const Real base2 =
-            (nDim > 2) ? probLo[t2] + (lo2 - domain.smallEnd(t2)) * cellSize[t2]
-                       : 0.0;
         const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
         const bool hasWaveKick =
             static_cast<bool>(waveVelocityKick) && isWaveFace[2 * iDim + side];
         const int faceBit = 1 << (2 * iDim + side);
 
-        for (int np = 0; np < nInject; ++np) {
-          // Sample transverse face position first so spatially varying #WAVEBC
-          // velocity kicks are evaluated at the particle's entry point.
-          Real facePos[3] = { 0.0, 0.0, 0.0 };
-          facePos[iDim] = xFace;
-          facePos[t1] = base1 + randNum() * span1;
-          if (nDim > 2) {
-            facePos[t2] = base2 + randNum() * span2;
-          }
-
+        auto inject_one_particle = [&](const Real facePos[3], Real particleQ) {
           Real uLocal[3] = { uIn[0], uIn[1], uIn[2] };
           if (hasWaveKick) {
             Real dvx = 0.0, dvy = 0.0, dvz = 0.0;
@@ -651,14 +644,117 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           p.rdata(iup_) = vel[ix_];
           p.rdata(ivp_) = vel[iy_];
           p.rdata(iwp_) = vel[iz_];
-          p.rdata(iqp_) = q;
+          p.rdata(iqp_) = particleQ;
 
           if (NStructInt > iRecordCount_) {
             p.idata(iRecordCount_) = 0;
           }
 
           particles.push_back(p);
-          faceInMass[2 * iDim + side] += qomSign * q * get_mass();
+          faceInMass[2 * iDim + side] += qomSign * particleQ * get_mass();
+        };
+
+        bool hasCustomTargetPPC = false;
+        if (useTargetPPC) {
+          for (int c2 = lo2; c2 <= hi2 && !hasCustomTargetPPC; ++c2) {
+            for (int c1 = lo1; c1 <= hi1; ++c1) {
+              if (tppcArr(boundary_face_cell(iDim, domEdge, t1, c1, t2, c2)) !=
+                  nppc) {
+                hasCustomTargetPPC = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (hasCustomTargetPPC) {
+          for (int c2 = lo2; c2 <= hi2; ++c2) {
+            const Real cellBase2 =
+                (nDim > 2)
+                    ? probLo[t2] + (c2 - domain.smallEnd(t2)) * cellSize[t2]
+                    : 0.0;
+            for (int c1 = lo1; c1 <= hi1; ++c1) {
+              const int cellNppc = cell_target_ppc(
+                  true, tppcArr,
+                  boundary_face_cell(iDim, domEdge, t1, c1, t2, c2), nppc);
+              const Real expected = fluxRate * (static_cast<Real>(cellNppc) /
+                                                static_cast<Real>(nppc));
+              if (expected <= 0.0)
+                continue;
+
+              const int64_t cellKey =
+                  (static_cast<int64_t>(1) << 61) |
+                  (static_cast<int64_t>(iDim * 2 + side) << 48) |
+                  (static_cast<int64_t>(c1 - domain.smallEnd(t1)) << 24) |
+                  static_cast<int64_t>(nDim > 2 ? (c2 - domain.smallEnd(t2))
+                                                : 0);
+              auto [itAcc, inserted] =
+                  injectFluxAcc.try_emplace(cellKey, randNum());
+              Real& acc = itAcc->second;
+              acc += expected;
+              const int nInject = static_cast<int>(acc);
+              if (nInject <= 0) {
+                if (acc < 0)
+                  acc = 0;
+                continue;
+              }
+              acc -= nInject;
+
+              const Real cellBase1 =
+                  probLo[t1] + (c1 - domain.smallEnd(t1)) * cellSize[t1];
+              const Real qCell = qomSign * vol * nDens / cellNppc;
+              for (int np = 0; np < nInject; ++np) {
+                Real facePos[3] = { 0.0, 0.0, 0.0 };
+                facePos[iDim] = xFace;
+                facePos[t1] = cellBase1 + randNum() * cellSize[t1];
+                if (nDim > 2) {
+                  facePos[t2] = cellBase2 + randNum() * cellSize[t2];
+                }
+                inject_one_particle(facePos, qCell);
+              }
+            }
+          }
+          continue;
+        }
+
+        const int numCells = (hi1 - lo1 + 1) * (hi2 - lo2 + 1);
+
+        // Tile-face accumulator: packs (iLev, iDim, side, tileLocalIndex).
+        // Accumulating over the tile face eliminates the artificial coherent
+        // "pulsing sheets" and replaces 10^4 map lookups per step with 1
+        // scalar.
+        const int64_t tileKey =
+            ((((int64_t)iLev * 3 + iDim) * 2 + side) << 40) |
+            (((int64_t)mfi.index()) << 16) |
+            (int64_t)(mfi.LocalTileIndex() & 0xFFFF);
+        Real& acc = injectFluxAcc[tileKey];
+        acc += numCells * fluxRate;
+        int nInject = static_cast<int>(acc);
+        if (nInject <= 0) {
+          if (acc < 0)
+            acc = 0;
+          continue;
+        }
+        acc -= nInject;
+
+        const Real span1 = (hi1 - lo1 + 1) * cellSize[t1];
+        const Real base1 =
+            probLo[t1] + (lo1 - domain.smallEnd(t1)) * cellSize[t1];
+        const Real span2 = (nDim > 2) ? (hi2 - lo2 + 1) * cellSize[t2] : 0.0;
+        const Real base2 =
+            (nDim > 2) ? probLo[t2] + (lo2 - domain.smallEnd(t2)) * cellSize[t2]
+                       : 0.0;
+
+        for (int np = 0; np < nInject; ++np) {
+          // Sample transverse face position first so spatially varying #WAVEBC
+          // velocity kicks are evaluated at the particle's entry point.
+          Real facePos[3] = { 0.0, 0.0, 0.0 };
+          facePos[iDim] = xFace;
+          facePos[t1] = base1 + randNum() * span1;
+          if (nDim > 2) {
+            facePos[t2] = base2 + randNum() * span2;
+          }
+          inject_one_particle(facePos, q);
         }
       }
     }
@@ -684,6 +780,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
   const int nppc = product(nPartPerCell);
   const Real m = get_mass();
   const int iLev = 0;
+  const bool useTargetPPC =
+      isTargetPPCDefined && !isFake2D && !target_PPC(iLev).empty();
   const auto& geom = Geom(iLev);
   const Box& domain = geom.Domain();
   const Real* probLo = geom.ProbLo();
@@ -705,6 +803,9 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
     const auto mom = nodeMom[mfi].const_array();
+    const Array4<int const> tppcArr = useTargetPPC
+                                          ? target_PPC(iLev)[mfi].const_array()
+                                          : Array4<int const>{};
 
     for (int iDim = 0; iDim < nDim; ++iDim) {
       const int t1 = (iDim + 1) % nDim;
@@ -780,14 +881,17 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
             constexpr Real deadband = 0.05;
             const Real vd = std::min(it->second + deadband, 0.0);
 
-            // Expected macroparticles: n vtherm g(vd) dt dA / (n vol/nppc).
+            // Expected macroparticles: n vtherm g(vd) dt dA / (n vol/cellNppc).
+            const int cellNppc = cell_target_ppc(
+                useTargetPPC, tppcArr,
+                boundary_face_cell(iDim, domEdge, t1, c1, t2, c2), nppc);
             const Real expected =
-                nppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn;
+                cellNppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn;
             const int nInject = static_cast<int>(expected + randNum());
             if (nInject <= 0)
               continue;
 
-            const Real q = qomSign * vol * nDens / nppc;
+            const Real q = qomSign * vol * nDens / cellNppc;
             const auto& smp = get_inflow_speed_sampler(vd);
             const Real base1 =
                 probLo[t1] + (c1 - domain.smallEnd(t1)) * cellSize[t1];

@@ -115,7 +115,8 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
                       centerNetChargeN[iLev], 0, 0, residual.nComp(),
                       residual.nGrow());
     if (finestLevel() > 0) {
-      skip_cells_divE_correction(residual, cell_status(iLev), iLev);
+      skip_cells_divE_correction(residual, cell_status(iLev), iLev,
+                                 bcField.has(FieldBC::coupled));
     }
 
     // The div(E) equation cannot be satisfied inside a 'linetied' or
@@ -427,7 +428,8 @@ void Pic::amr_divE_correction() {
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
     for (int iLev = finestLevel(); iLev >= 0; iLev--) {
       sum_to_center_amr(true, iLev);
-      skip_cells_divE_correction(centerMM[iLev], cell_status(iLev), iLev);
+      skip_cells_divE_correction(centerMM[iLev], cell_status(iLev), iLev,
+                                 bcField.has(FieldBC::coupled));
 
       if (doReport && !useCompactDivELog)
         Print() << "\n-----" << printPrefix << " div(E) correction at iter "
@@ -485,9 +487,11 @@ void Pic::amr_divE_correction() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     sum_to_center_amr(false, iLev);
     if (iLev > 0) {
+      const bool skipLevEdge0 = bcField.has(FieldBC::coupled);
       skip_cells_divE_correction(centerNetChargeN[iLev], cell_status(iLev),
-                                 iLev);
-      skip_cells_divE_correction(centerDivE[iLev], cell_status(iLev), iLev);
+                                 iLev, skipLevEdge0);
+      skip_cells_divE_correction(centerDivE[iLev], cell_status(iLev), iLev,
+                                 skipLevEdge0);
     }
   }
 }
