@@ -225,15 +225,40 @@ void Pic::advance_E_step(Real dtSub, const MultiFab& currentMF, int iLev,
 // Subcycled explicit Maxwell advance for B and E with the current J of the
 // step (time-centered at t^{n+1/2}) in every sub-step.
 void Pic::update_EB_explicit_leapfrog(Real dt, int nSub,
-                                      const Vector<MultiFab>& J) {
+                                      const Vector<MultiFab>& J,
+                                      Vector<MultiFab>* emfAvgOut) {
   std::string nameFunc = "Pic::update_EB_explicit_leapfrog";
   timing_func(nameFunc);
 
   const Real subDt = dt / nSub;
   const Real t0 = tc ? tc->get_time() : 0.0;
+  const Real halfSubWeight = 0.5 / static_cast<Real>(nSub);
+
+  if (emfAvgOut) {
+    for (int iLev = 0;
+         iLev < n_lev() && iLev < static_cast<int>(emfAvgOut->size()); ++iLev) {
+      if (!(*emfAvgOut)[iLev].empty())
+        (*emfAvgOut)[iLev].setVal(0.0);
+    }
+  }
+
+  auto accum_nodeE = [&]() {
+    if (!emfAvgOut)
+      return;
+    for (int iLev = 0;
+         iLev < n_lev() && iLev < static_cast<int>(emfAvgOut->size()); ++iLev) {
+      if ((*emfAvgOut)[iLev].empty())
+        continue;
+      const int nG =
+          amrex::min(nodeE[iLev].nGrow(), (*emfAvgOut)[iLev].nGrow());
+      MultiFab::Saxpy((*emfAvgOut)[iLev], halfSubWeight, nodeE[iLev], 0, 0,
+                      nDim3, nG);
+    }
+  };
 
   for (int iSub = 0; iSub < nSub; ++iSub) {
     // 1. Advance B half-step: B^m -> B^{m+1/2}
+    accum_nodeE();
     const Real tB_half = t0 + (iSub + 0.5) * subDt;
     advance_B_half_step(subDt, tB_half);
 
@@ -247,6 +272,7 @@ void Pic::update_EB_explicit_leapfrog(Real dt, int nSub,
     }
 
     // 3. Advance B second half-step: B^{m+1/2} -> B^{m+1}
+    accum_nodeE();
     const Real tB_full = t0 + (iSub + 1.0) * subDt;
     advance_B_half_step(subDt, tB_full);
   }

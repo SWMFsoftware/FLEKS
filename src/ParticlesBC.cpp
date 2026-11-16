@@ -343,6 +343,11 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
       const Array4<int const> tppcArr =
           useTargetPPC ? target_PPC(iLev)[mfi].const_array()
                        : Array4<int const>{};
+      const bool filterHybrid = isKineticElectron_ && grid != nullptr &&
+                                grid->has_active_solver(PicSolverMode::Hybrid);
+      const auto hcArr = filterHybrid
+                             ? grid->hybrid_collar_mask(iLev)[mfi].const_array()
+                             : Array4<const int>{};
 
       for (int iDim = 0; iDim < nDim; ++iDim) {
         const int t1 = (iDim + 1) % nDim;
@@ -376,6 +381,15 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
                     ? probLo[t2] + (c2 - domain.smallEnd(t2)) * cellSize[t2]
                     : 0.0;
             for (int c1 = lo1; c1 <= hi1; ++c1) {
+              if (filterHybrid) {
+                IntVect cellIdx;
+                cellIdx[iDim] = domEdge;
+                cellIdx[t1] = c1;
+                if (nDim > 2)
+                  cellIdx[t2] = c2;
+                if (hcArr(cellIdx) != 0)
+                  continue;
+              }
               const Real base1 =
                   probLo[t1] + (c1 - domain.smallEnd(t1)) * cellSize[t1];
 
@@ -507,6 +521,15 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real vol = dx[0].product();
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+    if (isKineticElectron_ && grid != nullptr &&
+        grid->has_active_solver(PicSolverMode::Hybrid) &&
+        grid->box_solver(iLev, mfi.index()) == PicSolverMode::Hybrid) {
+      continue;
+    }
+    const bool boxIsHybrid =
+        (grid != nullptr && grid->is_multi_solver_grid())
+            ? (grid->box_solver(iLev, mfi.index()) == PicSolverMode::Hybrid)
+            : isHybrid;
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
     const Array4<int const> tppcArr = useTargetPPC
@@ -549,7 +572,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         // - Full-PIC uses convective bulk flux nppc * (uOut * inward) * dt / dx
         //   to prevent light-electron charge imbalance across the face.
         Real fluxRate = 0.0;
-        if (isHybrid) {
+        if (boxIsHybrid) {
           const Real vFlux =
               (sigma > 0.0) ? (vtherm * inj_mean_inward_flux(uInNorm / vtherm))
                             : std::max(0.0, uInNorm);
@@ -582,7 +605,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
           Real wIn = uLocal[iDim] * inward;
           Real vel[3] = { 0.0, 0.0, 0.0 };
-          if (isHybrid) {
+          if (boxIsHybrid) {
             if (sigma > 0.0) {
               const Real vdLocal = (uLocal[iDim] * inward) / vtherm;
               wIn = vtherm * get_inflow_speed_sampler(vdLocal).draw(randNum());
@@ -800,6 +823,11 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
   };
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+    if (isKineticElectron_ && grid != nullptr &&
+        grid->has_active_solver(PicSolverMode::Hybrid) &&
+        grid->box_solver(iLev, mfi.index()) == PicSolverMode::Hybrid) {
+      continue;
+    }
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
     const auto mom = nodeMom[mfi].const_array();

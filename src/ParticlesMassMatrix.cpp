@@ -40,10 +40,17 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                              u0MF[mfi].const_array() };
   });
 
+  const bool skipNonImplicit =
+      (grid != nullptr && grid->is_multi_solver_grid());
+
   deposit_cell_tiles_colored(
       *this, iLev, 3,
       [&](const auto& item, int /*ord*/, auto checkHomeTag,
           bool strayPass) -> bool {
+        if (skipNonImplicit &&
+            grid->box_solver(iLev, item.grid) != PicSolverMode::Implicit) {
+          return false;
+        }
         const auto& ctx = fabTable[item.grid];
         const Array4<Real const>& nodeBArr = ctx.nodeBArr;
         const Array4<Real const>& nodeB0Arr = ctx.nodeB0Arr;
@@ -290,10 +297,17 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
   Real qdto2mc = charge / mass * 0.5 * dt;
   const bool useB0 = (nodeB0MF != nullptr);
 
+  const bool skipNonImplicit =
+      (grid != nullptr && grid->is_multi_solver_grid());
+
   deposit_cell_tiles_colored(
       *this, iLev, 2 << iLev,
       [&](const auto& item, int /*ord*/, auto checkHomeTag,
           bool strayPass) -> bool {
+        if (skipNonImplicit &&
+            grid->box_solver(iLev, item.grid) != PicSolverMode::Implicit) {
+          return false;
+        }
         Array4<Real const> const& nodeBArr = nodeBMF[item.grid].array();
         const Array4<Real const> nodeB0Arr =
             useB0 ? (*nodeB0MF)[item.grid].array() : Array4<Real const>();

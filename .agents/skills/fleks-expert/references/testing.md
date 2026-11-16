@@ -42,6 +42,7 @@ imports another's code. Code shared by several tests lives in `tests/_shared/`.
 | Inflow BC | `bc_inflow/` | `#INFLOW`-driven inflow face |
 | Wave injection BC | `bc_wave/` | Grouped: mono Bz wave + shear Alfvén wave via `#WAVEBC` |
 | Restart | `restart/` | Checkpoint/restart continuity across implicit, explicit, and hybrid PIC solvers |
+| Solver coupling | `solver_coupling/` | Spatial multi-solver domain coupling via `#REGIONSOLVER` (`Implicit`, `Explicit`, `Hybrid`, 3-way, blended 2D AMR) |
 | Performance | `performance/` | Beam-based scaling benchmark (see `validate_performance.py`) |
 
 - Directories may ship a `PARAM.in.hybrid` (or `PARAM.in.<suffix>`) variant; the
