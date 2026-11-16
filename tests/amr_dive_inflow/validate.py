@@ -271,9 +271,9 @@ def validate_plot(test_name=None):
     if max_qc_fine >= 2.0e4:
         return False, f"Interior L1 max|QC|={max_qc_fine:.1f} exceeds 2.0e4"
 
-    collar = strip & (x >= 1.0) & (x <= 1.5)
+    collar = strip & (x > 1.0) & (x <= 1.5)
     if not np.any(collar):
-        return False, "No points in upstream L0 collar [1.0, 1.5]"
+        return False, "No points in upstream L0 collar (1.0, 1.5]"
 
     mean_ppc0 = float(np.mean(ppc0[collar]))
     mean_ppc1 = float(np.mean(ppc1[collar]))

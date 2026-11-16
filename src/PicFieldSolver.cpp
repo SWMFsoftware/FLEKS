@@ -26,13 +26,9 @@ void Pic::update_E() {
       fill_ghost_emf_from_coarse(nodeE);
       sync_emf_at_interface(nodeEth);
       fill_ghost_emf_from_coarse(nodeEth);
-    } else if (useCurlUpwindB) {
-      fill_interface_and_ghost_emf_from_coarse(nodeE);
-      fill_interface_and_ghost_emf_from_coarse(nodeEth);
-      for (int iLev = 1; iLev < n_lev(); ++iLev) {
-        div_node_to_center(nodeE[iLev], centerDivE[iLev],
-                           Geom(iLev).InvCellSize());
-      }
+    } else if (useExplicitPIC && useCurlUpwindB) {
+      fill_ghost_emf_from_coarse(nodeE);
+      fill_ghost_emf_from_coarse(nodeEth);
     }
   }
 }
@@ -1353,22 +1349,18 @@ void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
 
-  if (finestLevel() > 0) {
-    if (useHybridPIC) {
-      sync_emf_at_interface(nodeEth);
-      fill_ghost_emf_from_coarse(nodeEth);
-      sync_emf_at_interface(nodeE);
-      fill_ghost_emf_from_coarse(nodeE);
-    } else if (useCurlUpwindB) {
-      fill_interface_and_ghost_emf_from_coarse(nodeEth);
-      fill_interface_and_ghost_emf_from_coarse(nodeE);
-    }
+  if (finestLevel() > 0 && useHybridPIC) {
+    sync_emf_at_interface(nodeEth);
+    fill_ghost_emf_from_coarse(nodeEth);
+    sync_emf_at_interface(nodeE);
+    fill_ghost_emf_from_coarse(nodeE);
   }
 
-  // When curl-form upwind is active in the full-PIC solver, compute the upwind
-  // dissipation as an effective EMF on nodes: E_upwind = sum_d (a_d/2) e_d x
-  // jump(B). Faraday's curl update then advances B strictly divergence-free.
-  const bool doCurlUpwind = useUpwindB && useCurlUpwindB && !useHybridPIC;
+  // When curl-form upwind is active in the full-PIC solver, advance B with
+  // a synchronized Faraday EMF (nodeEmf) and optionally add the upwind
+  // dissipation EMF: E_upwind = sum_d (a_d/2) e_d x jump(B), keeping nodeE and
+  // nodeEth unmodified on coarse-fine interfaces.
+  const bool doCurlUpwind = useCurlUpwindB && !useHybridPIC;
   if (doCurlUpwind) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (nodeEmf[iLev].empty()) {
@@ -1378,7 +1370,9 @@ void Pic::update_B() {
       }
       MultiFab::Copy(nodeEmf[iLev], nodeEth[iLev], 0, 0, nDim3,
                      nodeEth[iLev].nGrow());
-      add_curl_upwind_E(nodeEmf[iLev], iLev);
+      if (useUpwindB) {
+        add_curl_upwind_E(nodeEmf[iLev], iLev);
+      }
       nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
       nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
       apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3,

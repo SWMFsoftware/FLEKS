@@ -191,7 +191,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // introduced by AMR before the next field solve.
     distribute_FabArray(nodeEth[iLev], node_box_array(iLev),
                         DistributionMap(iLev), 3, get_n_ghost(), true, 0.0);
-    if (useUpwindB && useCurlUpwindB && !useHybridPIC) {
+    if (useCurlUpwindB && !useHybridPIC) {
       distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
     } else {

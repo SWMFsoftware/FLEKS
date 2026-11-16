@@ -436,19 +436,38 @@ inline bool skip_particle_for_dive_cleaning(
   // interfaces so div(E) shifts cannot step across the interface while
   // matching the mass-matrix assembly in sum_to_center_amr().
   const bool checkCoarseSide = bit::is_refined_neighbour(st);
-  const bool checkFineSide = (iLev > 0) && bit::is_lev_edge(st);
+  const bool checkFineSide =
+      !skipLevEdge0 && (iLev > 0) && bit::is_lev_edge(st);
   if (checkCoarseSide || checkFineSide) {
     constexpr amrex::Real fac = 0.25;
     const bool loX = (rv[0] <= fac);
     const bool hiX = (rv[0] >= (1.0 - fac));
-    const bool loY = (nDim > 1) && (rv[1] <= fac);
-    const bool hiY = (nDim > 1) && (rv[1] >= (1.0 - fac));
-    const bool loZ = (nDim > 2) && (rv[2] <= fac);
-    const bool hiZ = (nDim > 2) && (rv[2] >= (1.0 - fac));
+#if (AMREX_SPACEDIM > 1)
+    const bool loY = (rv[1] <= fac);
+    const bool hiY = (rv[1] >= (1.0 - fac));
+#else
+    constexpr bool loY = false;
+    constexpr bool hiY = false;
+#endif
+#if (AMREX_SPACEDIM > 2)
+    const bool loZ = (rv[2] <= fac);
+    const bool hiZ = (rv[2] >= (1.0 - fac));
+#else
+    constexpr bool loZ = false;
+    constexpr bool hiZ = false;
+#endif
     if (loX || hiX || loY || hiY || loZ || hiZ) {
       const int i = iv[0];
-      const int j = (nDim > 1) ? iv[1] : 0;
-      const int k = (nDim > 2) ? iv[2] : 0;
+#if (AMREX_SPACEDIM > 1)
+      const int j = iv[1];
+#else
+      constexpr int j = 0;
+#endif
+#if (AMREX_SPACEDIM > 2)
+      const int k = iv[2];
+#else
+      constexpr int k = 0;
+#endif
       const int diMin = loX ? -1 : 0, diMax = hiX ? 1 : 0;
       const int djMin = loY ? -1 : 0, djMax = hiY ? 1 : 0;
       const int dkMin = loZ ? -1 : 0, dkMax = hiZ ? 1 : 0;
@@ -457,7 +476,7 @@ inline bool skip_particle_for_dive_cleaning(
           for (int di = diMin; di <= diMax; ++di) {
             if (di == 0 && dj == 0 && dk == 0)
               continue;
-            const int neiSt = status(AMREX_D_DECL(i + di, j + dj, k + dk));
+            const int neiSt = status(i + di, j + dj, k + dk);
             if ((checkCoarseSide && bit::is_refined(neiSt)) ||
                 (checkFineSide && bit::is_lev_boundary(neiSt) &&
                  !bit::is_domain_boundary(neiSt))) {

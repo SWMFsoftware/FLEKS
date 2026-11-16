@@ -802,8 +802,11 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         }
         if (useBody) {
           if (useSmoothBodySphere) {
-            const Real xyzNew[3] = { p.pos(ix_), p.pos(iy_),
-                                     nDim > 2 ? p.pos(iz_) : 0.0 };
+#if (AMREX_SPACEDIM > 2)
+            const Real xyzNew[3] = { p.pos(ix_), p.pos(iy_), p.pos(iz_) };
+#else
+            const Real xyzNew[3] = { p.pos(ix_), p.pos(iy_), 0.0 };
+#endif
             enteredBody = grid->is_inside_body(xyzNew);
           } else {
             enteredBody = inBox && bit::is_body(cMask);
@@ -812,7 +815,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         if (outOfValidBox) {
           leftLevelValid = inBox
                                ? (bit::is_domain_boundary(cMask) ||
-                                  (n_lev() > 1 && bit::is_lev_boundary(cMask)))
+                                  (!bc.has(ParticleBC::coupled) &&
+                                   n_lev() > 1 && bit::is_lev_boundary(cMask)))
                                : is_outside_active_region(p, ab);
         }
 
