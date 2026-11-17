@@ -377,7 +377,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
           pl.resize(n_lev_max());
         distribute_FabArray(pl[iLev], node_box_array(iLev),
                             DistributionMap(iLev), nHybridMomentsComps,
-                            get_n_ghost(), doMoveData);
+                            get_n_ghost(), true, 0.0);
       }
     }
     distribute_FabArray(dBdt[iLev], node_box_array(iLev), DistributionMap(iLev),
@@ -385,7 +385,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     // mMach: node grid for both full-PIC and hybrid.
     distribute_FabArray(mMach[iLev], node_box_array(iLev),
-                        DistributionMap(iLev), 1, get_n_ghost(), doMoveData);
+                        DistributionMap(iLev), 1, get_n_ghost(), true, 0.0);
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
     // E current (jHat), and node-centered moments (nodePlasma): full-PIC only.
@@ -413,7 +413,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       if (pl.empty())
         pl.resize(n_lev_max());
       distribute_FabArray(pl[iLev], node_box_array(iLev), DistributionMap(iLev),
-                          nMoments, get_n_ghost(), doMoveData);
+                          nMoments, get_n_ghost(), true, 0.0);
     }
   }
 }

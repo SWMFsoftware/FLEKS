@@ -141,6 +141,12 @@ T                       doReSampling
 #CONSTANTPPV
 F                       isPPVconstant
 
+#LOADBALANCE
+hybrid                  loadBalanceStrategy
+10                      cellWeight
+10                      dn
+-1.0                    dt
+
 #MONITOR
 5                       dnReport
 

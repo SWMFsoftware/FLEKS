@@ -149,15 +149,16 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
               const Real cTmp = qp * invVol[iLev];
               deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
 
-              bool skipParticle = false;
-              if (n_lev() > 1) {
-                skipParticle = skip_particle_for_dive_cleaning(
-                    p.pos(), Geom(iLev), iLev, status,
-                    bc.has(ParticleBC::coupled));
-              }
-              if (!doNetChargeOnly && !skipParticle) {
-                accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp,
-                                                    mmArr);
+              if (!doNetChargeOnly) {
+                const Real mmWeight =
+                    (n_lev() > 1) ? dive_particle_cleaning_weight(
+                                        p.pos(), Geom(iLev), iLev, status,
+                                        bc.has(ParticleBC::coupled))
+                                  : Real(1.0);
+                if (mmWeight > 0.0) {
+                  accumulate_mass_matrix_contribution(iLev, loIdx, dShift,
+                                                      mmWeight * qp, mmArr);
+                }
               }
             }
             return foundStray;

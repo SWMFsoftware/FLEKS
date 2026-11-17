@@ -1031,6 +1031,8 @@ public:
   void build_E_preconditioner(amrex::MultiFab &invDiagMF, int iLev,
                               EPrecondType type);
   void sync_nodal_solver_vec(amrex::MultiFab &vecMF, int iLev);
+  void relax_fine_lev_edge_from_coarse(amrex::MultiFab &mfCrse,
+                                       amrex::MultiFab &mfFine, int iLev);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
   void convert_1d_to_3d(const amrex::Real *const p, amrex::MultiFab &MF,

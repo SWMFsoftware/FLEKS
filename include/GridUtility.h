@@ -1,6 +1,7 @@
 #ifndef _GRIDUTILITY_H_
 #define _GRIDUTILITY_H_
 
+#include <algorithm>
 #include <limits>
 #include <string>
 #include <vector>
@@ -416,7 +417,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
   }
 }
 
-inline bool skip_particle_for_dive_cleaning(
+inline amrex::Real dive_particle_cleaning_weight(
     const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
     const amrex::Array4<int const>& status, bool skipLevEdge0 = false) {
 
@@ -426,69 +427,88 @@ inline bool skip_particle_for_dive_cleaning(
 
   const int st = status(iv);
   if (bit::is_refined(st) || bit::is_lev_boundary(st)) {
-    return true;
+    return 0.0;
   }
   if (skipLevEdge0 && iLev == 0 && bit::is_lev_edge(st)) {
-    return true;
+    return 0.0;
   }
 
-  // Keep a symmetric 0.25*dx margin on both sides of interior coarse-fine
-  // interfaces so div(E) shifts cannot step across the interface while
-  // matching the mass-matrix assembly in sum_to_center_amr().
-  const bool checkCoarseSide = bit::is_refined_neighbour(st);
-  const bool checkFineSide =
-      !skipLevEdge0 && (iLev > 0) && bit::is_lev_edge(st);
-  if (checkCoarseSide || checkFineSide) {
-    constexpr amrex::Real fac = 0.25;
-    const bool loX = (rv[0] <= fac);
+  // Use a 0.25 * dx margin on the coarse side (retaining the Dirichlet anchor
+  // across refined inner patches so hollow intermediate levels keep a
+  // nonsingular div(E) matrix). On the fine side, skip the outer 0.5 * dx
+  // half-cell in divE_correct_position() so particles never differentiate
+  // across unsolved centerPhi == 0 ghost cells, while keeping a reduced
+  // Robin/Dirichlet anchor weight in centerMM (sum_to_center_amr()) so fine
+  // faces, edges, and corners stay locally grounded without a Neumann wall.
+  auto touches_interface = [&](amrex::Real fac, bool strictLo, auto&& pred) {
+    const bool loX = strictLo ? (rv[0] < fac) : (rv[0] <= fac);
     const bool hiX = (rv[0] >= (1.0 - fac));
 #if (AMREX_SPACEDIM > 1)
-    const bool loY = (rv[1] <= fac);
+    const bool loY = strictLo ? (rv[1] < fac) : (rv[1] <= fac);
     const bool hiY = (rv[1] >= (1.0 - fac));
 #else
     constexpr bool loY = false;
     constexpr bool hiY = false;
 #endif
 #if (AMREX_SPACEDIM > 2)
-    const bool loZ = (rv[2] <= fac);
+    const bool loZ = strictLo ? (rv[2] < fac) : (rv[2] <= fac);
     const bool hiZ = (rv[2] >= (1.0 - fac));
 #else
     constexpr bool loZ = false;
     constexpr bool hiZ = false;
 #endif
-    if (loX || hiX || loY || hiY || loZ || hiZ) {
-      const int i = iv[0];
+    if (!loX && !hiX && !loY && !hiY && !loZ && !hiZ)
+      return false;
+
+    const int i = iv[0];
 #if (AMREX_SPACEDIM > 1)
-      const int j = iv[1];
+    const int j = iv[1];
 #else
-      constexpr int j = 0;
+    constexpr int j = 0;
 #endif
 #if (AMREX_SPACEDIM > 2)
-      const int k = iv[2];
+    const int k = iv[2];
 #else
-      constexpr int k = 0;
+    constexpr int k = 0;
 #endif
-      const int diMin = loX ? -1 : 0, diMax = hiX ? 1 : 0;
-      const int djMin = loY ? -1 : 0, djMax = hiY ? 1 : 0;
-      const int dkMin = loZ ? -1 : 0, dkMax = hiZ ? 1 : 0;
-      for (int dk = dkMin; dk <= dkMax; ++dk) {
-        for (int dj = djMin; dj <= djMax; ++dj) {
-          for (int di = diMin; di <= diMax; ++di) {
-            if (di == 0 && dj == 0 && dk == 0)
-              continue;
-            const int neiSt = status(i + di, j + dj, k + dk);
-            if ((checkCoarseSide && bit::is_refined(neiSt)) ||
-                (checkFineSide && bit::is_lev_boundary(neiSt) &&
-                 !bit::is_domain_boundary(neiSt))) {
-              return true;
-            }
-          }
+    const int diMin = loX ? -1 : 0, diMax = hiX ? 1 : 0;
+    const int djMin = loY ? -1 : 0, djMax = hiY ? 1 : 0;
+    const int dkMin = loZ ? -1 : 0, dkMax = hiZ ? 1 : 0;
+    for (int dk = dkMin; dk <= dkMax; ++dk) {
+      for (int dj = djMin; dj <= djMax; ++dj) {
+        for (int di = diMin; di <= diMax; ++di) {
+          if (di == 0 && dj == 0 && dk == 0)
+            continue;
+          if (pred(status(i + di, j + dj, k + dk)))
+            return true;
         }
       }
     }
+    return false;
+  };
+
+  if (bit::is_refined_neighbour(st) &&
+      touches_interface(0.25, false,
+                        [](int neiSt) { return bit::is_refined(neiSt); })) {
+    return 0.0;
   }
 
-  return false;
+  constexpr amrex::Real fineEdgeAnchorWeight = 0.35;
+  if (!skipLevEdge0 && (iLev > 0) && bit::is_lev_edge(st) &&
+      touches_interface(0.5, true, [](int neiSt) {
+        return bit::is_lev_boundary(neiSt) && !bit::is_domain_boundary(neiSt);
+      })) {
+    return fineEdgeAnchorWeight;
+  }
+
+  return 1.0;
+}
+
+inline bool skip_particle_for_dive_cleaning(
+    const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
+    const amrex::Array4<int const>& status, bool skipLevEdge0 = false) {
+  return dive_particle_cleaning_weight(xyz, Geom, iLev, status, skipLevEdge0) <
+         1.0;
 }
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
@@ -680,7 +700,13 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, const amrex::BoxArray& baNew,
     tmp.define(baNew, dm, nComp, nGst);
     tmp.setVal(initValT);
     if (doCopy && !fa.empty()) {
-      tmp.ParallelCopy(fa, 0, 0, fa.nComp(), nGst, nGst);
+      // Copy outer-to-inner so valid cells (ng = 0) and evolved layer-1
+      // ghosts (ng = 1, e.g. Faraday centerB) always win over neighbor ghosts.
+      const int nCompCopy = std::min(nComp, fa.nComp());
+      const int srcGrow = std::min(nGst, fa.nGrow());
+      for (int ng = srcGrow; ng >= 0; --ng) {
+        tmp.ParallelCopy(fa, 0, 0, nCompCopy, ng, nGst);
+      }
       // tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());
     } else {
       tmp.setVal(0);

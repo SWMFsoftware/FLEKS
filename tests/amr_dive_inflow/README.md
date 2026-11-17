@@ -12,11 +12,17 @@ and `#COMOVING` are active together:
    - Keeps `L0` physical `is_lev_edge` cells active in `div(E)` cleaning on
      non-coupled boundaries while preserving `is_lev_edge` skipping on
      MHD-coupled (`FieldBC::coupled` / `ParticleBC::coupled`) boundaries.
-   - Applies a symmetric `0.25 * dx` proximity margin in
-     `skip_particle_for_dive_cleaning()` on both the coarse
-     (`is_refined_neighbour`) and fine (`iLev > 0` non-domain `is_lev_edge`)
-     sides of interior coarse-fine interfaces, matching the mass-matrix assembly
-     in `sum_to_center_amr()` and `divE_correct_position()`.
+   - Uses `dive_particle_cleaning_weight()` and
+     `skip_particle_for_dive_cleaning()` across `sum_to_center_amr()` and
+     `divE_correct_position()`: `0.25 * dx` coarse (`is_refined_neighbour`)
+     margin excluded from both `sum_to_center_amr()` and
+     `divE_correct_position()` (retaining the Dirichlet anchor across refined
+     inner patches), and `0.5 * dx` fine (`iLev > 0` non-domain `is_lev_edge`)
+     half-cell margin skipped in `divE_correct_position()` while contributing a
+     `0.35` Robin/Dirichlet anchor weight to `centerMM` in
+     `sum_to_center_amr()` so active fine particles never differentiate across
+     unsolved `centerPhi == 0` ghost cells yet interfaces remain locally
+     grounded.
    - Pre-shift dual-cell guarding skips only `bit::is_domain_boundary` cells
      (when `iLev == 0 || !bc.has(ParticleBC::coupled)`), keeping interior
      coarse-fine edges and `#BODY`-adjacent cells active with a post-shift
