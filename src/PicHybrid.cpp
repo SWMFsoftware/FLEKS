@@ -1730,13 +1730,31 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
     fill_ghost_emf_from_coarse(nodeEstage, timeOverride);
   }
 
-  for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    // Ohm's law produces total E; subtract inductive E0 = -dA0/dt so
-    // Faraday's law advances only B1 = B_tot - B0.
-    if (has_inductive_E0() && !nodeE0[iLev].empty()) {
-      const int nG = std::min(nodeEstage[iLev].nGrow(), nodeE0[iLev].nGrow());
-      MultiFab::Subtract(nodeEstage[iLev], nodeE0[iLev], 0, 0, nDim3, nG);
+  if (has_active_inductive_E0()) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      // Ohm's law produces total E; subtract inductive E0 = -dA0/dt so
+      // Faraday's law advances only B1 = B_tot - B0.
+      if (!nodeE0[iLev].empty()) {
+        const int nG = std::min(nodeEstage[iLev].nGrow(), nodeE0[iLev].nGrow());
+        MultiFab::Subtract(nodeEstage[iLev], nodeE0[iLev], 0, 0, nDim3, nG);
+      }
     }
+    // Re-synchronize coarse-fine interface hanging edges and fine ghost nodes
+    // on nodeEstage (= E_tot - E0) so coarse and fine curls share identical
+    // interface edge circulations and preserve div(B1) = 0.
+    for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
+      fill_fine_lev_edge_from_coarse(
+          nodeEstage[iLev - 1], nodeEstage[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          nodeEstage[iLev - 1], nodeEstage[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      nodeEstage[iLev].OverrideSync(Geom(iLev).periodicity());
+      nodeEstage[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
     // curl_node_to_center also fills the first ghost layer, which is used by
     // the stage update when faraday_ngrow(iLev) > 0.
     curl_node_to_center(nodeEstage[iLev], kStage[iLev][iK],

@@ -152,6 +152,20 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       relaxDir[iLev].clear();
     }
   }
+  if (use_intrinsic_B()) {
+    for (int iLev = n_lev(); iLev < n_lev_max(); ++iLev) {
+      if (iLev < static_cast<int>(nodeB0.size()))
+        nodeB0[iLev].clear();
+      if (iLev < static_cast<int>(centerB0.size()))
+        centerB0[iLev].clear();
+      if (iLev < static_cast<int>(nodeE0.size()))
+        nodeE0[iLev].clear();
+      if (iLev < static_cast<int>(centerBtotal.size()))
+        centerBtotal[iLev].clear();
+      if (iLev < static_cast<int>(nodeEtotalScratch_.size()))
+        nodeEtotalScratch_[iLev].clear();
+    }
+  }
 
   // Clear persistent AMR scratch buffers so they are rebuilt on the new grids.
   sumToCenterJc.clear();
@@ -793,180 +807,236 @@ void Pic::fill_E_B_fields(bool fillAll) {
 // parallel (ParallelFor), while spherical harmonic evaluations use host
 // scratch.
 //==========================================================
+void Pic::fill_intrinsic_fields_impl(bool fillB, bool fillE) {
+  if (!use_intrinsic_B() || (!fillB && !fillE))
+    return;
+
+  const IntrinsicBField& field = *intrinsicB_;
+  const auto p = field.get_params();
+  const int activeDim = get_dim();
+  const bool deviceEvalB = !field.use_crustal();
+  const bool nonzeroE = field.has_nonzero_inductive_E();
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (fillB) {
+      if (nodeB0[iLev].empty())
+        distribute_FabArray(nodeB0[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(), false);
+      if (centerB0[iLev].empty())
+        distribute_FabArray(centerB0[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 3, get_n_ghost(), false);
+    }
+    if (fillE && nodeE0[iLev].empty()) {
+      distribute_FabArray(nodeE0[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), false);
+    }
+
+    const auto plo = Geom(iLev).ProbLoArray();
+    const auto dx = Geom(iLev).CellSizeArray();
+#if (AMREX_SPACEDIM > 2)
+    const Real z2D = 0.5 * (Geom(iLev).ProbLo(iz_) + Geom(iLev).ProbHi(iz_));
+#else
+    const Real z2D = 0.0;
+#endif
+    const bool fuseNodalBE = fillB && fillE && deviceEvalB && nonzeroE;
+
+    if (fillB) {
+      if (deviceEvalB) {
+        if (fuseNodalBE) {
+          parallel_for_mf_omp(
+              nodeB0[iLev], [](const MFIter& mfi) { return mfi.fabbox(); },
+              [&](const MFIter& mfi) {
+                const Array4<Real>& arrB = nodeB0[iLev][mfi].array();
+                const Array4<Real>& arrE = nodeE0[iLev][mfi].array();
+                return [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  Real b[3] = { 0.0, 0.0, 0.0 };
+                  Real e[3] = { 0.0, 0.0, 0.0 };
+                  const Real x = plo[ix_] + i * dx[ix_];
+                  const Real y =
+                      (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
+#if (AMREX_SPACEDIM > 2)
+                  const Real z =
+                      (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : z2D;
+#else
+                  const Real z = z2D;
+#endif
+                  eval_intrinsic_be_dev(p, x, y, z, activeDim, b, e);
+                  arrB(i, j, k, ix_) = b[0];
+                  arrB(i, j, k, iy_) = b[1];
+                  arrB(i, j, k, iz_) = b[2];
+                  arrE(i, j, k, ix_) = e[0];
+                  arrE(i, j, k, iy_) = e[1];
+                  arrE(i, j, k, iz_) = e[2];
+                };
+              });
+        } else {
+          parallel_for_mf_omp(
+              nodeB0[iLev], [](const MFIter& mfi) { return mfi.fabbox(); },
+              [&](const MFIter& mfi) {
+                const Array4<Real>& arr = nodeB0[iLev][mfi].array();
+                return [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  Real b[3] = { 0.0, 0.0, 0.0 };
+                  const Real x = plo[ix_] + i * dx[ix_];
+                  const Real y =
+                      (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
+#if (AMREX_SPACEDIM > 2)
+                  const Real z =
+                      (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : z2D;
+#else
+                  const Real z = z2D;
+#endif
+                  eval_intrinsic_b_dev(p, x, y, z, activeDim, b);
+                  arr(i, j, k, ix_) = b[0];
+                  arr(i, j, k, iy_) = b[1];
+                  arr(i, j, k, iz_) = b[2];
+                };
+              });
+        }
+
+        parallel_for_mf_omp(
+            centerB0[iLev], [](const MFIter& mfi) { return mfi.fabbox(); },
+            [&](const MFIter& mfi) {
+              const Array4<Real>& arr = centerB0[iLev][mfi].array();
+              return [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                Real b[3] = { 0.0, 0.0, 0.0 };
+                const Real x = plo[ix_] + (i + 0.5) * dx[ix_];
+                const Real y =
+                    (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
+#if (AMREX_SPACEDIM > 2)
+                const Real z =
+                    (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : z2D;
+#else
+                const Real z = z2D;
+#endif
+                eval_intrinsic_b_dev(p, x, y, z, activeDim, b);
+                arr(i, j, k, ix_) = b[0];
+                arr(i, j, k, iy_) = b[1];
+                arr(i, j, k, iz_) = b[2];
+              };
+            });
+      } else {
+        // Crustal evaluation uses host scratch workspace.
+        for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.fabbox();
+          const Array4<Real>& arr = nodeB0[iLev][mfi].array();
+          // Under a 2D build index 2 of a Box is out of range, so the z loop
+          // collapses to a single pass and z uses the 2D midplane.
+#if (AMREX_SPACEDIM > 2)
+          const int kLo = box.smallEnd(2);
+          const int kHi = box.bigEnd(2);
+#else
+          const int kLo = 0;
+          const int kHi = 0;
+#endif
+          for (int k = kLo; k <= kHi; ++k) {
+#if (AMREX_SPACEDIM > 2)
+            const Real z = (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : z2D;
+#else
+            const Real z = z2D;
+#endif
+            for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+              const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
+              for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+                Real b[3] = { 0.0, 0.0, 0.0 };
+                field.eval(plo[ix_] + i * dx[ix_], y, z, b);
+                arr(i, j, k, ix_) = b[0];
+                arr(i, j, k, iy_) = b[1];
+                arr(i, j, k, iz_) = b[2];
+              }
+            }
+          }
+        }
+
+        for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.fabbox();
+          const Array4<Real>& arr = centerB0[iLev][mfi].array();
+#if (AMREX_SPACEDIM > 2)
+          const int kLo = box.smallEnd(2);
+          const int kHi = box.bigEnd(2);
+#else
+          const int kLo = 0;
+          const int kHi = 0;
+#endif
+          for (int k = kLo; k <= kHi; ++k) {
+#if (AMREX_SPACEDIM > 2)
+            const Real z =
+                (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : z2D;
+#else
+            const Real z = z2D;
+#endif
+            for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+              const Real y =
+                  (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
+              for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+                Real b[3] = { 0.0, 0.0, 0.0 };
+                field.eval(plo[ix_] + (i + 0.5) * dx[ix_], y, z, b);
+                arr(i, j, k, ix_) = b[0];
+                arr(i, j, k, iy_) = b[1];
+                arr(i, j, k, iz_) = b[2];
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (fillE) {
+      if (!nonzeroE) {
+        nodeE0[iLev].setVal(0.0);
+      } else {
+        if (!fuseNodalBE) {
+          parallel_for_mf_omp(
+              nodeE0[iLev], [](const MFIter& mfi) { return mfi.fabbox(); },
+              [&](const MFIter& mfi) {
+                const Array4<Real>& arr = nodeE0[iLev][mfi].array();
+                return [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  Real e[3] = { 0.0, 0.0, 0.0 };
+                  const Real x = plo[ix_] + i * dx[ix_];
+                  const Real y =
+                      (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
+#if (AMREX_SPACEDIM > 2)
+                  const Real z =
+                      (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : z2D;
+#else
+                  const Real z = z2D;
+#endif
+                  eval_inductive_e_dev(p, x, y, z, e);
+                  arr(i, j, k, ix_) = e[0];
+                  arr(i, j, k, iy_) = e[1];
+                  arr(i, j, k, iz_) = e[2];
+                };
+              });
+        }
+        if (use_body()) {
+          apply_body_E_bc(nodeE0[iLev], iLev);
+        }
+      }
+    }
+  }
+}
+
 void Pic::fill_intrinsic_B(Real tCode) {
   if (!use_intrinsic_B())
     return;
 
   const Real tEval = (tCode >= 0.0) ? tCode : (tc ? tc->get_time() : 0.0);
   intrinsicB_->update_time(tEval);
-
-  const IntrinsicBField& field = *intrinsicB_;
-  const auto p = field.get_params();
-  const int activeDim = get_dim();
-  const bool deviceEvalB = !field.use_crustal();
-  const bool hasE0 = has_inductive_E0();
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    if (nodeB0[iLev].empty())
-      distribute_FabArray(nodeB0[iLev], node_box_array(iLev),
-                          DistributionMap(iLev), 3, get_n_ghost(), false);
-    if (centerB0[iLev].empty())
-      distribute_FabArray(centerB0[iLev], boxArray(iLev), DistributionMap(iLev),
-                          3, get_n_ghost(), false);
-    if (hasE0 && nodeE0[iLev].empty())
-      distribute_FabArray(nodeE0[iLev], node_box_array(iLev),
-                          DistributionMap(iLev), 3, get_n_ghost(), false);
-
-    const auto plo = Geom(iLev).ProbLo();
-    const auto dx = Geom(iLev).CellSize();
-#if (AMREX_SPACEDIM > 2)
-    const Real z2D = 0.5 * (Geom(iLev).ProbLo(iz_) + Geom(iLev).ProbHi(iz_));
-#else
-    const Real z2D = 0.0;
-#endif
-
-    if (deviceEvalB) {
-      // Dipole, #COIL, and #TOROIDALFIELD evaluations are scratch-free and
-      // device-callable: run in ParallelFor.
-      for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = nodeB0[iLev][mfi].array();
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          Real b[3] = { 0.0, 0.0, 0.0 };
-          const Real x = plo[ix_] + i * dx[ix_];
-          const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
-#if (AMREX_SPACEDIM > 2)
-          const Real z = (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : z2D;
-#else
-          const Real z = z2D;
-#endif
-          eval_intrinsic_b_dev(p, x, y, z, activeDim, b);
-          arr(i, j, k, ix_) = b[0];
-          arr(i, j, k, iy_) = b[1];
-          arr(i, j, k, iz_) = b[2];
-        });
-      }
-
-      for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = centerB0[iLev][mfi].array();
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          Real b[3] = { 0.0, 0.0, 0.0 };
-          const Real x = plo[ix_] + (i + 0.5) * dx[ix_];
-          const Real y =
-              (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
-#if (AMREX_SPACEDIM > 2)
-          const Real z =
-              (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : z2D;
-#else
-          const Real z = z2D;
-#endif
-          eval_intrinsic_b_dev(p, x, y, z, activeDim, b);
-          arr(i, j, k, ix_) = b[0];
-          arr(i, j, k, iy_) = b[1];
-          arr(i, j, k, iz_) = b[2];
-        });
-      }
-    } else {
-      // Crustal evaluation uses host scratch workspace.
-      for (MFIter mfi(nodeB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = nodeB0[iLev][mfi].array();
-        // Under a 2D build index 2 of a Box is out of range, so the z loop
-        // collapses to a single pass and z uses the 2D midplane.
-#if (AMREX_SPACEDIM > 2)
-        const int kLo = box.smallEnd(2);
-        const int kHi = box.bigEnd(2);
-#else
-        const int kLo = 0;
-        const int kHi = 0;
-#endif
-        for (int k = kLo; k <= kHi; ++k) {
-#if (AMREX_SPACEDIM > 2)
-          const Real z = (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : z2D;
-#else
-          const Real z = z2D;
-#endif
-          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
-            const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
-            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-              Real b[3] = { 0.0, 0.0, 0.0 };
-              field.eval(plo[ix_] + i * dx[ix_], y, z, b);
-              arr(i, j, k, ix_) = b[0];
-              arr(i, j, k, iy_) = b[1];
-              arr(i, j, k, iz_) = b[2];
-            }
-          }
-        }
-      }
-
-      for (MFIter mfi(centerB0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = centerB0[iLev][mfi].array();
-#if (AMREX_SPACEDIM > 2)
-        const int kLo = box.smallEnd(2);
-        const int kHi = box.bigEnd(2);
-#else
-        const int kLo = 0;
-        const int kHi = 0;
-#endif
-        for (int k = kLo; k <= kHi; ++k) {
-#if (AMREX_SPACEDIM > 2)
-          const Real z =
-              (activeDim > 2) ? (plo[iz_] + (k + 0.5) * dx[iz_]) : z2D;
-#else
-          const Real z = z2D;
-#endif
-          for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
-            const Real y =
-                (activeDim > 1) ? (plo[iy_] + (j + 0.5) * dx[iy_]) : 0.0;
-            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-              Real b[3] = { 0.0, 0.0, 0.0 };
-              field.eval(plo[ix_] + (i + 0.5) * dx[ix_], y, z, b);
-              arr(i, j, k, ix_) = b[0];
-              arr(i, j, k, iy_) = b[1];
-              arr(i, j, k, iz_) = b[2];
-            }
-          }
-        }
-      }
-    }
-
-    if (hasE0) {
-      for (MFIter mfi(nodeE0[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<Real>& arr = nodeE0[iLev][mfi].array();
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          Real e[3] = { 0.0, 0.0, 0.0 };
-          const Real x = plo[ix_] + i * dx[ix_];
-          const Real y = (activeDim > 1) ? (plo[iy_] + j * dx[iy_]) : 0.0;
-#if (AMREX_SPACEDIM > 2)
-          const Real z = (activeDim > 2) ? (plo[iz_] + k * dx[iz_]) : z2D;
-#else
-          const Real z = z2D;
-#endif
-          eval_inductive_e_dev(p, x, y, z, e);
-          arr(i, j, k, ix_) = e[0];
-          arr(i, j, k, iy_) = e[1];
-          arr(i, j, k, iz_) = e[2];
-        });
-      }
-      if (use_body()) {
-        apply_body_E_bc(nodeE0[iLev], iLev);
-      }
-    }
-  }
+  fill_intrinsic_fields_impl(true, has_inductive_E0());
 }
 
 //==========================================================
 void Pic::refresh_intrinsic_fields(Real tCode) {
   if (!has_time_dep_B0())
     return;
-  if (intrinsicB_->is_at_time(tCode) && !nodeB0[0].empty() &&
-      (!has_inductive_E0() || !nodeE0[0].empty())) {
-    return;
+
+  const bool forceFillB = nodeB0[0].empty();
+  const bool forceFillE = has_inductive_E0() && nodeE0[0].empty();
+  const auto status = intrinsicB_->update_time(tCode);
+  const bool needB = status.changedB || forceFillB;
+  const bool needE = (has_inductive_E0() && status.changedE) || forceFillE;
+  if (needB || needE) {
+    fill_intrinsic_fields_impl(needB, needE);
   }
-  fill_intrinsic_B(tCode);
 }
 
 //==========================================================
@@ -989,7 +1059,7 @@ amrex::MultiFab& Pic::total_center_B(amrex::MultiFab& src, const int iLev) {
 //==========================================================
 const amrex::MultiFab& Pic::total_node_E(const amrex::MultiFab& src,
                                          const int iLev) {
-  if (useHybridPIC || !has_inductive_E0() || nodeE0[iLev].empty())
+  if (useHybridPIC || !has_active_inductive_E0() || nodeE0[iLev].empty())
     return src;
 
   amrex::MultiFab& dst = nodeEtotalScratch_[iLev];
@@ -1007,7 +1077,7 @@ const amrex::MultiFab& Pic::total_node_E(const amrex::MultiFab& src,
 //==========================================================
 const amrex::Vector<amrex::MultiFab>& Pic::total_node_E(
     const amrex::Vector<amrex::MultiFab>& src) {
-  if (useHybridPIC || !has_inductive_E0())
+  if (useHybridPIC || !has_active_inductive_E0())
     return src;
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -2329,15 +2399,16 @@ void Pic::update(bool doReportIn) {
     }
   }
 
-  // Co-moving frame solver is full-PIC only.
-  if (!useHybridPIC &&
-      (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE <= 0))) {
-    update_U0_E0();
-  }
-
   const Real dtFullStep = tc ? tc->get_dt() : 0.0;
   const Real tStepEnd = tc ? tc->get_time() : 0.0;
   const Real tStepStart = std::max(0.0, tStepEnd - dtFullStep);
+
+  // Co-moving frame solver is full-PIC only.
+  if (!useHybridPIC &&
+      (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE <= 0))) {
+    refresh_intrinsic_fields(tStepStart);
+    update_U0_E0();
+  }
 
   if (solveEM) {
     refresh_intrinsic_fields(tStepStart);

@@ -74,7 +74,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     // field is added here.
     const bool hasB0 = use_intrinsic_B() && !nodeB0[iLev].empty();
     const bool hasE0 =
-        !useHybridPIC && has_inductive_E0() && !nodeE0[iLev].empty();
+        !useHybridPIC && has_active_inductive_E0() && !nodeE0[iLev].empty();
     for (int iDir = ix_; iDir <= iz_; iDir++) {
       dataPIC_I[iBx_ + iDir] =
           get_value_at_loc(nodeB[iLev], Geom(iLev), xyz, iDir);
@@ -465,7 +465,8 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
 
   // True when the frozen intrinsic field is available for this level.
   const bool hasB0 = isValidMFI && use_intrinsic_B() && !nodeB0[iLev].empty();
-  const bool hasE0 = isValidMFI && has_inductive_E0() && !nodeE0[iLev].empty();
+  const bool hasE0 =
+      isValidMFI && has_active_inductive_E0() && !nodeE0[iLev].empty();
 
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
@@ -1443,13 +1444,17 @@ void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
 
     if (plotVars.find("E") != std::string::npos) {
       //-----------------E-----------------------------
-      const MultiFab& eOut = total_node_E(nodeE[iLev], iLev);
       if (saveNode) {
-        MultiFab::Copy(out[iLev], eOut, 0, iStart, eOut.nComp(), 0);
+        MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
+                       0);
+        if (!useHybridPIC && has_active_inductive_E0() && !nodeE0[iLev].empty())
+          MultiFab::Add(out[iLev], nodeE0[iLev], 0, iStart,
+                        nodeE0[iLev].nComp(), 0);
       } else {
+        const MultiFab& eOut = total_node_E(nodeE[iLev], iLev);
         average_node_to_cellcenter(out[iLev], iStart, eOut, 0, eOut.nComp(), 0);
       }
-      iStart += eOut.nComp();
+      iStart += nodeE[iLev].nComp();
       varNames.push_back("Ex");
       varNames.push_back("Ey");
       varNames.push_back("Ez");

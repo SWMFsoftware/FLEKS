@@ -26,16 +26,15 @@ from typing import Iterable, Sequence
 import numpy as np
 
 
-def _interp_rectilinear_nd(
+def _build_rectilinear_stencil(
     axes: Sequence[np.ndarray],
-    grid_vals: np.ndarray,
     query: np.ndarray,
-) -> np.ndarray:
-    """Multilinear interpolation on an N-D rectilinear grid (NaN outside bounds)."""
+) -> tuple[np.ndarray, list[tuple[tuple[np.ndarray, ...], np.ndarray]]]:
+    """Precompute N-D multilinear stencil indices and corner weights once."""
     n_pts = query.shape[0]
     ndim = len(axes)
     if n_pts == 0:
-        return np.empty(0, dtype=np.float64)
+        return np.zeros(0, dtype=bool), []
 
     lo_indices: list[np.ndarray] = []
     hi_indices: list[np.ndarray] = []
@@ -63,7 +62,7 @@ def _interp_rectilinear_nd(
         hi_indices.append(idx_hi)
         weights.append(w)
 
-    out = np.zeros(n_pts, dtype=np.float64)
+    corners: list[tuple[tuple[np.ndarray, ...], np.ndarray]] = []
     for mask in range(1 << ndim):
         corner_weight = np.ones(n_pts, dtype=np.float64)
         corner_idx: list[np.ndarray] = []
@@ -74,10 +73,37 @@ def _interp_rectilinear_nd(
             else:
                 corner_idx.append(lo_indices[dim])
                 corner_weight *= 1.0 - weights[dim]
-        out += corner_weight * grid_vals[tuple(corner_idx)]
+        corners.append((tuple(corner_idx), corner_weight))
 
+    return out_of_bounds, corners
+
+
+def _apply_rectilinear_stencil(
+    stencil: tuple[np.ndarray, list[tuple[tuple[np.ndarray, ...], np.ndarray]]],
+    grid_vals: np.ndarray,
+) -> np.ndarray:
+    """Evaluate a precomputed rectilinear stencil on one variable array."""
+    out_of_bounds, corners = stencil
+    n_pts = out_of_bounds.shape[0]
+    if n_pts == 0:
+        return np.empty(0, dtype=np.float64)
+
+    out = np.zeros(n_pts, dtype=np.float64)
+    for corner_idx, corner_weight in corners:
+        out += corner_weight * grid_vals[corner_idx]
     out[out_of_bounds] = np.nan
     return out
+
+
+def _interp_rectilinear_nd(
+    axes: Sequence[np.ndarray],
+    grid_vals: np.ndarray,
+    query: np.ndarray,
+) -> np.ndarray:
+    """Multilinear interpolation on an N-D rectilinear grid (NaN outside bounds)."""
+    return _apply_rectilinear_stencil(
+        _build_rectilinear_stencil(axes, query), grid_vals
+    )
 
 
 def _interp_idw_nd(
@@ -87,16 +113,23 @@ def _interp_idw_nd(
     k: int = 8,
 ) -> np.ndarray:
     """Pure-NumPy inverse-distance-weighted fallback when SciPy is unavailable."""
+    vals = np.asarray(values, dtype=np.float64)
+    squeeze_out = vals.ndim == 1
+    vals_2d = vals[:, np.newaxis] if squeeze_out else vals
     n_query = query.shape[0]
+    n_comp = vals_2d.shape[1]
+
     if n_query == 0:
-        return np.empty(0, dtype=np.float64)
+        empty = np.empty((0, n_comp), dtype=np.float64)
+        return empty[:, 0] if squeeze_out else empty
     if coords.shape[0] == 0:
-        return np.full(n_query, np.nan, dtype=np.float64)
+        full = np.full((n_query, n_comp), np.nan, dtype=np.float64)
+        return full[:, 0] if squeeze_out else full
 
     mins = np.min(coords, axis=0)
     maxs = np.max(coords, axis=0)
     tol = 1.0e-12 * np.maximum(maxs - mins, 1.0)
-    out = np.full(n_query, np.nan, dtype=np.float64)
+    out = np.full((n_query, n_comp), np.nan, dtype=np.float64)
     k_eff = min(k, coords.shape[0])
 
     for i in range(n_query):
@@ -113,11 +146,12 @@ def _interp_idw_nd(
         d2_nn = d2[nn]
         zero_mask = d2_nn == 0.0
         if np.any(zero_mask):
-            out[i] = float(np.mean(values[nn[zero_mask]]))
+            out[i] = np.mean(vals_2d[nn[zero_mask]], axis=0)
         else:
             w = 1.0 / d2_nn
-            out[i] = float(np.sum(w * values[nn]) / np.sum(w))
-    return out
+            out[i] = (w @ vals_2d[nn]) / np.sum(w)
+
+    return out[:, 0] if squeeze_out else out
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +199,22 @@ def _read_fortran_record(f, endian: str) -> bytes:
     return payload
 
 
-def _read_binary_out(path: str) -> dict:
+def _skip_fortran_record(f, endian: str) -> None:
+    """Skip over one sequential unformatted Fortran record without loading payload."""
+    hdr = f.read(4)
+    if len(hdr) < 4:
+        raise ValueError("Unexpected EOF skipping Fortran record header")
+    (nbytes,) = struct.unpack(endian + "i", hdr)
+    f.seek(nbytes + 4, os.SEEK_CUR)
+
+
+def _read_binary_out(
+    path: str, var_names: Sequence[str] | None = None
+) -> dict:
     """Parse a binary (real4 or real8) IDL/SWMF .out frame."""
+    wanted_upper = (
+        {v.strip().upper() for v in var_names} if var_names is not None else None
+    )
     with open(path, "rb") as f:
         hdr = f.read(4)
         endian = "<"
@@ -211,7 +259,7 @@ def _read_binary_out(path: str) -> dict:
             _read_fortran_record(f, endian).decode("ascii", errors="replace").split()
         )
         coord_names = all_names[:n_dim]
-        var_names = all_names[n_dim : n_dim + n_var]
+        file_var_names = all_names[n_dim : n_dim + n_var]
 
         raw_coords = np.frombuffer(
             _read_fortran_record(f, endian), dtype=fdtype
@@ -219,7 +267,10 @@ def _read_binary_out(path: str) -> dict:
         coords = raw_coords.reshape(n_dim, n_point).T.copy()
 
         fields = {}
-        for vname in var_names:
+        for vname in file_var_names:
+            if wanted_upper is not None and vname.upper() not in wanted_upper:
+                _skip_fortran_record(f, endian)
+                continue
             arr = np.frombuffer(
                 _read_fortran_record(f, endian), dtype=fdtype
             ).astype(np.float64)
@@ -236,7 +287,7 @@ def _read_binary_out(path: str) -> dict:
         "dims": tuple(int(s) for s in n_sizes),
         "params": params,
         "coord_names": coord_names,
-        "var_names": var_names,
+        "var_names": file_var_names,
         "coords": coords,
         "fields": fields,
     }
@@ -323,7 +374,9 @@ def _read_ascii_out(path: str) -> dict:
     }
 
 
-def _read_amrex_plotfile(path: str) -> dict:
+def _read_amrex_plotfile(
+    path: str, var_names: Sequence[str] | None = None
+) -> dict:
     """Parse an AMReX plotfile directory via flekspy when available."""
     try:
         import flekspy
@@ -348,8 +401,17 @@ def _read_amrex_plotfile(path: str) -> dict:
         raise ValueError(f"Could not extract coordinates from AMReX plotfile {path}")
 
     coords = np.column_stack(coord_cols)
-    var_names = [v for v in getattr(ds, "field_list", []) if v.upper() not in ("X", "Y", "Z")]
-    fields = {v: np.asarray(ad[v], dtype=np.float64).ravel() for v in var_names}
+    file_var_names = [
+        v for v in getattr(ds, "field_list", []) if v.upper() not in ("X", "Y", "Z")
+    ]
+    wanted_upper = (
+        {v.strip().upper() for v in var_names} if var_names is not None else None
+    )
+    fields = {
+        v: np.asarray(ad[v], dtype=np.float64).ravel()
+        for v in file_var_names
+        if wanted_upper is None or v.upper() in wanted_upper
+    }
     return {
         "path": path,
         "format": "amrex",
@@ -361,18 +423,18 @@ def _read_amrex_plotfile(path: str) -> dict:
         "dims": (coords.shape[0],),
         "params": np.array([], dtype=np.float64),
         "coord_names": coord_names,
-        "var_names": var_names,
+        "var_names": file_var_names,
         "coords": coords,
         "fields": fields,
     }
 
 
-def read_frame(path: str) -> dict:
+def read_frame(path: str, var_names: Sequence[str] | None = None) -> dict:
     """Load one FLEKS output frame (.out ASCII/real4/real8 or AMReX plotfile)."""
     if os.path.isdir(path) and os.path.isfile(os.path.join(path, "Header")):
-        return _read_amrex_plotfile(path)
+        return _read_amrex_plotfile(path, var_names=var_names)
     if _is_binary_out(path):
-        return _read_binary_out(path)
+        return _read_binary_out(path, var_names=var_names)
     return _read_ascii_out(path)
 
 
@@ -492,11 +554,19 @@ def _try_structured_grid(
         return None
 
     # Sort points in lexicographic C-order (axis 0 slowest, axis n_dim-1 fastest)
-    # after snapping slightly noisy coordinates to the unique grid ticks.
-    snapped = [
-        raw_axes[d][np.abs(coords[:, d : d + 1] - raw_axes[d][np.newaxis, :]).argmin(axis=1)]
-        for d in range(n_dim)
-    ]
+    # after 1D searchsorted nearest-tick snapping (avoids N_pts x N_axis memory).
+    snapped = []
+    for d in range(n_dim):
+        ax = raw_axes[d]
+        col = coords[:, d]
+        if len(ax) == 1:
+            snapped.append(np.full(n_point, ax[0], dtype=np.float64))
+        else:
+            pos = np.searchsorted(ax, col, side="left")
+            right = np.minimum(pos, len(ax) - 1)
+            left = np.maximum(pos - 1, 0)
+            choose_left = (col - ax[left]) <= (ax[right] - col)
+            snapped.append(np.where(choose_left, ax[left], ax[right]))
     order = np.lexsort([snapped[d] for d in range(n_dim - 1, -1, -1)])
     for d in range(n_dim):
         expected = np.repeat(
@@ -512,10 +582,38 @@ def _try_structured_grid(
     return active_axes, order, active_dims
 
 
+def _prepare_sampling_plan(
+    coords: np.ndarray,
+    query: np.ndarray,
+) -> dict:
+    """Detect structured layout and precompute interpolation stencil for a mesh."""
+    structured = _try_structured_grid(coords)
+    if structured is None:
+        return {"structured": False}
+
+    active_axes, sort_order, active_dims = structured
+    if not active_dims:
+        return {
+            "structured": True,
+            "active_dims": active_dims,
+        }
+
+    shape = tuple(len(ax) for ax in active_axes)
+    stencil = _build_rectilinear_stencil(active_axes, query[:, active_dims])
+    return {
+        "structured": True,
+        "active_dims": active_dims,
+        "sort_order": sort_order,
+        "shape": shape,
+        "stencil": stencil,
+    }
+
+
 def sample_frame(
     frame: dict,
     probe_coords: np.ndarray,
     var_names: Sequence[str] | None = None,
+    _cache: dict | None = None,
 ) -> tuple[list[str], dict[str, np.ndarray]]:
     """Interpolate *var_names* from *frame* onto 3D *probe_coords*."""
     probe_coords = np.asarray(probe_coords, dtype=np.float64).reshape(-1, 3)
@@ -542,12 +640,29 @@ def sample_frame(
     coords = frame["coords"]
     query = probe_coords[:, axis_indices]
 
-    structured = _try_structured_grid(coords)
+    plan = None
+    if _cache is not None:
+        prev_axes = _cache.get("axis_indices")
+        prev_coords = _cache.get("coords")
+        if (
+            prev_axes == axis_indices
+            and prev_coords is not None
+            and coords.shape == prev_coords.shape
+            and np.array_equal(coords, prev_coords)
+        ):
+            plan = _cache["plan"]
+
+    if plan is None:
+        plan = _prepare_sampling_plan(coords, query)
+        if _cache is not None:
+            _cache["axis_indices"] = axis_indices
+            _cache["coords"] = coords
+            _cache["plan"] = plan
+
     results: dict[str, np.ndarray] = {}
 
-    if structured is not None:
-        active_axes, sort_order, active_dims = structured
-        if not active_dims:
+    if plan["structured"]:
+        if not plan["active_dims"]:
             for out_name, f_name in zip(out_names, selected):
                 results[out_name] = np.full(
                     probe_coords.shape[0],
@@ -556,27 +671,35 @@ def sample_frame(
                 )
             return out_names, results
 
-        shape = tuple(len(ax) for ax in active_axes)
-        sub_query = query[:, active_dims]
+        sort_order = plan["sort_order"]
+        shape = plan["shape"]
+        stencil = plan["stencil"]
         for out_name, f_name in zip(out_names, selected):
             grid_vals = frame["fields"][f_name][sort_order].reshape(shape)
-            results[out_name] = _interp_rectilinear_nd(active_axes, grid_vals, sub_query)
+            results[out_name] = _apply_rectilinear_stencil(stencil, grid_vals)
         return out_names, results
 
-    # Fallback for unstructured / AMR point clouds (SciPy if installed, else pure-NumPy IDW).
+    # Fallback for unstructured / AMR point clouds: build triangulation / k-NN
+    # once across all selected variables.
+    if not selected:
+        return out_names, results
+
+    val_matrix = np.column_stack([frame["fields"][f_name] for f_name in selected])
     try:
         from scipy.interpolate import LinearNDInterpolator
     except ImportError:
         LinearNDInterpolator = None
 
-    for out_name, f_name in zip(out_names, selected):
-        if LinearNDInterpolator is not None:
-            interp = LinearNDInterpolator(
-                coords, frame["fields"][f_name], fill_value=np.nan
-            )
-            results[out_name] = interp(query).astype(np.float64)
-        else:
-            results[out_name] = _interp_idw_nd(coords, frame["fields"][f_name], query)
+    if LinearNDInterpolator is not None:
+        interp = LinearNDInterpolator(coords, val_matrix, fill_value=np.nan)
+        sampled_mat = interp(query).astype(np.float64)
+        if sampled_mat.ndim == 1:
+            sampled_mat = sampled_mat[:, np.newaxis]
+    else:
+        sampled_mat = _interp_idw_nd(coords, val_matrix, query)
+
+    for idx, out_name in enumerate(out_names):
+        results[out_name] = sampled_mat[:, idx]
     return out_names, results
 
 
@@ -590,7 +713,7 @@ def sample_frames(
         raise ValueError("No input frame paths provided")
 
     probe_coords = np.asarray(probe_coords, dtype=np.float64).reshape(-1, 3)
-    frames_data = [read_frame(p) for p in paths]
+    frames_data = [read_frame(p, var_names=var_names) for p in paths]
     frames_data.sort(key=lambda d: (d["time"], d["nStep"], d["path"]))
 
     times = np.array([d["time"] for d in frames_data], dtype=np.float64)
@@ -598,8 +721,11 @@ def sample_frames(
 
     resolved_names = None
     series: dict[str, list[np.ndarray]] = {}
+    grid_cache: dict = {}
     for frame in frames_data:
-        names, sampled = sample_frame(frame, probe_coords, var_names=var_names)
+        names, sampled = sample_frame(
+            frame, probe_coords, var_names=var_names, _cache=grid_cache
+        )
         if resolved_names is None:
             resolved_names = names
             series = {n: [] for n in resolved_names}

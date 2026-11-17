@@ -820,7 +820,7 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
                   tempNode.nGrow());
   }
 
-  if (has_inductive_E0() && !nodeE0[iLev].empty()) {
+  if (has_active_inductive_E0() && !nodeE0[iLev].empty()) {
     tempNode.setVal(0.0);
     update_E_M_dot_E(nodeE0[iLev], tempNode, iLev);
     MultiFab::Subtract(temp2Node, tempNode, 0, 0, tempNode.nComp(),
@@ -2039,13 +2039,16 @@ void Pic::project_down_E() {
 
 //==========================================================
 Real Pic::calc_E_field_energy() {
-  const Vector<MultiFab>& eTot = total_node_E(nodeE);
+  const bool hasActiveE0 = !useHybridPIC && has_active_inductive_E0();
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const bool addE0 = hasActiveE0 && !nodeE0[iLev].empty();
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       const Array4<int const> status = cell_status(iLev)[mfi].const_array();
       Box box = mfi.validbox();
-      const Array4<Real const> arr = eTot[iLev][mfi].const_array();
+      const Array4<Real const> arr = nodeE[iLev][mfi].const_array();
+      const Array4<Real const> arrE0 =
+          addE0 ? nodeE0[iLev][mfi].const_array() : Array4<Real const>();
 
       const Dim3 lo = lbound(box);
       const Dim3 len = length(box);
@@ -2062,9 +2065,13 @@ Real Pic::calc_E_field_energy() {
             const int ii = i + (m & 1);
             const int jj = j + ((m >> 1) & 1);
             const int kk = k + (m >> 2);
-            return arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
-                   arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
-                   arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
+            const Real ex =
+                arr(ii, jj, kk, ix_) + (addE0 ? arrE0(ii, jj, kk, ix_) : 0.0);
+            const Real ey =
+                arr(ii, jj, kk, iy_) + (addE0 ? arrE0(ii, jj, kk, iy_) : 0.0);
+            const Real ez =
+                arr(ii, jj, kk, iz_) + (addE0 ? arrE0(ii, jj, kk, iz_) : 0.0);
+            return ex * ex + ey * ey + ez * ez;
           });
 
       Real avg = (nDim == 3) ? 0.125 : 0.25;

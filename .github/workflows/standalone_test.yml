@@ -209,7 +209,7 @@ jobs:
           # buckets, AMR particle split/merge, dynamic regridding, Full-PIC GMRES
           # + div(E) + inflow, div(B) projection, 3D Hybrid Ohm's law, exosphere
           # source RNG, TestParticles, and explicit wall tallies using all 4 cores.
-          OMP_1X4_TESTS="constantppv,wave_amr_3d.hybrid,amr_dive_inflow.full,amr_divb.full,reconnection_amr.implicit,reconnection_amr.forcefree_hybrid,dynamic_amr,exosphere.sourceppc,exosphere.shadow,langmuir.explicit_wall"
+          OMP_1X4_TESTS="constantppv,wave_amr_3d.hybrid,amr_dive_inflow.full,amr_divb.full,reconnection_amr.implicit,reconnection_amr.forcefree_hybrid,dynamic_amr,exosphere.sourceppc,exosphere.shadow,langmuir.explicit_wall,coil_field.waveform_hybrid"
 
           # Mixed MPI + OpenMP smoke check on multi-box AMR decks to verify
           # mpirun --bind-to none, FabArray ghost exchange, and MPI+OMP reductions.

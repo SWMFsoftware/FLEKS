@@ -678,6 +678,10 @@ private:
     return use_intrinsic_B() && intrinsicB_->is_time_dependent();
   }
   bool has_inductive_E0() const { return has_time_dep_B0(); }
+  bool has_active_inductive_E0() const {
+    return has_inductive_E0() && intrinsicB_->has_nonzero_inductive_E();
+  }
+  void fill_intrinsic_fields_impl(bool fillB, bool fillE);
 
   // select particle params
   bool doSelectParticle = false;
