@@ -584,11 +584,15 @@ private:
   // never advanced by Faraday's law.
   amrex::Vector<amrex::MultiFab> nodeB0;
   amrex::Vector<amrex::MultiFab> centerB0;
+  amrex::Vector<amrex::MultiFab> nodeE0;
   // Scratch for the cell-centered total field B1 + B0 used by the convective
   // and Hall terms of the hybrid Ohm's law. The current is computed from B1
   // alone: the intrinsic field is current-free, and the discrete curl of
   // B1 + B0 would feed its truncation error into J.
   amrex::Vector<amrex::MultiFab> centerBtotal;
+  // Scratch for the node-centered total electric field E1 + E0 (when
+  // time-dependent inductive coil waveforms contribute E0 = -dA0/dt).
+  amrex::Vector<amrex::MultiFab> nodeEtotalScratch_;
 
   // The interior of the body (the body minus its one-cell-thick surface layer)
   // is a cavity: E = 0 and B frozen at its initial value. In full-PIC, an
@@ -670,6 +674,14 @@ private:
   bool use_intrinsic_B() const {
     return intrinsicB_ != nullptr && intrinsicB_->is_active();
   }
+  bool has_time_dep_B0() const {
+    return use_intrinsic_B() && intrinsicB_->is_time_dependent();
+  }
+  bool has_inductive_E0() const { return has_time_dep_B0(); }
+  bool has_active_inductive_E0() const {
+    return has_inductive_E0() && intrinsicB_->has_nonzero_inductive_E();
+  }
+  void fill_intrinsic_fields_impl(bool fillB, bool fillE);
 
   // select particle params
   bool doSelectParticle = false;
@@ -748,7 +760,9 @@ public:
     nodeB.resize(n_lev_max());
     nodeB0.resize(n_lev_max());
     centerB0.resize(n_lev_max());
+    nodeE0.resize(n_lev_max());
     centerBtotal.resize(n_lev_max());
+    nodeEtotalScratch_.resize(n_lev_max());
     dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
@@ -925,8 +939,13 @@ public:
   // spherical harmonic coefficients.
   void convert_intrinsic_B();
   void convert_ionosphere_emission();
-  // Fill the frozen B0 arrays (nodeB0 / centerB0) from the analytic field.
-  void fill_intrinsic_B();
+  // Fill the background B0 (nodeB0 / centerB0) and optional inductive E0
+  // (nodeE0) arrays from the analytic field at code time tCode (< 0 uses
+  // tc->get_time()).
+  void fill_intrinsic_B(amrex::Real tCode = -1.0);
+  // Refresh time-dependent B0/E0 arrays when tCode differs from the last
+  // evaluated time (no-op for static fields or repeated timestamps).
+  void refresh_intrinsic_fields(amrex::Real tCode);
   // Regional resistivity / hyper-resistivity setup and update methods.
   void set_region_shapes(const amrex::Vector<std::shared_ptr<Shape> > &shapes) {
     if (useHybridPIC && (hasRegionalResistivity_ || hasRegionalHyper_)) {
@@ -941,6 +960,11 @@ public:
   // Cell-centered total field: returns `src + B0` built in a scratch array, or
   // `src` itself when no intrinsic field is configured.
   amrex::MultiFab &total_center_B(amrex::MultiFab &src, int iLev);
+  // Nodal total electric field for non-hybrid solvers (`src + nodeE0`, or
+  // `src` itself when hybrid PIC is active or inductive E0 is absent).
+  const amrex::MultiFab &total_node_E(const amrex::MultiFab &src, int iLev);
+  const amrex::Vector<amrex::MultiFab> &total_node_E(
+      const amrex::Vector<amrex::MultiFab> &src);
   const IntrinsicBField *get_intrinsic_B() const { return intrinsicB_.get(); }
 
   void calc_mass_matrix();

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -116,34 +117,16 @@ void IntrinsicBField::read_coefficients() {
 }
 
 //==========================================================
-// The expansion is written for r measured in planetary radii and returns nT.
-// Folding rPlanet^(n+2) and the nT -> code conversion into the coefficients
-// makes the evaluation a plain function of the code-unit radius returning
-// code-unit field, so no unit is touched at run time.
-//==========================================================
-void IntrinsicBField::rescale_coefficients(Real si2NoB) {
-  const int n = nMax_;
-  const Real unit = cNTToT * si2NoB;
-
-  Real power = rPlanetCode_ * rPlanetCode_; // n+2 with n = 0
-  for (int iDeg = 0; iDeg < n; ++iDeg) {
-    const Real scale = power * unit;
-    for (int m = 0; m < n; ++m) {
-      coefC_[iDeg * n + m] *= scale;
-      coefD_[iDeg * n + m] *= scale;
-    }
-    power *= rPlanetCode_;
-  }
-}
-
-//==========================================================
-void IntrinsicBField::convert_units(Real si2NoB, Real si2NoL, Real rPlanetSI,
-                                    const Real *bodyCenterCode,
+void IntrinsicBField::convert_units(Real si2NoB, Real si2NoL, Real si2NoV,
+                                    Real rPlanetSI, const Real *bodyCenterCode,
                                     Real bodyRadiusCode, bool useBody,
                                     int nDim) {
   nDim_ = nDim;
   rPlanetCode_ = rPlanetSI * si2NoL;
-  if (!(rPlanetCode_ > 0.0)) {
+
+  const bool needsPlanetRadius =
+      nMax_ > 0 || (useDipole_ && rRefSI_ <= 0.0 && !useBody);
+  if (needsPlanetRadius && !(rPlanetCode_ > 0.0)) {
     Abort("IntrinsicBField: the planetary radius is not positive; check "
           "#PLANETRADIUS and #NORMALIZATION.");
   }
@@ -161,6 +144,7 @@ void IntrinsicBField::convert_units(Real si2NoB, Real si2NoL, Real rPlanetSI,
     rRefCode_ = rPlanetCode_;
 
   bEqCode_ = bEqNT_ * cNTToT * si2NoB;
+  params_.useDipole = useDipole_;
   if (useDipole_) {
     // The axis is the spherical direction (theta, phi) measured from +z,
     // tipped towards -x at phi = 0 so that it agrees with the BATSRUS dipole
@@ -181,6 +165,32 @@ void IntrinsicBField::convert_units(Real si2NoB, Real si2NoL, Real rPlanetSI,
     params_.coefC = coefC_.data();
     params_.coefD = coefD_.data();
     params_.nMax = nMax_;
+  }
+
+  coils_.convert_units(si2NoB, si2NoL, si2NoV);
+  params_.coils = coils_.get_params();
+}
+
+//==========================================================
+ExternalCoilField::TimeUpdateStatus IntrinsicBField::update_time(Real tCode) {
+  const auto status = coils_.update_time(tCode);
+  params_.coils = coils_.get_params();
+  return status;
+}
+
+//==========================================================
+void IntrinsicBField::rescale_coefficients(Real si2NoB) {
+  const int n = nMax_;
+  const Real unit = cNTToT * si2NoB;
+
+  Real power = rPlanetCode_ * rPlanetCode_; // n+2 with n = 0
+  for (int iDeg = 0; iDeg < n; ++iDeg) {
+    const Real scale = power * unit;
+    for (int m = 0; m < n; ++m) {
+      coefC_[iDeg * n + m] *= scale;
+      coefD_[iDeg * n + m] *= scale;
+    }
+    power *= rPlanetCode_;
   }
 }
 
@@ -303,8 +313,7 @@ void IntrinsicBField::eval_crustal(Real x, Real y, Real z, Real b[3]) const {
 
 //==========================================================
 void IntrinsicBField::eval(Real x, Real y, Real z, Real b[3]) const {
-  const Real zEval = (nDim_ > 2) ? z : params_.center[2];
-  eval_dipole_b(params_, x, y, zEval, b);
+  eval_intrinsic_b_dev(params_, x, y, z, nDim_, b);
 
   if (nMax_ <= 0)
     return;
@@ -315,15 +324,20 @@ void IntrinsicBField::eval(Real x, Real y, Real z, Real b[3]) const {
 //==========================================================
 std::string IntrinsicBField::describe() const {
   std::ostringstream os;
-  os << "  intrinsic magnetic field B0 (static, B = B1 + B0):\n";
-  os << "    center [code]         = (" << params_.center[0] << ", "
-     << params_.center[1] << ", " << params_.center[2] << ")\n";
+  os << "  intrinsic / external magnetic field B0 ("
+     << (is_time_dependent() ? "time-dependent, E0 = -dA0/dt active" : "static")
+     << ", B = B1 + B0):\n";
+  if (useDipole_ || nMax_ > 0) {
+    os << "    center [code]         = (" << params_.center[0] << ", "
+       << params_.center[1] << ", " << params_.center[2] << ")\n";
+  }
   if (useDipole_) {
     os << "    dipole strength       = " << bEqNT_ << " [nT] at rRef\n";
     os << "    dipole tilt           = theta " << thetaDeg_ << ", phi "
        << phiDeg_ << " [deg]\n";
     os << "    rRef [code]           = " << rRefCode_ << "\n";
     os << "    |B0| at rRef [code]   = " << bEqCode_ << "\n";
+    os << "    rPlanet [code]        = " << rPlanetCode_ << "\n";
   } else {
     os << "    dipole                = off\n";
   }
@@ -334,6 +348,6 @@ std::string IntrinsicBField::describe() const {
   } else {
     os << "    crustal field         = off\n";
   }
-  os << "    rPlanet [code]        = " << rPlanetCode_;
+  coils_.describe(os);
   return os.str();
 }

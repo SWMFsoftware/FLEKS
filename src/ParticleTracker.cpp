@@ -188,6 +188,12 @@ void ParticleTracker::update_field(Pic& pic, bool needJacobian) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
+    if (!pic.useHybridPIC && pic.has_active_inductive_E0() &&
+        !pic.nodeE0[iLev].empty()) {
+      const int nG = std::min(nodeE[iLev].nGrow(), pic.nodeE0[iLev].nGrow());
+      MultiFab::Add(nodeE[iLev], pic.nodeE0[iLev], 0, 0, nodeE[iLev].nComp(),
+                    nG);
+    }
     MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
                    nodeB[iLev].nGrow());
     // The tracker pushes with the total field, so the frozen intrinsic field

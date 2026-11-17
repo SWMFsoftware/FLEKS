@@ -1,0 +1,138 @@
+#DESCRIPTION
+Generic finite straight-wire segment verification (four regularized Biot-Savart COIL segments forming a square loop in z = 0).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-0.4                    xMin [m]
+ 0.4                    xMax [m]
+-0.4                    yMin [m]
+ 0.4                    yMax [m]
+-0.4                    zMin [m]
+ 0.4                    zMax [m]
+
+#NCELL
+16                      nCellX
+16                      nCellY
+16                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+none
+
+#PLASMA
+2                       nS
+1.0                     mass
+1.0                     charge
+0.04                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#COIL
+segment                 type
+square                  group
+-0.2                    x1 [m]
+-0.2                    y1 [m]
+ 0.0                    z1 [m]
+ 0.2                    x2 [m]
+-0.2                    y2 [m]
+ 0.0                    z2 [m]
+600.0                   current [A]
+0.02                    coreRadius [m]
+
+#COIL
+segment                 type
+square                  group
+ 0.2                    x1 [m]
+-0.2                    y1 [m]
+ 0.0                    z1 [m]
+ 0.2                    x2 [m]
+ 0.2                    y2 [m]
+ 0.0                    z2 [m]
+600.0                   current [A]
+0.02                    coreRadius [m]
+
+#COIL
+segment                 type
+square                  group
+ 0.2                    x1 [m]
+ 0.2                    y1 [m]
+ 0.0                    z1 [m]
+-0.2                    x2 [m]
+ 0.2                    y2 [m]
+ 0.0                    z2 [m]
+600.0                   current [A]
+0.02                    coreRadius [m]
+
+#COIL
+segment                 type
+square                  group
+-0.2                    x1 [m]
+ 0.2                    y1 [m]
+ 0.0                    z1 [m]
+-0.2                    x2 [m]
+-0.2                    y2 [m]
+ 0.0                    z2 [m]
+600.0                   current [A]
+0.02                    coreRadius [m]
+
+#TIMESTEPPING
+T                       useFixedDt
+1.0e-6                  dt [s]
+
+#NORMALIZATION
+1.0                     lNormSI [m]
+1.0e5                   uNormSI [m/s]
+
+#MONITOR
+10                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#PARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+3d var ascii si         plotString
+1                       dn
+-1.0                    dt
+1                       dx
+B0x B0y B0z Bx By Bz Ex Ey Ez   plotVar
+
+#STOP
+1                       MaxIter
+-1.0                    TimeMax

@@ -29,8 +29,10 @@ void Pic::push_and_deposit_explicit_current(int pushStage, Vector<MultiFab>& J,
     reset_body_net_charge_inc();
   }
 
+  const Vector<MultiFab>& nodeEpush = total_node_E(nodeE);
+
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeE, nodeB, nodeB0, eBg, uBg, dt, dtNext, pushStage,
+    parts[i]->mover(nodeEpush, nodeB, nodeB0, eBg, uBg, dt, dtNext, pushStage,
                     &nodeJ, trialOnly);
     for (int iLev = 0; iLev < n_lev(); ++iLev)
       MultiFab::Add(J[iLev], nodeJ[iLev], 0, 0, nDim3, get_n_ghost());
@@ -258,6 +260,11 @@ void Pic::advance_explicit_pc(Real dt) {
   std::string nameFunc = "Pic::advance_explicit_pc";
   timing_func(nameFunc);
 
+  const Real tEnd = tc ? tc->get_time() : 0.0;
+  const Real tStart = std::max(0.0, tEnd - dt);
+  const Real tHalf = std::max(0.0, tEnd - 0.5 * dt);
+  refresh_intrinsic_fields(tStart);
+
   // 1. Backup base fields B^n and E^n
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3,
@@ -274,6 +281,7 @@ void Pic::advance_explicit_pc(Real dt) {
   update_EB_explicit_leapfrog(dt, nEMSubcycle, nodeJexpl);
 
   // 4. Construct time-centered fields at t^(n+1/2)
+  refresh_intrinsic_fields(tHalf);
   const Real t0 = tc ? tc->get_time() : 0.0;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab::LinComb(nodeE[iLev], 0.5, nodeE[iLev], 0, 0.5, nodeEth[iLev], 0,
@@ -304,6 +312,7 @@ void Pic::advance_explicit_pc(Real dt) {
     MultiFab::Copy(nodeE[iLev], nodeEth[iLev], 0, 0, nDim3, get_n_ghost());
   }
   update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexpl);
+  refresh_intrinsic_fields(tEnd);
 }
 
 //==========================================================
@@ -322,6 +331,9 @@ void Pic::advance_explicit_full_pic() {
   if (usePC) {
     advance_explicit_pc(dt);
   } else {
+    const Real tEnd = tc ? tc->get_time() : 0.0;
+    const Real tStart = std::max(0.0, tEnd - dt);
+    refresh_intrinsic_fields(tStart);
     // Leapfrog: x^n, v^{n-1/2}, E^n, B^n -> x^{n+1}, v^{n+1/2}, E^{n+1},
     // B^{n+1}.
     // 1. Kick v^{n-1/2} -> v^{n+1/2} with (E^n, B^n) and drift to x^{n+1},
@@ -331,6 +343,7 @@ void Pic::advance_explicit_full_pic() {
 
     // 2. B half-step, E full step with J^{n+1/2}, B half-step (subcycled).
     update_EB_explicit_leapfrog(dt, nSubcycle, nodeJexpl);
+    refresh_intrinsic_fields(tEnd);
   }
 
   // A div(E) correction, when on, follows in Pic::update(), as for the

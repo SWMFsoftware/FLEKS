@@ -1,0 +1,142 @@
+#DESCRIPTION
+Generic static coil + toroidal guide field verification (Helmholtz solenoids + 1/R toroidal field without PLANETRADIUS).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-0.4                    xMin [m]
+ 0.4                    xMax [m]
+-0.4                    yMin [m]
+ 0.4                    yMax [m]
+-0.4                    zMin [m]
+ 0.4                    zMax [m]
+
+#NCELL
+16                      nCellX
+16                      nCellY
+16                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+none
+
+#PLASMA
+2                       nS
+1.0                     mass
+1.0                     charge
+0.04                    mass
+-1.0                    charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]   Species 0: ions
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+5.0                     rho [/cc]   Species 1: electrons
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e4                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#COIL
+solenoid                type
+helmholtz               group
+0.0                     centerX [m]
+0.0                     centerY [m]
+-0.125                  centerZ [m]
+0.0                     axisX
+0.0                     axisY
+1.0                     axisZ
+0.25                    radius [m]
+0.04                    length [m]
+4                       nTurns
+500.0                   current [A]
+0.0                     coreRadius [m]
+
+#COIL
+solenoid                type
+helmholtz               group
+0.0                     centerX [m]
+0.0                     centerY [m]
+ 0.125                  centerZ [m]
+0.0                     axisX
+0.0                     axisY
+1.0                     axisZ
+0.25                    radius [m]
+0.04                    length [m]
+4                       nTurns
+500.0                   current [A]
+0.0                     coreRadius [m]
+
+#TOROIDALFIELD
+toroidal                group
+0.0                     centerX [m]
+0.0                     centerY [m]
+0.0                     centerZ [m]
+0.0                     axisX
+0.0                     axisY
+1.0                     axisZ
+0.02                    bRef [T]
+0.30                    rRef [m]
+0.06                    rCore [m]
+
+#COILWAVEFORM
+helmholtz               group
+constant                type
+1.0                     scale
+
+#COILWAVEFORM
+toroidal                group
+constant                type
+1.0                     scale
+
+#TIMESTEPPING
+T                       useFixedDt
+1.0e-6                  dt [s]
+
+#NORMALIZATION
+1.0                     lNormSI [m]
+1.0e5                   uNormSI [m/s]
+
+#MONITOR
+10                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#PARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#SAVEPLOT
+1                       nPlot
+3d var real8 si         plotString
+1                       dn
+-1.0                    dt
+1                       dx
+B0x B0y B0z Bx By Bz Ex Ey Ez Eindx Eindy Eindz   plotVar
+
+#STOP
+1                       MaxIter
+-1.0                    TimeMax

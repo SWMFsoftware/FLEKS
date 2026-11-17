@@ -209,7 +209,7 @@ jobs:
           # buckets, AMR particle split/merge, dynamic regridding, Full-PIC GMRES
           # + div(E) + inflow, div(B) projection, 3D Hybrid Ohm's law, exosphere
           # source RNG, TestParticles, and explicit wall tallies using all 4 cores.
-          OMP_1X4_TESTS="constantppv,wave_amr_3d.hybrid,amr_dive_inflow.full,amr_divb.full,reconnection_amr.implicit,reconnection_amr.forcefree_hybrid,dynamic_amr,exosphere.sourceppc,exosphere.shadow,langmuir.explicit_wall"
+          OMP_1X4_TESTS="constantppv,wave_amr_3d.hybrid,amr_dive_inflow.full,amr_divb.full,reconnection_amr.implicit,reconnection_amr.forcefree_hybrid,dynamic_amr,exosphere.sourceppc,exosphere.shadow,langmuir.explicit_wall,coil_field.waveform_hybrid"
 
           # Mixed MPI + OpenMP smoke check on multi-box AMR decks to verify
           # mpirun --bind-to none, FabArray ghost exchange, and MPI+OMP reductions.
@@ -331,6 +331,11 @@ jobs:
             tests/bc_discontinuity/PARAM.in.rd
             tests/bc_inflow/PARAM.in
             tests/bc_reflecting/PARAM.in.fields
+            tests/coil_field/PARAM.in.helmholtz_toroidal
+            tests/coil_field/PARAM.in.segment_loop
+            tests/coil_field/PARAM.in.filament2d
+            tests/coil_field/PARAM.in.waveform_static
+            tests/coil_field/PARAM.in.waveform_hybrid
             tests/freestream/PARAM.in.hybrid
             tests/freestream/PARAM.in.hybrid_2d
             tests/freestream/PARAM.in.hybrid_inflow

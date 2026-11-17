@@ -73,6 +73,8 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     // The fluid component receives the total field, so the frozen intrinsic
     // field is added here.
     const bool hasB0 = use_intrinsic_B() && !nodeB0[iLev].empty();
+    const bool hasE0 =
+        !useHybridPIC && has_active_inductive_E0() && !nodeE0[iLev].empty();
     for (int iDir = ix_; iDir <= iz_; iDir++) {
       dataPIC_I[iBx_ + iDir] =
           get_value_at_loc(nodeB[iLev], Geom(iLev), xyz, iDir);
@@ -83,6 +85,9 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     for (int iDir = ix_; iDir <= iz_; iDir++) {
       dataPIC_I[iEx_ + iDir] =
           get_value_at_loc(nodeE[iLev], Geom(iLev), xyz, iDir);
+      if (hasE0)
+        dataPIC_I[iEx_ + iDir] +=
+            get_value_at_loc(nodeE0[iLev], Geom(iLev), xyz, iDir);
     }
 
     if (useHybridPIC) {
@@ -388,11 +393,9 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
   if (useHybridPIC &&
       (var.substr(0, 5) == "jHatx" || var.substr(0, 5) == "jHaty" ||
        var.substr(0, 5) == "jHatz" || var.substr(0, 3) == "nMM" ||
-       var.substr(0, 3) == "E0x" || var.substr(0, 3) == "E0y" ||
-       var.substr(0, 3) == "E0z" || var.substr(0, 3) == "u0x" ||
-       var.substr(0, 3) == "u0y" || var.substr(0, 3) == "u0z" ||
-       var.substr(0, 2) == "qc" || var.substr(0, 5) == "divEc" ||
-       var.substr(0, 3) == "phi")) {
+       var.substr(0, 3) == "u0x" || var.substr(0, 3) == "u0y" ||
+       var.substr(0, 3) == "u0z" || var.substr(0, 2) == "qc" ||
+       var.substr(0, 5) == "divEc" || var.substr(0, 3) == "phi")) {
     return value;
   }
   // 'divB' / 'divBc' are available in hybrid PIC too, allocated on demand.
@@ -462,6 +465,8 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
 
   // True when the frozen intrinsic field is available for this level.
   const bool hasB0 = isValidMFI && use_intrinsic_B() && !nodeB0[iLev].empty();
+  const bool hasE0 =
+      isValidMFI && has_active_inductive_E0() && !nodeE0[iLev].empty();
 
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
@@ -478,12 +483,18 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "Ex") {
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ijk, ix_);
+      if (!useHybridPIC && hasE0)
+        value += nodeE0[iLev][mfi].array()(ijk, ix_);
     } else if (var.substr(0, 2) == "Ey") {
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ijk, iy_);
+      if (!useHybridPIC && hasE0)
+        value += nodeE0[iLev][mfi].array()(ijk, iy_);
     } else if (var.substr(0, 2) == "Ez") {
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ijk, iz_);
+      if (!useHybridPIC && hasE0)
+        value += nodeE0[iLev][mfi].array()(ijk, iz_);
     } else if (var.substr(0, 2) == "Bx") {
       // The plotted magnetic field is the total field B1 + B0.
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
@@ -653,14 +664,29 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         value = 0.0;
       }
     } else if (var.substr(0, 3) == "E0x") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
-      value = arr(ijk, ix_);
+      value = 0.0;
+      if (!useHybridPIC && !eBg[iLev].empty())
+        value += eBg[iLev][mfi].array()(ijk, ix_);
+      if (hasE0)
+        value += nodeE0[iLev][mfi].array()(ijk, ix_);
     } else if (var.substr(0, 3) == "E0y") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
-      value = arr(ijk, iy_);
+      value = 0.0;
+      if (!useHybridPIC && !eBg[iLev].empty())
+        value += eBg[iLev][mfi].array()(ijk, iy_);
+      if (hasE0)
+        value += nodeE0[iLev][mfi].array()(ijk, iy_);
     } else if (var.substr(0, 3) == "E0z") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
-      value = arr(ijk, iz_);
+      value = 0.0;
+      if (!useHybridPIC && !eBg[iLev].empty())
+        value += eBg[iLev][mfi].array()(ijk, iz_);
+      if (hasE0)
+        value += nodeE0[iLev][mfi].array()(ijk, iz_);
+    } else if (var.substr(0, 5) == "Eindx") {
+      value = hasE0 ? nodeE0[iLev][mfi].array()(ijk, ix_) : 0.0;
+    } else if (var.substr(0, 5) == "Eindy") {
+      value = hasE0 ? nodeE0[iLev][mfi].array()(ijk, iy_) : 0.0;
+    } else if (var.substr(0, 5) == "Eindz") {
+      value = hasE0 ? nodeE0[iLev][mfi].array()(ijk, iz_) : 0.0;
     } else if (var.substr(0, 3) == "u0x") {
       const Array4<Real const>& arr = uBg[iLev][mfi].array();
       value = arr(ijk, ix_);
@@ -837,6 +863,8 @@ void Pic::read_restart() {
   // The default of doNeedFillNewCell is true. The PIC cells have been filled in
   // here, so turn it of
   doNeedFillNewCell = false;
+
+  fill_intrinsic_B();
 
   if (doSelectParticle) {
     Vector<std::array<int, 3> > selectParticleInput =
@@ -1419,9 +1447,12 @@ void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
       if (saveNode) {
         MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
                        0);
+        if (!useHybridPIC && has_active_inductive_E0() && !nodeE0[iLev].empty())
+          MultiFab::Add(out[iLev], nodeE0[iLev], 0, iStart,
+                        nodeE0[iLev].nComp(), 0);
       } else {
-        average_node_to_cellcenter(out[iLev], iStart, nodeE[iLev], 0,
-                                   nodeE[iLev].nComp(), 0);
+        const MultiFab& eOut = total_node_E(nodeE[iLev], iLev);
+        average_node_to_cellcenter(out[iLev], iStart, eOut, 0, eOut.nComp(), 0);
       }
       iStart += nodeE[iLev].nComp();
       varNames.push_back("Ex");

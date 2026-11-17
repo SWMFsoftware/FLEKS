@@ -1711,6 +1711,15 @@ void Pic::fill_interface_and_ghost_emf_from_coarse(Vector<MultiFab>& nodeEmf,
 void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
                             bool includeAmbi, Real timeOverride) {
   BL_PROFILE("Pic::faraday_stage_rhs");
+  if (has_time_dep_B0()) {
+    const Real tEnd = tc ? tc->get_time() : 0.0;
+    const Real dtFull = tc ? tc->get_dt() : 0.0;
+    const Real tStage = (timeOverride >= 0.0)
+                            ? timeOverride
+                            : std::max(0.0, tEnd - (1.0 - hstep) * dtFull);
+    refresh_intrinsic_fields(tStage);
+  }
+
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     assemble_ohm_E(Bin[iLev], total_center_B(Bin[iLev], iLev), nodeEstage[iLev],
                    iLev, hstep, includeAmbi, timeOverride);
@@ -1719,6 +1728,30 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
   if (finestLevel() > 0) {
     sync_emf_at_interface(nodeEstage, timeOverride);
     fill_ghost_emf_from_coarse(nodeEstage, timeOverride);
+  }
+
+  if (has_active_inductive_E0()) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      // Ohm's law produces total E; subtract inductive E0 = -dA0/dt so
+      // Faraday's law advances only B1 = B_tot - B0.
+      if (!nodeE0[iLev].empty()) {
+        const int nG = std::min(nodeEstage[iLev].nGrow(), nodeE0[iLev].nGrow());
+        MultiFab::Subtract(nodeEstage[iLev], nodeE0[iLev], 0, 0, nDim3, nG);
+      }
+    }
+    // Re-synchronize coarse-fine interface hanging edges and fine ghost nodes
+    // on nodeEstage (= E_tot - E0) so coarse and fine curls share identical
+    // interface edge circulations and preserve div(B1) = 0.
+    for (int iLev = 1; iLev <= finestLevel(); ++iLev) {
+      fill_fine_lev_edge_from_coarse(
+          nodeEstage[iLev - 1], nodeEstage[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          nodeEstage[iLev - 1], nodeEstage[iLev], 0, nDim3, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      nodeEstage[iLev].OverrideSync(Geom(iLev).periodicity());
+      nodeEstage[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
   }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -2180,6 +2213,8 @@ void Pic::update_B_hybrid() {
   const Real tStepEnd = tc ? tc->get_time() : 0.0;
   const Real tStepStart = std::max(0.0, tStepEnd - dt);
 
+  refresh_intrinsic_fields(tStepStart);
+
   // Ensure B ghost cells are fresh across all levels at tStepStart before CFL
   // checks and Faraday subcycling.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -2628,6 +2663,8 @@ void Pic::update_B_hybrid() {
       relax_covered_B_to_fine(iLev);
     }
   }
+
+  refresh_intrinsic_fields(tStepEnd);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     apply_centerB_BC(iLev);

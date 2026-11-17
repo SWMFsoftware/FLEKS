@@ -34,6 +34,7 @@ FLEKS/
 | Time loop / regridding / orchestration | `src/Pic.cpp` (`Pic::update`), `src/Domain.cpp` |
 | Parameter parsing | `src/PicParam.cpp`, `src/Domain.cpp` (`read_param`) |
 | Field boundary conditions | `src/PicBC.cpp`, `include/BC.h` |
+| Intrinsic & external coil fields | `src/IntrinsicBField.cpp`, `include/IntrinsicBField.h`, `src/ExternalCoilField.cpp`, `include/ExternalCoilField.h` |
 | Full-PIC field solve / div(E) | `src/PicFieldSolver.cpp`, `src/PicDivE.cpp` |
 | Hybrid solver | `src/PicHybrid.cpp` |
 | Particles | `src/Particles.cpp` plus the `src/Particles*.cpp` split files |

@@ -171,6 +171,18 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
     Print() << "  intrinsic field: crustal, file = " << fileName
             << ", nMax = " << nMax << "\n";
+  } else if (command == "#COIL") {
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->coils().read_coil_param(param);
+  } else if (command == "#TOROIDALFIELD") {
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->coils().read_toroidal_param(param);
+  } else if (command == "#COILWAVEFORM") {
+    if (intrinsicB_ == nullptr)
+      intrinsicB_ = std::make_unique<IntrinsicBField>();
+    intrinsicB_->coils().read_waveform_param(param);
   } else if (command == "#BODY") {
     std::string type;
     param.read_var("type", type);
@@ -1358,9 +1370,9 @@ void Pic::convert_intrinsic_B() {
                                   get_body_center()[iy_],
                                   get_body_center()[iz_] };
 
-  intrinsicB_->convert_units(fi->get_Si2NoB(), fi->get_Si2NoL(),
-                             fi->get_rPlanet_SI(), bodyCenterTmp,
-                             get_body_radius(), use_body(), nDim);
+  intrinsicB_->convert_units(
+      fi->get_Si2NoB(), fi->get_Si2NoL(), fi->get_Si2NoV(),
+      fi->get_rPlanet_SI(), bodyCenterTmp, get_body_radius(), use_body(), nDim);
 
   Print() << intrinsicB_->describe() << "\n";
 }

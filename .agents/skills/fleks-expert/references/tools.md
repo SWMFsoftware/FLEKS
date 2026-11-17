@@ -12,6 +12,7 @@
 | `tools/format_all.py` | bulk reformat (C++ + Fortran), required before a PR |
 | `tools/generate_compile_commands.py` | regenerate `compile_commands.json` |
 | `tools/check_docs.py` | verify the agent documentation tree — runs in CI |
+| `tools/extract_probes.py` | interpolate synthetic magnetic/electric probes along lines, planes, or point clouds from `.out` / `_amrex` frames |
 
 ## Format converter
 
