@@ -84,8 +84,57 @@ jobs:
           summary-title: Standalone FLEKS 2D AMReX Test Results
           post-pr-comment: 'false'
 
+  # Lightweight path filter (~2s, no checkout) so build-and-test-openmp only
+  # runs when C++ sources, build configuration, or CI workflow files change
+  # (skipping test-only PRs while still reporting a clean Skipped status).
+  detect-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_openmp: ${{ steps.filter.outputs.run_openmp }}
+    steps:
+      - name: Check if C++ or build files changed
+        id: filter
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (!context.payload.pull_request) {
+              core.setOutput('run_openmp', 'true');
+              return;
+            }
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+            const patterns = [
+              /^src\//,
+              /^include\//,
+              /^srcInterface\//,
+              /^userfiles\//,
+              /^Config\.pl$/,
+              /^Makefile(\..*)?$/,
+              /^\.github\/actions\//,
+              /^\.github\/workflows\/standalone_test\.yml$/,
+            ];
+            const matched = files
+              .map(f => f.filename)
+              .filter(name => patterns.some(re => re.test(name)));
+            if (files.length >= 3000 || matched.length > 0) {
+              console.log('C++/build changes detected for OpenMP CI:', matched);
+              core.setOutput('run_openmp', 'true');
+            } else {
+              console.log('No C++/build changes detected; skipping OpenMP CI.');
+              core.setOutput('run_openmp', 'false');
+            }
+
   # Standalone job building with OpenMP multithreading (-openmp) against 3D AMReX.
   build-and-test-openmp:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_openmp == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -149,21 +198,50 @@ jobs:
           sudo apt-get install -y python3-numpy
           python3 -c "import numpy; print('numpy', numpy.__version__)"
 
-      - name: Run Standalone FLEKS Tests (Pure OpenMP & Mixed MPI+OpenMP)
+      - name: Run Standalone FLEKS Tests (1 MPI x 4 OpenMP & 2 MPI x 2 OpenMP)
         working-directory: SWMF/PC/FLEKS/tests
         shell: bash
         run: |
           ldd ../bin/FLEKS.exe | grep -E 'gomp|omp'
           nm -u ../bin/FLEKS.exe | grep -E 'GOMP_parallel|__kmpc_fork_call'
-          TESTS=(whistler beam reconnection_amr amr_divb langmuir hybrid_upwind bc_absorb dynamic_amr)
-          for test_name in "${TESTS[@]}"; do
-            OMP_PROC_BIND=close OMP_PLACES=cores \
-              python3 validate_tests.py -n 1 --omp-threads 2 --test "$test_name" --run-dir "run_test_omp1x2_${test_name}"
-            rm -rf "run_test_omp1x2_${test_name}"
-          done
-          for test_name in "${TESTS[@]}"; do
-            python3 validate_tests.py -n 2 --omp-threads 2 --test "$test_name" --run-dir "run_test_omp2x2_${test_name}"
-            rm -rf "run_test_omp2x2_${test_name}"
+
+          # Curated variant-level suite: covers 3D plane striping, 27-color tile
+          # buckets, AMR particle split/merge, dynamic regridding, Full-PIC GMRES
+          # + div(E) + inflow, div(B) projection, 3D Hybrid Ohm's law, exosphere
+          # source RNG, TestParticles, and explicit wall tallies using all 4 cores.
+          OMP_1X4_TESTS="constantppv,wave_amr_3d.hybrid,amr_dive_inflow.full,amr_divb.full,reconnection_amr.implicit,reconnection_amr.forcefree_hybrid,dynamic_amr,exosphere.sourceppc,exosphere.shadow,langmuir.explicit_wall"
+
+          # Mixed MPI + OpenMP smoke check on multi-box AMR decks to verify
+          # mpirun --bind-to none, FabArray ghost exchange, and MPI+OMP reductions.
+          OMP_2X2_TESTS="reconnection_amr.implicit,wave_amr_3d.hybrid,dynamic_amr"
+
+          STATUS=0
+          OMP_PROC_BIND=close OMP_PLACES=cores \
+            python3 validate_tests.py -n 1 --omp-threads 4 \
+              --test "$OMP_1X4_TESTS" \
+              --run-dir run_test_omp1x4 \
+              --summary-file summary_omp_1x4.md \
+              --summary-title "Standalone FLEKS OpenMP Tests (1 MPI x 4 OMP)" || STATUS=1
+          rm -rf ../run_test_omp1x4
+
+          python3 validate_tests.py -n 2 --omp-threads 2 \
+            --test "$OMP_2X2_TESTS" \
+            --run-dir run_test_omp2x2 \
+            --summary-file summary_omp_2x2.md \
+            --summary-title "Standalone FLEKS Mixed MPI+OpenMP Tests (2 MPI x 2 OMP)" || STATUS=1
+          rm -rf ../run_test_omp2x2
+
+          exit $STATUS
+
+      - name: Write Job Summary
+        if: always()
+        shell: bash
+        run: |
+          for f in SWMF/PC/FLEKS/tests/summary_omp_1x4.md SWMF/PC/FLEKS/tests/summary_omp_2x2.md; do
+            if [ -f "$f" ]; then
+              cat "$f" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
 
   # Compiler warning check against the true-2D AMReX library (-amrex2d).

@@ -106,9 +106,12 @@ runs:
       uses: actions/cache@v5
       with:
         path: .ccache
-        key: ${{ runner.os }}-ccache-v2-${{ hashFiles('SWMF/Config.pl', 'SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PT/FLEKS/**/*.cpp', 'SWMF/PT/FLEKS/**/*.h') }}
+        # Scope ccache by amrex-cache-suffix (3d, 2d, 3d-omp, 2d-debug) so jobs
+        # with distinct compiler flags (-fopenmp, -DAMREX_SPACEDIM, -O0 -g) keep
+        # warm per-variant object caches instead of evicting or missing each other.
+        key: ${{ runner.os }}-ccache-v3-${{ inputs.amrex-cache-suffix }}-${{ hashFiles('SWMF/Config.pl', 'SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PT/FLEKS/**/*.cpp', 'SWMF/PT/FLEKS/**/*.h') }}
         restore-keys: |
-          ${{ runner.os }}-ccache-v2-
+          ${{ runner.os }}-ccache-v3-${{ inputs.amrex-cache-suffix }}-
 
     - name: Install or Update SWMF Components
       working-directory: SWMF

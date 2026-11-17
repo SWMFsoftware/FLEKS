@@ -142,11 +142,10 @@ the standalone tests:
 # Run all tests in serial mode (no MPI):
 python3 tests/validate_tests.py
 
-# Run a single test by name (e.g. beam):
+# Run a single test or a comma-separated list of tests/variants:
 python3 tests/validate_tests.py --test=beam
-
-# Equivalently, with a space:
 python3 tests/validate_tests.py --test beam
+python3 tests/validate_tests.py --test=constantppv,wave_amr_3d.hybrid,dynamic_amr
 
 # Run with N MPI processes:
 python3 tests/validate_tests.py -n 2
