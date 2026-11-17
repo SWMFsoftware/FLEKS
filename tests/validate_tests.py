@@ -1184,13 +1184,29 @@ def main():
         logger.error("Error: Number of processes must be >= 1.")
         sys.exit(1)
 
+    # Parse --omp-threads N: set OMP_NUM_THREADS for FLEKS.exe runs
+    for i, arg in enumerate(sys.argv):
+        if arg == "--omp-threads" and i + 1 < len(sys.argv):
+            os.environ["OMP_NUM_THREADS"] = sys.argv[i + 1]
+            continue
+        if arg.startswith("--omp-threads="):
+            os.environ["OMP_NUM_THREADS"] = arg[len("--omp-threads="):]
+            continue
+
+    try:
+        omp_threads_cfg = max(1, int(os.environ.get("OMP_NUM_THREADS", "1")))
+    except ValueError:
+        logger.error("Error: OMP_NUM_THREADS / --omp-threads must be a positive integer.")
+        sys.exit(1)
+    cores_per_worker = nprocs * omp_threads_cfg
+
     # Parse -j / --jobs: concurrent test execution
     jobs = 1
     for i, arg in enumerate(sys.argv):
         if arg.startswith("--jobs="):
             val = arg[len("--jobs="):]
             if val.lower() == "auto":
-                jobs = max(1, (os.cpu_count() or 1) // nprocs)
+                jobs = max(1, (os.cpu_count() or 1) // cores_per_worker)
             else:
                 try:
                     jobs = int(val)
@@ -1201,7 +1217,7 @@ def main():
             if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("-"):
                 val = sys.argv[i + 1]
                 if val.lower() == "auto":
-                    jobs = max(1, (os.cpu_count() or 1) // nprocs)
+                    jobs = max(1, (os.cpu_count() or 1) // cores_per_worker)
                 else:
                     try:
                         jobs = int(val)
@@ -1209,7 +1225,7 @@ def main():
                         logger.error("Error: -j requires an integer or 'auto'.")
                         sys.exit(1)
             else:
-                jobs = max(1, (os.cpu_count() or 1) // nprocs)
+                jobs = max(1, (os.cpu_count() or 1) // cores_per_worker)
 
     if jobs < 1:
         logger.error("Error: Number of jobs must be >= 1.")
@@ -1243,15 +1259,19 @@ def main():
             summary_title = arg[len("--summary-title="):]
             continue
 
-    # Parse --test NAME (select a specific test to run; default: run all)
-    # Accepts both "--test=NAME" and "--test NAME" forms.
-    selected_test = None
+    # Parse --test NAME[,NAME2,...] (select one or more tests/variants; default: run all)
+    # Accepts "--test=NAME", "--test NAME", comma-separated lists, and repeated flags.
+    selected_tests = []
     for i, arg in enumerate(sys.argv):
         if arg.startswith("--test="):
-            selected_test = arg[len("--test="):]
+            selected_tests.extend(
+                tok.strip() for tok in arg[len("--test="):].split(",") if tok.strip()
+            )
             continue
         if arg == "--test" and i + 1 < len(sys.argv):
-            selected_test = sys.argv[i + 1]
+            selected_tests.extend(
+                tok.strip() for tok in sys.argv[i + 1].split(",") if tok.strip()
+            )
             continue
         if arg == "--run-dir" and i + 1 < len(sys.argv):
             global RUN_DIR
@@ -1259,15 +1279,6 @@ def main():
             continue
         if arg.startswith("--run-dir="):
             RUN_DIR = arg[len("--run-dir="):]
-            continue
-
-    # Parse --omp-threads N: set OMP_NUM_THREADS for FLEKS.exe runs
-    for i, arg in enumerate(sys.argv):
-        if arg == "--omp-threads" and i + 1 < len(sys.argv):
-            os.environ["OMP_NUM_THREADS"] = sys.argv[i + 1]
-            continue
-        if arg.startswith("--omp-threads="):
-            os.environ["OMP_NUM_THREADS"] = arg[len("--omp-threads="):]
             continue
 
     # Parse --verbose / -v: show DEBUG diagnostics from each validator.
@@ -1289,26 +1300,29 @@ def main():
 
     _sync_shared_run_dir()
 
-    tests = discover_tests()
-    if not tests:
+    discovered = discover_tests()
+    if not discovered:
         logger.error("No tests found in tests/ subdirectories!")
         sys.exit(1)
 
-    # Filter to a single test if --test was given.
-    variant_filter = None
-    if selected_test is not None:
-        if "." in selected_test:
-            name_part, variant_filter = selected_test.split(".", 1)
-        else:
-            name_part = selected_test
-        matching = [t for t in tests if t[1] == name_part]
-        if not matching:
-            available = ", ".join(t[1] for t in tests)
-            logger.error("Error: test '%s' not found.", selected_test)
-            logger.error("Available tests: %s", available)
-            sys.exit(1)
-        tests = matching
-        logger.debug("Selected test: %s", selected_test)
+    # Build (test_dir, name, variant_filter) entries; filter if --test was given.
+    if selected_tests:
+        by_name = {name: td for td, name in discovered}
+        tests = []
+        for spec in selected_tests:
+            if "." in spec:
+                name_part, v_filter = spec.split(".", 1)
+            else:
+                name_part, v_filter = spec, None
+            if name_part not in by_name:
+                available = ", ".join(t[1] for t in discovered)
+                logger.error("Error: test '%s' not found.", spec)
+                logger.error("Available tests: %s", available)
+                sys.exit(1)
+            tests.append((by_name[name_part], name_part, v_filter))
+        logger.debug("Selected tests: %s", ", ".join(selected_tests))
+    else:
+        tests = [(td, name, None) for td, name in discovered]
 
     # Filter by --shard K/N if provided
     shard_info = ""
@@ -1355,8 +1369,8 @@ def main():
         )
 
         tasks = [
-            (idx, td, name, nprocs, variant_filter, include_expensive, slot_queue, verbose, RUN_DIR)
-            for idx, (td, name) in scheduled_tests
+            (idx, td, name, nprocs, v_filter, include_expensive, slot_queue, verbose, RUN_DIR)
+            for idx, (td, name, v_filter) in scheduled_tests
         ]
 
         collected_results = {}
@@ -1379,8 +1393,8 @@ def main():
             if os.path.exists(wdir):
                 shutil.rmtree(wdir, ignore_errors=True)
     else:
-        for test_dir, name in tests:
-            run_one_test(test_dir, name, nprocs, results, variant_filter=variant_filter,
+        for test_dir, name, v_filter in tests:
+            run_one_test(test_dir, name, nprocs, results, variant_filter=v_filter,
                          include_expensive=include_expensive, run_dir=RUN_DIR)
 
     # ----------------------------------------------------
