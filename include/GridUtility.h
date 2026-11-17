@@ -511,6 +511,36 @@ inline bool skip_particle_for_dive_cleaning(
          1.0;
 }
 
+/**
+ * @brief Return true if valid node (i, j, k) lies on an interior coarse-fine
+ * level interface (excluding body nodes and outer physical domain edges).
+ */
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_interior_coarse_fine_edge(
+    const amrex::Array4<int const>& stArr, int i, int j, int k) noexcept {
+  const int st = stArr(i, j, k);
+  if (!bit::is_lev_edge(st) || bit::is_body(st))
+    return false;
+
+#if (AMREX_SPACEDIM > 2)
+  const int kmin = k - 1;
+  const int kmax = k + 1;
+#else
+  const int kmin = k;
+  const int kmax = k;
+#endif
+  for (int kk = kmin; kk <= kmax; ++kk) {
+    for (int jj = j - 1; jj <= j + 1; ++jj) {
+      for (int ii = i - 1; ii <= i + 1; ++ii) {
+        const int neiSt = stArr(ii, jj, kk);
+        if (bit::is_lev_boundary(neiSt) && !bit::is_domain_boundary(neiSt)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::MFIter& mfi,
                                     const amrex::Geometry& gm,

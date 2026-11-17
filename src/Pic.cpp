@@ -236,6 +236,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
+        if (useUpwindE && cMaxE <= 0.0) {
+          distribute_FabArray(uUpwindE[iLev], node_box_array(iLev),
+                              DistributionMap(iLev), 1, get_n_ghost(),
+                              doMoveData, 0.0);
+        } else {
+          uUpwindE[iLev].clear();
+        }
         distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 1, doMoveData);
         distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),

@@ -8,11 +8,14 @@ namespace amrex {
 void AmrexLinearSolver::ensure_mask() {
   const BoxArray& ba = m_pic->node_box_array(m_iLev);
   const DistributionMapping& dm = m_pic->DistributionMap(m_iLev);
+  const bool skipCFEdge = m_pic->pin_coarse_fine_E_edge(m_iLev) &&
+                          (m_mode != FieldSolverMode::NewtonKrylov);
   if (!m_dotMask.empty() && m_dotMask.boxArray() == ba &&
-      m_dotMask.DistributionMap() == dm) {
+      m_dotMask.DistributionMap() == dm && m_skipCoarseFineEdge == skipCFEdge) {
     return;
   }
 
+  m_skipCoarseFineEdge = skipCFEdge;
   m_dotMask.define(ba, dm, 1, 0);
   const bool skipAllBody = m_pic->is_body_linetied();
   const bool skipInterior = m_pic->is_body_conducting();
@@ -24,9 +27,10 @@ void AmrexLinearSolver::ensure_mask() {
     const Array4<int const>& nodeArr = statusMF[mfi].const_array();
     ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       const int st = nodeArr(i, j, k);
-      const bool isActive = bit::is_owner(st) &&
-                            !(skipAllBody && bit::is_body(st)) &&
-                            !(skipInterior && bit::is_body_interior(st));
+      const bool isActive =
+          bit::is_owner(st) && !(skipAllBody && bit::is_body(st)) &&
+          !(skipInterior && bit::is_body_interior(st)) &&
+          !(skipCFEdge && is_interior_coarse_fine_edge(nodeArr, i, j, k));
       mskArr(i, j, k) = isActive ? 1 : 0;
     });
   }

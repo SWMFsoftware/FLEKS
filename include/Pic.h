@@ -339,6 +339,7 @@ private:
 
   // Background velocity and electric field.
   amrex::Vector<amrex::MultiFab> uBg;
+  amrex::Vector<amrex::MultiFab> uUpwindE;
   amrex::Vector<amrex::MultiFab> eBg;
 
   // Mach number: u/v_th
@@ -785,6 +786,7 @@ public:
     }
     eBg.resize(n_lev_max());
     uBg.resize(n_lev_max());
+    uUpwindE.resize(n_lev_max());
 
     mMach.resize(n_lev_max());
 
@@ -1018,6 +1020,7 @@ public:
   //-------------Electric field solver begin-------------
   void update_E();
   void update_E_impl();
+  void prepare_upwind_E_speed();
   void update_E_expl();
   void solve_E_gmres(int iLev);
   void solve_E_gmres_amrex(int iLev);
@@ -1031,6 +1034,13 @@ public:
   void build_E_preconditioner(amrex::MultiFab &invDiagMF, int iLev,
                               EPrecondType type);
   void sync_nodal_solver_vec(amrex::MultiFab &vecMF, int iLev);
+  bool pin_coarse_fine_E_edge(int iLev) const {
+    return (iLev > 0) && useCurlUpwindB && !useHybridPIC;
+  }
+  bool is_coarse_fine_E_dirichlet(int iLev) const {
+    return pin_coarse_fine_E_edge(iLev) &&
+           fsolver.mode != FieldSolverMode::NewtonKrylov;
+  }
   void relax_fine_lev_edge_from_coarse(amrex::MultiFab &mfCrse,
                                        amrex::MultiFab &mfFine, int iLev);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
@@ -1060,6 +1070,7 @@ public:
     amrex::DistributionMapping dm;
     bool skipAllBody = false;
     bool skipInterior = false;
+    bool skipCoarseFineEdge = false;
     std::vector<BoxLayout> boxes;
   };
   std::vector<NodeSystemLayout> nodeLayout;
@@ -1142,7 +1153,7 @@ public:
   void measure_covered_B_drift(int iLev);
   // Relax the covered coarse B on iLev toward the restriction of the fine B
   // with a discrete-curl correction, so the coarse div(B) is preserved.
-  void relax_covered_B_to_fine(int iLev);
+  void relax_covered_B_to_fine(int iLev, amrex::Real relaxWeight = 1.0);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 
@@ -1205,6 +1216,8 @@ public:
   void update_B();
 
   void add_curl_upwind_E(amrex::MultiFab &nodeEmf, int iLev);
+
+  void add_ghost_curl_upwind_E(amrex::MultiFab &nodeEmf, int iLev);
 
   void correct_B(int iLev);
 

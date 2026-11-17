@@ -202,6 +202,7 @@ private:
   int m_precondIters = 2;
   Real m_smootherWeight = Real(2.0 / 3.0);
   FieldSolverMode m_mode = FieldSolverMode::GMRES;
+  bool m_skipCoarseFineEdge = false;
 
   // Persistent GMRES instance to avoid re-initializing Hessenberg tables
   GMRES<MultiFab, AmrexLinearSolver> m_gmres;

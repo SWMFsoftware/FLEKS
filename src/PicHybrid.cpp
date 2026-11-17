@@ -1777,7 +1777,9 @@ void Pic::measure_covered_B_drift(int iLev) {
 //   A.
 //     Gauge modes A -> A + grad(phi) lie in the null space of curl, so CGLS
 //     does not amplify them and explicit gauge fixing is unnecessary.
-void Pic::relax_covered_B_to_fine(int iLev) {
+void Pic::relax_covered_B_to_fine(int iLev, Real relaxWeight) {
+  if (relaxWeight <= 0.0)
+    return;
   BL_PROFILE("Pic::relax_covered_B_to_fine");
 
   MultiFab& B = centerB[iLev];
@@ -1789,7 +1791,8 @@ void Pic::relax_covered_B_to_fine(int iLev) {
   // Number of cell components taking part in the relaxation.
   const int nRelax = bzFree ? 2 : nDim3;
   if (bzFree) {
-    MultiFab::Copy(B, target, iz_, iz_, 1, 0);
+    MultiFab::LinComb(B, Real(1.0) - relaxWeight, B, iz_, relaxWeight, target,
+                      iz_, iz_, 1, 0);
   }
 
   MultiFab& r = relaxResidual[iLev];
@@ -1938,7 +1941,8 @@ void Pic::relax_covered_B_to_fine(int iLev) {
     parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (bit::is_refined(st(i, j, k))) {
         for (int iVar = 0; iVar < nRelax; ++iVar)
-          d(i, j, k, iVar) = t(i, j, k, iVar) - b(i, j, k, iVar);
+          d(i, j, k, iVar) =
+              relaxWeight * (t(i, j, k, iVar) - b(i, j, k, iVar));
       }
     });
   }
