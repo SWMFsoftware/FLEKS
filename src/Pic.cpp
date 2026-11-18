@@ -133,7 +133,8 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
-void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
+void Pic::distribute_arrays(MeshChangeReason reason) {
+  const bool copyMoments = (reason == MeshChangeReason::LoadBalance);
 
   // The last one is the sum of all species.
   if (nodePlasma.empty()) {
@@ -384,7 +385,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
           pl.resize(n_lev_max());
         distribute_FabArray(pl[iLev], node_box_array(iLev),
                             DistributionMap(iLev), nHybridMomentsComps,
-                            get_n_ghost(), true, 0.0);
+                            get_n_ghost(), copyMoments, 0.0);
       }
     }
     distribute_FabArray(dBdt[iLev], node_box_array(iLev), DistributionMap(iLev),
@@ -392,7 +393,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     // mMach: node grid for both full-PIC and hybrid.
     distribute_FabArray(mMach[iLev], node_box_array(iLev),
-                        DistributionMap(iLev), 1, get_n_ghost(), true, 0.0);
+                        DistributionMap(iLev), 1, get_n_ghost(), copyMoments,
+                        0.0);
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
     // E current (jHat), and node-centered moments (nodePlasma): full-PIC only.
@@ -420,7 +422,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       if (pl.empty())
         pl.resize(n_lev_max());
       distribute_FabArray(pl[iLev], node_box_array(iLev), DistributionMap(iLev),
-                          nMoments, get_n_ghost(), true, 0.0);
+                          nMoments, get_n_ghost(), copyMoments, 0.0);
     }
   }
 }
@@ -446,7 +448,7 @@ void Pic::post_regrid(MeshChangeReason reason) {
     doNeedFillNewCell = true;
     hasWarnedTargetPPCClearance_ = false;
   }
-  distribute_arrays();
+  distribute_arrays(reason);
 
   // The target particle numbers are copied by distribute_arrays together
   // with their ghost cells, which hold the base target only (SetTargetPPC

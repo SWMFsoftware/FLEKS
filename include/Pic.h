@@ -882,8 +882,7 @@ public:
   void pre_regrid();
   void post_regrid(MeshChangeReason reason = MeshChangeReason::Topology);
 
-  void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld =
-                             amrex::Vector<amrex::BoxArray>());
+  void distribute_arrays(MeshChangeReason reason = MeshChangeReason::Topology);
 
   void fill_new_cells();
   void fill_E_B_fields(bool fillAll = false);
