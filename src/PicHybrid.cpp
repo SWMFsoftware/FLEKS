@@ -858,6 +858,12 @@ void Pic::save_current_moments_to_prev() {
                    nodePlasma[nSpecies][iLev].nGrow());
     nodePlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
   }
+  for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    fill_fine_lev_bny_from_coarse(
+        nodePlasmaPrev[nSpecies][iLev - 1], nodePlasmaPrev[nSpecies][iLev], 0,
+        nodePlasmaPrev[nSpecies][iLev].nComp(), refRatio(iLev - 1),
+        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+  }
 }
 
 //==========================================================

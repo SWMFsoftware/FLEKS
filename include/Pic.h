@@ -911,7 +911,7 @@ public:
 
   void charge_exchange();
 
-  void sum_moments(bool updateDt = false);
+  void sum_moments(bool updateDt = false, bool seedHybridPrev = false);
 
   void calc_mach_number();
   // Convert SI input parameters to code units after normalization is finalized.

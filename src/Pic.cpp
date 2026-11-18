@@ -73,9 +73,12 @@ void Pic::fill_new_cells() {
     // beam bulk override or the hybrid-wave Alfven velocity kick) is routed
     // through the InitialCondition plugin during fill_particles().
     fill_particles();
-    sum_moments(true);
+    // Seed nodePlasmaPrev inside sum_moments before calc_hybrid_dt_and_subcycle
+    // evaluates min_positive_stage_rho(), so topology regrids after step 1 do
+    // not blend fresh rCur with unseeded zero rPrev (artificially halving rMid
+    // and doubling the whistler subcycle estimate).
+    sum_moments(true, useHybridPIC);
     if (useHybridPIC) {
-      seed_first_hybrid_step();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         average_center_to_node(centerB[iLev], nodeB[iLev]);
         nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1923,7 +1926,7 @@ void Pic::calc_mass_matrix_amr() {
 }
 
 //==========================================================
-void Pic::sum_moments(bool updateDt) {
+void Pic::sum_moments(bool updateDt, bool seedHybridPrev) {
   std::string nameFunc = "Pic::sum_moments";
   if (is_grid_empty())
     return;
@@ -1999,6 +2002,9 @@ void Pic::sum_moments(bool updateDt) {
     convert_and_sum_moments();
     if (updateDt) {
       smooth_moments();
+    }
+    if (seedHybridPrev) {
+      seed_first_hybrid_step();
     }
   }
 
