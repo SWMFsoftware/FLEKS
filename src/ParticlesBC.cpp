@@ -464,8 +464,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
                 pt.rdata(ivp_) = vel[iy_];
                 pt.rdata(iwp_) = vel[iz_];
                 pt.rdata(iqp_) = qCell;
-                if (NStructInt > iRecordCount_)
-                  pt.idata(iRecordCount_) = 0;
                 particles.push_back(pt);
                 faceInMass[2 * iDim + side] += qomSign * qCell * m;
               }
@@ -645,10 +643,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           p.rdata(ivp_) = vel[iy_];
           p.rdata(iwp_) = vel[iz_];
           p.rdata(iqp_) = particleQ;
-
-          if (NStructInt > iRecordCount_) {
-            p.idata(iRecordCount_) = 0;
-          }
 
           particles.push_back(p);
           faceInMass[2 * iDim + side] += qomSign * particleQ * get_mass();
@@ -925,8 +919,6 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_open_faces(
               pt.rdata(ivp_) = vel[iy_];
               pt.rdata(iwp_) = vel[iz_];
               pt.rdata(iqp_) = q;
-              if (NStructInt > iRecordCount_)
-                pt.idata(iRecordCount_) = 0;
               particles.push_back(pt);
               faceInMass[2 * iDim + side] += qomSign * q * m;
             }
@@ -981,5 +973,4 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
       const Box&, const Array4<const int>&, const IntVect, IntVect&);
 
 INSTANTIATE_PARTICLES_BC(PicParticles)
-INSTANTIATE_PARTICLES_BC(PTParticles)
 #undef INSTANTIATE_PARTICLES_BC

@@ -52,6 +52,8 @@ Particles<NStructReal, NStructInt>::Particles(
   mergeRatioMax = pInfo.mergeRatioMax;
   pLevRatio = pInfo.pLevRatio;
   mergePartRatioMax = pInfo.mergePartRatioMax;
+  pusherType = pInfo.pusherType;
+  isRelativistic = pInfo.isRelativistic;
   if (fi)
     vacuum = pInfo.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
   else
@@ -257,4 +259,3 @@ void Particles<NStructReal, NStructInt>::add_velocity_perturbation(Real ampY,
 
 // Explicit template instantiations.
 template class Particles<nPicPartReal, nPicPartInt>;
-template class Particles<nPTPartReal, nPTPartInt>;

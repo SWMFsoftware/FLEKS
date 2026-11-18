@@ -31,10 +31,10 @@ Full text for humans: `doc/Coding_standards.md`. Summary below.
 
 ## FLEKS-specific rules
 
-- **Split `Particles` files:** every new out-of-line `Particles` method needs
-  explicit instantiations for both `PicParticles` and `PTParticles` in the
-  file that defines it. Only `src/Particles.cpp` may hold whole-class
-  instantiations.
+- **Split `Particles` files:** `PTParticles` aliases `PicParticles`, so every
+  new out-of-line `Particles` method needs explicit instantiation for
+  `PicParticles` in the file that defines it. Only `src/Particles.cpp` may
+  hold whole-class instantiations.
 - **Generated files:** edit `Constants.h.orig` / `userfiles/*Source.h`, never
   `include/Constants.h` / `include/UserSource.h`.
 - **Source list:** add every new `.cpp` to `SRCS` in `src/Makefile`.

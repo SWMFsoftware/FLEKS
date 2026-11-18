@@ -9,6 +9,7 @@
 #include <AMReX_MultiFabUtil.H>
 
 #include "GridUtility.h"
+#include "ParticlePusher.h"
 #include "Pic.h"
 #include "Timer.h"
 
@@ -44,6 +45,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       pMode = PartMode::PIC;
     else
       Abort("Error: wrong input for partMode.");
+  } else if (command == "#PARTICLEPUSHER") {
+    std::string sPusher;
+    param.read_var("pusherType", sPusher);
+    pInfo.pusherType = parse_pusher_type(sPusher);
+    param.read_var("isRelativistic", pInfo.isRelativistic);
   } else if (command == "#PARTICLEBOXBOUNDARY") {
     if (pInfo.pBCs.empty()) {
       pInfo.pBCs.resize(1);
@@ -924,6 +930,10 @@ void Pic::post_process_param() {
   // the input deck describes.
   if (nSubcycle < 1)
     Abort("Invalid #FIELDSUBCYCLE: nSubcycle must be at least 1.");
+  if (usePIC && pInfo.isRelativistic && solveEM)
+    Abort("Error: relativistic #PARTICLEPUSHER is not supported with "
+          "#FIELDSOLVER implicit; use explicit, hybrid, none, or "
+          "ParticleTracker.");
   if (isAutoSubcycle && !useHybridPIC)
     Abort("Auto-subcycling (#FIELDSUBCYCLE isAutoSubcycle=T) is currently "
           "only supported for the hybrid PIC solver.");

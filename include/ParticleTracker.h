@@ -11,8 +11,8 @@
 
 class ParticleTracker : public GridAccess {
 public:
-  ParticleTracker(Grid &gridIn, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-                  ParticleTrackerInfo &info)
+  ParticleTracker(Grid& gridIn, FluidInterface* fluidIn, TimeCtr* tcIn, int id,
+                  ParticleTrackerInfo& info)
       : GridAccess(gridIn), tc(tcIn), fi(fluidIn), gridID(id), pInfo(&info) {
     gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = gridName + " pt: ";
@@ -23,28 +23,30 @@ public:
   // Shared mesh queries (n_lev, Geom, DistributionMap, is_grid_empty, ...)
   // are inherited from GridAccess.
   void post_process_param();
+  void set_particle_bcs(const ParticlesInfo& picInfo);
 
   void pre_regrid();
   void post_regrid();
 
-  void update_field(Pic &pic, bool needJacobian = false);
-  void set_ic(Pic &pic);
-  void update(Pic &pic, bool doReport = false, amrex::Real dtIn = -1.0,
+  void update_field(Pic& pic, bool needJacobian = false);
+  void set_ic(Pic& pic);
+  void update(Pic& pic, bool doReport = false, amrex::Real dtIn = -1.0,
               amrex::Real nextDtIn = -1.0);
 
   void complete_parameters();
+  void add_particle_count(amrex::MultiFab& cost, int iLev);
 
   void save_restart_data();
-  void save_restart_header(std::ofstream &headerFile);
+  void save_restart_header(std::ofstream& headerFile);
   void read_restart();
   void write_log(bool doForce = false, bool doCreateFile = false);
 
-  void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape> > &shapes);
+  void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape> >& shapes);
 
 private:
   // The shared Grid reference lives in GridAccess.
-  TimeCtr *tc = nullptr;
-  FluidInterface *fi = nullptr;
+  TimeCtr* tc = nullptr;
+  FluidInterface* fi = nullptr;
 
   std::string tag = "pt";
   std::string gridName;
@@ -53,14 +55,14 @@ private:
 
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).
-  ParticleTrackerInfo *pInfo = nullptr;
+  ParticleTrackerInfo* pInfo = nullptr;
+  ParticlesInfo picPInfo;
+  TPOutputSpec outputSpec = TPOutputSpec::parse("");
 
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
-  amrex::Vector<amrex::MultiFab> nodeE;
-  amrex::Vector<amrex::MultiFab> nodeB;
 
   // Nodal magnetic field Jacobian (9 components) computed via
-  // jacobian_center_to_node.
+  // jacobian_center_to_node when outputSpec.needGradB is true.
   amrex::Vector<amrex::MultiFab> nodeJacB;
 
   // Scratch holding the total cell-centered field B1 + B0 when an intrinsic

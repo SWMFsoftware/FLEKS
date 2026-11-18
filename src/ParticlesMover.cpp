@@ -7,6 +7,7 @@
 
 #include "InitialCondition.h"
 #include "Morton.h"
+#include "ParticlePusher.h"
 #include "Particles.h"
 #include "SWMFInterface.h"
 #include "Timer.h"
@@ -329,6 +330,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
     OrderedTallyCollector<MoveTallyDelta> tallies(hasBodyQNetInc);
     std::atomic<bool> movedTooFar{ false };
+    std::atomic<bool> superluminal{ false };
 
     auto processTile = [&](const auto& item, int ord, auto checkHomeTag,
                            bool strayPass,
@@ -348,6 +350,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const bool useB0Tile = useB0;
       const bool hasCurrentTile = (currentMF != nullptr);
       const bool trialOnlyTile = trialOnly;
+      const PusherType pusherTypeTile = pusherType;
+      const bool isRelativisticTile = isRelativistic;
       const int iup = iup_;
       const int ivp = ivp_;
       const int iwp = iwp_;
@@ -451,20 +455,30 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         vp = vp - u0p[iy_];
         wp = wp - u0p[iz_];
 
-        const Real omx = qdto2mcTile * bp[ix_];
-        const Real omy = qdto2mcTile * bp[iy_];
-        const Real omz = qdto2mcTile * bp[iz_];
-
         // end interpolation
         const Real velocity[3] = { up, vp, wp };
-        const Real ut = up + qdto2mcTile * ep[ix_];
-        const Real vt = vp + qdto2mcTile * ep[iy_];
-        const Real wt = wp + qdto2mcTile * ep[iz_];
-        const Real electricVelocity[3] = { ut, vt, wt };
-        const Real omega[3] = { omx, omy, omz };
         Real updatedVelocity[3];
-        boris_push_nonrelativistic(velocity, electricVelocity, omega,
-                                   updatedVelocity);
+        if (!isRelativisticTile && pusherTypeTile == PusherType::Boris) {
+          const Real omx = qdto2mcTile * bp[ix_];
+          const Real omy = qdto2mcTile * bp[iy_];
+          const Real omz = qdto2mcTile * bp[iz_];
+          const Real ut = up + qdto2mcTile * ep[ix_];
+          const Real vt = vp + qdto2mcTile * ep[iy_];
+          const Real wt = wp + qdto2mcTile * ep[iz_];
+          const Real electricVelocity[3] = { ut, vt, wt };
+          const Real omega[3] = { omx, omy, omz };
+          boris_push_nonrelativistic(velocity, electricVelocity, omega,
+                                     updatedVelocity);
+        } else {
+          if (!push_lorentz_velocity(pusherTypeTile, isRelativisticTile,
+                                     velocity, ep, bp, qdto2mcTile,
+                                     updatedVelocity)) {
+            superluminal.store(true, std::memory_order_relaxed);
+            updatedVelocity[ix_] = velocity[ix_];
+            updatedVelocity[iy_] = velocity[iy_];
+            updatedVelocity[iz_] = velocity[iz_];
+          }
+        }
 
         const Real unp1 = updatedVelocity[ix_] + u0p[ix_];
         const Real vnp1 = updatedVelocity[iy_] + u0p[iy_];
@@ -523,6 +537,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
                                hasBodyQNetInc);
 
     tallies.flush([&](const MoveTallyDelta& d) { apply_move_tally_delta(d); });
+
+    if (superluminal.load(std::memory_order_relaxed))
+      Abort("charged_particle_mover: particle speed >= speed of light!");
 
     if (movedTooFar.load(std::memory_order_relaxed))
       Abort("charged_particle_mover: a particle moved more than one cell in a "
@@ -851,5 +868,4 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   template void T::divE_correct_position(const Vector<MultiFab>&, int);
 
 INSTANTIATE_PARTICLES_MOVER(PicParticles)
-INSTANTIATE_PARTICLES_MOVER(PTParticles)
 #undef INSTANTIATE_PARTICLES_MOVER

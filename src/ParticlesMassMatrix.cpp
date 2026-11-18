@@ -718,5 +718,4 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
   template void T::apply_jhat_mirror(MultiFab&, int);
 
 INSTANTIATE_PARTICLES_MASS_MATRIX(PicParticles)
-INSTANTIATE_PARTICLES_MASS_MATRIX(PTParticles)
 #undef INSTANTIATE_PARTICLES_MASS_MATRIX

@@ -18,6 +18,7 @@
 #include "Constants.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
+#include "ParticlePusher.h"
 #include "RandNum.h"
 #include "SourceInterface.h"
 #include "TimeCtr.h"
@@ -101,6 +102,9 @@ public:
   // [amu/cc]
   amrex::Real vacuumIO = 0;
 
+  PusherType pusherType = PusherType::Boris;
+  bool isRelativistic = false;
+
   OHIon ionOH;
 
   // Particle boundary conditions, one entry per species.
@@ -146,6 +150,9 @@ public:
 
   std::string sIOUnit = "planet";
   bool isRelativistic = false;
+  PusherType pusherType = PusherType::Boris;
+  std::string sOutputVars = "";
+  int nRecordFlush = nPTRecord;
 
   amrex::Vector<std::string> listFiles;
   bool doInitFromPIC = false;
@@ -205,6 +212,16 @@ public:
       param.read_var("dtSave", dtSave[iSpecies]);
     } else if (command == "#TPRELATIVISTIC") {
       param.read_var("isRelativistic", isRelativistic);
+    } else if (command == "#TPPUSHER") {
+      std::string sPusher;
+      param.read_var("pusherType", sPusher);
+      pusherType = parse_pusher_type(sPusher);
+    } else if (command == "#TPOUTPUT") {
+      param.read_var("outputVars", sOutputVars);
+      param.read_var("nRecordFlush", nRecordFlush);
+      if (nRecordFlush <= 0)
+        amrex::Abort("Error [ParticleTrackerInfo]: nRecordFlush must be > 0 "
+                     "in #TPOUTPUT.");
     } else if (command == "#TPSTATESI") {
       if (!fi)
         amrex::Abort("Error [ParticleTrackerInfo]: #TPSTATESI requires a "
@@ -308,7 +325,7 @@ public:
 template <int NStructReal, int NStructInt> class Particles;
 
 using PicParticles = Particles<nPicPartReal, nPicPartInt>;
-using PTParticles = Particles<nPTPartReal, nPTPartInt>;
+using PTParticles = PicParticles;
 
 template <int NStructReal, int NStructInt>
 class Particles : public amrex::AmrParticleContainer<NStructReal, NStructInt> {
@@ -387,6 +404,7 @@ protected:
 
   amrex::Real vacuum = 0;
 
+  PusherType pusherType = PusherType::Boris;
   bool isRelativistic = false;
 
   bool isParticleLocationRandom = true;
@@ -505,9 +523,6 @@ public:
   // Non-owning pointer to the active planar discontinuity BC manager (owned by
   // Pic).
   const DiscontinuityBoundaryManager* discontinuityBC = nullptr;
-
-  // Index of the integer data.
-  static constexpr int iRecordCount_ = 1;
 
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
@@ -1613,6 +1628,8 @@ public:
   amrex::Real get_body_inject_mass() const { return bodyInjectMass; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
+  void set_pusher_type(PusherType in) { pusherType = in; }
+  void set_particle_bc(const BoxBC<ParticleBC::Type>& bcIn) { bc = bcIn; }
 
   void Write_Paraview(std::string folder = "Particles",
                       std::string particletype = "1") {

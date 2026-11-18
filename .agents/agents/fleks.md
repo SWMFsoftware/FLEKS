@@ -34,9 +34,9 @@ done directly.
 
 ## Ground rules
 
-- `Particles` out-of-line methods need explicit instantiations for **both**
-  `PicParticles` and `PTParticles` in the defining file; only
-  `src/Particles.cpp` holds whole-class instantiation.
+- `Particles` out-of-line methods need explicit instantiation for
+  `PicParticles` in the defining file (`PTParticles` aliases `PicParticles`);
+  only `src/Particles.cpp` holds whole-class instantiation.
 - Never edit `include/Constants.h` or `include/UserSource.h` — edit
   `Constants.h.orig` / `userfiles/*Source.h` and re-run `Config.pl`.
 - New `.cpp` files must be added to `SRCS` in `src/Makefile`.
