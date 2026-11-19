@@ -27,7 +27,7 @@ void ParticleTracker::set_ic(Pic& pic) {
 
   complete_parameters();
 
-  update_field(pic, ptRecordSize > 13);
+  update_field(pic, outputSpec.needGradB);
 
   for (int i = 0; i < parts.size(); ++i) {
     auto& tps = parts[i];
@@ -44,13 +44,26 @@ void ParticleTracker::set_ic(Pic& pic) {
 
     // The initial state is special. Here, we do a fake update with dt=0, and
     // write the initial state to disk.
-    bool doSave = true;
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      const MultiFab* jacPtr =
-          (ptRecordSize > 13 && !nodeJacB.empty()) ? &nodeJacB[iLev] : nullptr;
-      tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev], 0, 0,
+    constexpr bool doSave = true;
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const MultiFab* e0Ptr =
+          (!pic.useHybridPIC && pic.has_active_inductive_E0() &&
+           !pic.nodeE0[iLev].empty())
+              ? &pic.nodeE0[iLev]
+              : nullptr;
+      const MultiFab* b0Ptr =
+          (pic.use_intrinsic_B() && !pic.nodeB0[iLev].empty())
+              ? &pic.nodeB0[iLev]
+              : nullptr;
+      const MultiFab* jacPtr = (outputSpec.needGradB && !nodeJacB.empty())
+                                   ? &nodeJacB[iLev]
+                                   : nullptr;
+      tps->move_and_save_particles(iLev, pic.nodeE[iLev], e0Ptr,
+                                   pic.nodeB[iLev], b0Ptr, 0, 0,
                                    tc->get_time_si(), doSave, jacPtr);
     }
+    tps->redistribute_particles();
+
     if (tps->get_dt_save() > 0.0) {
       tps->advance_next_save();
     }
@@ -133,11 +146,13 @@ void ParticleTracker::update(Pic& pic, bool doReport, Real dtIn,
   }
 
   bool needJacobian = false;
-  for (int i = 0; i < parts.size(); ++i) {
-    if (parts[i]->is_time_to_record(tc->get_time_si(), tc->get_cycle(),
-                                    pInfo->dnSave[i])) {
-      needJacobian = true;
-      break;
+  if (outputSpec.needGradB) {
+    for (int i = 0; i < parts.size(); ++i) {
+      if (parts[i]->is_time_to_record(tc->get_time_si(), tc->get_cycle(),
+                                      pInfo->dnSave[i])) {
+        needJacobian = true;
+        break;
+      }
     }
   }
 
@@ -151,14 +166,25 @@ void ParticleTracker::update(Pic& pic, bool doReport, Real dtIn,
     bool doRecord = tps->is_time_to_record(tc->get_time_si(), tc->get_cycle(),
                                            pInfo->dnSave[i]);
 
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const MultiFab* e0Ptr =
+          (!pic.useHybridPIC && pic.has_active_inductive_E0() &&
+           !pic.nodeE0[iLev].empty())
+              ? &pic.nodeE0[iLev]
+              : nullptr;
+      const MultiFab* b0Ptr =
+          (pic.use_intrinsic_B() && !pic.nodeB0[iLev].empty())
+              ? &pic.nodeB0[iLev]
+              : nullptr;
       const MultiFab* jacPtr =
-          (ptRecordSize > 13 && !nodeJacB.empty() && doRecord) ? &nodeJacB[iLev]
-                                                               : nullptr;
-      tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev], dtStep,
-                                   nextDtStep, tc->get_time_si(), doRecord,
-                                   jacPtr);
+          (outputSpec.needGradB && !nodeJacB.empty() && doRecord)
+              ? &nodeJacB[iLev]
+              : nullptr;
+      tps->move_and_save_particles(iLev, pic.nodeE[iLev], e0Ptr,
+                                   pic.nodeB[iLev], b0Ptr, dtStep, nextDtStep,
+                                   tc->get_time_si(), doRecord, jacPtr);
     }
+    tps->redistribute_particles();
 
     if (doRecord && tps->get_dt_save() > 0.0) {
       tps->advance_next_save();
@@ -185,52 +211,33 @@ void ParticleTracker::update(Pic& pic, bool doReport, Real dtIn,
 }
 
 void ParticleTracker::update_field(Pic& pic, bool needJacobian) {
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
-                   nodeE[iLev].nGrow());
-    if (!pic.useHybridPIC && pic.has_active_inductive_E0() &&
-        !pic.nodeE0[iLev].empty()) {
-      const int nG = std::min(nodeE[iLev].nGrow(), pic.nodeE0[iLev].nGrow());
-      MultiFab::Add(nodeE[iLev], pic.nodeE0[iLev], 0, 0, nodeE[iLev].nComp(),
-                    nG);
-    }
-    MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
-                   nodeB[iLev].nGrow());
-    // The tracker pushes with the total field, so the frozen intrinsic field
-    // of the #DIPOLE / #CRUSTALFIELD commands is folded in here rather than at
-    // the gather.
-    if (pic.use_intrinsic_B() && !pic.nodeB0[iLev].empty()) {
-      MultiFab::Add(nodeB[iLev], pic.nodeB0[iLev], 0, 0, nodeB[iLev].nComp(),
-                    nodeB[iLev].nGrow());
-    }
-  }
+  if (!needJacobian || !outputSpec.needGradB)
+    return;
 
-  // If magnetic field gradient is requested AND needed this step, compute
-  // Jacobian from centerB
-  if (needJacobian && ptRecordSize > 13) {
-    if (static_cast<int>(centerBtotal.size()) < n_lev())
-      centerBtotal.resize(n_lev());
+  if (static_cast<int>(centerBtotal.size()) < n_lev())
+    centerBtotal.resize(n_lev());
 
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      // The Jacobian is the gradient of the total field too: build B1 + B0 in
-      // the scratch array and differentiate that.
-      MultiFab& centerBt = centerBtotal[iLev];
-      if (centerBt.empty()) {
-        distribute_FabArray(centerBt, boxArray(iLev), DistributionMap(iLev), 3,
-                            nodeJacB[iLev].nGrow(), false);
-      }
-      MultiFab::Copy(centerBt, pic.centerB[iLev], 0, 0, 3, 0);
-      if (pic.use_intrinsic_B() && !pic.centerB0[iLev].empty())
-        MultiFab::Add(centerBt, pic.centerB0[iLev], 0, 0, 3, 0);
-
-      jacobian_center_to_node(centerBt, nodeJacB[iLev],
-                              Geom(iLev).InvCellSize());
-      nodeJacB[iLev].FillBoundary(Geom(iLev).periodicity());
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab& centerBt = centerBtotal[iLev];
+    if (centerBt.empty()) {
+      distribute_FabArray(centerBt, boxArray(iLev), DistributionMap(iLev), 3,
+                          get_n_ghost(), false);
     }
+    const int nG = std::min(centerBt.nGrow(), pic.centerB[iLev].nGrow());
+    MultiFab::Copy(centerBt, pic.centerB[iLev], 0, 0, 3, nG);
+    if (pic.use_intrinsic_B() && !pic.centerB0[iLev].empty()) {
+      const int nGB0 = std::min(nG, pic.centerB0[iLev].nGrow());
+      MultiFab::Add(centerBt, pic.centerB0[iLev], 0, 0, 3, nGB0);
+    }
+
+    jacobian_center_to_node(centerBt, nodeJacB[iLev], Geom(iLev).InvCellSize());
+    nodeJacB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
 
 void ParticleTracker::post_process_param() {
+  outputSpec = TPOutputSpec::parse(pInfo->sOutputVars);
+
   const int nSpecies = fi->get_nS();
   Real min_dtSave = -1.0;
   for (int i = 0; i < nSpecies; ++i) {
@@ -242,14 +249,29 @@ void ParticleTracker::post_process_param() {
   }
 
   if (min_dtSave > 0.0) {
-    savectr = std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
-                                        gridID, nPTRecord * min_dtSave, -1);
+    savectr =
+        std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
+                                  gridID, pInfo->nRecordFlush * min_dtSave, -1);
   } else {
     int min_dnSave = *std::min_element(pInfo->dnSave.begin(),
                                        pInfo->dnSave.begin() + nSpecies);
-    savectr = std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
-                                        gridID, -1, nPTRecord * min_dnSave);
+    savectr =
+        std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
+                                  gridID, -1, pInfo->nRecordFlush * min_dnSave);
     savectr->set_multiple(min_dnSave);
+  }
+
+  for (auto& tps : parts) {
+    tps->set_relativistic(pInfo->isRelativistic);
+    tps->set_pusher_type(pInfo->pusherType);
+    tps->set_output_spec(outputSpec);
+  }
+}
+
+void ParticleTracker::set_particle_bcs(const ParticlesInfo& picInfo) {
+  picPInfo = picInfo;
+  for (int i = 0; i < parts.size(); ++i) {
+    parts[i]->set_particle_bc(picPInfo.particle_bc(i));
   }
 }
 
@@ -260,25 +282,21 @@ void ParticleTracker::pre_regrid() {
 }
 
 void ParticleTracker::post_regrid() {
-  if (nodeB.empty()) {
-    nodeB.resize(n_lev_max());
-  }
-  if (nodeE.empty()) {
-    nodeE.resize(n_lev_max());
-  }
-  if (ptRecordSize > 13 && nodeJacB.empty()) {
-    nodeJacB.resize(n_lev_max());
-  }
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    distribute_FabArray(nodeE[iLev], node_box_array(iLev),
-                        DistributionMap(iLev), 3, get_n_ghost(), false);
-    distribute_FabArray(nodeB[iLev], node_box_array(iLev),
-                        DistributionMap(iLev), 3, get_n_ghost(), false);
-    if (ptRecordSize > 13) {
+  if (outputSpec.needGradB) {
+    if (static_cast<int>(nodeJacB.size()) != n_lev_max()) {
+      nodeJacB.resize(n_lev_max());
+    }
+    if (static_cast<int>(centerBtotal.size()) != n_lev_max()) {
+      centerBtotal.resize(n_lev_max());
+    }
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
       distribute_FabArray(nodeJacB[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 9, get_n_ghost(), false);
+      centerBtotal[iLev].clear();
     }
+  } else {
+    nodeJacB.clear();
+    centerBtotal.clear();
   }
 
   //--------------test particles-----------------------------------
@@ -288,19 +306,22 @@ void ParticleTracker::post_regrid() {
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<TestParticles>(
           &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          gridID);
+          gridID, picPInfo);
       ptr->set_ppc(pInfo->nTPPerCell);
       ptr->set_interval(pInfo->nTPIntervalCell);
       ptr->set_particle_region(pInfo->sRegion, tpShapes);
       ptr->set_relativistic(pInfo->isRelativistic);
+      ptr->set_pusher_type(pInfo->pusherType);
+      ptr->set_output_spec(outputSpec);
       ptr->set_dt_save(pInfo->dtSave[i], tc->get_time_si());
       parts.push_back(std::move(ptr));
     }
     Print() << gridName << " pt: Number of test particle species: " << nSpecies
             << std::endl;
     Print() << gridName
-            << " pt: TPSAVE parameters (nPTRecord, ptRecordSize): " << nPTRecord
-            << ", " << ptRecordSize << std::endl;
+            << " pt: TPSAVE parameters (nRecordFlush, ptRecordSize): "
+            << pInfo->nRecordFlush << ", " << outputSpec.recordSize << " ("
+            << pusher_type_name(pInfo->pusherType) << ")" << std::endl;
     Print() << gridName << " pt: TPREGION: " << pInfo->sRegion << std::endl;
   } else {
     for (int i = 0; i < nSpecies; ++i) {
@@ -310,6 +331,12 @@ void ParticleTracker::post_regrid() {
     }
   }
   //--------------test particles-----------------------------------
+}
+
+void ParticleTracker::add_particle_count(MultiFab& cost, int iLev) {
+  for (auto& tp : parts) {
+    tp->add_particle_count(cost, iLev);
+  }
 }
 
 void ParticleTracker::set_tp_init_shapes(
@@ -372,7 +399,9 @@ void ParticleTracker::complete_parameters() {
   for (auto& tps : parts) {
     tps->set_IO_units(writer.No2OutTable("X"), writer.No2OutTable("u"),
                       writer.No2OutTable("mass"), writer.No2OutTable("B"),
-                      writer.No2OutTable("E"));
+                      writer.No2OutTable("E"), fi->get_No2SiV(),
+                      fi->get_No2SiB(), pInfo->sIOUnit);
+    tps->set_output_spec(outputSpec);
   }
 }
 

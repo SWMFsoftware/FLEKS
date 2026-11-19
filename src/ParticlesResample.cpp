@@ -1215,5 +1215,4 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
                                         long);
 
 INSTANTIATE_PARTICLES_RESAMPLE(PicParticles)
-INSTANTIATE_PARTICLES_RESAMPLE(PTParticles)
 #undef INSTANTIATE_PARTICLES_RESAMPLE

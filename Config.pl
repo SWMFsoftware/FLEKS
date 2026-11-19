@@ -202,7 +202,7 @@ foreach (@Arguments){
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
 
-die "$ERROR -tp input should be 'P', 'PB', 'PBE', or 'PBEG'.\n"
+die "$ERROR -tp input should be 'P', 'PB', 'PBE', 'PBED', or 'PBEG'.\n"
     if $NewTPSave and not exists $nTPSave{$NewTPSave};
 
 die "$ERROR -u input should use letters, numbers, or underscores.\n"

@@ -296,11 +296,6 @@ int Particles<NStructReal, NStructInt>::add_particles_cell(
           // Convert 'density changing rate' to 'density' if necessary.
           p.rdata(iqp_) = q * dt * weightScale;
 
-          if (NStructInt > iRecordCount_) {
-            // For test particle only.
-            p.idata(iRecordCount_) = 0;
-          }
-
           if (outParticles != nullptr) {
             outParticles->push_back(p);
           } else {
@@ -659,8 +654,6 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
               p.rdata(ivp_) = v[1];
               p.rdata(iwp_) = v[2];
               p.rdata(iqp_) = q;
-              if (NStructInt > iRecordCount_)
-                p.idata(iRecordCount_) = 0;
               tile.push_back(p);
 
               // Co-located electron creation: identical position and exact
@@ -689,8 +682,6 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
                   pe.rdata(ivp_) = ve[1];
                   pe.rdata(iwp_) = ve[2];
                   pe.rdata(iqp_) = -elecFrac[ie] * q;
-                  if (NStructInt > iRecordCount_)
-                    pe.idata(iRecordCount_) = 0;
                   eleTiles[ie]->push_back(pe);
 
                   ele->bodyInjectCount += 1;
@@ -722,5 +713,4 @@ void Particles<NStructReal, NStructInt>::inject_emission_shell(
                                         IntVect, const bool);
 
 INSTANTIATE_PARTICLES_INIT(PicParticles)
-INSTANTIATE_PARTICLES_INIT(PTParticles)
 #undef INSTANTIATE_PARTICLES_INIT

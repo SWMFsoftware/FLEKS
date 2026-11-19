@@ -850,7 +850,12 @@ public:
 
   void update(bool doReportIn = false);
 
-  PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
+  PicParticles *get_particle_pointer(int i) {
+    return (i >= 0 && i < static_cast<int>(parts.size())) ? parts[i].get()
+                                                          : nullptr;
+  }
+  bool use_pic() const { return usePIC; }
+  const ParticlesInfo &get_particles_info() const { return pInfo; }
   bool are_particles_initialized() const { return particlesInitialized; }
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
@@ -1261,7 +1266,8 @@ public:
   void report_load_balance(bool doReportSummary = true,
                            bool doReportDetail = false);
 
-  void calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight);
+  void calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight,
+                          ParticleTracker *pt = nullptr);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
@@ -1556,6 +1562,8 @@ public:
   }
 
   void WriteParticleQualityToParaView() {
+    if (parts.size() < 2)
+      return;
     parts[0]->calculate_particle_quality(particleQuality);
     grid.write_mf(particleQuality, finestLevel(), "particleQuality0");
     parts[1]->calculate_particle_quality(particleQuality);

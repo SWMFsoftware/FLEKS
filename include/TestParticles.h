@@ -1,42 +1,47 @@
 #ifndef _TESTPARTICLES_H_
 #define _TESTPARTICLES_H_
 
-#include "BitArray.h"
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
 #include "Particles.h"
+
+enum class TPOutputGroup : int {
+  B = 0,
+  E,
+  Drifts,
+  GradB,
+  VExB,
+  Mu,
+  Pitch,
+  Energy,
+  Gamma
+};
+
+struct TPOutputSpec {
+  int recordSize = 7;
+  bool needGradB = false;
+  std::vector<TPOutputGroup> groups;
+  std::vector<std::string> colNames;
+
+  // Parse a #TPOUTPUT variable string (presets P/PB/PBE/PBED/PBEG and/or
+  // composable tokens b, e, drifts, gradb, vexb, mu, pitch, energy, gamma).
+  // When empty, falls back to the compile-time ptRecordSize setting.
+  static TPOutputSpec parse(std::string_view spec);
+};
 
 class TestParticles : public PTParticles {
 public:
-  static constexpr int iTPt_ = 0;
-  static constexpr int iTPx_ = 1;
-  static constexpr int iTPy_ = 2;
-  static constexpr int iTPz_ = 3;
-  static constexpr int iTPu_ = 4;
-  static constexpr int iTPv_ = 5;
-  static constexpr int iTPw_ = 6;
-  static constexpr int iTPBx_ = 7;
-  static constexpr int iTPBy_ = 8;
-  static constexpr int iTPBz_ = 9;
-  static constexpr int iTPEx_ = 10;
-  static constexpr int iTPEy_ = 11;
-  static constexpr int iTPEz_ = 12;
-  // Drift velocities for PBED mode (ptRecordSize == 19)
-  static constexpr int iTPvGradBx_ = 13;
-  static constexpr int iTPvGradBy_ = 14;
-  static constexpr int iTPvGradBz_ = 15;
-  static constexpr int iTPvCurvx_ = 16;
-  static constexpr int iTPvCurvy_ = 17;
-  static constexpr int iTPvCurvz_ = 18;
-
-  // Raw gradient tensor for legacy PBEG mode (ptRecordSize == 22)
-  static constexpr int iTPdBxdx_ = 13;
-  static constexpr int iTPdBxdy_ = 14;
-  static constexpr int iTPdBxdz_ = 15;
-  static constexpr int iTPdBydx_ = 16;
-  static constexpr int iTPdBydy_ = 17;
-  static constexpr int iTPdBydz_ = 18;
-  static constexpr int iTPdBzdx_ = 19;
-  static constexpr int iTPdBzdy_ = 20;
-  static constexpr int iTPdBzdz_ = 21;
+  struct TrajEntry {
+    int cpu = 0;
+    int id = 0;
+    amrex::Real qp = 0.0;
+    bool merged = false;
+    std::vector<amrex::Real> data;
+  };
 
 private:
   static constexpr int iRegionBoundary_ = 1;
@@ -47,32 +52,30 @@ private:
 public:
   TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
                 TimeCtr* const tcIn, const int speciesID,
-                const amrex::Real charge, const amrex::Real mass, int id = 0);
+                const amrex::Real charge, const amrex::Real mass, int id = 0,
+                const ParticlesInfo& picInfo = ParticlesInfo{});
 
   ~TestParticles() = default;
 
-  inline int record_var_index(int iPart, int iVar = 0) {
-    return nPicPartReal + ptRecordSize * iPart + iVar;
-  }
-
-  // nodeBMF is the *total* magnetic field: the caller (ParticleTracker) adds
-  // the frozen intrinsic field B0 into its own copy before calling.
+  // Push and optionally record particles on level iLev without redistributing.
+  // nodeBMF is the evolved field and nodeB0MF (optional) is the frozen
+  // intrinsic field; nodeEMF and nodeE0MF (optional) behave analogously.
   void move_and_save_particles(int iLev, const amrex::MultiFab& nodeEMF,
-                               const amrex::MultiFab& nodeBMF, amrex::Real dt,
+                               const amrex::MultiFab* nodeE0MF,
+                               const amrex::MultiFab& nodeBMF,
+                               const amrex::MultiFab* nodeB0MF, amrex::Real dt,
                                amrex::Real dtNext, amrex::Real tNow,
                                bool doSave,
                                const amrex::MultiFab* nodeJacBMF = nullptr);
 
   void move_and_save_charged_particles(
-      int iLev, const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+      int iLev, const amrex::MultiFab& nodeEMF, const amrex::MultiFab* nodeE0MF,
+      const amrex::MultiFab& nodeBMF, const amrex::MultiFab* nodeB0MF,
       amrex::Real dt, amrex::Real dtNext, amrex::Real tNow, bool doSave,
       const amrex::MultiFab* nodeJacBMF = nullptr);
 
   void move_and_save_neutrals(int iLev, amrex::Real dt, amrex::Real tNow,
                               bool doSave);
-
-  void pack_particles_and_records(char* recordBuff, char* listBuff,
-                                  unsigned long long int shift);
 
   void read_test_particle_list(const amrex::Vector<std::string>& listFiles);
 
@@ -85,23 +88,19 @@ public:
 
   bool write_particles(int cycle);
 
-  unsigned long long int loop_particles(
-      std::string action = "count_record_size", char* buff = nullptr,
-      unsigned long long int sizeLimit = 0, unsigned long long int shift = 0);
+  void set_output_spec(const TPOutputSpec& spec) {
+    outputSpec = spec;
+    rebuild_col_scales();
+  }
 
-  void print_record_buffer(char* buffer, unsigned long long int nBuffer);
+  const TPOutputSpec& get_output_spec() const { return outputSpec; }
 
   void set_IO_units(amrex::Real no2outLIn, amrex::Real no2outVIn,
                     amrex::Real no2outMIn, amrex::Real no2outBIn,
-                    amrex::Real no2outEIn) {
-    no2outL = no2outLIn;
-    no2outV = no2outVIn;
-    no2outM = no2outMIn;
-    no2outB = no2outBIn;
-    no2outE = no2outEIn;
-  }
+                    amrex::Real no2outEIn, amrex::Real no2siVIn,
+                    amrex::Real no2siBIn, const std::string& ioUnitIn);
 
-  void set_interval(amrex::IntVect in) { nIntervalCell = in; };
+  void set_interval(amrex::IntVect in) { nIntervalCell = in; }
 
   void set_particle_region(std::string& sRegion,
                            amrex::Vector<std::shared_ptr<Shape> >& shapes) {
@@ -183,6 +182,16 @@ public:
   }
 
 private:
+  struct SlotStage {
+    struct Meta {
+      int cpu = 0;
+      int id = 0;
+      amrex::Real qp = 0.0;
+    };
+    std::vector<Meta> metas;
+    std::vector<amrex::Real> values;
+  };
+
   std::string outputDir;
 
   std::string printPrefix;
@@ -193,7 +202,14 @@ private:
 
   int iPartRegion = iRegionBoundary_;
 
-  amrex::Real no2outL, no2outV, no2outM, no2outB, no2outE;
+  amrex::Real no2outL = 1.0, no2outV = 1.0, no2outM = 1.0, no2outB = 1.0,
+              no2outE = 1.0;
+  amrex::Real no2siV = 1.0, no2siB = 1.0;
+  amrex::Real energyScale = 1.0, muScale = 1.0;
+  std::string ioUnit = "planet";
+
+  TPOutputSpec outputSpec = TPOutputSpec::parse("");
+  std::vector<amrex::Real> colScales;
 
   unsigned long int nInitPart;
 
@@ -204,6 +220,19 @@ private:
   amrex::Real dtSave = -1.0;
   amrex::Real tNextSave = 0.0;
 
+  // Rank-local per-OpenMP-slot append-only trajectory buffers. Decoupled from
+  // AMReX Particle structs so particle containers remain compact, segments of
+  // exited particles are preserved, and recording stays O(1) without hashing
+  // inside the particle mover; coalesce_trajectories() groups by (cpu, id) at
+  // write_particles() flush time.
+  std::vector<SlotStage> trajStages_;
+
+  void rebuild_col_scales();
+  void coalesce_trajectories(std::vector<TrajEntry>& sortedEntries);
+  void pack_particles_and_records(const std::vector<TrajEntry>& entries,
+                                  char* recordBuff, char* listBuff,
+                                  unsigned long long int shift) const;
+
   void interpolate_record_trajectory(
       amrex::Real xp, amrex::Real yp, amrex::Real zp, amrex::Real up,
       amrex::Real vp, amrex::Real wp, amrex::Real unp1, amrex::Real vnp1,
@@ -211,13 +240,6 @@ private:
       amrex::Real tNowSI, amrex::Real& tRec, amrex::Real& xRec,
       amrex::Real& yRec, amrex::Real& zRec, amrex::Real& uRec,
       amrex::Real& vRec, amrex::Real& wRec) const;
-
-  void save_particle_record(ParticleType& p, amrex::Real tRec, amrex::Real xRec,
-                            amrex::Real yRec, amrex::Real zRec,
-                            amrex::Real uRec, amrex::Real vRec,
-                            amrex::Real wRec, const amrex::Real* bp = nullptr,
-                            const amrex::Real* ep = nullptr,
-                            const amrex::Real (*gradB)[3] = nullptr);
 };
 
 #endif
