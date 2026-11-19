@@ -143,7 +143,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   const bool hasDivESolver =
       usePIC && !useHybridPIC && (solveEM || useExplicitPIC);
   const bool needEth =
-      usePIC && (solveEM || (useHybridPIC && usePredictorCorrector));
+      usePIC &&
+      (solveEM || ((useHybridPIC || useExplicitPIC) && usePredictorCorrector));
   const bool needCoMovBg =
       usePIC && !useHybridPIC &&
       (solveEM || solveFieldInCoMov || useUpwindB || useUpwindE);
@@ -478,7 +479,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 //==========================================================
 void Pic::pre_regrid() {
   if (!parts.empty()) {
-    for (size_t i = 0; i < parts.size(); ++i) {
+    for (int i = 0; i < parts.size(); ++i) {
       // Release Predictor-Corrector particle backup before regridding so
       // backupContainer_ is rebuilt with the new BoxArray/DistributionMapping
       // and its memory is freed prior to redistributing arrays/particles.
@@ -2347,7 +2348,7 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight,
       // per cell with pre-splitting), so the fine blocks at the edge of a
       // refined region got 2-3 times their cost.
       grid.cell_cost()[iLev].setVal(0.0);
-      for (size_t i = 0; i < parts.size(); i++)
+      for (int i = 0; i < parts.size(); i++)
         parts[i]->add_particle_count(grid.cell_cost()[iLev], iLev);
       if (!usePIC && pt)
         pt->add_particle_count(grid.cell_cost()[iLev], iLev);
@@ -2713,7 +2714,7 @@ void Pic::free_memory() {
 
   amrex::Arena::PrintUsage();
 
-  for (size_t i = 0; i < parts.size(); ++i) {
+  for (int i = 0; i < parts.size(); ++i) {
     parts[i]->release_particle_backup();
     amrex::Print() << "[Particles " << i << " Before ShrinkToFit]: ";
     parts[i]->PrintCapacity();

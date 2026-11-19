@@ -609,7 +609,7 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       const auto& plasma = nodePlasma;
       const int idx = extract_int(var);
       if (!plasma.empty() && idx >= 0 &&
-          idx < static_cast<int>(plasma.size()) - 1 &&
+          idx < static_cast<int>(plasma.size()) &&
           iLev < static_cast<int>(plasma[idx].size()) &&
           !plasma[idx][iLev].empty()) {
         const Array4<Real const>& arr = plasma[idx][iLev][mfi].array();

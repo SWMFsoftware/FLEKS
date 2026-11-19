@@ -146,7 +146,11 @@ void compute_nodal_grad_b(const Array4<const Real>& nodeBArr,
 
   const Real sx = dShift[ix_];
   const Real sy = dShift[iy_];
-  const Real sz = (nDim > 2) ? dShift[iz_] : 0.0;
+#if (AMREX_SPACEDIM == 3)
+  const Real sz = dShift[iz_];
+#else
+  const Real sz = 0.0;
+#endif
 
   for (int iDim = 0; iDim < nDim3; ++iDim) {
     gradB[iDim][ix_] = (((b[iDim][1][0][0] - b[iDim][0][0][0]) * (1.0 - sy) +
@@ -196,18 +200,23 @@ inline void reflect_record_at_walls(const BoxBC<ParticleBC::Type>& bc,
   }
 }
 
-void append_particle_record(std::vector<Real>& dst, const TPOutputSpec& spec,
-                            Real mass, Real charge, bool isRelativistic,
-                            Real tRec, Real xRec, Real yRec, Real zRec,
-                            Real uRec, Real vRec, Real wRec, const Real* bp,
-                            const Real* ep, const Real (*gradB)[3]) {
-  dst.push_back(tRec);
-  dst.push_back(xRec);
-  dst.push_back(yRec);
-  dst.push_back(zRec);
-  dst.push_back(uRec);
-  dst.push_back(vRec);
-  dst.push_back(wRec);
+inline void append_particle_record(std::vector<Real>& dst,
+                                   const TPOutputSpec& spec, Real mass,
+                                   Real charge, bool isRelativistic, Real tRec,
+                                   Real xRec, Real yRec, Real zRec, Real uRec,
+                                   Real vRec, Real wRec, const Real* bp,
+                                   const Real* ep, const Real (*gradB)[3]) {
+  const std::size_t off = dst.size();
+  dst.resize(off + static_cast<std::size_t>(spec.recordSize));
+  Real* out = dst.data() + off;
+
+  *out++ = tRec;
+  *out++ = xRec;
+  *out++ = yRec;
+  *out++ = zRec;
+  *out++ = uRec;
+  *out++ = vRec;
+  *out++ = wRec;
 
   if (spec.groups.empty())
     return;
@@ -233,14 +242,14 @@ void append_particle_record(std::vector<Real>& dst, const TPOutputSpec& spec,
   for (TPOutputGroup g : spec.groups) {
     switch (g) {
       case TPOutputGroup::B:
-        dst.push_back(bSafe[0]);
-        dst.push_back(bSafe[1]);
-        dst.push_back(bSafe[2]);
+        *out++ = bSafe[0];
+        *out++ = bSafe[1];
+        *out++ = bSafe[2];
         break;
       case TPOutputGroup::E:
-        dst.push_back(eSafe[0]);
-        dst.push_back(eSafe[1]);
-        dst.push_back(eSafe[2]);
+        *out++ = eSafe[0];
+        *out++ = eSafe[1];
+        *out++ = eSafe[2];
         break;
       case TPOutputGroup::Drifts:
         if (!driftsComputed) {
@@ -250,30 +259,30 @@ void append_particle_record(std::vector<Real>& dst, const TPOutputSpec& spec,
           }
           driftsComputed = true;
         }
-        dst.push_back(vGradB[0]);
-        dst.push_back(vGradB[1]);
-        dst.push_back(vGradB[2]);
-        dst.push_back(vCurv[0]);
-        dst.push_back(vCurv[1]);
-        dst.push_back(vCurv[2]);
+        *out++ = vGradB[0];
+        *out++ = vGradB[1];
+        *out++ = vGradB[2];
+        *out++ = vCurv[0];
+        *out++ = vCurv[1];
+        *out++ = vCurv[2];
         break;
       case TPOutputGroup::GradB:
         for (int iRow = 0; iRow < 3; ++iRow) {
           for (int jCol = 0; jCol < 3; ++jCol) {
-            dst.push_back(gradB ? gradB[iRow][jCol] : Real(0.0));
+            *out++ = gradB ? gradB[iRow][jCol] : Real(0.0);
           }
         }
         break;
       case TPOutputGroup::VExB:
         if (B2 > 1e-30) {
           const Real invB2 = Real(1.0) / B2;
-          dst.push_back((eSafe[1] * bSafe[2] - eSafe[2] * bSafe[1]) * invB2);
-          dst.push_back((eSafe[2] * bSafe[0] - eSafe[0] * bSafe[2]) * invB2);
-          dst.push_back((eSafe[0] * bSafe[1] - eSafe[1] * bSafe[0]) * invB2);
+          *out++ = (eSafe[1] * bSafe[2] - eSafe[2] * bSafe[1]) * invB2;
+          *out++ = (eSafe[2] * bSafe[0] - eSafe[0] * bSafe[2]) * invB2;
+          *out++ = (eSafe[0] * bSafe[1] - eSafe[1] * bSafe[0]) * invB2;
         } else {
-          dst.push_back(0.0);
-          dst.push_back(0.0);
-          dst.push_back(0.0);
+          *out++ = 0.0;
+          *out++ = 0.0;
+          *out++ = 0.0;
         }
         break;
       case TPOutputGroup::Mu: {
@@ -286,7 +295,7 @@ void append_particle_record(std::vector<Real>& dst, const TPOutputSpec& spec,
           const Real vperp2 = std::max(Real(0.0), v2 - vpar * vpar);
           muVal = Real(0.5) * mass * gamma * gamma * vperp2 * invB;
         }
-        dst.push_back(muVal);
+        *out++ = muVal;
         break;
       }
       case TPOutputGroup::Pitch: {
@@ -297,18 +306,18 @@ void append_particle_record(std::vector<Real>& dst, const TPOutputSpec& spec,
               (uRec * bSafe[0] + vRec * bSafe[1] + wRec * bSafe[2]) / denom;
           pitchCos = std::clamp(raw, Real(-1.0), Real(1.0));
         }
-        dst.push_back(pitchCos);
+        *out++ = pitchCos;
         break;
       }
       case TPOutputGroup::Energy: {
         const Real eCode =
             isRelativistic ? (mass * gamma * gamma * v2 / (gamma + Real(1.0)))
                            : (Real(0.5) * mass * v2);
-        dst.push_back(eCode);
+        *out++ = eCode;
         break;
       }
       case TPOutputGroup::Gamma:
-        dst.push_back(gamma);
+        *out++ = gamma;
         break;
     }
   }
@@ -562,24 +571,6 @@ void TestParticles::interpolate_record_trajectory(
   }
 }
 
-void TestParticles::commit_stages(const std::vector<SlotStage>& stages) {
-  const std::size_t rSize = static_cast<std::size_t>(outputSpec.recordSize);
-  for (const auto& stage : stages) {
-    const std::size_t nRec = stage.metas.size();
-    for (std::size_t k = 0; k < nRec; ++k) {
-      const auto& m = stage.metas[k];
-      auto& entry = trajMap_[pack_tp_key(m.cpu, m.id)];
-      if (entry.data.empty()) {
-        entry.cpu = m.cpu;
-        entry.id = m.id;
-        entry.qp = m.qp;
-      }
-      const Real* recPtr = &stage.values[k * rSize];
-      entry.data.insert(entry.data.end(), recPtr, recPtr + rSize);
-    }
-  }
-}
-
 //==========================================================
 void TestParticles::move_and_save_particles(
     int iLev, const MultiFab& nodeEMF, const MultiFab* nodeE0MF,
@@ -631,7 +622,18 @@ void TestParticles::move_and_save_charged_particles(
         };
       });
 
-  std::vector<SlotStage> stages(doSave ? omp_slot_count() : 0);
+  if (doSave) {
+    const int nSlots = omp_slot_count();
+    if (static_cast<int>(trajStages_.size()) < nSlots)
+      trajStages_.resize(nSlots);
+  }
+  bool hasReflectBC = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == ParticleBC::reflect || bc.hi[d] == ParticleBC::reflect) {
+      hasReflectBC = true;
+      break;
+    }
+  }
   std::atomic<bool> superluminal{ false };
 
   parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int /*ord*/) {
@@ -643,12 +645,13 @@ void TestParticles::move_and_save_charged_particles(
     const Real invDxTile[3] = { lb.invDx[0], lb.invDx[1], lb.invDx[2] };
     const PusherType pusherTile = pusherType;
     const bool isRelTile = isRelativistic;
+    const bool fastBoris = (!isRelTile && pusherTile == PusherType::Boris);
     const Real qdto2mcTile = qdto2mc;
     const Real dtLocTile = dtLoc;
     const Real dtTile = dt;
     const bool doSaveTile = doSave;
     const bool needGradB = outputSpec.needGradB;
-    SlotStage* stage = doSaveTile ? &stages[omp_slot_id()] : nullptr;
+    SlotStage* stage = doSaveTile ? &trajStages_[omp_slot_id()] : nullptr;
     MoveTallyDelta localTally;
 
     for (auto& p : particles) {
@@ -658,7 +661,11 @@ void TestParticles::move_and_save_charged_particles(
       const Real vIn[3] = { p.rdata(iup_), p.rdata(ivp_), p.rdata(iwp_) };
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
-      const Real zp = nDim > 2 ? p.pos(iz_) : 0.0;
+#if (AMREX_SPACEDIM == 3)
+      const Real zp = p.pos(iz_);
+#else
+      const Real zp = 0.0;
+#endif
 
       IntVect loIdx;
       RealVect dShift;
@@ -685,10 +692,23 @@ void TestParticles::move_and_save_charged_particles(
         ep[2] += e0p[2];
       }
 
-      Real vOut[3] = { vIn[0], vIn[1], vIn[2] };
-      if (!push_lorentz_velocity(pusherTile, isRelTile, vIn, ep, bp,
-                                 qdto2mcTile, vOut)) {
+      Real vOut[3];
+      if (fastBoris) {
+        const Real omx = qdto2mcTile * bp[0];
+        const Real omy = qdto2mcTile * bp[1];
+        const Real omz = qdto2mcTile * bp[2];
+        const Real ut = vIn[0] + qdto2mcTile * ep[0];
+        const Real vt = vIn[1] + qdto2mcTile * ep[1];
+        const Real wt = vIn[2] + qdto2mcTile * ep[2];
+        const Real electricVelocity[3] = { ut, vt, wt };
+        const Real omega[3] = { omx, omy, omz };
+        boris_push_nonrelativistic(vIn, electricVelocity, omega, vOut);
+      } else if (!push_lorentz_velocity(pusherTile, isRelTile, vIn, ep, bp,
+                                        qdto2mcTile, vOut)) {
         superluminal.store(true, std::memory_order_relaxed);
+        vOut[0] = vIn[0];
+        vOut[1] = vIn[1];
+        vOut[2] = vIn[2];
       }
 
       p.rdata(iup_) = vOut[0];
@@ -697,8 +717,9 @@ void TestParticles::move_and_save_charged_particles(
 
       p.pos(ix_) = xp + vOut[0] * dtLocTile;
       p.pos(iy_) = yp + vOut[1] * dtLocTile;
-      if (nDim > 2)
-        p.pos(iz_) = zp + vOut[2] * dtLocTile;
+#if (AMREX_SPACEDIM == 3)
+      p.pos(iz_) = zp + vOut[2] * dtLocTile;
+#endif
 
       // Apply passive boundary condition (reflect or delete; never mutates
       // PIC) before recording so reflected coordinates stay inside walls and
@@ -715,8 +736,10 @@ void TestParticles::move_and_save_charged_particles(
                                       vOut[0], vOut[1], vOut[2], dtLocTile,
                                       Real(0.5) * dtTile, tNowSI, tRec, xRec,
                                       yRec, zRec, uRec, vRec, wRec);
-        reflect_record_at_walls(bc, lb.plo, lb.phi, xRec, yRec, zRec, uRec,
-                                vRec, wRec);
+        if (hasReflectBC) {
+          reflect_record_at_walls(bc, lb.plo, lb.phi, xRec, yRec, zRec, uRec,
+                                  vRec, wRec);
+        }
 
         Real gradB[3][3] = { { 0.0 } };
         if (needGradB) {
@@ -739,9 +762,6 @@ void TestParticles::move_and_save_charged_particles(
 
   if (superluminal.load(std::memory_order_relaxed))
     Abort("Error: particle speed is fast than light!");
-
-  if (doSave)
-    commit_stages(stages);
 }
 
 //==========================================================
@@ -763,14 +783,25 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
                               cell_status(iLev)[mfi].const_array() };
       });
 
-  std::vector<SlotStage> stages(doSave ? omp_slot_count() : 0);
+  if (doSave) {
+    const int nSlots = omp_slot_count();
+    if (static_cast<int>(trajStages_.size()) < nSlots)
+      trajStages_.resize(nSlots);
+  }
+  bool hasReflectBC = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == ParticleBC::reflect || bc.hi[d] == ParticleBC::reflect) {
+      hasReflectBC = true;
+      break;
+    }
+  }
 
   parallel_for_cell_tiles(*this, iLev, [&](const auto& item, int /*ord*/) {
     const auto& ctx = fabTable[item.grid];
     auto& particles = item.ptile->GetArrayOfStructs();
     const bool doSaveTile = doSave;
     const bool isRelTile = isRelativistic;
-    SlotStage* stage = doSaveTile ? &stages[omp_slot_id()] : nullptr;
+    SlotStage* stage = doSaveTile ? &trajStages_[omp_slot_id()] : nullptr;
     MoveTallyDelta localTally;
 
     for (auto& p : particles) {
@@ -782,12 +813,17 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
       const Real wp = p.rdata(iwp_);
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
-      const Real zp = nDim > 2 ? p.pos(iz_) : 0.0;
+#if (AMREX_SPACEDIM == 3)
+      const Real zp = p.pos(iz_);
+#else
+      const Real zp = 0.0;
+#endif
 
       p.pos(ix_) = xp + up * dt;
       p.pos(iy_) = yp + vp * dt;
-      if (nDim > 2)
-        p.pos(iz_) = zp + wp * dt;
+#if (AMREX_SPACEDIM == 3)
+      p.pos(iz_) = zp + wp * dt;
+#endif
 
       if (reflect_or_delete_particle(p, ctx.status, ctx.ab, {}, {},
                                      &localTally)) {
@@ -800,8 +836,10 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
         interpolate_record_trajectory(xp, yp, zp, up, vp, wp, up, vp, wp, dt,
                                       dt, tNowSI, tRec, xRec, yRec, zRec, uRec,
                                       vRec, wRec);
-        reflect_record_at_walls(bc, lb.plo, lb.phi, xRec, yRec, zRec, uRec,
-                                vRec, wRec);
+        if (hasReflectBC) {
+          reflect_record_at_walls(bc, lb.plo, lb.phi, xRec, yRec, zRec, uRec,
+                                  vRec, wRec);
+        }
         stage->metas.push_back({ static_cast<int>(p.cpu()),
                                  static_cast<int>(p.id()), p.rdata(iqp_) });
         append_particle_record(stage->values, outputSpec, mass, charge,
@@ -810,9 +848,6 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
       }
     }
   });
-
-  if (doSave)
-    commit_stages(stages);
 }
 
 //======================================================================
@@ -895,8 +930,9 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
           p.idata(iSupID_) = pOther.idata(iSupID_);
           p.pos(ix_) = pOther.pos(ix_);
           p.pos(iy_) = pOther.pos(iy_);
-          if (nDim > 2)
-            p.pos(iz_) = pOther.pos(iz_);
+#if (AMREX_SPACEDIM == 3)
+          p.pos(iz_) = pOther.pos(iz_);
+#endif
           p.rdata(iup_) = pOther.rdata(iup_);
           p.rdata(ivp_) = pOther.rdata(ivp_);
           p.rdata(iwp_) = pOther.rdata(iwp_);
@@ -1020,6 +1056,35 @@ void TestParticles::coalesce_trajectories(
   const int nProcs = ParallelDescriptor::NProcs();
   const int myProc = ParallelDescriptor::MyProc();
   const std::size_t rSize = static_cast<std::size_t>(outputSpec.recordSize);
+  const bool backwardTime = (tc != nullptr && tc->get_dt_si() < 0.0);
+
+  std::unordered_map<std::uint64_t, TrajEntry> localMap;
+  std::size_t totalRecords = 0;
+  for (const auto& stage : trajStages_)
+    totalRecords += stage.metas.size();
+  localMap.reserve(totalRecords);
+
+  for (auto& stage : trajStages_) {
+    const std::size_t nRec = stage.metas.size();
+    for (std::size_t k = 0; k < nRec; ++k) {
+      const auto& m = stage.metas[k];
+      auto& entry = localMap[pack_tp_key(m.cpu, m.id)];
+      const Real* recPtr = &stage.values[k * rSize];
+      if (entry.data.empty()) {
+        entry.cpu = m.cpu;
+        entry.id = m.id;
+        entry.qp = m.qp;
+      } else {
+        const Real prevT = entry.data[entry.data.size() - rSize];
+        const Real curT = recPtr[0];
+        if (backwardTime ? (curT > prevT) : (curT < prevT))
+          entry.merged = true;
+      }
+      entry.data.insert(entry.data.end(), recPtr, recPtr + rSize);
+    }
+    stage.metas.clear();
+    stage.values.clear();
+  }
 
   if (nProcs > 1) {
     std::vector<std::vector<char> > sendBufs(nProcs);
@@ -1031,7 +1096,7 @@ void TestParticles::coalesce_trajectories(
       buf.insert(buf.end(), c, c + n);
     };
 
-    for (auto& kv : trajMap_) {
+    for (auto& kv : localMap) {
       TrajEntry& e = kv.second;
       if (e.data.empty())
         continue;
@@ -1109,14 +1174,13 @@ void TestParticles::coalesce_trajectories(
       off += nVals * sizeof(Real);
     }
 
-    trajMap_.swap(ownedMap);
+    localMap.swap(ownedMap);
   }
 
   sortedEntries.clear();
-  sortedEntries.reserve(trajMap_.size());
+  sortedEntries.reserve(localMap.size());
 
-  const bool backwardTime = (tc != nullptr && tc->get_dt_si() < 0.0);
-  for (auto& kv : trajMap_) {
+  for (auto& kv : localMap) {
     TrajEntry& e = kv.second;
     if (e.data.empty())
       continue;
@@ -1142,8 +1206,6 @@ void TestParticles::coalesce_trajectories(
 
     sortedEntries.push_back(std::move(e));
   }
-
-  trajMap_.clear();
 
   std::sort(sortedEntries.begin(), sortedEntries.end(),
             [](const TrajEntry& a, const TrajEntry& b) {
@@ -1289,4 +1351,9 @@ bool TestParticles::write_particles(int cycle) {
 }
 
 //======================================================================
-void TestParticles::reset_record_counter() { trajMap_.clear(); }
+void TestParticles::reset_record_counter() {
+  for (auto& stage : trajStages_) {
+    stage.metas.clear();
+    stage.values.clear();
+  }
+}

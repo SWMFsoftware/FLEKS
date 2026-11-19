@@ -220,13 +220,14 @@ private:
   amrex::Real dtSave = -1.0;
   amrex::Real tNextSave = 0.0;
 
-  // Rank-local trajectory buffer keyed by packed (cpu, id). Decoupled from
-  // AMReX Particle structs so particle containers remain compact and segments
-  // of exited particles are preserved until write_particles() flushes them.
-  std::unordered_map<std::uint64_t, TrajEntry> trajMap_;
+  // Rank-local per-OpenMP-slot append-only trajectory buffers. Decoupled from
+  // AMReX Particle structs so particle containers remain compact, segments of
+  // exited particles are preserved, and recording stays O(1) without hashing
+  // inside the particle mover; coalesce_trajectories() groups by (cpu, id) at
+  // write_particles() flush time.
+  std::vector<SlotStage> trajStages_;
 
   void rebuild_col_scales();
-  void commit_stages(const std::vector<SlotStage>& stages);
   void coalesce_trajectories(std::vector<TrajEntry>& sortedEntries);
   void pack_particles_and_records(const std::vector<TrajEntry>& entries,
                                   char* recordBuff, char* listBuff,
