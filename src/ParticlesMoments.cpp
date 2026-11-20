@@ -102,7 +102,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center_amr(
     MultiFab& netChargeMF, MultiFab& jc, MultiFab& jf, CenterMMFab& centerMM,
-    bool doNetChargeOnly, int iLev) {
+    CenterMMFab* cmmc, bool doNetChargeOnly, int iLev) {
   timing_func("Pts::sum_to_center");
 
   int finer_level = iLev + 1;
@@ -113,6 +113,23 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
   if (iLev == (n_lev() - 1)) {
     finer_level = iLev;
   }
+  const bool skipLevEdge0 = bc.has(ParticleBC::coupled);
+  IntVect skipDomLo(0), skipDomHi(0);
+  if (iLev == 0 || !skipLevEdge0) {
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+      if (!Geom(iLev).isPeriodic(d)) {
+        skipDomLo[d] =
+            (bc.lo[d] == ParticleBC::inflow || bc.lo[d] == ParticleBC::reflect)
+                ? 1
+                : 0;
+        skipDomHi[d] =
+            (bc.hi[d] == ParticleBC::inflow || bc.hi[d] == ParticleBC::reflect)
+                ? 1
+                : 0;
+      }
+    }
+  }
+
   for (int nLev = finer_level; nLev >= coarser_level; nLev--) {
     if (iLev == nLev) {
       deposit_cell_tiles_colored(
@@ -149,13 +166,10 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
               const Real cTmp = qp * invVol[iLev];
               deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
 
-              bool skipParticle = false;
-              if (n_lev() > 1) {
-                skipParticle = skip_particle_for_dive_cleaning(
-                    p.pos(), Geom(iLev), iLev, status,
-                    bc.has(ParticleBC::coupled));
-              }
-              if (!doNetChargeOnly && !skipParticle) {
+              if (!doNetChargeOnly &&
+                  !skip_particle_for_dive_cleaning(
+                      p.pos(), Geom(iLev), iLev, n_lev(), status, skipLevEdge0,
+                      skipDomLo, skipDomHi)) {
                 accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp,
                                                     mmArr);
               }
@@ -213,6 +227,10 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
           *this, nLev, 3,
           [&](const auto& item, int /*ord*/, bool strayPass) -> bool {
             Array4<Real> const& chargeArr = jc[item.grid].array();
+            const bool fillCmmc = (cmmc != nullptr && !doNetChargeOnly);
+            Array4<RealCMM> const cmmcArr =
+                fillCmmc ? (*cmmc)[item.grid].array() : Array4<RealCMM>();
+            const Box cmmcBox = fillCmmc ? (*cmmc)[item.grid].box() : Box();
             const Array4<int const>& status =
                 cell_status(nLev)[item.grid].array();
             const AoS& particles = item.ptile->GetArrayOfStructs();
@@ -250,6 +268,25 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
                 }
                 const Real cTmp = qp * invVol[iLev];
                 deposit_charge(chargeArr, loIdx, coef, cTmp, lo, hi);
+
+                if (fillCmmc &&
+                    is_in_coarse_refined_margin(p.pos(), Geom(nLev), status) &&
+                    cmmcBox.contains(loIdx) &&
+                    cmmcBox.contains(loIdx + IntVect(1))) {
+                  bool skipDom = false;
+                  const Box& dom = Geom(iLev).Domain();
+                  for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                    if (!Geom(iLev).isPeriodic(d) &&
+                        ((skipDomLo[d] && loIdx[d] < dom.smallEnd(d)) ||
+                         (skipDomHi[d] && loIdx[d] + 1 > dom.bigEnd(d)))) {
+                      skipDom = true;
+                    }
+                  }
+                  if (!skipDom) {
+                    accumulate_mass_matrix_contribution(iLev, loIdx, dShift, qp,
+                                                        cmmcArr);
+                  }
+                }
               }
             }
             return foundStray;
@@ -675,9 +712,11 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
 template void PicParticles::sum_to_center(MultiFab&, CenterMMFab&, bool, int);
 template void PTParticles::sum_to_center(MultiFab&, CenterMMFab&, bool, int);
 template void PicParticles::sum_to_center_amr(MultiFab&, MultiFab&, MultiFab&,
-                                              CenterMMFab&, bool, int);
+                                              CenterMMFab&, CenterMMFab*, bool,
+                                              int);
 template void PTParticles::sum_to_center_amr(MultiFab&, MultiFab&, MultiFab&,
-                                             CenterMMFab&, bool, int);
+                                             CenterMMFab&, CenterMMFab*, bool,
+                                             int);
 template std::array<Real, 5> PicParticles::total_moments(bool);
 template std::array<Real, 5> PTParticles::total_moments(bool);
 template Real PicParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
