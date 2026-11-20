@@ -487,6 +487,7 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
     if (jf.empty()) {
       BoxArray baf = centerB[iLev + 1].boxArray();
       baf.coarsen(refRatio(iLev));
+      baf.uniqify();
       jf.define(baf, centerB[iLev + 1].DistributionMap(), 1, 1);
     }
     jf.setVal(0.0);

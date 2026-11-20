@@ -1807,6 +1807,11 @@ void Pic::calc_mass_matrix_amr() {
       BoxArray bac = nodeB[iLev].boxArray();
       for (int i = iLev - 1; i >= 0; i--) {
         bac.coarsen(refRatio(i));
+        // Materialize coarsened boxes so AMReX BoxArray::intersections() hashes
+        // on the coarsened coordinates rather than fine boxes with crseRatio>1
+        // (avoids asymmetric CPC send/recv tags / MPI_ERR_TRUNCATE when
+        // iLev - i >= 2 and fine box widths are not divisible by 2^(iLev - i)).
+        bac.uniqify();
         if (jhc[iLev][i].empty() || jhc[iLev][i].boxArray() != bac ||
             jhc[iLev][i].DistributionMap() != nodeB[iLev].DistributionMap() ||
             jhc[iLev][i].nGrow() != nGst || nmmc[iLev][i].empty() ||
@@ -1848,6 +1853,7 @@ void Pic::calc_mass_matrix_amr() {
       BoxArray bac = nodeB[iLev].boxArray();
       for (int i = iLev - 1; i >= 0; i--) {
         bac.coarsen(refRatio(i));
+        bac.uniqify();
         jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, nGst);
         nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
                              nodeMM[iLev].nComp(), nGst);
