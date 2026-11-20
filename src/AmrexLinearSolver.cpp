@@ -393,6 +393,26 @@ void AmrexDivESolver::ensure_mask() {
   if (m_pic->use_body() && !m_pic->is_body_insulating()) {
     mask_body(m_dotMask, m_pic->cell_status(m_iLev));
   }
+
+  if (m_iLev < static_cast<int>(m_pic->centerMM.size()) &&
+      !m_pic->centerMM[m_iLev].empty()) {
+#if (AMREX_SPACEDIM == 2)
+    constexpr int centerGp = 4;
+#else
+    constexpr int centerGp = 13;
+#endif
+    for (MFIter mfi(m_dotMask, doTiling); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.tilebox();
+      const Array4<int>& mskArr = m_dotMask[mfi].array();
+      const Array4<RealCMM const>& mmArr =
+          m_pic->centerMM[m_iLev][mfi].const_array();
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (std::abs(mmArr(i, j, k)[centerGp]) == 0.0) {
+          mskArr(i, j, k) = 0;
+        }
+      });
+    }
+  }
 }
 
 void AmrexDivESolver::mask_inactive_cells(MultiFab& mf) const {

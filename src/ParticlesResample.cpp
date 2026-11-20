@@ -1,8 +1,13 @@
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdlib>
+#include <vector>
 
 #include <AMReX_ParReduce.H>
 
 #include "GpuBackend.h"
+#include "GridUtility.h"
 #include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
@@ -11,6 +16,510 @@
 #include "Utility.h"
 
 using namespace amrex;
+
+namespace {
+
+Real compute_symmetric_split_alpha(Real xp, Real yp, Real zp, Real dpx,
+                                   Real dpy, Real dpz, Real xMin, Real xMax,
+                                   Real yMin, Real yMax, Real zMin,
+                                   Real zMax) noexcept {
+  Real alpha = 1.0;
+  if (std::abs(dpx) > 0.0)
+    alpha = std::min(
+        { alpha, (xp - xMin) / std::abs(dpx), (xMax - xp) / std::abs(dpx) });
+  if (std::abs(dpy) > 0.0)
+    alpha = std::min(
+        { alpha, (yp - yMin) / std::abs(dpy), (yMax - yp) / std::abs(dpy) });
+  if (nDim > 2 && std::abs(dpz) > 0.0)
+    alpha = std::min(
+        { alpha, (zp - zMin) / std::abs(dpz), (zMax - zp) / std::abs(dpz) });
+  return std::max(Real(0.0), alpha);
+}
+
+/**
+ * @brief Validate 6D spread and solve the 5-constraint conservation weights
+ * when combining @p nPartCombine particles into @p nPartNew particles.
+ */
+template <typename AoS>
+bool solve_accurate_merge_group(const AoS& particles, const RealVect& invDxLev,
+                                Real velNorm, int iUp, int iQp,
+                                Vector<int>& idx_I, int nPartCombine,
+                                int nPartNew, Real maxDist, Vector<Real>& x) {
+  constexpr int nVar = 5;
+  constexpr int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
+  const Real coefVel = 1, coefPos = 1;
+
+  Vector<Real> middle(nDim + nDim3, 0);
+  for (int pID : idx_I) {
+    for (int iDir = 0; iDir < nDim; ++iDir)
+      middle[iDir] += particles[pID].pos(iDir);
+    for (int iDir = 0; iDir < nDim3; ++iDir)
+      middle[nDim + iDir] += particles[pID].rdata(iUp + iDir);
+  }
+  for (int i = 0; i < middle.size(); ++i) {
+    middle[i] /= nPartCombine;
+  }
+
+  for (int pID : idx_I) {
+    Real dl2 = 0, dvel2 = 0;
+    for (int iDir = 0; iDir < nDim; ++iDir) {
+      const Real d = (particles[pID].pos(iDir) - middle[iDir]) * invDxLev[iDir];
+      dl2 += d * d;
+    }
+    for (int iDir = 0; iDir < nDim3; ++iDir) {
+      const Real d =
+          (particles[pID].rdata(iUp + iDir) - middle[nDim + iDir]) * velNorm;
+      dvel2 += d * d;
+    }
+    if (sqrt(coefPos * dl2 + coefVel * dvel2) > maxDist) {
+      return false;
+    }
+  }
+
+  // Find the pair that is closest to each other in phase space.
+  int pair1 = 0, pair2 = 0;
+  Real dis2Min = 1e30;
+  for (int ip1 = 0; ip1 < nPartCombine - 1; ++ip1) {
+    for (int ip2 = ip1 + 1; ip2 < nPartCombine; ++ip2) {
+      Real dl2 = 0, dv2 = 0;
+      for (int iDir = 0; iDir < nDim; ++iDir) {
+        const Real d = invDxLev[iDir] * (particles[idx_I[ip1]].pos(iDir) -
+                                         particles[idx_I[ip2]].pos(iDir));
+        dl2 += d * d;
+      }
+      for (int iDir = 0; iDir < nDim3; ++iDir) {
+        const Real d = velNorm * (particles[idx_I[ip1]].rdata(iUp + iDir) -
+                                  particles[idx_I[ip2]].rdata(iUp + iDir));
+        dv2 += d * d;
+      }
+
+      const Real dis2 = dv2 * coefVel + dl2 * coefPos;
+      if (dis2 < dis2Min) {
+        dis2Min = dis2;
+        pair1 = ip1;
+        pair2 = ip2;
+      }
+    }
+  }
+
+  // Delete the lighter one.
+  int iPartDel = pair1;
+  // Compare with (1 + 1e-9) margin so equal-weight pairs remain deterministic
+  // under roundoff.
+  if (fabs(particles[idx_I[pair1]].rdata(iQp)) >
+      (1 + 1e-9) * fabs(particles[idx_I[pair2]].rdata(iQp))) {
+    iPartDel = pair2;
+  }
+  std::swap(idx_I[iPartDel], idx_I[nPartCombine - 1]);
+
+  Vector<Real> ref(nVar, 0);
+  Array2D<Real, 0, nVar - 1, 0, nVar> a;
+  for (int i = 0; i < nVar; ++i) {
+    for (int j = 0; j < nVar + 1; ++j) {
+      a(i, j) = 0;
+    }
+  }
+
+  for (int ip = 0; ip < nPartCombine; ++ip) {
+    const Real qp = particles[idx_I[ip]].rdata(iQp);
+    const Real up = particles[idx_I[ip]].rdata(iUp);
+    const Real vp = particles[idx_I[ip]].rdata(iUp + 1);
+    const Real wp = particles[idx_I[ip]].rdata(iUp + 2);
+    const Real v2 = up * up + vp * vp + wp * wp;
+
+    if (ip < nVar) {
+      a(iq_, ip) = 1;
+      a(iu_, ip) = up;
+      a(iv_, ip) = vp;
+      a(iw_, ip) = wp;
+      a(ie_, ip) = v2;
+    }
+
+    a(iq_, nVar) += qp;
+    a(iu_, nVar) += qp * up;
+    a(iv_, nVar) += qp * vp;
+    a(iw_, nVar) += qp * wp;
+    a(ie_, nVar) += qp * v2;
+  }
+
+  const Real csmall = 1e-9;
+  const Real tmp = csmall * fabs(1. / a(iq_, nVar));
+  for (int i = iq_; i <= ie_; ++i) {
+    // Ensure a strictly positive threshold so constraint rows with zero RHS and
+    // zero coefficients (e.g., vz = 0 in 1D/2D) are flagged as singular,
+    // preventing near-zero pivots or 0/0 NaNs in the weights.
+    ref[i] = std::max(fabs(a(i, nVar) * tmp), csmall * tmp);
+  }
+
+  x.resize(nVar, 0);
+  bool isSolved = linear_solver_Gauss_Elimination<Real, nVar, nVar + 1>(
+      nVar, nVar + 1, a, x, ref);
+
+  if (isSolved) {
+    // All the particle weights should be finite and have the same sign.
+    const Real qt = x[0];
+    for (int ip = 0; ip < nPartNew; ++ip) {
+      if (!std::isfinite(x[ip]) || qt * x[ip] <= 0) {
+        isSolved = false;
+        break;
+      }
+    }
+  }
+
+  return isSolved;
+}
+
+template <typename AoS>
+void compute_live_vel_stats(const AoS& particles,
+                            const std::vector<bool>* alive, int nPartLive,
+                            int iUp, Real (&uBulk)[nDim3], Real& thVel,
+                            Real& velNorm) {
+  const int nPartOrig = static_cast<int>(particles.size());
+  for (int iDir = 0; iDir < nDim3; ++iDir) {
+    uBulk[iDir] = 0.0;
+  }
+  for (int pid = 0; pid < nPartOrig; ++pid) {
+    if (alive != nullptr && !(*alive)[pid])
+      continue;
+    const auto& pcl = particles[pid];
+    for (int iDir = 0; iDir < nDim3; ++iDir) {
+      uBulk[iDir] += pcl.rdata(iUp + iDir);
+    }
+  }
+  for (int iDir = 0; iDir < nDim3; ++iDir) {
+    uBulk[iDir] /= nPartLive;
+  }
+
+  Real thVel2 = 0.0;
+  for (int pid = 0; pid < nPartOrig; ++pid) {
+    if (alive != nullptr && !(*alive)[pid])
+      continue;
+    const auto& pcl = particles[pid];
+    for (int iDir = 0; iDir < nDim3; ++iDir) {
+      const Real dv = pcl.rdata(iUp + iDir) - uBulk[iDir];
+      thVel2 += dv * dv;
+    }
+  }
+  thVel2 /= nPartLive;
+  thVel = sqrt(thVel2);
+  velNorm = (thVel < 1e-13) ? Real(0.0) : Real(1.0) / (Real(0.5) * thVel);
+}
+
+/**
+ * @brief Bin particles into overlapping 3D velocity cells around the
+ * bulk and thermal velocity.
+ */
+template <typename AoS, typename Rand>
+void build_velocity_bins(const AoS& particles, int nPartLive, Real r0,
+                         int nCell, Real velBinBufferSize, Rand& localRng,
+                         Real& velNormOut, Vector<Vector<int> >& phasePartIdx_I,
+                         int iUp) {
+  const int nPartOrig = static_cast<int>(particles.size());
+  Real uBulk[nDim3] = { 0, 0, 0 };
+  Real thVel = 0.0;
+  compute_live_vel_stats(particles, nullptr, nPartLive, iUp, uBulk, thVel,
+                         velNormOut);
+
+  phasePartIdx_I.assign(nCell * nCell * nCell, Vector<int>{});
+  const auto bin_index = [nCell](int i, int j, int k) {
+    return (i * nCell + j) * nCell + k;
+  };
+
+  const Real dv = (Real(2.0) * r0 * thVel) / nCell;
+  const Real invDv = (dv < 1e-13) ? Real(0.0) : Real(1.0) / dv;
+
+  Real velMin_D[nDim3], velMax_D[nDim3];
+  for (int iDir = 0; iDir < nDim3; ++iDir) {
+    const Real dvshift = (localRng() - 0.5) * dv;
+    velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
+    velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
+  }
+
+  int iCell_D[nDim3];
+  for (int pid = 0; pid < nPartOrig; ++pid) {
+    const auto& pcl = particles[pid];
+
+    bool isOutside = false;
+    for (int iDim = 0; iDim < nDim3; ++iDim) {
+      const Real v = pcl.rdata(iUp + iDim);
+      if (v < velMin_D[iDim] || v > velMax_D[iDim])
+        isOutside = true;
+    }
+    if (isOutside)
+      continue;
+
+    for (int iDim = 0; iDim < nDim3; ++iDim) {
+      iCell_D[iDim] = std::clamp(
+          fastfloor((pcl.rdata(iUp + iDim) - velMin_D[iDim]) * invDv), 0,
+          nCell - 1);
+    }
+
+    // One particle may belong to multiple bins when each bin has a buffer.
+    for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; ++xCell) {
+      for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; ++yCell) {
+        for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1; ++zCell) {
+          if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
+              zCell < 0 || zCell >= nCell)
+            continue;
+
+          const int cellIdx[nDim3] = { xCell, yCell, zCell };
+          bool isInside = true;
+          for (int iDim = 0; iDim < nDim3; ++iDim) {
+            const Real binMin =
+                velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
+            const Real binMax =
+                velMin_D[iDim] + (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+            const Real v = pcl.rdata(iUp + iDim);
+            if (v < binMin || v > binMax)
+              isInside = false;
+          }
+
+          if (isInside) {
+            phasePartIdx_I[bin_index(xCell, yCell, zCell)].push_back(pid);
+          }
+        }
+      }
+    }
+  }
+}
+
+#if (AMREX_SPACEDIM == 3)
+/**
+ * @brief Reduce overloaded cells (nPartLive > reliefGoal) via 13 -> 12
+ * CIC-octant merges that conserve all 8 trilinear cell-charge weights
+ * (preserving Gauss's law), 3 momenta, and kinetic energy to machine precision.
+ */
+template <typename AoS>
+void merge_overload_cic_octant(AoS& particles, const Real* const plo,
+                               const Real* const invDxCell,
+                               const RealVect& invDxLev, const IntVect& cell,
+                               int reliefGoal, std::vector<bool>& alive,
+                               int& nPartLive, int iUp, int iQp) {
+  constexpr int nGroup = 13;
+  constexpr int nKeep = 12;
+
+  const int nPartOrig = static_cast<int>(particles.size());
+  std::array<Vector<int>, 8> octBins;
+  std::vector<std::array<Real, 8> > w8Cache(nPartOrig);
+
+  for (int pid = 0; pid < nPartOrig; ++pid) {
+    if (!alive[pid])
+      continue;
+    IntVect loIdx;
+    RealVect dShift;
+    Real coef[2][2][2];
+    find_cell_interpolation(particles[pid].pos(), plo, invDxCell, loIdx, dShift,
+                            coef);
+    const int ox = loIdx[ix_] - cell[ix_] + 1;
+    const int oy = loIdx[iy_] - cell[iy_] + 1;
+    const int oz = loIdx[iz_] - cell[iz_] + 1;
+    if (ox < 0 || ox > 1 || oy < 0 || oy > 1 || oz < 0 || oz > 1)
+      continue;
+
+    auto& w8 = w8Cache[pid];
+    for (int ix = 0; ix < 2; ++ix) {
+      for (int iy = 0; iy < 2; ++iy) {
+        for (int iz = 0; iz < 2; ++iz) {
+          w8[(ix * 2 + iy) * 2 + iz] = coef[ix][iy][iz];
+        }
+      }
+    }
+    octBins[(ox * 2 + oy) * 2 + oz].push_back(pid);
+  }
+
+  for (int outerPass = 0; outerPass < 5 && nPartLive > reliefGoal;
+       ++outerPass) {
+    Real uBulk[nDim3] = { 0, 0, 0 };
+    Real thVel = 0.0;
+    Real velNorm = 0.0;
+    compute_live_vel_stats(particles, &alive, nPartLive, iUp, uBulk, thVel,
+                           velNorm);
+    if (velNorm <= Real(0.0))
+      break;
+
+    std::vector<bool> skippedSeed(nPartOrig, false);
+    int mergesInPass = 0;
+
+    for (int oct = 0; oct < 8 && nPartLive > reliefGoal; ++oct) {
+      const auto& bin = octBins[oct];
+      while (nPartLive > reliefGoal) {
+        Vector<int> partIdx;
+        int seedPid = -1;
+        for (int pid : bin) {
+          if (alive[pid]) {
+            partIdx.push_back(pid);
+            if (seedPid < 0 && !skippedSeed[pid]) {
+              seedPid = pid;
+            }
+          }
+        }
+        if (static_cast<int>(partIdx.size()) < nGroup || seedPid < 0)
+          break;
+
+        auto phase_dist2 = [&](int pidA, int pidB) {
+          Real dl2 = 0.0, dv2 = 0.0;
+          for (int iDir = 0; iDir < nDim; ++iDir) {
+            const Real d =
+                (particles[pidA].pos(iDir) - particles[pidB].pos(iDir)) *
+                invDxLev[iDir];
+            dl2 += d * d;
+          }
+          for (int iDir = 0; iDir < nDim3; ++iDir) {
+            const Real d = (particles[pidA].rdata(iUp + iDir) -
+                            particles[pidB].rdata(iUp + iDir)) *
+                           velNorm;
+            dv2 += d * d;
+          }
+          return Real(4.0) * dl2 + dv2;
+        };
+
+        std::partial_sort(partIdx.begin(), partIdx.begin() + nGroup,
+                          partIdx.end(), [&](int idl, int idr) {
+                            const Real dll = phase_dist2(idl, seedPid);
+                            const Real dlr = phase_dist2(idr, seedPid);
+                            if (fabs(dll - dlr) > 1e-9 * (dll + dlr)) {
+                              return dll < dlr;
+                            }
+                            return idl < idr;
+                          });
+
+        std::array<int, nGroup> idx13;
+        for (int ip = 0; ip < nGroup; ++ip) {
+          idx13[ip] = partIdx[ip];
+        }
+
+        int pair1 = 0, pair2 = 1;
+        Real dis2Min = 1e30;
+        for (int ip1 = 0; ip1 < nGroup - 1; ++ip1) {
+          for (int ip2 = ip1 + 1; ip2 < nGroup; ++ip2) {
+            const Real dis2 = phase_dist2(idx13[ip1], idx13[ip2]);
+            if (dis2 < dis2Min) {
+              dis2Min = dis2;
+              pair1 = ip1;
+              pair2 = ip2;
+            }
+          }
+        }
+
+        int iPartDel = pair1;
+        if (fabs(particles[idx13[pair1]].rdata(iQp)) >
+            (1 + 1e-9) * fabs(particles[idx13[pair2]].rdata(iQp))) {
+          iPartDel = pair2;
+        }
+        std::swap(idx13[iPartDel], idx13[nKeep]);
+
+        Real qSum = 0.0;
+        for (int ip = 0; ip < nGroup; ++ip) {
+          qSum += particles[idx13[ip]].rdata(iQp);
+        }
+        if (fabs(qSum) == Real(0.0)) {
+          skippedSeed[seedPid] = true;
+          continue;
+        }
+
+        Real vRef[3] = { 0.0, 0.0, 0.0 };
+        for (int ip = 0; ip < nKeep; ++ip) {
+          for (int d = 0; d < 3; ++d) {
+            vRef[d] += particles[idx13[ip]].rdata(iUp + d);
+          }
+        }
+        for (int d = 0; d < 3; ++d) {
+          vRef[d] /= static_cast<Real>(nKeep);
+        }
+
+        Array2D<Real, 0, nKeep - 1, 0, nKeep> a, aOrig;
+        for (int r = 0; r < nKeep; ++r) {
+          for (int c = 0; c <= nKeep; ++c) {
+            a(r, c) = 0.0;
+            aOrig(r, c) = 0.0;
+          }
+        }
+
+        for (int ip = 0; ip < nGroup; ++ip) {
+          const int pid = idx13[ip];
+          const Real yn = particles[pid].rdata(iQp) / qSum;
+          Real vec[nKeep];
+          for (int m = 0; m < 8; ++m) {
+            vec[m] = w8Cache[pid][m];
+          }
+          const Real du = (particles[pid].rdata(iUp) - vRef[0]) * velNorm;
+          const Real dv = (particles[pid].rdata(iUp + 1) - vRef[1]) * velNorm;
+          const Real dw = (particles[pid].rdata(iUp + 2) - vRef[2]) * velNorm;
+          vec[8] = du;
+          vec[9] = dv;
+          vec[10] = dw;
+          vec[11] = du * du + dv * dv + dw * dw;
+
+          for (int r = 0; r < nKeep; ++r) {
+            if (ip < nKeep) {
+              a(r, ip) = vec[r];
+              aOrig(r, ip) = vec[r];
+            }
+            a(r, nKeep) += yn * vec[r];
+            aOrig(r, nKeep) += yn * vec[r];
+          }
+        }
+
+        Vector<Real> ref(nKeep, Real(1e-10));
+        Vector<Real> ySol(nKeep, 0.0);
+        bool isSolved = linear_solver_Gauss_Elimination<Real, nKeep, nKeep + 1>(
+            nKeep, nKeep + 1, a, ySol, ref);
+
+        if (isSolved) {
+          for (int ip = 0; ip < nKeep; ++ip) {
+            if (!std::isfinite(ySol[ip]) || ySol[ip] <= Real(0.0)) {
+              isSolved = false;
+              break;
+            }
+          }
+        }
+        if (isSolved) {
+          for (int r = 0; r < nKeep; ++r) {
+            Real sum = 0.0;
+            for (int ip = 0; ip < nKeep; ++ip) {
+              sum += aOrig(r, ip) * ySol[ip];
+            }
+            if (!std::isfinite(sum) ||
+                fabs(sum - aOrig(r, nKeep)) > Real(1e-9)) {
+              isSolved = false;
+              break;
+            }
+          }
+        }
+        if (isSolved) {
+          for (int ip = 0; ip < nKeep; ++ip) {
+            const Real xNew = ySol[ip] * qSum;
+            const Real absNew = fabs(xNew);
+            const Real absOld = fabs(particles[idx13[ip]].rdata(iQp));
+            if (absNew > Real(4.0) * absOld || absNew < Real(0.15) * absOld) {
+              isSolved = false;
+              break;
+            }
+          }
+        }
+
+        if (!isSolved) {
+          skippedSeed[seedPid] = true;
+          continue;
+        }
+
+        for (int ip = 0; ip < nKeep; ++ip) {
+          particles[idx13[ip]].rdata(iQp) = ySol[ip] * qSum;
+        }
+        particles[idx13[nKeep]].id() = -1;
+        particles[idx13[nKeep]].rdata(iQp) = 0.0;
+        alive[idx13[nKeep]] = false;
+        --nPartLive;
+        ++mergesInPass;
+      }
+    }
+    if (mergesInPass == 0)
+      break;
+  }
+}
+#endif
+
+} // namespace
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
@@ -53,9 +562,9 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
         if (target <= 0)
           return;
         avg = totalMass / target;
-        // Pre-splitting spreads the fragments over the cell; with #CONSTANTPPV
-        // they stay close (a large shift can leave the domain).
-        dl = (isPPVconstant && !isFake2D)
+        // Pre-splitting and #CONSTANTPPV keep charged fragments localized
+        // inside their cell while strictly preserving center of charge.
+        dl = (isPPVconstant || !is_neutral())
                  ? 0.1 * Geom(iLev).CellSize()[ix_] /
                        std::max(1.0, std::cbrt(static_cast<Real>(target)))
                  : 4.0 * Geom(iLev).CellSize()[ix_] /
@@ -128,15 +637,18 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
             Real coef = (u2 < 1e-13) ? 0.0 : dl / sqrt(u2);
             const Real dpx = coef * up1;
             const Real dpy = coef * vp1;
-            const Real dpz = coef * wp1;
+            const Real dpz = (nDim > 2) ? coef * wp1 : Real(0.0);
+            const Real alpha = compute_symmetric_split_alpha(
+                xp1, yp1, zp1, dpx, dpy, dpz, xMin, xMax, yMin, yMax, zMin,
+                zMax);
 
-            Real xp2 = std::clamp(xp1 + dpx, xMin, xMax);
-            Real yp2 = std::clamp(yp1 + dpy, yMin, yMax);
-            Real zp2 = std::clamp(zp1 + dpz, zMin, zMax);
+            Real xp2 = std::clamp(xp1 + alpha * dpx, xMin, xMax);
+            Real yp2 = std::clamp(yp1 + alpha * dpy, yMin, yMax);
+            Real zp2 = std::clamp(zp1 + alpha * dpz, zMin, zMax);
 
-            xp1 = std::clamp(xp1 - dpx, xMin, xMax);
-            yp1 = std::clamp(yp1 - dpy, yMin, yMax);
-            zp1 = std::clamp(zp1 - dpz, zMin, zMax);
+            xp1 = std::clamp(xp1 - alpha * dpx, xMin, xMax);
+            yp1 = std::clamp(yp1 - alpha * dpy, yMin, yMax);
+            zp1 = std::clamp(zp1 - alpha * dpz, zMin, zMax);
 
             p.pos(ix_) = xp1;
             p.pos(iy_) = yp1;
@@ -548,6 +1060,11 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
         }
         split_particles_by_velocity(pold, newparticles, &localRng, false);
       } else {
+        const bool isPreSplitCollar =
+            usePreSplitting && doPreSplitting && (nGoal > nInitial);
+        const Real wTarget = isPreSplitCollar
+                                 ? (totalMass / static_cast<Real>(nGoal))
+                                 : Real(0.0);
         for (int ip = 0; ip < nSplit; ip++) {
           auto& p = particles[ip];
           Real qp1 = p.rdata(iqp_);
@@ -558,43 +1075,66 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
           Real vp1 = p.rdata(ivp_);
           Real wp1 = p.rdata(iwp_);
 
-          const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+          Real hdpx = Real(0.0);
+          Real hdpy = Real(0.0);
+          Real hdpz = Real(0.0);
+          bool usedAxisPreSplit = false;
+          if (isPreSplitCollar && !is_neutral() && wTarget > Real(0.0)) {
+            const Real wRatio = fabs(qp1) / wTarget;
+            if (wRatio > Real(1.4)) {
+              const int nActiveDim = (nDim > 2 && !isFake2D) ? 3 : 2;
+              const int stage =
+                  std::max(1, static_cast<int>(std::lround(std::log2(wRatio))));
+              const int splitDir = (stage - 1) % nActiveDim;
+              const Real halfSpan =
+                  Real(0.25) * Geom(iLev).CellSize()[splitDir];
+              hdpx = (splitDir == ix_) ? halfSpan : Real(0.0);
+              hdpy = (splitDir == iy_) ? halfSpan : Real(0.0);
+              hdpz = (nDim > 2 && splitDir == iz_) ? halfSpan : Real(0.0);
+              usedAxisPreSplit = true;
+            }
+          }
+          if (!usedAxisPreSplit) {
+            const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+            const Real coef = (u2 < 1e-13) ? 0.0 : dl / sqrt(u2);
+            hdpx = Real(0.5) * coef * up1;
+            hdpy = Real(0.5) * coef * vp1;
+            hdpz = (nDim > 2) ? Real(0.5) * coef * wp1 : Real(0.0);
+          }
 
-          Real coef = (u2 < 1e-13) ? 0.0 : dl / sqrt(u2);
-          const Real dpx = coef * up1;
-          const Real dpy = coef * vp1;
-          const Real dpz = coef * wp1;
-
-          Real xp2 = xp1 + dpx;
-          Real yp2 = yp1 + dpy;
-          Real zp2 = zp1 + dpz;
+          Real xp2 = xp1;
+          Real yp2 = yp1;
+          Real zp2 = zp1;
 
           int nNew = is_neutral() ? 7 : 1;
           p.rdata(iqp_) = qp1 / (nNew + 1.0);
 
+          if (!is_neutral()) {
+            const Real alpha = compute_symmetric_split_alpha(
+                xp1, yp1, zp1, hdpx, hdpy, hdpz, xMin, xMax, yMin, yMax, zMin,
+                zMax);
+            xp2 = std::clamp(xp1 + alpha * hdpx, xMin, xMax);
+            yp2 = std::clamp(yp1 + alpha * hdpy, yMin, yMax);
+            zp2 = std::clamp(zp1 + alpha * hdpz, zMin, zMax);
+
+            xp1 = std::clamp(xp1 - alpha * hdpx, xMin, xMax);
+            yp1 = std::clamp(yp1 - alpha * hdpy, yMin, yMax);
+            zp1 = std::clamp(zp1 - alpha * hdpz, zMin, zMax);
+            p.pos(ix_) = xp1;
+            p.pos(iy_) = yp1;
+            if (nDim > 2)
+              p.pos(iz_) = zp1;
+          }
+
           for (int iNew = 0; iNew < nNew; iNew++) {
             if (is_neutral()) {
-              xp2 = xp1 + (xMax - xMin) * (localRng() - 0.5);
-              yp2 = yp1 + (yMax - yMin) * (localRng() - 0.5);
-              zp2 = zp1 + (zMax - zMin) * (localRng() - 0.5);
-            } else {
-              xp1 -= dpx;
-              yp1 -= dpy;
-              zp1 -= dpz;
-
-              xp1 = std::clamp(xp1, xMin, xMax);
-              yp1 = std::clamp(yp1, yMin, yMax);
-              zp1 = std::clamp(zp1, zMin, zMax);
-              p.pos(ix_) = xp1;
-              p.pos(iy_) = yp1;
-
-              if (nDim > 2)
-                p.pos(iz_) = zp1;
+              xp2 = std::clamp(xp1 + (xMax - xMin) * (localRng() - 0.5), xMin,
+                               xMax);
+              yp2 = std::clamp(yp1 + (yMax - yMin) * (localRng() - 0.5), yMin,
+                               yMax);
+              zp2 = std::clamp(zp1 + (zMax - zMin) * (localRng() - 0.5), zMin,
+                               zMax);
             }
-
-            xp2 = std::clamp(xp2, xMin, xMax);
-            yp2 = std::clamp(yp2, yMin, yMax);
-            zp2 = std::clamp(zp2, zMin, zMax);
 
             // NOTE: Initializing via make_particle() matches legacy behavior.
             // Copying parent particle metadata (pnew = p) preserves PT
@@ -636,16 +1176,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
     int nPartCombine, int nPartNew, Vector<Real>& x, Real velNorm) {
   timing_func("Pts::merge_particles_accurate");
 
-  constexpr int nVar = 5;
-  constexpr int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
   const Real coefVel = 1, coefPos = 1;
-
-  Vector<Real> ref(nVar, 0);
-  Array2D<Real, 0, nVar - 1, 0, nVar> a;
-  for (int i = 0; i < nVar; ++i)
-    for (int j = 0; j < nVar + 1; ++j) {
-      a(i, j) = 0;
-    }
 
   // Find the center of the particles, and sort the particles based
   // on its distance to the 6-D center.
@@ -701,120 +1232,9 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
     idx_I[ip] = partIdx[ip];
   }
 
-  // Calculate the center of the particles for combination
-  for (int i = 0; i < middle.size(); ++i) {
-    middle[i] = 0;
-  }
-  for (int pID : idx_I) {
-    for (int iDir = 0; iDir < nDim; iDir++)
-      middle[iDir] += particles[pID].pos(iDir);
-    for (int iDir = 0; iDir < nDim3; iDir++)
-      middle[nDim + iDir] += particles[pID].rdata(iup_ + iDir);
-  }
-  for (int i = 0; i < middle.size(); ++i) {
-    middle[i] /= nPartCombine;
-  }
-
-  bool doCombine = true;
-  for (int pID : idx_I) {
-    Real distance = sqrt(calc_distance2_to_center(pID));
-    if (distance > mergeThresholdDistance) {
-      doCombine = false;
-    }
-  }
-
-  if (!doCombine)
-    return false;
-
-  // Find the pair that is closest to each other in phase space
-  int pair1 = 0, pair2 = 0;
-  Real dis2Min = 1e30;
-  for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
-    for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
-
-      // Distance between two particles in phase space.
-      Real dl2 = 0, dv2 = 0;
-      for (int iDir = 0; iDir < nDim; iDir++) {
-        Real dx = invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
-                                       particles[idx_I[ip2]].pos(iDir));
-        dl2 += dx * dx;
-      }
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        Real dv = velNorm * (particles[idx_I[ip1]].rdata(iup_ + iDir) -
-                             particles[idx_I[ip2]].rdata(iup_ + iDir));
-        dv2 += dv * dv;
-      }
-
-      const Real dis2 = dv2 * coefVel + dl2 * coefPos;
-
-      if (dis2 < dis2Min) {
-        dis2Min = dis2;
-        pair1 = ip1;
-        pair2 = ip2;
-      }
-    }
-  //-------------------------------
-
-  // Delete the lighter one.
-  int iPartDel = pair1;
-  // Q: Why is it 'l>(1+1e-9)*r' instead of 'l>r'?
-  // A: The particle weights can be the same for some cases. 'l>r'
-  // may return random results due to the truncation error.
-  if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
-      (1 + 1e-9) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
-    iPartDel = pair2;
-  }
-
-  std::swap(idx_I[iPartDel], idx_I[nPartCombine - 1]);
-
-  //-----------Solve the new particle weights-------
-  for (int ip = 0; ip < nPartCombine; ip++) {
-    const Real qp = particles[idx_I[ip]].rdata(iqp_);
-    const Real up = particles[idx_I[ip]].rdata(iup_);
-    const Real vp = particles[idx_I[ip]].rdata(ivp_);
-    const Real wp = particles[idx_I[ip]].rdata(iwp_);
-    const Real v2 = up * up + vp * vp + wp * wp;
-
-    if (ip < nVar) {
-      a(iq_, ip) = 1;
-      a(iu_, ip) = up;
-      a(iv_, ip) = vp;
-      a(iw_, ip) = wp;
-      a(ie_, ip) = v2;
-    }
-
-    a(iq_, nVar) += qp;
-    a(iu_, nVar) += qp * up;
-    a(iv_, nVar) += qp * vp;
-    a(iw_, nVar) += qp * wp;
-    a(ie_, nVar) += qp * v2;
-  }
-
-  const Real csmall = 1e-9;
-  const Real tmp = csmall * fabs(1. / a(iq_, nVar));
-  for (int i = iq_; i <= ie_; ++i) {
-    // Ensure a strictly positive threshold so constraint rows with zero RHS and
-    // zero coefficients (e.g., vz = 0 in 1D/2D) are flagged as singular,
-    // preventing near-zero pivots or 0/0 NaNs in the weights.
-    ref[i] = std::max(fabs(a(i, nVar) * tmp), csmall * tmp);
-  }
-
-  x.resize(nVar, 0);
-  bool isSolved = linear_solver_Gauss_Elimination<Real, nVar, nVar + 1>(
-      nVar, nVar + 1, a, x, ref);
-
-  if (isSolved) {
-    // All the particle weights should have the same sign.
-    Real qt = x[0];
-    for (int ip = 0; ip < nPartNew; ip++) {
-      if (qt * x[ip] <= 0) {
-        isSolved = false;
-        break;
-      }
-    }
-  }
-
-  return isSolved;
+  return solve_accurate_merge_group(particles, invDx[iLev], velNorm, iup_, iqp_,
+                                    idx_I, nPartCombine, nPartNew,
+                                    mergeThresholdDistance, x);
 }
 
 //==========================================================
@@ -1006,191 +1426,117 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
       if (nPartOrig <= nPartGoal || nPartOrig == 0)
         return;
 
-      // The range of the velocity domain:
-      // [-r0,r0]*thermal_velocity+bulk_velocity
+      // Sort the particles by location first so results are invariant across
+      // MPI rank decompositions.
+      std::sort(particles.begin(), particles.end(), compare_two_parts);
+
+      // The range of the velocity domain: [-r0, r0] * vth + uBulk.
       const Real r0 = fastMerge ? 2.0 : 1.0;
 
       // Phase space cell number in one direction.
-      int nCell = 0;
-      if (fastMerge) {
-        nCell = r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim3));
-      } else {
-        nCell = r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim3));
-      }
+      const int nCell =
+          fastMerge
+              ? static_cast<int>(r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim3)))
+              : static_cast<int>(r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim3)));
 
-      if (nCell < 3)
-        return;
+      if (nCell >= 3) {
+        std::vector<bool> merged(nPartOrig, false);
+        Real velNorm = 0.0;
+        Vector<Vector<int> > phasePartIdx_I;
+        build_velocity_bins(particles, nPartOrig, r0, nCell, velBinBufferSize,
+                            localRng, velNorm, phasePartIdx_I, iup_);
 
-      // Sort the particles by the location first to make sure the results
-      // are the same for different number of processors
-      std::sort(particles.begin(), particles.end(), compare_two_parts);
+        const auto bin_index = [nCell](int i, int j, int k) {
+          return (i * nCell + j) * nCell + k;
+        };
 
-      // One particle may belong to more than one velocity bins, but it can be
-      // only merged at most once.
-      std::vector<bool> merged(nPartOrig, false);
+        for (int iu = 0; iu < nCell; iu++)
+          for (int iv = 0; iv < nCell; iv++)
+            for (int iw = 0; iw < nCell; iw++) {
+              Vector<int> partIdx;
+              const auto& pIdx = phasePartIdx_I[bin_index(iu, iv, iw)];
+              for (int i = 0; i < pIdx.size(); ++i) {
+                int pid = pIdx[i];
+                if (!merged[pid]) {
+                  partIdx.push_back(pid);
+                }
+              }
 
-      // Estimate the bulk velocity and thermal velocity.
-      Real uBulk[nDim3] = { 0, 0, 0 };
-      for (int pid = 0; pid < nPartOrig; pid++) {
-        auto& pcl = particles[pid];
-        for (int iDir = 0; iDir < nDim3; iDir++) {
-          uBulk[iDir] += pcl.rdata(iup_ + iDir);
-        }
-      }
-
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        uBulk[iDir] /= nPartOrig;
-      }
-
-      Real thVel2 = 0;
-      for (int pid = 0; pid < nPartOrig; pid++) {
-        auto& pcl = particles[pid];
-        for (int iDir = 0; iDir < nDim3; iDir++) {
-          Real dv = pcl.rdata(iup_ + iDir) - uBulk[iDir];
-          thVel2 += dv * dv;
-        }
-      }
-
-      thVel2 /= nPartOrig;
-      Real thVel = sqrt(thVel2);
-
-      const Real velNorm = (thVel < 1e-13) ? 0.0 : 1.0 / (0.5 * thVel);
-
-      // Assign the particle IDs to the corresponding velocity space cells.
-      Vector<Vector<int> > phasePartIdx_I(nCell * nCell * nCell);
-      const auto bin_index = [nCell](int i, int j, int k) {
-        return (i * nCell + j) * nCell + k;
-      };
-
-      Real dv = (2.0 * r0 * thVel) / nCell;
-      Real invDv = (dv < 1e-13) ? 0.0 : 1.0 / dv;
-
-      // Velocity domain range.
-      Real velMin_D[nDim3], velMax_D[nDim3];
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        Real dvshift = (localRng() - 0.5) * dv;
-        velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
-        velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
-      }
-
-      int iCell_D[nDim3];
-      for (int pid = 0; pid < nPartOrig; pid++) {
-        auto& pcl = particles[pid];
-
-        bool isOutside = false;
-        for (int iDim = 0; iDim < nDim3; iDim++) {
-          Real v = pcl.rdata(iup_ + iDim);
-          if (v < velMin_D[iDim] || v > velMax_D[iDim])
-            isOutside = true;
-        }
-        if (isOutside)
-          continue;
-
-        for (int iDim = 0; iDim < nDim3; iDim++) {
-          iCell_D[iDim] = std::clamp(
-              fastfloor((pcl.rdata(iup_ + iDim) - velMin_D[iDim]) * invDv), 0,
-              nCell - 1);
-        }
-
-        // One particle may belong to multiple bins when each bin has a buffer
-        // region.
-        for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
-          for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
-            for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
-                 zCell++) {
-
-              if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
-                  zCell < 0 || zCell >= nCell)
+              if (partIdx.size() < nPartNew + 1)
                 continue;
 
-              Vector<int> cellIdx = { xCell, yCell, zCell };
+              Vector<Real> x;
+              Vector<int> idx_I;
 
-              Real binMin_D[nDim3], binMax_D[nDim3];
+              int nOld = nPartCombine;
+              bool isSolved = false;
+              if (fastMerge) {
+                if (nOld > partIdx.size())
+                  nOld = partIdx.size();
 
-              for (int iDim = 0; iDim < nDim3; iDim++) {
-                binMin_D[iDim] =
-                    velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
-                binMax_D[iDim] = velMin_D[iDim] +
-                                 (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+                for (int iTry = 0; iTry < nMergeTry; iTry++) {
+                  long sd = seed + iu * 777 + iv * 77 + iw + iTry;
+                  isSolved = merge_particles_fast(iLev, particles, partIdx,
+                                                  idx_I, nOld, nPartNew, x, sd);
+                  if (isSolved)
+                    break;
+                }
+              } else {
+                isSolved =
+                    merge_particles_accurate(iLev, particles, partIdx, idx_I,
+                                             nOld, nPartNew, x, velNorm);
               }
+              if (!isSolved)
+                continue;
 
-              bool isInside = true;
-              for (int iDim = 0; iDim < nDim3; iDim++) {
-                Real v = pcl.rdata(iup_ + iDim);
-                if (v < binMin_D[iDim] || v > binMax_D[iDim])
-                  isInside = false;
+              // Reject merge if any solved weight is non-finite (NaN / Inf).
+              bool xIsFinite = true;
+              for (int ip = 0; ip < nPartNew; ++ip) {
+                if (!std::isfinite(x[ip])) {
+                  xIsFinite = false;
+                  break;
+                }
               }
+              if (!xIsFinite)
+                continue;
 
-              if (isInside) {
-                phasePartIdx_I[bin_index(cellIdx[ix_], cellIdx[iy_],
-                                         cellIdx[iz_])]
-                    .push_back(pid);
+              // Adjust weight.
+              for (int ip = 0; ip < nPartNew; ip++) {
+                auto& p = particles[idx_I[ip]];
+                p.rdata(iqp_) = x[ip];
+                merged[idx_I[ip]] = true;
+              }
+              // Mark for deletion
+              for (int ip = nPartNew; ip < nOld; ip++) {
+                particles[idx_I[ip]].id() = -1;
+                particles[idx_I[ip]].rdata(iqp_) = 0;
+                merged[idx_I[ip]] = true;
               }
             }
       }
 
-      for (int iu = 0; iu < nCell; iu++)
-        for (int iv = 0; iv < nCell; iv++)
-          for (int iw = 0; iw < nCell; iw++) {
-            Vector<int> partIdx;
-            auto& pIdx = phasePartIdx_I[bin_index(iu, iv, iw)];
-            for (int i = 0; i < pIdx.size(); ++i) {
-              int pid = pIdx[i];
-              if (!merged[pid]) {
-                partIdx.push_back(pid);
-              }
-            }
-
-            if (partIdx.size() < nPartNew + 1)
-              continue;
-
-            Vector<Real> x;
-            Vector<int> idx_I;
-
-            int nOld = nPartCombine;
-            bool isSolved = false;
-            if (fastMerge) {
-              if (nOld > partIdx.size())
-                nOld = partIdx.size();
-
-              for (int iTry = 0; iTry < nMergeTry; iTry++) {
-                long sd = seed + iu * 777 + iv * 77 + iw + iTry;
-                isSolved = merge_particles_fast(iLev, particles, partIdx, idx_I,
-                                                nOld, nPartNew, x, sd);
-                if (isSolved)
-                  break;
-              }
-            } else {
-              isSolved = merge_particles_accurate(
-                  iLev, particles, partIdx, idx_I, nOld, nPartNew, x, velNorm);
-            }
-            if (!isSolved)
-              continue;
-
-            // Reject merge if any solved weight is non-finite (NaN / Inf).
-            bool xIsFinite = true;
-            for (int ip = 0; ip < nPartNew; ++ip) {
-              if (!std::isfinite(x[ip])) {
-                xIsFinite = false;
-                break;
-              }
-            }
-            if (!xIsFinite)
-              continue;
-
-            // Adjust weight.
-            for (int ip = 0; ip < nPartNew; ip++) {
-              auto& p = particles[idx_I[ip]];
-              p.rdata(iqp_) = x[ip];
-              merged[idx_I[ip]] = true;
-            }
-            // Mark for deletion
-            for (int ip = nPartNew; ip < nOld; ip++) {
-              particles[idx_I[ip]].id() = -1;
-              particles[idx_I[ip]].rdata(iqp_) = 0;
-              merged[idx_I[ip]] = true;
+#if (AMREX_SPACEDIM == 3)
+      if (!fastMerge && useTargetPPC && !is_neutral()) {
+        const int reliefGoal = std::max(nPartGoal, 112);
+        if (nPartOrig > reliefGoal) {
+          std::vector<bool> alive(nPartOrig, false);
+          int nPartLive = 0;
+          for (int pid = 0; pid < nPartOrig; ++pid) {
+            if (particles[pid].id() >= 0 &&
+                fabs(particles[pid].rdata(iqp_)) > Real(0.0)) {
+              alive[pid] = true;
+              ++nPartLive;
             }
           }
+          if (nPartLive > reliefGoal) {
+            merge_overload_cic_octant(particles, Geom(iLev).ProbLo(),
+                                      Geom(iLev).InvCellSize(), invDx[iLev],
+                                      item.cell, reliefGoal, alive, nPartLive,
+                                      iup_, iqp_);
+          }
+        }
+      }
+#endif
     });
   }
 }

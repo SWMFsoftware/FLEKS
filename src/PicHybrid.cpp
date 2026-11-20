@@ -1652,6 +1652,7 @@ void Pic::sync_emf_at_interface(Vector<MultiFab>& nodeEmf, Real timeOverride) {
     fill_fine_lev_edge_from_coarse(
         nodeEmf[iLev - 1], nodeEmf[iLev], 0, nDim3, refRatio(iLev - 1),
         Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
     nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(node_status(iLev), nodeEmf[iLev], 0, nDim3, &Pic::get_node_E,
                    iLev, false, 0.0, timeOverride);
@@ -1777,7 +1778,8 @@ void Pic::measure_covered_B_drift(int iLev) {
 //   A.
 //     Gauge modes A -> A + grad(phi) lie in the null space of curl, so CGLS
 //     does not amplify them and explicit gauge fixing is unnecessary.
-void Pic::relax_covered_B_to_fine(int iLev, Real relaxWeight) {
+void Pic::relax_covered_B_to_fine(int iLev, Real relaxWeight,
+                                  Real vacRelaxWeight) {
   if (relaxWeight <= 0.0)
     return;
   BL_PROFILE("Pic::relax_covered_B_to_fine");
@@ -1787,10 +1789,17 @@ void Pic::relax_covered_B_to_fine(int iLev, Real relaxWeight) {
   MultiFab::Copy(target, B, 0, 0, nDim3, 0);
   average_down(centerB[iLev + 1], target, 0, nDim3, refRatio(iLev));
 
+  const bool useChiPWeight =
+      (vacRelaxWeight >= Real(0.0)) && (vacRelaxWeight < relaxWeight) &&
+      !useHybridPIC && !useExplicitPIC &&
+      (iLev < static_cast<int>(nodeMM.size())) && !nodeMM[iLev].empty() &&
+      nodeMM[iLev].boxArray() == node_box_array(iLev) &&
+      nodeMM[iLev].DistributionMap() == B.DistributionMap();
+
   const bool bzFree = is_bz_div_free();
   // Number of cell components taking part in the relaxation.
   const int nRelax = bzFree ? 2 : nDim3;
-  if (bzFree) {
+  if (bzFree && !useChiPWeight) {
     MultiFab::LinComb(B, Real(1.0) - relaxWeight, B, iz_, relaxWeight, target,
                       iz_, iz_, 1, 0);
   }
@@ -1928,21 +1937,55 @@ void Pic::relax_covered_B_to_fine(int iLev, Real relaxWeight) {
     }
   };
 
-  // r = avg(Bf) - Bc on the covered cells, zero elsewhere. The components not
-  // taking part in the relaxation stay zero, so the adjoint never drives their
-  // potential components.
+  // r = w_cell * (avg(Bf) - Bc) on the covered cells, zero elsewhere. The
+  // components not taking part in the relaxation stay zero, so the adjoint
+  // never drives their potential components.
+  const Real c0 = fourPI * fsolver.theta * tc->get_dt();
+  const Real susceptScale = (nDim > 2) ? Real(3.375) : Real(2.25);
+#if (AMREX_SPACEDIM == 2)
+  constexpr int idx0MM = 4 * 9;
+  constexpr int kOffMM = 0;
+#else
+  constexpr int idx0MM = 13 * 9;
+  constexpr int kOffMM = 1;
+#endif
   r.setVal(0.0);
   for (MFIter mfi(B); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const auto& d = r[mfi].array();
-    const auto& b = B[mfi].const_array();
+    const auto& bMut = B[mfi].array();
     const auto& t = target[mfi].const_array();
     const auto& st = cell_status(iLev)[mfi].const_array();
+    const Array4<RealMM const> mmArr = useChiPWeight
+                                           ? nodeMM[iLev][mfi].const_array()
+                                           : Array4<RealMM const>();
     parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (bit::is_refined(st(i, j, k))) {
+        Real wCell = relaxWeight;
+        if (useChiPWeight) {
+          Real minChiP = Real(1.0e4);
+          for (int ok = 0; ok <= kOffMM; ++ok) {
+            for (int oj = 0; oj <= 1; ++oj) {
+              for (int oi = 0; oi <= 1; ++oi) {
+                const Real* const M_I =
+                    &(mmArr(i + oi, j + oj, k + ok)[idx0MM]);
+                const Real trM = (M_I[0] + M_I[4] + M_I[8]) / Real(3.0);
+                const Real chiCorner =
+                    amrex::max(Real(0.0), susceptScale * c0 * trM);
+                minChiP = amrex::min(minChiP, chiCorner);
+              }
+            }
+          }
+          const Real chi2 = minChiP * minChiP;
+          wCell = vacRelaxWeight +
+                  (relaxWeight - vacRelaxWeight) * (chi2 / (Real(1.0) + chi2));
+          if (bzFree) {
+            bMut(i, j, k, iz_) +=
+                wCell * (t(i, j, k, iz_) - bMut(i, j, k, iz_));
+          }
+        }
         for (int iVar = 0; iVar < nRelax; ++iVar)
-          d(i, j, k, iVar) =
-              relaxWeight * (t(i, j, k, iVar) - b(i, j, k, iVar));
+          d(i, j, k, iVar) = wCell * (t(i, j, k, iVar) - bMut(i, j, k, iVar));
       }
     });
   }

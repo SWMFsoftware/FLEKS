@@ -417,60 +417,53 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void deposit_vector_field(
   }
 }
 
-inline amrex::Real dive_particle_cleaning_weight(
-    const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
-    const amrex::Array4<int const>& status, bool skipLevEdge0 = false) {
-
+inline bool is_in_coarse_refined_margin(
+    const amrex::RealVect& xyz, const amrex::Geometry& Geom,
+    const amrex::Array4<int const>& status) {
   amrex::IntVect iv;
   amrex::RealVect rv;
   find_cell_index_exp(xyz, Geom.ProbLo(), Geom.InvCellSize(), iv, rv);
-
-  const int st = status(iv);
-  if (bit::is_refined(st) || bit::is_lev_boundary(st)) {
-    return 0.0;
-  }
-  if (skipLevEdge0 && iLev == 0 && bit::is_lev_edge(st)) {
-    return 0.0;
-  }
-
-  // Use a 0.25 * dx margin on the coarse side (retaining the Dirichlet anchor
-  // across refined inner patches so hollow intermediate levels keep a
-  // nonsingular div(E) matrix). On the fine side, skip the outer 0.5 * dx
-  // half-cell in divE_correct_position() so particles never differentiate
-  // across unsolved centerPhi == 0 ghost cells, while keeping a reduced
-  // Robin/Dirichlet anchor weight in centerMM (sum_to_center_amr()) so fine
-  // faces, edges, and corners stay locally grounded without a Neumann wall.
-  auto touches_interface = [&](amrex::Real fac, bool strictLo, auto&& pred) {
-    const bool loX = strictLo ? (rv[0] < fac) : (rv[0] <= fac);
-    const bool hiX = (rv[0] >= (1.0 - fac));
-#if (AMREX_SPACEDIM > 1)
-    const bool loY = strictLo ? (rv[1] < fac) : (rv[1] <= fac);
-    const bool hiY = (rv[1] >= (1.0 - fac));
+#if (AMREX_SPACEDIM > 2)
+  const int ivk = iv[2];
 #else
-    constexpr bool loY = false;
-    constexpr bool hiY = false;
+  constexpr int ivk = 0;
+#endif
+#if (AMREX_SPACEDIM > 1)
+  const int ivj = iv[1];
+#else
+  constexpr int ivj = 0;
+#endif
+  if (!status.contains(iv[0], ivj, ivk)) {
+    return false;
+  }
+
+  const int st = status(iv[0], ivj, ivk);
+  if (bit::is_refined(st) || bit::is_lev_boundary(st) ||
+      !bit::is_refined_neighbour(st)) {
+    return false;
+  }
+
+  constexpr amrex::Real fac = 0.25;
+  const bool loX = (rv[0] <= fac);
+  const bool hiX = (rv[0] >= (1.0 - fac));
+#if (AMREX_SPACEDIM > 1)
+  const bool loY = (rv[1] <= fac);
+  const bool hiY = (rv[1] >= (1.0 - fac));
+#else
+  constexpr bool loY = false;
+  constexpr bool hiY = false;
 #endif
 #if (AMREX_SPACEDIM > 2)
-    const bool loZ = strictLo ? (rv[2] < fac) : (rv[2] <= fac);
-    const bool hiZ = (rv[2] >= (1.0 - fac));
+  const bool loZ = (rv[2] <= fac);
+  const bool hiZ = (rv[2] >= (1.0 - fac));
 #else
-    constexpr bool loZ = false;
-    constexpr bool hiZ = false;
+  constexpr bool loZ = false;
+  constexpr bool hiZ = false;
 #endif
-    if (!loX && !hiX && !loY && !hiY && !loZ && !hiZ)
-      return false;
-
+  if (loX || hiX || loY || hiY || loZ || hiZ) {
     const int i = iv[0];
-#if (AMREX_SPACEDIM > 1)
-    const int j = iv[1];
-#else
-    constexpr int j = 0;
-#endif
-#if (AMREX_SPACEDIM > 2)
-    const int k = iv[2];
-#else
-    constexpr int k = 0;
-#endif
+    const int j = ivj;
+    const int k = ivk;
     const int diMin = loX ? -1 : 0, diMax = hiX ? 1 : 0;
     const int djMin = loY ? -1 : 0, djMax = hiY ? 1 : 0;
     const int dkMin = loZ ? -1 : 0, dkMax = hiZ ? 1 : 0;
@@ -479,36 +472,80 @@ inline amrex::Real dive_particle_cleaning_weight(
         for (int di = diMin; di <= diMax; ++di) {
           if (di == 0 && dj == 0 && dk == 0)
             continue;
-          if (pred(status(i + di, j + dj, k + dk)))
+          if (status.contains(i + di, j + dj, k + dk) &&
+              bit::is_refined(status(i + di, j + dj, k + dk))) {
             return true;
+          }
         }
       }
     }
-    return false;
-  };
-
-  if (bit::is_refined_neighbour(st) &&
-      touches_interface(0.25, false,
-                        [](int neiSt) { return bit::is_refined(neiSt); })) {
-    return 0.0;
   }
-
-  constexpr amrex::Real fineEdgeAnchorWeight = 0.35;
-  if (!skipLevEdge0 && (iLev > 0) && bit::is_lev_edge(st) &&
-      touches_interface(0.5, true, [](int neiSt) {
-        return bit::is_lev_boundary(neiSt) && !bit::is_domain_boundary(neiSt);
-      })) {
-    return fineEdgeAnchorWeight;
-  }
-
-  return 1.0;
+  return false;
 }
 
 inline bool skip_particle_for_dive_cleaning(
-    const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
-    const amrex::Array4<int const>& status, bool skipLevEdge0 = false) {
-  return dive_particle_cleaning_weight(xyz, Geom, iLev, status, skipLevEdge0) <
-         1.0;
+    const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev, int nLev,
+    const amrex::Array4<int const>& status, bool skipLevEdge0 = false,
+    const amrex::IntVect& skipDomLo = amrex::IntVect(0),
+    const amrex::IntVect& skipDomHi = amrex::IntVect(0)) {
+  if (nLev > 1) {
+    amrex::IntVect iv;
+    amrex::RealVect rv;
+    find_cell_index_exp(xyz, Geom.ProbLo(), Geom.InvCellSize(), iv, rv);
+#if (AMREX_SPACEDIM > 2)
+    const int ivk = iv[2];
+#else
+    constexpr int ivk = 0;
+#endif
+#if (AMREX_SPACEDIM > 1)
+    const int ivj = iv[1];
+#else
+    constexpr int ivj = 0;
+#endif
+    if (!status.contains(iv[0], ivj, ivk)) {
+      return true;
+    }
+
+    const int st = status(iv[0], ivj, ivk);
+    if (bit::is_refined(st) || bit::is_lev_boundary(st)) {
+      return true;
+    }
+    if (skipLevEdge0 && iLev == 0 && bit::is_lev_edge(st)) {
+      return true;
+    }
+
+    // Coarse-side 0.25 * dx (= 0.5 * dx_fine) margin on is_refined_neighbour
+    // cells is handed off to the adjacent finer level (iLev + 1) so that
+    // particles contributing to fine-level jc are cleaned self-consistently by
+    // the fine level's div(E) solve instead of sitting frozen.
+    if (is_in_coarse_refined_margin(xyz, Geom, status)) {
+      return true;
+    }
+  }
+
+  bool anySkipDom = false;
+  for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+    if (skipDomLo[d] || skipDomHi[d]) {
+      anySkipDom = true;
+    }
+  }
+  if (!anySkipDom) {
+    return false;
+  }
+
+  amrex::IntVect loIdx;
+  amrex::RealVect dShift;
+  find_cell_index(xyz, Geom.ProbLo(), Geom.InvCellSize(), loIdx, dShift);
+  const amrex::Box& dom = Geom.Domain();
+  for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+    if (!Geom.isPeriodic(d) &&
+        ((skipDomLo[d] && loIdx[d] < dom.smallEnd(d)) ||
+         (skipDomHi[d] && loIdx[d] + 1 > dom.bigEnd(d)))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

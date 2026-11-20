@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <sstream>
 #include <vector>
 
 #include <AMReX_MultiFabUtil.H>
@@ -124,6 +126,124 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev, bool reportSolver) {
     // for an 'insulating' body the charge inside is a real source and is kept.
     if (use_body() && bodyFieldBC != BodyFieldBC::insulating) {
       mask_body(residual, cell_status(iLev));
+    }
+
+    if (iLev < static_cast<int>(centerMM.size()) && !centerMM[iLev].empty()) {
+#if (AMREX_SPACEDIM == 2)
+      constexpr int centerGp = 4;
+#else
+      constexpr int centerGp = 13;
+#endif
+      for (MFIter mfi(residual); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        const Array4<Real>& resArr = residual[mfi].array();
+        const Array4<RealCMM const>& mmArr = centerMM[iLev][mfi].const_array();
+        parallel_for_omp(bx,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           if (std::abs(mmArr(i, j, k)[centerGp]) == 0.0) {
+                             resArr(i, j, k) = 0.0;
+                           }
+                         });
+      }
+
+      // On pure-Neumann refined levels (no Dirichlet coupling to refined,
+      // body, or domain-boundary cells), A * 1 == 0 identically, so any
+      // nonzero mean residual lies in ker(A) and cannot be reduced by
+      // in-level particle shifts. Projecting out the active-cell mean makes
+      // the linear system compatible so GMRES converges cleanly.
+      if (iLev > 0) {
+        const bool maskBody =
+            use_body() && bodyFieldBC != BodyFieldBC::insulating;
+        const auto& statusMF = cell_status(iLev);
+        amrex::ReduceOps<ReduceOpSum, ReduceOpSum, ReduceOpSum, ReduceOpSum>
+            reduceOp;
+        amrex::ReduceData<Real, Real, Real, Real> reduceData(reduceOp);
+        using ReduceTuple = typename decltype(reduceData)::Type;
+        for (MFIter mfi(residual); mfi.isValid(); ++mfi) {
+          const Box& bx = mfi.validbox();
+          const Array4<Real const> resArr = residual[mfi].const_array();
+          const Array4<RealCMM const> mmArr = centerMM[iLev][mfi].const_array();
+          const Array4<int const> stArr = statusMF[mfi].const_array();
+          reduceOp.eval(
+              bx, reduceData,
+              [=] AMREX_GPU_DEVICE(int i, int j, int k)
+                  noexcept -> ReduceTuple {
+                    const int st = stArr(i, j, k);
+                    if (bit::is_refined(st) || bit::is_lev_boundary(st) ||
+                        bit::is_domain_boundary(st) ||
+                        (maskBody && bit::is_body(st))) {
+                      return { 0.0, 0.0, 0.0, 0.0 };
+                    }
+                    const Real diag = std::abs(mmArr(i, j, k)[centerGp]);
+                    if (diag == 0.0) {
+                      return { 0.0, 0.0, 0.0, 0.0 };
+                    }
+                    Real activeRowSum = 0.0;
+#if (AMREX_SPACEDIM == 2)
+                    for (int dj = -1; dj <= 1; ++dj) {
+                      for (int di = -1; di <= 1; ++di) {
+                        const int nst = stArr(i + di, j + dj, 0);
+                        if (bit::is_refined(nst) || bit::is_lev_boundary(nst) ||
+                            bit::is_domain_boundary(nst) ||
+                            (maskBody && bit::is_body(nst))) {
+                          continue;
+                        }
+                        const int gp = (di + 1) * 3 + (dj + 1);
+                        activeRowSum += mmArr(i, j, 0)[gp];
+                      }
+                    }
+#else
+                    for (int dk = -1; dk <= 1; ++dk) {
+                      for (int dj = -1; dj <= 1; ++dj) {
+                        for (int di = -1; di <= 1; ++di) {
+                          const int nst = stArr(i + di, j + dj, k + dk);
+                          if (bit::is_refined(nst) ||
+                              bit::is_lev_boundary(nst) ||
+                              bit::is_domain_boundary(nst) ||
+                              (maskBody && bit::is_body(nst))) {
+                            continue;
+                          }
+                          const int gp = (di + 1) * 9 + (dj + 1) * 3 + (dk + 1);
+                          activeRowSum += mmArr(i, j, k)[gp];
+                        }
+                      }
+                    }
+#endif
+                    return { std::abs(activeRowSum), diag, resArr(i, j, k),
+                             Real(1.0) };
+                  });
+        }
+        auto hv = reduceData.value();
+        Real vals[4] = { amrex::get<0>(hv), amrex::get<1>(hv),
+                         amrex::get<2>(hv), amrex::get<3>(hv) };
+        ParallelDescriptor::ReduceRealSum(vals, 4);
+        const Real sumActiveRow = vals[0];
+        const Real sumDiag = vals[1];
+        const Real sumRes = vals[2];
+        const Real nActive = vals[3];
+        if (nActive > 0.0 && sumDiag > 0.0 &&
+            sumActiveRow <= Real(1e-12) * sumDiag) {
+          const Real meanRes = sumRes / nActive;
+          for (MFIter mfi(residual); mfi.isValid(); ++mfi) {
+            const Box& bx = mfi.validbox();
+            const Array4<Real> resArr = residual[mfi].array();
+            const Array4<RealCMM const> mmArr =
+                centerMM[iLev][mfi].const_array();
+            const Array4<int const> stArr = statusMF[mfi].const_array();
+            parallel_for_omp(
+                bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  const int st = stArr(i, j, k);
+                  if (bit::is_refined(st) || bit::is_lev_boundary(st) ||
+                      bit::is_domain_boundary(st) ||
+                      (maskBody && bit::is_body(st)) ||
+                      std::abs(mmArr(i, j, k)[centerGp]) == 0.0) {
+                    return;
+                  }
+                  resArr(i, j, k) -= meanRes;
+                });
+          }
+        }
+      }
     }
 
     if (fsolver.divESolverBackend == ESolverBackend::AmrexGMRES) {
@@ -339,50 +459,61 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
     centerMM[iLev].setVal(mm0);
   }
 
-  int fLev = iLev + 1;
-  int cLev = iLev - 1;
-  if (iLev == 0) {
-    cLev = iLev;
-  }
-  if (iLev == finestLevel()) {
-    fLev = iLev;
-  }
   if (static_cast<int>(sumToCenterJc.size()) != n_lev()) {
     sumToCenterJc.resize(n_lev());
     sumToCenterJf.resize(n_lev());
+    sumToCenterCmmc.resize(n_lev());
   }
   MultiFab& jc = sumToCenterJc[iLev];
   MultiFab& jf = sumToCenterJf[iLev];
-  if (jc.empty()) {
-    BoxArray bac = centerB[cLev].boxArray();
-    bac.refine(refRatio(iLev));
-    jc.define(bac, centerB[cLev].DistributionMap(), 1, 1);
-    BoxArray baf = centerB[fLev].boxArray();
-    baf.coarsen(refRatio(iLev));
-    baf.grow(1);
-    jf.define(baf, centerB[fLev].DistributionMap(), 1, 1);
+  CenterMMFab& cmmc = sumToCenterCmmc[iLev];
+  const bool hasCoarser = (iLev > 0);
+  const bool hasFiner = (iLev < finestLevel());
+  if (hasCoarser) {
+    if (jc.empty()) {
+      BoxArray bac = centerB[iLev - 1].boxArray();
+      bac.refine(refRatio(iLev - 1));
+      jc.define(bac, centerB[iLev - 1].DistributionMap(), 1, 1);
+    }
+    jc.setVal(0.0);
+    if (!doNetChargeOnly) {
+      if (cmmc.empty()) {
+        cmmc.define(jc.boxArray(), jc.DistributionMap(), 1, 1);
+      }
+      cmmc.setVal(RealCMM(0.0));
+    }
   }
-  jc.setVal(0.0);
-  jf.setVal(0.0);
+  if (hasFiner) {
+    if (jf.empty()) {
+      BoxArray baf = centerB[iLev + 1].boxArray();
+      baf.coarsen(refRatio(iLev));
+      jf.define(baf, centerB[iLev + 1].DistributionMap(), 1, 1);
+    }
+    jf.setVal(0.0);
+  }
+  CenterMMFab* cmmcPtr = (hasCoarser && !doNetChargeOnly) ? &cmmc : nullptr;
   for (int i = 0; i < nSpecies; ++i) {
     parts[i]->sum_to_center_amr(centerNetChargeNew[iLev], jc, jf,
-                                centerMM[iLev], doNetChargeOnly, iLev);
+                                centerMM[iLev], cmmcPtr, doNetChargeOnly, iLev);
   }
 
   if (!doNetChargeOnly) {
     centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
+    if (hasCoarser) {
+      centerMM[iLev].ParallelAdd(cmmc, 0, 0, 1, IntVect(1), IntVect(0),
+                                 Geom(iLev).periodicity());
+    }
   }
 
   centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
-  jc.SumBoundary();
-  jf.SumBoundary();
-  amrex::MultiFab& tmp = divEOutMF[iLev];
-  tmp.setVal(0.0);
-  tmp.ParallelCopy(jc);
-  MultiFab::Add(centerNetChargeNew[iLev], tmp, 0, 0, 1, 0);
-  tmp.setVal(0.0);
-  tmp.ParallelCopy(jf);
-  MultiFab::Add(centerNetChargeNew[iLev], tmp, 0, 0, 1, 0);
+  if (hasCoarser) {
+    centerNetChargeNew[iLev].ParallelAdd(jc, 0, 0, 1, IntVect(1), IntVect(0),
+                                         Geom(iLev).periodicity());
+  }
+  if (hasFiner) {
+    centerNetChargeNew[iLev].ParallelAdd(jf, 0, 0, 1, IntVect(1), IntVect(0),
+                                         Geom(iLev).periodicity());
+  }
 
   if (iLev == 0) {
     apply_BC(cell_status(iLev), centerNetChargeNew[iLev], 0,
@@ -443,8 +574,24 @@ void Pic::amr_divE_correction() {
                                divESolver.get_achieved_error() });
       }
 
+      const MultiFab* phiCoarsePtr = nullptr;
+      if (iLev > 0) {
+        if (static_cast<int>(divEPhiCoarseView.size()) != n_lev()) {
+          divEPhiCoarseView.resize(n_lev());
+        }
+        MultiFab& phiCoarse = divEPhiCoarseView[iLev];
+        if (phiCoarse.empty()) {
+          phiCoarse.define(sumToCenterJc[iLev].boxArray(),
+                           sumToCenterJc[iLev].DistributionMap(), 1, 1);
+        }
+        phiCoarse.setVal(0.0);
+        phiCoarse.ParallelCopy(centerPhi[iLev], 0, 0, 1, IntVect(0), IntVect(1),
+                               Geom(iLev).periodicity());
+        phiCoarsePtr = &phiCoarse;
+      }
+
       for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->divE_correct_position(centerPhi, iLev);
+        parts[i]->divE_correct_position(centerPhi, iLev, phiCoarsePtr);
       }
       if (finestLevel() > 0) {
         for (int i = 0; i < nSpecies; ++i) {
@@ -459,10 +606,10 @@ void Pic::amr_divE_correction() {
     for (const auto& entry : logEntries) {
       totalMatVec += entry.nMatVec;
     }
-    const Real resInitial = logEntries.front().res0;
-    const Real resFinal = logEntries.back().res0 * logEntries.back().relErr;
 
     if (finestLevel() == 0) {
+      const Real resInitial = logEntries.front().res0;
+      const Real resFinal = logEntries.back().res0 * logEntries.back().relErr;
       if (logEntries.size() == 1) {
         Print() << printPrefix << "div(E): res " << std::setprecision(5)
                 << resInitial << " -> " << resFinal << " (" << totalMatVec
@@ -475,11 +622,40 @@ void Pic::amr_divE_correction() {
                 << std::defaultfloat << std::setprecision(6) << std::endl;
       }
     } else {
-      Print() << printPrefix << "div(E) [" << nDivECorrection << " iters, "
-              << (finestLevel() + 1) << " levs]: res " << std::setprecision(5)
-              << resInitial << " -> " << resFinal << " (total " << totalMatVec
-              << " mv)" << std::defaultfloat << std::setprecision(6)
-              << std::endl;
+      const int nLev = finestLevel() + 1;
+      std::vector<Real> levResInit(nLev, 0.0);
+      std::vector<Real> levResFinal(nLev, 0.0);
+      std::vector<int> levMatVec(nLev, 0);
+      std::vector<bool> levSeen(nLev, false);
+      for (const auto& entry : logEntries) {
+        if (entry.lev < 0 || entry.lev >= nLev)
+          continue;
+        if (!levSeen[entry.lev]) {
+          levResInit[entry.lev] = entry.res0;
+          levSeen[entry.lev] = true;
+        }
+        levResFinal[entry.lev] = entry.res0 * entry.relErr;
+        levMatVec[entry.lev] += entry.nMatVec;
+      }
+      Real worstResInit = 0.0;
+      Real worstResFinal = 0.0;
+      for (int l = 0; l < nLev; ++l) {
+        worstResInit = std::max(worstResInit, levResInit[l]);
+        worstResFinal = std::max(worstResFinal, levResFinal[l]);
+      }
+
+      std::ostringstream oss;
+      oss << printPrefix << "div(E) [" << nDivECorrection << " iters, " << nLev
+          << " levs]: res " << std::setprecision(5) << worstResInit << " -> "
+          << worstResFinal << " (total " << totalMatVec << " mv) [";
+      for (int l = 0; l < nLev; ++l) {
+        if (l > 0)
+          oss << ", ";
+        oss << "L" << l << ": " << levResInit[l] << "->" << levResFinal[l]
+            << "/" << levMatVec[l];
+      }
+      oss << "]";
+      Print() << oss.str() << std::endl;
     }
   }
 

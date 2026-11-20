@@ -157,6 +157,8 @@ void Pic::distribute_arrays(MeshChangeReason reason) {
   // Clear persistent AMR scratch buffers so they are rebuilt on the new grids.
   sumToCenterJc.clear();
   sumToCenterJf.clear();
+  sumToCenterCmmc.clear();
+  divEPhiCoarseView.clear();
   amrJhc.clear();
   amrJhf.clear();
   amrNmmc.clear();
@@ -243,6 +245,14 @@ void Pic::distribute_arrays(MeshChangeReason reason) {
                               doMoveData, 0.0);
         } else {
           uUpwindE[iLev].clear();
+        }
+        if (useCurlUpwindB && useUpwindB && fixedUpwindVel <= 0.0 &&
+            finestLevel() > 0) {
+          distribute_FabArray(aVacUpwindB[iLev], node_box_array(iLev),
+                              DistributionMap(iLev), 1, get_n_ghost(),
+                              doMoveData, 0.0);
+        } else if (iLev < static_cast<int>(aVacUpwindB.size())) {
+          aVacUpwindB[iLev].clear();
         }
         distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 1, doMoveData);
@@ -1891,15 +1901,15 @@ void Pic::calc_mass_matrix_amr() {
 
   for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
     for (int i = finestLevel(); i > iLev; i--) {
-      jHat[iLev].ParallelAdd(jhc[i][iLev]);
+      jHat[iLev].ParallelAdd(jhc[i][iLev], Geom(iLev).periodicity());
       nmmc[i][iLev] *= (invVol[iLev] / invVol[i]);
-      nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
+      nodeMM[iLev].ParallelAdd(nmmc[i][iLev], Geom(iLev).periodicity());
     }
   }
   for (int iLev = finestLevel(); iLev > 0; iLev--) {
-    jHat[iLev].ParallelAdd(jhf[iLev - 1]);
+    jHat[iLev].ParallelAdd(jhf[iLev - 1], Geom(iLev).periodicity());
     nmmf[iLev - 1] *= (invVol[iLev] / invVol[iLev - 1]);
-    nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
+    nodeMM[iLev].ParallelAdd(nmmf[iLev - 1], Geom(iLev).periodicity());
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
