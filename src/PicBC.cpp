@@ -917,7 +917,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 }
 
 //==========================================================
-void Pic::ensure_wave_bc_initialized() {
+void Pic::ensure_wave_bc_initialized(bool allowUniformFallback) {
   if (!waveBC.turb.active || waveBC.turb.initialized)
     return;
   bool isWaveFace[6] = { false, false, false, false, false, false };
@@ -935,7 +935,7 @@ void Pic::ensure_wave_bc_initialized() {
   const bool hasNodeFluid =
       fi->is_node_fluid_ready() && !fi->get_node_fluid(0).empty();
   const bool hasUniformFallback =
-      !fi->is_init_from_swmf() && (fi->get_nS() > 0) &&
+      allowUniformFallback && !fi->is_init_from_swmf() && (fi->get_nS() > 0) &&
       (static_cast<int>(fi->get_uniform_state().size()) >=
        5 * fi->get_nS() + 3) &&
       (static_cast<int>(fi->inflowState.size()) >= fi->get_nS());

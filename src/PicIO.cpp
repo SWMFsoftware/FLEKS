@@ -803,6 +803,9 @@ void Pic::read_restart() {
   read_restart_mf(nodeB, prefix + "_nodeB");
   read_restart_mf(centerB, prefix + "_centerB");
   if (useHyperbolicCleaning) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      ensure_hypPhi(iLev);
+    }
     if (read_restart_mf(hypPhi, prefix + "_hypPhi", true, true)) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_BC(cell_status(iLev), hypPhi[iLev], 0, hypPhi[iLev].nComp(),

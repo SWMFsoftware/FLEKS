@@ -577,7 +577,9 @@ void Pic::post_regrid(MeshChangeReason reason) {
       p->set_wave_face(d, 1, isWaveHi);
     }
   }
-  ensure_wave_bc_initialized();
+  // Wait for nodeFluid (set in set_ic() or read_restart()) so uninterrupted and
+  // restarted runs use the same sampling path.
+  ensure_wave_bc_initialized(false);
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.

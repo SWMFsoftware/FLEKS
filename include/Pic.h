@@ -1367,7 +1367,7 @@ public:
   // Inject wave source into boundary ghost cells (iField: 0 = B, 1 = E).
   // Collectively initialize #TURBULENTINFLOW across all MPI ranks before any
   // field or boundary-particle evaluation.
-  void ensure_wave_bc_initialized();
+  void ensure_wave_bc_initialized(bool allowUniformFallback = true);
 
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                         const int iStart, const int nComp, const int iLev,
