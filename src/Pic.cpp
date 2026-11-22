@@ -240,7 +240,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(divB[iLev], boxArray(iLev), DistributionMap(iLev), 3,
                           get_n_ghost(), doMoveData, 0.0);
       distribute_FabArray(hypPhi[iLev], boxArray(iLev), DistributionMap(iLev),
-                          3, get_n_ghost(), doMoveData);
+                          3, get_n_ghost(), doMoveData, 0.0);
 
       distribute_FabArray(centerDB[iLev], boxArray(iLev), DistributionMap(iLev),
                           nDim3, get_n_ghost(), doMoveData);

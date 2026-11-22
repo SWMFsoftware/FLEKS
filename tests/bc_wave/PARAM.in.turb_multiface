@@ -1,0 +1,170 @@
+#DESCRIPTION
+Non-periodic 2D 3-face turbulent inflow with PLANETRADIUS length conversion
+and a C^2 quintic spatial window (FULL-PIC semi-implicit). Solar wind flows
+along -x; x-hi, y-lo, and y-hi are 'wave' field faces ('coupled' particles) and
+x-lo is 'coupled' (matching global runs). WAVEBCWINDOW tapers the source smoothly
+along x so downstream y-walls have zero perturbation while upstream corners and
+side faces inject broadband out-of-plane shear Alfven waves scaled via PLANETRADIUS.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#NORMALIZATION
+1.316e5                 lNormSI
+3.0e6                   uNormSI
+
+#PLANETRADIUS
+6.378e6                 rPlanetSi
+
+#GEOMETRY
+0.0                     xMin
+32.0                    xMax
+-16.0                   yMin
+ 16.0                   yMax
+-0.25                   zMin
+ 0.25                   zMax
+
+#NCELL
+64                      nCellX
+64                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+1.0/25.0                mass           Species 1: electrons (reduced mass ratio)
+-1.0                    charge
+
+#FIELDBOXBOUNDARY
+coupled                 fieldBoxBoundaryLo
+wave                    fieldBoxBoundaryHi
+wave                    fieldBoxBoundaryLo
+wave                    fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+coupled                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+coupled                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+implicit
+
+#EFIELDSOLVER
+1e-6                    EFieldTol
+200                     EFieldIter
+amrex                   solverType
+auto                    precondType
+
+#DIVE
+T                       doCorrectDivE
+1                       nDivECorrection
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     coefDiff
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+
+#SMOOTHJ
+T                       doSmoothJ
+2                       nSmoothJ
+0.5                     coefSmoothJ
+
+#INFLOW
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.2008e5                T [K]
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+2.4017e5                T [K]
+
+#UNIFORMSTATE
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+1.2008e5                T
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+2.4017e5                T
+3.5355e-9               bx
+-3.5355e-9              by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+-1.5556e-3              ez
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#MONITOR
+100                     dnReport
+
+#SAVELOG
+20                      dnSavePic
+20                      dnSavePT
+
+#PARTICLES
+5                       npcelx
+5                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+3.5                     dt
+1                       dx
+Bx By Bz Ex Ey Ez uzS0 rhoS0 varName
+
+#WAVEBCWINDOW
+0                       direction      (0=x)
+1.0528e6                min            [m] (8 d_i)
+1.316e7                 max            [m] (100 d_i, beyond xMax)
+1.0528e6                taperWidth     [m] (8 d_i)
+
+#TURBULENTINFLOW
+8                       nMode
+0.2                     lambdaMin      [R_E ~= 9.7 d_i]
+0.6                     lambdaMax      [R_E ~= 29.1 d_i]
+1.666667                spectralIndex
+0.25                    dBrmsOverB0
+1                       seed
+2.0                     rampTime
+
+#STOP
+-1                      MaxIter
+7.0                     TimeMax

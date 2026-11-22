@@ -1173,7 +1173,7 @@ void Pic::post_process_param() {
     }
   }
 
-  fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
+  fsolver.mode = (useUpwindE && !fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 

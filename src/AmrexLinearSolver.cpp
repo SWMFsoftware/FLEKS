@@ -169,8 +169,12 @@ void AmrexLinearSolver::apply(V& Ax, V const& x) {
     linComb(Ax, 1.0, m_nkBase, eps, x);
     m_pic->update_E_matvec(Ax, Ax, m_iLev, false);
     mask_inactive_nodes(Ax);
-    const Real invEps = 1.0 / eps;
-    linComb(Ax, invEps, Ax, -invEps, m_nkBaseMatvec);
+    // Subtract before scaling: linComb(Ax, invEps, Ax, -invEps, base) allows
+    // FMA contraction to leave non-zero rounding error when Ax == base (e.g.,
+    // on Dirichlet boundary nodes), stalling GMRES and corrupting Newton-Krylov
+    // iterations.
+    increment(Ax, m_nkBaseMatvec, Real(-1.0));
+    scale(Ax, Real(1.0) / eps);
   } else {
     apply_linear_matvec(Ax, x);
   }
