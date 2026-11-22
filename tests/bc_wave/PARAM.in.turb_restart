@@ -1,0 +1,185 @@
+#DESCRIPTION
+Checkpoint/restart continuity test for TURBULENTINFLOW with PLANETRADIUS unit
+conversion, non-periodic 3-face wave injection (x-hi, y-lo, y-hi), and an
+active spatial window. Session 1 runs cycles 0..5 and writes a checkpoint;
+Session 2 continues uninterrupted to cycle 10. validate.py restarts from cycle
+5 via FLEKS1_restart.H and verifies exact agreement on energy logs, cycle-10
+real8 fields, and wave_modes.json.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#NORMALIZATION
+1.875e5                 lNormSI
+3.0e6                   uNormSI
+
+#PLANETRADIUS
+6.378e6                 rPlanetSi
+
+#GEOMETRY
+0.0                     xMin
+16.0                    xMax
+-8.0                    yMin
+ 8.0                    yMax
+-0.25                   zMin
+ 0.25                   zMax
+
+#NCELL
+32                      nCellX
+32                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+16                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+1.0/25.0                mass           Species 1: electrons (reduced mass ratio)
+-1.0                    charge
+
+#FIELDBOXBOUNDARY
+coupled                 fieldBoxBoundaryLo
+wave                    fieldBoxBoundaryHi
+wave                    fieldBoxBoundaryLo
+wave                    fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+coupled                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+coupled                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+implicit
+
+#EFIELDSOLVER
+1e-12                   EFieldTol
+200                     EFieldIter
+amrex                   solverType
+none                    precondType
+
+#DIVE
+F                       doCorrectDivE
+
+#DISCRETIZATION
+0.51                    theta
+0.0                     coefDiff
+
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+#LAGGEDLIMITER
+T                       useLaggedLimiter
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterThetaE
+
+#UPWINDB
+T                       useUpwindB
+1                       limiterThetaB
+
+#SMOOTHJ
+T                       doSmoothJ
+2                       nSmoothJ
+0.5                     coefSmoothJ
+
+#INFLOW
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.2008e5                T [K]
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+2.4017e5                T [K]
+
+#UNIFORMSTATE
+3.0                     rho [/cc]      Species 0: ions
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+1.2008e5                T
+3.0                     rho [/cc]      Species 1: electrons
+-440.0                  ux
+0.0                     uy
+0.0                     uz
+2.4017e5                T
+3.5355e-9               bx
+-3.5355e-9              by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+-1.5556e-3              ez
+
+#TIMESTEPPING
+T                       useFixedDt
+0.03125                 dt
+
+#MONITOR
+10                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+4                       npcelx
+4                       npcely
+1                       npcelz
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid real8 planet  plotString
+5                       dn
+-1.0                    dt
+1                       dx
+
+#WAVEBCWINDOW
+0                       direction
+7.5e5                   min            [m] (4 d_i)
+1.875e7                 max            [m] (100 d_i)
+7.5e5                   taperWidth     [m] (4 d_i)
+
+#TURBULENTINFLOW
+8                       nMode
+0.1                     lambdaMin      [R_E ~= 3.40 d_i]
+0.3                     lambdaMax      [R_E ~= 10.2 d_i]
+1.666667                spectralIndex
+0.25                    dBrmsOverB0
+1                       seed
+0.2                     rampTime
+
+#SAVERESTART
+T                       doSaveRestart
+5                       dnSaveRestart
+-1.0                    dtSaveRestart
+
+#STOP
+5                       MaxIter
+-1.0                    TimeMax
+
+#RUN
+
+#SAVERESTART
+F                       doSaveRestart
+
+#STOP
+10                      MaxIter
+-1.0                    TimeMax

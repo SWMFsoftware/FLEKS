@@ -59,7 +59,8 @@ struct WaveComponent {
 
 // Smooth spatial window (#WAVEBCWINDOW or auto-detected upstream solar-wind
 // window for #TURBULENTINFLOW): 1 inside [lo, hi] along one axis, with
-// independent cos^2 tapers of width taperLo / taperHi at each end, 0 outside.
+// independent C^2 quintic smoothstep tapers of width taperLo / taperHi at each
+// end, 0 outside.
 struct WaveWindow {
   bool active = false;
   int direction = 0; // 0,1,2 = x,y,z
@@ -86,8 +87,10 @@ struct TurbulentInflowConfig {
   bool initialized = false;
 
   int nMode = 48;
-  amrex::Real lambdaMin = 0.5; // domain length units (code units)
-  amrex::Real lambdaMax = 8.0; // domain length units (code units)
+  amrex::Real lambdaMinInput = 0.5; // MHD/domain-IO length units (R_E or lNorm)
+  amrex::Real lambdaMaxInput = 8.0; // MHD/domain-IO length units (R_E or lNorm)
+  amrex::Real lambdaMin = 0.5;      // resolved code units
+  amrex::Real lambdaMax = 8.0;      // resolved code units
   amrex::Real spectralIndex = 5.0 / 3.0;
   amrex::Real dBrmsOverB0 = 0.3;
   int seed = 1;
@@ -97,6 +100,7 @@ struct TurbulentInflowConfig {
   std::string polarization =
       "out_of_plane"; // out_of_plane | in_plane | alfven | isotropic
   std::string modeFile = "wave_modes.json";
+  bool useScalarWindow = false;
 
   // Resolved code-unit reference state and timing:
   amrex::Real rampTime = 0.0;
@@ -182,6 +186,10 @@ public:
   void ensure_turbulence_initialized(const FluidInterface* fi,
                                      const amrex::Geometry& geom, int nDim,
                                      bool isFake2D, const bool isWaveFace[6]);
+  // Select the active spatial window for a boundary face bitmask
+  // (bit 2*d + side). Explicit #WAVEBCWINDOW overrides per-face windows;
+  // primary inflow face takes precedence at upstream corners.
+  const WaveWindow& active_window(int faceMask = -1) const;
   // Window weight at pos (code units); 1 when no window is set.
   amrex::Real window_weight(const amrex::Real* pos) const {
     return window.active ? window.weight(pos) : 1.0;
@@ -196,17 +204,18 @@ public:
   bool eval_turbulent_state(const amrex::Real* pos, const amrex::Real* phase_t,
                             amrex::Real t, amrex::Real env, bool needJAndV,
                             amrex::Real dB[3], amrex::Real dJ[3],
-                            amrex::Real dVmhd[3]) const;
+                            amrex::Real dVmhd[3], int faceMask = -1) const;
   // Evaluate #TURBULENTINFLOW field perturbation (iField: 0 = dB, 1 = dE)
   // using precomputed phase_t[m] = phase[m] - omega[m] * t and time envelope.
   void eval_turbulent_field(const amrex::Real* pos, const amrex::Real* phase_t,
-                            amrex::Real env, int iField,
-                            amrex::Real out[3]) const;
+                            amrex::Real env, int iField, amrex::Real out[3],
+                            int faceMask = -1) const;
   // Evaluate #TURBULENTINFLOW species velocity kick (charge > 0 => ion kick,
   // charge < 0 => electron kick including current drift -J / rho_q0).
   void eval_turbulent_velocity_kick(const amrex::Real* pos, amrex::Real t,
                                     amrex::Real charge, amrex::Real& dvx,
-                                    amrex::Real& dvy, amrex::Real& dvz) const;
+                                    amrex::Real& dvy, amrex::Real& dvz,
+                                    int faceMask = -1) const;
 
   WaveFace& face(int direction, int side);
   void clear();
@@ -218,6 +227,7 @@ public:
   amrex::Real maxAmplitude = 0.0; // 0 => amplitude guard disabled
 
   WaveWindow window;
+  WaveWindow faceWindows[6];
   TurbulentInflowConfig turb;
 };
 

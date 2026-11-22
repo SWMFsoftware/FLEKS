@@ -1173,7 +1173,7 @@ void Pic::post_process_param() {
     }
   }
 
-  fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
+  fsolver.mode = (useUpwindE && !fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 
@@ -1324,7 +1324,10 @@ void Pic::finalize_units_conversion() {
         p->set_wave_face(d, 1, isWaveHi);
       }
     }
-    ensure_wave_bc_initialized();
+    // Wait for nodeFluid (set in set_ic() or read_restart()) so uninterrupted
+    // and restarted runs use the same sampling path; still initializes now on
+    // multi-session #RUN updates where nodeFluid is already ready.
+    ensure_wave_bc_initialized(false);
   }
   discontinuityBC.convert_and_validate(fi, Geom(0), nDim, is_fake_2d(),
                                        useHybridPIC, electronTemperature,

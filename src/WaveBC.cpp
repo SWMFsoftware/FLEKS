@@ -65,6 +65,20 @@ inline amrex::Real dot3(const amrex::Real a[3], const amrex::Real b[3]) {
 inline amrex::Real norm3(const amrex::Real a[3]) {
   return std::sqrt(dot3(a, a));
 }
+
+// C^2 quintic smoothstep and derivatives for s in [0, 1].
+inline amrex::Real smoothstep5(amrex::Real s) {
+  return s * s * s * (10.0 + s * (-15.0 + 6.0 * s));
+}
+
+inline amrex::Real smoothstep5_deriv(amrex::Real s) {
+  const amrex::Real oneMinusS = 1.0 - s;
+  return 30.0 * s * s * oneMinusS * oneMinusS;
+}
+
+inline amrex::Real smoothstep5_second_deriv(amrex::Real s) {
+  return 60.0 * s * (1.0 - s) * (1.0 - 2.0 * s);
+}
 } // namespace
 
 amrex::Real MonoWave::value(const WaveComponent& c, amrex::Real t,
@@ -122,14 +136,14 @@ amrex::Real WaveWindow::weight(const amrex::Real* pos) const {
   if (taperLo == taperHi) {
     const amrex::Real d = std::min(x - lo, hi - x);
     if (taperLo > 0.0 && d < taperLo)
-      return 0.5 * (1.0 - std::cos(dPI * d / taperLo));
+      return smoothstep5(d / taperLo);
     return 1.0;
   }
   amrex::Real w = 1.0;
   if (taperLo > 0.0 && (x - lo) < taperLo)
-    w *= 0.5 * (1.0 - std::cos(dPI * (x - lo) / taperLo));
+    w *= smoothstep5((x - lo) / taperLo);
   if (taperHi > 0.0 && (hi - x) < taperHi)
-    w *= 0.5 * (1.0 - std::cos(dPI * (hi - x) / taperHi));
+    w *= smoothstep5((hi - x) / taperHi);
   return w;
 }
 
@@ -149,20 +163,20 @@ void WaveWindow::weight_and_derivs(const amrex::Real* pos, amrex::Real& w,
 
   amrex::Real wLo = 1.0, dWLo = 0.0, d2WLo = 0.0;
   if (taperLo > 0.0 && (x - lo) < taperLo) {
-    const amrex::Real kLo = dPI / taperLo;
-    const amrex::Real arg = kLo * (x - lo);
-    wLo = 0.5 * (1.0 - std::cos(arg));
-    dWLo = 0.5 * kLo * std::sin(arg);
-    d2WLo = 0.5 * kLo * kLo * std::cos(arg);
+    const amrex::Real invT = 1.0 / taperLo;
+    const amrex::Real s = (x - lo) * invT;
+    wLo = smoothstep5(s);
+    dWLo = smoothstep5_deriv(s) * invT;
+    d2WLo = smoothstep5_second_deriv(s) * invT * invT;
   }
 
   amrex::Real wHi = 1.0, dWHi = 0.0, d2WHi = 0.0;
   if (taperHi > 0.0 && (hi - x) < taperHi) {
-    const amrex::Real kHi = dPI / taperHi;
-    const amrex::Real arg = kHi * (hi - x);
-    wHi = 0.5 * (1.0 - std::cos(arg));
-    dWHi = -0.5 * kHi * std::sin(arg);
-    d2WHi = 0.5 * kHi * kHi * std::cos(arg);
+    const amrex::Real invT = 1.0 / taperHi;
+    const amrex::Real s = (hi - x) * invT;
+    wHi = smoothstep5(s);
+    dWHi = -smoothstep5_deriv(s) * invT;
+    d2WHi = smoothstep5_second_deriv(s) * invT * invT;
   }
 
   w = wLo * wHi;
@@ -204,8 +218,8 @@ void WaveBoundaryManager::read_turbulent_inflow(ReadParam& param) {
   turb.initialized = false;
 
   param.read_var("nMode", turb.nMode);
-  param.read_var("lambdaMin", turb.lambdaMin);
-  param.read_var("lambdaMax", turb.lambdaMax);
+  param.read_var("lambdaMin", turb.lambdaMinInput);
+  param.read_var("lambdaMax", turb.lambdaMaxInput);
   param.read_var("spectralIndex", turb.spectralIndex);
   param.read_var("dBrmsOverB0", turb.dBrmsOverB0);
   param.read_var("seed", turb.seed);
@@ -213,10 +227,12 @@ void WaveBoundaryManager::read_turbulent_inflow(ReadParam& param) {
 
   if (turb.nMode <= 0)
     amrex::Abort("TURBULENTINFLOW: nMode must be > 0.");
-  if (turb.lambdaMin <= 0.0)
+  if (turb.lambdaMinInput <= 0.0)
     amrex::Abort("TURBULENTINFLOW: lambdaMin must be > 0.");
-  if (turb.lambdaMax < turb.lambdaMin)
+  if (turb.lambdaMaxInput < turb.lambdaMinInput)
     amrex::Abort("TURBULENTINFLOW: lambdaMax must be >= lambdaMin.");
+  turb.lambdaMin = turb.lambdaMinInput;
+  turb.lambdaMax = turb.lambdaMaxInput;
   if (turb.dBrmsOverB0 < 0.0)
     amrex::Abort("TURBULENTINFLOW: dBrmsOverB0 must be >= 0.");
   if (turb.rampTimeSI < 0.0)
@@ -260,6 +276,9 @@ void WaveBoundaryManager::read_turbulent_inflow(ReadParam& param) {
 
 void WaveBoundaryManager::clear() {
   faces.clear();
+  window = WaveWindow{};
+  for (auto& fw : faceWindows)
+    fw = WaveWindow{};
   turb = TurbulentInflowConfig{};
   active = false;
 }
@@ -417,6 +436,10 @@ void WaveBoundaryManager::convert_units(const FluidInterface* fi) {
     turb.tStart = (si2noT > 0.0) ? (turb.tStartSI * si2noT) : turb.tStartSI;
     turb.rampTime =
         (si2noT > 0.0) ? (turb.rampTimeSI * si2noT) : turb.rampTimeSI;
+    const amrex::Real mhd2noL =
+        (fi->get_MhdNo2NoL() > 0.0) ? fi->get_MhdNo2NoL() : 1.0;
+    turb.lambdaMin = turb.lambdaMinInput * mhd2noL;
+    turb.lambdaMax = turb.lambdaMaxInput * mhd2noL;
   }
 
   for (auto& f : faces) {
@@ -465,6 +488,21 @@ void WaveBoundaryManager::convert_units(const FluidInterface* fi) {
   }
 }
 
+const WaveWindow& WaveBoundaryManager::active_window(int faceMask) const {
+  if (window.active)
+    return window;
+  if (faceMask > 0) {
+    const int primaryBit = 1 << (2 * turb.primaryDir + turb.primarySide);
+    if ((faceMask & primaryBit) != 0)
+      return window; // inactive => w = 1 on primary inflow face & corners
+    for (int fIdx = 0; fIdx < 6; ++fIdx) {
+      if ((faceMask & (1 << fIdx)) != 0 && faceWindows[fIdx].active)
+        return faceWindows[fIdx];
+    }
+  }
+  return window;
+}
+
 void WaveBoundaryManager::ensure_turbulence_initialized(
     const FluidInterface* fi, const amrex::Geometry& geom, int nDim,
     bool isFake2D, const bool isWaveFace[6]) {
@@ -473,13 +511,37 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
   if (!fi)
     return;
 
+  const int effDim = (isFake2D && nDim == 3) ? 2 : nDim;
   const amrex::Real si2noT = fi->get_Si2NoT();
   turb.tStart = (si2noT > 0.0) ? (turb.tStartSI * si2noT) : turb.tStartSI;
   turb.rampTime = (si2noT > 0.0) ? (turb.rampTimeSI * si2noT) : turb.rampTimeSI;
 
+  // Convert wavelengths from MHD/domain-IO length units (R_E or lNorm) to code
+  // units and enforce the Nyquist resolution limit.
+  const amrex::Real mhd2noL =
+      (fi->get_MhdNo2NoL() > 0.0) ? fi->get_MhdNo2NoL() : 1.0;
+  turb.lambdaMin = turb.lambdaMinInput * mhd2noL;
+  turb.lambdaMax = turb.lambdaMaxInput * mhd2noL;
+  turb.useScalarWindow = (effDim == 2 && turb.polarization == "out_of_plane");
+
+  const amrex::Real* dx = geom.CellSize();
+  amrex::Real dxMax = dx[0];
+  for (int d = 1; d < effDim; ++d)
+    dxMax = std::max(dxMax, dx[d]);
+  if (turb.lambdaMin < 2.0 * dxMax) {
+    amrex::Abort(
+        "TURBULENTINFLOW: lambdaMin=" + std::to_string(turb.lambdaMinInput) +
+        " [MHD/IO units] (= " + std::to_string(turb.lambdaMin) +
+        " code units, mhd2noL=" + std::to_string(mhd2noL) +
+        ", No2SiL=" + std::to_string(fi->get_No2SiL()) +
+        " m) is below the Nyquist limit 2*dx=" + std::to_string(2.0 * dxMax) +
+        " code units. Increase lambdaMin or check units "
+        "(MHD/domain-IO length units, e.g. R_E in planetary runs "
+        "or lNorm in standalone box runs).");
+  }
+
   const int nS = fi->get_nS();
   const bool useHybrid = fi->get_useHybridPIC();
-  const bool swmfSingleFluid = fi->is_init_from_swmf();
 
   amrex::Real mIon = 0.0, mElec = 0.0;
   for (int iS = 0; iS < nS; ++iS) {
@@ -528,7 +590,7 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
         pzIon += rhoS * fi->get_uz(mfi, ijk, iS, 0);
       }
     }
-    rhoOut = swmfSingleFluid ? rhoAll : ((rhoIon > 0.0) ? rhoIon : rhoAll);
+    rhoOut = (rhoAll > 0.0) ? rhoAll : rhoIon;
     if (rhoIon > 0.0) {
       vOut[0] = pxIon / rhoIon;
       vOut[1] = pyIon / rhoIon;
@@ -542,7 +604,6 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
   constexpr int nSlotPerFace = 9; // count, rho, rhoQ, vx, vy, vz, bx, by, bz
   std::vector<amrex::Real> faceSums(6 * nSlotPerFace, 0.0);
 
-  const int effDim = (isFake2D && nDim == 3) ? 2 : nDim;
   const amrex::Box domNode =
       amrex::convert(geom.Domain(), amrex::IntVect::TheNodeVector());
 
@@ -646,13 +707,18 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
     const auto& uState = fi->get_uniform_state();
     if (nS > 0 && static_cast<int>(uState.size()) >= 5 * nS + 3 &&
         static_cast<int>(fi->inflowState.size()) >= nS) {
-      amrex::Real rhoIon = 0.0, rhoQ = 0.0;
+      amrex::Real rhoAll = 0.0, rhoIon = 0.0, rhoQ = 0.0;
       amrex::Real px = 0.0, py = 0.0, pz = 0.0;
       for (int iS = 0; iS < nS; ++iS) {
         const amrex::Real q = fi->get_species_charge(iS);
         const amrex::Real m = fi->get_species_mass(iS);
+        if (useHybrid && q < 0.0)
+          continue;
         const amrex::Real n = fi->inflowState[iS].nDens;
-        if (q > 0.0 && n > 0.0) {
+        if (n <= 0.0)
+          continue;
+        rhoAll += n * m;
+        if (q > 0.0) {
           rhoIon += n * m;
           rhoQ += n * q;
           px += n * m * fi->inflowState[iS].ux;
@@ -660,7 +726,7 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
           pz += n * m * fi->inflowState[iS].uz;
         }
       }
-      turb.rho0 = rhoIon;
+      turb.rho0 = (rhoAll > 0.0) ? rhoAll : rhoIon;
       turb.rhoQ0 = rhoQ;
       if (rhoIon > 0.0) {
         turb.v0[0] = px / rhoIon;
@@ -681,10 +747,13 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
   for (int d = 0; d < 3; ++d)
     turb.va0[d] = turb.b0[d] * invSqrtFourPiRho;
 
-  // Automatic solar-wind windowing on side 'wave' faces: if side wave faces
-  // cross a bow shock (density jump > 1.20 * rho0) and no explicit
-  // #WAVEBCWINDOW was given, automatically taper wave injection upstream of the
-  // flank shock crossing.
+  // Automatic solar-wind windowing per side 'wave' face: if a side wave face
+  // crosses a bow shock (density jump > 1.20 * rho0) and no explicit
+  // #WAVEBCWINDOW was given, automatically taper wave injection upstream of
+  // that face's shock crossing.
+  for (int f = 0; f < 6; ++f)
+    faceWindows[f] = WaveWindow{};
+
   bool hasSideWaveFace = false;
   for (int fIdx = 0; fIdx < 2 * effDim; ++fIdx) {
     if (isWaveFace[fIdx] && (fIdx / 2) != turb.primaryDir)
@@ -697,10 +766,11 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
     const int pSide = turb.primarySide;
     const amrex::Real* probLo = geom.ProbLo();
     const amrex::Real* probHi = geom.ProbHi();
-    const amrex::Real* dx = geom.CellSize();
     const amrex::Real rhoThresh = 1.20 * turb.rho0;
 
-    amrex::Real xShock = (pSide == 1) ? -1.0e30 : 1.0e30;
+    amrex::Real xShockFace[6];
+    for (int f = 0; f < 6; ++f)
+      xShockFace[f] = (pSide == 1) ? -1.0e30 : 1.0e30;
     const amrex::MultiFab& nodeFluid = fi->get_node_fluid(0);
 
     for (int d = 0; d < effDim; ++d) {
@@ -736,9 +806,9 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
                   const amrex::Real xCoord =
                       probLo[pDir] + ijk[pDir] * dx[pDir];
                   if (pSide == 1)
-                    xShock = std::max(xShock, xCoord);
+                    xShockFace[fIdx] = std::max(xShockFace[fIdx], xCoord);
                   else
-                    xShock = std::min(xShock, xCoord);
+                    xShockFace[fIdx] = std::min(xShockFace[fIdx], xCoord);
                 }
               }
             }
@@ -748,30 +818,42 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
     }
 
     if (pSide == 1) {
-      amrex::ParallelDescriptor::ReduceRealMax(xShock);
-      if (xShock > probLo[pDir] && xShock < probHi[pDir]) {
-        const amrex::Real lUp = probHi[pDir] - xShock;
-        window.active = true;
-        window.isCodeUnits = true;
-        window.direction = pDir;
-        window.lo = xShock + 0.05 * lUp;
-        window.hi = 1.0e30;
-        window.taperLo = 0.25 * lUp;
-        window.taperHi = 0.0;
-        window.taper = window.taperLo;
+      amrex::ParallelDescriptor::ReduceRealMax(xShockFace, 6);
+      for (int fIdx = 0; fIdx < 2 * effDim; ++fIdx) {
+        if (!isWaveFace[fIdx] || (fIdx / 2) == pDir)
+          continue;
+        const amrex::Real xShock = xShockFace[fIdx];
+        if (xShock > probLo[pDir] && xShock < probHi[pDir]) {
+          const amrex::Real lUp = probHi[pDir] - xShock;
+          WaveWindow& fw = faceWindows[fIdx];
+          fw.active = true;
+          fw.isCodeUnits = true;
+          fw.direction = pDir;
+          fw.lo = xShock + 0.05 * lUp;
+          fw.hi = 1.0e30;
+          fw.taperLo = 0.25 * lUp;
+          fw.taperHi = 0.0;
+          fw.taper = fw.taperLo;
+        }
       }
     } else {
-      amrex::ParallelDescriptor::ReduceRealMin(xShock);
-      if (xShock > probLo[pDir] && xShock < probHi[pDir]) {
-        const amrex::Real lUp = xShock - probLo[pDir];
-        window.active = true;
-        window.isCodeUnits = true;
-        window.direction = pDir;
-        window.lo = -1.0e30;
-        window.hi = xShock - 0.05 * lUp;
-        window.taperLo = 0.0;
-        window.taperHi = 0.25 * lUp;
-        window.taper = window.taperHi;
+      amrex::ParallelDescriptor::ReduceRealMin(xShockFace, 6);
+      for (int fIdx = 0; fIdx < 2 * effDim; ++fIdx) {
+        if (!isWaveFace[fIdx] || (fIdx / 2) == pDir)
+          continue;
+        const amrex::Real xShock = xShockFace[fIdx];
+        if (xShock > probLo[pDir] && xShock < probHi[pDir]) {
+          const amrex::Real lUp = xShock - probLo[pDir];
+          WaveWindow& fw = faceWindows[fIdx];
+          fw.active = true;
+          fw.isCodeUnits = true;
+          fw.direction = pDir;
+          fw.lo = -1.0e30;
+          fw.hi = xShock - 0.05 * lUp;
+          fw.taperLo = 0.0;
+          fw.taperHi = 0.25 * lUp;
+          fw.taper = fw.taperHi;
+        }
       }
     }
   }
@@ -1025,7 +1107,7 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
     amrex::Print() << "  #TURBULENTINFLOW initialized:\n"
                    << "    primary inflow face: dir = " << turb.primaryDir
                    << ", side = " << (turb.primarySide == 0 ? "lo" : "hi")
-                   << "\n"
+                   << ", mhd2noL = " << mhd2noL << "\n"
                    << "    upstream B0 = (" << turb.b0[0] * no2siB * 1e9 << ", "
                    << turb.b0[1] * no2siB * 1e9 << ", "
                    << turb.b0[2] * no2siB * 1e9
@@ -1034,20 +1116,36 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
                    << ", " << turb.v0[1] * no2siV * 1e-3 << ", "
                    << turb.v0[2] * no2siV * 1e-3
                    << ") [km/s], vA = " << vaMagSI * 1e-3 << " [km/s]\n"
-                   << "    nMode = " << N << ", lambda = [" << turb.lambdaMin
-                   << ", " << turb.lambdaMax << "] [code] (["
+                   << "    nMode = " << N << ", lambda = ["
+                   << turb.lambdaMinInput << ", " << turb.lambdaMaxInput
+                   << "] [MHD/IO] = [" << turb.lambdaMin << ", "
+                   << turb.lambdaMax << "] [code] (["
                    << turb.lambdaMin * no2siL * 1e-3 << ", "
                    << turb.lambdaMax * no2siL * 1e-3 << "] km)\n"
                    << "    spectralIndex = " << turb.spectralIndex
                    << ", dBrms/B0 = " << turb.dBrmsOverB0
                    << ", sigmaC = " << turb.sigmaC
                    << ", polarization = " << turb.polarization
+                   << (turb.useScalarWindow ? " (scalar C^2 window)" : "")
                    << ", seed = " << turb.seed << "\n";
     if (window.active) {
-      amrex::Print() << "    spatial window: dir = " << window.direction
-                     << ", lo = " << window.lo << ", hi = " << window.hi
+      amrex::Print() << "    explicit spatial window: dir = "
+                     << window.direction << ", lo = " << window.lo
+                     << ", hi = " << window.hi
                      << ", taperLo = " << window.taperLo
                      << ", taperHi = " << window.taperHi << " [code]\n";
+    } else {
+      for (int fIdx = 0; fIdx < 2 * effDim; ++fIdx) {
+        const WaveWindow& fw = faceWindows[fIdx];
+        if (!fw.active)
+          continue;
+        amrex::Print() << "    auto spatial window (dir=" << (fIdx / 2)
+                       << ", side=" << ((fIdx % 2 == 0) ? "lo" : "hi")
+                       << "): windowDir = " << fw.direction
+                       << ", lo = " << fw.lo << ", hi = " << fw.hi
+                       << ", taperLo = " << fw.taperLo
+                       << ", taperHi = " << fw.taperHi << " [code]\n";
+      }
     }
 
     if (!turb.modeFile.empty() && turb.modeFile != "none") {
@@ -1055,11 +1153,12 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
       if (ofs) {
         ofs << std::setprecision(10);
         const amrex::Real nCm3 =
-            (turb.rho0 * no2siRho) / (cProtonMassSI * mIon * 1.0e6);
+            (turb.rho0 * no2siRho) / (cProtonMassSI * mSum * 1.0e6);
         ofs << "{\n"
             << " \"info\": {\n"
             << "  \"n\": " << nCm3 << ",\n"
             << "  \"mi\": " << mIon << ",\n"
+            << "  \"me\": " << mElec << ",\n"
             << "  \"b0\": [" << turb.b0[0] * no2siB << ", "
             << turb.b0[1] * no2siB << ", " << turb.b0[2] * no2siB << "],\n"
             << "  \"v0\": [" << turb.v0[0] * no2siV << ", "
@@ -1116,7 +1215,7 @@ void WaveBoundaryManager::ensure_turbulence_initialized(
 bool WaveBoundaryManager::eval_turbulent_state(
     const amrex::Real* pos, const amrex::Real* phase_t, amrex::Real t,
     amrex::Real env, bool needJAndV, amrex::Real dB[3], amrex::Real dJ[3],
-    amrex::Real dVmhd[3]) const {
+    amrex::Real dVmhd[3], int faceMask) const {
   dB[0] = dB[1] = dB[2] = 0.0;
   dJ[0] = dJ[1] = dJ[2] = 0.0;
   dVmhd[0] = dVmhd[1] = dVmhd[2] = 0.0;
@@ -1125,17 +1224,20 @@ bool WaveBoundaryManager::eval_turbulent_state(
       turb.dBrmsOverB0 <= 0.0)
     return false;
 
+  const WaveWindow& win = active_window(faceMask);
   amrex::Real w = 1.0, dW = 0.0, d2W = 0.0;
-  window.weight_and_derivs(pos, w, dW, d2W);
+  win.weight_and_derivs(pos, w, dW, d2W);
   if (w == 0.0 && dW == 0.0 && d2W == 0.0)
     return false;
 
-  const int wDir =
-      (window.active && window.direction >= 0 && window.direction < 3)
-          ? window.direction
-          : 0;
+  const int wDir = (win.active && win.direction >= 0 && win.direction < 3)
+                       ? win.direction
+                       : 0;
   amrex::Real gradW[3] = { 0.0, 0.0, 0.0 };
   gradW[wDir] = dW;
+
+  const bool scalarWin =
+      turb.useScalarWindow && (!win.active || win.direction < 2);
 
   const int N = turb.nMode;
   const amrex::Real* AMREX_RESTRICT kx = turb.kx.data();
@@ -1152,6 +1254,67 @@ bool WaveBoundaryManager::eval_turbulent_state(
 
   amrex::Real dBxRaw = 0.0, dByRaw = 0.0, dBzRaw = 0.0;
   amrex::Real dAxRaw = 0.0, dAyRaw = 0.0, dAzRaw = 0.0;
+
+  if (scalarWin) {
+    if (!needJAndV) {
+      for (int m = 0; m < N; ++m) {
+        const amrex::Real ph = phase_t ? phase_t[m] : (phase[m] - omega[m] * t);
+        const amrex::Real arg =
+            kx[m] * pos[0] + ky[m] * pos[1] + kz[m] * pos[2] + ph;
+        const amrex::Real s = std::sin(arg);
+        dBxRaw += Bx[m] * s;
+        dByRaw += By[m] * s;
+        dBzRaw += Bz[m] * s;
+      }
+      dB[0] = env * w * dBxRaw;
+      dB[1] = env * w * dByRaw;
+      dB[2] = env * w * dBzRaw;
+      return true;
+    }
+
+    const amrex::Real* AMREX_RESTRICT Jx = turb.Jx.data();
+    const amrex::Real* AMREX_RESTRICT Jy = turb.Jy.data();
+    const amrex::Real* AMREX_RESTRICT Jz = turb.Jz.data();
+    const amrex::Real* AMREX_RESTRICT Vmx = turb.Vmx.data();
+    const amrex::Real* AMREX_RESTRICT Vmy = turb.Vmy.data();
+    const amrex::Real* AMREX_RESTRICT Vmz = turb.Vmz.data();
+
+    amrex::Real dJxRaw = 0.0, dJyRaw = 0.0, dJzRaw = 0.0;
+    amrex::Real dVxRaw = 0.0, dVyRaw = 0.0, dVzRaw = 0.0;
+    for (int m = 0; m < N; ++m) {
+      const amrex::Real ph = phase_t ? phase_t[m] : (phase[m] - omega[m] * t);
+      const amrex::Real arg =
+          kx[m] * pos[0] + ky[m] * pos[1] + kz[m] * pos[2] + ph;
+      const amrex::Real s = std::sin(arg);
+      const amrex::Real c = std::cos(arg);
+      dBxRaw += Bx[m] * s;
+      dByRaw += By[m] * s;
+      dBzRaw += Bz[m] * s;
+      dJxRaw += Jx[m] * c;
+      dJyRaw += Jy[m] * c;
+      dJzRaw += Jz[m] * c;
+      dVxRaw += Vmx[m] * s;
+      dVyRaw += Vmy[m] * s;
+      dVzRaw += Vmz[m] * s;
+    }
+
+    dB[0] = env * w * dBxRaw;
+    dB[1] = env * w * dByRaw;
+    dB[2] = env * w * dBzRaw;
+
+    const amrex::Real dBRawVec[3] = { dBxRaw, dByRaw, dBzRaw };
+    amrex::Real gradWCrossB[3];
+    cross3(gradW, dBRawVec, gradWCrossB);
+    const amrex::Real invFourPi = 1.0 / fourPI;
+    dJ[0] = env * (w * dJxRaw + invFourPi * gradWCrossB[0]);
+    dJ[1] = env * (w * dJyRaw + invFourPi * gradWCrossB[1]);
+    dJ[2] = env * (w * dJzRaw + invFourPi * gradWCrossB[2]);
+
+    dVmhd[0] = env * w * dVxRaw;
+    dVmhd[1] = env * w * dVyRaw;
+    dVmhd[2] = env * w * dVzRaw;
+    return true;
+  }
 
   if (!needJAndV) {
     for (int m = 0; m < N; ++m) {
@@ -1246,7 +1409,8 @@ bool WaveBoundaryManager::eval_turbulent_state(
 void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
                                                const amrex::Real* phase_t,
                                                amrex::Real env, int iField,
-                                               amrex::Real out[3]) const {
+                                               amrex::Real out[3],
+                                               int faceMask) const {
   out[0] = 0.0;
   out[1] = 0.0;
   out[2] = 0.0;
@@ -1255,7 +1419,7 @@ void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
 
   amrex::Real dB[3], dJ[3], dVmhd[3];
   if (!eval_turbulent_state(pos, phase_t, 0.0, env, (iField == 1), dB, dJ,
-                            dVmhd))
+                            dVmhd, faceMask))
     return;
 
   if (iField == 0) {
@@ -1284,13 +1448,14 @@ void WaveBoundaryManager::eval_turbulent_field(const amrex::Real* pos,
 
 void WaveBoundaryManager::eval_turbulent_velocity_kick(
     const amrex::Real* pos, amrex::Real t, amrex::Real charge, amrex::Real& dvx,
-    amrex::Real& dvy, amrex::Real& dvz) const {
+    amrex::Real& dvy, amrex::Real& dvz, int faceMask) const {
   const amrex::Real env = turbulent_envelope(t);
   if (env <= 0.0)
     return;
 
   amrex::Real dB[3], dJ[3], dVmhd[3];
-  if (!eval_turbulent_state(pos, nullptr, t, env, true, dB, dJ, dVmhd))
+  if (!eval_turbulent_state(pos, nullptr, t, env, true, dB, dJ, dVmhd,
+                            faceMask))
     return;
 
   amrex::Real jDriftScale = 0.0;

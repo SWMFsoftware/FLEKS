@@ -3414,12 +3414,13 @@ internally when the fluid interface provides the normalization).
 
 Optional spatial window for the #WAVEBC sources. Every injected field value
 and velocity kick is multiplied by a weight that depends on one coordinate:
-1 inside [min, max], a $\cos^2$ taper of width taperWidth just inside each end,
-and 0 outside. Lengths are in SI units (m) when the normalization is active,
-like the #WAVEBC wavelengths. Use it to drive only the part of a face that
-sees the upstream flow, e.g. the upstream ends of the side faces of a
-magnetosphere box (direction 0, min upstream of the bow shock, max beyond the
-box). The default (no command) applies the full source on every wave face.
+1 inside [min, max], a $C^2$ quintic smoothstep taper of width taperWidth just
+inside each end, and 0 outside. Lengths are in SI units (m) when the
+normalization is active, like the #WAVEBC wavelengths. Use it to drive only the
+part of a face that sees the upstream flow, e.g. the upstream ends of the side
+faces of a magnetosphere box (direction 0, min upstream of the bow shock, max
+beyond the box). The default (no command) applies the full source on every wave
+face.
 </command>
 
 <command name="TURBULENTINFLOW" alias="TURBULENTINFLOW_FLEKS" multiple="F">
@@ -3433,8 +3434,8 @@ box). The default (no command) applies the full source on every wave face.
 
 #TURBULENTINFLOW
 48                      nMode
-0.5                     lambdaMin     [code/domain length units]
-8.0                     lambdaMax     [code/domain length units]
+0.5                     lambdaMin     [MHD/domain length units]
+8.0                     lambdaMax     [MHD/domain length units]
 1.666667                spectralIndex (1D magnetic power-law slope, e.g. 5/3)
 0.3                     dBrmsOverB0   (rms dB / |B0|; 0 for steady control)
 1                       seed
@@ -3442,16 +3443,21 @@ box). The default (no command) applies the full source on every wave face.
 
 Synthesizes a divergence-free broadband Alfvenic / Elsasser wave spectrum on
 boundary faces marked `wave` in `#FIELDBOXBOUNDARY`.
-* `lambdaMin` and `lambdaMax` are in domain length units (matching `#GEOMETRY`
-  and `#REGION`, e.g. $R_E$ in global runs or $d_i$ in standalone box runs);
-  `rampTime` and optional `tStart` are in seconds `[s]`.
+* `lambdaMin` and `lambdaMax` are in MHD/domain-IO length units (converted via
+  `MhdNo2NoL` so they match `#PICGRID` and `#SAVEPLOT`, e.g. $R_E$ in planetary
+  GM-PC or `#PLANETRADIUS` runs, and $l_{\mathrm{norm}}$ in standalone box runs);
+  a Nyquist check enforces $\lambda_{\min} \ge 2\Delta x$. `rampTime` and
+  optional `tStart` are in seconds `[s]`.
 * The upstream reference state $(\rho_0, \mathbf{V}_0, \mathbf{B}_0)$ is sampled
-  automatically from `FluidInterface` on the primary inflow `wave` face.
-* If side `wave` faces cross a bow shock ($\rho > 1.2\rho_0$), a smooth $\cos^2$
-  spatial window is automatically applied upstream of the shock crossing via the
-  vector potential $\delta\mathbf{B} = \nabla \times (W \delta\mathbf{A})$ so
-  $\nabla \cdot \delta\mathbf{B} = 0$ holds identically without needing
-  `#WAVEBCWINDOW`.
+  automatically from `FluidInterface` on the primary inflow `wave` face using
+  total kinetic mass density $\rho_0$.
+* If side `wave` faces cross a bow shock ($\rho > 1.2\rho_0$), an independent
+  smooth $C^2$ quintic spatial window is automatically detected per side face
+  upstream of its shock crossing without needing `#WAVEBCWINDOW`. For 2D
+  `out_of_plane` mode, exact scalar windowing $\delta\mathbf{B} = W\delta\mathbf{B}_{\mathrm{raw}}$
+  is used (divergence-free and Wal\'en-preserving through the taper); for
+  in-plane/3D polarizations, the vector-potential form $\delta\mathbf{B} = \nabla \times (W \delta\mathbf{A})$
+  ensures $\nabla \cdot \delta\mathbf{B} = 0$.
 * If a transverse domain direction is periodic, $k_\perp$ is automatically
   quantized to an integer multiple of $2\pi / L_\perp$.
 * Full kinetic consistency: boundary electrons and ions receive species velocity

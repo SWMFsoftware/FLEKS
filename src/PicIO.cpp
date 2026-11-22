@@ -746,6 +746,9 @@ void Pic::save_restart_data() {
   write_restart_mf(nodeE, prefix + "_nodeE");
   write_restart_mf(nodeB, prefix + "_nodeB");
   write_restart_mf(centerB, prefix + "_centerB");
+  if (useHyperbolicCleaning) {
+    write_restart_mf(hypPhi, prefix + "_hypPhi");
+  }
   if (useElectronPressureEq) {
     write_restart_mf(centerPeState, prefix + "_centerPeState");
   }
@@ -799,6 +802,21 @@ void Pic::read_restart() {
   read_restart_mf(nodeE, prefix + "_nodeE");
   read_restart_mf(nodeB, prefix + "_nodeB");
   read_restart_mf(centerB, prefix + "_centerB");
+  if (useHyperbolicCleaning) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      ensure_hypPhi(iLev);
+    }
+    if (read_restart_mf(hypPhi, prefix + "_hypPhi", true, true)) {
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        apply_BC(cell_status(iLev), hypPhi[iLev], 0, hypPhi[iLev].nComp(),
+                 nullptr, iLev, nullptr, iLev > 0);
+      }
+    } else {
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        hypPhi[iLev].setVal(0.0);
+      }
+    }
+  }
 
   // The evolved electron pressure is only present in restarts written by a run
   // that had #ELECTRONPRESSURE on. Older files start without it and the field
