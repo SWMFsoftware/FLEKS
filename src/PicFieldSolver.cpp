@@ -13,6 +13,76 @@
 
 using namespace amrex;
 
+namespace {
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
+local_u_speed(const Array4<Real const>& arrU, int i, int j, int k) noexcept {
+  const Real ux = arrU(i, j, k, ix_);
+  const Real uy = arrU(i, j, k, iy_);
+  const Real uz = arrU(i, j, k, iz_);
+  return std::sqrt(ux * ux + uy * uy + uz * uz);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void upwind_E_face_speeds(
+    const Array4<Real const>& arrCSpeed, int i, int j, int k, const int dii[3],
+    Real cMaxVal, Real upwindFloor, Real& ul, Real& ur) noexcept {
+  ul = cMaxVal;
+  ur = cMaxVal;
+  if (cMaxVal <= 0.0) {
+    const Real u0 = arrCSpeed(i, j, k);
+    ul = amrex::max(upwindFloor,
+                    Real(0.5) *
+                        (arrCSpeed(i - dii[0], j - dii[1], k - dii[2]) + u0));
+    ur = amrex::max(upwindFloor,
+                    Real(0.5) *
+                        (u0 + arrCSpeed(i + dii[0], j + dii[1], k + dii[2])));
+  }
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
+local_chi_p(const Array4<RealMM const>& mmArr, int i, int j, int k, Real c0,
+            Real susceptScale) noexcept {
+#if (AMREX_SPACEDIM == 2)
+  constexpr int idx0 = 4 * 9;
+#else
+  constexpr int idx0 = 13 * 9;
+#endif
+  const Real* const M_I = &(mmArr(i, j, k)[idx0]);
+  const Real trM = (M_I[0] + M_I[4] + M_I[8]) / Real(3.0);
+  return amrex::max(Real(0.0), susceptScale * c0 * trM);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void apply_curl_upwind_increment(
+    const Array4<Real>& arrE, int i, int j, int k, int iDir, Real halfA,
+    const Real jump[nDim3]) noexcept {
+  if (iDir == ix_) {
+    arrE(i, j, k, iy_) -= halfA * jump[iz_];
+    arrE(i, j, k, iz_) += halfA * jump[iy_];
+  } else if (iDir == iy_) {
+    arrE(i, j, k, ix_) += halfA * jump[iz_];
+    arrE(i, j, k, iz_) -= halfA * jump[ix_];
+  } else {
+    arrE(i, j, k, ix_) -= halfA * jump[iy_];
+    arrE(i, j, k, iy_) += halfA * jump[ix_];
+  }
+}
+
+void zero_coarse_fine_E_edge(const iMultiFab& statusMF, MultiFab& mf) {
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.validbox();
+    const Array4<Real> arr = mf[mfi].array();
+    const Array4<int const> stArr = statusMF[mfi].const_array();
+    parallel_for_omp(bx, mf.nComp(),
+                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+                       if (is_interior_coarse_fine_edge(stArr, i, j, k)) {
+                         arr(i, j, k, c) = 0.0;
+                       }
+                     });
+  }
+}
+
+} // namespace
+
 //==========================================================
 void Pic::update_E() {
   if (useExplicitPIC) {
@@ -97,6 +167,166 @@ AMREX_GPU_HOST_DEVICE inline bool is_conducting_wall_Et(
 }
 
 //==========================================================
+void Pic::prepare_upwind_E_speed() {
+  if (!useUpwindE || cMaxE > 0.0)
+    return;
+
+  if (static_cast<int>(uUpwindE.size()) < n_lev_max()) {
+    uUpwindE.resize(n_lev_max());
+  }
+
+  const bool addVacFloor =
+      (finestLevel() > 0) && useCurlUpwindB && !useHybridPIC;
+  const Real dt = tc->get_dt();
+  const Real c0 = fourPI * fsolver.theta * dt;
+  const Real susceptScale = (nDim > 2) ? Real(3.375) : Real(2.25);
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (uUpwindE[iLev].empty() ||
+        uUpwindE[iLev].boxArray() != node_box_array(iLev) ||
+        uUpwindE[iLev].DistributionMap() != DistributionMap(iLev)) {
+      distribute_FabArray(uUpwindE[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost(), false, 0.0);
+    }
+
+    Real maxInvDx = 0.0;
+    for (int d = 0; d < nDim; ++d) {
+      maxInvDx = std::max(maxInvDx, Geom(iLev).InvCellSize(d));
+    }
+    const Real cVacLev = addVacFloor
+                             ? (Real(0.80) * std::min(Real(1.0), dt * maxInvDx))
+                             : Real(0.0);
+    const Real cStag =
+        addVacFloor
+            ? (Real(0.015) * std::min(Real(1.0), Real(1.0) / (dt * maxInvDx)))
+            : Real(0.0);
+    const bool hasMM = addVacFloor &&
+                       (iLev < static_cast<int>(nodeMM.size())) &&
+                       !nodeMM[iLev].empty();
+
+    for (MFIter mfi(uUpwindE[iLev]); mfi.isValid(); ++mfi) {
+      const Box& fbox = mfi.fabbox();
+      const Box& vbox = mfi.validbox();
+      const Array4<Real> uArr = uUpwindE[iLev][mfi].array();
+      const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
+
+      parallel_for_omp(fbox,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         uArr(i, j, k) = local_u_speed(arrU, i, j, k);
+                       });
+
+      if (addVacFloor) {
+        const Array4<RealMM const> mmArr =
+            hasMM ? nodeMM[iLev][mfi].const_array() : Array4<RealMM const>();
+        parallel_for_omp(vbox, [=] AMREX_GPU_DEVICE(int i, int j,
+                                                    int k) noexcept {
+          const Real chiP =
+              hasMM ? local_chi_p(mmArr, i, j, k, c0, susceptScale) : Real(0.0);
+          const Real cVac = cVacLev / (Real(1.0) + chiP);
+          uArr(i, j, k) = amrex::max(amrex::max(uArr(i, j, k), cVac), cStag);
+        });
+      }
+    }
+
+    uUpwindE[iLev].OverrideSync(Geom(iLev).periodicity());
+    uUpwindE[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  if (addVacFloor) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (iLev > 0) {
+        fill_fine_lev_bny_from_coarse(uUpwindE[iLev - 1], uUpwindE[iLev], 0, 1,
+                                      refRatio(iLev - 1), Geom(iLev - 1),
+                                      Geom(iLev), node_status(iLev),
+                                      node_bilinear_interp);
+        uUpwindE[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+
+      const Box domNodes = amrex::surroundingNodes(Geom(iLev).Domain());
+      GpuArray<int, 3> domLo = { 0, 0, 0 };
+      GpuArray<int, 3> domHi = { 0, 0, 0 };
+      GpuArray<int, 3> isPer = { 1, 1, 1 };
+      for (int d = 0; d < nDim; ++d) {
+        domLo[d] = domNodes.smallEnd(d);
+        domHi[d] = domNodes.bigEnd(d);
+        isPer[d] = Geom(iLev).isPeriodic(d) ? 1 : 0;
+      }
+
+      for (MFIter mfi(uUpwindE[iLev]); mfi.isValid(); ++mfi) {
+        const Box& fbox = mfi.fabbox();
+        const Array4<Real> uArr = uUpwindE[iLev][mfi].array();
+        const Array4<int const> stArr = node_status(iLev)[mfi].const_array();
+        parallel_for_omp(fbox, [=] AMREX_GPU_DEVICE(int i, int j,
+                                                    int k) noexcept {
+          if (bit::is_domain_boundary(stArr(i, j, k))) {
+            const int ic =
+                isPer[0] ? i : amrex::min(domHi[0], amrex::max(domLo[0], i));
+            const int jc =
+                isPer[1] ? j : amrex::min(domHi[1], amrex::max(domLo[1], j));
+            const int kc =
+                isPer[2] ? k : amrex::min(domHi[2], amrex::max(domLo[2], k));
+            uArr(i, j, k) = amrex::max(uArr(i, j, k), uArr(ic, jc, kc));
+          }
+        });
+      }
+
+      uUpwindE[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+}
+
+//==========================================================
+void Pic::prepare_curl_upwind_vac_speed() {
+  if (!useCurlUpwindB || !useUpwindB || fixedUpwindVel > 0.0 ||
+      finestLevel() <= 0 || useExplicitPIC || useHybridPIC) {
+    return;
+  }
+
+  if (static_cast<int>(aVacUpwindB.size()) < n_lev_max()) {
+    aVacUpwindB.resize(n_lev_max());
+  }
+
+  const Real dt = tc->get_dt();
+  const Real c0 = fourPI * fsolver.theta * dt;
+  const Real susceptScale = (nDim > 2) ? Real(3.375) : Real(2.25);
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (aVacUpwindB[iLev].empty() ||
+        aVacUpwindB[iLev].boxArray() != node_box_array(iLev) ||
+        aVacUpwindB[iLev].DistributionMap() != DistributionMap(iLev)) {
+      distribute_FabArray(aVacUpwindB[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost(), false, 0.0);
+    }
+    aVacUpwindB[iLev].setVal(0.0);
+
+    const bool hasMM =
+        (iLev < static_cast<int>(nodeMM.size())) && !nodeMM[iLev].empty();
+    for (MFIter mfi(aVacUpwindB[iLev]); mfi.isValid(); ++mfi) {
+      const Box& vbox = mfi.validbox();
+      const Array4<Real> aArr = aVacUpwindB[iLev][mfi].array();
+      const Array4<RealMM const> mmArr =
+          hasMM ? nodeMM[iLev][mfi].const_array() : Array4<RealMM const>();
+      parallel_for_omp(vbox, [=] AMREX_GPU_DEVICE(int i, int j,
+                                                  int k) noexcept {
+        const Real chiP =
+            hasMM ? local_chi_p(mmArr, i, j, k, c0, susceptScale) : Real(0.0);
+        aArr(i, j, k) = Real(0.05) / (Real(1.0) + chiP * chiP);
+      });
+    }
+
+    aVacUpwindB[iLev].OverrideSync(Geom(iLev).periodicity());
+    aVacUpwindB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  for (int iLev = 1; iLev < n_lev(); ++iLev) {
+    fill_fine_lev_bny_from_coarse(
+        aVacUpwindB[iLev - 1], aVacUpwindB[iLev], 0, 1, refRatio(iLev - 1),
+        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+    aVacUpwindB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+//==========================================================
 void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
@@ -104,6 +334,10 @@ void Pic::update_E_impl() {
 
   if (hasAbsorbBC_ && !isAbsorbCflWarned_)
     warn_absorb_cfl();
+
+  if (useUpwindE && cMaxE <= 0.0) {
+    prepare_upwind_E_speed();
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (fsolver.solverBackend == ESolverBackend::AmrexGMRES) {
@@ -145,16 +379,28 @@ void Pic::update_E_impl() {
       apply_field_bc(node_status(iLev), nodeEth[iLev], 0, nDim3,
                      &Pic::get_node_E, iLev, false);
     } else {
+      if (useCurlUpwindB && !useHybridPIC) {
+        relax_fine_lev_edge_from_coarse(nodeE[iLev - 1], nodeE[iLev], iLev,
+                                        Real(0.25), Real(0.5), false);
+      }
+
       fill_fine_lev_bny_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      nodeE[iLev].OverrideSync(Geom(iLev).periodicity());
       nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
       apply_field_bc(node_status(iLev), nodeE[iLev], 0, nDim3, &Pic::get_node_E,
                      iLev, false);
 
+      if (useCurlUpwindB && !useHybridPIC) {
+        relax_fine_lev_edge_from_coarse(nodeEth[iLev - 1], nodeEth[iLev], iLev,
+                                        Real(0.25), Real(0.5), false);
+      }
+
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], nodeEth[iLev], 0, nDim3, refRatio(iLev - 1),
           Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      nodeEth[iLev].OverrideSync(Geom(iLev).periodicity());
       nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
       apply_field_bc(node_status(iLev), nodeEth[iLev], 0, nDim3,
                      &Pic::get_node_E, iLev, false);
@@ -180,11 +426,34 @@ void Pic::update_E_impl() {
 
 //==========================================================
 void Pic::solve_E_gmres(int iLev) {
-  convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
+  if (is_coarse_fine_E_dirichlet(iLev)) {
+    if (solverRhsNode1[iLev].empty()) {
+      distribute_FabArray(solverRhsNode1[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost());
+    }
+    if (solverMatvecMF[iLev].empty()) {
+      distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost());
+      distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, 1);
+      distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost());
+      distribute_FabArray(solverCenterLapMF[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 3, 1);
+    }
+    MultiFab& baseE = solverRhsNode1[iLev];
+    MultiFab::Copy(baseE, nodeE[iLev], 0, 0, nDim3, nodeE[iLev].nGrow());
+    fill_fine_lev_edge_from_coarse(
+        nodeEth[iLev - 1], baseE, 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
+        Geom(iLev), node_status(iLev), node_bilinear_interp);
+    update_E_matvec(baseE, solverMatvecMF[iLev], iLev, false);
+    convert_3d_to_1d(solverMatvecMF[iLev], eSolver.matvec, iLev);
+  } else {
+    convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
+    update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
+  }
 
-  update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
-
-  // Original linear solve: A * delta = rhs - A(E_old).
+  // Original linear solve: A * delta = rhs - A(E_base).
   Real* const r = eSolver.rhs;
   const Real* const m = eSolver.matvec;
   Real* const x = eSolver.xLeft;
@@ -206,25 +475,237 @@ void Pic::solve_E_gmres(int iLev) {
 void Pic::sync_nodal_solver_vec(MultiFab& vecMF, int iLev) {
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
+  const bool skipCFEdge = is_coarse_fine_E_dirichlet(iLev);
   const auto& statusMF = node_status(iLev);
 
   for (MFIter mfi(vecMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.tilebox();
     const Array4<Real> arr = vecMF[mfi].array();
     const Array4<int const> nodeArr = statusMF[mfi].const_array();
-    parallel_for_omp(bx, vecMF.nComp(),
-                     [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
-                       const int st = nodeArr(i, j, k);
-                       if (!bit::is_owner(st) ||
-                           (skipAllBody && bit::is_body(st)) ||
-                           (skipInterior && bit::is_body_interior(st))) {
-                         arr(i, j, k, c) = 0.0;
-                       }
-                     });
+    parallel_for_omp(
+        bx, vecMF.nComp(),
+        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) noexcept {
+          const int st = nodeArr(i, j, k);
+          if (!bit::is_owner(st) || (skipAllBody && bit::is_body(st)) ||
+              (skipInterior && bit::is_body_interior(st)) ||
+              (skipCFEdge && is_interior_coarse_fine_edge(nodeArr, i, j, k))) {
+            arr(i, j, k, c) = 0.0;
+          }
+        });
   }
 
   vecMF.SumBoundary(0, vecMF.nComp(), IntVect(0), IntVect(0),
                     Geom(iLev).periodicity());
+}
+
+//==========================================================
+void Pic::relax_fine_lev_edge_from_coarse(MultiFab& mfCrse, MultiFab& mfFine,
+                                          int iLev, Real alphaCrse,
+                                          Real alphaSub, bool tangentialOnly) {
+  if (iLev <= 0 || (alphaCrse <= Real(0.0) && alphaSub <= Real(0.0)))
+    return;
+
+  const int nComp = mfFine.nComp();
+  const bool useEBg = solveFieldInCoMov &&
+                      iLev < static_cast<int>(eBg.size()) &&
+                      !eBg[iLev].empty() && !eBg[iLev - 1].empty();
+
+  const auto period = Geom(iLev).periodicity();
+  mfFine.OverrideSync(period);
+  mfFine.FillBoundary(period);
+
+  MultiFab fOrig(mfFine.boxArray(), mfFine.DistributionMap(), nComp,
+                 mfFine.nGrow());
+  MultiFab::Copy(fOrig, mfFine, 0, 0, nComp, mfFine.nGrow());
+
+  const bool doCoarse = (alphaCrse > Real(0.0));
+  MultiFab fCrse;
+  if (doCoarse) {
+    const IntVect ratio = refRatio(iLev - 1);
+    fCrse.define(mfFine.boxArray(), mfFine.DistributionMap(), nComp,
+                 mfFine.nGrow());
+    fCrse.setVal(0.0);
+    if (useEBg) {
+      MultiFab cPert(mfCrse.boxArray(), mfCrse.DistributionMap(), nComp,
+                     mfCrse.nGrow());
+      MultiFab::Copy(cPert, mfCrse, 0, 0, nComp, mfCrse.nGrow());
+      MultiFab::Subtract(cPert, eBg[iLev - 1], 0, 0, nComp,
+                         std::min(mfCrse.nGrow(), eBg[iLev - 1].nGrow()));
+      cPert.FillBoundary(Geom(iLev - 1).periodicity());
+      interp_from_coarse_to_fine(cPert, fCrse, 0, nComp, ratio, Geom(iLev - 1),
+                                 Geom(iLev), &node_bilinear_interp,
+                                 mfFine.nGrow());
+    } else {
+      mfCrse.FillBoundary(Geom(iLev - 1).periodicity());
+      interp_from_coarse_to_fine(mfCrse, fCrse, 0, nComp, ratio, Geom(iLev - 1),
+                                 Geom(iLev), &node_bilinear_interp,
+                                 mfFine.nGrow());
+    }
+  }
+
+  // Build a 1-ghost interface-node mask so tangential neighbor checks work
+  // seamlessly across multi-box seams and periodic boundaries (node_status
+  // only sets bit::is_lev_edge on validbox nodes).
+  iMultiFab cfEdgeMask(mfFine.boxArray(), mfFine.DistributionMap(), 1, 1);
+  cfEdgeMask.setVal(0);
+  const auto& statusMF = node_status(iLev);
+  for (MFIter mfi(cfEdgeMask); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<int> mskArr = cfEdgeMask[mfi].array();
+    const Array4<int const> stArr = statusMF[mfi].const_array();
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (is_interior_coarse_fine_edge(stArr, i, j, k)) {
+        mskArr(i, j, k) = 1;
+      }
+    });
+  }
+  cfEdgeMask.FillBoundary(period);
+
+  const bool isFake2D = is_fake_2d();
+  const int maxTangentialDim = (nDim > 2 && !isFake2D) ? 3 : 2;
+  // In near-vacuum regions (chiP << 1, e.g., deep planetary wake shadow),
+  // coarse-fine interface nodes have negligible plasma inertia to damp
+  // surface modes decoupled from Faraday's law by coarse EMF restriction.
+  // Smoothly ramp alphaCrse toward 1 as chiP -> 0 while leaving plasma-filled
+  // regions (chiP >= 2, e.g., solar wind and bow shock) at alphaCrse.
+  const bool hasMM = doCoarse && !useExplicitPIC && !useHybridPIC &&
+                     (iLev < static_cast<int>(nodeMM.size())) &&
+                     !nodeMM[iLev].empty() &&
+                     nodeMM[iLev].boxArray() == mfFine.boxArray() &&
+                     nodeMM[iLev].DistributionMap() == mfFine.DistributionMap();
+  const Real c0 = fourPI * fsolver.theta * tc->get_dt();
+  const Real susceptScale = (nDim > 2) ? Real(3.375) : Real(2.25);
+
+  for (MFIter mfi(mfFine); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real> arr = mfFine[mfi].array();
+    const Array4<Real const> srcArr = fOrig[mfi].const_array();
+    const Array4<int const> cfArr = cfEdgeMask[mfi].const_array();
+    const Array4<Real const> crseArr =
+        doCoarse ? fCrse[mfi].const_array() : Array4<Real const>();
+    const Array4<Real const> ebgArr =
+        useEBg ? eBg[iLev][mfi].const_array() : Array4<Real const>();
+    const Array4<RealMM const> mmArr =
+        hasMM ? nodeMM[iLev][mfi].const_array() : Array4<RealMM const>();
+
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (cfArr(i, j, k) == 0)
+        return;
+
+      Real alphaC = alphaCrse;
+      if (hasMM) {
+        const Real chiP = local_chi_p(mmArr, i, j, k, c0, susceptScale);
+        alphaC = amrex::max(alphaCrse, Real(1.0) / (Real(1.0) + chiP * chiP));
+      }
+
+      int tanDirs[3] = { 0, 0, 0 };
+      int nTan = 0;
+      bool isNormalDir[3] = { false, false, false };
+      for (int d = 0; d < maxTangentialDim; ++d) {
+        const int di = (d == 0) ? 1 : 0;
+        const int dj = (d == 1) ? 1 : 0;
+        const int dk = (d == 2) ? 1 : 0;
+        if (cfArr(i - di, j - dj, k - dk) != 0 &&
+            cfArr(i + di, j + dj, k + dk) != 0) {
+          tanDirs[nTan++] = d;
+        } else {
+          isNormalDir[d] = true;
+        }
+      }
+
+      // eBg-preserving tangential tensor-product [1/4, 1/2, 1/4] Nyquist
+      // filter (3-pt on 1D edges, 9-pt on 2D faces) combined with gentle
+      // relaxation toward the coarse perturbation so fine interface E stays
+      // locked to the coarse-to-fine Faraday EMF without introducing a hard
+      // Dirichlet reflecting wall in GMRES.
+      for (int c = 0; c < nComp; ++c) {
+        if (tangentialOnly && c < 3 && isNormalDir[c])
+          continue;
+
+        const Real bg0 = useEBg ? ebgArr(i, j, k, c) : Real(0.0);
+        const Real p0 = srcArr(i, j, k, c) - bg0;
+        Real pBar = p0;
+
+        if (alphaSub > Real(0.0) && nTan > 0) {
+          if (nTan == 1) {
+            const int d0 = tanDirs[0];
+            const int di = (d0 == 0) ? 1 : 0;
+            const int dj = (d0 == 1) ? 1 : 0;
+            const int dk = (d0 == 2) ? 1 : 0;
+            const Real pLo =
+                srcArr(i - di, j - dj, k - dk, c) -
+                (useEBg ? ebgArr(i - di, j - dj, k - dk, c) : Real(0.0));
+            const Real pHi =
+                srcArr(i + di, j + dj, k + dk, c) -
+                (useEBg ? ebgArr(i + di, j + dj, k + dk, c) : Real(0.0));
+            pBar = Real(0.5) * p0 + Real(0.25) * (pLo + pHi);
+          } else if (nTan == 2) {
+            const int d0 = tanDirs[0];
+            const int d1 = tanDirs[1];
+            const int di0 = (d0 == 0) ? 1 : 0;
+            const int dj0 = (d0 == 1) ? 1 : 0;
+            const int dk0 = (d0 == 2) ? 1 : 0;
+            const int di1 = (d1 == 0) ? 1 : 0;
+            const int dj1 = (d1 == 1) ? 1 : 0;
+            const int dk1 = (d1 == 2) ? 1 : 0;
+            Real pSum = Real(0.0);
+            Real wSum = Real(0.0);
+            for (int o0 = -1; o0 <= 1; ++o0) {
+              const Real w0 = (o0 == 0) ? Real(0.5) : Real(0.25);
+              for (int o1 = -1; o1 <= 1; ++o1) {
+                const int ii = i + o0 * di0 + o1 * di1;
+                const int jj = j + o0 * dj0 + o1 * dj1;
+                const int kk = k + o0 * dk0 + o1 * dk1;
+                if (o0 != 0 && o1 != 0 && cfArr(ii, jj, kk) == 0)
+                  continue;
+                const Real w = w0 * ((o1 == 0) ? Real(0.5) : Real(0.25));
+                const Real pVal = srcArr(ii, jj, kk, c) -
+                                  (useEBg ? ebgArr(ii, jj, kk, c) : Real(0.0));
+                pSum += w * pVal;
+                wSum += w;
+              }
+            }
+            pBar = pSum / wSum;
+          }
+#if (AMREX_SPACEDIM > 2)
+          else {
+            Real pSum = Real(0.0);
+            Real wSum = Real(0.0);
+            for (int ok = -1; ok <= 1; ++ok) {
+              const Real wk = (ok == 0) ? Real(0.5) : Real(0.25);
+              for (int oj = -1; oj <= 1; ++oj) {
+                const Real wj = (oj == 0) ? Real(0.5) : Real(0.25);
+                for (int oi = -1; oi <= 1; ++oi) {
+                  const int ii = i + oi;
+                  const int jj = j + oj;
+                  const int kk = k + ok;
+                  if ((oi != 0 || oj != 0 || ok != 0) && cfArr(ii, jj, kk) == 0)
+                    continue;
+                  const Real w = wk * wj * ((oi == 0) ? Real(0.5) : Real(0.25));
+                  const Real pVal =
+                      srcArr(ii, jj, kk, c) -
+                      (useEBg ? ebgArr(ii, jj, kk, c) : Real(0.0));
+                  pSum += w * pVal;
+                  wSum += w;
+                }
+              }
+            }
+            pBar = pSum / wSum;
+          }
+#endif
+        }
+
+        const Real pFiltered = p0 - alphaSub * (p0 - pBar);
+        const Real pOut = doCoarse ? ((Real(1.0) - alphaC) * pFiltered +
+                                      alphaC * crseArr(i, j, k, c))
+                                   : pFiltered;
+        arr(i, j, k, c) = bg0 + pOut;
+      }
+    });
+  }
+
+  mfFine.OverrideSync(period);
+  mfFine.FillBoundary(period);
 }
 
 //==========================================================
@@ -260,10 +741,18 @@ void Pic::solve_E_gmres_amrex(int iLev) {
   update_E_rhs(rhsMF, iLev);
 
   MultiFab& matvecMF = solverMatvecMF[iLev];
-  update_E_matvec(nodeE[iLev], matvecMF, iLev, false);
+  const bool pinCFEdge = is_coarse_fine_E_dirichlet(iLev);
+  MultiFab& baseE = pinCFEdge ? solverRhsNode1[iLev] : nodeE[iLev];
+  if (pinCFEdge) {
+    MultiFab::Copy(baseE, nodeE[iLev], 0, 0, nDim3, nodeE[iLev].nGrow());
+    fill_fine_lev_edge_from_coarse(
+        nodeEth[iLev - 1], baseE, 0, nDim3, refRatio(iLev - 1), Geom(iLev - 1),
+        Geom(iLev), node_status(iLev), node_bilinear_interp);
+  }
+  update_E_matvec(baseE, matvecMF, iLev, false);
 
   if (fsolver.mode == FieldSolverMode::NewtonKrylov) {
-    amrexESolver[iLev]->set_newton_base(nodeE[iLev], matvecMF);
+    amrexESolver[iLev]->set_newton_base(baseE, matvecMF);
   }
 
   MultiFab::Saxpy(rhsMF, -1.0, matvecMF, 0, 0, 3, 0);
@@ -425,6 +914,11 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
 
   MultiFab& tempNode3 = solverTempNode3[iLev];
 
+  const bool pinCFEdge = useZeroBC && is_coarse_fine_E_dirichlet(iLev);
+  if (pinCFEdge) {
+    zero_coarse_fine_E_edge(node_status(iLev), vecMF);
+  }
+
   // M*E needs ghost cell information.
   vecMF.FillBoundary(Geom(iLev).periodicity());
 
@@ -510,6 +1004,13 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
     const Real coe1 = -0.5 * fsolver.theta * tc->get_dt() / dx;
     const Real limThetaE = limiterThetaE;
     const Real cMaxVal = cMaxE;
+    const Real upwindFloor =
+        (useUpwindB && fixedUpwindVel > 0.0) ? fixedUpwindVel : Real(0.0);
+
+    if (cMaxVal <= 0.0 &&
+        (static_cast<int>(uUpwindE.size()) <= iLev || uUpwindE[iLev].empty())) {
+      prepare_upwind_E_speed();
+    }
 
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -517,7 +1018,9 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
       const Array4<Real const> arrE0 = nodeE[iLev][mfi].const_array();
       const Array4<Real const> limitE = fsolver.useLaggedLimiter ? arrE0 : arrE;
       const Array4<Real> res = matvecMF[mfi].array();
-      const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
+      const Array4<Real const> arrCSpeed =
+          (cMaxVal <= 0.0) ? uUpwindE[iLev][mfi].const_array()
+                           : Array4<Real const>();
 
       parallel_for_omp(
           box, vecMF.nComp(),
@@ -539,16 +1042,9 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
                   limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
                   limitE(i, j, k, iVar));
 
-              Real ur = cMaxVal, ul = cMaxVal;
-
-              if (cMaxVal <= 0) {
-                ul = fabs(0.5 * (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_],
-                                      iDir) +
-                                 arrU(i, j, k, iDir)));
-                ur = fabs(0.5 * (arrU(i, j, k, iDir) +
-                                 arrU(i + dii[ix_], j + dii[iy_], k + dii[iz_],
-                                      iDir)));
-              }
+              Real ul = 0.0, ur = 0.0;
+              upwind_E_face_speeds(arrCSpeed, i, j, k, dii, cMaxVal,
+                                   upwindFloor, ul, ur);
 
               Real dE =
                   cR * ur *
@@ -668,6 +1164,10 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
   // E_t = 0 an exact constraint of the linear system.
   if (is_body_conducting())
     project_body_E(matvecMF, iLev);
+
+  if (pinCFEdge) {
+    zero_coarse_fine_E_edge(node_status(iLev), matvecMF);
+  }
 }
 
 //==========================================================
@@ -935,10 +1435,17 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
   const Real dx0 = Geom(iLev).CellSize()[0];
   const Real coeUpwind = useUpwindE ? (0.5 * dtTheta / dx0) : 0.0;
   const Real cMaxVal = cMaxE;
+  const Real upwindFloor =
+      (useUpwindB && fixedUpwindVel > 0.0) ? fixedUpwindVel : Real(0.0);
   const bool doUpwindE = useUpwindE;
+  if (doUpwindE && cMaxVal <= 0.0 &&
+      (static_cast<int>(uUpwindE.size()) <= iLev || uUpwindE[iLev].empty())) {
+    prepare_upwind_E_speed();
+  }
 
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
+  const bool skipCFEdge = is_coarse_fine_E_dirichlet(iLev);
   const bool hasWallEt = hasConductingBC_;
   const BoundaryBounds bnd(Geom(iLev), ba.ixType(), &bcField);
   const auto& statusMF = node_status(iLev);
@@ -948,14 +1455,17 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
     const Array4<Real> invArr = invDiagMF[mfi].array();
     const Array4<RealMM const> mmArr = nodeMM[iLev][mfi].const_array();
     const Array4<int const> statusArr = statusMF[mfi].const_array();
-    const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
+    const Array4<Real const> arrCSpeed = (doUpwindE && cMaxVal <= 0.0)
+                                             ? uUpwindE[iLev][mfi].const_array()
+                                             : Array4<Real const>();
 
     parallel_for_omp(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       const int st = statusArr(i, j, k);
       const bool isExcludedBody = (skipAllBody && bit::is_body(st)) ||
                                   (skipInterior && bit::is_body_interior(st));
       const int ijk[3] = { i, j, k };
-      bool isDirichletNode = false;
+      bool isDirichletNode =
+          skipCFEdge && is_interior_coarse_fine_edge(statusArr, i, j, k);
       for (int d = 0; d < nDim; ++d) {
         if (!bnd.isNode[d])
           continue;
@@ -985,16 +1495,9 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
         for (int iDir = 0; iDir < nDim; ++iDir) {
           int dii[3] = { 0, 0, 0 };
           dii[iDir] = 1;
-          Real ur = cMaxVal;
-          Real ul = cMaxVal;
-          if (cMaxVal <= 0.0) {
-            ul =
-                std::abs(0.5 * (arrU(i - dii[0], j - dii[1], k - dii[2], iDir) +
-                                arrU(i, j, k, iDir)));
-            ur = std::abs(0.5 *
-                          (arrU(i, j, k, iDir) +
-                           arrU(i + dii[0], j + dii[1], k + dii[2], iDir)));
-          }
+          Real ul = 0.0, ur = 0.0;
+          upwind_E_face_speeds(arrCSpeed, i, j, k, dii, cMaxVal, upwindFloor,
+                               ul, ur);
           upwindDiag += coeUpwind * (ur + ul);
         }
       }
@@ -1081,6 +1584,7 @@ const Pic::NodeSystemLayout& Pic::node_system_layout(const MultiFab& MF,
   // on the surface), and an 'insulating' body keeps all of them.
   const bool skipAllBody = is_body_linetied();
   const bool skipInterior = is_body_conducting();
+  const bool skipCFEdge = is_coarse_fine_E_dirichlet(iLev);
 
   // The selection depends only on the grid (node ownership) and on the body,
   // which is static, so the layout is rebuilt only after a regrid.
@@ -1088,7 +1592,8 @@ const Pic::NodeSystemLayout& Pic::node_system_layout(const MultiFab& MF,
   if (layout.boxes.size() == static_cast<size_t>(MF.local_size()) &&
       layout.ba == MF.boxArray() && layout.dm == MF.DistributionMap() &&
       layout.skipAllBody == skipAllBody &&
-      layout.skipInterior == skipInterior) {
+      layout.skipInterior == skipInterior &&
+      layout.skipCoarseFineEdge == skipCFEdge) {
     return layout;
   }
 
@@ -1096,6 +1601,7 @@ const Pic::NodeSystemLayout& Pic::node_system_layout(const MultiFab& MF,
   layout.dm = MF.DistributionMap();
   layout.skipAllBody = skipAllBody;
   layout.skipInterior = skipInterior;
+  layout.skipCoarseFineEdge = skipCFEdge;
   layout.boxes.assign(MF.local_size(), {});
 
   HostFabCache statusCache;
@@ -1108,7 +1614,8 @@ const Pic::NodeSystemLayout& Pic::node_system_layout(const MultiFab& MF,
     auto is_unknown = [&](int i, int j, int k) {
       const int st = nodeArr(i, j, k);
       return bit::is_owner(st) && !(skipAllBody && bit::is_body(st)) &&
-             !(skipInterior && bit::is_body_interior(st));
+             !(skipInterior && bit::is_body_interior(st)) &&
+             !(skipCFEdge && is_interior_coarse_fine_edge(nodeArr, i, j, k));
     };
 
     NodeSystemLayout::BoxLayout& boxLayout = layout.boxes[mfi.LocalIndex()];
@@ -1363,12 +1870,19 @@ void Pic::update_B() {
     fill_ghost_emf_from_coarse(nodeE);
   }
 
-  // When curl-form upwind is active in the full-PIC solver, advance B with
-  // a synchronized Faraday EMF (nodeEmf) and optionally add the upwind
-  // dissipation EMF: E_upwind = sum_d (a_d/2) e_d x jump(B), keeping nodeE and
-  // nodeEth unmodified on coarse-fine interfaces.
+  // When curl-form upwind is active in the full-PIC solver, advance B with a
+  // coarse-to-fine synchronized Faraday EMF (nodeEmf) and optionally add the
+  // upwind dissipation EMF: E_upwind = sum_d (a_d/2) e_d x jump(B). Coarse-to-
+  // fine interface EMF keeps coarse centerB free of two-way GMRES solve
+  // feedback at theta = 0.5 while full-weight divergence-free covered-B
+  // relaxation (covRelaxWeight = 1.0) and fine-to-coarse current/mass-matrix
+  // accumulation transmit fine-level magnetospheric structure two-way onto
+  // coarser levels.
   const bool doCurlUpwind = useCurlUpwindB && !useHybridPIC;
   if (doCurlUpwind) {
+    if (useUpwindB) {
+      prepare_curl_upwind_vac_speed();
+    }
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (nodeEmf[iLev].empty()) {
         distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
@@ -1390,6 +1904,13 @@ void Pic::update_B() {
     }
     if (finestLevel() > 0) {
       fill_interface_and_ghost_emf_from_coarse(nodeEmf);
+      if (useUpwindB) {
+        for (int iLev = 1; iLev < n_lev(); ++iLev) {
+          add_ghost_curl_upwind_E(nodeEmf[iLev], iLev);
+          nodeEmf[iLev].OverrideSync(Geom(iLev).periodicity());
+          nodeEmf[iLev].FillBoundary(Geom(iLev).periodicity());
+        }
+      }
     }
   }
 
@@ -1414,10 +1935,20 @@ void Pic::update_B() {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 
-  // Divergence-free relaxation of covered coarse B toward fine average
+  // Divergence-free relaxation of covered coarse B toward fine average.
+  // In semi-implicit full-PIC, weight covered cells by local plasma
+  // susceptibility chi_p: full two-way coupling (1.0) in dense plasma (bow
+  // shock, magnetosheath) backed off smoothly to 0.02 in evacuated wakes
+  // (chi_p << 1) where coarse-fine vacuum dispersion mismatch would otherwise
+  // excite the covered-B <-> coarse-EMF ghost feedback loop.
   if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0) {
+    constexpr Real covRelaxWeight = 1.0;
+    const Real vacRelaxWeight = useHybridPIC ? Real(-1.0) : Real(0.02);
     for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
-      relax_covered_B_to_fine(iLev);
+      if (need_divB() && doReport) {
+        measure_covered_B_drift(iLev);
+      }
+      relax_covered_B_to_fine(iLev, covRelaxWeight, vacRelaxWeight);
     }
   } else if (projectDownEmFields && finestLevel() > 0) {
     for (int iLev = finestLevel(); iLev > 0; iLev--) {
@@ -1580,12 +2111,19 @@ void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
   const Real fixedSpeedUp = fixedUpwindVel;
   const Real dt = tc->get_dt();
   const bool isFake2D = is_fake_2d();
+  const bool useVacFloor = (fixedSpeedUp <= 0.0) && (finestLevel() > 0) &&
+                           !useExplicitPIC && !useHybridPIC &&
+                           (iLev < static_cast<int>(aVacUpwindB.size())) &&
+                           !aVacUpwindB[iLev].empty();
 
   for (MFIter mfi(nodeEmfLev); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = nodeEmfLev[mfi].array();
     const Array4<Real const>& arrBin = centerB[iLev][mfi].const_array();
     const Array4<Real const>& arrU = uBg[iLev][mfi].const_array();
+    const Array4<Real const> aVacArr =
+        useVacFloor ? aVacUpwindB[iLev][mfi].const_array()
+                    : Array4<Real const>();
 
     FArrayBox faceJump[nDim3];
     Array4<Real const> arrFace[nDim3];
@@ -1668,22 +2206,118 @@ void Pic::add_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
           a = fixedSpeedUp;
         } else {
           a = std::abs(arrU(i, j, k, iDir));
+          if (useVacFloor) {
+            a = amrex::max(a, aVacArr(i, j, k));
+          }
         }
 
         const Real maxA = 1.0 / (dt * invDxUp[iDir]);
         a = amrex::min(a, maxA);
         const Real halfA = 0.5 * a;
 
-        if (iDir == ix_) {
-          arrE(i, j, k, iy_) -= halfA * jump[iz_];
-          arrE(i, j, k, iz_) += halfA * jump[iy_];
-        } else if (iDir == iy_) {
-          arrE(i, j, k, ix_) += halfA * jump[iz_];
-          arrE(i, j, k, iz_) -= halfA * jump[ix_];
-        } else {
-          arrE(i, j, k, ix_) -= halfA * jump[iy_];
-          arrE(i, j, k, iy_) += halfA * jump[ix_];
+        apply_curl_upwind_increment(arrE, i, j, k, iDir, halfA, jump);
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::add_ghost_curl_upwind_E(MultiFab& nodeEmfLev, int iLev) {
+  std::string nameFunc = "Pic::add_ghost_curl_upwind_E";
+  timing_func(nameFunc);
+
+  if (iLev <= 0 || !useUpwindB || !useCurlUpwindB)
+    return;
+
+  GpuArray<int, nDim3> upwindDir = { 0, 0, 0 };
+  GpuArray<Real, nDim3> invDxUp = { 0.0, 0.0, 0.0 };
+  for (int iDim = 0; iDim < nDim; ++iDim) {
+    upwindDir[iDim] = (Geom(iLev).Domain().length(iDim) > 1) ? 1 : 0;
+    invDxUp[iDim] = Geom(iLev).InvCellSize(iDim);
+  }
+
+  const Real fixedSpeedUp = fixedUpwindVel;
+  const Real dt = tc->get_dt();
+  const bool isFake2D = is_fake_2d();
+  const bool useVacFloor = (fixedSpeedUp <= 0.0) && (finestLevel() > 0) &&
+                           !useExplicitPIC && !useHybridPIC &&
+                           (iLev < static_cast<int>(aVacUpwindB.size())) &&
+                           !aVacUpwindB[iLev].empty();
+  const int nGrowB = centerB[iLev].nGrow();
+  const auto period = Geom(iLev).periodicity();
+
+  // Synchronize layer-1 evolved ghosts across fine boxes so corner/edge ghost
+  // stencils see identical magnetic field values across MPI ranks.
+  MultiFab bSync(boxArray(iLev), DistributionMap(iLev), nDim3, nGrowB);
+  MultiFab::Copy(bSync, centerB[iLev], 0, 0, nDim3, nGrowB);
+  if (nGrowB >= 1) {
+    bSync.ParallelCopy(centerB[iLev], 0, 0, nDim3, IntVect(1), IntVect(nGrowB),
+                       period);
+    MultiFab::Copy(bSync, centerB[iLev], 0, 0, nDim3, 0);
+  }
+  bSync.FillBoundary(period);
+
+  const auto& statusMF = node_status(iLev);
+  for (MFIter mfi(nodeEmfLev); mfi.isValid(); ++mfi) {
+    const Box& vbox = mfi.validbox();
+    const Box gbox =
+        amrex::grow(vbox, IntVect(AMREX_D_DECL(1, 1, isFake2D ? 0 : 1)));
+    const Array4<Real>& arrE = nodeEmfLev[mfi].array();
+    const Array4<Real const>& bArr = bSync[mfi].const_array();
+    const Array4<int const>& stArr = statusMF[mfi].const_array();
+    const Array4<Real const>& arrU = uBg[iLev][mfi].const_array();
+    const Array4<Real const> aVacArr =
+        useVacFloor ? aVacUpwindB[iLev][mfi].const_array()
+                    : Array4<Real const>();
+
+    parallel_for_omp(gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const int st = stArr(i, j, k);
+      if (!bit::is_lev_boundary(st) || bit::is_domain_boundary(st) ||
+          bit::is_body(st)) {
+        return;
+      }
+
+      Real jump[nDim3];
+      for (int iDir = 0; iDir < nDim; ++iDir) {
+        if (!upwindDir[iDir] || (iDir == iz_ && isFake2D))
+          continue;
+
+        const int t1 = (iDir == ix_) ? iy_ : ix_;
+        const int t2 = (iDir == iz_) ? iy_ : iz_;
+        const int o2Min = (nDim > 2 || t2 != iz_) ? -1 : 0;
+
+        for (int v = 0; v < nDim3; ++v)
+          jump[v] = 0.0;
+
+        int nCell = 0;
+        for (int o1 = -1; o1 <= 0; ++o1) {
+          for (int o2 = o2Min; o2 <= 0; ++o2) {
+            int cP[3] = { i, j, k };
+            cP[t1] += o1;
+            cP[t2] += o2;
+            int cM[3] = { cP[0], cP[1], cP[2] };
+            cM[iDir] -= 1;
+            for (int v = 0; v < nDim3; ++v) {
+              jump[v] +=
+                  bArr(cP[0], cP[1], cP[2], v) - bArr(cM[0], cM[1], cM[2], v);
+            }
+            ++nCell;
+          }
         }
+        const Real invN = Real(1.0) / nCell;
+        for (int v = 0; v < nDim3; ++v)
+          jump[v] *= invN;
+
+        Real a =
+            (fixedSpeedUp > 0.0) ? fixedSpeedUp : local_u_speed(arrU, i, j, k);
+        if (useVacFloor) {
+          a = amrex::max(a, aVacArr(i, j, k));
+        }
+        const Real maxA = Real(1.0) / (dt * invDxUp[iDir]);
+        a = amrex::min(a, maxA);
+        const Real halfA = Real(0.5) * a;
+
+        apply_curl_upwind_increment(arrE, i, j, k, iDir, halfA, jump);
       }
     });
   }

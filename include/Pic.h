@@ -339,6 +339,8 @@ private:
 
   // Background velocity and electric field.
   amrex::Vector<amrex::MultiFab> uBg;
+  amrex::Vector<amrex::MultiFab> uUpwindE;
+  amrex::Vector<amrex::MultiFab> aVacUpwindB;
   amrex::Vector<amrex::MultiFab> eBg;
 
   // Mach number: u/v_th
@@ -435,6 +437,8 @@ private:
   // calc_mass_matrix_amr.
   amrex::Vector<amrex::MultiFab> sumToCenterJc;
   amrex::Vector<amrex::MultiFab> sumToCenterJf;
+  amrex::Vector<CenterMMFab> sumToCenterCmmc;
+  amrex::Vector<amrex::MultiFab> divEPhiCoarseView;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > amrJhc;
   amrex::Vector<amrex::MultiFab> amrJhf;
   amrex::Vector<amrex::Vector<NodeMMFab> > amrNmmc;
@@ -753,7 +757,7 @@ public:
     eSolver.set_nIter(200);
 
     divESolver.set_tol(0.01);
-    divESolver.set_nIter(20);
+    divESolver.set_nIter(50);
 
     //-----------------------------------------------------
     centerB.resize(n_lev_max());
@@ -799,6 +803,8 @@ public:
     }
     eBg.resize(n_lev_max());
     uBg.resize(n_lev_max());
+    uUpwindE.resize(n_lev_max());
+    aVacUpwindB.resize(n_lev_max());
 
     mMach.resize(n_lev_max());
 
@@ -894,8 +900,7 @@ public:
   void pre_regrid();
   void post_regrid(MeshChangeReason reason = MeshChangeReason::Topology);
 
-  void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld =
-                             amrex::Vector<amrex::BoxArray>());
+  void distribute_arrays(MeshChangeReason reason = MeshChangeReason::Topology);
 
   void fill_new_cells();
   void fill_E_B_fields(bool fillAll = false);
@@ -1042,6 +1047,8 @@ public:
   //-------------Electric field solver begin-------------
   void update_E();
   void update_E_impl();
+  void prepare_upwind_E_speed();
+  void prepare_curl_upwind_vac_speed();
   void update_E_expl();
   void solve_E_gmres(int iLev);
   void solve_E_gmres_amrex(int iLev);
@@ -1055,6 +1062,16 @@ public:
   void build_E_preconditioner(amrex::MultiFab &invDiagMF, int iLev,
                               EPrecondType type);
   void sync_nodal_solver_vec(amrex::MultiFab &vecMF, int iLev);
+  bool pin_coarse_fine_E_edge(int /*iLev*/) const { return false; }
+  bool is_coarse_fine_E_dirichlet(int iLev) const {
+    return pin_coarse_fine_E_edge(iLev) &&
+           fsolver.mode != FieldSolverMode::NewtonKrylov;
+  }
+  void relax_fine_lev_edge_from_coarse(amrex::MultiFab &mfCrse,
+                                       amrex::MultiFab &mfFine, int iLev,
+                                       amrex::Real alphaCrse,
+                                       amrex::Real alphaSub,
+                                       bool tangentialOnly = false);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
   void convert_1d_to_3d(const amrex::Real *const p, amrex::MultiFab &MF,
@@ -1082,6 +1099,7 @@ public:
     amrex::DistributionMapping dm;
     bool skipAllBody = false;
     bool skipInterior = false;
+    bool skipCoarseFineEdge = false;
     std::vector<BoxLayout> boxes;
   };
   std::vector<NodeSystemLayout> nodeLayout;
@@ -1164,7 +1182,8 @@ public:
   void measure_covered_B_drift(int iLev);
   // Relax the covered coarse B on iLev toward the restriction of the fine B
   // with a discrete-curl correction, so the coarse div(B) is preserved.
-  void relax_covered_B_to_fine(int iLev);
+  void relax_covered_B_to_fine(int iLev, amrex::Real relaxWeight = 1.0,
+                               amrex::Real vacRelaxWeight = -1.0);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 
@@ -1227,6 +1246,8 @@ public:
   void update_B();
 
   void add_curl_upwind_E(amrex::MultiFab &nodeEmf, int iLev);
+
+  void add_ghost_curl_upwind_E(amrex::MultiFab &nodeEmf, int iLev);
 
   void correct_B(int iLev);
 

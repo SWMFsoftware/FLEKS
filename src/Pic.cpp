@@ -136,7 +136,8 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
-void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
+void Pic::distribute_arrays(MeshChangeReason reason) {
+  const bool copyMoments = (reason == MeshChangeReason::LoadBalance);
 
   // The last one is the sum of all species.
   if (nodePlasma.empty()) {
@@ -173,6 +174,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   // Clear persistent AMR scratch buffers so they are rebuilt on the new grids.
   sumToCenterJc.clear();
   sumToCenterJf.clear();
+  sumToCenterCmmc.clear();
+  divEPhiCoarseView.clear();
   amrJhc.clear();
   amrJhf.clear();
   amrNmmc.clear();
@@ -260,6 +263,21 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
+        if (useUpwindE && cMaxE <= 0.0) {
+          distribute_FabArray(uUpwindE[iLev], node_box_array(iLev),
+                              DistributionMap(iLev), 1, get_n_ghost(),
+                              doMoveData, 0.0);
+        } else {
+          uUpwindE[iLev].clear();
+        }
+        if (useCurlUpwindB && useUpwindB && fixedUpwindVel <= 0.0 &&
+            finestLevel() > 0) {
+          distribute_FabArray(aVacUpwindB[iLev], node_box_array(iLev),
+                              DistributionMap(iLev), 1, get_n_ghost(),
+                              doMoveData, 0.0);
+        } else if (iLev < static_cast<int>(aVacUpwindB.size())) {
+          aVacUpwindB[iLev].clear();
+        }
         distribute_FabArray(solverMatvecMF[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, 1, doMoveData);
         distribute_FabArray(solverTempNode3[iLev], node_box_array(iLev),
@@ -401,7 +419,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
           pl.resize(n_lev_max());
         distribute_FabArray(pl[iLev], node_box_array(iLev),
                             DistributionMap(iLev), nHybridMomentsComps,
-                            get_n_ghost(), doMoveData);
+                            get_n_ghost(), copyMoments, 0.0);
       }
     }
     distribute_FabArray(dBdt[iLev], node_box_array(iLev), DistributionMap(iLev),
@@ -409,7 +427,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     // mMach: node grid for both full-PIC and hybrid.
     distribute_FabArray(mMach[iLev], node_box_array(iLev),
-                        DistributionMap(iLev), 1, get_n_ghost(), doMoveData);
+                        DistributionMap(iLev), 1, get_n_ghost(), copyMoments,
+                        0.0);
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
     // E current (jHat), and node-centered moments (nodePlasma): full-PIC only.
@@ -437,7 +456,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       if (pl.empty())
         pl.resize(n_lev_max());
       distribute_FabArray(pl[iLev], node_box_array(iLev), DistributionMap(iLev),
-                          nMoments, get_n_ghost(), doMoveData);
+                          nMoments, get_n_ghost(), copyMoments, 0.0);
     }
   }
 }
@@ -463,7 +482,7 @@ void Pic::post_regrid(MeshChangeReason reason) {
     doNeedFillNewCell = true;
     hasWarnedTargetPPCClearance_ = false;
   }
-  distribute_arrays();
+  distribute_arrays(reason);
 
   // The target particle numbers are copied by distribute_arrays together
   // with their ghost cells, which hold the base target only (SetTargetPPC
@@ -1947,6 +1966,11 @@ void Pic::calc_mass_matrix_amr() {
       BoxArray bac = nodeB[iLev].boxArray();
       for (int i = iLev - 1; i >= 0; i--) {
         bac.coarsen(refRatio(i));
+        // Materialize coarsened boxes so AMReX BoxArray::intersections() hashes
+        // on the coarsened coordinates rather than fine boxes with crseRatio>1
+        // (avoids asymmetric CPC send/recv tags / MPI_ERR_TRUNCATE when
+        // iLev - i >= 2 and fine box widths are not divisible by 2^(iLev - i)).
+        bac.uniqify();
         if (jhc[iLev][i].empty() || jhc[iLev][i].boxArray() != bac ||
             jhc[iLev][i].DistributionMap() != nodeB[iLev].DistributionMap() ||
             jhc[iLev][i].nGrow() != nGst || nmmc[iLev][i].empty() ||
@@ -1988,6 +2012,7 @@ void Pic::calc_mass_matrix_amr() {
       BoxArray bac = nodeB[iLev].boxArray();
       for (int i = iLev - 1; i >= 0; i--) {
         bac.coarsen(refRatio(i));
+        bac.uniqify();
         jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, nGst);
         nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
                              nodeMM[iLev].nComp(), nGst);
@@ -2041,15 +2066,15 @@ void Pic::calc_mass_matrix_amr() {
 
   for (int iLev = finestLevel() - 1; iLev >= 0; iLev--) {
     for (int i = finestLevel(); i > iLev; i--) {
-      jHat[iLev].ParallelAdd(jhc[i][iLev]);
+      jHat[iLev].ParallelAdd(jhc[i][iLev], Geom(iLev).periodicity());
       nmmc[i][iLev] *= (invVol[iLev] / invVol[i]);
-      nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
+      nodeMM[iLev].ParallelAdd(nmmc[i][iLev], Geom(iLev).periodicity());
     }
   }
   for (int iLev = finestLevel(); iLev > 0; iLev--) {
-    jHat[iLev].ParallelAdd(jhf[iLev - 1]);
+    jHat[iLev].ParallelAdd(jhf[iLev - 1], Geom(iLev).periodicity());
     nmmf[iLev - 1] *= (invVol[iLev] / invVol[iLev - 1]);
-    nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
+    nodeMM[iLev].ParallelAdd(nmmf[iLev - 1], Geom(iLev).periodicity());
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {

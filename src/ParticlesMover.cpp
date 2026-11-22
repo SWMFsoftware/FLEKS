@@ -612,7 +612,8 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
-    const amrex::Vector<MultiFab>& phiMF, int iLev) {
+    const amrex::Vector<MultiFab>& phiMF, int iLev,
+    const MultiFab* phiCoarseView) {
   timing_func("Pts:divE_correct_position");
 
   const Real sign = charge / fabs(charge);
@@ -631,6 +632,23 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   const bool useSmoothBodySphere =
       useBody && (grid->bodyParticleBC == ParticleBC::reflect ||
                   grid->bodyParticleBC == ParticleBC::ambipolar);
+  const int nLevels = n_lev();
+  const bool skipLevEdge0 = bc.has(ParticleBC::coupled);
+  IntVect skipDomLo(0), skipDomHi(0);
+  if (iLev == 0 || !skipLevEdge0) {
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+      if (!Geom(iLev).isPeriodic(d)) {
+        skipDomLo[d] =
+            (bc.lo[d] == ParticleBC::inflow || bc.lo[d] == ParticleBC::reflect)
+                ? 1
+                : 0;
+        skipDomHi[d] =
+            (bc.hi[d] == ParticleBC::inflow || bc.hi[d] == ParticleBC::reflect)
+                ? 1
+                : 0;
+      }
+    }
+  }
   const LevelGeomBox lb = make_level_geom_box(iLev);
   const BoxArray& ba = this->ParticleBoxArray(iLev);
 
@@ -661,48 +679,15 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         continue;
       }
 
-      if (skip_particle_for_dive_cleaning(p.pos(), Geom(iLev), iLev, status,
-                                          bc.has(ParticleBC::coupled)) &&
-          n_lev() > 1) {
+      if (skip_particle_for_dive_cleaning(p.pos(), Geom(iLev), iLev, nLevels,
+                                          status, skipLevEdge0, skipDomLo,
+                                          skipDomHi)) {
         continue;
       }
 
       IntVect loIdx;
       RealVect dShift;
       find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
-
-      // Since the boundary condition for solving phi is not perfect,
-      // correcting particles close to physical outer-domain boundaries may
-      // produce artificial oscillations or boundary charge pile-up on both
-      // base and refined levels, so skip the half-cell stencil touching domain
-      // boundary ghosts (without freezing coarse-fine refinement edges or the
-      // inner body, which are handled consistently by calculate_phi and the
-      // post-shift guard below).
-      if (iLev == 0 || !bc.has(ParticleBC::coupled)) {
-        bool isBoundaryPhysicalCell = false;
-#if (AMREX_SPACEDIM > 2)
-        constexpr int izMax = 1;
-#else
-        constexpr int izMax = 0;
-#endif
-        for (int iz = 0; iz <= izMax && !isBoundaryPhysicalCell; iz++)
-          for (int iy = 0; iy <= 1 && !isBoundaryPhysicalCell; iy++)
-            for (int ix = 0; ix <= 1; ix++) {
-              const int st = status(loIdx[ix_] + ix, loIdx[iy_] + iy,
-#if (AMREX_SPACEDIM > 2)
-                                    loIdx[iz_] + iz
-#else
-                                    0
-#endif
-              );
-              if (bit::is_domain_boundary(st)) {
-                isBoundaryPhysicalCell = true;
-                break;
-              }
-            }
-        if (isBoundaryPhysicalCell)
-          continue;
-      }
 
       {
         //----- Mass matrix calculation begin--------------
@@ -813,11 +798,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           }
         }
         if (outOfValidBox) {
-          leftLevelValid = inBox
-                               ? (bit::is_domain_boundary(cMask) ||
-                                  (!bc.has(ParticleBC::coupled) &&
-                                   n_lev() > 1 && bit::is_lev_boundary(cMask)))
-                               : is_outside_active_region(p, ab);
+          leftLevelValid = inBox ? bit::is_domain_boundary(cMask)
+                                 : is_outside_active_region(p, ab);
         }
 
         if (leftLevelValid || enteredBody) {
@@ -832,6 +814,178 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       }
     } // for p
   });
+
+  if (phiCoarseView != nullptr && iLev > 0) {
+    const int cLev = iLev - 1;
+    const LevelGeomBox lbC = make_level_geom_box(cLev);
+    const BoxArray& baC = this->ParticleBoxArray(cLev);
+    struct CoarseDivEFabCtx {
+      ActiveRegionBox ab;
+      Array4<Real const> phiArr;
+      Box phiBox;
+      Array4<int const> status;
+    };
+    const auto fabTableC =
+        build_local_fab_table(cell_status(cLev), [&](const MFIter& mfi) {
+          const Box& bx = cell_status(cLev)[mfi].box();
+          return CoarseDivEFabCtx{
+            make_active_region_box(lbC, baC[mfi.index()], bx),
+            (*phiCoarseView)[mfi].const_array(), (*phiCoarseView)[mfi].box(),
+            cell_status(cLev)[mfi].const_array()
+          };
+        });
+    const Box& domFine = Geom(iLev).Domain();
+
+    parallel_for_cell_tiles(*this, cLev, [&](const auto& item, int /*ord*/) {
+      const auto& ctx = fabTableC[item.grid];
+      const Array4<Real const>& phiArr = ctx.phiArr;
+      const Box& phiBox = ctx.phiBox;
+      const Array4<int const>& status = ctx.status;
+      const ActiveRegionBox& ab = ctx.ab;
+
+      AoS& particles = item.ptile->GetArrayOfStructs();
+
+      for (auto& p : particles) {
+        if (p.id() == -1 || is_outside_active_region(p, status, ab)) {
+          continue;
+        }
+        if (!is_in_coarse_refined_margin(p.pos(), Geom(cLev), status)) {
+          continue;
+        }
+
+        IntVect loIdx;
+        RealVect dShift;
+        find_cell_index(p.pos(), ploLoc, invDxLoc, loIdx, dShift);
+        if (!phiBox.contains(loIdx) || !phiBox.contains(loIdx + IntVect(1))) {
+          continue;
+        }
+
+        bool skipDom = false;
+        for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+          if (!Geom(iLev).isPeriodic(d) &&
+              ((skipDomLo[d] && loIdx[d] < domFine.smallEnd(d)) ||
+               (skipDomHi[d] && loIdx[d] + 1 > domFine.bigEnd(d)))) {
+            skipDom = true;
+          }
+        }
+        if (skipDom) {
+          continue;
+        }
+
+        const Real xi0 = dShift[ix_] * dx0;
+        const Real eta0 = dShift[iy_] * dx1;
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx2 : 0;
+        const Real xi1 = dx0 - xi0;
+        const Real eta1 = dx1 - eta0;
+        const Real zeta1 = nDim > 2 ? dx2 - zeta0 : 1;
+
+        const Real zeta12Vol = zeta1 * invV;
+
+        RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
+#if AMREX_SPACEDIM > 2
+        const Real zeta02Vol = zeta0 * invV;
+        const Real eta02Vol = eta0 * invV;
+        const Real eta12Vol = eta1 * invV;
+        alignas(32) const Real wx[8] = { -eta1 * zeta12Vol, eta1 * zeta12Vol,
+                                         -eta0 * zeta12Vol, eta0 * zeta12Vol,
+                                         -eta1 * zeta02Vol, eta1 * zeta02Vol,
+                                         -eta0 * zeta02Vol, eta0 * zeta02Vol };
+        alignas(32) const Real wy[8] = { -xi1 * zeta12Vol, -xi0 * zeta12Vol,
+                                         xi1 * zeta12Vol,  xi0 * zeta12Vol,
+                                         -xi1 * zeta02Vol, -xi0 * zeta02Vol,
+                                         xi1 * zeta02Vol,  xi0 * zeta02Vol };
+        alignas(32) const Real wz[8] = { -xi1 * eta12Vol, -xi0 * eta12Vol,
+                                         -xi1 * eta02Vol, -xi0 * eta02Vol,
+                                         xi1 * eta12Vol,  xi0 * eta12Vol,
+                                         xi1 * eta02Vol,  xi0 * eta02Vol };
+        const int i0 = loIdx[ix_], j0 = loIdx[iy_], k0 = loIdx[iz_];
+        const Real* AMREX_RESTRICT p00 = phiArr.ptr(i0, j0, k0);
+        const Real* AMREX_RESTRICT p10 = phiArr.ptr(i0, j0 + 1, k0);
+        const Real* AMREX_RESTRICT p01 = phiArr.ptr(i0, j0, k0 + 1);
+        const Real* AMREX_RESTRICT p11 = phiArr.ptr(i0, j0 + 1, k0 + 1);
+        alignas(32) const Real phi8[8] = { p00[0], p00[1], p10[0], p10[1],
+                                           p01[0], p01[1], p11[0], p11[1] };
+        Real ex = 0.0, ey = 0.0, ez = 0.0;
+#pragma omp simd reduction(+ : ex, ey, ez)
+        for (int n = 0; n < 8; ++n) {
+          ex += phi8[n] * wx[n];
+          ey += phi8[n] * wy[n];
+          ez += phi8[n] * wz[n];
+        }
+        eps_D[ix_] = ex;
+        eps_D[iy_] = ey;
+        eps_D[iz_] = (nD > 2) ? ez : 0.0;
+#else
+        alignas(32) const Real wx[4] = { -eta1 * zeta12Vol, eta1 * zeta12Vol,
+                                         -eta0 * zeta12Vol, eta0 * zeta12Vol };
+        alignas(32) const Real wy[4] = { -xi1 * zeta12Vol, -xi0 * zeta12Vol,
+                                         xi1 * zeta12Vol, xi0 * zeta12Vol };
+        const int i0 = loIdx[ix_], j0 = loIdx[iy_];
+        const Real* AMREX_RESTRICT p00 = phiArr.ptr(i0, j0, 0);
+        const Real* AMREX_RESTRICT p10 = phiArr.ptr(i0, j0 + 1, 0);
+        alignas(32) const Real phi4[4] = { p00[0], p00[1], p10[0], p10[1] };
+        Real ex = 0.0, ey = 0.0;
+#pragma omp simd reduction(+ : ex, ey)
+        for (int n = 0; n < 4; ++n) {
+          ex += phi4[n] * wx[n];
+          ey += phi4[n] * wy[n];
+        }
+        eps_D[ix_] = ex;
+        eps_D[iy_] = ey;
+#endif
+
+        for (int iDim = 0; iDim < nDim; iDim++)
+          eps_D[iDim] *= sign * fourPI;
+
+        Real eps_D_dot_invDx_Max = 0.0;
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > eps_D_dot_invDx_Max) {
+            eps_D_dot_invDx_Max = fabs(eps_D[iDim] * invDx[iLev][iDim]);
+          }
+        }
+        if (eps_D_dot_invDx_Max > epsLimit) {
+          const Real dl = eps_D.vectorLength();
+          const Real ratio = epsLimit * dx[iLev][ix_] / dl;
+          for (int iDim = 0; iDim < nDim; iDim++)
+            eps_D[iDim] *= ratio;
+        }
+
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          p.pos(iDim) += eps_D[iDim];
+        }
+
+        bool enteredBody = false;
+        bool leftDom = false;
+        const bool outOfValidBox = !is_inside_valid_box(p, ab);
+        bool inBox = false;
+        int cMask = 0;
+        if ((useBody && !useSmoothBodySphere) || outOfValidBox) {
+          locate_particle_cell(p, ab, status, inBox, cMask);
+        }
+        if (useBody) {
+          if (useSmoothBodySphere) {
+#if (AMREX_SPACEDIM > 2)
+            const Real xyzNew[3] = { p.pos(ix_), p.pos(iy_), p.pos(iz_) };
+#else
+            const Real xyzNew[3] = { p.pos(ix_), p.pos(iy_), 0.0 };
+#endif
+            enteredBody = grid->is_inside_body(xyzNew);
+          } else {
+            enteredBody = inBox && bit::is_body(cMask);
+          }
+        }
+        if (outOfValidBox) {
+          leftDom = inBox ? bit::is_domain_boundary(cMask)
+                          : is_outside_active_region(p, ab);
+        }
+        if (leftDom || enteredBody) {
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            p.pos(iDim) -= eps_D[iDim];
+          }
+        }
+      }
+    });
+  }
 }
 
 //==========================================================
@@ -848,7 +1002,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
       const Vector<MultiFab>&, Real, Real, int, Vector<MultiFab>*, bool);      \
   template void T::neutral_mover(Real);                                        \
-  template void T::divE_correct_position(const Vector<MultiFab>&, int);
+  template void T::divE_correct_position(const Vector<MultiFab>&, int,         \
+                                         const MultiFab*);
 
 INSTANTIATE_PARTICLES_MOVER(PicParticles)
 INSTANTIATE_PARTICLES_MOVER(PTParticles)
