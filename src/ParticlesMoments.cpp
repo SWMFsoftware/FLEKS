@@ -613,26 +613,25 @@ template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
     MultiFab& momentsMF) {
 
-  constexpr Real c1over3 = 1. / 3;
+  constexpr Real c1over3 = 1.0 / 3.0;
   auto const& ma = momentsMF.const_arrays();
 
-  Real uthMax = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, momentsMF,
-                          IntVect(0), // zero ghost cells
-                          [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
-                              noexcept -> GpuTuple<Real> {
-                                Array4<Real const> const& arr = ma[nb];
-                                Real rho = arr(i, j, k, iRho_);
-                                if (rho == 0)
-                                  return 0.0;
-                                Real p =
-                                    (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
-                                     arr(i, j, k, iPzz_)) *
-                                    c1over3;
-                                Real uth = sqrt(p / rho);
-                                return uth;
-                              });
+  Real uthSq3Max =
+      ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, momentsMF,
+                IntVect(0), // zero ghost cells
+                [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
+                    noexcept -> GpuTuple<Real> {
+                      Array4<Real const> const& arr = ma[nb];
+                      Real rho = arr(i, j, k, iRho_);
+                      if (rho == 0)
+                        return 0.0;
+                      Real p3 = arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
+                                arr(i, j, k, iPzz_);
+                      Real uthSq3 = p3 / rho;
+                      return (uthSq3 > 0.0) ? uthSq3 : 0.0;
+                    });
 
-  return uthMax;
+  return std::sqrt(uthSq3Max * c1over3);
 }
 
 //==========================================================

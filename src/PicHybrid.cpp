@@ -2853,6 +2853,13 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
   };
   Vector<LevSubReq> levReqs(n_lev());
   const bool hasBody = use_body();
+  if (doReport) {
+    if (fixedUMax >= 0) {
+      maxUthSpecies.clear();
+    } else {
+      maxUthSpecies.assign(n_lev() * nSpecies, 0.0);
+    }
+  }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     LevSubReq& req = levReqs[iLev];
@@ -2871,20 +2878,21 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
     if (fixedUMax >= 0) {
       uMaxLev = fixedUMax;
     } else {
-      Vector<Real> uMaxSpecies(nSpecies, 0.0);
+      Vector<Real> uMaxAndUth(doReport ? 2 * nSpecies : nSpecies, 0.0);
       for (int i = 0; i < nSpecies; ++i) {
         amrex::MultiFab& momMF = nodePlasma[i][iLev];
         auto const& ma = momMF.const_arrays();
-        Real uSpMax = ParReduce(
-            TypeList<ReduceOpMax>{}, TypeList<Real>{}, momMF, IntVect(0),
+        auto [uSpMax, uthSpMax] = ParReduce(
+            TypeList<ReduceOpMax, ReduceOpMax>{}, TypeList<Real, Real>{}, momMF,
+            IntVect(0),
             [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
-                noexcept -> GpuTuple<Real> {
+                noexcept -> GpuTuple<Real, Real> {
                   Array4<Real const> const& arr = ma[nb];
                   Real rho = arr(i, j, k, iRho_);
                   if (rho <= 0.0 ||
                       !is_active_cfl_node(cStatArrays[nb], nStatArrays[nb], i,
                                           j, k, hasBody, hasFiner))
-                    return 0.0;
+                    return { 0.0, 0.0 };
                   Real invRho = 1.0 / rho;
                   Real uBulk2 = (arr(i, j, k, iUx_) * arr(i, j, k, iUx_) +
                                  arr(i, j, k, iUy_) * arr(i, j, k, iUy_) +
@@ -2894,14 +2902,26 @@ void Pic::calc_hybrid_dt_and_subcycle(Real& dtNext, int& nSubNext,
                             arr(i, j, k, iPzz_)) *
                            (1.0 / 3.0);
                   Real vth = (p > 0.0) ? sqrt(p * invRho) : 0.0;
-                  return sqrt(uBulk2) + 3.0 * vth;
+                  return { sqrt(uBulk2) + 3.0 * vth, vth };
                 });
-        uMaxSpecies[i] = uSpMax;
+        uMaxAndUth[i] = uSpMax;
+        if (doReport) {
+          uMaxAndUth[nSpecies + i] = uthSpMax;
+        }
       }
-      ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
+      ParallelDescriptor::ReduceRealMax(uMaxAndUth.data(), uMaxAndUth.size());
       for (int i = 0; i < nSpecies; ++i) {
-        if (uMaxSpecies[i] > uMaxLev) {
-          uMaxLev = uMaxSpecies[i];
+        if (uMaxAndUth[i] > uMaxLev) {
+          uMaxLev = uMaxAndUth[i];
+        }
+        if (doReport) {
+          const Real uSp = uMaxAndUth[nSpecies + i];
+          maxUthSpecies[iLev * nSpecies + i] = uSp;
+          if (!doCompact) {
+            amrex::Print() << printPrefix << std::setprecision(5) << "lev "
+                           << iLev << " Species " << i << ": max(uth) = " << uSp
+                           << std::endl;
+          }
         }
       }
     }
