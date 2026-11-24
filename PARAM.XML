@@ -1396,7 +1396,8 @@ without recompiling. outputVars accepts presets ('P', 'PB', 'PBE', 'PBED', 'PBEG
 and/or composable tokens separated by spaces, commas, or '+' ('b', 'e', 'drifts',
 'gradb', 'vexb', 'mu', 'pitch', 'energy', 'gamma'). Position and velocity
 (t, x, y, z, vx, vy, vz) are always included as the first 7 columns.
-When omitted, output defaults to the compile-time Config.pl -tp= setting.
+When omitted, output defaults to PBED (position, velocity, B, E, and magnetic
+drifts) with nRecordFlush = 20.
 </command>
 
 </commandgroup>

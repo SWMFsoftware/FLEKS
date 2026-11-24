@@ -31,25 +31,6 @@ inline std::uint64_t pack_tp_key(int cpu, int id) noexcept {
          static_cast<std::uint32_t>(id);
 }
 
-std::string default_output_string_from_compile_size() {
-  switch (ptRecordSize) {
-    case 7:
-      return "P";
-    case 10:
-      return "PB";
-    case 13:
-      return "PBE";
-    case 19:
-      return "PBED";
-    case 22:
-      return "PBEG";
-    default:
-      Abort("Error: unsupported compile-time ptRecordSize = " +
-            std::to_string(ptRecordSize));
-      return "PBED";
-  }
-}
-
 void compute_magnetic_drifts(Real mass, Real charge, Real gamma,
                              const Real bp[3], const Real vRec[3],
                              const Real gradB[3][3], Real vGradB[3],
@@ -332,8 +313,8 @@ TPOutputSpec TPOutputSpec::parse(std::string_view specStr) {
   out.recordSize = 7;
   out.needGradB = false;
 
-  std::string raw = specStr.empty() ? default_output_string_from_compile_size()
-                                    : std::string(specStr);
+  std::string raw =
+      specStr.empty() ? std::string("PBED") : std::string(specStr);
 
   bool seen[9] = {
     false, false, false, false, false, false, false, false, false

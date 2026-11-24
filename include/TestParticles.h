@@ -29,7 +29,7 @@ struct TPOutputSpec {
 
   // Parse a #TPOUTPUT variable string (presets P/PB/PBE/PBED/PBEG and/or
   // composable tokens b, e, drifts, gradb, vexb, mu, pitch, energy, gamma).
-  // When empty, falls back to the compile-time ptRecordSize setting.
+  // When empty, defaults to PBED (position, velocity, B, E, and drifts).
   static TPOutputSpec parse(std::string_view spec);
 };
 

@@ -172,12 +172,6 @@ our $Help;
 our $ERROR;
 our $WARNING;
 
-my $TPSave = "PBED";
-my $NewTPSave;
-my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE', 19=>'PBED', 22=>'PBEG');
-my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13, 'PBED' => 19, 'PBEG' => 22);
-my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E", 'PBED' => "Particle+B+E+Drifts", 'PBEG' => "Particle+B+E+GradB");
-
 my $AmrexDim;
 
 my $nLevMax=1;
@@ -190,7 +184,6 @@ my $SimdFlags;
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
      if(/^-h$/)                 {$Help=1;       next};     
-     if(/^-tp=(.*)$/)           {$NewTPSave=$1; next};
      if(/^-lev$/)               {$NewLevMax=1;  next};
      if(/^-lev=(.*)$/)          {$NewLevMax=$1; next};
      if(/^-u$/)                 {$ListUserSources=1; next};
@@ -201,9 +194,6 @@ foreach (@Arguments){
      if(/^-nosimd$/i)           {$SimdFlags="no";  next};
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
-
-die "$ERROR -tp input should be 'P', 'PB', 'PBE', 'PBED', or 'PBEG'.\n"
-    if $NewTPSave and not exists $nTPSave{$NewTPSave};
 
 die "$ERROR -u input should use letters, numbers, or underscores.\n"
     . &get_user_source_options_text
@@ -228,8 +218,6 @@ if (!defined $NewUserSource && !-f $UserSourceFile &&
 }
 
 &set_user_source if defined $NewUserSource;
-
-&set_test_particle if $NewTPSave and $NewTPSave ne $TPSave;
 
 &set_grid if $NewLevMax and $NewLevMax ne $nLevMax;
 
@@ -266,13 +254,10 @@ sub get_settings{
 
     system("make", "-s", $ConstantsFile) == 0
         or die "$ERROR could not create $ConstantsFile\n";
-    my $nSize;
     open(FILE, $ConstantsFile) or die "$ERROR could not open $ConstantsFile\n";   
     while(<FILE>){                                                                      
-        $nSize = $2   if /\b(ptRecordSize\s*=\s*)(\d+)/i;
 	$nLevMax = $2 if /\b(nLevMax\s*=\s*)(\d+)/i;
     }
-    $TPSave = $nTPString{$nSize};
     close FILE;
 }
 ################################################################################
@@ -323,17 +308,6 @@ sub set_simd_flags{
     }
 }
 ################################################################################
-sub set_test_particle{
-    $TPSave = $NewTPSave if $NewTPSave;
-
-    my $nSize = $nTPSave{$TPSave};
-    @ARGV = ($ConstantsFile);
-    while(<>){
-        s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
-        print;
-    } 
-}
-################################################################################
 sub set_user_source{
     my $sourceFile = "$UserSourceDir/${NewUserSource}Source.h";
 
@@ -378,7 +352,6 @@ sub show_settings{
         (&amrex_uses_omp("$AmrexDir/InstallDir") ? "True" : "False") . " \n";
     print "AMReX: GPU          = " .
         (&amrex_uses_cuda("$AmrexDir/InstallDir") ? "CUDA" : "none") . " \n";
-    print "Test Particle info  = $TPInfo{$TPSave} \n";
     print "User Source         = " . &get_user_source_info . " \n";
 }
 ################################################################################
@@ -564,13 +537,6 @@ sub print_help{
 -u            Show available user source options.
 
 -u=NAME       Select user source file userfiles/NAMESource.h.
-
--tp=P,PB,PBE,PBED,PBEG  Test particle output information.
-              P: only save particle velocity + location
-              PB: particle + magnetic field. 
-              PBE: particle + magnetic field + electric field
-              PBED: particle + B-field + E-field + gradient/curvature drift velocities (default)
-              PBEG: particle + B-field + E-field + raw gradient of B-field
 
 \n";
     exit -0;

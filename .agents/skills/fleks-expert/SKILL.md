@@ -55,7 +55,7 @@ Violating any of these gives silently wrong results or link errors:
    in the file that defines it; whole-class instantiation belongs only in
    `src/Particles.cpp` (repeating it elsewhere gives duplicate symbols).
 2. `include/Constants.h` and `include/UserSource.h` are **generated** — from
-   `Constants.h.orig` (via `Config.pl -tp=`, `-lev=`) and from
+   `Constants.h.orig` (via `Config.pl -lev=`) and from
    `userfiles/*Source.h` (via `Config.pl -u=...`). Edit the sources, never the
    generated files.
 3. FLEKS is always 3D internally; 2D is one cell in z ("fake 2D"). A true-2D
