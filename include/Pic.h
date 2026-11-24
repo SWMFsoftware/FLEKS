@@ -260,12 +260,12 @@ private:
   amrex::Real peFirehoseCoef = 2.0;        // beta_par - beta_perp <= C_fh
   amrex::Real peWhistlerCoef = 0.36;       // P_perp/P_par - 1 <= C_wh/beta^exp
   amrex::Real peWhistlerExp = 0.55;
-  amrex::Real peAnisoRelaxTimeSI = 0.0;    // 0 = hard clamp, >0 = soft tau [s]
-  amrex::Real peAnisoRelaxTime = 0.0;      // code units
-  amrex::Real peAnisoBaseRateSI = 0.0;     // baseline isotropization [1/s]
-  amrex::Real peAnisoBaseRate = 0.0;       // code units
-  amrex::Real le2009B0SI = 0.0;            // reference B0 [T] (<=0: auto mean)
-  amrex::Real le2009B0 = 0.0;              // code units
+  amrex::Real peAnisoRelaxTimeSI = 0.0; // 0 = hard clamp, >0 = soft tau [s]
+  amrex::Real peAnisoRelaxTime = 0.0;   // code units
+  amrex::Real peAnisoBaseRateSI = 0.0;  // baseline isotropization [1/s]
+  amrex::Real peAnisoBaseRate = 0.0;    // code units
+  amrex::Real le2009B0SI = 0.0;         // reference B0 [T] (<=0: auto mean)
+  amrex::Real le2009B0 = 0.0;           // code units
   // Add the ambipolar E to the RK stages; needed once Pe is not polytropic.
   bool ambipolarInStages = true;
   int nPeComps_ = 1;                // 1 (scalar Pe) or 2 (Pe, PePar)
@@ -1256,14 +1256,11 @@ public:
   void update_max_evolved_Te();
   // Conservative face-centered heat conduction helper (evolves scalar comp of
   // `state` using cell densities `rho` and total field `bTot`).
-  void solve_heat_conduction_scalar(int iLev, amrex::Real dt,
-                                    amrex::MultiFab &state, int iStateComp,
-                                    const amrex::MultiFab &rho,
-                                    const amrex::MultiFab &bTot,
-                                    amrex::Real kappaScale,
-                                    amrex::Real energyScale,
-                                    const amrex::MultiFab *coarseState = nullptr,
-                                    int iCoarseComp = 0);
+  void solve_heat_conduction_scalar(
+      int iLev, amrex::Real dt, amrex::MultiFab &state, int iStateComp,
+      const amrex::MultiFab &rho, const amrex::MultiFab &bTot,
+      amrex::Real kappaScale, amrex::Real energyScale,
+      const amrex::MultiFab *coarseState = nullptr, int iCoarseComp = 0);
   // Resistive Ohmic heating hook: dPe/dt = (gamma_e - 1) * eta * |J|^2.
   void add_ohmic_heating(int iLev, amrex::Real dt);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
@@ -1276,8 +1273,7 @@ public:
   // Evaluate (Pe, PePar, PePerp) at cell (i,j,k) for Le et al. (2009) EOS.
   void eval_le2009_cell_pressures(int iLev, const amrex::MFIter &mfi,
                                   amrex::IntVect ijk, amrex::Real &peOut,
-                                  amrex::Real &peParOut,
-                                  amrex::Real &pePerpOut,
+                                  amrex::Real &peParOut, amrex::Real &pePerpOut,
                                   amrex::Real *neOut = nullptr) const;
 
   //-------------Electric field solver end-------------

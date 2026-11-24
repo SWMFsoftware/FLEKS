@@ -128,4 +128,4 @@ Pe PePar PePerp rhoS0 Bx plotVar
 
 #STOP
 -1                      MaxIter
-4.0                     TimeMax
+3.0                     TimeMax
