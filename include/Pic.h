@@ -694,6 +694,8 @@ private:
   // Stand-alone run (not coupled through the SWMF), set by Domain.
   bool isStandalone = false;
   amrex::Real maxCFL = 0.0;
+  // Latest max(uth) per level and species, indexed as [iLev * nSpecies + iSp].
+  amrex::Vector<amrex::Real> maxUthSpecies;
   int dnMemory = -1;
 
   std::string logFile;

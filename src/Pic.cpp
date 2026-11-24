@@ -2165,45 +2165,58 @@ void Pic::sum_moments(bool updateDt, bool seedHybridPrev) {
   }
 
   if (updateDt) {
-    Vector<Real> uMax(n_lev(), 0.0);
-    Vector<Real> dxMin(n_lev());
-    Vector<Real> dtMax(n_lev());
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      const auto& dx = Geom(iLev).CellSize();
-      dxMin[iLev] = min(AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]));
+    const int nLev = n_lev();
+    Vector<Real> uMax(nLev, 0.0);
+    Vector<Real> dxMin(nLev);
+    Vector<Real> dtMax(nLev);
 
-      // Only compute thermal velocity if CFL is active or if detailed report is
-      // enabled. Avoids expensive particle traversal and MPI reductions for
-      // fixed-dt compact runs.
-      bool needThermalSpeed = (tc->get_cfl() > 0) || (doReport && !doCompact);
+    // Only compute thermal velocity if CFL is active or if this step reports
+    // monitor output. Avoids unnecessary grid-moment reductions and MPI
+    // collectives on non-report steps of fixed-dt runs.
+    const bool needThermalSpeed = (tc->get_cfl() > 0) || doReport;
 
-      if (needThermalSpeed) {
-        if (fixedUMax >= 0) {
-          uMax[iLev] = fixedUMax;
-        } else {
-          Vector<Real> uMaxSpecies(nSpecies, 0.0);
+    if (needThermalSpeed) {
+      if (fixedUMax >= 0) {
+        std::fill(uMax.begin(), uMax.end(), fixedUMax);
+        if (doReport) {
+          maxUthSpecies.clear();
+        }
+      } else {
+        Vector<Real> uMaxAll(nLev * nSpecies, 0.0);
+        for (int iLev = 0; iLev < nLev; ++iLev) {
           for (int i = 0; i < nSpecies; ++i) {
             amrex::MultiFab& momMF = nodePlasma[i][iLev];
-            uMaxSpecies[i] = parts[i]->calc_max_thermal_velocity(momMF);
+            uMaxAll[iLev * nSpecies + i] =
+                parts[i]->calc_max_thermal_velocity(momMF);
           }
-          // Reduce all species in a single MPI reduction instead of nSpecies
-          // calls
-          ParallelDescriptor::ReduceRealMax(uMaxSpecies.data(), nSpecies);
+        }
+        // Reduce all levels and species in a single MPI collective.
+        ParallelDescriptor::ReduceRealMax(uMaxAll.data(), uMaxAll.size());
 
+        if (doReport) {
+          maxUthSpecies = uMaxAll;
+        }
+
+        for (int iLev = 0; iLev < nLev; ++iLev) {
           for (int i = 0; i < nSpecies; ++i) {
+            const Real uSp = uMaxAll[iLev * nSpecies + i];
             if (doReport && !doCompact) {
               Print() << printPrefix << std::setprecision(5) << "lev " << iLev
-                      << " Species " << i << ": max(uth) = " << uMaxSpecies[i]
+                      << " Species " << i << ": max(uth) = " << uSp
                       << std::endl;
             }
 
-            if (uMaxSpecies[i] > uMax[iLev]) {
-              uMax[iLev] = uMaxSpecies[i];
+            if (uSp > uMax[iLev]) {
+              uMax[iLev] = uSp;
             }
           }
         }
       }
+    }
 
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      const auto& dx = Geom(iLev).CellSize();
+      dxMin[iLev] = min(AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]));
       dtMax[iLev] = (uMax[iLev] > 0.0) ? dxMin[iLev] / uMax[iLev]
                                        : std::numeric_limits<Real>::max();
     }
@@ -2566,6 +2579,31 @@ void Pic::update(bool doReportIn) {
         nBSubcycle = nSubNext;
         nSubcycle = nSubNext;
       }
+    } else if (doReport) {
+      if (fixedUMax >= 0) {
+        maxUthSpecies.clear();
+      } else {
+        const int nLev = n_lev();
+        maxUthSpecies.assign(nLev * nSpecies, 0.0);
+        for (int iLev = 0; iLev < nLev; ++iLev) {
+          for (int i = 0; i < nSpecies; ++i) {
+            maxUthSpecies[iLev * nSpecies + i] =
+                parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
+          }
+        }
+        ParallelDescriptor::ReduceRealMax(maxUthSpecies.data(),
+                                          maxUthSpecies.size());
+        if (!doCompact) {
+          for (int iLev = 0; iLev < nLev; ++iLev) {
+            for (int i = 0; i < nSpecies; ++i) {
+              Print() << printPrefix << std::setprecision(5) << "lev " << iLev
+                      << " Species " << i
+                      << ": max(uth) = " << maxUthSpecies[iLev * nSpecies + i]
+                      << std::endl;
+            }
+          }
+        }
+      }
     }
   } else {
     tc->set_dt(tc->get_next_dt());
@@ -2613,15 +2651,34 @@ void Pic::update(bool doReportIn) {
     Real normSpeed = speed / speedNorm;
 
     if (doCompact) {
-      Print() << "==== " << printPrefix << "Cycle " << tc->get_cycle()
-              << " | t = " << std::setprecision(6) << tc->get_time_si()
-              << " (s) | dt = " << std::setprecision(5) << dtStepSI << " (s)";
+      Print p;
+      p << "==== " << printPrefix << "Cycle " << tc->get_cycle()
+        << " | t = " << std::setprecision(6) << tc->get_time_si()
+        << " (s) | dt = " << std::setprecision(5) << dtStepSI << " (s)";
       if (maxCFL > 0.0) {
-        Print() << " | CFL = " << std::setprecision(4) << maxCFL;
+        p << " | CFL = " << std::setprecision(4) << maxCFL;
       }
-      Print() << " | Speed = " << std::setprecision(2) << std::fixed
-              << normSpeed << " ====" << std::endl;
-      Print() << std::defaultfloat;
+      if (!maxUthSpecies.empty() &&
+          static_cast<int>(maxUthSpecies.size()) == n_lev() * nSpecies) {
+        p << " | max(uth) = " << std::setprecision(5);
+        const int nLev = n_lev();
+        for (int iLev = 0; iLev < nLev; ++iLev) {
+          if (nLev > 1) {
+            if (iLev > 0)
+              p << " ";
+            p << "L" << iLev << ":";
+          }
+          p << "[";
+          for (int i = 0; i < nSpecies; ++i) {
+            if (i > 0)
+              p << ", ";
+            p << maxUthSpecies[iLev * nSpecies + i];
+          }
+          p << "]";
+        }
+      }
+      p << " | Speed = " << std::setprecision(2) << std::fixed << normSpeed
+        << " ====" << std::defaultfloat << std::endl;
     } else {
       Print() << printPrefix
               << "Normalized PIC simulation speed = " << normSpeed
