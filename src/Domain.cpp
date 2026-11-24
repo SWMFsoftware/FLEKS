@@ -29,7 +29,7 @@ bool Domain::find_parameter_owner(const std::string &command,
     "#FORCEFREEIC", "#GEMIC", "#HALLTERM", "#HYBRIDUPWIND", "#HYPERRESISTIVITY",
     "#INFLOW", "#IONOSPHEREEMISSION", "#KINETICSOURCE", "#LAGGEDLIMITER", "#MAXCHARGEEXCHANGERATE",
     "#MEMORY", "#MERGELIGHT", "#MINIMUMDENSITY", "#MINPARTICLESPERCELL", "#OHION",
-    "#PARTICLEBOXBOUNDARY", "#PARTICLELEVRATIO", "#PARTICLES", "#PARTMODE",
+    "#PARTICLEBOXBOUNDARY", "#PARTICLELEVRATIO", "#PARTICLEPUSHER", "#PARTICLES", "#PARTMODE",
     "#PIC", "#PRESPLITTING", "#RANDOMPARTICLESLOCATION",
     "#REGIONHYPERRESISTIVITY", "#REGIONRESISTIVITY", "#RESAMPLING", "#OVERRIDESPLITTING",
     "#RESISTIVITY", "#SELECTPARTICLE", "#SMOOTHE", "#SMOOTHJ", "#SMOOTHMOMENTS",
@@ -45,9 +45,10 @@ bool Domain::find_parameter_owner(const std::string &command,
   };
   static const std::set<std::string> ptCommands = {
     // Handled by ParticleTrackerInfo::read_param().
-    "#TESTPARTICLENUMBER", "#TPCELLINTERVAL", "#TPINITFROMPIC", "#TPPARTICLES",
-    "#TPREGION",           "#TPRELATIVISTIC", "#TPSAVE",        "#TPSAVEAT",
-    "#TPSTATESI"
+    "#TESTPARTICLENUMBER", "#TPCELLINTERVAL", "#TPINITFROMPIC",
+    "#TPOUTPUT",           "#TPPARTICLES",    "#TPPUSHER",
+    "#TPREGION",           "#TPRELATIVISTIC", "#TPSAVE",
+    "#TPSAVEAT",           "#TPSTATESI"
   };
 
   if (picCommands.count(command))
@@ -372,7 +373,7 @@ void Domain::prepare_grid_info(const Vector<Real> &info, Geometry &geometry,
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell(balanceStrategy, cellWeight);
+  pic->calc_cost_per_cell(balanceStrategy, cellWeight, pt.get());
 
   grid->load_balance(nullptr, doSplitLevs);
 
@@ -1410,6 +1411,8 @@ void Domain::read_param() {
     // fi is final, then refresh the tracker from the resolved config.
     ptInfo.post_process_param();
     pt->post_process_param();
+    if (pic)
+      pt->set_particle_bcs(pic->get_particles_info());
     pt->set_tp_init_shapes(shapeList);
   }
 

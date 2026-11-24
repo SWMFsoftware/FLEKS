@@ -1,0 +1,170 @@
+#DESCRIPTION
+Test particle tracker: 2-level 3D AMR + reflecting X walls + dipole + body.
+
+Exercises PIC F pure particle tracking across a 2-level refined mesh with
+reflecting X walls (PARTICLEBOXBOUNDARY reflect), an absorbing inner sphere
+(BODY sphere), static dipole magnetic field (DIPOLE), E = 0 everywhere, and
+full derived diagnostics via TPOUTPUT over 3 flush windows.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#PIC
+F                       usePIC
+
+#GEOMETRY
+-4.0                    xMin
+ 4.0                    xMax
+-4.0                    yMin
+ 4.0                    yMax
+-2.0                    zMin
+ 2.0                    zMax
+
+#NCELL
+16                      nCellX
+16                      nCellY
+4                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+4                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+conducting              fieldBoxBoundaryLo
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#REGION
+refine_box              name
+box                     shape
+-2.0                    xMin
+ 2.0                    xMax
+-2.0                    yMin
+ 2.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#REFINEREGION
+0                       iLev
++refine_box             regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+#PLANETRADIUS
+1.0e5                   radius
+
+#DIPOLE
+50.0                    strength
+0.0                     theta
+0.0                     phi
+-1.0                    rRef
+
+#BODY
+sphere                  type
+1.0                     radius
+0.0                     centerX
+0.0                     centerY
+0.0                     centerZ
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+linetied                fieldBoundary
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+80.0                    ux [km/s]
+20.0                    uy [km/s]
+10.0                    uz [km/s]
+100.0                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+1.0e-8                  bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#RANDOMPARTICLESLOCATION
+F                       isParticleLocationRandom
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#TIMESTEPPING
+T                       useFixedDt
+0.05                    dt
+
+#MONITOR
+10                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+1                       dnSavePT
+
+#PARTICLETRACKER
+T                       usePT
+
+#TPRELATIVISTIC
+F                       isRelativistic
+
+#TPPUSHER
+boris                   pusherType
+
+#TPPARTICLES
+1                       npcelx
+1                       npcely
+1                       npcelz
+
+#TPREGION
+uniform                 region
+
+#TPCELLINTERVAL
+1                       nIntervalX
+1                       nIntervalY
+1                       nIntervalZ
+
+#TPOUTPUT
+PBE drifts vexb mu pitch energy gamma   outputVars
+6                                       nRecordFlush
+
+#TPSAVE
+0                       iSpecies
+planet                  IOUnit
+1                       dnSave
+0.0                     launchThreshold
+
+#SAVEPLOT
+0                       nPlot
+
+#STOP
+18                      MaxIter
+-1.0                    TimeMax

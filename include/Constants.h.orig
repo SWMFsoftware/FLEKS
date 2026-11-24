@@ -58,9 +58,8 @@ inline constexpr int nPicPartReal = 4;
 inline constexpr int nPicPartInt = 1;
 
 inline constexpr int nPTRecord = 20;
-inline constexpr int ptRecordSize = 19;
-inline constexpr int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord,
-                     nPTPartInt = 2;
+inline constexpr int nPTPartReal = nPicPartReal,
+                     nPTPartInt = nPicPartInt;
 #ifdef _PT_COMPONENT_
 static const std::string component = "PT";
 #else

@@ -610,5 +610,4 @@ void Particles<NStructReal, NStructInt>::apply_loss(
   template void T::apply_loss(const SourceInterface*, Real);
 
 INSTANTIATE_PARTICLES_REACTIONS(PicParticles)
-INSTANTIATE_PARTICLES_REACTIONS(PTParticles)
 #undef INSTANTIATE_PARTICLES_REACTIONS

@@ -27,6 +27,9 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
+#PIC
+F                       usePIC
+
 #SOLVEEM
 F                       solveEM
 

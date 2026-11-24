@@ -519,27 +519,29 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 3) == "B0z") {
       value = hasB0 ? nodeB0[iLev][mfi].array()(ijk, iz_) : 0.0;
     } else if (var.substr(0, 5) == "jHatx") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
-      value = arr(ijk, ix_);
+      if (iLev < static_cast<int>(jHat.size()) && !jHat[iLev].empty())
+        value = jHat[iLev][mfi].array()(ijk, ix_);
     } else if (var.substr(0, 5) == "jHaty") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
-      value = arr(ijk, iy_);
+      if (iLev < static_cast<int>(jHat.size()) && !jHat[iLev].empty())
+        value = jHat[iLev][mfi].array()(ijk, iy_);
     } else if (var.substr(0, 5) == "jHatz") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
-      value = arr(ijk, iz_);
+      if (iLev < static_cast<int>(jHat.size()) && !jHat[iLev].empty())
+        value = jHat[iLev][mfi].array()(ijk, iz_);
     } else if (var.substr(0, 3) == "nMM") {
-      int ii = extract_int(var);
-      const Array4<RealMM const>& arr = nodeMM[iLev][mfi].array();
-      value = arr(ijk)[ii];
+      if (iLev < static_cast<int>(nodeMM.size()) && !nodeMM[iLev].empty()) {
+        int ii = extract_int(var);
+        const Array4<RealMM const>& arr = nodeMM[iLev][mfi].array();
+        value = arr(ijk)[ii];
+      }
     } else if (var.substr(0, 5) == "dBxdt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
-      value = arr(ijk, ix_);
+      if (iLev < static_cast<int>(dBdt.size()) && !dBdt[iLev].empty())
+        value = dBdt[iLev][mfi].array()(ijk, ix_);
     } else if (var.substr(0, 5) == "dBydt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
-      value = arr(ijk, iy_);
+      if (iLev < static_cast<int>(dBdt.size()) && !dBdt[iLev].empty())
+        value = dBdt[iLev][mfi].array()(ijk, iy_);
     } else if (var.substr(0, 5) == "dBzdt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
-      value = arr(ijk, iz_);
+      if (iLev < static_cast<int>(dBdt.size()) && !dBdt[iLev].empty())
+        value = dBdt[iLev][mfi].array()(ijk, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
                var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
@@ -548,10 +550,14 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                var.substr(0, 4) == "ppcS" || var.substr(0, 4) == "numS") {
 
       const auto& plasma = nodePlasma;
-      if (extract_int(var) >= plasma.size() - 1) {
+      const int idx = extract_int(var);
+      if (plasma.empty() || idx < 0 ||
+          idx >= static_cast<int>(plasma.size()) - 1 ||
+          iLev >= static_cast<int>(plasma[idx].size()) ||
+          plasma[idx][iLev].empty()) {
         value = 0;
       } else {
-        int iVar;
+        int iVar = iRho_;
 
         if (var.substr(0, 4) == "rhoS")
           iVar = iRho_;
@@ -576,8 +582,7 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         if (var.substr(0, 4) == "ppcS" || var.substr(0, 4) == "numS")
           iVar = iNum_;
 
-        const Array4<Real const>& arr =
-            plasma[extract_int(var)][iLev][mfi].array();
+        const Array4<Real const>& arr = plasma[idx][iLev][mfi].array();
         value = arr(ijk, iVar);
 
         if (var.substr(0, 1) == "u") {
@@ -589,7 +594,8 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "jx" || var.substr(0, 2) == "jy" ||
                var.substr(0, 2) == "jz") {
       // nodeJ is a hybrid-only diagnostic.
-      if (useHybridPIC) {
+      if (useHybridPIC && iLev < static_cast<int>(nodeJ.size()) &&
+          !nodeJ[iLev].empty()) {
         const int iDir = (var.substr(0, 2) == "jx")   ? ix_
                          : (var.substr(0, 2) == "jy") ? iy_
                                                       : iz_;
@@ -597,64 +603,78 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         value = arr(ijk, iDir) * (1.0 / fourPI);
       }
     } else if (var.substr(0, 4) == "mach") {
-      value = mMach[iLev][mfi].array()(ijk);
+      if (iLev < static_cast<int>(mMach.size()) && !mMach[iLev].empty())
+        value = mMach[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 2) == "pS") {
       const auto& plasma = nodePlasma;
-      const Array4<Real const>& arr =
-          plasma[extract_int(var)][iLev][mfi].array();
-      value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
-    } else if (var == "rho" || var == "rhoTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iRho_);
-    } else if (var == "ux" || var == "uxTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      Real rho = arr(ijk, iRho_);
-      value = (rho != 0.0) ? (arr(ijk, iUx_) / rho) : 0.0;
-    } else if (var == "uy" || var == "uyTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      Real rho = arr(ijk, iRho_);
-      value = (rho != 0.0) ? (arr(ijk, iUy_) / rho) : 0.0;
-    } else if (var == "uz" || var == "uzTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      Real rho = arr(ijk, iRho_);
-      value = (rho != 0.0) ? (arr(ijk, iUz_) / rho) : 0.0;
-    } else if (var == "p" || var == "pTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
-    } else if (var == "pXX" || var == "pXXTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iPxx_);
-    } else if (var == "pYY" || var == "pYYTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iPyy_);
-    } else if (var == "pZZ" || var == "pZZTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iPzz_);
-    } else if (var == "pXY" || var == "pXYTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iPxy_);
-    } else if (var == "pXZ" || var == "pXZTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iPxz_);
-    } else if (var == "pYZ" || var == "pYZTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iPyz_);
-    } else if (var == "ppc" || var == "num" || var == "ppcTot" ||
-               var == "numTot") {
-      const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
-      value = arr(ijk, iNum_);
+      const int idx = extract_int(var);
+      if (!plasma.empty() && idx >= 0 &&
+          idx < static_cast<int>(plasma.size()) &&
+          iLev < static_cast<int>(plasma[idx].size()) &&
+          !plasma[idx][iLev].empty()) {
+        const Array4<Real const>& arr = plasma[idx][iLev][mfi].array();
+        value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
+      }
+    } else if (var == "rho" || var == "rhoTot" || var == "ux" ||
+               var == "uxTot" || var == "uy" || var == "uyTot" || var == "uz" ||
+               var == "uzTot" || var == "p" || var == "pTot" || var == "pXX" ||
+               var == "pXXTot" || var == "pYY" || var == "pYYTot" ||
+               var == "pZZ" || var == "pZZTot" || var == "pXY" ||
+               var == "pXYTot" || var == "pXZ" || var == "pXZTot" ||
+               var == "pYZ" || var == "pYZTot" || var == "ppc" ||
+               var == "num" || var == "ppcTot" || var == "numTot") {
+      if (!nodePlasma.empty() &&
+          nSpecies < static_cast<int>(nodePlasma.size()) &&
+          iLev < static_cast<int>(nodePlasma[nSpecies].size()) &&
+          !nodePlasma[nSpecies][iLev].empty()) {
+        const Array4<Real const>& arr = nodePlasma[nSpecies][iLev][mfi].array();
+        if (var == "rho" || var == "rhoTot") {
+          value = arr(ijk, iRho_);
+        } else if (var == "ux" || var == "uxTot") {
+          Real rho = arr(ijk, iRho_);
+          value = (rho != 0.0) ? (arr(ijk, iUx_) / rho) : 0.0;
+        } else if (var == "uy" || var == "uyTot") {
+          Real rho = arr(ijk, iRho_);
+          value = (rho != 0.0) ? (arr(ijk, iUy_) / rho) : 0.0;
+        } else if (var == "uz" || var == "uzTot") {
+          Real rho = arr(ijk, iRho_);
+          value = (rho != 0.0) ? (arr(ijk, iUz_) / rho) : 0.0;
+        } else if (var == "p" || var == "pTot") {
+          value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
+        } else if (var == "pXX" || var == "pXXTot") {
+          value = arr(ijk, iPxx_);
+        } else if (var == "pYY" || var == "pYYTot") {
+          value = arr(ijk, iPyy_);
+        } else if (var == "pZZ" || var == "pZZTot") {
+          value = arr(ijk, iPzz_);
+        } else if (var == "pXY" || var == "pXYTot") {
+          value = arr(ijk, iPxy_);
+        } else if (var == "pXZ" || var == "pXZTot") {
+          value = arr(ijk, iPxz_);
+        } else if (var == "pYZ" || var == "pYZTot") {
+          value = arr(ijk, iPyz_);
+        } else {
+          value = arr(ijk, iNum_);
+        }
+      }
     } else if (var.substr(0, 2) == "Pe") {
       // Electron pressure actually used by the Ohm's law: the evolved state
       // when #ELECTRONPRESSURE is on, the polytropic closure otherwise.
       // centerPeState is only allocated when the equation is evolved.
-      const MultiFab& peField =
-          useElectronPressureEq ? centerPeState[iLev] : centerPe[iLev];
-      const Array4<Real const>& arr = peField[mfi].array();
-      value = arr(ijk);
+      const Vector<MultiFab>& peVec =
+          useElectronPressureEq ? centerPeState : centerPe;
+      if (iLev < static_cast<int>(peVec.size()) && !peVec[iLev].empty()) {
+        const Array4<Real const>& arr = peVec[iLev][mfi].array();
+        value = arr(ijk);
+      }
     } else if (var.substr(0, 2) == "Te") {
       // Electron temperature in code units; only meaningful when the electron
       // pressure equation is evolved. See the Te block in write_amrex_field().
-      if (useElectronPressureEq) {
+      if (useElectronPressureEq &&
+          iLev < static_cast<int>(centerPeState.size()) &&
+          !centerPeState[iLev].empty() &&
+          iLev < static_cast<int>(centerPeRho.size()) &&
+          !centerPeRho[iLev].empty()) {
         const Real pe =
             amrex::max(centerPeState[iLev][mfi].array()(ijk), peMin);
         const Real ne =
@@ -665,19 +685,22 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       }
     } else if (var.substr(0, 3) == "E0x") {
       value = 0.0;
-      if (!useHybridPIC && !eBg[iLev].empty())
+      if (!useHybridPIC && iLev < static_cast<int>(eBg.size()) &&
+          !eBg[iLev].empty())
         value += eBg[iLev][mfi].array()(ijk, ix_);
       if (hasE0)
         value += nodeE0[iLev][mfi].array()(ijk, ix_);
     } else if (var.substr(0, 3) == "E0y") {
       value = 0.0;
-      if (!useHybridPIC && !eBg[iLev].empty())
+      if (!useHybridPIC && iLev < static_cast<int>(eBg.size()) &&
+          !eBg[iLev].empty())
         value += eBg[iLev][mfi].array()(ijk, iy_);
       if (hasE0)
         value += nodeE0[iLev][mfi].array()(ijk, iy_);
     } else if (var.substr(0, 3) == "E0z") {
       value = 0.0;
-      if (!useHybridPIC && !eBg[iLev].empty())
+      if (!useHybridPIC && iLev < static_cast<int>(eBg.size()) &&
+          !eBg[iLev].empty())
         value += eBg[iLev][mfi].array()(ijk, iz_);
       if (hasE0)
         value += nodeE0[iLev][mfi].array()(ijk, iz_);
@@ -688,20 +711,22 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 5) == "Eindz") {
       value = hasE0 ? nodeE0[iLev][mfi].array()(ijk, iz_) : 0.0;
     } else if (var.substr(0, 3) == "u0x") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
-      value = arr(ijk, ix_);
+      if (iLev < static_cast<int>(uBg.size()) && !uBg[iLev].empty())
+        value = uBg[iLev][mfi].array()(ijk, ix_);
     } else if (var.substr(0, 3) == "u0y") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
-      value = arr(ijk, iy_);
+      if (iLev < static_cast<int>(uBg.size()) && !uBg[iLev].empty())
+        value = uBg[iLev][mfi].array()(ijk, iy_);
     } else if (var.substr(0, 3) == "u0z") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
-      value = arr(ijk, iz_);
+      if (iLev < static_cast<int>(uBg.size()) && !uBg[iLev].empty())
+        value = uBg[iLev][mfi].array()(ijk, iz_);
     } else if (var.substr(0, 2) == "qc") {
-      const Array4<Real const>& arr = centerNetChargeN[iLev][mfi].array();
-      value = arr(ijk);
+      if (iLev < static_cast<int>(centerNetChargeN.size()) &&
+          !centerNetChargeN[iLev].empty())
+        value = centerNetChargeN[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 5) == "divEc") {
-      const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
-      value = arr(ijk);
+      if (iLev < static_cast<int>(centerDivE.size()) &&
+          !centerDivE[iLev].empty())
+        value = centerDivE[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 5) == "divBc") {
       // Diagnostic: reads zero when it was never requested.
       if (iLev < centerDivB.size() && !centerDivB[iLev].empty()) {
@@ -715,8 +740,8 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         value = arr(ijk);
       }
     } else if (var.substr(0, 3) == "phi") {
-      const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
-      value = arr(ijk);
+      if (iLev < static_cast<int>(centerPhi.size()) && !centerPhi[iLev].empty())
+        value = centerPhi[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {
@@ -752,7 +777,7 @@ void Pic::save_restart_data() {
   if (useElectronPressureEq) {
     write_restart_mf(centerPeState, prefix + "_centerPeState");
   }
-  if (useHybridPIC) {
+  if (usePIC && useHybridPIC && !nodePlasmaPrev.empty()) {
     write_restart_mf(nodePlasmaPrev[nSpecies], prefix + "_nodePlasmaPrev");
   }
   if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
@@ -786,7 +811,9 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << "#SUPID" + command_suffix;
     headerFile << nSpecies << "\t\t\tnSpecies\n";
     for (int i = 0; i < nSpecies; ++i) {
-      headerFile << parts[i]->sup_id() << "\t\t\tsupID\n";
+      headerFile << (i < static_cast<int>(parts.size()) ? parts[i]->sup_id()
+                                                        : 1)
+                 << "\t\t\tsupID\n";
     }
     headerFile << "\n";
   }
@@ -856,25 +883,27 @@ void Pic::read_restart() {
     read_restart_mf(grid.bodyNetCharge, prefix + "_bodyNetCharge", true, true);
   }
 
-  sum_moments();
-  // div(E)-correction fields are full-PIC only.
-  if (!useHybridPIC) {
-    if (finestLevel() == 0) {
-      sum_to_center(false);
-    } else if (doCorrectDivE) {
-      for (int iLev = 0; iLev <= finestLevel(); ++iLev) {
-        sum_to_center_amr(false, iLev);
+  if (usePIC) {
+    sum_moments();
+    // div(E)-correction fields are full-PIC only.
+    if (!useHybridPIC) {
+      if (finestLevel() == 0) {
+        sum_to_center(false);
+      } else if (doCorrectDivE) {
+        for (int iLev = 0; iLev <= finestLevel(); ++iLev) {
+          sum_to_center_amr(false, iLev);
+        }
       }
-    }
-  } else {
-    smooth_moments();
-    // Checkpointed velocities are already staggered at t^n - dt_prev/2, so a
-    // restarted run continues without taking another half-step seed.
-    isFirstHybridStep = false;
-    dtPrevHybrid = tc ? tc->get_dt() : 0.0;
-    if (!read_restart_mf(nodePlasmaPrev[nSpecies], prefix + "_nodePlasmaPrev",
-                         true, true)) {
-      seed_first_hybrid_step();
+    } else {
+      smooth_moments();
+      // Checkpointed velocities are already staggered at t^n - dt_prev/2, so a
+      // restarted run continues without taking another half-step seed.
+      isFirstHybridStep = false;
+      dtPrevHybrid = tc ? tc->get_dt() : 0.0;
+      if (!read_restart_mf(nodePlasmaPrev[nSpecies], prefix + "_nodePlasmaPrev",
+                           true, true)) {
+        seed_first_hybrid_step();
+      }
     }
   }
 
@@ -1124,7 +1153,7 @@ void Pic::write_plots(bool doForce) {
   for (auto& plot : tc->plots) {
     if (plot.is_time_to(doForce)) {
 #ifdef _PT_COMPONENT_
-      if (!isMomentsUpdated) {
+      if (usePIC && !isMomentsUpdated) {
         sum_moments(false);
       }
 #endif
@@ -1168,6 +1197,8 @@ void Pic::write_amrex(const PlotWriter& pw, Real const timeNow,
 void Pic::write_amrex_particle(const PlotWriter& pw, Real const timeNow,
                                int const iCycle) {
   int iSpecies = pw.get_particleSpecies();
+  if (!usePIC || iSpecies < 0 || iSpecies >= static_cast<int>(parts.size()))
+    return;
 
   std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
 

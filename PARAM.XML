@@ -808,6 +808,23 @@ SEP               partMode
 This command sets the particle mode to either SEP (Solar Energetic Particles) or PIC (Particle-In-Cell).
 </command>
 
+<command name="PARTICLEPUSHER" alias="PARTICLEPUSHER_FLEKS0,PARTICLEPUSHER_FLEKS1,PARTICLEPUSHER_FLEKS2" multiple="T">
+  <parameter name="pusherType" type="string" input="select">
+    <option value="boris" default="T"/>
+    <option value="vay"/>
+    <option value="higueracary"/>
+  </parameter>
+  <parameter name="isRelativistic" type="logical" default="F"/>
+
+#PARTICLEPUSHER
+boris             pusherType
+F                 isRelativistic
+
+Selects the Lorentz velocity pusher and relativistic toggle for kinetic PIC particles.
+Relativistic pushing uses normalized c = uNormSI and is supported with explicit,
+hybrid, or none field solvers (not with implicit #FIELDSOLVER).
+</command>
+
 <command name="PARTICLETRACKER" alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2" multiple="T">
   <parameter name="useParticleTracker" type="logical" default="F"/>
 
@@ -1350,6 +1367,38 @@ If cMaxE is negative, the local plasma speed is used, otherwise cMaxE is used.
 T                         isRelativistic
 
 If it is true, the test particle velocity update will be relativistic.
+</command>
+
+<command name="TPPUSHER" alias="TPPUSHER_FLEKS0,TPPUSHER_FLEKS1,TPPUSHER_FLEKS2" multiple="T">
+  <parameter name="pusherType" type="string" input="select">
+    <option value="boris" default="T"/>
+    <option value="vay"/>
+    <option value="higueracary"/>
+  </parameter>
+
+#TPPUSHER
+vay                       pusherType
+
+Selects the Lorentz velocity integrator for test particles: 'boris', 'vay' (Vay 2008),
+or 'higueracary' (Higuera and Cary 2017; alias 'hc'). Relativistic behavior is toggled
+by #TPRELATIVISTIC (with normalized c = uNormSI).
+</command>
+
+<command name="TPOUTPUT" alias="TPOUTPUT_FLEKS0,TPOUTPUT_FLEKS1,TPOUTPUT_FLEKS2" multiple="T">
+  <parameter name="outputVars" type="string" default="PBED"/>
+  <parameter name="nRecordFlush" type="integer" min="1" default="20"/>
+
+#TPOUTPUT
+PBE drifts mu energy      outputVars
+20                        nRecordFlush
+
+Configures test-particle trajectory output columns and flush cadence at runtime
+without recompiling. outputVars accepts presets ('P', 'PB', 'PBE', 'PBED', 'PBEG')
+and/or composable tokens separated by spaces, commas, or '+' ('b', 'e', 'drifts',
+'gradb', 'vexb', 'mu', 'pitch', 'energy', 'gamma'). Position and velocity
+(t, x, y, z, vx, vy, vz) are always included as the first 7 columns.
+When omitted, output defaults to PBED (position, velocity, B, E, and magnetic
+drifts) with nRecordFlush = 20.
 </command>
 
 </commandgroup>

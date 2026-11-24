@@ -43,9 +43,10 @@ python3 tools/format_all.py     # CI-enforced formatting (C++ + Fortran)
 Violating any of these gives silently wrong results or link errors:
 
 1. `Particles` is split across independently compiled `src/Particles*.cpp`
-   files. Every new out-of-line method needs **explicit instantiations for both
-   `PicParticles` and `PTParticles`** in the defining file; whole-class
-   instantiation belongs only in `src/Particles.cpp`.
+   files; `PTParticles` is a type alias for `PicParticles`. Every new
+   out-of-line method needs **explicit instantiation for `PicParticles`** in
+   the defining file; whole-class instantiation belongs only in
+   `src/Particles.cpp`.
 2. `include/Constants.h` and `include/UserSource.h` are **generated** (from
    `Constants.h.orig` and `userfiles/*Source.h`). Edit the sources.
    Sync `include/Constants.h` via `Config.pl` or `make install`. Sync `include/UserSource.h`

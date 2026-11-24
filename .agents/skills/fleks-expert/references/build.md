@@ -13,7 +13,6 @@
 ./Config.pl -lev=2           # max AMR levels
 ./Config.pl -u=Exo           # select userfiles/ExoSource.h -> include/UserSource.h
 ./Config.pl -u               # list available user sources
-./Config.pl -tp=PBE          # test-particle output (P, PB, PBE, PBEG)
 ./Config.pl -amrex2d         # true-2D AMReX build (-amrex3d to switch back)
 ./Config.pl -openmp          # OpenMP CPU build (-noopenmp to switch back)
 ```

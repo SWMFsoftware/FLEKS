@@ -672,20 +672,11 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
 //==========================================================
 
 template void PicParticles::sum_to_center(MultiFab&, CenterMMFab&, bool, int);
-template void PTParticles::sum_to_center(MultiFab&, CenterMMFab&, bool, int);
 template void PicParticles::sum_to_center_amr(MultiFab&, MultiFab&, MultiFab&,
                                               CenterMMFab&, bool, int);
-template void PTParticles::sum_to_center_amr(MultiFab&, MultiFab&, MultiFab&,
-                                             CenterMMFab&, bool, int);
 template std::array<Real, 5> PicParticles::total_moments(bool);
-template std::array<Real, 5> PTParticles::total_moments(bool);
 template Real PicParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
                                         Real);
 template void PicParticles::fold_wall_ghost_nodes(MultiFab&, int, bool);
-template void PTParticles::fold_wall_ghost_nodes(MultiFab&, int, bool);
-template Real PTParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
-                                       Real);
 template Real PicParticles::calc_max_thermal_velocity(MultiFab&);
-template Real PTParticles::calc_max_thermal_velocity(MultiFab&);
 template void PicParticles::convert_to_fluid_moments(Vector<MultiFab>&);
-template void PTParticles::convert_to_fluid_moments(Vector<MultiFab>&);

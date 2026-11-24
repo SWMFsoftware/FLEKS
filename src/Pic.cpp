@@ -15,6 +15,7 @@
 
 #include "GridUtility.h"
 #include "LinearSolver.h"
+#include "ParticleTracker.h"
 #include "Pic.h"
 #include "Timer.h"
 
@@ -137,16 +138,26 @@ void Pic::fill_new_cells() {
 
 //==========================================================
 void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
+  const bool hasPicSolverEM = usePIC && solveEM;
+  const bool hasFullPicMoments = usePIC && !useHybridPIC;
+  const bool hasDivESolver =
+      usePIC && !useHybridPIC && (solveEM || useExplicitPIC);
+  const bool needEth =
+      usePIC &&
+      (solveEM || ((useHybridPIC || useExplicitPIC) && usePredictorCorrector));
+  const bool needCoMovBg =
+      usePIC && !useHybridPIC &&
+      (solveEM || solveFieldInCoMov || useUpwindB || useUpwindE);
 
   // The last one is the sum of all species.
-  if (nodePlasma.empty()) {
+  if (usePIC && nodePlasma.empty()) {
     nodePlasma.resize(nSpecies + 1);
   }
 
   // The relaxation workspace is needed only on coarse levels with an active
   // fine level. The active-level loop below cannot release a workspace on a
   // level that disappeared during coarsening, so clear those slots explicitly.
-  if ((useHybridPIC || useCurlUpwindB) && !relaxTarget.empty()) {
+  if (usePIC && (useHybridPIC || useCurlUpwindB) && !relaxTarget.empty()) {
     for (int iLev = std::max(0, finestLevel()); iLev < n_lev_max(); ++iLev) {
       relaxTarget[iLev].clear();
       relaxResidual[iLev].clear();
@@ -181,12 +192,18 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   amrexDivESolver.clear();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    if (reportParticleQuality) {
+    if (usePIC && reportParticleQuality) {
       distribute_FabArray(particleQuality[iLev], boxArray(iLev),
                           DistributionMap(iLev), 18, 0);
+    } else if (!particleQuality.empty()) {
+      particleQuality[iLev].clear();
     }
-    distribute_FabArray(targetPPC[iLev], boxArray(iLev), DistributionMap(iLev),
-                        1, get_n_ghost());
+    if (usePIC) {
+      distribute_FabArray(targetPPC[iLev], boxArray(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost());
+    } else {
+      targetPPC[iLev].clear();
+    }
     distribute_FabArray(centerB[iLev], boxArray(iLev), DistributionMap(iLev), 3,
                         get_n_ghost());
     distribute_FabArray(nodeB[iLev], node_box_array(iLev),
@@ -213,9 +230,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         DistributionMap(iLev), 3, get_n_ghost());
     // Keep old theta-field values where grids overlap and initialize nodes
     // introduced by AMR before the next field solve.
-    distribute_FabArray(nodeEth[iLev], node_box_array(iLev),
-                        DistributionMap(iLev), 3, get_n_ghost(), true, 0.0);
-    if (useCurlUpwindB && !useHybridPIC) {
+    if (needEth) {
+      distribute_FabArray(nodeEth[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), true, 0.0);
+    } else {
+      nodeEth[iLev].clear();
+    }
+    if (usePIC && useCurlUpwindB && !useHybridPIC) {
       distribute_FabArray(nodeEmf[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), false, 0.0);
     } else {
@@ -224,7 +245,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     bool doMoveData = false;
     // div(E)/div(B) correction and implicit E-solver arrays (full-PIC only).
-    if (!useHybridPIC) {
+    if (hasFullPicMoments) {
       distribute_FabArray(centerNetChargeOld[iLev], boxArray(iLev),
                           DistributionMap(iLev), 1, get_n_ghost());
       distribute_FabArray(centerNetChargeN[iLev], boxArray(iLev),
@@ -250,7 +271,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, 0, doMoveData);
       }
 
-      if (!useExplicitPIC && !useHybridPIC) {
+      if (hasPicSolverEM) {
         distribute_FabArray(nodeMM[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 1, 1, doMoveData);
         if (nodeMM_comm_data.size() != n_lev()) {
@@ -285,7 +306,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
       }
-      if (useExplicitPIC) {
+      if (usePIC && useExplicitPIC) {
         distribute_FabArray(nodeCurlB[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 3, get_n_ghost(),
                             doMoveData);
@@ -308,7 +329,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     // Allocate it only for coarse levels with an active fine level. Using
     // n_lev_max() here would allocate the AMR-only buffers in single-level
     // runs that merely allow AMR, which needlessly regresses memory use.
-    if ((useHybridPIC || useCurlUpwindB) && finestLevel() > 0 &&
+    if (usePIC && (useHybridPIC || useCurlUpwindB) && finestLevel() > 0 &&
         iLev < finestLevel()) {
       distribute_FabArray(relaxTarget[iLev], boxArray(iLev),
                           DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
@@ -322,13 +343,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), nDim3, 0, doMoveData, 0.0);
     }
 
-    if (useHybridPIC) {
+    if (usePIC && useHybridPIC) {
       // Previous-step moments for the Ohm's-law interpolation.
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
     }
-    if (useHybridPIC) {
+    if (usePIC && useHybridPIC) {
       // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE
       // node-centered.
       distribute_FabArray(centerLapB[iLev], boxArray(iLev),
@@ -394,7 +415,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             DistributionMap(iLev), 1, get_n_ghost(), false);
       }
     }
-    if (useHybridPIC) {
+    if (usePIC && useHybridPIC) {
       // Node-grid previous-step moments (J^{n-1/2}), slim layout.
       for (auto& pl : nodePlasmaPrev) {
         if (pl.empty())
@@ -404,22 +425,29 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             get_n_ghost(), doMoveData);
       }
     }
-    distribute_FabArray(dBdt[iLev], node_box_array(iLev), DistributionMap(iLev),
-                        3, get_n_ghost(), doMoveData);
+    if (hasPicSolverEM) {
+      distribute_FabArray(dBdt[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
+    }
 
     // mMach: node grid for both full-PIC and hybrid.
-    distribute_FabArray(mMach[iLev], node_box_array(iLev),
-                        DistributionMap(iLev), 1, get_n_ghost(), doMoveData);
+    if (usePIC) {
+      distribute_FabArray(mMach[iLev], node_box_array(iLev),
+                          DistributionMap(iLev), 1, get_n_ghost(), doMoveData);
+    }
 
     // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
     // E current (jHat), and node-centered moments (nodePlasma): full-PIC only.
-    if (!useHybridPIC) {
+    if (needCoMovBg) {
       distribute_FabArray(eBg[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
-
       distribute_FabArray(uBg[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
-
+    } else {
+      eBg[iLev].clear();
+      uBg[iLev].clear();
+    }
+    if (hasFullPicMoments) {
       distribute_FabArray(centerMM[iLev], boxArray(iLev), DistributionMap(iLev),
                           1, get_n_ghost(), doMoveData);
 
@@ -428,24 +456,30 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
       distribute_FabArray(divEOutMF[iLev], boxArray(iLev),
                           DistributionMap(iLev), 1, 0, false);
-
+    }
+    if (hasPicSolverEM) {
       distribute_FabArray(jHat[iLev], node_box_array(iLev),
                           DistributionMap(iLev), 3, get_n_ghost(), doMoveData);
     }
 
-    for (auto& pl : nodePlasma) {
-      if (pl.empty())
-        pl.resize(n_lev_max());
-      distribute_FabArray(pl[iLev], node_box_array(iLev), DistributionMap(iLev),
-                          nMoments, get_n_ghost(), doMoveData);
+    if (usePIC) {
+      for (auto& pl : nodePlasma) {
+        if (pl.empty())
+          pl.resize(n_lev_max());
+        distribute_FabArray(pl[iLev], node_box_array(iLev),
+                            DistributionMap(iLev), nMoments, get_n_ghost(),
+                            doMoveData);
+      }
     }
   }
+
+  (void)hasDivESolver;
 }
 
 //==========================================================
 void Pic::pre_regrid() {
   if (!parts.empty()) {
-    for (int i = 0; i < nSpecies; ++i) {
+    for (int i = 0; i < parts.size(); ++i) {
       // Release Predictor-Corrector particle backup before regridding so
       // backupContainer_ is rebuilt with the new BoxArray/DistributionMapping
       // and its memory is freed prior to redistributing arrays/particles.
@@ -491,90 +525,92 @@ void Pic::post_regrid(MeshChangeReason reason) {
   //===========Move field data around end====================
 
   //--------------particles-----------------------------------
-  if (parts.empty()) {
-    // Let the plugin apply any particle-count override (e.g. LightWave /
-    // TopHat force zero macroparticles) after #PARTICLES has been fully parsed
-    // so it always wins.
-    if (ic_)
-      ic_->apply_particle_override(pInfo);
+  if (usePIC) {
+    if (parts.empty()) {
+      // Let the plugin apply any particle-count override (e.g. LightWave /
+      // TopHat force zero macroparticles) after #PARTICLES has been fully
+      // parsed so it always wins.
+      if (ic_)
+        ic_->apply_particle_override(pInfo);
 
-    for (int i = 0; i < nSpecies; ++i) {
-      auto ptr = std::make_unique<PicParticles>(
-          &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          pInfo, pMode, ic_.get());
-      ptr->set_target_ppc_source(targetPPC);
+      for (int i = 0; i < nSpecies; ++i) {
+        auto ptr = std::make_unique<PicParticles>(
+            &grid, fi, tc, i, fi->get_species_charge(i),
+            fi->get_species_mass(i), pInfo, pMode, ic_.get());
+        ptr->set_target_ppc_source(targetPPC);
 
-      parts.push_back(std::move(ptr));
+        parts.push_back(std::move(ptr));
 
-      auto ptrSource = std::make_unique<PicParticles>(
-          &grid, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          pInfo, pMode, ic_.get());
-      ptrSource->set_target_ppc_source(targetPPC);
+        auto ptrSource = std::make_unique<PicParticles>(
+            &grid, fi, tc, i, fi->get_species_charge(i),
+            fi->get_species_mass(i), pInfo, pMode, ic_.get());
+        ptrSource->set_target_ppc_source(targetPPC);
 
-      sourceParts.push_back(std::move(ptrSource));
-    }
+        sourceParts.push_back(std::move(ptrSource));
+      }
 
-    if (discontinuityBC.active) {
-      for (auto& p : parts) {
-        p->discontinuityBC = &discontinuityBC;
+      if (discontinuityBC.active) {
+        for (auto& p : parts) {
+          p->discontinuityBC = &discontinuityBC;
+        }
+      }
+    } else {
+      if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Arena())) {
+        p->freeUnused();
+      }
+      if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Pinned_Arena())) {
+        p->freeUnused();
+      }
+#if defined(__linux__)
+      malloc_trim(0);
+#endif
+      for (int i = 0; i < nSpecies; ++i) {
+        parts[i]->release_particle_backup();
+        // Label the particles outside the NEW PIC region.
+        parts[i]->label_particles_outside_active_region_general();
+
+        parts[i]->redistribute_particles();
+        parts[i]->ShrinkToFit();
+        if (i < sourceParts.size() && sourceParts[i]) {
+          // sourceParts is emptied after charge exchange. Redistribute also
+          // resizes its AMReX level storage; otherwise get_particle_tile() can
+          // access a missing level when refinement adds a finer grid.
+          sourceParts[i]->redistribute_particles();
+          sourceParts[i]->ShrinkToFit();
+        }
       }
     }
-  } else {
+
     if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Arena())) {
       p->freeUnused();
     }
     if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Pinned_Arena())) {
       p->freeUnused();
     }
+    amrex::FabArrayBase::flushTileArrayCache();
 #if defined(__linux__)
     malloc_trim(0);
 #endif
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->release_particle_backup();
-      // Label the particles outside the NEW PIC region.
-      parts[i]->label_particles_outside_active_region_general();
 
-      parts[i]->redistribute_particles();
-      parts[i]->ShrinkToFit();
-      if (i < sourceParts.size() && sourceParts[i]) {
-        // sourceParts is emptied after charge exchange. Redistribute also
-        // resizes its AMReX level storage; otherwise get_particle_tile() can
-        // access a missing level when refinement adds a finer grid.
-        sourceParts[i]->redistribute_particles();
-        sourceParts[i]->ShrinkToFit();
+    // Propagate field wave boundaries to each species to drive wave velocity
+    // kicks.
+    if (waveBC.active) {
+      for (auto& p : parts) {
+        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
+                                     Real& dvy, Real& dvz, int waveFaceMask,
+                                     int iSpecies, Real charge) {
+          wave_velocity_kick(pos, t, dvx, dvy, dvz, waveFaceMask, iSpecies,
+                             charge);
+        };
       }
     }
-  }
-
-  if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Arena())) {
-    p->freeUnused();
-  }
-  if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Pinned_Arena())) {
-    p->freeUnused();
-  }
-  amrex::FabArrayBase::flushTileArrayCache();
-#if defined(__linux__)
-  malloc_trim(0);
-#endif
-
-  // Propagate field wave boundaries to each species to drive wave velocity
-  // kicks.
-  if (waveBC.active) {
-    for (auto& p : parts) {
-      p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
-                                   Real& dvy, Real& dvz, int waveFaceMask,
-                                   int iSpecies, Real charge) {
-        wave_velocity_kick(pos, t, dvx, dvy, dvz, waveFaceMask, iSpecies,
-                           charge);
-      };
-    }
-  }
-  for (int d = 0; d < nDim; ++d) {
-    const bool isWaveLo = (bcField.face(d, 0) == FieldBC::wave);
-    const bool isWaveHi = (bcField.face(d, 1) == FieldBC::wave);
-    for (auto& p : parts) {
-      p->set_wave_face(d, 0, isWaveLo);
-      p->set_wave_face(d, 1, isWaveHi);
+    for (int d = 0; d < nDim; ++d) {
+      const bool isWaveLo = (bcField.face(d, 0) == FieldBC::wave);
+      const bool isWaveHi = (bcField.face(d, 1) == FieldBC::wave);
+      for (auto& p : parts) {
+        p->set_wave_face(d, 0, isWaveLo);
+        p->set_wave_face(d, 1, isWaveHi);
+      }
     }
   }
   // Wait for nodeFluid (set in set_ic() or read_restart()) so uninterrupted and
@@ -583,13 +619,18 @@ void Pic::post_regrid(MeshChangeReason reason) {
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.
+  const bool hasPicSolverEM = usePIC && solveEM;
+  const bool hasDivESolver =
+      usePIC && !useHybridPIC && (solveEM || useExplicitPIC);
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    int n = get_local_node_or_cell_number(nodeE[iLev]);
-    eSolver.init(n, nDim3, nDim, matvec_E_solver);
+    if (hasPicSolverEM) {
+      int n = get_local_node_or_cell_number(nodeE[iLev]);
+      eSolver.init(n, nDim3, nDim, matvec_E_solver);
+    }
 
     // divESolver uses the full-PIC-only centerDivE array.
-    if (!useHybridPIC) {
-      n = get_local_node_or_cell_number(centerDivE[iLev]);
+    if (hasDivESolver) {
+      int n = get_local_node_or_cell_number(centerDivE[iLev]);
       divESolver.init(n, 1, nDim, matvec_divE_accurate);
     }
   }
@@ -776,8 +817,10 @@ void Pic::fill_E_B_fields(bool fillAll) {
   // Seed the theta field from E on all levels after newly refined E nodes have
   // been filled, so the first field solve on the new mesh has valid data.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
-                   nodeE[iLev].nGrow());
+    if (!nodeEth[iLev].empty()) {
+      MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                     nodeE[iLev].nGrow());
+    }
   }
 
   // In hybrid PIC, sync nodeB from centerB at initialization.
@@ -1562,8 +1605,7 @@ void Pic::particle_mover(int pushStage) {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  const Vector<MultiFab>& nodeEbase =
-      (useHybridPIC || useExplicitPIC) ? nodeE : nodeEth;
+  const Vector<MultiFab>& nodeEbase = solveEM ? nodeEth : nodeE;
   const Vector<MultiFab>& nodeEpush = total_node_E(nodeEbase);
 
   // In single-pass hybrid PIC (!usePredictorCorrector), fields (E^n, B^n) and
@@ -2309,7 +2351,8 @@ void Pic::calc_mach_number() {
 }
 
 //==========================================================
-void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
+void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight,
+                             ParticleTracker* pt) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (balanceStrategy == BalanceStrategy::Cell) {
       grid.cell_cost()[iLev].setVal(1.0);
@@ -2320,8 +2363,10 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
       // per cell with pre-splitting), so the fine blocks at the edge of a
       // refined region got 2-3 times their cost.
       grid.cell_cost()[iLev].setVal(0.0);
-      for (int i = 0; i < nSpecies; i++)
+      for (int i = 0; i < parts.size(); i++)
         parts[i]->add_particle_count(grid.cell_cost()[iLev], iLev);
+      if (!usePIC && pt)
+        pt->add_particle_count(grid.cell_cost()[iLev], iLev);
     }
 
     for (MFIter mfi(grid.cell_cost()[iLev]); mfi.isValid(); ++mfi) {
@@ -2405,8 +2450,17 @@ void Pic::finish_particle_push() {
 void Pic::update(bool doReportIn) {
   std::string nameFunc = "Pic::update";
 
-  if (is_grid_empty() || !usePIC)
+  if (is_grid_empty())
     return;
+
+  if (!usePIC) {
+    refresh_intrinsic_fields(tc ? tc->get_time() : 0.0);
+    if (tc) {
+      tc->restore_unconstrained_dt();
+      tc->set_dt(tc->get_next_dt());
+    }
+    return;
+  }
 
   timing_func(nameFunc);
 
@@ -2719,7 +2773,7 @@ void Pic::free_memory() {
 
   amrex::Arena::PrintUsage();
 
-  for (int i = 0; i < nSpecies; ++i) {
+  for (int i = 0; i < parts.size(); ++i) {
     parts[i]->release_particle_backup();
     amrex::Print() << "[Particles " << i << " Before ShrinkToFit]: ";
     parts[i]->PrintCapacity();
