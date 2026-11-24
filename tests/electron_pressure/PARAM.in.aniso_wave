@@ -1,0 +1,134 @@
+#DESCRIPTION
+Anisotropic electron pressure (CGL): gyrotropic -div(Pe)/rho_q modification of
+the parallel whistler-Alfven dispersion relation. With Te = 100 eV and
+peAnisoRatio0 = 3.0 (PePerp > PePar), alpha = 1 - (beta_e,par - beta_e,perp)/2
+increases the wave frequency relative to the isotropic dispersion branch.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+100.0                   electronTemperature  [eV]
+1.6666666666666667      electronGamma
+5.0                     electronDensity0  [amu/cc]
+
+#ELECTRONPRESSURE
+T                       useElectronPressureEq
+0.0                     heatCondKappa0SI
+20.0                    coulombLog
+T                       fieldAlignedConduction
+1.0                     fieldAlignedFraction
+1.0e-15                 fieldAlignedBMinSI
+0.0                     heatFluxLimiter
+0.0                     peMin
+T                       ambipolarInStages
+
+#ELECTRONANISO
+cgl                     electronAnisoModel
+3.0                     peAnisoRatio0
+F                       usePeInstabilityLimit
+
+#HALLTERM
+T                       useHallTerm
+
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
+#BSUBCYCLE
+16                      nBSubcycle
+
+#SMOOTHE
+F                       doSmoothE
+0                       nSmoothE
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0439e-8               bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+HybridWave
+
+#WAVEIC
+T                       rightHand
+1                       waveMode
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+500                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+10                      dn
+-1                      dt
+1                       dx
+X Bx By Bz Pe PePar PePerp rhoS0 plotVar
+
+#STOP
+-1                      MaxIter
+6.0                     TimeMax

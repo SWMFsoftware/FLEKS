@@ -1,65 +1,45 @@
-# Evolved electron pressure (`#ELECTRONPRESSURE`)
+# Evolved & Anisotropic Electron Pressure (`tests/electron_pressure`)
 
-Tests the hybrid-PIC scalar electron pressure PDE that `#ELECTRONPRESSURE T`
-switches on in place of the algebraic polytropic closure
-`Pe = P0 (rho/rho0)^gamma`:
+Verification suite for the hybrid-PIC electron pressure models in FLEKS:
 
-```
-dPe/dt + div(u_e Pe) + (gamma_e - 1) Pe div(u_e)
-    = (gamma_e - 1) [ div(kappa_hat . grad(Te)) + H_ei ]
-```
+1. **Isotropic scalar PDE (`#ELECTRONPRESSURE`)**:
+   ```
+   dPe/dt + div(u_e Pe) + (gamma_e - 1) Pe div(u_e)
+       = (gamma_e - 1) [ eta |J|^2 - div(kappa_hat . grad(Te)) + H_ei ]
+   ```
+   with `u_e = (J_i - J) / rho_q`, SSP-RK2 advection + exponential compression,
+   conservative face-centered heat conduction (`rkl2` default, `point-implicit`,
+   `subcycle`), Ohmic heating (`#ELECTRONHEATING`, default `T`), and
+   point-implicit electron–ion equilibration (`#ELECTRONCOLLISION`).
 
-with `u_e = U_i - J/(e n_e)`, `Te = Pe/n_e` and the Spitzer conductivity
-`kappa = kappa0 Te^2.5`. `H_ei` is a documented hook and is zero for now.
-
-All three decks are the `tests/iaw` ion acoustic wave (48x1x1, periodic,
-2000 particles/cell, TimeMax 5) with a 20% single-wavelength density
-perturbation along x, so `Pe` starts from the polytropic closure and
-`Pe/rho^gamma` is spatially uniform.
+2. **Gyrotropic / anisotropic electron pressure (`#ELECTRONANISO`)**:
+   - **`cgl`**: evolves `(Pe, PePar)` with CGL parallel/perpendicular compression,
+     anisotropic parallel Spitzer conduction + conservative mirror-force exchange,
+     marginal-stability firehose/whistler clamping, and `-div(P_e)/rho_q` in Ohm's law.
+   - **`le2009`**: algebraic Le et al. (2009) trapped–passing EOS bridging
+     Boltzmann and CGL limits as a function of `n/n0` and `B/B0`.
 
 ## Decks
 
-| deck          | kappa0 [W/(m K^3.5)] | B           | expected closure |
-|---------------|----------------------|-------------|------------------|
-| `adiabatic`   | 0                    | 0           | `Pe ~ rho^gamma` |
-| `conduction`  | 1.0e-19 (reduced)    | 0           | `Pe ~ rho` (Te flattened) |
-| `crossfield`  | 1.0e-19 (reduced)    | `by` = 1e-10 T | `Pe ~ rho^gamma` (conduction suppressed) |
+| Deck | Model / Physics | Validation Criterion |
+|------|-----------------|----------------------|
+| `adiabatic` | Scalar PDE (`kappa0 = 0`, `B = 0`) | `Pe / rho^gamma` flat vs `Pe / rho` |
+| `conduction` | Scalar PDE (`point-implicit`, `B = 0`) | `Pe / rho` flat vs `Pe / rho^gamma` |
+| `crossfield` | Scalar PDE (`point-implicit`, `By != 0`) | Cross-field conduction suppressed (`Pe / rho^gamma` flat) |
+| `conduction_rkl2` | Scalar PDE (`rkl2` default, `B = 0`) | Flat `Te`, `sum(Pe)` conserved to `< 1e-5`, zero checkerboard |
+| `ohmic` | `#ELECTRONHEATING T` (`rk4`) | Resistive decay heats `Pe` and conserves `B^2/(8*pi) + Pe/(gamma-1)` |
+| `pc` | `#ELECTRONHEATING T` (`rk4-pc`) | Predictor-corrector gives identical non-doubled Ohmic heating |
+| `collision` | `#ELECTRONCOLLISION` | Matches analytical Braginskii relaxation ODE to `< 5%` |
+| `biermann_2d` | 2D crossed `grad(ne) x grad(Te)` | Generates out-of-plane `Bz` via `-div(Pe)/rho_q` |
+| `amr` | 2-level refined mesh (`refRatio = 2`) | Coarse/fine adiabatic `Pe / rho^gamma` consistency |
+| `cgl_compression` | `#ELECTRONANISO cgl`, `Bx != 0`, `kappa0 = 0` | `PePar/PePerp` tracks `(rho/rho0)^2` and satisfies trace identity |
+| `aniso_firehose` | `#ELECTRONANISO cgl`, `Tperp/Tpar0 = 0.05` | Conserves `Pe` and clamps `(PePar - PePerp)/P_B` to `2.0` |
+| `aniso_whistler` | `#ELECTRONANISO cgl`, `Tperp/Tpar0 = 10.0` | Conserves `Pe` and clamps `PePerp/PePar - 1` to `0.36/beta_par^0.55` |
+| `aniso_wave` | `#ELECTRONANISO cgl`, `HybridWave`, `Tperp/Tpar0 = 3` | Matches gyrotropic whistler-Alfvén dispersion shift `alpha = 1 - (beta_par-beta_perp)/2` |
+| `le2009` | `#ELECTRONANISO le2009`, `IonAcousticWave` | Matches closed-form Le et al. (2009) `PePar/PePerp` and `TePar/TePerp` pointwise |
 
-The conduction coefficient is far below the physical Spitzer value
-(9.2e-12) on purpose: with this normalization the physical value is so
-conductive that Te would flatten within a single step. The chosen value still
-violates the explicit parabolic limit `dt < dx^2/(2 chi)` by orders of
-magnitude, which is what the point-implicit update is there to survive.
+## Running
 
-`fieldAlignedBMinSI` (1e-15 T) is the field strength below which the field
-direction is treated as meaningless. It matters here: an unmagnetized run
-still carries round-off level `B` (~1e-18 in code units), and normalising it
-gives an arbitrary direction that would silently steer the heat flux away
-from `grad(Te)` and switch the conduction off. Real fields (the `crossfield`
-deck has `|B|` ~ 1e-2 in code units) are many orders of magnitude above the
-cutoff.
-
-## Validation
-
-Both scale-free ratios
-
-- `A = Pe / rho^gamma`  (flat for adiabatic electrons)
-- `I = Pe / rho`        (flat for isothermal electrons)
-
-are evaluated pointwise over the plot frames, and `validate.py` checks that
-the expected-flat one has a much smaller relative spread (std/mean) than the
-other. Because only the *relative* spread is compared, the check does not
-depend on the output units of `Pe` or `rho`.
-
-The wave is standing and Landau damped, and the conduction needs ~2 s to
-flatten the initial adiabatic transient (the point-implicit update is stable
-for any step but converges at one Jacobi sweep per step). The frame used is
-therefore the one where the two closure hypotheses differ most,
-`max |spreadA - spreadI|`, which skips both the transient and the frames
-where the wave has damped away.
-
-Run:
-
-```
-python3 tests/validate_tests.py --test=electron_pressure
+```bash
+python3 tests/validate_tests.py --test=electron_pressure -n 2 --verbose
 ```
