@@ -692,10 +692,9 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                                     peMin)
                        : amrex::max(
                              0.5 * (3.0 * pe -
-                                    amrex::max(
-                                        centerPeState[iLev][mfi].array()(ijk,
-                                                                         1),
-                                        peMin)),
+                                    amrex::max(centerPeState[iLev][mfi].array()(
+                                                   ijk, 1),
+                                               peMin)),
                              peMin))
                 : pe;
         const Real ne =
@@ -1269,10 +1268,9 @@ void Pic::write_plots(bool doForce) {
         // ghost cell (the periodic image of the first cell), so fill it.
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           const auto period = Geom(iLev).periodicity();
-          for (auto* mf :
-               { &centerB, &centerNetChargeN, &centerDivE, &centerPhi,
-                 &centerPe, &centerPeState, &centerPeRho, &centerDivB,
-                 &divB }) {
+          for (auto* mf : { &centerB, &centerNetChargeN, &centerDivE,
+                            &centerPhi, &centerPe, &centerPeState, &centerPeRho,
+                            &centerDivB, &divB }) {
             if (iLev < (int)mf->size() && !(*mf)[iLev].empty() &&
                 (*mf)[iLev].nGrow() > 0)
               (*mf)[iLev].FillBoundary(period);
@@ -1763,8 +1761,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
           const Array4<Real const>& rhoArr = centerPeRho[iLev][mfi].array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
             const Real ne = amrex::max(rhoArr(i, j, k), rhoMinOut);
-            outArr(i, j, k, iStart) =
-                amrex::max(peArr(i, j, k), peMinOut) / ne;
+            outArr(i, j, k, iStart) = amrex::max(peArr(i, j, k), peMinOut) / ne;
           });
         }
         iStart += 1;

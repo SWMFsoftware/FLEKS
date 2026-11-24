@@ -1161,8 +1161,10 @@ public:
                       const amrex::MultiFab &centerBtimeAvg,
                       amrex::MultiFab &Eout, int iLev, amrex::Real hstep,
                       bool includeAmbi = true, amrex::Real timeOverride = -1.0);
-  void compute_ambipolar_E();
-  void compute_ambipolar_E(int iLev);
+  void compute_ambipolar_E(
+      amrex::Vector<amrex::MultiFab> *centerBOverride = nullptr);
+  void compute_ambipolar_E(int iLev,
+                           amrex::MultiFab *centerBOverride = nullptr);
   // One Faraday stage on all levels: kStage[iLev][iK] = curl(E_Ohm), with
   // E assembled from Bin at moment fraction hstep, then synchronized
   // across levels.

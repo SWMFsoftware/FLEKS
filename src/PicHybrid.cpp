@@ -628,7 +628,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 // Precomputed once per PIC timestep outside the magnetic subcycling
 // steps, avoiding redundant gradient and EOS operations during the
 // high-frequency whistler integration.
-void Pic::compute_ambipolar_E() {
+void Pic::compute_ambipolar_E(Vector<MultiFab>* centerBOverride) {
   std::string nameFunc = "Pic::compute_ambipolar_E";
   timing_func(nameFunc);
 
@@ -640,7 +640,8 @@ void Pic::compute_ambipolar_E() {
   }
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    compute_ambipolar_E(iLev);
+    MultiFab* bLev = centerBOverride ? &(*centerBOverride)[iLev] : nullptr;
+    compute_ambipolar_E(iLev, bLev);
   }
 
   if (finestLevel() > 0) {
@@ -653,7 +654,7 @@ void Pic::compute_ambipolar_E() {
 }
 
 //==========================================================
-void Pic::compute_ambipolar_E(int iLev) {
+void Pic::compute_ambipolar_E(int iLev, MultiFab* centerBOverride) {
   if (electronTemperature <= 0) {
     nodeEambi[iLev].setVal(0.0);
     return;
@@ -664,8 +665,11 @@ void Pic::compute_ambipolar_E(int iLev) {
       compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], false);
     }
 
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    const MultiFab& bTot = total_center_B(centerB[iLev], iLev);
+    MultiFab& bSrc = centerBOverride ? *centerBOverride : centerB[iLev];
+    if (!centerBOverride) {
+      bSrc.FillBoundary(Geom(iLev).periodicity());
+    }
+    const MultiFab& bTot = total_center_B(bSrc, iLev);
     const Real p0 = electronDensity0 * electronTemperature;
     const Real invRho0 =
         (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
@@ -3148,6 +3152,10 @@ void Pic::faraday_stage_rhs(Vector<MultiFab>& Bin, int iK, Real hstep,
     refresh_intrinsic_fields(tStage);
   }
 
+  if (includeAmbi && electronTemperature > 0 && (useAnisoPe || useLe2009Pe)) {
+    compute_ambipolar_E(&Bin);
+  }
+
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     assemble_ohm_E(Bin[iLev], total_center_B(Bin[iLev], iLev), nodeEstage[iLev],
                    iLev, hstep, includeAmbi, timeOverride);
@@ -4162,6 +4170,9 @@ void Pic::update_B_hybrid() {
   }
 
   // Evaluate E^{n+1} into nodeE for the next push.
+  if (electronTemperature > 0 && (useAnisoPe || useLe2009Pe)) {
+    compute_ambipolar_E();
+  }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
                    nodeE[iLev], iLev, 1.0);
