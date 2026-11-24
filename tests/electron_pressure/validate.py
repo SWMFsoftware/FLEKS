@@ -41,6 +41,8 @@ EXPECT_FLAT = {
     "electron_pressure_adiabatic": "A",
     "electron_pressure_conduction": "I",
     "electron_pressure_crossfield": "A",
+    "electron_pressure_conduction_rkl2": "I",
+    "electron_pressure_amr": "A",
 }
 
 
@@ -181,11 +183,195 @@ def _check_closure(test_name):
     return True, "Passed"
 
 
+def _frame_time(out_file):
+    """Extract simulation time from the second line of an IDL .out header."""
+    try:
+        with open(out_file, "r", encoding="latin-1") as f:
+            f.readline()
+            line2 = f.readline().split()
+        return float(line2[1])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _check_conduction_rkl2():
+    """Verify RKL2 flattens Te, conserves sum(Pe), and has no checkerboard."""
+    ok, msg = _check_closure("electron_pressure_conduction_rkl2")
+    if not ok:
+        return ok, msg
+
+    plots = sorted(glob.glob(os.path.join(RUN_DIR, "PC", "plots", "*.out")))
+    if len(plots) < 2:
+        return False, "Expected >= 2 plot frames for RKL2 conservation check"
+
+    sums = []
+    for path in plots:
+        cols = _load_columns(path, ["Pe", "rhoS0"])
+        if not cols:
+            return False, f"Missing Pe/rhoS0 in {path}"
+        sums.append(sum(cols["Pe"]))
+
+    s0 = sums[0]
+    if s0 <= 0.0:
+        return False, f"Non-positive initial Pe sum {s0}"
+    max_rel = max(abs(s - s0) / s0 for s in sums[1:])
+    logger.debug("    [RKL2] sum(Pe) relative drift across frames: %.3e", max_rel)
+    if max_rel > 1e-5:
+        return False, f"RKL2 sum(Pe) drifted by {max_rel:.3e} (> 1e-5)"
+
+    # Check absence of 2*dx checkerboard in Te = Pe/rho at the final frame.
+    last_cols = _load_columns(plots[-1], ["Pe", "rhoS0"])
+    te = [p / r for p, r in zip(last_cols["Pe"], last_cols["rhoS0"]) if r > 0.0]
+    if len(te) >= 8:
+        nyq = abs(sum(((-1.0) ** i) * v for i, v in enumerate(te))) / len(te)
+        rel_nyq = nyq / (sum(te) / len(te))
+        logger.debug("    [RKL2] final Te Nyquist mode fraction: %.3e", rel_nyq)
+        if rel_nyq > 1e-3:
+            return False, f"RKL2 Te shows checkerboard mode {rel_nyq:.3e}"
+
+    return True, "Passed"
+
+
+def _check_ohmic(test_name):
+    """Verify Ohmic heating raises Pe and conserves B^2/(8*pi) + Pe/(gamma-1)."""
+    plots = sorted(glob.glob(os.path.join(RUN_DIR, "PC", "plots", "*.out")))
+    if len(plots) < 2:
+        return False, f"Expected >= 2 plot frames for {test_name}"
+
+    tot_energies = []
+    pe_means = []
+    for path in plots:
+        cols = _load_columns(path, ["Bx", "By", "Bz", "Pe"])
+        if not cols:
+            return False, f"Missing Bx/By/Bz/Pe in {path}"
+        n = len(cols["Pe"])
+        em = sum(
+            (bx * bx + by * by + bz * bz) / (8.0 * math.pi)
+            for bx, by, bz in zip(cols["Bx"], cols["By"], cols["Bz"])
+        ) / n
+        eth = sum(p / (GAMMA_E - 1.0) for p in cols["Pe"]) / n
+        tot_energies.append(em + eth)
+        pe_means.append(sum(cols["Pe"]) / n)
+
+    pe_gain = (pe_means[-1] - pe_means[0]) / pe_means[0]
+    e0 = tot_energies[0]
+    max_rel = max(abs(e - e0) / e0 for e in tot_energies[1:])
+    logger.debug(
+        "    [%s] Pe gain=%.4f, total E_mag+E_th_e rel_drift=%.3e",
+        test_name,
+        pe_gain,
+        max_rel,
+    )
+    if pe_gain < 0.05:
+        return False, f"Ohmic heating Pe gain {pe_gain:.4f} too small (< 0.05)"
+    if max_rel > 5e-3:
+        return False, f"Ohmic total energy conservation drift {max_rel:.3e} (> 5e-3)"
+    return True, "Passed"
+
+
+def _check_collision():
+    """Verify #ELECTRONCOLLISION matches analytical Braginskii relaxation ODE."""
+    plots = sorted(glob.glob(os.path.join(RUN_DIR, "PC", "plots", "*.out")))
+    if len(plots) < 2:
+        return False, "Expected >= 2 plot frames for collision test"
+
+    times = []
+    pe_vals = []
+    pi_vals = []
+    rho_vals = []
+    for path in plots:
+        t = _frame_time(path)
+        cols = _load_columns(path, ["Pe", "pS0", "rhoS0"])
+        if t is None or not cols:
+            return False, f"Missing time or columns in {path}"
+        times.append(t)
+        pe_vals.append(sum(cols["Pe"]) / len(cols["Pe"]))
+        pi_vals.append(sum(cols["pS0"]) / len(cols["pS0"]))
+        rho_vals.append(sum(cols["rhoS0"]) / len(cols["rhoS0"]))
+
+    # Compute code-unit collisionCoefEi from PARAM.in.collision constants.
+    mp = 1.67262192e-27
+    me = 9.1093837e-31
+    qe = 1.60217663e-19
+    kb = 1.380649e-23
+    eps0 = 8.8541878176198092e-12
+    l_norm = 1.0e5
+    u_norm = 1.0e5
+    m_norm = 1.0e7 * l_norm * (mp / qe) ** 2
+    si2no_rho = (l_norm ** 3) / m_norm
+    no2si_n = 1.0 / (si2no_rho * mp)
+    si2no_t = l_norm / u_norm
+    si2no_temp = kb / (mp * u_norm * u_norm)
+    mr = (me * mp) / (me + mp)
+    e2eps = (qe * qe) / eps0
+    coef_si = 20.0 * (math.sqrt(mr) / mp) * (e2eps ** 2) / (3.0 * (2.0 * math.pi * kb) ** 1.5)
+    c_ei = 2.0 * 1.0e4 * coef_si * no2si_n * (si2no_temp ** 1.5) / si2no_t
+
+    # Integrate exact ODE dPe/dt = H(Te)*(Pi - Pe) over [times[0], times[-1]].
+    # In PARAM.in.collision, ion species 0 has mass = 1e4 amu and charge = 1,
+    # so number/charge density is ne = rhoS0 / 1e4.
+    pe_ode = pe_vals[0]
+    pi_ref = sum(pi_vals) / len(pi_vals)
+    ne_ref = (sum(rho_vals) / len(rho_vals)) / 1.0e4
+    n_sub = 2000
+    dt_sub = (times[-1] - times[0]) / n_sub
+    for _ in range(n_sub):
+        te = pe_ode / ne_ref
+        h = c_ei * ne_ref / (te ** 1.5)
+        pe_ode = (pe_ode + dt_sub * h * pi_ref) / (1.0 + dt_sub * h)
+
+    rel_err = abs(pe_vals[-1] - pe_ode) / pe_ode
+    frac_prog = (pe_vals[-1] - pe_vals[0]) / (pi_ref - pe_vals[0])
+    logger.debug(
+        "    [COLLISION] Pe %.4e -> %.4e (ODE %.4e, Pi %.4e, progress %.1f%%, err %.3e)",
+        pe_vals[0],
+        pe_vals[-1],
+        pe_ode,
+        pi_ref,
+        100.0 * frac_prog,
+        rel_err,
+    )
+    if frac_prog < 0.10:
+        return False, f"Insufficient collisional equilibration ({frac_prog:.3f})"
+    if rel_err > 0.05:
+        return False, f"Collision ODE mismatch {rel_err:.3e} (> 0.05)"
+    return True, "Passed"
+
+
+def _check_biermann_2d():
+    """Verify non-collinear grad(ne) x grad(Te) generates out-of-plane Bz."""
+    plots = sorted(glob.glob(os.path.join(RUN_DIR, "PC", "plots", "*.out")))
+    if len(plots) < 2:
+        return False, "Expected >= 2 plot frames for biermann_2d"
+
+    cols0 = _load_columns(plots[0], ["Bz"])
+    cols1 = _load_columns(plots[-1], ["Bz", "Pe", "rhoS0"])
+    if not cols0 or not cols1:
+        return False, "Missing Bz/Pe/rhoS0 in biermann_2d plot files"
+
+    max_bz0 = max(abs(b) for b in cols0["Bz"])
+    max_bz1 = max(abs(b) for b in cols1["Bz"])
+    logger.debug("    [BIERMANN_2D] max|Bz| %.3e -> %.3e", max_bz0, max_bz1)
+    if max_bz0 > 1e-10:
+        return False, f"Initial Bz unexpectedly non-zero: {max_bz0:.3e}"
+    if not math.isfinite(max_bz1) or max_bz1 < 1e-4:
+        return False, f"Biermann battery failed to generate Bz (max={max_bz1:.3e})"
+    return True, "Passed"
+
+
 def validate_log(pic_diags=None, test_name=None):
     """Stability / conservation checks shared with the other hybrid tests."""
     return validate_hybrid(pic_diags=pic_diags, test_name=test_name)
 
 
 def validate_plot(test_name):
-    """Verify which electron-pressure closure the evolved Pe follows."""
+    """Verify evolved electron pressure physics for each variant."""
+    if test_name == "electron_pressure_conduction_rkl2":
+        return _check_conduction_rkl2()
+    if test_name in ("electron_pressure_ohmic", "electron_pressure_pc"):
+        return _check_ohmic(test_name)
+    if test_name == "electron_pressure_collision":
+        return _check_collision()
+    if test_name == "electron_pressure_biermann_2d":
+        return _check_biermann_2d()
     return _check_closure(test_name)

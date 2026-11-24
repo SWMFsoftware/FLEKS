@@ -630,8 +630,8 @@ Real PlotWriter::No2OutTable(std::string_view var) const {
     // in units of uNorm^2, i.e. a squared velocity, and there is no dedicated
     // output temperature unit, so it is written in code units.
     value = No2OutV * No2OutV;
-  } else if (var.substr(0, 1) == "p") {
-    // pressure
+  } else if (var.substr(0, 1) == "p" || var.substr(0, 2) == "Pe") {
+    // pressure (including Pe, PePar, PePerp)
     value = No2OutP;
   } else if (var.substr(0, 1) == "j") {
     // current

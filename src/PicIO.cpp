@@ -852,9 +852,12 @@ void Pic::read_restart() {
     if (read_restart_mf(centerPeState, prefix + "_centerPeState", false,
                         true)) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        apply_pe_zero_gradient_bc(iLev, centerPeState[iLev]);
+        apply_centerPe_BC(iLev);
+        compute_electron_density(iLev, nodePeRho[iLev], centerPeRho[iLev],
+                                 false);
       }
       peStateInitialized_ = true;
+      update_max_evolved_Te();
     } else {
       Print() << "  restart: no electron pressure file found; Pe will be "
               << "seeded from the polytropic closure on the first step.\n";

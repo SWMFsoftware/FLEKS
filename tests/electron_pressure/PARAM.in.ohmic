@@ -1,0 +1,127 @@
+#DESCRIPTION
+Evolved electron pressure: resistive Ohmic heating test.
+Heavy ions stay stationary while a sinusoidal transverse B wave decays under
+etaResistivity. Checks that Ohmic heating (gamma_e - 1)*eta*|J|^2 heats Pe
+and conserves total (B^2/(8*pi) + Pe/(gamma_e - 1)).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-8.0                    xMin
+ 8.0                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+hybrid
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#RESISTIVITY
+1.0e10                  etaResistivity  [m^2/s]
+
+#ELECTRONTEMPERATURE
+62.8                    electronTemperature  [eV]
+1.6666666666666667      electronGamma
+5.0                     electronDensity0  [amu/cc]
+
+#ELECTRONPRESSURE
+T                       useElectronPressureEq
+0.0                     heatCondKappa0SI
+20.0                    coulombLog
+T                       fieldAlignedConduction
+1.0                     fieldAlignedFraction
+1.0e-15                 fieldAlignedBMinSI
+0.0                     heatFluxLimiter
+0.0                     peMin
+T                       ambipolarInStages
+
+#ELECTRONHEATING
+T                       useOhmicHeating
+
+#HALLTERM
+F                       useHallTerm
+
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
+#BSUBCYCLE
+4                       nBSubcycle
+
+#SMOOTHE
+F                       doSmoothE
+0                       nSmoothE
+
+#PLASMA
+1                       nSpecies
+1.0e6                   mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0439e-8               bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+ConvectionWave
+0.5                     frac
+1                       waveMode
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+50                      nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+50                      dn
+0.0                     dt
+1                       dx
+Bx By Bz Pe             plotVar
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax

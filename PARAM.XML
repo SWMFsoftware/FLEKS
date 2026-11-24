@@ -507,7 +507,7 @@ initial state Pe = P0 (rho/rho0)\^gamma and the reference density.
 
 Electron heat flux: q_e = -kappa_hat . grad(Te) with the Spitzer form
 kappa = kappa0 * Te\^2.5, kappa0 = heatCondKappa0SI [W/(m K\^(7/2))] scaled by
-coulombLog/20 (the default 9.2e-12 corresponds to coulombLog 20). With
+20/coulombLog (the default 9.2e-12 corresponds to coulombLog 20). With
 fieldAlignedConduction T the conduction is along the magnetic field only,
 kappa_hat = kappa b b; fieldAlignedFraction f in [0,1] blends it towards the
 isotropic form, kappa_hat = kappa [f b b + (1 - f) I]. The direction is only
@@ -516,13 +516,15 @@ the dyad blends smoothly back to isotropic: an unmagnetized run still carries
 round-off level B whose normalised direction is arbitrary, and locking the
 heat flux to it would silently suppress the conduction. heatFluxLimiter > 0
 applies the free-streaming saturation q_sat = f_lim n_e Te sqrt(Te m_p/m_e)
-(BATSRUS uses 0.06); 0 disables it. The conduction step is point-implicit, so
-it is stable for any time step.
+(BATSRUS uses 0.06); 0 disables it. The conduction operator uses conservative
+face-centered fluxes (compact 2-point normal gradients and slope-limited
+transverse gradients) with RKL2 super-time-stepping by default (see
+#ELECTRONCONDUCTION).
 
-H_ei, the collisional energy returned to the electron fluid by the ions, is a
-documented source-term hook only: FLEKS has no Coulomb collision operator yet,
-so it is identically zero. It will be filled in once a collisional model is
-added.
+H_ei, the collisional energy returned to the electron fluid by the ions, is
+controlled by #ELECTRONCOLLISION (zero unless enabled). Resistive Ohmic
+heating (gamma_e - 1) * eta * |J|\^2 is enabled by default when #RESISTIVITY is
+non-zero and can be toggled with #ELECTRONHEATING.
 
 ambipolarInStages T (default) adds the ambipolar field -grad(Pe)/(e n_e) to the
 Ohm's law at every Runge-Kutta stage of the magnetic update. This is required
@@ -558,25 +560,28 @@ term is integrated:
 </command>
 
 <command name="ELECTRONCONDUCTION" alias="ELECTRONCONDUCTION_FLEKS0,ELECTRONCONDUCTION_FLEKS1,ELECTRONCONDUCTION_FLEKS2" multiple="T">
-  <parameter name="heatCondMethod" type="string" default="point-implicit"/>
+  <parameter name="heatCondMethod" type="string" default="rkl2"/>
   <parameter name="nCondIter" type="integer" min="1" default="1"/>
   <parameter name="nCondSubcycleMax" type="integer" min="1" default="100"/>
 
 #ELECTRONCONDUCTION
-point-implicit    heatCondMethod (point-implicit, subcycle)
+rkl2              heatCondMethod (rkl2, point-implicit, subcycle)
 1                 nCondIter
 100               nCondSubcycleMax
 
 Configure the solving strategy for electron heat conduction in the evolved
 electron pressure equation (#ELECTRONPRESSURE):
-  - point-implicit: diagonal Jacobi implicit damping (unconditionally stable).
-                    When nCondIter > 1, executes multi-pass relaxation sweeps
-                    with sub-step dt/nCondIter to accelerate physical diffusion
-                    towards thermal equilibrium.
+  - rkl2:           2nd-order Runge-Kutta-Legendre super-time-stepping (default)
+                    using conservative face-centered fluxes, with stage count
+                    capped at nCondSubcycleMax and conservative point-implicit
+                    completion for any remaining time.
+  - point-implicit: symmetric conservative face-flux implicit damping
+                    (unconditionally stable). When nCondIter > 1, executes
+                    multi-pass relaxation sweeps with sub-step dt/nCondIter.
   - subcycle:       explicit parabolic subcycling subject to the local diffusion
-                    CFL limit dt_diff = 0.45 ne / (sum kappa_dd / dx\^2), capped
-                    at nCondSubcycleMax sub-steps per PIC step. Any remaining
-                    time is completed with point-implicit to ensure stability.
+                    CFL limit, capped at nCondSubcycleMax sub-steps per PIC step.
+                    Any remaining time is completed with conservative
+                    point-implicit to ensure stability.
 </command>
 
 <command name="ELECTRONCOLLISION" alias="ELECTRONCOLLISION_FLEKS0,ELECTRONCOLLISION_FLEKS1,ELECTRONCOLLISION_FLEKS2" multiple="T">
@@ -594,10 +599,21 @@ in the evolved electron pressure equation (#ELECTRONPRESSURE), following
 the BATSRUS Braginskii model:
     dPe/dt = (Pi - Pe) / tau_eq
 where 1/tau_eq = 2 * C_ei * collisionFactor * rho / Te\^1.5.
-Solved using the BATSRUS point-implicit relaxation:
-    DeltaPe = dt * H / (1 + 2 * dt * H) * (Pi - Pe)
-which is unconditionally stable and strictly preserves thermal balance.
+Solved using the point-implicit relaxation (with fixed kinetic ion Pi):
+    DeltaPe = dt * H / (1 + dt * H) * (Pi - Pe)
+which is unconditionally stable.
 Pi is computed from the scalar ion pressure Tr(P_i)/3 in nodePlasma.
+</command>
+
+<command name="ELECTRONHEATING" alias="ELECTRONHEATING_FLEKS0,ELECTRONHEATING_FLEKS1,ELECTRONHEATING_FLEKS2" multiple="T">
+  <parameter name="useOhmicHeating" type="logical" default="T"/>
+
+#ELECTRONHEATING
+T                 useOhmicHeating
+
+Enable resistive Ohmic heating (gamma_e - 1) * eta * |J|\^2 in the evolved
+electron pressure equation (#ELECTRONPRESSURE) whenever #RESISTIVITY (or
+#REGIONRESISTIVITY) is active. Default is T.
 </command>
 
 <command name="FIELDSUBCYCLE" alias="FIELDSUBCYCLE_FLEKS0,FIELDSUBCYCLE_FLEKS1,FIELDSUBCYCLE_FLEKS2" multiple="T">

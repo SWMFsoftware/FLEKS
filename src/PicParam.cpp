@@ -714,6 +714,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (useHeatExchange) {
       param.read_var("collisionFactor", collisionFactor);
     }
+  } else if (command == "#ELECTRONHEATING") {
+    hasElectronPressure_ = true;
+    param.read_var("useOhmicHeating", useOhmicHeating);
   } else if (command == "#FIELDINTEGRATOR") {
     hasFieldIntegrator_ = true;
     param.read_var("fieldIntegrator", fieldIntegrator);
@@ -1007,9 +1010,10 @@ void Pic::post_process_param() {
             "'exponential' or 'explicit'.");
     }
 
-    if (heatCondMethod != "point-implicit" && heatCondMethod != "subcycle") {
+    if (heatCondMethod != "point-implicit" && heatCondMethod != "subcycle" &&
+        heatCondMethod != "rkl2") {
       Abort("Invalid #ELECTRONCONDUCTION: heatCondMethod must be "
-            "'point-implicit' or 'subcycle'.");
+            "'rkl2', 'point-implicit', or 'subcycle'.");
     }
     if (nCondIter < 1)
       Abort("Invalid #ELECTRONCONDUCTION: nCondIter must be at least 1.");
@@ -1024,11 +1028,13 @@ void Pic::post_process_param() {
     // Sized here rather than in the constructor: the command has not been
     // read when Pic is constructed.
     centerPeState.resize(n_lev_max());
+    centerPeStateStar.resize(n_lev_max());
     centerPeRho.resize(n_lev_max());
     centerPeTe.resize(n_lev_max());
     nodePeVec.resize(n_lev_max());
     nodePeRho.resize(n_lev_max());
     nodePeAux.resize(n_lev_max());
+    maxEvolvedTe_.assign(n_lev_max(), 0.0);
   }
 
   if (use_body()) {
@@ -1506,7 +1512,7 @@ void Pic::convert_electron_heat_conduction() {
   const Real Si2NoTemperature =
       cBoltzmannSI / (cProtonMassSI * uNormSI * uNormSI);
 
-  const Real kappa0SI = heatCondKappa0SI * (coulombLog / 20.0);
+  const Real kappa0SI = heatCondKappa0SI * (20.0 / coulombLog);
   heatCondKappa0 = kappa0SI * Si2NoEnergyDens * Si2NoV * Si2NoL /
                    std::pow(Si2NoTemperature, 3.5);
 
@@ -1525,7 +1531,7 @@ void Pic::convert_electron_heat_conduction() {
           "normalization (#NORMALIZATION lNormSI / uNormSI).");
 
   Print() << "  electron heat conduction: kappa0 = " << heatCondKappa0SI
-          << " [W/(m K^(7/2))] * (coulombLog/20 = " << coulombLog / 20.0
+          << " [W/(m K^(7/2))] * (20/coulombLog = " << 20.0 / coulombLog
           << ") -> " << heatCondKappa0 << " [code units]\n";
   Print() << "    gamma_e = " << electronGamma
           << (fieldAlignedConduction
@@ -1555,7 +1561,7 @@ void Pic::convert_electron_collision() {
   const Real twoPiKB = 2.0 * dPI * cBoltzmannSI;
   const Real e2OverEps = (cUnitChargeSI * cUnitChargeSI) / cEps0SI;
 
-  const Real coefSI = coulombLog * std::sqrt(reducedMassSI / cProtonMassSI) *
+  const Real coefSI = coulombLog * (std::sqrt(reducedMassSI) / cProtonMassSI) *
                       (e2OverEps * e2OverEps) / (3.0 * std::pow(twoPiKB, 1.5));
 
   const Real Si2NoT = Si2NoL / Si2NoV;

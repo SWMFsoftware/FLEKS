@@ -242,16 +242,20 @@ private:
   int peLimiterType = 2; // 0: upwind1, 1: minmod, 2: vanleer, 3: mc
   bool peCompressionExp = true;
   // Solving strategy for Pe heat conduction (see #ELECTRONCONDUCTION)
-  std::string heatCondMethod = "point-implicit";
+  std::string heatCondMethod = "rkl2";
   int nCondIter = 1;
   int nCondSubcycleMax = 100;
   // Electron-ion collisional heat exchange (#ELECTRONCOLLISION)
   bool useHeatExchange = false;
   amrex::Real collisionFactor = 1.0;
   amrex::Real collisionCoefEi = 0.0; // code units
+  // Resistive Ohmic heating (#ELECTRONHEATING)
+  bool useOhmicHeating = true;
   // Add the ambipolar E to the RK stages; needed once Pe is not polytropic.
   bool ambipolarInStages = true;
+  int nPeComps_ = 1;                // 1 (scalar Pe) or 2 (Pe, PePar)
   bool peStateInitialized_ = false; // centerPeState holds a valid field
+  amrex::Vector<amrex::Real> maxEvolvedTe_;
 
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
@@ -415,15 +419,18 @@ private:
   // All are allocated with the full nGst (= 2) ghost layers, which the
   // advection MUSCL stencil needs: it reads the state two cells away in every
   // direction.
-  amrex::Vector<amrex::MultiFab> centerPeState; // Pe at cell centers (state)
-  amrex::Vector<amrex::MultiFab> centerPeRho;   // n_e; read pointwise only, so
-                                                // it carries no ghost BC
-  amrex::Vector<amrex::MultiFab> centerPeTe;    // Te; conductivity scratch, NOT
-                                                // the reported Te
-  amrex::Vector<amrex::MultiFab> nodePeVec;     // u_e, then grad(Te), then q
-  amrex::Vector<amrex::MultiFab> nodePeRho; // nodal ion charge density, then
-                                            // the collision stage's Pi
-  amrex::Vector<amrex::MultiFab> nodePeAux; // (0) Te, (1..3) kappa_hat_dd
+  amrex::Vector<amrex::MultiFab> centerPeState;     // Pe (and PePar) at cell
+                                                    // centers
+  amrex::Vector<amrex::MultiFab> centerPeStateStar; // Predictor-corrector
+                                                    // backup
+  amrex::Vector<amrex::MultiFab> centerPeRho;       // n_e; read pointwise only
+                                                    // it carries no ghost BC
+  amrex::Vector<amrex::MultiFab> centerPeTe; // Te; conductivity scratch, NOT
+                                             // the reported Te
+  amrex::Vector<amrex::MultiFab> nodePeVec;  // u_e, then grad(Te), then q
+  amrex::Vector<amrex::MultiFab> nodePeRho;  // nodal ion charge density, then
+                                             // the collision stage's Pi
+  amrex::Vector<amrex::MultiFab> nodePeAux;  // (0) Te, (1..3) kappa_hat_dd
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -1214,8 +1221,7 @@ public:
   // Zero-gradient ghosts, used by the pressure field and scratch.
   void apply_pe_zero_gradient_bc(int iLev, amrex::MultiFab &mf);
   void apply_centerPe_BC(int iLev);
-  // Fake-2D (single z cell) ghost clamp for a single-component cell-centered
-  // field.
+  // Fake-2D (single z cell) ghost clamp for a cell-centered field (all comps).
   void apply_fake2d_k_clamp(amrex::MultiFab &mf);
   // Nodal ion density -> cell-centered n_e. useGrownTile also covers the
   // coarse-fine interface nodes, which compute_ambipolar_E needs.
@@ -1225,8 +1231,21 @@ public:
                                       amrex::MultiFab &nodePe);
   // Te = Pe/n_e at the cell centers, as conductivity scratch for the solver.
   void compute_electron_temperature(int iLev);
+  // Maximum evolved electron temperature (in code units) on active cells.
+  amrex::Real max_evolved_Te(int iLev) const;
+  void update_max_evolved_Te();
+  // Conservative face-centered heat conduction helper (evolves scalar comp of
+  // `state` using cell densities `rho` and total field `bTot`).
+  void solve_heat_conduction_scalar(int iLev, amrex::Real dt,
+                                    amrex::MultiFab &state, int iStateComp,
+                                    const amrex::MultiFab &rho,
+                                    const amrex::MultiFab &bTot,
+                                    amrex::Real kappaScale,
+                                    amrex::Real energyScale);
+  // Resistive Ohmic heating hook: dPe/dt = (gamma_e - 1) * eta * |J|^2.
+  void add_ohmic_heating(int iLev, amrex::Real dt);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
-  // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation from BATSRUS.
+  // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation.
   void add_electron_ion_heating(int iLev, amrex::Real dt);
 
   //-------------Electric field solver end-------------
