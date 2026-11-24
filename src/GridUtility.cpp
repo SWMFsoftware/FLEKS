@@ -169,6 +169,52 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
       });
 }
 
+void div_sym_tensor_center_to_node(const MultiFab& centerTensorMF,
+                                   MultiFab& nodeVecMF, const Real* invDx) {
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
+
+  parallel_for_mf_omp(
+      nodeVecMF, [](const MFIter& mfi) { return mfi.validbox(); },
+      [&](const MFIter& mfi) {
+        const Array4<Real> node = nodeVecMF[mfi].array();
+        const Array4<Real const> c = centerTensorMF[mfi].const_array();
+        return [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          const int km1 = nDim > 2 ? k - 1 : k;
+          auto dx_comp = [&](int comp) noexcept -> Real {
+            return 0.25 * invDx_x *
+                   (c(i, j, k, comp) - c(i - 1, j, k, comp) +
+                    c(i, j, km1, comp) - c(i - 1, j, km1, comp) +
+                    c(i, j - 1, k, comp) - c(i - 1, j - 1, k, comp) +
+                    c(i, j - 1, km1, comp) - c(i - 1, j - 1, km1, comp));
+          };
+          auto dy_comp = [&](int comp) noexcept -> Real {
+            return 0.25 * invDx_y *
+                   (c(i, j, k, comp) - c(i, j - 1, k, comp) +
+                    c(i, j, km1, comp) - c(i, j - 1, km1, comp) +
+                    c(i - 1, j, k, comp) - c(i - 1, j - 1, k, comp) +
+                    c(i - 1, j, km1, comp) - c(i - 1, j - 1, km1, comp));
+          };
+          auto dz_comp = [&](int comp) noexcept -> Real {
+            if constexpr (nDim > 2) {
+              return 0.25 * invDx_z *
+                     (c(i, j, k, comp) - c(i, j, km1, comp) +
+                      c(i - 1, j, k, comp) - c(i - 1, j, km1, comp) +
+                      c(i, j - 1, k, comp) - c(i, j - 1, km1, comp) +
+                      c(i - 1, j - 1, k, comp) - c(i - 1, j - 1, km1, comp));
+            }
+            return 0.0;
+          };
+
+          // Symmetric tensor slot order: 0=xx, 1=yy, 2=zz, 3=xy, 4=xz, 5=yz.
+          node(i, j, k, ix_) = dx_comp(0) + dy_comp(3) + dz_comp(4);
+          node(i, j, k, iy_) = dx_comp(3) + dy_comp(1) + dz_comp(5);
+          node(i, j, k, iz_) = dx_comp(4) + dy_comp(5) + dz_comp(2);
+        };
+      });
+}
+
 void jacobian_center_to_node(const MultiFab& centerVecMF, MultiFab& nodeJacMF,
                              const Real* invDx) {
   for (int iDim = 0; iDim < 3; ++iDim) {

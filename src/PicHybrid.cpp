@@ -19,33 +19,82 @@ namespace {
 //==========================================================
 // Helpers for the evolved electron pressure.
 
-// Face-averaged normal velocity on the low (off=0) or high (off=1) face of
-// cell (i,j,k) along direction DIR. Averages the 4 corner nodes in 3D or the
-// 2 edge nodes in 2D / fake-2D, matching div_node_to_center identically.
+// Face-averaged component `comp` of a nodal vector field on the low (off=0) or
+// high (off=1) face of cell (i,j,k) along direction DIR. Averages the 4 corner
+// nodes in 3D or the 2 edge nodes in 2D / fake-2D, matching div_node_to_center.
+template <int DIR>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real ue_face_comp(
+    const Array4<Real const>& arrUe, const int comp, const int i, const int j,
+    const int k, const int off, const bool isFake2D) noexcept {
+  const int kOff = (nDim > 2 && !isFake2D) ? 1 : 0;
+  if constexpr (DIR == ix_) {
+    if (kOff > 0) {
+      return 0.25 *
+             (arrUe(i + off, j, k, comp) + arrUe(i + off, j + 1, k, comp) +
+              arrUe(i + off, j, k + 1, comp) +
+              arrUe(i + off, j + 1, k + 1, comp));
+    }
+    return 0.5 * (arrUe(i + off, j, k, comp) + arrUe(i + off, j + 1, k, comp));
+  } else if constexpr (DIR == iy_) {
+    if (kOff > 0) {
+      return 0.25 *
+             (arrUe(i, j + off, k, comp) + arrUe(i + 1, j + off, k, comp) +
+              arrUe(i, j + off, k + 1, comp) +
+              arrUe(i + 1, j + off, k + 1, comp));
+    }
+    return 0.5 * (arrUe(i, j + off, k, comp) + arrUe(i + 1, j + off, k, comp));
+  } else {
+    return 0.25 *
+           (arrUe(i, j, k + off, comp) + arrUe(i + 1, j, k + off, comp) +
+            arrUe(i, j + 1, k + off, comp) +
+            arrUe(i + 1, j + 1, k + off, comp));
+  }
+}
+
 template <int DIR>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Real
 ue_face(const Array4<Real const>& arrUe, const int i, const int j, const int k,
         const int off, const bool isFake2D) noexcept {
-  const int kOff = (nDim > 2 && !isFake2D) ? 1 : 0;
-  if constexpr (DIR == ix_) {
-    if (kOff > 0) {
-      return 0.25 * (arrUe(i + off, j, k, ix_) + arrUe(i + off, j + 1, k, ix_) +
-                     arrUe(i + off, j, k + 1, ix_) +
-                     arrUe(i + off, j + 1, k + 1, ix_));
-    }
-    return 0.5 * (arrUe(i + off, j, k, ix_) + arrUe(i + off, j + 1, k, ix_));
-  } else if constexpr (DIR == iy_) {
-    if (kOff > 0) {
-      return 0.25 * (arrUe(i, j + off, k, iy_) + arrUe(i + 1, j + off, k, iy_) +
-                     arrUe(i, j + off, k + 1, iy_) +
-                     arrUe(i + 1, j + off, k + 1, iy_));
-    }
-    return 0.5 * (arrUe(i, j + off, k, iy_) + arrUe(i + 1, j + off, k, iy_));
-  } else {
-    return 0.25 *
-           (arrUe(i, j, k + off, iz_) + arrUe(i + 1, j, k + off, iz_) +
-            arrUe(i, j + 1, k + off, iz_) + arrUe(i + 1, j + 1, k + off, iz_));
+  return ue_face_comp<DIR>(arrUe, DIR, i, j, k, off, isFake2D);
+}
+
+// Smooth, positivity-preserving Le et al. (2009) trapped-passing equations of
+// state for collisionless magnetized electrons:
+//   Pe_par  = p0 * n~ * (1 + x^3)^(1/3)
+//   Pe_perp = p0 * n~ * (1 + B~ * x^2) / (1 + x^2)
+// where n~ = n/n0, B~ = sqrt(B^2 + B_min^2)/B0, and x = (pi/6) * (n~/B~)^2.
+// Asymptotes to Boltzmann (Pe_par = Pe_perp = p0*n~) as x -> 0 and trapped
+// CGL (Pe_par = p0*(pi/6)*n~^3/B~^2, Pe_perp = p0*n~*B~) as x -> inf.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void le2009_closure(
+    const Real rho, const Real bMag, const Real p0, const Real invRho0,
+    const Real invB0, const Real bMin, const Real peMin,
+    const bool useFirehoseLimit, const Real firehoseCoef, Real& peParOut,
+    Real& pePerpOut) noexcept {
+  if (rho <= 0.0 || p0 <= 0.0 || invRho0 <= 0.0 || invB0 <= 0.0) {
+    peParOut = peMin;
+    pePerpOut = peMin;
+    return;
   }
+  const Real nTilde = rho * invRho0;
+  const Real bEff = std::sqrt(bMag * bMag + bMin * bMin);
+  const Real bTilde = bEff * invB0;
+  const Real ratio = nTilde / bTilde;
+  const Real x = (dPI / 6.0) * ratio * ratio;
+  const Real x2 = x * x;
+  const Real x3 = x2 * x;
+  Real pPar = p0 * nTilde * std::cbrt(1.0 + x3);
+  Real pPerp = p0 * nTilde * (1.0 + bTilde * x2) / (1.0 + x2);
+  if (useFirehoseLimit && bMag > 0.0) {
+    const Real pB = (bMag * bMag) / (8.0 * dPI);
+    const Real pTot = (pPar + 2.0 * pPerp) / 3.0;
+    const Real pParMax = pTot + (2.0 / 3.0) * firehoseCoef * pB;
+    if (pPar > pParMax) {
+      pPar = pParMax;
+      pPerp = 0.5 * (3.0 * pTot - pPar);
+    }
+  }
+  peParOut = amrex::max(pPar, peMin);
+  pePerpOut = amrex::max(pPerp, peMin);
 }
 
 // Add one direction's contribution to div(u_e P) and div(u_e). The caller
@@ -610,51 +659,135 @@ void Pic::compute_ambipolar_E(int iLev) {
     return;
   }
 
-  if (useElectronPressureEq) {
-    // Pe is an evolved field: take it as it is instead of rebuilding it from
-    // the density with the polytropic closure.
-    MultiFab::Copy(centerPe[iLev], centerPeState[iLev], 0, 0, 1,
-                   centerPe[iLev].nGrow());
-    centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
-  } else {
-    // Copy nodal ion density to nodeRhoTemp and average it to cell centers.
-    compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], false);
-    centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+  if (useAnisoPe || useLe2009Pe) {
+    if (useLe2009Pe) {
+      compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], false);
+    }
 
-    // Evaluate electron pressure Pe at cell centers via EOS
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    const MultiFab& bTot = total_center_B(centerB[iLev], iLev);
     const Real p0 = electronDensity0 * electronTemperature;
     const Real invRho0 =
-        (electronDensity0 > 0) ? (1.0 / electronDensity0) : 0.0;
-    const Real gamma = electronGamma;
-    const Real Te = electronTemperature;
+        (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
+    const Real invB0 = (le2009B0 > 0.0) ? (1.0 / le2009B0) : 0.0;
+    const Real bMin = fieldAlignedBMin;
+    const Real bMin2 = bMin * bMin;
+    const Real peMinLocal = peMin;
+    const bool useFh = usePeInstabilityLimit;
+    const Real fhCoef = peFirehoseCoef;
+    const bool isLe = useLe2009Pe;
 
-    for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(centerPeTensor[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
+      const Array4<Real>& arrT = centerPeTensor[iLev][mfi].array();
+      const Array4<Real const>& arrB = bTot[mfi].const_array();
+      const Array4<Real>& arrPeDiag = centerPe[iLev][mfi].array();
+      const Array4<Real const> arrState =
+          useAnisoPe ? centerPeState[iLev][mfi].const_array()
+                     : Array4<Real const>();
+
       parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        arrPe(i, j, k) =
-            polytropic_closure(arrPe(i, j, k), p0, invRho0, gamma, Te);
+        const Real bx = arrB(i, j, k, ix_);
+        const Real by = arrB(i, j, k, iy_);
+        const Real bz = arrB(i, j, k, iz_);
+        const Real b2 = bx * bx + by * by + bz * bz;
+        const Real bMag = std::sqrt(b2);
+
+        Real pe, pePar, pePerp;
+        if (isLe) {
+          const Real rho = arrPeDiag(i, j, k);
+          le2009_closure(rho, bMag, p0, invRho0, invB0, bMin, peMinLocal, useFh,
+                         fhCoef, pePar, pePerp);
+          pe = (pePar + 2.0 * pePerp) / 3.0;
+          arrPeDiag(i, j, k) = pe;
+        } else {
+          pe = amrex::max(arrState(i, j, k, 0), peMinLocal);
+          pePar = amrex::max(arrState(i, j, k, 1), peMinLocal);
+          pePerp = amrex::max(0.5 * (3.0 * pe - pePar), peMinLocal);
+        }
+
+        Real bhx = 0.0, bhy = 0.0, bhz = 0.0, wB = 0.0;
+        if (b2 > 0.0) {
+          const Real invB = 1.0 / bMag;
+          bhx = bx * invB;
+          bhy = by * invB;
+          bhz = bz * invB;
+          wB = b2 / (b2 + bMin2);
+        }
+
+        const Real dP = wB * (pePar - pePerp);
+        const Real pPerpEff = pe - dP / 3.0;
+        arrT(i, j, k, 0) = pPerpEff + dP * bhx * bhx;
+        arrT(i, j, k, 1) = pPerpEff + dP * bhy * bhy;
+        arrT(i, j, k, 2) = pPerpEff + dP * bhz * bhz;
+        arrT(i, j, k, 3) = dP * bhx * bhy;
+        arrT(i, j, k, 4) = dP * bhx * bhz;
+        arrT(i, j, k, 5) = dP * bhy * bhz;
       });
     }
-    centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    centerPeTensor[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          centerPeTensor[iLev - 1], centerPeTensor[iLev], 0, 6,
+          refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          *get_cell_interp());
+    }
+    if (!Geom(iLev).isAllPeriodic() && centerPeTensor[iLev].nGrow() > 0) {
+      apply_pe_zero_gradient_bc(iLev, centerPeTensor[iLev]);
+    }
+    apply_fake2d_k_clamp(centerPeTensor[iLev]);
+
+    div_sym_tensor_center_to_node(centerPeTensor[iLev], nodeEambi[iLev],
+                                  Geom(iLev).InvCellSize());
+  } else {
+    if (useElectronPressureEq) {
+      // Pe is an evolved field: take it as it is instead of rebuilding it from
+      // the density with the polytropic closure.
+      MultiFab::Copy(centerPe[iLev], centerPeState[iLev], 0, 0, 1,
+                     centerPe[iLev].nGrow());
+      centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+    } else {
+      // Copy nodal ion density to nodeRhoTemp and average it to cell centers.
+      compute_electron_density(iLev, nodeRhoTemp[iLev], centerPe[iLev], false);
+      centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      // Evaluate electron pressure Pe at cell centers via EOS
+      const Real p0 = electronDensity0 * electronTemperature;
+      const Real invRho0 =
+          (electronDensity0 > 0) ? (1.0 / electronDensity0) : 0.0;
+      const Real gamma = electronGamma;
+      const Real Te = electronTemperature;
+
+      for (MFIter mfi(centerPe[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arrPe = centerPe[iLev][mfi].array();
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          arrPe(i, j, k) =
+              polytropic_closure(arrPe(i, j, k), p0, invRho0, gamma, Te);
+        });
+      }
+      centerPe[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    if (iLev > 0) {
+      fill_fine_lev_bny_from_coarse(
+          centerPe[iLev - 1], centerPe[iLev], 0, 1, refRatio(iLev - 1),
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
+    }
+
+    // Zero-gradient (Neumann / foextrap) BC across non-periodic domain
+    // boundaries
+    if (!Geom(iLev).isAllPeriodic() && centerPe[iLev].nGrow() > 0) {
+      apply_pe_zero_gradient_bc(iLev, centerPe[iLev]);
+    }
+
+    apply_fake2d_k_clamp(centerPe[iLev]);
+
+    // Compute grad_center_to_node(Pe) directly into nodeEambi
+    grad_center_to_node(centerPe[iLev], nodeEambi[iLev],
+                        Geom(iLev).InvCellSize());
   }
-
-  if (iLev > 0) {
-    fill_fine_lev_bny_from_coarse(
-        centerPe[iLev - 1], centerPe[iLev], 0, 1, refRatio(iLev - 1),
-        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
-  }
-
-  // Zero-gradient (Neumann / foextrap) BC across non-periodic domain boundaries
-  if (!Geom(iLev).isAllPeriodic() && centerPe[iLev].nGrow() > 0) {
-    apply_pe_zero_gradient_bc(iLev, centerPe[iLev]);
-  }
-
-  apply_fake2d_k_clamp(centerPe[iLev]);
-
-  // Compute grad_center_to_node(Pe) directly into nodeEambi
-  grad_center_to_node(centerPe[iLev], nodeEambi[iLev],
-                      Geom(iLev).InvCellSize());
 
   // Scale in-place: E_ambi = -grad(Pe) / max(rho, rhoMinOhm)
   for (MFIter mfi(nodeEambi[iLev]); mfi.isValid(); ++mfi) {
@@ -1048,6 +1181,9 @@ void Pic::init_electron_pressure(int iLev) {
   const auto& prob_lo = geom.ProbLo();
   const auto& dx = geom.CellSize();
 
+  const bool isAniso = useAnisoPe;
+  const Real anisoRatio0 = peAnisoRatio0;
+
   for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrPe = centerPeState[iLev][mfi].array();
@@ -1070,10 +1206,114 @@ void Pic::init_electron_pressure(int iLev) {
       } else {
         peInit = polytropic_closure(arrRho(i, j, k), p0, invRho0, gamma, Te);
       }
-      arrPe(i, j, k, 0) = amrex::max(peInit, peMinLocal);
+      const Real peVal = amrex::max(peInit, peMinLocal);
+      arrPe(i, j, k, 0) = peVal;
+      if (isAniso) {
+        arrPe(i, j, k, 1) = amrex::max(
+            3.0 * peVal / (1.0 + 2.0 * anisoRatio0), peMinLocal);
+      }
     });
   }
   apply_centerPe_BC(iLev);
+}
+
+//==========================================================
+void Pic::init_le2009_b0() {
+  if (!useLe2009Pe || le2009B0 > 0.0 || n_lev() <= 0 || centerB[0].empty())
+    return;
+
+  centerB[0].FillBoundary(Geom(0).periodicity());
+  const MultiFab& bTot = total_center_B(centerB[0], 0);
+  auto const& bArr = bTot.const_arrays();
+  auto const& statArr = cell_status(0).const_arrays();
+  const bool hasBody = use_body();
+
+  auto [bSum, count] = ParReduce(
+      TypeList<ReduceOpSum, ReduceOpSum>{}, TypeList<Real, long>{}, bTot,
+      IntVect(0),
+      [=] AMREX_GPU_DEVICE(int nb, int i, int j,
+                           int k) noexcept -> GpuTuple<Real, long> {
+        if (hasBody && bit::is_body(statArr[nb](i, j, k)))
+          return { 0.0, 0L };
+        const Real bx = bArr[nb](i, j, k, ix_);
+        const Real by = bArr[nb](i, j, k, iy_);
+        const Real bz = bArr[nb](i, j, k, iz_);
+        return { std::sqrt(bx * bx + by * by + bz * bz), 1L };
+      });
+  ParallelDescriptor::ReduceRealSum(bSum);
+  ParallelDescriptor::ReduceLongSum(count);
+
+  if (count <= 0 || bSum <= 0.0) {
+    Abort("Pic::init_le2009_b0: mean |B| on level 0 is zero; provide a "
+          "positive le2009B0SI in #ELECTRONANISO.");
+  }
+  le2009B0 = bSum / static_cast<Real>(count);
+  Print() << "  electron pressure anisotropy (le2009): auto reference B0 = "
+          << le2009B0 << " [code units]\n";
+}
+
+//==========================================================
+void Pic::eval_le2009_cell_pressures(int iLev, const MFIter& mfi, IntVect ijk,
+                                     Real& peOut, Real& peParOut,
+                                     Real& pePerpOut, Real* neOut) const {
+  peOut = 0.0;
+  peParOut = 0.0;
+  pePerpOut = 0.0;
+  if (neOut) {
+    *neOut = 0.0;
+  }
+  if (!useLe2009Pe || !usePIC || iLev >= static_cast<int>(centerB.size()) ||
+      centerB[iLev].empty()) {
+    return;
+  }
+
+  // Reconstruct quasi-neutral electron density at cell center from surrounding
+  // 8 (4 in 2D) corner nodes of nodePlasma[s].
+  Real ne = 0.0;
+  const int i = ijk[ix_];
+  const int j = ijk[iy_];
+  const int k = (nDim > 2) ? ijk[iz_] : 0;
+  const int kMax = (nDim > 2 && !is_fake_2d()) ? 1 : 0;
+  const Real invN = (kMax > 0) ? 0.125 : 0.25;
+  for (int s = 0; s < nSpecies; ++s) {
+    if (s >= static_cast<int>(nodePlasma.size()) ||
+        iLev >= static_cast<int>(nodePlasma[s].size()) ||
+        nodePlasma[s][iLev].empty()) {
+      continue;
+    }
+    const Real qomFactor = (fi && s < fi->get_nS() && fi->get_MoMi(s) > 0.0)
+                               ? (fi->get_QoQi(s) / fi->get_MoMi(s))
+                               : 1.0;
+    const auto& mom = nodePlasma[s][iLev][mfi].const_array();
+    Real rhoSum = 0.0;
+    for (int dk = 0; dk <= kMax; ++dk)
+      for (int dj = 0; dj <= 1; ++dj)
+        for (int di = 0; di <= 1; ++di)
+          rhoSum += mom(i + di, j + dj, k + dk, iRho_);
+    ne += qomFactor * rhoSum * invN;
+  }
+  if (neOut) {
+    *neOut = ne;
+  }
+
+  const auto& b1 = centerB[iLev][mfi].const_array();
+  Real bx = b1(i, j, k, ix_);
+  Real by = b1(i, j, k, iy_);
+  Real bz = b1(i, j, k, iz_);
+  if (use_intrinsic_B() && iLev < static_cast<int>(centerB0.size()) &&
+      !centerB0[iLev].empty()) {
+    const auto& b0 = centerB0[iLev][mfi].const_array();
+    bx += b0(i, j, k, ix_);
+    by += b0(i, j, k, iy_);
+    bz += b0(i, j, k, iz_);
+  }
+  const Real bMag = std::sqrt(bx * bx + by * by + bz * bz);
+  const Real p0 = electronDensity0 * electronTemperature;
+  const Real invRho0 = (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
+  const Real invB0 = (le2009B0 > 0.0) ? (1.0 / le2009B0) : 0.0;
+  le2009_closure(ne, bMag, p0, invRho0, invB0, fieldAlignedBMin, peMin,
+                 usePeInstabilityLimit, peFirehoseCoef, peParOut, pePerpOut);
+  peOut = (peParOut + 2.0 * pePerpOut) / 3.0;
 }
 
 //==========================================================
@@ -1354,6 +1594,9 @@ void Pic::update_Pe_hybrid(int iLev, Real dt) {
   // A no-op each when heatCondKappa0 is 0 / #ELECTRONCOLLISION is absent.
   apply_electron_heat_conduction(iLev, dt);
   add_electron_ion_heating(iLev, dt);
+  if (useAnisoPe) {
+    apply_electron_isotropization(iLev, dt);
+  }
 
   apply_centerPe_BC(iLev);
 }
@@ -1472,6 +1715,199 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
           : 1;
   const Real dtSub = dt / static_cast<Real>(nAdvSub);
 
+  if (useAnisoPe) {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    const MultiFab& bTot = total_center_B(centerB[iLev], iLev);
+    const BoxArray& ba = centerPeState[iLev].boxArray();
+    const DistributionMapping& dm = centerPeState[iLev].DistributionMap();
+    const Real bMin2 = fieldAlignedBMin * fieldAlignedBMin;
+
+    // 2-component work arrays: comp 0 = PePar, comp 1 = PePerp.
+    MultiFab peAnisoWork(ba, dm, 2, get_n_ghost());
+    MultiFab peAniso0(ba, dm, 2, 0);
+    MultiFab peAniso1(ba, dm, 2, 0);
+
+    auto fill_aniso_ghosts = [&](MultiFab& mf) {
+      mf.FillBoundary(Geom(iLev).periodicity());
+      if (iLev > 0) {
+        MultiFab coarseParPerp(centerPeState[iLev - 1].boxArray(),
+                               centerPeState[iLev - 1].DistributionMap(), 2,
+                               centerPeState[iLev - 1].nGrow());
+        for (MFIter mfi(coarseParPerp); mfi.isValid(); ++mfi) {
+          const Box& fbox = mfi.fabbox();
+          const Array4<Real>& arrC = coarseParPerp[mfi].array();
+          const Array4<Real const>& arrS =
+              centerPeState[iLev - 1][mfi].const_array();
+          parallel_for_omp(fbox,
+                           [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                             const Real pe = amrex::max(arrS(i, j, k, 0), peMinLocal);
+                             const Real pPar =
+                                 amrex::max(arrS(i, j, k, 1), peMinLocal);
+                             arrC(i, j, k, 0) = pPar;
+                             arrC(i, j, k, 1) = amrex::max(
+                                 0.5 * (3.0 * pe - pPar), peMinLocal);
+                           });
+        }
+        fill_fine_lev_bny_from_coarse(coarseParPerp, mf, 0, 2,
+                                      refRatio(iLev - 1), Geom(iLev - 1),
+                                      Geom(iLev), cell_status(iLev),
+                                      *get_cell_interp());
+      }
+      apply_pe_zero_gradient_bc(iLev, mf);
+      apply_fake2d_k_clamp(mf);
+    };
+
+    apply_centerPe_BC(iLev);
+    for (MFIter mfi(peAnisoWork); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrW = peAnisoWork[mfi].array();
+      const Array4<Real const>& arrS = centerPeState[iLev][mfi].const_array();
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real pe = amrex::max(arrS(i, j, k, 0), peMinLocal);
+        const Real pPar = amrex::max(arrS(i, j, k, 1), peMinLocal);
+        arrW(i, j, k, 0) = pPar;
+        arrW(i, j, k, 1) = amrex::max(0.5 * (3.0 * pe - pPar), peMinLocal);
+      });
+    }
+
+    for (int iSub = 0; iSub < nAdvSub; ++iSub) {
+      fill_aniso_ghosts(peAnisoWork);
+      MultiFab::Copy(peAniso0, peAnisoWork, 0, 0, 2, 0);
+
+      // Stage 1: advect both PePar and PePerp.
+      for (MFIter mfi(peAnisoWork); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real const>& arrW = peAnisoWork[mfi].const_array();
+        const Array4<Real>& arr1 = peAniso1[mfi].array();
+        const Array4<Real const>& arrUe = nodePeVec[iLev][mfi].const_array();
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          for (int c = 0; c < 2; ++c) {
+            Real divFlux = 0.0;
+            Real divUe = 0.0;
+            if (invDxX > 0.0)
+              pe_dir_flux<ix_>(arrW, c, arrUe, i, j, k, invDxX, limType,
+                               peMinLocal, isFake2D, divFlux, divUe);
+            if (invDxY > 0.0)
+              pe_dir_flux<iy_>(arrW, c, arrUe, i, j, k, invDxY, limType,
+                               peMinLocal, isFake2D, divFlux, divUe);
+            if constexpr (nDim > 2) {
+              if (invDxZ > 0.0)
+                pe_dir_flux<iz_>(arrW, c, arrUe, i, j, k, invDxZ, limType,
+                                 peMinLocal, isFake2D, divFlux, divUe);
+            }
+            arr1(i, j, k, c) =
+                amrex::max(arrW(i, j, k, c) - dtSub * divFlux, peMinLocal);
+          }
+        });
+      }
+      MultiFab::Copy(peAnisoWork, peAniso1, 0, 0, 2, 0);
+      fill_aniso_ghosts(peAnisoWork);
+
+      // Stage 2: SSP-RK2 advection + CGL exponential compression.
+      for (MFIter mfi(peAnisoWork); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real const>& arr0 = peAniso0[mfi].const_array();
+        const Array4<Real const>& arr1 = peAnisoWork[mfi].const_array();
+        const Array4<Real>& arrOut = peAniso1[mfi].array();
+        const Array4<Real const>& arrUe = nodePeVec[iLev][mfi].const_array();
+        const Array4<Real const>& arrB = bTot[mfi].const_array();
+
+        parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+          Real pAdv[2] = { 0.0, 0.0 };
+          Real divUeUnused = 0.0;
+          for (int c = 0; c < 2; ++c) {
+            Real divFlux1 = 0.0;
+            if (invDxX > 0.0)
+              pe_dir_flux<ix_>(arr1, c, arrUe, i, j, k, invDxX, limType,
+                               peMinLocal, isFake2D, divFlux1, divUeUnused);
+            if (invDxY > 0.0)
+              pe_dir_flux<iy_>(arr1, c, arrUe, i, j, k, invDxY, limType,
+                               peMinLocal, isFake2D, divFlux1, divUeUnused);
+            if constexpr (nDim > 2) {
+              if (invDxZ > 0.0)
+                pe_dir_flux<iz_>(arr1, c, arrUe, i, j, k, invDxZ, limType,
+                                 peMinLocal, isFake2D, divFlux1, divUeUnused);
+            }
+            pAdv[c] = amrex::max(
+                0.5 * arr0(i, j, k, c) +
+                    0.5 * (arr1(i, j, k, c) - dtSub * divFlux1),
+                peMinLocal);
+          }
+
+          // Cell-centered Jacobian du_{b}/dx_{a} matching div_node_to_center.
+          Real du[3][3] = { { 0.0, 0.0, 0.0 },
+                            { 0.0, 0.0, 0.0 },
+                            { 0.0, 0.0, 0.0 } };
+          for (int b = 0; b < 3; ++b) {
+            if (invDxX > 0.0) {
+              du[0][b] =
+                  (ue_face_comp<ix_>(arrUe, b, i, j, k, 1, isFake2D) -
+                   ue_face_comp<ix_>(arrUe, b, i, j, k, 0, isFake2D)) *
+                  invDxX;
+            }
+            if (invDxY > 0.0) {
+              du[1][b] =
+                  (ue_face_comp<iy_>(arrUe, b, i, j, k, 1, isFake2D) -
+                   ue_face_comp<iy_>(arrUe, b, i, j, k, 0, isFake2D)) *
+                  invDxY;
+            }
+            if constexpr (nDim > 2) {
+              if (invDxZ > 0.0) {
+                du[2][b] =
+                    (ue_face_comp<iz_>(arrUe, b, i, j, k, 1, isFake2D) -
+                     ue_face_comp<iz_>(arrUe, b, i, j, k, 0, isFake2D)) *
+                    invDxZ;
+              }
+            }
+          }
+          const Real divUe = du[0][0] + du[1][1] + du[2][2];
+
+          const Real bx = arrB(i, j, k, ix_);
+          const Real by = arrB(i, j, k, iy_);
+          const Real bz = arrB(i, j, k, iz_);
+          const Real b2 = bx * bx + by * by + bz * bz;
+          Real bbGradEff = divUe / 3.0;
+          if (b2 > 0.0) {
+            const Real invB = 1.0 / std::sqrt(b2);
+            const Real bh[3] = { bx * invB, by * invB, bz * invB };
+            Real bbGrad = 0.0;
+            for (int a = 0; a < 3; ++a)
+              for (int b = 0; b < 3; ++b)
+                bbGrad += bh[a] * bh[b] * du[a][b];
+            const Real wB = b2 / (b2 + bMin2);
+            bbGradEff = wB * bbGrad + (1.0 - wB) * (divUe / 3.0);
+          }
+
+          if (compExp) {
+            arrOut(i, j, k, 0) = amrex::max(
+                pAdv[0] * std::exp(-2.0 * bbGradEff * dtSub), peMinLocal);
+            arrOut(i, j, k, 1) = amrex::max(
+                pAdv[1] * std::exp(-(divUe - bbGradEff) * dtSub), peMinLocal);
+          } else {
+            arrOut(i, j, k, 0) = amrex::max(
+                pAdv[0] - dtSub * 2.0 * pAdv[0] * bbGradEff, peMinLocal);
+            arrOut(i, j, k, 1) = amrex::max(
+                pAdv[1] - dtSub * pAdv[1] * (divUe - bbGradEff), peMinLocal);
+          }
+        });
+      }
+      MultiFab::Copy(peAnisoWork, peAniso1, 0, 0, 2, 0);
+    }
+
+    for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrS = centerPeState[iLev][mfi].array();
+      const Array4<Real const>& arrW = peAnisoWork[mfi].const_array();
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real pPar = amrex::max(arrW(i, j, k, 0), peMinLocal);
+        const Real pPerp = amrex::max(arrW(i, j, k, 1), peMinLocal);
+        arrS(i, j, k, 0) = (pPar + 2.0 * pPerp) / 3.0;
+        arrS(i, j, k, 1) = pPar;
+      });
+    }
+    return;
+  }
+
   MultiFab centerPe0(centerPeState[iLev].boxArray(),
                      centerPeState[iLev].DistributionMap(), 1, 0);
 
@@ -1560,7 +1996,9 @@ void Pic::advect_electron_pressure(int iLev, Real dt) {
 void Pic::solve_heat_conduction_scalar(int iLev, Real dt, MultiFab& state,
                                        int iStateComp, const MultiFab& rho,
                                        const MultiFab& bTot, Real kappaScale,
-                                       Real energyScale) {
+                                       Real energyScale,
+                                       const MultiFab* coarseState,
+                                       int iCoarseComp) {
   if (heatCondKappa0 <= 0.0 || kappaScale <= 0.0 || energyScale <= 0.0 ||
       dt <= 0.0) {
     return;
@@ -1622,15 +2060,23 @@ void Pic::solve_heat_conduction_scalar(int iLev, Real dt, MultiFab& state,
   // Helper to fill ghosts of a 1-comp pressure MultiFab.
   auto fill_pe_ghosts = [&](MultiFab& mf) {
     mf.FillBoundary(Geom(iLev).periodicity());
-    if (iLev > 0 && &state == &centerPeState[iLev]) {
-      MultiFab coarseAlias(centerPeState[iLev - 1], amrex::make_alias,
-                           iStateComp, 1);
-      fill_fine_lev_bny_from_coarse(coarseAlias, mf, 0, 1, refRatio(iLev - 1),
-                                    Geom(iLev - 1), Geom(iLev),
-                                    cell_status(iLev), *get_cell_interp());
+    if (iLev > 0) {
+      const MultiFab* cPtr =
+          coarseState ? coarseState
+                      : ((&state == &centerPeState[iLev])
+                             ? &centerPeState[iLev - 1]
+                             : nullptr);
+      const int cComp = coarseState ? iCoarseComp : iStateComp;
+      if (cPtr && !cPtr->empty()) {
+        MultiFab coarseAlias(const_cast<MultiFab&>(*cPtr), amrex::make_alias,
+                             cComp, 1);
+        fill_fine_lev_bny_from_coarse(coarseAlias, mf, 0, 1, refRatio(iLev - 1),
+                                      Geom(iLev - 1), Geom(iLev),
+                                      cell_status(iLev), *get_cell_interp());
+      }
     }
     apply_pe_zero_gradient_bc(iLev, mf);
-    if (coupledDirichlet && iStateComp == 0) {
+    if (coupledDirichlet && &state == &centerPeState[iLev] && iStateComp == 0) {
       fill_ext_dir(cell_status(iLev), mf, 0, 1, &Pic::get_center_Pe, iLev,
                    &bcField);
     }
@@ -2184,9 +2630,293 @@ void Pic::apply_electron_heat_conduction(int iLev, Real dt) {
 
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   const MultiFab& bTot = total_center_B(centerB[iLev], iLev);
-  solve_heat_conduction_scalar(iLev, dt, centerPeState[iLev], 0,
-                               centerPeRho[iLev], bTot, 1.0,
-                               electronGamma - 1.0);
+
+  if (!useAnisoPe) {
+    solve_heat_conduction_scalar(iLev, dt, centerPeState[iLev], 0,
+                                 centerPeRho[iLev], bTot, 1.0,
+                                 electronGamma - 1.0);
+    return;
+  }
+
+  // Gyrotropic CGL heat conduction: evolve parallel thermal energy (PePar/2)
+  // and perpendicular thermal energy (PePerp) with kappaScale = 2/3,
+  // energyScale = 2 (for PePar) and 1 (for PePerp), conserving total thermal
+  // energy (PePar + 2*PePerp)/2 = 3/2 * Pe.
+  const BoxArray& ba = centerPeState[iLev].boxArray();
+  const DistributionMapping& dm = centerPeState[iLev].DistributionMap();
+  const Real peMinLocal = peMin;
+
+  MultiFab pePerpMF(ba, dm, 1, get_n_ghost());
+  for (MFIter mfi(pePerpMF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrPerp = pePerpMF[mfi].array();
+    const Array4<Real const>& arrS = centerPeState[iLev][mfi].const_array();
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const Real pe = amrex::max(arrS(i, j, k, 0), peMinLocal);
+      const Real pPar = amrex::max(arrS(i, j, k, 1), peMinLocal);
+      arrPerp(i, j, k) = amrex::max(0.5 * (3.0 * pe - pPar), peMinLocal);
+    });
+  }
+
+  MultiFab pePerpCoarse;
+  if (iLev > 0) {
+    pePerpCoarse.define(centerPeState[iLev - 1].boxArray(),
+                        centerPeState[iLev - 1].DistributionMap(), 1,
+                        centerPeState[iLev - 1].nGrow());
+    for (MFIter mfi(pePerpCoarse); mfi.isValid(); ++mfi) {
+      const Box& fbox = mfi.fabbox();
+      const Array4<Real>& arrC = pePerpCoarse[mfi].array();
+      const Array4<Real const>& arrS =
+          centerPeState[iLev - 1][mfi].const_array();
+      parallel_for_omp(fbox,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                         const Real pe = amrex::max(arrS(i, j, k, 0), peMinLocal);
+                         const Real pPar =
+                             amrex::max(arrS(i, j, k, 1), peMinLocal);
+                         arrC(i, j, k) =
+                             amrex::max(0.5 * (3.0 * pe - pPar), peMinLocal);
+                       });
+    }
+  }
+
+  solve_heat_conduction_scalar(
+      iLev, dt, centerPeState[iLev], 1, centerPeRho[iLev], bTot, 2.0 / 3.0, 2.0,
+      iLev > 0 ? &centerPeState[iLev - 1] : nullptr, 1);
+  solve_heat_conduction_scalar(iLev, dt, pePerpMF, 0, centerPeRho[iLev], bTot,
+                               2.0 / 3.0, 1.0,
+                               iLev > 0 ? &pePerpCoarse : nullptr, 0);
+
+  // Conservative mirror-force heat-flux exchange between PePar and PePerp:
+  //   dPe_par/dt += +2 * q_perp * div(bhat),  dPe_perp/dt += -q_perp * div(bhat)
+  // which leaves Pe = (PePar + 2*PePerp)/3 strictly invariant.
+  const Real fAlign = fieldAlignedConduction ? fieldAlignedFraction : 0.0;
+  if (fAlign > 0.0) {
+    const IntVect domLen = Geom(iLev).Domain().length();
+    const Real* invDxGeom = Geom(iLev).InvCellSize();
+    const Real invDxX = (domLen[ix_] > 1) ? invDxGeom[ix_] : 0.0;
+    const Real invDxY = (domLen[iy_] > 1) ? invDxGeom[iy_] : 0.0;
+    const Real invDxZ = (nDim > 2 && domLen[iz_] > 1) ? invDxGeom[iz_] : 0.0;
+    const Real bMin2 = fieldAlignedBMin * fieldAlignedBMin;
+    const Real rhoFloor = rhoMinOhm;
+    const Real kappa0Perp = heatCondKappa0 * (2.0 / 3.0);
+
+    MultiFab bHatMF(ba, dm, nDim3, 1);
+    MultiFab tePerpMF(ba, dm, 1, 1);
+    for (MFIter mfi(bHatMF); mfi.isValid(); ++mfi) {
+      const Box& fbox = mfi.fabbox();
+      const Box gbox = amrex::grow(mfi.validbox(), 1);
+      const Box box = fbox & gbox;
+      const Array4<Real>& arrBh = bHatMF[mfi].array();
+      const Array4<Real const>& arrB = bTot[mfi].const_array();
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real bx = arrB(i, j, k, ix_);
+        const Real by = arrB(i, j, k, iy_);
+        const Real bz = arrB(i, j, k, iz_);
+        const Real b2 = bx * bx + by * by + bz * bz;
+        if (b2 > 0.0) {
+          const Real invB = 1.0 / std::sqrt(b2);
+          const Real wB = fAlign * b2 / (b2 + bMin2);
+          arrBh(i, j, k, ix_) = wB * bx * invB;
+          arrBh(i, j, k, iy_) = wB * by * invB;
+          arrBh(i, j, k, iz_) = wB * bz * invB;
+        } else {
+          arrBh(i, j, k, ix_) = 0.0;
+          arrBh(i, j, k, iy_) = 0.0;
+          arrBh(i, j, k, iz_) = 0.0;
+        }
+      });
+    }
+    bHatMF.FillBoundary(Geom(iLev).periodicity());
+    apply_pe_zero_gradient_bc(iLev, bHatMF);
+    apply_fake2d_k_clamp(bHatMF);
+
+    for (MFIter mfi(tePerpMF); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrT = tePerpMF[mfi].array();
+      const Array4<Real const>& arrP = pePerpMF[mfi].const_array();
+      const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].const_array();
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
+        arrT(i, j, k) = amrex::max(arrP(i, j, k), peMinLocal) / ne;
+      });
+    }
+    tePerpMF.FillBoundary(Geom(iLev).periodicity());
+    apply_pe_zero_gradient_bc(iLev, tePerpMF);
+    apply_fake2d_k_clamp(tePerpMF);
+
+    for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrS = centerPeState[iLev][mfi].array();
+      const Array4<Real>& arrPerp = pePerpMF[mfi].array();
+      const Array4<Real const>& arrBh = bHatMF[mfi].const_array();
+      const Array4<Real const>& arrTp = tePerpMF[mfi].const_array();
+      const Array4<Real const>& arrRho = centerPeRho[iLev][mfi].const_array();
+
+      parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const Real ne = amrex::max(arrRho(i, j, k), rhoFloor);
+        const Real pPar = amrex::max(arrS(i, j, k, 1), peMinLocal);
+        const Real pPerp = amrex::max(arrPerp(i, j, k), peMinLocal);
+        const Real tPar = pPar / ne;
+        const Real kap = (tPar > 0.0) ? kappa0Perp * std::pow(tPar, 2.5) : 0.0;
+        const Real gX = (invDxX > 0.0)
+                            ? 0.5 * (arrTp(i + 1, j, k) - arrTp(i - 1, j, k)) *
+                                  invDxX
+                            : 0.0;
+        const Real gY = (invDxY > 0.0)
+                            ? 0.5 * (arrTp(i, j + 1, k) - arrTp(i, j - 1, k)) *
+                                  invDxY
+                            : 0.0;
+        const Real gZ =
+            (invDxZ > 0.0)
+                ? 0.5 * (arrTp(i, j, k + 1) - arrTp(i, j, k - 1)) * invDxZ
+                : 0.0;
+        const Real bDotG = arrBh(i, j, k, ix_) * gX + arrBh(i, j, k, iy_) * gY +
+                           arrBh(i, j, k, iz_) * gZ;
+        const Real qPerp = -kap * bDotG;
+        Real divBh = 0.0;
+        if (invDxX > 0.0)
+          divBh +=
+              0.5 * (arrBh(i + 1, j, k, ix_) - arrBh(i - 1, j, k, ix_)) * invDxX;
+        if (invDxY > 0.0)
+          divBh +=
+              0.5 * (arrBh(i, j + 1, k, iy_) - arrBh(i, j - 1, k, iy_)) * invDxY;
+        if (invDxZ > 0.0)
+          divBh +=
+              0.5 * (arrBh(i, j, k + 1, iz_) - arrBh(i, j, k - 1, iz_)) * invDxZ;
+        Real dE = dt * qPerp * divBh;
+        // Clamp transfer so neither parallel nor perpendicular pressure crosses
+        // peMinLocal, keeping Pe = (PePar + 2*PePerp)/3 exact.
+        const Real dEMax = pPerp - peMinLocal;
+        const Real dEMin = -0.5 * (pPar - peMinLocal);
+        dE = std::clamp(dE, dEMin, dEMax);
+        arrS(i, j, k, 1) = pPar + 2.0 * dE;
+        arrPerp(i, j, k) = pPerp - dE;
+      });
+    }
+  }
+
+  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrS = centerPeState[iLev][mfi].array();
+    const Array4<Real const>& arrPerp = pePerpMF[mfi].const_array();
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const Real pPar = amrex::max(arrS(i, j, k, 1), peMinLocal);
+      const Real pPerp = amrex::max(arrPerp(i, j, k), peMinLocal);
+      arrS(i, j, k, 0) = (pPar + 2.0 * pPerp) / 3.0;
+      arrS(i, j, k, 1) = pPar;
+    });
+  }
+}
+
+//==========================================================
+// Marginal-stability (firehose + whistler/mirror) & baseline isotropization for
+// gyrotropic CGL electrons. Leaves Pe = (PePar + 2*PePerp)/3 strictly invariant.
+void Pic::apply_electron_isotropization(int iLev, Real dt) {
+  if (!useAnisoPe)
+    return;
+
+  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  const MultiFab& bTot = total_center_B(centerB[iLev], iLev);
+  const Real bMin2 = fieldAlignedBMin * fieldAlignedBMin;
+  const Real peMinLocal = peMin;
+  const bool useLimit = usePeInstabilityLimit;
+  const Real fhCoef = peFirehoseCoef;
+  const Real whCoef = peWhistlerCoef;
+  const Real whExp = peWhistlerExp;
+  const Real tauInst = peAnisoRelaxTime;
+  const Real baseRate = peAnisoBaseRate;
+
+  for (MFIter mfi(centerPeState[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrS = centerPeState[iLev][mfi].array();
+    const Array4<Real const>& arrB = bTot[mfi].const_array();
+
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const Real pe = amrex::max(arrS(i, j, k, 0), peMinLocal);
+      Real pePar = amrex::max(arrS(i, j, k, 1), peMinLocal);
+      const Real peParCeiling = amrex::max(peMinLocal, 3.0 * pe - 2.0 * peMinLocal);
+      pePar = amrex::min(pePar, peParCeiling);
+
+      const Real bx = arrB(i, j, k, ix_);
+      const Real by = arrB(i, j, k, iy_);
+      const Real bz = arrB(i, j, k, iz_);
+      const Real b2 = bx * bx + by * by + bz * bz;
+      if (b2 <= 0.0) {
+        arrS(i, j, k, 0) = pe;
+        arrS(i, j, k, 1) = pe;
+        return;
+      }
+
+      const Real pB = b2 / (8.0 * dPI);
+      const Real wB = b2 / (b2 + bMin2);
+
+      if (useLimit && pB > 0.0) {
+        // Firehose upper bound: beta_par - beta_perp <= fhCoef
+        // => PePar - PePerp <= fhCoef * P_B => PePar <= Pe + (2/3)*fhCoef*P_B.
+        const Real pParMax = amrex::min(pe + (2.0 / 3.0) * fhCoef * pB,
+                                        peParCeiling);
+
+        // Whistler/mirror lower bound: PePerp/PePar - 1 <= whCoef / beta_par^whExp
+        // i.e. g(p) = 3*(Pe - p)/(2*p) - whCoef * (P_B / p)^whExp <= 0.
+        Real pParMin = peMinLocal;
+        if (whCoef > 0.0 && pePar < pe) {
+          const Real pFloor = amrex::max(peMinLocal, 1.0e-30 * pe);
+          auto g_wh = [&](const Real p) noexcept -> Real {
+            return 1.5 * (pe - p) / p - whCoef * std::pow(pB / p, whExp);
+          };
+          if (g_wh(pePar) > 0.0) {
+            // Bisection + Newton bracketed on [pFloor, pe].
+            Real lo = pFloor;
+            Real hi = pe;
+            Real p = amrex::max(pePar, lo);
+            if (g_wh(lo) <= 0.0) {
+              pParMin = lo;
+            } else {
+              for (int it = 0; it < 12; ++it) {
+                const Real g = g_wh(p);
+                if (g > 0.0) {
+                  lo = p;
+                } else {
+                  hi = p;
+                }
+                const Real dg =
+                    -1.5 * pe / (p * p) +
+                    whCoef * whExp * std::pow(pB / p, whExp) / p;
+                Real pNext = (dg < 0.0) ? (p - g / dg) : (0.5 * (lo + hi));
+                if (!(pNext > lo && pNext < hi)) {
+                  pNext = 0.5 * (lo + hi);
+                }
+                p = pNext;
+              }
+              pParMin = std::clamp(p, peMinLocal, pe);
+            }
+          }
+        }
+
+        const Real pClamp = std::clamp(pePar, pParMin, pParMax);
+        if (pClamp != pePar) {
+          if (tauInst <= 0.0) {
+            pePar = pClamp;
+          } else {
+            const Real r = dt / tauInst;
+            pePar = (pePar + r * pClamp) / (1.0 + r);
+          }
+        }
+      }
+
+      if (baseRate > 0.0) {
+        const Real rBase = dt * baseRate;
+        pePar = (pePar + rBase * pe) / (1.0 + rBase);
+      }
+
+      // Smoothly isotropize as |B| drops below fieldAlignedBMin.
+      pePar = pe + wB * (pePar - pe);
+      pePar = std::clamp(pePar, peMinLocal, peParCeiling);
+
+      arrS(i, j, k, 0) = pe;
+      arrS(i, j, k, 1) = pePar;
+    });
+  }
 }
 
 //==========================================================

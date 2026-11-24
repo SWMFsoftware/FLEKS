@@ -616,6 +616,34 @@ electron pressure equation (#ELECTRONPRESSURE) whenever #RESISTIVITY (or
 #REGIONRESISTIVITY) is active. Default is T.
 </command>
 
+<command name="ELECTRONANISO" alias="ELECTRONANISO_FLEKS0,ELECTRONANISO_FLEKS1,ELECTRONANISO_FLEKS2" multiple="T">
+  <parameter name="electronAnisoModel" type="string" default="none"/>
+
+#ELECTRONANISO
+cgl               electronAnisoModel (none, cgl, le2009)
+1.0               peAnisoRatio0 (optional; initial Te,perp / Te,par for cgl)
+T                 usePeInstabilityLimit (optional; firehose + whistler limit)
+2.0               peFirehoseCoef (optional; beta_par - beta_perp threshold)
+0.36              peWhistlerCoef (optional; whistler/mirror threshold coef)
+0.55              peWhistlerExp (optional; whistler/mirror beta_par exponent)
+0.0               peAnisoRelaxTimeSI (optional; 0 = hard clamp, >0 = soft tau [s])
+0.0               peAnisoBaseRateSI (optional; baseline isotropization [1/s])
+0.0               le2009B0SI (optional; reference B0 [T] for le2009, 0 = auto)
+
+Enable anisotropic / gyrotropic electron pressure in the hybrid PIC solver.
+The gyrotropic pressure tensor P_e = P_e,perp I + (P_e,par - P_e,perp) b b enters
+generalized Ohm's law as -div(P_e)/rho_q. Optional parameters can appear in any
+order after electronAnisoModel:
+  - none:   isotropic scalar electron pressure (default).
+  - cgl:    requires #ELECTRONPRESSURE T; evolves (Pe, PePar) with CGL
+            parallel/perpendicular compression, anisotropic parallel Spitzer
+            conduction, and marginal-stability isotropization (firehose and
+            whistler/mirror bounds) conserving total Pe = (PePar + 2*PePerp)/3.
+  - le2009: algebraic Le et al. (2009) trapped-passing EOS bridging Boltzmann
+            and CGL limits as functions of n/n0 and B/B0 (cannot be combined
+            with #ELECTRONPRESSURE T).
+</command>
+
 <command name="FIELDSUBCYCLE" alias="FIELDSUBCYCLE_FLEKS0,FIELDSUBCYCLE_FLEKS1,FIELDSUBCYCLE_FLEKS2" multiple="T">
   <parameter name="nSubcycle" type="integer" min="1" default="1"/>
   <parameter name="isAutoSubcycle" type="logical" default="F"/>

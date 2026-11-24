@@ -91,6 +91,9 @@ void Pic::fill_new_cells() {
       if (useElectronPressureEq && !peStateInitialized_) {
         init_electron_pressure();
       }
+      if (useLe2009Pe && le2009B0 <= 0.0) {
+        init_le2009_b0();
+      }
       compute_ambipolar_E();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
@@ -410,6 +413,11 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             doMoveData);
         distribute_FabArray(nodePeAux[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 4, get_n_ghost(),
+                            doMoveData);
+      }
+      if (useAnisoPe || useLe2009Pe) {
+        distribute_FabArray(centerPeTensor[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 6, get_n_ghost(),
                             doMoveData);
       }
       if (hasRegionalResistivity_) {

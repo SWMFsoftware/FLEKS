@@ -412,10 +412,16 @@ where:
   \item $-\mathbf{U}_i \times \mathbf{B}$ is the \emph{convection} term, always active.
   \item $\eta\,\mathbf{J}$ is the \emph{resistive} term, with $\eta$ the magnetic diffusivity.
   \item $(\mathbf{J}\times\mathbf{B})/\rho_q$ is the \emph{Hall} term. When the Hall term is absent, the Hall-whistler time-step restriction is removed.
-  \item $-\nabla P_e/\rho_q$ is the \emph{electron pressure gradient} term. The electron pressure $P_e$ supports two closures:
+  \item $-\nabla\cdot\mathbf{P}_e/\rho_q$ is the \emph{electron pressure divergence} term. FLEKS supports four closures in hybrid PIC:
   \begin{itemize}
     \item Isothermal ($\gamma=1$): $P_e = T_e \rho$.
     \item Adiabatic ($\gamma > 1$): $P_e = P_0 (\rho/\rho_0)^\gamma$, where $P_0 = \rho_0 T_e$.
+    \item Evolved isotropic scalar pressure (\texttt{\#ELECTRONPRESSURE T}):
+    \begin{equation}
+    \frac{\partial P_e}{\partial t} + \nabla\cdot(\mathbf{u}_e P_e) + (\gamma_e - 1) P_e (\nabla\cdot\mathbf{u}_e) = (\gamma_e - 1)\left[\eta |\mathbf{J}|^2 - \nabla\cdot\mathbf{q}_e + H_{ei}\right],
+    \end{equation}
+    with $\mathbf{u}_e = (\mathbf{J}_i - \mathbf{J})/\rho_q$, conservative face-centered Spitzer/flux-limited heat flux $\mathbf{q}_e = -\hat{\boldsymbol{\kappa}}\cdot\nabla T_e$ (integrated with RKL2 super-time-stepping by default), resistive Ohmic heating, and point-implicit electron--ion collisional equilibration $H_{ei} = (P_i - P_e)/\tau_{eq}$.
+    \item Gyrotropic / anisotropic electron pressure (\texttt{\#ELECTRONANISO}): $\mathbf{P}_e = P_{e\perp}\mathbf{I} + (P_{e\parallel} - P_{e\perp})\hat{\mathbf{b}}\hat{\mathbf{b}}$, either as an evolved two-component CGL system $(P_e, P_{e\parallel})$ with double-adiabatic compression, parallel heat conduction, and energy-conserving firehose/whistler marginal isotropization, or as the algebraic Le et al.\ (2009) trapped--passing EOS (\texttt{le2009}).
   \end{itemize}
   A minimum density floor $\rho_{\min}$ is applied to the $1/\rho_q$ factors in the Hall and electron pressure terms to prevent unbounded contributions in near-vacuum cells.
   \item $\mathbf{E}_{\text{upwind}}$ is the \emph{upwind (Rusanov) dissipation} term (Section~\ref{sec:hybrid_upwind}), enabled by default (\texttt{\#HYBRIDUPWIND}). It adds directional wave dissipation to suppress grid-scale oscillations while strictly preserving discrete $\nabla \cdot \mathbf{B} = 0$.

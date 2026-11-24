@@ -657,29 +657,90 @@ Real Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           value = arr(ijk, iNum_);
         }
       }
-    } else if (var.substr(0, 2) == "Pe") {
-      // Electron pressure actually used by the Ohm's law: the evolved state
-      // when #ELECTRONPRESSURE is on, the polytropic closure otherwise.
-      // centerPeState is only allocated when the equation is evolved.
-      const Vector<MultiFab>& peVec =
-          useElectronPressureEq ? centerPeState : centerPe;
-      if (iLev < static_cast<int>(peVec.size()) && !peVec[iLev].empty()) {
-        const Array4<Real const>& arr = peVec[iLev][mfi].array();
-        value = arr(ijk);
+    } else if (var.substr(0, 5) == "PePar" || var.substr(0, 6) == "PePerp") {
+      const bool wantPar = (var.substr(0, 5) == "PePar");
+      if (useAnisoPe && iLev < static_cast<int>(centerPeState.size()) &&
+          !centerPeState[iLev].empty()) {
+        const Array4<Real const>& arr = centerPeState[iLev][mfi].array();
+        const Real pe = amrex::max(arr(ijk, 0), peMin);
+        const Real pPar = amrex::max(arr(ijk, 1), peMin);
+        value = wantPar ? pPar : amrex::max(0.5 * (3.0 * pe - pPar), peMin);
+      } else if (useLe2009Pe) {
+        Real pe = 0.0, pePar = 0.0, pePerp = 0.0;
+        eval_le2009_cell_pressures(iLev, mfi, ijk, pe, pePar, pePerp);
+        value = wantPar ? pePar : pePerp;
+      } else {
+        const Vector<MultiFab>& peVec =
+            useElectronPressureEq ? centerPeState : centerPe;
+        if (iLev < static_cast<int>(peVec.size()) && !peVec[iLev].empty()) {
+          value = peVec[iLev][mfi].array()(ijk, 0);
+        }
       }
-    } else if (var.substr(0, 2) == "Te") {
-      // Electron temperature in code units; only meaningful when the electron
-      // pressure equation is evolved. See the Te block in write_amrex_field().
+    } else if (var.substr(0, 5) == "TePar" || var.substr(0, 6) == "TePerp") {
+      const bool wantPar = (var.substr(0, 5) == "TePar");
       if (useElectronPressureEq &&
           iLev < static_cast<int>(centerPeState.size()) &&
           !centerPeState[iLev].empty() &&
           iLev < static_cast<int>(centerPeRho.size()) &&
           !centerPeRho[iLev].empty()) {
         const Real pe =
-            amrex::max(centerPeState[iLev][mfi].array()(ijk), peMin);
+            amrex::max(centerPeState[iLev][mfi].array()(ijk, 0), peMin);
+        const Real pComp =
+            useAnisoPe
+                ? (wantPar
+                       ? amrex::max(centerPeState[iLev][mfi].array()(ijk, 1),
+                                    peMin)
+                       : amrex::max(
+                             0.5 * (3.0 * pe -
+                                    amrex::max(
+                                        centerPeState[iLev][mfi].array()(ijk,
+                                                                         1),
+                                        peMin)),
+                             peMin))
+                : pe;
+        const Real ne =
+            amrex::max(centerPeRho[iLev][mfi].array()(ijk), rhoMinOhm);
+        value = pComp / ne;
+      } else if (useLe2009Pe) {
+        Real pe = 0.0, pePar = 0.0, pePerp = 0.0, ne = 0.0;
+        eval_le2009_cell_pressures(iLev, mfi, ijk, pe, pePar, pePerp, &ne);
+        const Real pComp = wantPar ? pePar : pePerp;
+        value = pComp / amrex::max(ne, rhoMinOhm);
+      } else {
+        value = 0.0;
+      }
+    } else if (var.substr(0, 2) == "Pe") {
+      // Electron pressure actually used by the Ohm's law: the evolved state
+      // when #ELECTRONPRESSURE is on, the closure otherwise.
+      if (useLe2009Pe) {
+        Real pe = 0.0, pePar = 0.0, pePerp = 0.0;
+        eval_le2009_cell_pressures(iLev, mfi, ijk, pe, pePar, pePerp);
+        value = pe;
+      } else {
+        const Vector<MultiFab>& peVec =
+            useElectronPressureEq ? centerPeState : centerPe;
+        if (iLev < static_cast<int>(peVec.size()) && !peVec[iLev].empty()) {
+          const Array4<Real const>& arr = peVec[iLev][mfi].array();
+          value = arr(ijk, 0);
+        }
+      }
+    } else if (var.substr(0, 2) == "Te") {
+      // Electron temperature in code units; only meaningful when the electron
+      // pressure equation or Le (2009) closure is active.
+      if (useElectronPressureEq &&
+          iLev < static_cast<int>(centerPeState.size()) &&
+          !centerPeState[iLev].empty() &&
+          iLev < static_cast<int>(centerPeRho.size()) &&
+          !centerPeRho[iLev].empty()) {
+        const Real pe =
+            amrex::max(centerPeState[iLev][mfi].array()(ijk, 0), peMin);
         const Real ne =
             amrex::max(centerPeRho[iLev][mfi].array()(ijk), rhoMinOhm);
         value = pe / ne;
+      } else if (useLe2009Pe) {
+        Real pe = 0.0, pePar = 0.0, pePerp = 0.0, ne = 0.0;
+        eval_le2009_cell_pressures(iLev, mfi, ijk, pe, pePar, pePerp, &ne);
+        value = pe / amrex::max(ne, rhoMinOhm);
       } else {
         value = 0.0;
       }
@@ -849,8 +910,46 @@ void Pic::read_restart() {
   // that had #ELECTRONPRESSURE on. Older files start without it and the field
   // is then seeded from the polytropic closure on the first step.
   if (useElectronPressureEq) {
-    if (read_restart_mf(centerPeState, prefix + "_centerPeState", false,
-                        true)) {
+    bool foundPe = false;
+    const std::string peBase = prefix + "_centerPeState";
+    const std::string peFile0 = restart_file_name(peBase, 0, &foundPe);
+    int fileNComp = 0;
+    if (foundPe) {
+      if (ParallelDescriptor::IOProcessor()) {
+        std::ifstream ifs(peFile0 + "_H");
+        if (ifs.is_open()) {
+          VisMF::Header hdr;
+          ifs >> hdr;
+          fileNComp = hdr.m_ncomp;
+        }
+      }
+      ParallelDescriptor::Bcast(&fileNComp, 1,
+                                ParallelDescriptor::IOProcessorNumber());
+    }
+
+    if (foundPe && useAnisoPe && fileNComp == 1) {
+      Vector<MultiFab> tmpPe(n_lev());
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        tmpPe[iLev].define(centerPeState[iLev].boxArray(),
+                           centerPeState[iLev].DistributionMap(), 1,
+                           centerPeState[iLev].nGrow());
+      }
+      if (read_restart_mf(tmpPe, peBase, false, true)) {
+        for (int iLev = 0; iLev < n_lev(); ++iLev) {
+          MultiFab::Copy(centerPeState[iLev], tmpPe[iLev], 0, 0, 1, 0);
+          MultiFab::Copy(centerPeState[iLev], tmpPe[iLev], 0, 1, 1, 0);
+          apply_centerPe_BC(iLev);
+          compute_electron_density(iLev, nodePeRho[iLev], centerPeRho[iLev],
+                                   false);
+        }
+        peStateInitialized_ = true;
+        update_max_evolved_Te();
+        Print() << "  restart: seeded anisotropic PePar = Pe from 1-comp "
+                << "checkpoint.\n";
+      } else {
+        peStateInitialized_ = false;
+      }
+    } else if (read_restart_mf(centerPeState, peBase, false, true)) {
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         apply_centerPe_BC(iLev);
         compute_electron_density(iLev, nodePeRho[iLev], centerPeRho[iLev],
@@ -1171,8 +1270,9 @@ void Pic::write_plots(bool doForce) {
         for (int iLev = 0; iLev < n_lev(); ++iLev) {
           const auto period = Geom(iLev).periodicity();
           for (auto* mf :
-               { &centerNetChargeN, &centerDivE, &centerPhi, &centerPe,
-                 &centerPeState, &centerPeRho, &centerDivB, &divB }) {
+               { &centerB, &centerNetChargeN, &centerDivE, &centerPhi,
+                 &centerPe, &centerPeState, &centerPeRho, &centerDivB,
+                 &divB }) {
             if (iLev < (int)mf->size() && !(*mf)[iLev].empty() &&
                 (*mf)[iLev].nGrow() > 0)
               (*mf)[iLev].FillBoundary(period);
@@ -1405,11 +1505,12 @@ void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
   if (saveBody)
     nVarOut += 1;
 
-  // The evolved electron pressure and temperature (#ELECTRONPRESSURE). They
-  // are cell-centered, so they are only meaningful in the cell-centered output.
-  const bool savePeVars = useElectronPressureEq && !saveNode;
+  // The electron pressure and temperature diagnostics (#ELECTRONPRESSURE or
+  // #ELECTRONANISO le2009) are cell-centered, so they are only meaningful in
+  // cell-centered output.
+  const bool savePeVars = (useElectronPressureEq || useLe2009Pe) && !saveNode;
   if (savePeVars)
-    nVarOut += 2;
+    nVarOut += (useAnisoPe || useLe2009Pe) ? 6 : 2;
 
   // Save cell-centered, instead of the nodal, values, because the AMReX
   // document says some visualization tools assumes the AMReX format outputs
@@ -1612,31 +1713,87 @@ void Pic::write_amrex_field(const PlotWriter& pw, Real const timeNow,
     }
 
     if (savePeVars) {
-      // centerPeState is allocated whenever savePeVars is true.
-      MultiFab::Copy(out[iLev], centerPeState[iLev], 0, iStart, 1, 0);
-      iStart += 1;
-      varNames.push_back("Pe");
-
-      // Te = Pe/n_e, recomputed from the same two arrays rather than read from
-      // centerPeTe: the conductivity updates that scratch before the collision
-      // stage, so it trails the state by up to one update and would not belong
-      // to the Pe written next to it. Refreshing it inside the solver instead
-      // was measured to perturb the next step's advection stencil, so it is
-      // only ever read here.
       const Real peMinOut = peMin;
       const Real rhoMinOut = rhoMinOhm;
-      for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.validbox();
-        const Array4<Real>& outArr = out[iLev][mfi].array();
-        const Array4<Real const>& peArr = centerPeState[iLev][mfi].array();
-        const Array4<Real const>& rhoArr = centerPeRho[iLev][mfi].array();
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-          const Real ne = amrex::max(rhoArr(i, j, k), rhoMinOut);
-          outArr(i, j, k, iStart) = amrex::max(peArr(i, j, k), peMinOut) / ne;
-        });
+      if (useLe2009Pe) {
+        for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<Real>& outArr = out[iLev][mfi].array();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                Real pe = 0.0, pPar = 0.0, pPerp = 0.0, ne = 0.0;
+                eval_le2009_cell_pressures(iLev, mfi,
+                                           IntVect{ AMREX_D_DECL(i, j, k) }, pe,
+                                           pPar, pPerp, &ne);
+                const Real neSafe = amrex::max(ne, rhoMinOut);
+                outArr(i, j, k, iStart) = pe;
+                outArr(i, j, k, iStart + 1) = pe / neSafe;
+                outArr(i, j, k, iStart + 2) = pPar;
+                outArr(i, j, k, iStart + 3) = pPerp;
+                outArr(i, j, k, iStart + 4) = pPar / neSafe;
+                outArr(i, j, k, iStart + 5) = pPerp / neSafe;
+              }
+        }
+        iStart += 6;
+        varNames.push_back("Pe");
+        varNames.push_back("Te");
+        varNames.push_back("PePar");
+        varNames.push_back("PePerp");
+        varNames.push_back("TePar");
+        varNames.push_back("TePerp");
+      } else {
+        // centerPeState is allocated whenever useElectronPressureEq is true.
+        MultiFab::Copy(out[iLev], centerPeState[iLev], 0, iStart, 1, 0);
+        iStart += 1;
+        varNames.push_back("Pe");
+
+        // Te = Pe/n_e, recomputed from the same two arrays rather than read
+        // from centerPeTe: the conductivity updates that scratch before the
+        // collision stage, so it trails the state by up to one update and would
+        // not belong to the Pe written next to it. Refreshing it inside the
+        // solver instead was measured to perturb the next step's advection
+        // stencil, so it is only ever read here.
+        for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<Real>& outArr = out[iLev][mfi].array();
+          const Array4<Real const>& peArr = centerPeState[iLev][mfi].array();
+          const Array4<Real const>& rhoArr = centerPeRho[iLev][mfi].array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            const Real ne = amrex::max(rhoArr(i, j, k), rhoMinOut);
+            outArr(i, j, k, iStart) =
+                amrex::max(peArr(i, j, k), peMinOut) / ne;
+          });
+        }
+        iStart += 1;
+        varNames.push_back("Te");
+
+        if (useAnisoPe) {
+          for (MFIter mfi(out[iLev]); mfi.isValid(); ++mfi) {
+            const Box& box = mfi.validbox();
+            const Array4<Real>& outArr = out[iLev][mfi].array();
+            const Array4<Real const>& peArr = centerPeState[iLev][mfi].array();
+            const Array4<Real const>& rhoArr = centerPeRho[iLev][mfi].array();
+            ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+              const Real pe = amrex::max(peArr(i, j, k, 0), peMinOut);
+              const Real pPar = amrex::max(peArr(i, j, k, 1), peMinOut);
+              const Real pPerp = amrex::max(0.5 * (3.0 * pe - pPar), peMinOut);
+              const Real ne = amrex::max(rhoArr(i, j, k), rhoMinOut);
+              outArr(i, j, k, iStart) = pPar;
+              outArr(i, j, k, iStart + 1) = pPerp;
+              outArr(i, j, k, iStart + 2) = pPar / ne;
+              outArr(i, j, k, iStart + 3) = pPerp / ne;
+            });
+          }
+          iStart += 4;
+          varNames.push_back("PePar");
+          varNames.push_back("PePerp");
+          varNames.push_back("TePar");
+          varNames.push_back("TePerp");
+        }
       }
-      iStart += 1;
-      varNames.push_back("Te");
     }
 
     for (int i = 0; i < out[iLev].nComp(); ++i) {

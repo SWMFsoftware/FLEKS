@@ -251,6 +251,21 @@ private:
   amrex::Real collisionCoefEi = 0.0; // code units
   // Resistive Ohmic heating (#ELECTRONHEATING)
   bool useOhmicHeating = true;
+  // ---- Anisotropic / gyrotropic electron pressure (#ELECTRONANISO) ----
+  std::string electronAnisoModel = "none"; // "none", "cgl", "le2009"
+  bool useAnisoPe = false;                 // true for "cgl" (Pe, PePar)
+  bool useLe2009Pe = false;                // true for "le2009" algebraic EOS
+  amrex::Real peAnisoRatio0 = 1.0;         // initial T_e,perp / T_e,par
+  bool usePeInstabilityLimit = true;       // firehose + whistler clamping
+  amrex::Real peFirehoseCoef = 2.0;        // beta_par - beta_perp <= C_fh
+  amrex::Real peWhistlerCoef = 0.36;       // P_perp/P_par - 1 <= C_wh/beta^exp
+  amrex::Real peWhistlerExp = 0.55;
+  amrex::Real peAnisoRelaxTimeSI = 0.0;    // 0 = hard clamp, >0 = soft tau [s]
+  amrex::Real peAnisoRelaxTime = 0.0;      // code units
+  amrex::Real peAnisoBaseRateSI = 0.0;     // baseline isotropization [1/s]
+  amrex::Real peAnisoBaseRate = 0.0;       // code units
+  amrex::Real le2009B0SI = 0.0;            // reference B0 [T] (<=0: auto mean)
+  amrex::Real le2009B0 = 0.0;              // code units
   // Add the ambipolar E to the RK stages; needed once Pe is not polytropic.
   bool ambipolarInStages = true;
   int nPeComps_ = 1;                // 1 (scalar Pe) or 2 (Pe, PePar)
@@ -423,6 +438,8 @@ private:
                                                     // centers
   amrex::Vector<amrex::MultiFab> centerPeStateStar; // Predictor-corrector
                                                     // backup
+  amrex::Vector<amrex::MultiFab> centerPeTensor;    // 6-comp symmetric Pe
+                                                    // tensor
   amrex::Vector<amrex::MultiFab> centerPeRho;       // n_e; read pointwise only
                                                     // it carries no ghost BC
   amrex::Vector<amrex::MultiFab> centerPeTe; // Te; conductivity scratch, NOT
@@ -948,6 +965,7 @@ public:
   void convert_electron_density0();
   void convert_electron_heat_conduction();
   void convert_electron_collision();
+  void convert_electron_aniso();
   void convert_inflow_state();
   // Turn the SI input of #DIPOLE / #CRUSTALFIELD into code units and read the
   // spherical harmonic coefficients.
@@ -1241,12 +1259,24 @@ public:
                                     const amrex::MultiFab &rho,
                                     const amrex::MultiFab &bTot,
                                     amrex::Real kappaScale,
-                                    amrex::Real energyScale);
+                                    amrex::Real energyScale,
+                                    const amrex::MultiFab *coarseState = nullptr,
+                                    int iCoarseComp = 0);
   // Resistive Ohmic heating hook: dPe/dt = (gamma_e - 1) * eta * |J|^2.
   void add_ohmic_heating(int iLev, amrex::Real dt);
   // Electron-ion collisional thermal equilibration (heat exchange) hook:
   // dPe/dt = (Pi - Pe) / tau_eq, point-implicit formulation.
   void add_electron_ion_heating(int iLev, amrex::Real dt);
+  // Marginal-stability & baseline isotropization for gyrotropic CGL electrons.
+  void apply_electron_isotropization(int iLev, amrex::Real dt);
+  // Auto-seed reference B0 for Le et al. (2009) closure from level-0 mean |B|.
+  void init_le2009_b0();
+  // Evaluate (Pe, PePar, PePerp) at cell (i,j,k) for Le et al. (2009) EOS.
+  void eval_le2009_cell_pressures(int iLev, const amrex::MFIter &mfi,
+                                  amrex::IntVect ijk, amrex::Real &peOut,
+                                  amrex::Real &peParOut,
+                                  amrex::Real &pePerpOut,
+                                  amrex::Real *neOut = nullptr) const;
 
   //-------------Electric field solver end-------------
 
