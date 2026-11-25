@@ -147,17 +147,30 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // Static dipole of the inner body. Everything is SI; convert_intrinsic_B()
     // turns it into code units once the normalization is known.
     Real bEq = 0.0, theta = 0.0, phi = 0.0, rRef = -1.0;
+    std::string dipoleType = "dipole3d";
     param.read_var("strength", bEq);
     param.read_var("theta", theta);
     param.read_var("phi", phi);
     param.read_var("rRef", rRef);
+    param.read_optional("dipoleType", dipoleType);
+
+    bool isLine2D = false;
+    if (dipoleType == "dipole3d" || dipoleType == "3d") {
+      isLine2D = false;
+    } else if (dipoleType == "line2d" || dipoleType == "2d") {
+      isLine2D = true;
+    } else {
+      Abort("Error: #DIPOLE dipoleType '" + dipoleType +
+            "' is not supported. Accepted values: dipole3d, line2d.");
+    }
 
     if (intrinsicB_ == nullptr)
       intrinsicB_ = std::make_unique<IntrinsicBField>();
-    intrinsicB_->read_dipole(bEq, theta, phi, rRef);
+    intrinsicB_->read_dipole(bEq, theta, phi, rRef, isLine2D);
 
-    Print() << "  intrinsic field: dipole, strength = " << bEq
-            << " [nT] at rRef, tilt = (" << theta << ", " << phi << ") [deg], "
+    Print() << "  intrinsic field: " << (isLine2D ? "2D line dipole" : "dipole")
+            << ", strength = " << bEq << " [nT] at rRef, tilt = (" << theta
+            << ", " << phi << ") [deg], "
             << "rRef = " << rRef << " [m, <0 = from #BODY/#PLANETRADIUS]\n";
   } else if (command == "#CRUSTALFIELD") {
     // Static crustal field from a BATSRUS spherical harmonic coefficient file.

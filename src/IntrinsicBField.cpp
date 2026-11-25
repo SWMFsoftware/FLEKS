@@ -26,8 +26,9 @@ constexpr Real cNTToT = 1.0e-9;
 
 //==========================================================
 void IntrinsicBField::read_dipole(Real bEqNT, Real thetaDeg, Real phiDeg,
-                                  Real rRefSI) {
+                                  Real rRefSI, bool isLine2D) {
   useDipole_ = true;
+  isLine2D_ = isLine2D;
   bEqNT_ = bEqNT;
   thetaDeg_ = thetaDeg;
   phiDeg_ = phiDeg;
@@ -145,18 +146,29 @@ void IntrinsicBField::convert_units(Real si2NoB, Real si2NoL, Real si2NoV,
 
   bEqCode_ = bEqNT_ * cNTToT * si2NoB;
   params_.useDipole = useDipole_;
+  params_.isLine2D = isLine2D_;
   if (useDipole_) {
-    // The axis is the spherical direction (theta, phi) measured from +z,
-    // tipped towards -x at phi = 0 so that it agrees with the BATSRUS dipole
-    // tilt (Dipole_D = Bdp * [-sin(theta), 0, cos(theta)]).
     const Real theta = thetaDeg_ * cDegToRad;
-    const Real phi = phiDeg_ * cDegToRad;
-    const Real sinTheta = std::sin(theta);
-    const Real moment = bEqCode_ * rRefCode_ * rRefCode_ * rRefCode_;
+    if (isLine2D_) {
+      // 2D line dipole in the x-y plane: theta is the tilt from +y towards -x
+      // (2D analogue of the BATSRUS dipole tilt from +z towards -x).
+      // |B| = |bEq| * (rRef / r)^2, divergence-free in 2D.
+      const Real moment = bEqCode_ * rRefCode_ * rRefCode_;
+      params_.moment[0] = -moment * std::sin(theta);
+      params_.moment[1] = moment * std::cos(theta);
+      params_.moment[2] = 0.0;
+    } else {
+      // The axis is the spherical direction (theta, phi) measured from +z,
+      // tipped towards -x at phi = 0 so that it agrees with the BATSRUS dipole
+      // tilt (Dipole_D = Bdp * [-sin(theta), 0, cos(theta)]).
+      const Real phi = phiDeg_ * cDegToRad;
+      const Real sinTheta = std::sin(theta);
+      const Real moment = bEqCode_ * rRefCode_ * rRefCode_ * rRefCode_;
 
-    params_.moment[0] = -moment * sinTheta * std::cos(phi);
-    params_.moment[1] = -moment * sinTheta * std::sin(phi);
-    params_.moment[2] = moment * std::cos(theta);
+      params_.moment[0] = -moment * sinTheta * std::cos(phi);
+      params_.moment[1] = -moment * sinTheta * std::sin(phi);
+      params_.moment[2] = moment * std::cos(theta);
+    }
   }
 
   if (nMax_ > 0) {
@@ -332,9 +344,17 @@ std::string IntrinsicBField::describe() const {
        << params_.center[1] << ", " << params_.center[2] << ")\n";
   }
   if (useDipole_) {
+    os << "    dipole type           = "
+       << (isLine2D_ ? "line2d (2D, B ~ 1/r^2)" : "dipole3d (3D, B ~ 1/r^3)")
+       << "\n";
     os << "    dipole strength       = " << bEqNT_ << " [nT] at rRef\n";
-    os << "    dipole tilt           = theta " << thetaDeg_ << ", phi "
-       << phiDeg_ << " [deg]\n";
+    if (isLine2D_) {
+      os << "    dipole tilt (2D)      = theta " << thetaDeg_
+         << " [deg from +y towards -x]\n";
+    } else {
+      os << "    dipole tilt           = theta " << thetaDeg_ << ", phi "
+         << phiDeg_ << " [deg]\n";
+    }
     os << "    rRef [code]           = " << rRefCode_ << "\n";
     os << "    |B0| at rRef [code]   = " << bEqCode_ << "\n";
     os << "    rPlanet [code]        = " << rPlanetCode_ << "\n";
