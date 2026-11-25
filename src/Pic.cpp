@@ -91,6 +91,9 @@ void Pic::fill_new_cells() {
       if (useElectronPressureEq && !peStateInitialized_) {
         init_electron_pressure();
       }
+      if (useLe2009Pe && le2009B0 <= 0.0) {
+        init_le2009_b0();
+      }
       compute_ambipolar_E();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
@@ -389,7 +392,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         // The evolved field must survive a regrid (doCopy = true); the
         // scratch arrays are rebuilt and recomputed every step.
         distribute_FabArray(centerPeState[iLev], boxArray(iLev),
-                            DistributionMap(iLev), 1, get_n_ghost(), true);
+                            DistributionMap(iLev), nPeComps_, get_n_ghost(),
+                            true);
+        if (usePredictorCorrector) {
+          distribute_FabArray(centerPeStateStar[iLev], boxArray(iLev),
+                              DistributionMap(iLev), nPeComps_, get_n_ghost(),
+                              doMoveData);
+        }
         distribute_FabArray(centerPeRho[iLev], boxArray(iLev),
                             DistributionMap(iLev), 1, get_n_ghost(),
                             doMoveData);
@@ -404,6 +413,11 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                             doMoveData);
         distribute_FabArray(nodePeAux[iLev], node_box_array(iLev),
                             DistributionMap(iLev), 4, get_n_ghost(),
+                            doMoveData);
+      }
+      if (useAnisoPe || useLe2009Pe) {
+        distribute_FabArray(centerPeTensor[iLev], boxArray(iLev),
+                            DistributionMap(iLev), 6, get_n_ghost(),
                             doMoveData);
       }
       if (hasRegionalResistivity_) {
@@ -2539,11 +2553,15 @@ void Pic::update(bool doReportIn) {
         parts[i]->backup_particle_state();
       }
 
-      // 2. Backup base fields B^n and E^n
+      // 2. Backup base fields B^n, E^n, and Pe^n
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, nDim3,
                        get_n_ghost());
         MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nDim3, get_n_ghost());
+        if (useElectronPressureEq && peStateInitialized_) {
+          MultiFab::Copy(centerPeStateStar[iLev], centerPeState[iLev], 0, 0,
+                         nPeComps_, get_n_ghost());
+        }
       }
 
       // 3. Predictor push using (E^n, B^n) [pushStage = 1]
@@ -2582,10 +2600,15 @@ void Pic::update(bool doReportIn) {
       // = 2]
       advance_particles_and_sources(2);
 
-      // 8. Restore B^n and advance to final B^(n+1) using accepted moments
+      // 8. Restore B^n (and Pe^n) and advance to final B^(n+1) using accepted
+      // moments
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, nDim3,
                        get_n_ghost());
+        if (useElectronPressureEq && peStateInitialized_) {
+          MultiFab::Copy(centerPeState[iLev], centerPeStateStar[iLev], 0, 0,
+                         nPeComps_, get_n_ghost());
+        }
       }
       sum_moments(false);
       smooth_moments();

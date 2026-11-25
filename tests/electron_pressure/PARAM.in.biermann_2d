@@ -1,0 +1,147 @@
+#DESCRIPTION
+Evolved electron pressure: 2D Biermann-battery and anisotropic conduction test.
+An oblique shock front (shockSlope = 1.0) separates low-Te and high-Te regions
+while field-aligned heat conduction along Bx creates non-collinear grad(ne) and
+grad(Te), generating out-of-plane Bz via curl(-grad(Pe)/rho_q).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-8.0                    xMin
+ 8.0                    xMax
+-8.0                    yMin
+ 8.0                    yMax
+-0.5                    zMin
+ 0.5                    zMax
+
+#NCELL
+24                      nCellX
+24                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+12                      maxBlockSizeX
+12                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+outflow                 fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+reflect                 particleBoxBoundaryLo
+reflect                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
+#FIELDSOLVER
+hybrid
+
+#HALLTERM
+F                       useHallTerm
+
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#SMOOTHE
+F                       doSmoothE
+0                       nSmoothE
+
+#ELECTRONTEMPERATURE
+62.8                    electronTemperature  [eV]
+1.6666666666666667      electronGamma
+5.0                     electronDensity0  [amu/cc]
+
+#ELECTRONPRESSURE
+T                       useElectronPressureEq
+1.0e-18                 heatCondKappa0SI
+20.0                    coulombLog
+T                       fieldAlignedConduction
+1.0                     fieldAlignedFraction
+1.0e-15                 fieldAlignedBMinSI
+0.0                     heatFluxLimiter
+0.0                     peMin
+T                       ambipolarInStages
+
+#PLASMA
+1                       nSpecies
+1.0e6                   mass
+1.0                     charge
+
+#INFLOW
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.0e5                   T [K]
+
+#SHOCKPOSITION
+0.0                     shockPosition
+1.0                     shockSlope
+
+#SHOCKTUBE
+5.0                     LeftState rho [/cc]
+0.0                     LeftState ux [km/s]
+0.0                     LeftState uy [km/s]
+0.0                     LeftState uz [km/s]
+0.05                    LeftState p [nPa]
+0.05                    LeftState pe [nPa]
+5.0                     LeftState Bx [nT]
+0.0                     LeftState By [nT]
+0.0                     LeftState Bz [nT]
+10.0                    RightState rho [/cc]
+0.0                     RightState ux [km/s]
+0.0                     RightState uy [km/s]
+0.0                     RightState uz [km/s]
+0.05                    RightState p [nPa]
+0.40                    RightState pe [nPa]
+5.0                     RightState Bx [nT]
+0.0                     RightState By [nT]
+0.0                     RightState Bz [nT]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+25                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+25                      dn
+0.0                     dt
+1                       dx
+Bz Pe rhoS0             plotVar
+
+#STOP
+-1                      MaxIter
+0.5                     TimeMax

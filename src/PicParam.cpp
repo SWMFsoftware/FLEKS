@@ -714,6 +714,24 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (useHeatExchange) {
       param.read_var("collisionFactor", collisionFactor);
     }
+  } else if (command == "#ELECTRONHEATING") {
+    hasElectronPressure_ = true;
+    param.read_var("useOhmicHeating", useOhmicHeating);
+  } else if (command == "#ELECTRONANISO") {
+    hasElectronPressure_ = true;
+    param.read_var("electronAnisoModel", electronAnisoModel);
+    bool progress = true;
+    while (progress) {
+      progress = param.read_optional("peAnisoRatio0", peAnisoRatio0);
+      progress |=
+          param.read_optional("usePeInstabilityLimit", usePeInstabilityLimit);
+      progress |= param.read_optional("peFirehoseCoef", peFirehoseCoef);
+      progress |= param.read_optional("peWhistlerCoef", peWhistlerCoef);
+      progress |= param.read_optional("peWhistlerExp", peWhistlerExp);
+      progress |= param.read_optional("peAnisoRelaxTimeSI", peAnisoRelaxTimeSI);
+      progress |= param.read_optional("peAnisoBaseRateSI", peAnisoBaseRateSI);
+      progress |= param.read_optional("le2009B0SI", le2009B0SI);
+    }
   } else if (command == "#FIELDINTEGRATOR") {
     hasFieldIntegrator_ = true;
     param.read_var("fieldIntegrator", fieldIntegrator);
@@ -1007,9 +1025,10 @@ void Pic::post_process_param() {
             "'exponential' or 'explicit'.");
     }
 
-    if (heatCondMethod != "point-implicit" && heatCondMethod != "subcycle") {
+    if (heatCondMethod != "point-implicit" && heatCondMethod != "subcycle" &&
+        heatCondMethod != "rkl2") {
       Abort("Invalid #ELECTRONCONDUCTION: heatCondMethod must be "
-            "'point-implicit' or 'subcycle'.");
+            "'rkl2', 'point-implicit', or 'subcycle'.");
     }
     if (nCondIter < 1)
       Abort("Invalid #ELECTRONCONDUCTION: nCondIter must be at least 1.");
@@ -1024,11 +1043,55 @@ void Pic::post_process_param() {
     // Sized here rather than in the constructor: the command has not been
     // read when Pic is constructed.
     centerPeState.resize(n_lev_max());
+    centerPeStateStar.resize(n_lev_max());
     centerPeRho.resize(n_lev_max());
     centerPeTe.resize(n_lev_max());
     nodePeVec.resize(n_lev_max());
     nodePeRho.resize(n_lev_max());
     nodePeAux.resize(n_lev_max());
+    maxEvolvedTe_.assign(n_lev_max(), 0.0);
+  }
+
+  if (electronAnisoModel != "none" && electronAnisoModel != "cgl" &&
+      electronAnisoModel != "le2009") {
+    Abort("Invalid #ELECTRONANISO: electronAnisoModel must be "
+          "'none', 'cgl', or 'le2009'.");
+  }
+  if (electronAnisoModel == "cgl") {
+    if (!useHybridPIC || !useElectronPressureEq)
+      Abort("Invalid #ELECTRONANISO: model 'cgl' requires #HYBRIDPIC T and "
+            "#ELECTRONPRESSURE T.");
+    if (peAnisoRatio0 <= 0.0)
+      Abort("Invalid #ELECTRONANISO: peAnisoRatio0 must be positive.");
+    if (peFirehoseCoef <= 0.0)
+      Abort("Invalid #ELECTRONANISO: peFirehoseCoef must be positive.");
+    if (peWhistlerCoef < 0.0)
+      Abort("Invalid #ELECTRONANISO: peWhistlerCoef must be non-negative.");
+    if (peAnisoRelaxTimeSI < 0.0 || peAnisoBaseRateSI < 0.0)
+      Abort("Invalid #ELECTRONANISO: relaxation time and base rate must be "
+            "non-negative.");
+    if (std::abs(electronGamma - 5.0 / 3.0) > 1.0e-3) {
+      Print() << "  Warning: #ELECTRONANISO 'cgl' assumes 3D gyrotropic "
+                 "degrees of freedom (gamma_e = 5/3); electronGamma = "
+              << electronGamma << " only scales non-CGL terms.\n";
+    }
+    useAnisoPe = true;
+    nPeComps_ = 2;
+  } else if (electronAnisoModel == "le2009") {
+    if (!useHybridPIC)
+      Abort("Invalid #ELECTRONANISO: model 'le2009' requires #HYBRIDPIC T.");
+    if (useElectronPressureEq)
+      Abort("Invalid #ELECTRONANISO: model 'le2009' is an algebraic EOS and "
+            "cannot be combined with #ELECTRONPRESSURE T.");
+    if (electronTemperatureEV <= 0.0)
+      Abort("Invalid #ELECTRONANISO: model 'le2009' requires "
+            "#ELECTRONTEMPERATURE electronTemperature > 0.");
+    if (peFirehoseCoef <= 0.0)
+      Abort("Invalid #ELECTRONANISO: peFirehoseCoef must be positive.");
+    useLe2009Pe = true;
+  }
+  if (useAnisoPe || useLe2009Pe) {
+    centerPeTensor.resize(n_lev_max());
   }
 
   if (use_body()) {
@@ -1311,6 +1374,7 @@ void Pic::finalize_units_conversion() {
   convert_electron_density0();
   convert_electron_heat_conduction();
   convert_electron_collision();
+  convert_electron_aniso();
   convert_inflow_state();
   convert_intrinsic_B();
   convert_ionosphere_emission();
@@ -1506,7 +1570,7 @@ void Pic::convert_electron_heat_conduction() {
   const Real Si2NoTemperature =
       cBoltzmannSI / (cProtonMassSI * uNormSI * uNormSI);
 
-  const Real kappa0SI = heatCondKappa0SI * (coulombLog / 20.0);
+  const Real kappa0SI = heatCondKappa0SI * (20.0 / coulombLog);
   heatCondKappa0 = kappa0SI * Si2NoEnergyDens * Si2NoV * Si2NoL /
                    std::pow(Si2NoTemperature, 3.5);
 
@@ -1525,7 +1589,7 @@ void Pic::convert_electron_heat_conduction() {
           "normalization (#NORMALIZATION lNormSI / uNormSI).");
 
   Print() << "  electron heat conduction: kappa0 = " << heatCondKappa0SI
-          << " [W/(m K^(7/2))] * (coulombLog/20 = " << coulombLog / 20.0
+          << " [W/(m K^(7/2))] * (20/coulombLog = " << 20.0 / coulombLog
           << ") -> " << heatCondKappa0 << " [code units]\n";
   Print() << "    gamma_e = " << electronGamma
           << (fieldAlignedConduction
@@ -1555,7 +1619,7 @@ void Pic::convert_electron_collision() {
   const Real twoPiKB = 2.0 * dPI * cBoltzmannSI;
   const Real e2OverEps = (cUnitChargeSI * cUnitChargeSI) / cEps0SI;
 
-  const Real coefSI = coulombLog * std::sqrt(reducedMassSI / cProtonMassSI) *
+  const Real coefSI = coulombLog * (std::sqrt(reducedMassSI) / cProtonMassSI) *
                       (e2OverEps * e2OverEps) / (3.0 * std::pow(twoPiKB, 1.5));
 
   const Real Si2NoT = Si2NoL / Si2NoV;
@@ -1569,6 +1633,35 @@ void Pic::convert_electron_collision() {
   Print() << "  electron-ion collision (heat exchange): factor = "
           << collisionFactor << ", coulombLog = " << coulombLog
           << " -> collisionCoefEi = " << collisionCoefEi << " [code units]\n";
+}
+
+//==========================================================
+// SI -> code conversion for anisotropic electron pressure (#ELECTRONANISO).
+void Pic::convert_electron_aniso() {
+  if (!useAnisoPe && !useLe2009Pe)
+    return;
+
+  fieldAlignedBMin = fieldAlignedBMinSI * fi->get_Si2NoB();
+  const Real Si2NoT = fi->get_Si2NoL() / fi->get_Si2NoV();
+  peAnisoRelaxTime = peAnisoRelaxTimeSI * Si2NoT;
+  peAnisoBaseRate = peAnisoBaseRateSI / Si2NoT;
+  le2009B0 = (le2009B0SI > 0.0) ? (le2009B0SI * fi->get_Si2NoB()) : 0.0;
+
+  if (useAnisoPe) {
+    Print() << "  electron pressure anisotropy (cgl): Tperp/Tpar0 = "
+            << peAnisoRatio0
+            << ", instabilityLimit = " << (usePeInstabilityLimit ? "T" : "F")
+            << ", firehoseCoef = " << peFirehoseCoef
+            << ", whistlerCoef = " << peWhistlerCoef
+            << ", relaxTime = " << peAnisoRelaxTimeSI << " [s]"
+            << ", baseRate = " << peAnisoBaseRateSI << " [1/s]\n";
+  } else if (useLe2009Pe) {
+    Print() << "  electron pressure anisotropy (le2009): B0 = "
+            << (le2009B0SI > 0.0 ? std::to_string(le2009B0SI) + " [T]"
+                                 : std::string("auto (mean |B|)"))
+            << ", firehoseLimit = " << (usePeInstabilityLimit ? "T" : "F")
+            << "\n";
+  }
 }
 
 //==========================================================

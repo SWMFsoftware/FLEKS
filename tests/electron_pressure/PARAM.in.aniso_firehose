@@ -1,0 +1,124 @@
+#DESCRIPTION
+Anisotropic electron pressure (CGL): firehose marginal-stability limiter.
+Uniform magnetized heavy-ion plasma initialized beyond the electron firehose
+threshold (Te,perp / Te,par = 0.05) with usePeInstabilityLimit = T and
+peAnisoRelaxTimeSI = 0.0. Checks exact Pe conservation and clamping of
+(PePar - PePerp) / P_B to peFirehoseCoef = 2.0.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-8.0                    xMin
+ 8.0                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+16                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#FIELDSOLVER
+hybrid
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+100.0                   electronTemperature  [eV]
+1.6666666666666667      electronGamma
+5.0                     electronDensity0  [amu/cc]
+
+#ELECTRONPRESSURE
+T                       useElectronPressureEq
+0.0                     heatCondKappa0SI
+20.0                    coulombLog
+T                       fieldAlignedConduction
+1.0                     fieldAlignedFraction
+1.0e-15                 fieldAlignedBMinSI
+0.0                     heatFluxLimiter
+0.0                     peMin
+T                       ambipolarInStages
+
+#ELECTRONANISO
+cgl                     electronAnisoModel
+0.05                    peAnisoRatio0
+T                       usePeInstabilityLimit
+2.0                     peFirehoseCoef
+0.0                     peAnisoRelaxTimeSI
+
+#HALLTERM
+F                       useHallTerm
+
+#HYBRIDUPWIND
+F                       useHybridUpwind
+
+#BSUBCYCLE
+1                       nBSubcycle
+
+#SMOOTHE
+F                       doSmoothE
+0                       nSmoothE
+
+#PLASMA
+1                       nSpecies
+1.0e6                   mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0439e-8               bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI
+1.0e5                   uNormSI
+
+#MONITOR
+5                       dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+50                      nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#SAVEPLOT
+1                       nPlot
+z=0 var ascii pic       plotString
+1                       dn
+0.0                     dt
+1                       dx
+Pe PePar PePerp Bx By Bz plotVar
+
+#STOP
+-1                      MaxIter
+0.10                    TimeMax

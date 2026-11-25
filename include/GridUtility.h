@@ -36,6 +36,13 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
 void grad_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 
+// Divergence of a cell-centered 6-component symmetric tensor
+// (xx, yy, zz, xy, xz, yz) onto grid nodes using the compact staggered stencil
+// of grad_center_to_node().
+void div_sym_tensor_center_to_node(const amrex::MultiFab& centerTensorMF,
+                                   amrex::MultiFab& nodeVecMF,
+                                   const amrex::Real* invDx);
+
 void jacobian_center_to_node(const amrex::MultiFab& centerVecMF,
                              amrex::MultiFab& nodeJacMF,
                              const amrex::Real* invDx);
