@@ -2098,8 +2098,9 @@ This command adds a static dipole field to the intrinsic (background)
 magnetic field B0 of the planet.
 
 dipoleType is optional and defaults to 'dipole3d' (standard 3D point dipole,
-B ~ 1/r^3). Setting 'line2d' selects a 2D divergence-free line dipole in the
-x-y plane (B = [2 (m.r^) r^ - m] / r^2, Bz = 0, |B| = |strength|*(rRef/r)^2).
+$B \propto 1/r^3$). Setting 'line2d' selects a 2D divergence-free line dipole
+in the x-y plane ($B = [2 (\mathbf{m}\cdot\hat{\mathbf{r}})\hat{\mathbf{r}} - \mathbf{m}] / r^2$,
+$B_z = 0$, $|B| = |\mathrm{strength}| (r_{\mathrm{ref}}/r)^2$).
 For 'line2d', theta is the 2D tilt angle in degrees measured from +y towards -x
 (phi is ignored), so theta = 0 with negative strength gives a northward
 equatorial field (+y) on the dayside (+x), matching 2D BATSRUS.
