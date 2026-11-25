@@ -4,7 +4,12 @@ include ../Makefile.conf
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH} -I${UTILDIR}/AMREX/Src/LinearSolvers
 VERBOSE_GMRES = 
 SIMD_FLAGS = -march=native -fopenmp-simd
-FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
+USE_MI_COUPLING = no
+ifeq (${USE_MI_COUPLING},yes)
+  MI_FLAGS = -D_MI_COUPLING_
+  MI_SRCS = $(wildcard mi/*.cpp)
+endif
+FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES} ${MI_FLAGS}
 
 # GPU build: extra nvcc warning/error flags and device linking when Makefile.conf
 # uses share/build/Makefile.nvcc (./Config.pl -cuda).
@@ -31,7 +36,7 @@ LIBFLEKS = libFLEKS.a
 # $(sort) fixes the archive member order: $(wildcard) returns directory order,
 # which is not reproducible across machines.
 SRCS := $(sort $(filter-out main.cpp Converter.cpp, \
-                 $(wildcard *.cpp) $(wildcard ic/*.cpp)))
+                 $(wildcard *.cpp) $(wildcard ic/*.cpp) ${MI_SRCS}))
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
@@ -67,7 +72,7 @@ ${LIBFLEKS}:${OBJECTS}
 	${AR} ${LIBFLEKS} ${OBJECTS}
 
 clean:
-	-@(rm -f ${OBJECTS} main.o dlink.o ${LIBFLEKS})
+	-@(rm -f ${OBJECTS} mi/*.o main.o dlink.o ${LIBFLEKS})
 	-@(rm -rf .d)
 
 distclean: clean

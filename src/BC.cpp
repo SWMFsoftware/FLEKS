@@ -56,6 +56,7 @@ const std::vector<bc_detail::Entry>& BodyFieldBC::table() {
     { "linetied", BodyFieldBC::linetied, Legacy::none },
     { "conducting", BodyFieldBC::conducting, Legacy::none },
     { "insulating", BodyFieldBC::insulating, Legacy::none },
+    { "ionosphere", BodyFieldBC::ionosphere, Legacy::none },
   };
   return tbl;
 }

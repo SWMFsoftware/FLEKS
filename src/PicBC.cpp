@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 #include <AMReX_BCRec.H>
@@ -1517,8 +1518,340 @@ void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
     if (useHybridPIC) {
       fill_body_E_insulating(mf, iLev);
     }
+  } else if (bodyFieldBC == BodyFieldBC::ionosphere) {
+#ifdef _MI_COUPLING_
+    zero_body_interior_E(mf, iLev);
+    apply_body_E_ionosphere(mf, iLev);
+#else
+    Abort("BodyFieldBC::ionosphere requires ./Config.pl -mi.");
+#endif
   }
 }
+
+#ifdef _MI_COUPLING_
+//==========================================================
+void Pic::init_ionosphere() {
+  if (!is_body_ionosphere() || !intrinsicB_ || !intrinsicB_->use_dipole())
+    return;
+
+  if (!ionosphere_)
+    ionosphere_ = std::make_unique<Ionosphere>(ionoParams_);
+  else
+    ionosphere_->set_params(ionoParams_);
+
+  const auto& b0p = intrinsicB_->get_params();
+  const Real rPlanetSI = (fi->get_rPlanet_SI() > 0.0)
+                             ? fi->get_rPlanet_SI()
+                             : (get_body_radius() * fi->get_No2SiL());
+  const Real si2NoL = fi->get_Si2NoL();
+  const Real si2NoB = fi->get_Si2NoB();
+  const Real si2NoE =
+      (fi->get_No2SiE() > 0.0) ? (Real(1.0) / fi->get_No2SiE()) : Real(1.0);
+  const Real bEqSI = intrinsicB_->get_dipole_strength_code() * fi->get_No2SiB();
+
+  // Default FAC extraction shell: rBody + 4*dx0 if not explicitly specified.
+  if (ionosphere_->params().rFacCode <= 0.0) {
+    const Real dx0 = Geom(0).CellSize(ix_);
+    ionosphere_->params().rFacCode = get_body_radius() + Real(4.0) * dx0;
+  }
+
+  ionosphere_->init(b0p.moment, b0p.center, rPlanetSI, si2NoL, si2NoE, si2NoB,
+                    bEqSI);
+  lastIonoSolveTimeSI_ = -1.0;
+  lastIonoSolveCycle_ = -1;
+
+  Print() << "  Ionosphere initialized: rIono=" << ionosphere_->frame().rIonoSI
+          << " m (" << ionosphere_->frame().rIonoCode
+          << " code), rFac=" << ionosphere_->get_params().rFacCode
+          << " code, grid=" << ionosphere_->n_theta() << "x"
+          << ionosphere_->n_phi() << "\n";
+}
+
+//==========================================================
+void Pic::extract_ionosphere_fac(std::vector<Real>& jrOutwardSI) {
+  const int nTh = ionosphere_->n_theta();
+  const int nPh = ionosphere_->n_phi();
+  const size_t nTot = static_cast<size_t>(nTh) * nPh;
+  jrOutwardSI.assign(nTot, 0.0);
+
+  const auto& frame = ionosphere_->frame();
+  const Real rFacCode = ionosphere_->get_params().rFacCode;
+  const Real latBndRad =
+      ionosphere_->get_params().latBoundaryDeg * (dPI / Real(180.0));
+  const auto& b0p = intrinsicB_->get_params();
+
+  // Compute curl(B1) on nodes for every active level.
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (nodeCurlB[iLev].empty()) {
+      distribute_FabArray(nodeCurlB[iLev], nodeE[iLev].boxArray(),
+                          DistributionMap(iLev), nDim3, get_n_ghost());
+    }
+    curl_center_to_node(centerB[iLev], nodeCurlB[iLev],
+                        Geom(iLev).InvCellSize());
+    nodeCurlB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  // Per-point accumulation buffer: [weight, curlBx, curlBy, curlBz, B1x, B1y,
+  // B1z]
+  constexpr int nPack = 7;
+  std::vector<Real> localBuf(nTot * nPack, 0.0);
+
+  // Sample each ionospheric grid point mapped outward to r = rFacCode.
+  const auto& thArr = ionosphere_->theta();
+  const auto& phArr = ionosphere_->phi();
+
+  for (int i = 0; i < nTh; ++i) {
+    const Real th = thArr[i];
+    if (std::abs(Real(0.5) * dPI - th) <= latBndRad)
+      continue;
+    const Real sn = std::sin(th);
+    const Real cs = std::cos(th);
+
+    for (int j = 0; j < nPh - 1; ++j) {
+      const Real ph = phArr[j];
+      const Real xIonoSmg[3] = {
+        frame.rIonoCode * sn * std::cos(ph),
+        frame.rIonoCode * sn * std::sin(ph),
+        frame.rIonoCode * cs,
+      };
+      Real xFacSmg[3], thFac = 0.0, phFac = 0.0, jDum[2][3];
+      const int iHem = map_dipole_smg(xIonoSmg, rFacCode, xFacSmg, thFac, phFac,
+                                      false, jDum);
+      if (iHem == 0)
+        continue;
+
+      // Rotate to simulation coordinates.
+      Real xSim[3];
+      for (int b = 0; b < 3; ++b) {
+        xSim[b] = frame.center[b] + frame.rot[0][b] * xFacSmg[0] +
+                  frame.rot[1][b] * xFacSmg[1] + frame.rot[2][b] * xFacSmg[2];
+      }
+
+      // Find the finest AMR level whose local valid box contains xSim.
+      bool found = false;
+      for (int iLev = finestLevel(); iLev >= 0 && !found; --iLev) {
+        const auto plo = Geom(iLev).ProbLo();
+        const auto invDx = Geom(iLev).InvCellSize();
+        const Real gx = (xSim[0] - plo[0]) * invDx[0];
+        const Real gy = (xSim[1] - plo[1]) * invDx[1];
+        const Real gz = (xSim[2] - plo[2]) * invDx[2];
+        const int ix = static_cast<int>(std::floor(gx));
+        const int iy = static_cast<int>(std::floor(gy));
+        const int iz = static_cast<int>(std::floor(gz));
+        const IntVect iv(AMREX_D_DECL(ix, iy, iz));
+
+        for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+          const Box& cbx = mfi.validbox();
+          if (!cbx.contains(iv))
+            continue;
+
+          const Real wx = gx - ix;
+          const Real wy = gy - iy;
+          const Real wz = gz - iz;
+          const auto curlArr = nodeCurlB[iLev][mfi].const_array();
+          const auto b1Arr = centerB[iLev][mfi].const_array();
+
+          Real curlVal[3] = { 0.0, 0.0, 0.0 };
+          for (int c = 0; c < 3; ++c) {
+            const Real c00 = (1.0 - wx) * curlArr(ix, iy, iz, c) +
+                             wx * curlArr(ix + 1, iy, iz, c);
+            const Real c10 = (1.0 - wx) * curlArr(ix, iy + 1, iz, c) +
+                             wx * curlArr(ix + 1, iy + 1, iz, c);
+            const Real c01 = (1.0 - wx) * curlArr(ix, iy, iz + 1, c) +
+                             wx * curlArr(ix + 1, iy, iz + 1, c);
+            const Real c11 = (1.0 - wx) * curlArr(ix, iy + 1, iz + 1, c) +
+                             wx * curlArr(ix + 1, iy + 1, iz + 1, c);
+            const Real c0 = (1.0 - wy) * c00 + wy * c10;
+            const Real c1 = (1.0 - wy) * c01 + wy * c11;
+            curlVal[c] = (1.0 - wz) * c0 + wz * c1;
+          }
+
+          const size_t base = static_cast<size_t>(i * nPh + j) * nPack;
+          localBuf[base + 0] = 1.0;
+          localBuf[base + 1] = curlVal[0];
+          localBuf[base + 2] = curlVal[1];
+          localBuf[base + 3] = curlVal[2];
+          localBuf[base + 4] = b1Arr(ix, iy, iz, 0);
+          localBuf[base + 5] = b1Arr(ix, iy, iz, 1);
+          localBuf[base + 6] = b1Arr(ix, iy, iz, 2);
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+
+  ParallelDescriptor::ReduceRealSum(localBuf.data(), localBuf.size(),
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if (ParallelDescriptor::IOProcessor()) {
+    constexpr Real mu0 = Real(4.0) * dPI * Real(1.0e-7);
+    const Real curlBToJSI = fi->get_No2SiB() / (mu0 * fi->get_No2SiL());
+
+    for (int i = 0; i < nTh; ++i) {
+      const Real th = thArr[i];
+      if (std::abs(Real(0.5) * dPI - th) <= latBndRad)
+        continue;
+      const Real sn = std::sin(th);
+      const Real cs = std::cos(th);
+
+      for (int j = 0; j < nPh - 1; ++j) {
+        const size_t k = static_cast<size_t>(i * nPh + j);
+        const size_t base = k * nPack;
+        const Real w = localBuf[base + 0];
+        if (w <= Real(0.0))
+          continue;
+
+        const Real invW = Real(1.0) / w;
+        const Real jSI[3] = {
+          localBuf[base + 1] * invW * curlBToJSI,
+          localBuf[base + 2] * invW * curlBToJSI,
+          localBuf[base + 3] * invW * curlBToJSI,
+        };
+
+        // Reconstruct mapped position at rFac and rIono for B0 evaluation.
+        const Real ph = phArr[j];
+        const Real xIonoSmg[3] = {
+          frame.rIonoCode * sn * std::cos(ph),
+          frame.rIonoCode * sn * std::sin(ph),
+          frame.rIonoCode * cs,
+        };
+        Real xFacSmg[3], thFac = 0.0, phFac = 0.0, jDum[2][3];
+        map_dipole_smg(xIonoSmg, rFacCode, xFacSmg, thFac, phFac, false, jDum);
+
+        Real xFacSim[3], xIonoSim[3];
+        for (int b = 0; b < 3; ++b) {
+          xFacSim[b] = frame.center[b] + frame.rot[0][b] * xFacSmg[0] +
+                       frame.rot[1][b] * xFacSmg[1] +
+                       frame.rot[2][b] * xFacSmg[2];
+          xIonoSim[b] = frame.center[b] + frame.rot[0][b] * xIonoSmg[0] +
+                        frame.rot[1][b] * xIonoSmg[1] +
+                        frame.rot[2][b] * xIonoSmg[2];
+        }
+
+        Real bFac[3] = {
+          localBuf[base + 4] * invW,
+          localBuf[base + 5] * invW,
+          localBuf[base + 6] * invW,
+        };
+        eval_dipole_b(b0p, xFacSim[0], xFacSim[1], xFacSim[2], bFac);
+        const Real bFacMag = std::sqrt(bFac[0] * bFac[0] + bFac[1] * bFac[1] +
+                                       bFac[2] * bFac[2]);
+        if (bFacMag <= Real(1.0e-30))
+          continue;
+
+        Real bIono[3] = { 0.0, 0.0, 0.0 };
+        eval_dipole_b(b0p, xIonoSim[0], xIonoSim[1], xIonoSim[2], bIono);
+        const Real bIonoMag = std::sqrt(
+            bIono[0] * bIono[0] + bIono[1] * bIono[1] + bIono[2] * bIono[2]);
+        if (bIonoMag <= Real(1.0e-30))
+          continue;
+
+        // J_|| at rFac [A/m^2], scaled by B_iono / B_fac along flux tube.
+        const Real jParFac =
+            (jSI[0] * bFac[0] + jSI[1] * bFac[1] + jSI[2] * bFac[2]) / bFacMag;
+        const Real jParIono = jParFac * (bIonoMag / bFacMag);
+
+        // Project onto outward radial unit vector at ionosphere.
+        const Real rHat[3] = {
+          (xIonoSim[0] - frame.center[0]) / frame.rIonoCode,
+          (xIonoSim[1] - frame.center[1]) / frame.rIonoCode,
+          (xIonoSim[2] - frame.center[2]) / frame.rIonoCode,
+        };
+        const Real bIonoR =
+            bIono[0] * rHat[0] + bIono[1] * rHat[1] + bIono[2] * rHat[2];
+        jrOutwardSI[k] = jParIono * (bIonoR / bIonoMag);
+      }
+
+      // Periodic longitude wrap.
+      jrOutwardSI[static_cast<size_t>(i * nPh + (nPh - 1))] =
+          jrOutwardSI[static_cast<size_t>(i * nPh)];
+    }
+  }
+}
+
+//==========================================================
+void Pic::update_ionosphere(bool force) {
+  if (!is_body_ionosphere() || !ionosphere_ || !ionosphere_->is_initialized())
+    return;
+
+  const int cycle = tc ? tc->get_cycle() : 0;
+  const Real timeSI = tc ? (tc->get_time() * fi->get_No2SiT()) : Real(0.0);
+  const auto& p = ionosphere_->get_params();
+
+  if (!force) {
+    if (p.dtCoupleSI > Real(0.0)) {
+      if (lastIonoSolveTimeSI_ >= Real(0.0) &&
+          (timeSI - lastIonoSolveTimeSI_) < p.dtCoupleSI)
+        return;
+    } else if (p.dnCouple > 1) {
+      if (lastIonoSolveCycle_ >= 0 &&
+          (cycle - lastIonoSolveCycle_) < p.dnCouple)
+        return;
+    }
+  }
+
+  std::string nameFunc = "Pic::update_ionosphere";
+  timing_func(nameFunc);
+
+  std::vector<Real> jrSI;
+  extract_ionosphere_fac(jrSI);
+  const bool ok = ionosphere_->solve(jrSI, true);
+
+  lastIonoSolveTimeSI_ = timeSI;
+  lastIonoSolveCycle_ = cycle;
+
+  if (!ok) {
+    Print() << "  [MI WARNING] Ionosphere solver did not reach tolerance "
+            << "(iterN=" << ionosphere_->last_iter_north()
+            << ", residN=" << ionosphere_->last_resid_north()
+            << ", iterS=" << ionosphere_->last_iter_south()
+            << ", residS=" << ionosphere_->last_resid_south() << ")\n";
+  }
+
+  if (p.dnOutput > 0 && (force || (cycle % p.dnOutput == 0))) {
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), "%s/plots/ionosphere_n%07d.dat",
+                  component.c_str(), cycle);
+    ionosphere_->write_diagnostics(buf, timeSI, cycle);
+  }
+}
+
+//==========================================================
+void Pic::apply_body_E_ionosphere(amrex::MultiFab& mf, const int iLev) {
+  if (!ionosphere_ || !ionosphere_->is_initialized() || mf.nComp() < 3)
+    return;
+
+  const auto plo = Geom(iLev).ProbLo();
+  const auto dx = Geom(iLev).CellSize();
+  const auto& status = node_status(iLev);
+  const int activeDim = get_dim();
+  const IonosphereDeviceView view = ionosphere_->device_view();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    auto arr = mf[mfi].array();
+    const auto statusArr = status[mfi].const_array();
+
+    parallel_for_omp(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (!bit::is_body(statusArr(i, j, k)) ||
+          bit::is_body_interior(statusArr(i, j, k)))
+        return;
+
+      const Real x = plo[ix_] + i * dx[ix_];
+      const Real y = (activeDim > 1) ? plo[iy_] + j * dx[iy_] : Real(0.0);
+      const Real z = (activeDim > 2) ? plo[iz_] + k * dx[iz_] : Real(0.0);
+
+      Real eIono[3];
+      eval_ionosphere_E_dev(view, x, y, z, eIono);
+
+      arr(i, j, k, ix_) = eIono[0];
+      arr(i, j, k, iy_) = eIono[1];
+      arr(i, j, k, iz_) = eIono[2];
+    });
+  }
+}
+#endif
 
 //==========================================================
 void Pic::warn_absorb_cfl() {

@@ -14,7 +14,8 @@ void AmrexLinearSolver::ensure_mask() {
   }
 
   m_dotMask.define(ba, dm, 1, 0);
-  const bool skipAllBody = m_pic->is_body_linetied();
+  const bool skipAllBody =
+      m_pic->is_body_linetied() || m_pic->is_body_ionosphere();
   const bool skipInterior = m_pic->is_body_conducting();
   const auto& statusMF = m_pic->node_status(m_iLev);
 

@@ -94,6 +94,11 @@ void Pic::fill_new_cells() {
       if (useLe2009Pe && le2009B0 <= 0.0) {
         init_le2009_b0();
       }
+#ifdef _MI_COUPLING_
+      if (is_body_ionosphere()) {
+        update_ionosphere(true);
+      }
+#endif
       compute_ambipolar_E();
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
         assemble_ohm_E(centerB[iLev], total_center_B(centerB[iLev], iLev),
@@ -120,6 +125,14 @@ void Pic::fill_new_cells() {
     }
     // div(E)-correction fields are full-PIC only.
     if (!useHybridPIC) {
+#ifdef _MI_COUPLING_
+      if (is_body_ionosphere()) {
+        update_ionosphere(true);
+        for (int iLev = 0; iLev < n_lev(); ++iLev) {
+          apply_body_E_bc(nodeE[iLev], iLev);
+        }
+      }
+#endif
       if (finestLevel() == 0) {
         sum_to_center(false);
       } else if (doCorrectDivE) {
@@ -2501,6 +2514,14 @@ void Pic::update(bool doReportIn) {
 
   if (solveEM) {
     refresh_intrinsic_fields(tStepStart);
+#ifdef _MI_COUPLING_
+    if (is_body_ionosphere()) {
+      update_ionosphere(false);
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+        apply_body_E_bc(nodeE[iLev], iLev);
+      }
+    }
+#endif
     if (finestLevel() == 0) {
       calc_mass_matrix();
     } else {
@@ -2511,6 +2532,12 @@ void Pic::update(bool doReportIn) {
   }
 
   isMomentsUpdated = false;
+
+#ifdef _MI_COUPLING_
+  if (is_body_ionosphere() && (useHybridPIC || useExplicitPIC)) {
+    update_ionosphere(false);
+  }
+#endif
 
   if (useExplicitPIC) {
     advance_explicit_full_pic();

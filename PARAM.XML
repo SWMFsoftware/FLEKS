@@ -2396,6 +2396,54 @@ because it is shielded by the surface layer:
               Discretely this means no field constraint at all: E and B are
               solved inside the body as usual, and since no particle survives
               there the interior simply evolves as vacuum.
+  ionosphere- self-contained magnetosphere-ionosphere (MI) coupling (requires
+              ./Config.pl -mi, #BODY, and #DIPOLE; supported in hybrid,
+              explicit full-PIC, and semi-implicit full-PIC):
+              extracts field-aligned currents from curl(B1) on a spherical
+              shell rFac, maps them along dipole field lines to the ionosphere
+              rIono, solves div_h(Sigma . grad_h Phi) = J_r^{outward}, and
+              maps E = -grad(Phi) back onto the body surface layer via the
+              exact dipole Jacobian while keeping E = 0 in the body interior.
+              Configure with #IONOSPHERE.
+</command>
+
+<command name="IONOSPHERE" alias="IONOSPHERE_FLEKS0,IONOSPHERE_FLEKS1,IONOSPHERE_FLEKS2" multiple="T">
+  <parameter name="nThetaHem" type="integer" default="91"/>
+  <parameter name="nPhi" type="integer" default="181"/>
+  <parameter name="rIonoRatio" type="real" default="1.017"/>
+  <parameter name="rFac" type="real" default="-1.0"/>
+  <parameter name="latBoundaryDeg" type="real" default="20.0"/>
+  <parameter name="conductanceModel" type="string" default="uniform"/>
+  <parameter name="sigmaPedersen" type="real" default="5.0"/>
+  <parameter name="sigmaHall" type="real" default="0.0"/>
+  <parameter name="sigmaParallel" type="real" default="1000.0"/>
+  <parameter name="f107" type="real" default="150.0"/>
+  <parameter name="lowLatBC" type="string" default="dirichlet"/>
+  <parameter name="dnCouple" type="integer" default="1"/>
+  <parameter name="dtCoupleSI" type="real" default="0.0"/>
+  <parameter name="nSmoothFac" type="integer" default="2"/>
+  <parameter name="relaxAlpha" type="real" default="1.0"/>
+  <parameter name="useCorotation" type="logical" default="F"/>
+  <parameter name="omegaPlanetSI" type="real" default="7.2921159e-5"/>
+  <parameter name="dnOutput" type="integer" default="0"/>
+
+#IONOSPHERE
+91                nThetaHem
+181               nPhi
+1.017             rIonoRatio
+-1.0              rFac
+20.0              latBoundaryDeg
+uniform           conductanceModel
+5.0               sigmaPedersen
+0.0               sigmaHall
+
+Configures the self-contained 2D spherical ionospheric electrodynamics solver
+used when #BODYBOUNDARY selects fieldBoundary = ionosphere (requires building
+with ./Config.pl -mi). All parameters are optional and default to the values
+above. conductanceModel accepts 'uniform', 'solar_euv' (Moen &amp; Brekke), or
+'auroral' (solar EUV plus upward-FAC auroral enhancement). lowLatBC accepts
+'dirichlet' (Phi = 0) or 'neumann' (dPhi/dTheta = 0). If rFac &lt;= 0, the FAC
+extraction shell defaults to rBody + 4 * dx0.
 </command>
 
 <command name="REGIONRESISTIVITY" alias="REGIONRESISTIVITY_FLEKS0,REGIONRESISTIVITY_FLEKS1,REGIONRESISTIVITY_FLEKS2" multiple="T">

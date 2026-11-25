@@ -843,6 +843,20 @@ void Pic::save_restart_data() {
   if (grid.use_body() && grid.bodyParticleBC == ParticleBC::ambipolar) {
     write_restart_mf(grid.bodyNetCharge, prefix + "_bodyNetCharge");
   }
+#ifdef _MI_COUPLING_
+  if (is_body_ionosphere() && ionosphere_ && ionosphere_->is_initialized()) {
+    if (ParallelDescriptor::IOProcessor()) {
+      std::ofstream ionoFile(prefix + "_ionosphere.bin", std::ios::binary);
+      const auto& pot = ionosphere_->get_potential();
+      const int nTh = ionosphere_->n_theta();
+      const int nPh = ionosphere_->n_phi();
+      ionoFile.write(reinterpret_cast<const char*>(&nTh), sizeof(int));
+      ionoFile.write(reinterpret_cast<const char*>(&nPh), sizeof(int));
+      ionoFile.write(reinterpret_cast<const char*>(pot.data()),
+                     pot.size() * sizeof(Real));
+    }
+  }
+#endif
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->label_particles_outside_active_region();
@@ -1013,6 +1027,35 @@ void Pic::read_restart() {
   doNeedFillNewCell = false;
 
   fill_intrinsic_B();
+#ifdef _MI_COUPLING_
+  if (is_body_ionosphere() && ionosphere_ && ionosphere_->is_initialized()) {
+    const int nTh = ionosphere_->n_theta();
+    const int nPh = ionosphere_->n_phi();
+    std::vector<Real> pot(static_cast<size_t>(nTh) * nPh, 0.0);
+    int loaded = 0;
+    if (ParallelDescriptor::IOProcessor()) {
+      std::ifstream ionoFile(prefix + "_ionosphere.bin", std::ios::binary);
+      if (ionoFile.is_open()) {
+        int rTh = 0, rPh = 0;
+        ionoFile.read(reinterpret_cast<char*>(&rTh), sizeof(int));
+        ionoFile.read(reinterpret_cast<char*>(&rPh), sizeof(int));
+        if (rTh == nTh && rPh == nPh) {
+          ionoFile.read(reinterpret_cast<char*>(pot.data()),
+                        pot.size() * sizeof(Real));
+          if (ionoFile.good())
+            loaded = 1;
+        }
+      }
+    }
+    ParallelDescriptor::Bcast(&loaded, 1,
+                              ParallelDescriptor::IOProcessorNumber());
+    if (loaded) {
+      ParallelDescriptor::Bcast(pot.data(), pot.size(),
+                                ParallelDescriptor::IOProcessorNumber());
+      ionosphere_->set_potential(pot);
+    }
+  }
+#endif
 
   if (doSelectParticle) {
     Vector<std::array<int, 3> > selectParticleInput =
