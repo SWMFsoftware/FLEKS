@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Validator for the intrinsic-magnetic-field tests (tests/intrinsic_field/).
 
-Six variants are discovered from this directory:
+Seven variants are discovered from this directory:
 
   - PARAM.in.body         -> "intrinsic_field_body"           dipole + #BODY
   - PARAM.in.body_conducting -> "intrinsic_field_body_conducting"
                             dipole + a conducting #BODY: the total field is
                             made tangential, so B1 = -B0.n n-hat on the shell
+  - PARAM.in.line2d       -> "intrinsic_field_line2d"         2D line dipole + #BODY
   - PARAM.in.crustal      -> "intrinsic_field_crustal"        g10-only file
   - PARAM.in.crustal_nm2  -> "intrinsic_field_crustal_nm2"    BATSRUS layout, many g/h
   - PARAM.in.crustal_nm2_signed -> "intrinsic_field_crustal_nm2_signed"
@@ -47,6 +48,11 @@ B_EQ_NT = 100.0
 THETA_DEG = 90.0
 PHI_DEG = 180.0
 R_REF = 1.0
+
+# 2D line dipole deck (PARAM.in.line2d): negative strength and non-zero tilt
+# from +y towards -x (phi is ignored by line2d).
+LINE2D_B_EQ_NT = -100.0
+LINE2D_THETA_DEG = 25.0
 
 # Hybrid deck: the uniform drift of #UNIFORMSTATE is 100 km/s, and the plot
 # output is in planetary units, so the velocity that enters E = -u x B0 is
@@ -95,6 +101,19 @@ def dipole_b0(x, y, z=0.0):
     mdotr = sum(mh[i] * rh[i] for i in range(3))
     f = B_EQ_NT * (R_REF / r) ** 3
     return tuple(f * (3.0 * mdotr * rh[i] - mh[i]) for i in range(3))
+
+
+def line2d_dipole_b0(x, y):
+    """Analytic tilted 2D line dipole in nT, r in planetary radii."""
+    th = math.radians(LINE2D_THETA_DEG)
+    m = LINE2D_B_EQ_NT * R_REF ** 2
+    mx = -m * math.sin(th)
+    my = m * math.cos(th)
+    r2 = x * x + y * y
+    if r2 <= 0.0:
+        return (0.0, 0.0, 0.0)
+    term = 2.0 * (mx * x + my * y) / r2
+    return ((term * x - mx) / r2, (term * y - my) / r2, 0.0)
 
 
 def _schmidt_rnm(n_max):
@@ -292,7 +311,8 @@ def validate_log(pic_diags=None, test_name=None):
         return False, (f"Eb changed by {abs(b1 - b0) / abs(b0):.3e}; the "
                        "magnetic energy of a static field must be constant")
 
-    if test_name in ("intrinsic_field_body", "intrinsic_field_body_conducting"):
+    if test_name in ("intrinsic_field_body", "intrinsic_field_body_conducting",
+                     "intrinsic_field_line2d"):
         return True, "Passed (energies finite, Eb constant, body absorbs)"
 
     e0, e1 = pic_diags[0]["Etot"], pic_diags[-1]["Etot"]
@@ -383,6 +403,13 @@ def validate_plot(test_name):
         ok_dip, msg_dip = _check_dipole(cols, rows, test_name)
         return ok_dip, f"{msg}; {msg_dip}"
 
+    if test_name == "intrinsic_field_line2d":
+        ok, msg = _check_body(cols, rows)
+        if not ok:
+            return False, msg
+        ok_dip, msg_dip = _check_line2d_dipole(cols, rows)
+        return ok_dip, f"{msg}; {msg_dip}"
+
     return _check_dipole(cols, rows, test_name)
 
 
@@ -444,6 +471,82 @@ def _check_dipole(cols, rows, test_name):
 
     return True, (f"Passed (analytic dipole, median rel err {med:.1e}; "
                   f"|B0| r=1 = {B_EQ_NT:.1f} nT)")
+
+
+def _check_line2d_dipole(cols, rows):
+    """Analytic 2D line dipole: r^-2 isotropic magnitude, B0z=0, 2D div-free."""
+    errs = []
+    prods = []
+    max_bz = 0.0
+    b0max = max(_mag(_field(cols, "B0", i)) for i in range(len(rows)))
+    for i, _ in enumerate(rows):
+        x, y, _ = _xyz(cols, i)
+        r2d = math.hypot(x, y)
+        b0 = _field(cols, "B0", i)
+        max_bz = max(max_bz, abs(b0[2]))
+        if r2d < R_MIN or r2d > R_MAX:
+            continue
+        ban = line2d_dipole_b0(x, y)
+        scale = abs(LINE2D_B_EQ_NT) * (R_REF / r2d) ** 2
+        errs.append(_mag(tuple(b0[k] - ban[k] for k in range(3))) / scale)
+        prods.append(_mag(b0) * r2d * r2d)
+    if not errs:
+        return False, "No usable point in the comparison band"
+    errs.sort()
+    med = errs[len(errs) // 2]
+    logger.debug("    line2d dipole: n=%d median rel err = %.3e, max = %.3e, "
+                 "max |B0z| = %.3e", len(errs), med, errs[-1], max_bz)
+    if med > ANALYTIC_TOL:
+        return False, (f"B0 does not match the analytic 2D line dipole "
+                       f"(median rel err = {med:.3e} > {ANALYTIC_TOL:g})")
+    if max_bz > 1e-12 * b0max:
+        return False, (f"2D line dipole has non-zero B0z "
+                       f"(max |B0z| = {max_bz:.3e} nT)")
+
+    # For a 2D line dipole, |B0| * r^2 is strictly constant (= |B_eq| * rRef^2)
+    # at every angle and radius.
+    target = abs(LINE2D_B_EQ_NT) * R_REF ** 2
+    max_prod_err = max(abs(p - target) / target for p in prods)
+    logger.debug("    |B0| r^2 max rel err vs %.1f = %.3e",
+                 target, max_prod_err)
+    if max_prod_err > ANALYTIC_TOL:
+        return False, (f"|B0| r^2 is not constant (max rel err = "
+                       f"{max_prod_err:.3e} > {ANALYTIC_TOL:g})")
+
+    # 2D divergence-free check using central differences on the nodal grid for
+    # r > 2.0 (where O((dx/r)^2) truncation error is small).
+    dx = _grid_spacing(cols)
+    if dx > 0.0:
+        grid = {}
+        for i in range(len(rows)):
+            x, y, _ = _xyz(cols, i)
+            ix = round(x / dx)
+            iy = round(y / dx)
+            grid[(ix, iy)] = (x, y, cols["B0X"][i], cols["B0Y"][i])
+        max_div = 0.0
+        n_div = 0
+        for (ix, iy), (x, y, bx, by) in grid.items():
+            if math.hypot(x, y) < 2.0:
+                continue
+            p_xp = grid.get((ix + 1, iy))
+            p_xm = grid.get((ix - 1, iy))
+            p_yp = grid.get((ix, iy + 1))
+            p_ym = grid.get((ix, iy - 1))
+            if not (p_xp and p_xm and p_yp and p_ym):
+                continue
+            div2d = ((p_xp[2] - p_xm[2]) + (p_yp[3] - p_ym[3])) / (2.0 * dx)
+            bmag = math.hypot(bx, by)
+            if bmag > 0.0:
+                max_div = max(max_div, abs(div2d) * dx / bmag)
+                n_div += 1
+        logger.debug("    2D div(B0)*dx/|B0| (r >= 2, n=%d): max = %.3e",
+                     n_div, max_div)
+        if n_div == 0 or max_div > 0.02:
+            return False, (f"2D line dipole failed divergence-free check "
+                           f"(n={n_div}, max |div2d(B0)|*dx/|B0| = {max_div:.3e})")
+
+    return True, (f"Passed (analytic 2D line dipole, median rel err {med:.1e}; "
+                  f"|B0| r^2 = {target:.1f} nT, B0z = 0, 2D div-free)")
 
 
 def _check_conducting_total(cols, rows):

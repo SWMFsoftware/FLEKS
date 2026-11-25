@@ -231,12 +231,20 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
   const GETVALUE fnCenterB = &Pic::get_center_B;
   const GETVALUE fnNodeE = &Pic::get_node_E;
   const GETVALUE fnCenterE = &Pic::get_center_E;
-  const bool isDiscontinuityB = discontinuityBC.active && bc != nullptr &&
-                                nComp == 3 &&
-                                (func == fnNodeB || func == fnCenterB);
+  const bool isBField = (nComp == 3 && (func == fnNodeB || func == fnCenterB));
+  const bool isDiscontinuityB =
+      discontinuityBC.active && bc != nullptr && isBField;
   const bool isDiscontinuityE = discontinuityBC.active && bc != nullptr &&
                                 nComp == 3 &&
                                 (func == fnNodeE || func == fnCenterE);
+  // In standalone runs (#INITFROMSWMF F) with a static intrinsic field B0
+  // (#DIPOLE / #CRUSTALFIELD / #COIL), the upstream solar-wind state in
+  // #UNIFORMSTATE / #DISCONTINUITY prescribes the TOTAL magnetic field B_sw
+  // (consistent with E_sw = -u_sw x B_sw and #TURBULENTINFLOW). Because the
+  // evolved field is B1 = B_total - B0, subtract B0 on outer inflow/wave faces
+  // so B_total = B_sw exactly at the upstream boundary.
+  const bool subtractB0OnInflow = isBField && bc != nullptr &&
+                                  !fi->is_init_from_swmf() && use_intrinsic_B();
   const bool hasBC = (bc != nullptr);
   int periodic[3] = { 0, 0, 0 }, domainLen[3] = { 0, 0, 0 };
   for (int d = 0; d < AMREX_SPACEDIM; ++d) {
@@ -273,6 +281,7 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
             const int ijk[3] = { i, j, k };
             bool skipForPhysWall = false;
             bool onInflowGhost = false;
+            bool onWaveGhost = false;
             for (int d = 0; d < nDim; ++d) {
               const auto isNonDirichletWall = [](int t) {
                 return t == FieldBC::outflow || t == FieldBC::vacuum ||
@@ -283,13 +292,32 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                 skipForPhysWall = true;
                 break;
               }
-              if ((ijk[d] < bnd.loBnd[d] && bnd.bcLo[d] == FieldBC::inflow) ||
-                  (ijk[d] > bnd.hiBnd[d] && bnd.bcHi[d] == FieldBC::inflow)) {
+              const bool atLo = bnd.isNode[d] ? (ijk[d] <= bnd.loBnd[d])
+                                              : (ijk[d] < bnd.loBnd[d]);
+              const bool atHi = bnd.isNode[d] ? (ijk[d] >= bnd.hiBnd[d])
+                                              : (ijk[d] > bnd.hiBnd[d]);
+              if ((atLo && bnd.bcLo[d] == FieldBC::inflow) ||
+                  (atHi && bnd.bcHi[d] == FieldBC::inflow)) {
                 onInflowGhost = true;
+              }
+              if ((atLo && bnd.bcLo[d] == FieldBC::wave) ||
+                  (atHi && bnd.bcHi[d] == FieldBC::wave)) {
+                onWaveGhost = true;
               }
             }
             if (skipForPhysWall)
               return;
+
+            Real b0Sub[3] = { 0.0, 0.0, 0.0 };
+            if (subtractB0OnInflow && (onInflowGhost || onWaveGhost)) {
+              Real posB0[3] = { 0.0, 0.0, 0.0 };
+              for (int d = 0; d < nDim; ++d) {
+                posB0[d] = probLo[d] + (static_cast<Real>(ijk[d]) +
+                                        (bnd.isNode[d] ? 0.0 : 0.5)) *
+                                           dx[d];
+              }
+              intrinsicB_->eval(posB0[0], posB0[1], posB0[2], b0Sub);
+            }
 
             if (onInflowGhost && (isDiscontinuityB || isDiscontinuityE)) {
               Real pos[3] = { 0.0, 0.0, 0.0 };
@@ -305,7 +333,17 @@ void Pic::fill_ext_dir(const iMultiFab& status, MultiFab& mf, const int iStart,
                 discontinuityBC.eval_E(pos, tEval, val);
               }
               for (int iVar = 0; iVar < nComp; ++iVar) {
-                arr(i, j, k, iStart + iVar) = val[iVar];
+                arr(i, j, k, iStart + iVar) = val[iVar] - b0Sub[iVar];
+              }
+              return;
+            }
+
+            if (subtractB0OnInflow && (onInflowGhost || onWaveGhost)) {
+              for (int iVar = 0; iVar < nComp; ++iVar) {
+                arr(i, j, k, iStart + iVar) =
+                    (this->*func)(mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar,
+                                  iLev) -
+                    b0Sub[iVar];
               }
               return;
             }
@@ -763,6 +801,10 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
   const GETVALUE fnCenterB = &Pic::get_center_B;
   const GETVALUE fnNodeE = &Pic::get_node_E;
   const GETVALUE fnCenterE = &Pic::get_center_E;
+  const bool isBFieldWall =
+      nComp == 3 && func != nullptr && (func == fnNodeB || func == fnCenterB);
+  const bool subtractB0OnWall =
+      isBFieldWall && !fi->is_init_from_swmf() && use_intrinsic_B();
   const bool useDiscOnWall = discontinuityBC.active && nComp == 3 &&
                              func != nullptr &&
                              (func == fnNodeB || func == fnCenterB ||
@@ -808,6 +850,19 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
                   const bool isInflowFace =
                       (onLoWall && bnd.bcLo[d] == FieldBC::inflow) ||
                       (onHiWall && bnd.bcHi[d] == FieldBC::inflow);
+                  const bool isWaveFace =
+                      (onLoWall && bnd.bcLo[d] == FieldBC::wave) ||
+                      (onHiWall && bnd.bcHi[d] == FieldBC::wave);
+                  Real b0Sub[3] = { 0.0, 0.0, 0.0 };
+                  if (subtractB0OnWall && (isInflowFace || isWaveFace)) {
+                    Real posB0[3] = { 0.0, 0.0, 0.0 };
+                    for (int od = 0; od < nDimLoc; ++od) {
+                      posB0[od] = probLo[od] + (static_cast<Real>(ijk[od]) +
+                                                (bnd.isNode[od] ? 0.0 : 0.5)) *
+                                                   dx[od];
+                    }
+                    intrinsicB_->eval(posB0[0], posB0[1], posB0[2], b0Sub);
+                  }
                   if (isInflowFace && useDiscOnWall) {
                     Real pos[3] = { 0.0, 0.0, 0.0 };
                     for (int od = 0; od < nDimLoc; ++od) {
@@ -822,14 +877,16 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
                       discontinuityBC.eval_E(pos, tEval, val);
                     }
                     for (int iVar = 0; iVar < nComp; ++iVar) {
-                      arr(i, j, k, iStart + iVar) = val[iVar];
+                      arr(i, j, k, iStart + iVar) = val[iVar] - b0Sub[iVar];
                     }
                   } else {
                     for (int iVar = 0; iVar < nComp; ++iVar) {
                       const int comp = iStart + iVar;
                       if (hasFunc) {
-                        arr(i, j, k, comp) = (this->*func)(
-                            mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+                        arr(i, j, k, comp) =
+                            (this->*func)(mfi, IntVect{ AMREX_D_DECL(i, j, k) },
+                                          iVar, iLev) -
+                            b0Sub[iVar];
                       } else {
                         int m[3] = { i, j, k };
                         m[d] =
@@ -1214,11 +1271,18 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
           if (hasWave) {
             if (isBndNode && func) {
               // Reset nodal physical boundary from base state before
-              // superimposing wave.
+              // superimposing wave (subtracting B0 for standalone B fields so
+              // B_total = B_sw + dB on the wave face).
+              Real b0Sub[3] = { 0.0, 0.0, 0.0 };
+              if (iField == 0 && !fi->is_init_from_swmf() &&
+                  use_intrinsic_B()) {
+                intrinsicB_->eval(pos[0], pos[1], pos[2], b0Sub);
+              }
               for (int iVar = 0; iVar < nComp; ++iVar) {
                 const Real baseVal = (this->*func)(
                     mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
-                arr(i, j, k, iStart + iVar) = baseVal + waveVal[iVar % 3];
+                arr(i, j, k, iStart + iVar) =
+                    baseVal - b0Sub[iVar % 3] + waveVal[iVar % 3];
               }
             } else {
               // Ghost cells already contain base state from apply_BC(); add

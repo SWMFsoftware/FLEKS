@@ -22,10 +22,14 @@ struct B0Params {
   // units.
   amrex::Real center[3] = { 0.0, 0.0, 0.0 };
 
-  // Dipole moment m in code units: B = [3 (m.r^) r^ - m] / r^3, so
-  // |m| = Bc * rRef^3 for the equatorial strength Bc at the reference radius.
+  // Dipole moment m in code units:
+  // - 3D point dipole (isLine2D == false): B = [3 (m.r^) r^ - m] / r^3,
+  //   |m| = Bc * rRef^3.
+  // - 2D line dipole (isLine2D == true): B = [2 (m.r^) r^ - m] / r^2 in the
+  //   x-y plane (Bz = 0, 2D divergence-free), |m| = Bc * rRef^2.
   amrex::Real moment[3] = { 0.0, 0.0, 0.0 };
   bool useDipole = false;
+  bool isLine2D = false;
 
   // Crustal coefficients, flat layout coef[n * nMax + m], already rescaled to
   // code units. Null when the crustal field is off.
@@ -47,6 +51,21 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void eval_dipole_b(const B0Params &p,
                                                             amrex::Real b[3]) {
   const amrex::Real xc = x - p.center[0];
   const amrex::Real yc = y - p.center[1];
+
+  if (p.isLine2D) {
+    const amrex::Real r2 = xc * xc + yc * yc;
+    if (r2 <= amrex::Real(1.0e-12))
+      return;
+
+    const amrex::Real invR2 = 1.0 / r2;
+    const amrex::Real term =
+        2.0 * (p.moment[0] * xc + p.moment[1] * yc) * invR2;
+
+    b[0] += (term * xc - p.moment[0]) * invR2;
+    b[1] += (term * yc - p.moment[1]) * invR2;
+    return;
+  }
+
   const amrex::Real zc = z - p.center[2];
 
   const amrex::Real r2 = xc * xc + yc * yc + zc * zc;
@@ -118,7 +137,7 @@ public:
 
   // Raw SI input filled by #DIPOLE and #CRUSTALFIELD parameter parsing.
   void read_dipole(amrex::Real bEqNT, amrex::Real thetaDeg, amrex::Real phiDeg,
-                   amrex::Real rRefSI);
+                   amrex::Real rRefSI, bool isLine2D = false);
   void read_crustal(const std::string &fileName, int nMax);
 
   // True when #DIPOLE asked for its own reference radius.
@@ -167,6 +186,7 @@ private:
                     amrex::Real b[3]) const;
 
   bool useDipole_ = false;
+  bool isLine2D_ = false;
   amrex::Real bEqNT_ = 0.0;
   amrex::Real thetaDeg_ = 0.0;
   amrex::Real phiDeg_ = 0.0;
