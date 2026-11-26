@@ -20,6 +20,9 @@
 // sum_g V_g E_g^2 / 8 pi over the unknown nodes, plus the kinetic energy. The
 // node volume V_g is the 1/8 of the volumes of the leaf cells around the node,
 // with the volumes of the fine edge nodes folded onto the coarse nodes.
+//
+// The loops of this file run on the host: the solver is not available on
+// GPUs yet (see composite_setup).
 
 #include <AMReX_MultiFabUtil.H>
 
