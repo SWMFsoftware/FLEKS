@@ -360,8 +360,8 @@ Select the electromagnetic field solver mode for FLEKS:
   transpose of the curl of E in Faraday's law. The total energy is then
   conserved across the resolution change for theta = 0.5 and ratioDivC2C = 0,
   to the tolerance of the linear solver. The electric energy in the log file
-  is the sum of V*E^2/(8 pi) over the unknown nodes, where V is the volume of
-  the node. At present implicit1 with AMR requires periodic boundaries and
+  is the sum of V times E squared / (8 pi) over the unknown nodes, where V is
+  the volume of the node. At present implicit1 with AMR requires periodic boundaries and
   ratioDivC2C = 0, and does not work with #SMOOTHE, #SMOOTHJ, #UPWINDE,
   #COMOVING, #BODY, #UPWINDB with typeUpwindB curl, a time dependent intrinsic
   magnetic field and #EFIELDSOLVER with solverType amrex.

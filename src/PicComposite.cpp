@@ -57,7 +57,7 @@ void Pic::composite_prolong(Vector<MultiFab>& mf, int nComp) {
       const Array4<Real>& fine = mf[iLev][mfi].array();
       const Array4<Real const>& crse = ctmp[mfi].array();
       const auto& status = node_status(iLev)[mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::Loop(box, [&](int i, int j, int k) {
         if (!bit::is_lev_edge(status(i, j, k)))
           return;
         int ic, jc, kc;
@@ -108,7 +108,7 @@ void Pic::composite_fold(Vector<MultiFab>& mf, int nComp) {
       const Array4<Real const>& fine = mf[iLev][mfi].array();
       const Array4<Real>& crse = ctmp[mfi].array();
       const auto& status = node_status(iLev)[mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::Loop(box, [&](int i, int j, int k) {
         if (!bit::is_lev_edge(status(i, j, k)) ||
             !bit::is_owner(status(i, j, k)))
           return;
@@ -148,6 +148,11 @@ void Pic::composite_fold(Vector<MultiFab>& mf, int nComp) {
 void Pic::composite_setup() {
   std::string nameFunc = "Pic::composite_setup";
   timing_func(nameFunc);
+
+  // The loops of this file run on the host (amrex::Loop): several of them
+  // sum into a scalar or add to shared coarse nodes.
+  if (Gpu::inLaunchRegion())
+    Abort("Error: #FIELDSOLVER implicit1 is not available on GPUs yet.");
 
   for (int iDim = 0; iDim < nDim; iDim++) {
     if (!Geom(0).isPeriodic(iDim))
@@ -205,7 +210,7 @@ void Pic::composite_setup() {
       const Box& box = mfi.validbox();
       const Array4<Real>& leaf = compLeaf[iLev][mfi].array();
       const auto& status = cell_status(iLev)[mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::Loop(box, [&](int i, int j, int k) {
         leaf(i, j, k) = bit::is_refined(status(i, j, k)) ? 0.0 : 1.0;
       });
     }
@@ -219,7 +224,7 @@ void Pic::composite_setup() {
       const Array4<Real>& volArr = compVol[iLev][mfi].array();
       const Array4<int>& unk = compUnknown[iLev][mfi].array();
       const auto& status = node_status(iLev)[mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::Loop(box, [&](int i, int j, int k) {
         Real sum = 0;
         for (int dk = -1; dk <= 0; dk++)
           for (int dj = -1; dj <= 0; dj++)
@@ -444,7 +449,7 @@ void Pic::update_E_composite() {
         const Array4<Real const>& t = compT[iLev][mfi].array();
         const Array4<Real const>& x = compX[iLev][mfi].array();
         const auto& status = node_status(iLev)[mfi].array();
-        ParallelFor(box, 3, [&](int i, int j, int k, int iVar) {
+        amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
           if (bit::is_owner(status(i, j, k)))
             sumLev += t(i, j, k, iVar) * x(i, j, k, iVar);
         });
@@ -550,7 +555,7 @@ void Pic::update_E_composite() {
         const Array4<Real const>& a = nodeEth[iLev][mfi].array();
         const Array4<Real const>& x = compX[iLev][mfi].array();
         const Array4<Real const>& leaf = compLeaf[iLev][mfi].array();
-        ParallelFor(box, 3, [&](int i, int j, int k, int iVar) {
+        amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
           Real sum = 0;
           for (int dk = -1; dk <= 0; dk++)
             for (int dj = -1; dj <= 0; dj++)
@@ -584,7 +589,7 @@ Real Pic::calc_E_field_energy_composite() {
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       const Array4<Real const>& vol = compVol[iLev][mfi].array();
       const Array4<int const>& unk = compUnknown[iLev][mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::Loop(box, [&](int i, int j, int k) {
         if (unk(i, j, k) == 1) {
           sum += vol(i, j, k) * (arr(i, j, k, ix_) * arr(i, j, k, ix_) +
                                  arr(i, j, k, iy_) * arr(i, j, k, iy_) +
@@ -624,7 +629,7 @@ void Pic::composite_self_test() {
       const Box& box = mfi.validbox();
       const Array4<Real const>& vol = compVol[iLev][mfi].array();
       const Array4<int const>& unk = compUnknown[iLev][mfi].array();
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::Loop(box, [&](int i, int j, int k) {
         if (unk(i, j, k) == 1)
           volSum += vol(i, j, k);
       });
@@ -654,7 +659,7 @@ void Pic::composite_self_test() {
           const Array4<Real const>& b = compCurl[iLev][mfi].array();
           const Array4<Real const>& leaf = compLeaf[iLev][mfi].array();
           const Real vol = get_cell_volume(iLev);
-          ParallelFor(box, 3, [&](int i, int j, int k, int iVar) {
+          amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
             cDotC += vol * leaf(i, j, k) * a(i, j, k, iVar) * b(i, j, k, iVar);
           });
         }
