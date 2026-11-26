@@ -162,10 +162,6 @@ void Pic::composite_setup() {
   if (Gpu::inLaunchRegion())
     Abort("Error: #FIELDSOLVER implicit1 is not available on GPUs yet.");
 
-  for (int iDim = 0; iDim < nDim; iDim++) {
-    if (!Geom(0).isPeriodic(iDim))
-      Abort("Error: #FIELDSOLVER implicit1 needs periodic field boundaries.");
-  }
   if (doSmoothE || doSmoothJ || useUpwindE || solveFieldInCoMov ||
       fsolver.coefDiff != 0 || use_body())
     Abort("Error: #FIELDSOLVER implicit1 does not support #SMOOTHE, #SMOOTHJ, "
@@ -198,6 +194,11 @@ void Pic::composite_setup() {
   compM.resize(n_lev_max());
   compCurl.resize(n_lev_max());
 
+  // Non-periodic boundaries are treated on the base level as in the
+  // level-by-level solver: the cells and nodes outside the domain are filled
+  // from the boundary conditions and take part in the curl operators.
+  isCompositeBounded = !Geom(0).isAllPeriodic();
+
   nCompUnknown = 0;
   for (int iLev = 0; iLev < nLev; iLev++) {
     const BoxArray& ba = boxArray(iLev);
@@ -224,6 +225,30 @@ void Pic::composite_setup() {
     }
     compLeaf[iLev].FillBoundary(Geom(iLev).periodicity());
 
+    if (isCompositeBounded) {
+      // The cells outside the domain count as leaf cells of the base level,
+      // so that the boundary nodes get the full stencil and volume.
+      int nTouch = 0;
+      for (MFIter mfi(compLeaf[iLev]); mfi.isValid(); ++mfi) {
+        const Box box = amrex::grow(mfi.validbox(), 1);
+        const Array4<Real>& leaf = compLeaf[iLev][mfi].array();
+        const auto& status = cell_status(iLev)[mfi].array();
+        amrex::Loop(box, [&](int i, int j, int k) {
+          if (bit::is_domain_boundary(status(i, j, k))) {
+            if (iLev == 0) {
+              leaf(i, j, k) = 1.0;
+            } else {
+              nTouch++;
+            }
+          }
+        });
+      }
+      ParallelDescriptor::ReduceIntSum(nTouch);
+      if (nTouch > 0)
+        Abort("Error: #FIELDSOLVER implicit1 does not support refined levels "
+              "that touch a non-periodic boundary.");
+    }
+
     // Volume of the leaf cells of this level around the node.
     const Real vol = get_cell_volume(iLev);
     for (MFIter mfi(compVol[iLev]); mfi.isValid(); ++mfi) {
@@ -248,6 +273,81 @@ void Pic::composite_setup() {
     }
   }
   composite_fold(compVol, 1);
+
+  if (isCompositeBounded) {
+    // Node volumes without the cells outside the domain, for the electric
+    // energy. They agree with the cell based sum of calc_E_field_energy.
+    compVolE.resize(n_lev_max());
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      compVolE[iLev].define(node_box_array(iLev), DistributionMap(iLev), 1, 0);
+      const Real vol = get_cell_volume(iLev);
+      for (MFIter mfi(compVolE[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real const>& leaf = compLeaf[iLev][mfi].array();
+        const Array4<Real>& volArr = compVolE[iLev][mfi].array();
+        const auto& status = cell_status(iLev)[mfi].array();
+        amrex::Loop(box, [&](int i, int j, int k) {
+          Real sum = 0;
+          for (int dk = kLoCell; dk <= 0; dk++)
+            for (int dj = -1; dj <= 0; dj++)
+              for (int di = -1; di <= 0; di++)
+                if (!bit::is_domain_boundary(status(i + di, j + dj, k + dk)))
+                  sum += leaf(i + di, j + dj, k + dk);
+          volArr(i, j, k) = sum * vol / nCellPerNode;
+        });
+      }
+    }
+    composite_fold(compVolE, 1);
+  }
+
+  if (isCompositeBounded) {
+    // Rows of the base level that are replaced by the identity, as in
+    // update_E_matvec: 1 for all components on the faces with a prescribed
+    // electric field (inflow, fixed, wave), 2 for the tangential components
+    // on conducting walls.
+    compFixed.define(node_box_array(0), DistributionMap(0), 3, 0);
+    compIn.define(node_box_array(0), DistributionMap(0), 3, 0);
+    const BoundaryBounds bnd(Geom(0), node_box_array(0).ixType(), &bcField);
+    for (MFIter mfi(compFixed); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<int>& fixed = compFixed[mfi].array();
+      amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
+        const int ijk[3] = { i, j, k };
+        fixed(i, j, k, iVar) = 0;
+        if (hasConductingBC_ && is_conducting_wall_Et(bnd, ijk, iVar))
+          fixed(i, j, k, iVar) = 2;
+        for (int d = 0; d < nDim; ++d) {
+          if (!bnd.isNode[d])
+            continue;
+          if ((FieldBC::is_dirichlet(bnd.bcLo[d]) && ijk[d] == bnd.loBnd[d]) ||
+              (FieldBC::is_dirichlet(bnd.bcHi[d]) && ijk[d] == bnd.hiBnd[d]))
+            fixed(i, j, k, iVar) = 1;
+        }
+      });
+    }
+  }
+}
+
+//==========================================================
+// Replace the rows of the base level that are fixed by the boundary
+// conditions: 'dirichlet' on the faces with a prescribed electric field and
+// 'wall' for the tangential components on conducting walls.
+void Pic::composite_set_fixed_rows(MultiFab& out, const MultiFab& dirichlet,
+                                   const MultiFab& wall) {
+  for (MFIter mfi(out); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arr = out[mfi].array();
+    const Array4<Real const>& dir = dirichlet[mfi].array();
+    const Array4<Real const>& wal = wall[mfi].array();
+    const Array4<int const>& fixed = compFixed[mfi].array();
+    amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
+      if (fixed(i, j, k, iVar) == 1) {
+        arr(i, j, k, iVar) = dir(i, j, k, iVar);
+      } else if (fixed(i, j, k, iVar) == 2) {
+        arr(i, j, k, iVar) = wal(i, j, k, iVar);
+      }
+    });
+  }
 }
 
 //==========================================================
@@ -316,11 +416,38 @@ void Pic::composite_curl_transpose(MultiFab& center, MultiFab& out, int iLev) {
 // vecOut = A vecIn for the composite system
 // A = I + V^-1 [(theta dt)^2 C^T W_B C + 4 pi theta dt P^T M P],
 // where W_B holds the leaf cell volumes and M is the unnormalised mass matrix.
-void Pic::composite_matvec(const double* vecIn, double* vecOut) {
+// With non-periodic boundaries the nodes outside the domain are filled as in
+// update_E_matvec: with the homogeneous part of the boundary conditions for
+// a correction of E (useZeroBC), or with the boundary values for E itself.
+void Pic::composite_matvec(const double* vecIn, double* vecOut,
+                           const bool useZeroBC) {
   std::string nameFunc = "Pic::composite_matvec";
   timing_func(nameFunc);
 
   composite_scatter(vecIn, compX);
+
+  if (isCompositeBounded) {
+    MultiFab::Copy(compIn, compX[0], 0, 0, 3, 0);
+    if (useZeroBC) {
+      // The correction is zero where the electric field is prescribed.
+      for (MFIter mfi(compX[0]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arr = compX[0][mfi].array();
+        const Array4<int const>& fixed = compFixed[mfi].array();
+        amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
+          if (fixed(i, j, k, iVar) == 1)
+            arr(i, j, k, iVar) = 0.0;
+        });
+      }
+      apply_field_bc_homogeneous(node_status(0), compX[0], 0);
+    } else {
+      apply_field_bc(node_status(0), compX[0], 0, nDim3, &Pic::get_node_E, 0,
+                     false, 0.0);
+      // The boundary values written on the faces are copied to the ghost
+      // nodes of the neighbouring boxes.
+      compX[0].FillBoundary(Geom(0).periodicity());
+    }
+  }
 
   const Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -341,6 +468,8 @@ void Pic::composite_matvec(const double* vecIn, double* vecOut) {
       MultiFab::Divide(compT[iLev], compVol[iLev], 0, iVar, 1, 0);
     MultiFab::Add(compT[iLev], compX[iLev], 0, 0, 3, 0);
   }
+  if (isCompositeBounded)
+    composite_set_fixed_rows(compT[0], compX[0], compIn);
   composite_gather(compT, vecOut);
 }
 
@@ -349,7 +478,19 @@ void Pic::composite_matvec(const double* vecIn, double* vecOut) {
 void Pic::composite_rhs(double* rhs) {
   const Real delt = fsolver.theta * tc->get_dt();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(compCurl[iLev], centerB[iLev], 0, 0, 3, 0);
+    if (iLev == 0 && isCompositeBounded) {
+      // The magnetic field in the cells outside the domain, as in
+      // update_E_rhs.
+      centerB[0].FillBoundary(Geom(0).periodicity());
+      apply_field_bc(cell_status(0), centerB[0], 0, centerB[0].nComp(),
+                     &Pic::get_center_B, 0, true, -2.0);
+      MultiFab::Copy(compCurl[0], centerB[0], 0, 0, 3, 1);
+      nodeB[0].FillBoundary(Geom(0).periodicity());
+      apply_field_bc(node_status(0), nodeB[0], 0, nodeB[0].nComp(),
+                     &Pic::get_node_B, 0, true, 0.0);
+    } else {
+      MultiFab::Copy(compCurl[iLev], centerB[iLev], 0, 0, 3, 0);
+    }
     composite_curl_transpose(compCurl[iLev], compT[iLev], iLev);
     // jHat is divided by the cell volume.
     MultiFab::Saxpy(compT[iLev], -fourPI * get_cell_volume(iLev), jHat[iLev], 0,
@@ -361,6 +502,20 @@ void Pic::composite_rhs(double* rhs) {
     for (int iVar = 0; iVar < 3; iVar++)
       MultiFab::Divide(compT[iLev], compVol[iLev], 0, iVar, 1, 0);
     MultiFab::Add(compT[iLev], nodeE[iLev], 0, 0, 3, 0);
+  }
+  if (isCompositeBounded) {
+    // The right-hand side of the fixed rows is the electric field itself, so
+    // that the residual rhs - A E^n is zero there: the prescribed field at
+    // the time of the solve on the inflow faces, E^n otherwise.
+    const MultiFab* dirichletE = &nodeE[0];
+    if (hasInflowBC_) {
+      MultiFab::Copy(compX[0], nodeE[0], 0, 0, 3,
+                     std::min(compX[0].nGrow(), nodeE[0].nGrow()));
+      apply_field_bc(node_status(0), compX[0], 0, nDim3, &Pic::get_node_E, 0,
+                     false, 0.0);
+      dirichletE = &compX[0];
+    }
+    composite_set_fixed_rows(compT[0], *dirichletE, nodeE[0]);
   }
   composite_gather(compT, rhs);
 }
@@ -377,6 +532,11 @@ void Pic::composite_fill_E(const double* const p, Vector<MultiFab>& mf) {
   }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     mf[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0 && isCompositeBounded) {
+      // The wave source is applied inside apply_field_bc().
+      apply_field_bc(node_status(0), mf[0], 0, nDim3, &Pic::get_node_E, 0,
+                     false);
+    }
     if (iLev > 0) {
       fill_fine_lev_bny_from_coarse(
           mf[iLev - 1], mf[iLev], 0, 3, refRatio(iLev - 1), Geom(iLev - 1),
@@ -411,7 +571,9 @@ void Pic::update_E_composite() {
   composite_gather(nodeE, eOld.data());
 
   // Solve A dE = rhs - A E^n for the change dE = E^{n+theta} - E^n.
-  composite_matvec(eOld.data(), eSolver.matvec);
+  // E^n is used with its boundary values, the change dE with the homogeneous
+  // boundary conditions.
+  composite_matvec(eOld.data(), eSolver.matvec, false);
   for (int i = 0; i < nSolve; ++i) {
     eSolver.rhs[i] -= eSolver.matvec[i];
     eSolver.xLeft[i] = 0;
@@ -487,8 +649,9 @@ void Pic::update_E_composite() {
             << " dW_E = " << (wE1 - wE0) * 0.5 / fourPI << std::endl;
   }
 
-  composite_fill_E(eOld.data(), nodeEth);
+  // Same order as in update_E_impl: the boundary conditions may depend on it.
   composite_fill_E(eNew.data(), nodeE);
+  composite_fill_E(eOld.data(), nodeEth);
 
   if (doBudget) {
     // Change of the kinetic energy that the mover will produce with nodeEth
@@ -596,7 +759,9 @@ Real Pic::calc_E_field_energy_composite() {
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
-      const Array4<Real const>& vol = compVol[iLev][mfi].array();
+      const Array4<Real const>& vol = isCompositeBounded
+                                          ? compVolE[iLev][mfi].array()
+                                          : compVol[iLev][mfi].array();
       const Array4<int const>& unk = compUnknown[iLev][mfi].array();
       amrex::Loop(box, [&](int i, int j, int k) {
         if (unk(i, j, k) == 1) {

@@ -671,7 +671,7 @@ curl--curl term as \code{curl\_center\_to\_node} of the masked
 the unchanged Faraday update. The covered coarse nodes are injected from the fine level
 after the solve and the ghost nodes of the fine level are interpolated from the coarse
 level, both for output only. GMRES uses the unweighted norm over the unknowns (P0 of
-Section~\ref{sec:precond}). The solver needs periodic boundaries and
+Section~\ref{sec:precond}). The solver needs
 \code{ratioDivC2C}~$=0$, and stops with an error message with \code{\#SMOOTHE},
 \code{\#SMOOTHJ}, \code{\#UPWINDE}, \code{\#COMOVING} or \code{\#BODY}. It also
 stops with \code{\#UPWINDB} with \code{typeUpwindB curl}, with a time dependent
@@ -679,6 +679,34 @@ intrinsic magnetic field and with \code{\#EFIELDSOLVER} with \code{solverType am
 With the developer switch \code{doTestComposite} of the \code{Pic} class (set in the
 source), the symmetry of $\Pm^T\Cm_{\rm leaf}^T\Wb\Cm_{\rm leaf}\Pm$ is
 checked with random vectors, and the energy budget of the first steps is printed.
+
+\paragraph{Non-periodic boundaries (26 November 2026).} They are treated on the base
+level exactly as in the level-by-level solver, by reusing its boundary routines
+(this answers Q4 with the first option: a refined level may not touch a non-periodic
+boundary, and the code stops if it does).
+\begin{itemize}
+\item The cells outside the domain count as leaf cells of the base level, so the
+  boundary nodes keep the full stencil of $\Cm^T\Wb\Cm$ and the full volume $V_g$,
+  as in the node based operator of the level solver.
+\item The nodes outside the domain are filled by \code{apply\_field\_bc} when the
+  operator acts on $\EE^n$, and by \code{apply\_field\_bc\_homogeneous} when it acts
+  on the correction $\EE_\theta-\EE^n$ that GMRES solves for. The magnetic field in
+  the cells outside the domain is filled as in \code{update\_E\_rhs}.
+\item The rows of the nodes with a prescribed electric field (\code{inflow},
+  \code{fixed}, \code{wave}) and of the tangential components on \code{conducting}
+  walls are replaced by the identity, with the boundary value on the right-hand side.
+\item The electric energy uses the node volumes of the cells inside the domain only,
+  so that it agrees with the cell based sum of \code{calc\_E\_field\_energy}.
+\end{itemize}
+With these boundaries the total energy is not conserved: it changes by the flux
+through the boundary. On a uniform grid, where the single solve can be forced for
+testing, it reproduces the level solver to round-off for \code{outflow},
+\code{conducting}, \code{absorb}, \code{fixed} and \code{inflow} boundaries. For
+\code{wave} boundaries the two agree to round-off only if the level solver refreshes
+the ghost nodes after \code{apply\_field\_bc}; as it is, the level solver uses the
+old value of a boundary node in the ghost layer of the neighbouring box, a relative
+difference of $10^{-6}$ in the test \code{bc\_wave}.
+
 The variant \code{implicit1} of the test \code{tests/amr\_equilibrium} checks that the
 total energy is conserved to a relative $10^{-6}$.
 

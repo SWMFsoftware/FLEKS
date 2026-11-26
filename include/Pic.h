@@ -393,6 +393,12 @@ private:
   static constexpr int iLevComposite_ = -1;
   int nLevComposite_ = 0;
   int nCompUnknown = 0;                    // unknown nodes on this processor
+  // Non-periodic boundaries: rows of the base level fixed by the boundary
+  // conditions (see composite_setup) and a copy of the input of the matvec.
+  bool isCompositeBounded = false;
+  amrex::iMultiFab compFixed;
+  amrex::Vector<amrex::MultiFab> compVolE; // node volumes inside the domain
+  amrex::MultiFab compIn;
   amrex::Vector<amrex::MultiFab> compLeaf; // 1 in leaf cells, else 0
   amrex::Vector<amrex::iMultiFab> compUnknown; // 1 on unknown nodes, else 0
   amrex::Vector<amrex::MultiFab> compVol;      // node volume V_g
@@ -1103,7 +1109,11 @@ public:
                         double *const p);
   void composite_curl_transpose(amrex::MultiFab &center, amrex::MultiFab &out,
                                 int iLev);
-  void composite_matvec(const double *vecIn, double *vecOut);
+  void composite_matvec(const double *vecIn, double *vecOut,
+                        const bool useZeroBC = true);
+  void composite_set_fixed_rows(amrex::MultiFab &out,
+                                const amrex::MultiFab &dirichlet,
+                                const amrex::MultiFab &wall);
   void composite_rhs(double *rhs);
   void composite_fill_E(const double *const p,
                         amrex::Vector<amrex::MultiFab> &mf);

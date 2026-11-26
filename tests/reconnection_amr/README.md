@@ -9,6 +9,7 @@ region at a fraction of the uniform-grid cost.
 Two solver variants share this grid and setup — see `#FIELDSOLVER`:
 
 - **Full PIC** (`PARAM.in.implicit`): Maxwell + implicit GMRES solve (`#FIELDSOLVER implicit`).
+- **Full PIC, single solve** (`PARAM.in.implicit1`): as `PARAM.in.implicit`, with `#FIELDSOLVER implicit1` (one implicit solve over both grid levels). It exercises the single solve with the non-periodic (outflow) field boundaries in y, and passes the same checks.
 - **Hybrid PIC** (`PARAM.in.hybrid`): kinetic ions + fluid electrons (`#FIELDSOLVER hybrid`).
 
 The runner auto-detects both variants, listing them as `RECONNECTION_AMR (IMPLICIT)` and `RECONNECTION_AMR (HYBRID)` in `tests/summary.md`.
@@ -153,6 +154,7 @@ To run a **single variant**, append its token to the test name:
 
 ```bash
 python3 tests/validate_tests.py --test=reconnection_amr.implicit          # full PIC only
+python3 tests/validate_tests.py --test=reconnection_amr.implicit1         # full PIC, single solve
 python3 tests/validate_tests.py --test=reconnection_amr.hybrid            # hybrid only
 python3 tests/validate_tests.py --test=reconnection_amr.forcefree_hybrid  # interface: force-free
 python3 tests/validate_tests.py --test=reconnection_amr.gem_hybrid        # interface: GEM-like
