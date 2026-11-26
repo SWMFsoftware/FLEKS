@@ -1,0 +1,704 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\newtheorem{proposition}{Proposition}
+\newcommand{\open}[1]{\par\smallskip\noindent\fcolorbox{red}{red!5}{\parbox{0.96\linewidth}{\textbf{Open question #1}}}\par\smallskip}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\vv}{\mathbf{v}}
+\newcommand{\EE}{\mathbf{e}}
+\newcommand{\BB}{\mathbf{b}}
+\newcommand{\jj}{\mathbf{j}}
+\newcommand{\Sm}{\mathsf{S}}
+\newcommand{\Pm}{\mathsf{P}}
+\newcommand{\Rm}{\mathsf{R}}
+\newcommand{\Cm}{\mathsf{C}}
+\newcommand{\Gm}{\mathsf{G}}
+\newcommand{\Mm}{\mathsf{M}}
+\newcommand{\Wb}{\mathsf{W}_B}
+\newcommand{\Wt}{\widetilde{\mathsf{W}}}
+\newcommand{\Am}{\mathsf{A}}
+\newcommand{\Dm}{\mathsf{D}}
+\newcommand{\Nset}{\mathcal{N}}
+\newcommand{\Nexp}{\widetilde{\mathcal{N}}}
+\newcommand{\Hset}{\mathcal{H}}
+\newcommand{\Cset}{\mathcal{L}}
+
+\title{An energy-conserving composite-grid ECSIM field solve\\ for AMR in FLEKS}
+\author{Derivation note (draft for checking)}
+\date{19 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+FLEKS solves the implicit ECSIM field equation level by level. Every AMR run of
+a uniform plasma at rest loses 0.6--0.9\% of the total energy by $t=1200$, while
+the single-level run conserves it to round-off. This note derives one implicit
+solve for $\mathbf{E}^{n+\theta}$ on the composite grid of all levels, with the
+complete mass matrix. With it the discrete energy identity of single-grid ECSIM
+holds across the resolution change, to the tolerance of the linear solver.
+Section~\ref{sec:single} restates the single-grid proof in the matrix form used
+later. Sections~\ref{sec:current}--\ref{sec:proof} give the composite unknowns,
+the prolongation $\Pm$, the composite curl pair and the proof. Sections
+\ref{sec:matvec}--\ref{sec:replace} give the matrix-free implementation and list
+what it replaces. Section~\ref{sec:div} covers $\nabla\cdot\mathbf{B}$ and Gauss's
+law, and Section~\ref{sec:tests} gives the test plan. The open choices are boxed
+in red and collected in Section~\ref{sec:open}. The algebraic claims were checked
+numerically on a toy composite grid with the FLEKS stencils
+(\code{doc/CompositeECSIM\_check.py}). The results are quoted where they are used.
+\end{abstract}
+
+\section*{Conventions}
+Code units, $c=1$, Gaussian form as in \code{doc/Algorithm.tex}. Levels
+$\ell=0,\dots,L$, refinement ratio $r$ (examples use $r=2$), cell volume
+$\Delta V_\ell$, spatial dimension $d$ ($d=2$ means $\partial_z\equiv0$ as in
+FLEKS 2D). $\mathbf{E}$ lives at nodes and $\mathbf{B}$ at cell centres. The
+particle shape is cloud-in-cell (CIC, \code{find\_node\_interpolation}, two nodes
+per direction). Vectors of nodal values are bold lower case ($\EE$, $\jj$). Each
+node carries 3 components; a nodal scalar operator acts on each component.
+$\delta \equiv \theta\Delta t$.
+
+%=====================================================================
+\section{Single-grid ECSIM in FLEKS, in discrete form}\label{sec:single}
+
+\subsection{Discrete operators}
+Let $a_k$ ($k=x,y,z$) be the node-to-cell difference of FLEKS: at cell $c$ with
+corner nodes $c+o$, $o\in\{0,1\}^d$,
+\begin{equation}
+(a_k f)_c=\frac{1}{2^{d-1}\Delta x_k}\sum_{o,\,o_k=1}\bigl(f_{c+o}-f_{c+o-\hat k}\bigr),
+\label{eq:ak}
+\end{equation}
+i.e.\ the forward difference along $k$ averaged over the $2^{d-1}$ edges of the
+cell. This is \code{grad\_node\_to\_center}, \code{div\_node\_to\_center} and
+\code{curl\_node\_to\_center} (\code{src/GridUtility.cpp}). For a $Q_1$
+(multilinear) interpolant on the cell, $(a_kf)_c$ is the value of $\partial_kf$ at
+the cell centre, which equals its average over the cell. The Faraday curl is
+\begin{equation}
+\Cm=\begin{pmatrix}0&-a_z&a_y\\ a_z&0&-a_x\\ -a_y&a_x&0\end{pmatrix}:
+\ \text{nodes}\to\text{cells}.
+\end{equation}
+The cell-to-node curl \code{curl\_center\_to\_node} uses the $2^d$ cells around
+a node with the same $1/2^{d-1}$ average and the backward difference, so
+componentwise $\partial^{c\to n}_k=-a_k^{T}$. Inserting this into the components gives
+\begin{equation}
+\code{curl\_center\_to\_node}=\Cm^{T}\qquad\text{(on a uniform grid)}.
+\label{eq:curlT}
+\end{equation}
+For example, the $y$ component of $\Cm^{T}\BB$ is $-a_x^TB_z+a_z^TB_x
+=\partial^{c\to n}_xB_z\cdot(-1)+\partial^{c\to n}_zB_x$, which is the $y$ component
+of \code{curl\_center\_to\_node}.
+
+\paragraph{The curl--curl term in the matvec.} \code{update\_E\_matvec} does not
+apply $\Cm^T\Cm$. It applies $-\nabla^2+\nabla\nabla\cdot$ as
+\code{lap\_node\_to\_node} ($=-\sum_k a_k^Ta_k$) and
+\code{grad\_center\_to\_node}$\circ$\code{div\_node\_to\_center}
+($=-a_i^T\sum_k a_k$). The two agree when $a_i^Ta_k=a_k^Ta_i$. On a uniform
+periodic grid the symbols are
+$\hat a_k=e^{i\phi}\,2i\sin(\kappa_k/2)\prod_{k'\ne k}\cos(\kappa_{k'}/2)/\Delta x_k$,
+with the common phase $\phi=\sum_k\kappa_k/2$. So $\overline{\hat a_i}\hat a_k$ is real and
+symmetric, and
+\begin{equation}
+-\code{lap}+\code{grad}\,\code{div}=\Cm^T\Cm\quad\text{exactly, on a uniform periodic grid, when \code{coefDiff}}=0.
+\end{equation}
+With $\code{coefDiff}$ ($=$\code{ratioDivC2C}) $\neq0$, part of $\nabla\cdot$ is
+replaced by the centre-to-centre divergence. The operator is then no longer
+$\Cm^T\Cm$, and the energy identity below fails even on one level. The AMR
+tests already use \code{ratioDivC2C 0}. The composite solve must apply the
+curl--curl term as $\Cm^T\Wb\Cm$ (Section~\ref{sec:matvec}). On a uniform grid
+this is the same operator, so the single-level results do not change.
+
+\subsection{Particles: gather, deposit, mass matrix}
+Particle $p$ (charge $q_p$, mass $m_p$, position $x_p$, the same position for the
+mass matrix and for the gather in the mover) has CIC weights $s_{p,g}$ on the
+$2^d$ corners $g$ of its cell. Write $\Sm_p$ for the row vector of these weights.
+With $\alpha_p=q_p\Delta t/(2m_p)$, the ECSIM velocity update
+$\bar\vv_p=\vv_p^n+\alpha_p(\mathbf{E}^{n+\theta}(x_p)+\bar\vv_p\times\mathbf{B}_p)$
+is linear in $\mathbf{E}$ for given $\mathbf{B}_p$:
+\begin{equation}
+\bar\vv_p=\hat\vv_p+\beta_p\,\mathbf{E}^{n+\theta}(x_p),\qquad
+\mathbf{E}^{n+\theta}(x_p)=\Sm_p\EE_\theta ,
+\label{eq:vbar}
+\end{equation}
+where $\beta_p$ is the $3\times3$ rotation matrix built in
+\code{calc\_mass\_matrix} (\code{alpha[9]}, without the $1/\Delta V$ factor) and
+$\hat\vv_p$ is the explicit part (\code{currents[]}$/q_p$). Define the
+\emph{unnormalised} deposit and mass matrix
+\begin{equation}
+\hat\jj=\sum_p q_p\,\Sm_p^T\hat\vv_p ,\qquad
+\Mm=\sum_p q_p\,\Sm_p^T\beta_p\Sm_p ,\qquad
+\bar\jj=\hat\jj+\Mm\EE_\theta=\sum_pq_p\Sm_p^T\bar\vv_p .
+\label{eq:jM}
+\end{equation}
+FLEKS stores $\code{jHat}=\hat\jj/\Delta V$ and $\code{nodeMM}=\Mm/\Delta V$.
+$\Mm$ is not symmetric (the rotation part of $\beta_p$ is antisymmetric), and the proof
+does not need it to be.
+
+\paragraph{Kinetic energy.} Since $\vv^{n+1}_p=2\bar\vv_p-\vv^n_p$, we have
+$\tfrac12m_p(|\vv^{n+1}_p|^2-|\vv^n_p|^2)=m_p(\vv^{n+1}_p-\vv^n_p)\cdot\bar\vv_p
+=2m_p\alpha_p\mathbf{E}(x_p)\cdot\bar\vv_p$, because $(\bar\vv\times\mathbf{B})\cdot\bar\vv=0$.
+Summing over the particles and using \eqref{eq:vbar}, \eqref{eq:jM}:
+\begin{equation}
+K^{n+1}-K^n=\Delta t\sum_pq_p\bar\vv_p\cdot\Sm_p\EE_\theta=\Delta t\,\EE_\theta^T\bar\jj .
+\label{eq:dK}
+\end{equation}
+This is exact for any $\mathbf{B}_p$. The only requirements are that the gather
+and the deposit use the same $\Sm_p$ on the same nodal vector $\EE_\theta$, and that
+\eqref{eq:vbar} is the velocity the mover actually uses.
+
+\subsection{Fields and the energy identity}
+With $\Gm$ the symmetric positive definite field mass matrix ($\Gm=\Delta V\,\mathsf I$
+on one level) and $\Wb=\Delta V\,\mathsf I$ on cells, the scheme in weak form is
+\begin{align}
+\Gm(\EE^{n+1}-\EE^n)&=\Delta t\bigl(\Cm^T\Wb\BB_\theta-4\pi\bar\jj\bigr),\label{eq:amp}\\
+\BB^{n+1}-\BB^n&=-\Delta t\,\Cm\EE_\theta ,\label{eq:far}
+\end{align}
+with $\EE_\theta=\theta\EE^{n+1}+(1-\theta)\EE^n$ and
+$\BB_\theta=\BB^n-\theta\Delta t\Cm\EE_\theta$. Divided by $\Delta V$, this is
+exactly what \code{update\_E\_rhs}/\code{update\_E\_matvec} solve:
+\begin{equation}
+\bigl[\mathsf I+\delta^2\Cm^T\Cm+4\pi\delta\,\Mm/\Delta V\bigr]\EE_\theta
+=\EE^n+\delta\bigl(\Cm^T\BB^n-4\pi\hat\jj/\Delta V\bigr).
+\end{equation}
+The energies are $W_E=\EE^T\Gm\EE/8\pi$ and $W_B=\BB^T\Wb\BB/8\pi$
+(\code{calc\_E\_field\_energy} and \code{calc\_B\_field\_energy}; the first averages
+$|E|^2$ over the corners of each cell, which gives $\Gm=\Delta V\,\mathsf I$).
+
+\begin{proposition}\label{prop:energy}
+Let $\Gm$ be symmetric and let the Ampère curl be $\Cm^T\Wb$ with the same $\Cm$
+as in Faraday's law \eqref{eq:far}. Then \eqref{eq:dK}--\eqref{eq:far} give
+\begin{equation}
+(W_E+W_B+K)^{n+1}-(W_E+W_B+K)^n=-\frac{\theta-\frac12}{4\pi}
+\Bigl[(\Delta\EE)^T\Gm\Delta\EE+(\Delta\BB)^T\Wb\Delta\BB\Bigr],
+\label{eq:energy}
+\end{equation}
+where $\Delta\EE=\EE^{n+1}-\EE^n$ and $\Delta\BB=\BB^{n+1}-\BB^n$.
+For $\theta=\frac12$ the total energy is conserved exactly.
+\end{proposition}
+\begin{proof}
+$\EE^{n+1}+\EE^n=2\EE_\theta-(2\theta-1)\Delta\EE$. With $\Gm$ symmetric,
+$8\pi\Delta W_E=\Delta\EE^T\Gm(\EE^{n+1}+\EE^n)
+=2\EE_\theta^T\Gm\Delta\EE-(2\theta-1)\Delta\EE^T\Gm\Delta\EE$. By \eqref{eq:amp},
+$\EE_\theta^T\Gm\Delta\EE=\Delta t\,(\Cm\EE_\theta)^T\Wb\BB_\theta-4\pi\Delta t\,\EE_\theta^T\bar\jj$.
+In the same way, $\BB^{n+1}+\BB^n=2\BB_\theta-(2\theta-1)\Delta\BB$ and \eqref{eq:far}
+give $8\pi\Delta W_B=-2\Delta t\,(\Cm\EE_\theta)^T\Wb\BB_\theta-(2\theta-1)\Delta\BB^T\Wb\Delta\BB$.
+Adding these, the two curl terms cancel identically. The current term,
+$-\Delta t\,\EE_\theta^T\bar\jj$, cancels \eqref{eq:dK}.
+\end{proof}
+
+\paragraph{Effect of the solver tolerance.} If the linear system is solved with
+residual $\mathbf r$ (left side minus right side of the $\Gm$-weighted system
+\eqref{eq:Asys} below, $\mathbf r=\Am\EE_\theta-\text{rhs}$), then \eqref{eq:amp} holds with an extra $+\mathbf r/\theta$ on the
+right. The total energy changes per step by the extra amount
+\begin{equation}
+\delta W=\frac{1}{4\pi\theta}\,\EE_\theta^T\mathbf r .
+\label{eq:tol}
+\end{equation}
+So ``exact to the solver tolerance'' means $|\delta W|\le|\EE_\theta|\,|\mathbf r|/(4\pi\theta)$
+in the $\Gm$-consistent norms (Section~\ref{sec:precond}).
+
+\paragraph{Conditions used} (each must survive the move to AMR):
+\begin{enumerate}[label=(C\arabic*)]
+\item gather and deposit use the same weights on the same unknowns;
+\item $\bar\jj=\hat\jj+\Mm\EE_\theta$ is the current of the velocities the mover
+  produces (no smoothing of $\hat\jj$, $\Mm$ or $\mathbf{E}$ unless it is applied as
+  $\Sm\to\Sm\mathsf F$ consistently in all three places);
+\item the Ampère curl is the $(\Gm,\Wb)$-adjoint of the Faraday curl;
+\item $\Gm$ is symmetric, and $\EE^T\Gm\EE/8\pi$ is the energy that is reported;
+\item no extra terms in the operator: upwind $\mathbf{E}$ off, $\code{coefDiff}=0$,
+  div~$\mathbf{E}$ correction off (it moves the particles), $\theta=\frac12$ for
+  exact conservation.
+\end{enumerate}
+
+%=====================================================================
+\section{The current AMR algorithm and where the identity fails}\label{sec:current}
+
+This section describes the full-PIC ECSIM path (\code{Pic::update} with
+\code{solveEM}) as implemented now.
+\begin{itemize}
+\item \textbf{Deposit} (\code{calc\_mass\_matrix\_amr},
+  \code{Particles::calc\_mass\_matrix\_amr}). A particle on level $\ell$ deposits
+  $\hat\jj$ and $\Mm$ with the level-$\ell$ CIC shape on level $\ell$. It also deposits
+  with the coarse shapes on \emph{every coarser level} (\code{jhc}, \code{nmmc}).
+  If its tile has the \code{refined\_neighbour} flag, it deposits with the
+  level-$(\ell+1)$ shape on level $\ell+1$ as well (\code{jhf}, \code{nmmf}). Each
+  level therefore sees all the plasma inside its own region, covered part included.
+\item \textbf{Solve} (\code{update\_E\_impl}). The levels are solved one after the
+  other, coarse first. The unknowns of level $\ell$ are its owned valid nodes. On
+  a fine level these include the edge nodes on the coarse--fine interface, so the
+  interface carries two independent values of $\mathbf{E}$, one per level.
+  The fine ghost nodes are a Dirichlet condition: in the initial residual
+  (\code{useZeroBC=false}) they are the bilinear interpolation of the coarse
+  $\mathbf{E}^{n+\theta}$ (\code{fill\_fine\_lev\_bny\_from\_coarse} on
+  \code{nodeEth[iLev-1]}), and inside GMRES they are zero.
+  The covered coarse nodes are unknowns of the coarse solve.
+\item \textbf{Ampère curl} (\code{update\_E\_rhs}). This is \code{curl\_center\_to\_node}
+  of \code{centerB}, with the fine ghost cells interpolated from the coarse $\mathbf{B}$.
+\item \textbf{Faraday} (\code{update\_B}). Each level applies \code{curl\_node\_to\_center} to its
+  own \code{nodeEth}, the covered coarse cells included. Covered $\mathbf{B}$ is
+  averaged down only if \code{projectDownEmFields} is set.
+\item \textbf{Mover}. A particle on level $\ell$ gathers \code{nodeEth[$\ell$]} with its CIC
+  weights on the corners of its own (leaf) cell.
+\item \textbf{Diagnostic}. $W_E$ and $W_B$ are summed over the unrefined cells of every
+  level, with each level's own nodal $\mathbf{E}$.
+\end{itemize}
+Measured against conditions (C1)--(C4):
+\begin{description}
+\item[(F1)] The cross-level deposits violate (C1) and (C2). A fine particle puts
+  $\Mm$ on the coarse level, but it never feels the coarse $\mathbf{E}$. A coarse particle
+  next to the interface puts $\Mm$ on the fine level, but it gathers only from the
+  coarse level. The coarse $\Mm$ is therefore not the response of any particle to
+  the coarse $\mathbf{E}$ that the coarse solve determines. This is the diagnosis
+  that the mass matrix does not act across the resolution change.
+\item[(F2)] The two values of $\mathbf{E}$ on the interface violate (C1) and (C3):
+  the coarse leaf cells and the fine cells next to the interface are advanced with
+  different values of $\mathbf{E}$.
+\item[(F3)] The Ampère curl at the fine edge nodes uses ghost $\mathbf{B}$
+  interpolated from the coarse level. It is not the transpose of the Faraday curl
+  that advances the leaf cells, which violates (C3).
+\item[(F4)] The covered coarse $\mathbf{E}$ and $\mathbf{B}$ are evolved. They are
+  not counted in the energy, but they feed the coarse interface nodes.
+\end{description}
+The hybrid-only routines \code{sync\_emf\_at\_interface}, \code{fill\_ghost\_emf\_from\_coarse},
+the Faraday-evolved ghost layer (\code{faraday\_ngrow}) and
+\code{relax\_covered\_B\_to\_fine} are in \code{PicHybrid.cpp}. The ECSIM path does not
+call them. Section~\ref{sec:replace} says what the composite operators make of them.
+
+%=====================================================================
+\section{Composite unknowns}\label{sec:unknowns}
+
+\paragraph{Leaf cells.} $\Cset$ is the set of cells not covered by a finer level,
+with $\Wb=\mathrm{diag}(\Delta V_c)$, $c\in\Cset$. This is the set over which
+\code{calc\_B\_field\_energy} sums. Each particle lives in exactly one leaf cell,
+because AMReX puts a particle on the finest level that contains it.
+
+\paragraph{Expanded node set $\Nexp$.} This is the set of corners of the leaf cells.
+Because the shape is CIC, \emph{every particle stencil and every leaf-cell curl lies
+in $\Nexp$, and no ghost node of any level enters.} $\Nexp$ consists of
+\begin{itemize}
+\item the nodes of each level that are interior to its leaf region;
+\item the \emph{coincident} interface nodes: fine nodes on the coarse--fine
+  interface that coincide with a coarse node. They are corners of both coarse and
+  fine leaf cells;
+\item the \emph{hanging} nodes $\Hset$: fine nodes on the interface that do not
+  coincide with a coarse node (midpoints of coarse edges, centres of coarse faces).
+  They are corners of fine leaf cells only.
+\end{itemize}
+The \emph{covered coarse nodes}, which lie strictly inside the region covered by
+level $\ell+1$, are not corners of any leaf cell. They are not in $\Nexp$.
+
+\paragraph{Unknowns.} $\Nset=\Nexp\setminus\Hset$, one value per physical location.
+The hanging nodes are slaved by $\Pm$ (Section~\ref{sec:P}). The covered coarse nodes
+are \emph{eliminated}: they appear in none of the equations. After the solve they are
+filled by a restriction $\Rm$ (from the fine $\mathbf{E}$ by injection or full weighting)
+for output, coupling, the coarse div~$\mathbf{E}$ diagnostics and regridding. They
+enter neither the energy nor the dynamics. (The alternative of keeping them as
+unknowns tied by $\EE_c=\Rm\EE_f$ adds constraint rows and changes nothing physical,
+because no leaf cell or particle uses them.)
+
+\open{Q1 (storage of the coincident interface unknowns).} Either the finer level owns
+the coincident nodes (recommended) or the coarser level does. If the finer level owns
+them, the hanging values are averages of neighbouring fine edge nodes, so $\Pm$ is
+local to the fine level (Section~\ref{sec:P}), and the coarse copies are an injection,
+which is the adjoint of a plain sum. If the coarser level owns them, $\Pm$ becomes a
+coarse-to-fine interpolation like the present ghost fill, but every matvec then needs
+two-way coarse--fine communication.
+
+\open{Q2 (restriction $\Rm$ for the covered coarse $\mathbf{E}$).} Injection or full
+weighting. It is a diagnostic choice only. Full weighting is smoother for
+output and coupling to MHD.
+
+%=====================================================================
+\section{Prolongation, deposit, mass matrix and field mass matrix}\label{sec:P}
+
+\paragraph{Prolongation.} $\Pm:\mathbb{R}^{3|\Nset|}\to\mathbb{R}^{3|\Nexp|}$ is the
+identity on $\Nset$. At a hanging node it is the multilinear interpolation, along the
+interface, from the coincident nodes of the coarse edge or face that contains it:
+weight $1/2$ from each end of an edge (edge midpoint) and $1/4$ from each corner of a face
+(face centre), for $r=2$. For general $r$ the weights are $j/r$ products. $\Pm$ makes
+$\Pm\EE$ the restriction of a continuous piecewise-$Q_1$ field. On a coarse--fine face
+the fine piecewise-bilinear trace then equals the coarse bilinear trace exactly.
+
+\paragraph{Gather and deposit.} For particle $p$ in leaf cell $c(p)$, $\Sm_p$ are its CIC
+weights on the corners of $c(p)$, as row vectors on $\Nexp$. Then
+\begin{equation}
+\mathbf{E}^{n+\theta}(x_p)=\Sm_p\Pm\EE_\theta ,\qquad
+\hat\jj=\Pm^T\sum_pq_p\Sm_p^T\hat\vv_p=\Pm^T\hat{\tilde\jj} ,\qquad
+\Mm=\Pm^T\Bigl(\sum_pq_p\Sm_p^T\beta_p\Sm_p\Bigr)\Pm=\Pm^T\widetilde\Mm\,\Pm .
+\label{eq:PMP}
+\end{equation}
+Here $\hat{\tilde\jj}$ and $\widetilde\Mm$ are the per-level deposits of the particles
+on their own level only, on the corners of their own cells, hanging nodes
+included. These are the \code{calc\_mass\_matrix} deposits per level
+\emph{without} the cross-level parts \code{jhc}, \code{nmmc}, \code{jhf} and \code{nmmf}.
+$\Pm^T$ folds the hanging rows and columns onto the coincident nodes with the
+interpolation weights. The only particles affected are those in the first fine
+cell layer next to the interface, whose cells have hanging corners. Coarse particles
+next to the interface use only the coarse corners, which are coincident
+nodes. With \eqref{eq:PMP}, \eqref{eq:dK} holds unchanged:
+$\Delta K=\Delta t\,\EE_\theta^T\bar\jj$.
+
+\paragraph{Field mass matrix.} Let $\Wt=\mathrm{diag}(\tilde w_g)$ on $\Nexp$, with
+$\tilde w_g=\sum_{c\in\Cset,\,g\in c}\Delta V_c/2^d$. Then
+\begin{equation}
+\Gm=\Pm^T\Wt\Pm .
+\label{eq:G}
+\end{equation}
+$\EE^T\Gm\EE/8\pi$ is \emph{exactly} what \code{calc\_E\_field\_energy} computes,
+provided the level arrays hold the composite field: hanging nodes $=\Pm\EE$, and the
+coincident nodes equal on both levels. $\Gm$ is symmetric positive definite. It is
+diagonal except for couplings among the coincident nodes of one coarse face, which
+come through the hanging nodes.
+
+\open{Q3 (consistent or lumped $\Gm$).} With the lumped $\Gm_L=\mathrm{diag}(\Gm\mathbf 1)$,
+Proposition~\ref{prop:energy} still holds, but for the energy $\EE^T\Gm_L\EE/8\pi$,
+which is not what the diagnostic reports. In the toy check (one step, random
+fields), the lumped scheme conserves its own energy to $2\times10^{-16}$ but changes the
+diagnostic energy by $5.6\times10^{-3}$ (2D) and $2.3\times10^{-3}$ (3D) relative. The
+consistent $\Gm$ conserves the diagnostic energy to $10^{-16}$. Recommendation:
+use the consistent $\Gm$. It costs one extra $\Pm$/$\Pm^T$ pair in the matvec, which is
+needed for $\Mm$ anyway.
+
+%=====================================================================
+\section{Composite curl pair and the energy proof}\label{sec:proof}
+
+\paragraph{Faraday.} For every leaf cell $c$ at level $\ell$,
+$(\Cm\EE)_c=(\Cm_\ell\,\Pm\EE)_c$, the level-$\ell$ stencil \eqref{eq:ak} on the corners
+of $c$:
+\begin{equation}
+\BB_c^{n+1}=\BB_c^n-\Delta t\,(\Cm_\ell\Pm\EE_\theta)_c,\qquad c\in\Cset .
+\end{equation}
+Only leaf cells are advanced. Covered coarse cells are restricted for output
+(\code{average\_down}). Fine ghost cells are not advanced at all.
+
+\paragraph{Ampère.} The curl of $\mathbf{B}$ in \eqref{eq:amp} is $\Cm^T\Wb\BB$ with
+$\Cm=\Cm_{\rm leaf}\Pm$:
+\begin{equation}
+(\Cm^T\Wb\BB)_g=\sum_\ell\Delta V_\ell\,\bigl[\Pm^T\Cm_\ell^{T}(\chi_\ell\BB_\ell)\bigr]_g ,
+\label{eq:ampcurl}
+\end{equation}
+where $\chi_\ell$ masks the leaf cells of level $\ell$ (zero on covered cells
+\emph{and on the ghost cells of level $\ell$}). By \eqref{eq:curlT},
+$\Cm_\ell^T(\chi_\ell\BB_\ell)$ is \code{curl\_center\_to\_node} applied to the masked
+$\mathbf{B}$. At a node inside one level, \eqref{eq:ampcurl} divided by
+$\tilde w_g=\Delta V_\ell$ is the present curl. At a coincident node, the coarse leaf
+cells around it enter with weight $\Delta V_0$ and the fine cells with $\Delta V_1$, and
+the fine cells around the neighbouring hanging nodes enter through $\Pm^T$. No ghost
+$\mathbf{B}$ is needed.
+
+\paragraph{The composite linear system.} Substituting $\bar\jj=\hat\jj+\Mm\EE_\theta$ and
+$\BB_\theta=\BB^n-\delta\Cm\EE_\theta$ into \eqref{eq:amp} gives
+\begin{equation}
+\Am\EE_\theta\equiv\bigl[\Gm+\delta^2\Cm^T\Wb\Cm+4\pi\delta\,\Pm^T\widetilde\Mm\Pm\bigr]\EE_\theta
+=\Gm\EE^n+\delta\bigl(\Cm^T\Wb\BB^n-4\pi\Pm^T\hat{\tilde\jj}\bigr),
+\label{eq:Asys}
+\end{equation}
+followed by $\EE^{n+1}=(\EE_\theta-(1-\theta)\EE^n)/\theta$ on $\Nset$, the
+hanging nodes by $\Pm$, and Faraday on $\Cset$. The update is linear, so if $\EE^n$
+is a composite field (hanging $=\Pm$, coincident nodes single-valued), $\EE^{n+1}$ is one too.
+
+\begin{proposition}\label{prop:comp}
+The composite scheme \eqref{eq:PMP}--\eqref{eq:Asys} with Faraday on $\Cset$ satisfies
+the energy identity \eqref{eq:energy} with $\Gm=\Pm^T\Wt\Pm$ and $\Wb$ the leaf
+volumes. For $\theta=\frac12$ it conserves $W_E+W_B+K$, as computed by the existing
+diagnostics, up to the residual term \eqref{eq:tol}.
+\end{proposition}
+\begin{proof}
+The proof of Proposition~\ref{prop:energy} used only these facts: $\Gm$ is symmetric;
+the Ampère curl is $\Cm^T\Wb$ for the Faraday $\Cm$; $\Wb$ is symmetric; and
+$\Delta K=\Delta t\EE_\theta^T\bar\jj$ with $\bar\jj$ the current in Ampère's law. The
+first three hold by construction. The last follows from \eqref{eq:PMP}: the gather
+$\Sm_p\Pm$ and the deposit $(\Sm_p\Pm)^T$ are transposes. Nothing in the proof refers
+to a level.
+\end{proof}
+
+\paragraph{Numerical check.} On a toy periodic grid with one refined box
+(\code{CompositeECSIM\_check.py}, $r=2$, CIC, the FLEKS stencils, random $\mathbf{E}^n$
+and $\mathbf{B}^n$, 40 particles per leaf cell with random $\mathbf{B}_p$), one $\theta=\frac12$
+step with a direct solve changes the total energy by $0$ (2D) and
+$1.3\times10^{-16}$ (3D) relative.
+
+%=====================================================================
+\section{Matrix-free matvec, right-hand side and preconditioning}\label{sec:matvec}
+
+\subsection{Matvec $\mathbf y=\Am\mathbf x$}
+\begin{enumerate}
+\item \textbf{Scatter} $\mathbf x\to$ level arrays (\code{solverVecMF[$\ell$]}). Fill the
+  owned unknowns, then the coarse copies of the coincident nodes (injection from the
+  fine owner, if Q1 is answered ``fine owns''), then the hanging nodes by $\Pm$ (an
+  average of fine edge neighbours; fine-level halo exchange only). Set the covered
+  coarse nodes and the ghost nodes to \emph{zero}. Their values must not matter, and
+  zero makes any leak visible in testing.
+\item \textbf{Per level} $\ell$, on level arrays:
+  \begin{enumerate}
+  \item $\mathbf b_\ell=\chi_\ell\,\code{curl\_node\_to\_center}(\mathbf x_\ell)$;
+  \item $\mathbf y_\ell=\Delta V_\ell\bigl[\delta^2\,\code{curl\_center\_to\_node}(\mathbf b_\ell)
+    +4\pi\delta\,\code{nodeMM}_\ell\,\mathbf x_\ell+\omega_\ell\,\mathbf x_\ell\bigr]$, where
+    $\code{nodeMM}_\ell$ is the own-level deposit (the existing
+    \code{update\_E\_M\_dot\_E}) and $\omega_\ell(g)=n_{\rm leaf,\ell}(g)/2^d$ is the
+    fraction of the $2^d$ cells around $g$ that are leaf cells of level $\ell$.
+    (Then $\sum_\ell\Delta V_\ell\omega_\ell=\tilde w_g$.)
+  \end{enumerate}
+\item \textbf{Fold} $\Pm^T$. Add each hanging-node $\mathbf y$ to its coincident neighbours
+  with the interpolation weights; add the coarse copies of the coincident nodes into
+  the fine owner (the adjoint of the injection); discard the covered and ghost values.
+  This uses the same \code{ParallelAdd} pattern as the present
+  \code{calc\_mass\_matrix\_amr}.
+\item \textbf{Row scaling} for GMRES: divide row $g$ by the lumped weight $(\Gm\mathbf 1)_g$.
+  In the interior of a level this reproduces the present operator
+  $\mathsf I+\delta^2\Cm^T\Cm+4\pi\delta\,\code{nodeMM}$ exactly.
+\end{enumerate}
+The curl--curl term must be the $\Cm^T(\chi\,\Cm\,\cdot)$ product of steps 2(a) and 2(b),
+\emph{not} \code{lap\_node\_to\_node}$+$\code{grad\,div}. The two agree in the interior
+of a level, but only the masked curl pair gives the transpose at the interface and at
+covered cells. The extra cost over the present level matvecs is one fold and
+one scatter per matvec. The total number of unknowns is smaller (no covered coarse
+nodes, no duplicated interface).
+
+\paragraph{Right-hand side.} By the same steps:
+$\Gm\EE^n+\delta(\Cm^T\Wb\BB^n-4\pi\Pm^T\hat{\tilde\jj})$, with the masked
+\code{curl\_center\_to\_node} of \code{centerB} and \emph{no} ghost fill of \code{centerB}
+or \code{nodeB}. The co-moving term becomes $4\pi\delta\,\Pm^T\widetilde\Mm\Pm\,\EE_0$. Its effect
+on the energy is not analysed here: it is not used in the rest tests.
+
+\paragraph{Physical boundaries.} The present code applies the field BCs (Dirichlet rows,
+conducting walls, \code{apply\_field\_bc\_homogeneous}) only on level~0. In the
+composite system they apply to the boundary nodes of whichever level owns them.
+\open{Q4 (BCs on refined levels touching the domain boundary).} Either require that
+refined levels do not touch non-periodic boundaries, or extend the BC rows to all
+levels. The tests are periodic, so this can wait.
+
+\subsection{GMRES norm, tolerance and preconditioning}\label{sec:precond}
+\begin{itemize}
+\item \textbf{Norm.} By \eqref{eq:tol}, the energy error is $\EE_\theta^T\mathbf r$. With the
+  row scaling of step 4, the natural inner product is
+  $\langle\mathbf u,\mathbf v\rangle=\mathbf u^T\mathrm{diag}(\Gm\mathbf 1)\mathbf v$, i.e.\
+  volume weighted. The present unweighted $\ell_2$ norm weights a coarse node like a fine one,
+  although the coarse node carries $2^d$ times the volume; the mismatch grows with every level.
+\item \textbf{Spectrum.} At fixed $\Delta t$ the fine level has $c\Delta t/\Delta x$ that is
+  $r$ times larger. The iteration count should therefore be close to that of a
+  single-level run at the fine resolution, not that of the present coarse solve. The
+  coarse--fine coupling adds no stiffness of its own, but it does couple the
+  long-wavelength coarse modes to the fine solve.
+\item \textbf{Preconditioners}, in order of effort: (P0) none, as now, with the row
+  scaling, to measure the baseline; (P1) point-block Jacobi with the $3\times3$ node
+  blocks of $\Am$, which are available from \code{nodeMM} and the stencil diagonal;
+  (P2) level-block additive Schwarz, with a few GMRES iterations of the existing
+  level operator as the block solve and flexible GMRES outside. This is not the
+  rejected iteration of level solves: the outer composite GMRES makes the result exact,
+  and the inner solves are cheap and inexact; (P3) composite multigrid, later.
+\end{itemize}
+\open{Q5 (preconditioner and tolerance).} Recommendation: start with P0 plus row scaling
+and the weighted norm. Measure the energy error against \code{EFieldTol} (it should
+scale linearly) and the iteration counts against the present solver, then decide on
+P1 or P2.
+
+%=====================================================================
+\section{What the composite solve replaces}\label{sec:replace}
+In the full-PIC (ECSIM) path:
+\begin{enumerate}
+\item The level loop in \code{update\_E\_impl} becomes one solve of \eqref{eq:Asys}.
+  \code{convert\_1d\_to\_3d} and \code{convert\_3d\_to\_1d} run over all levels, with
+  ownership by $\Nset$.
+\item The fine Dirichlet ghost $\mathbf{E}$ in \code{update\_E\_matvec}
+  (\code{fill\_fine\_lev\_bny\_from\_coarse} of \code{nodeEth[iLev-1]}) is replaced by $\Pm$
+  on the hanging nodes. The ghost nodes are no longer used.
+\item The ghost fill of \code{centerB} and \code{nodeB} for the Ampère curl in
+  \code{update\_E\_rhs} is replaced by the masked transpose \eqref{eq:ampcurl}.
+\item The cross-level deposits \code{jhc}, \code{nmmc}, \code{jhf} and \code{nmmf} in
+  \code{calc\_mass\_matrix\_amr} are replaced by own-level deposits folded with $\Pm^T$.
+  (The \code{sum\_two\_lev\_interface\_node} loops in \code{calc\_mass\_matrix} run only
+  when there is a single level, so they do nothing.)
+\item The coarse solve and the coarse Faraday update on the covered region are replaced
+  by $\Rm$ and \code{average\_down}, for output only. \code{project\_down\_E} becomes $\Rm$.
+\item \code{update\_B} advances only the leaf cells. Fine ghost \code{centerB} is
+  still needed for \code{average\_center\_to\_node}, because \code{nodeB} at the fine edge nodes
+  enters $\beta_p$ and the pusher. This does not affect the energy, since the
+  $\mathbf{B}_p$ used is arbitrary in \eqref{eq:dK}, but it must be the same $\mathbf{B}_p$
+  in the mass matrix and in the mover.
+\end{enumerate}
+\open{Q6 (nodal $\mathbf{B}$ at interface nodes).} Either use the volume-weighted average
+over the leaf cells around the node (composite, single-valued) or keep the present
+fine ghost interpolation. Both conserve energy. The composite average makes the
+coarse and fine particles on either side see the same $\mathbf{B}$ at the coincident
+nodes.
+
+\paragraph{The hybrid interface machinery.} \code{sync\_emf\_at\_interface},
+\code{fill\_ghost\_emf\_from\_coarse}, the Faraday-evolved first ghost layer and
+\code{relax\_covered\_B\_to\_fine} belong to the hybrid solver and are not touched. The
+composite construction is their ECSIM counterpart. The coincident nodes carry a single
+$\mathbf{E}$, which is what the synchronization of $\mathbf{E}$ provides. The hanging nodes
+interpolated along the coarse edges are $\Pm$, which is what the synchronization does
+on the fine side. The fine cells next to the interface are leaf cells and are advanced
+by Faraday's law with that $\mathbf{E}$, so no ghost layer is evolved. The covered cells
+are not advanced at all, so they cannot drift, and their restriction is diagnostic only.
+If the hybrid solver later adopts $\Pm$ and the leaf-only Faraday update, these four
+routines reduce to $\Pm$, nothing, nothing and \code{average\_down}.
+
+%=====================================================================
+\section{Divergence and charge}\label{sec:div}
+
+\subsection{$\nabla\cdot\mathbf{B}$}
+On a uniform grid the conserved divergence is the weak one, $\Gamma^T\Wb\BB$, where
+$\Gamma=(a_x,a_y,a_z)^T$ is the node-to-cell gradient; up to sign and volume this is
+\code{div\_center\_to\_node}. It is conserved because $\Gamma^T\Cm=0$: the symbol is
+$\bar{\hat a}\cdot(\hat a\times\cdot)$ with $\hat a=e^{i\phi}i\times$(real vector), so
+$\bar{\hat a}\times\hat a=0$. On the composite grid the candidate is $\Gamma_P=\Gamma_{\rm leaf}\Pm$
+(test functions continuous piecewise $Q_1$), and the question is whether $\Gamma_P^T\Wb\Cm=0$.
+
+\paragraph{2D: exact.} In 2D only $B_x=a_yE_z$ and $B_y=-a_xE_z$ enter. Per cell and unit length in $z$,
+$(\Delta V_c/\Delta z)(a_x\phi\,a_y\psi-a_y\phi\,a_x\psi)=\tfrac12[(\phi_{10}-\phi_{01})(\psi_{11}-\psi_{00})
+-(\phi_{11}-\phi_{00})(\psi_{10}-\psi_{01})]$. This is the shoelace form of the edge-trapezoid
+integral $\oint_{\partial c}\phi\,d\psi$, which holds as an identity in the corner values.
+Interior edges cancel. On a coarse edge split by a hanging node with the
+$\Pm$ values $\phi_m=\frac{\phi_a+\phi_b}2$, $\psi_m=\frac{\psi_a+\psi_b}2$, the two fine
+trapezoids sum to $\frac12(\phi_a+\phi_b)(\psi_b-\psi_a)$, which is the coarse one (the trapezoid
+rule is exact for $\int\phi\,d\psi$ with linear $\phi,\psi$; this holds for any $r$). Hence
+$\Gamma_P^T\Wb\Cm=0$ exactly in 2D. Numerically: $0$.
+
+\paragraph{3D: not exact.} In 3D the centre value of $a_x\phi$ averages the two $z$-layers
+of the cell, so the cell term is the 2D Jacobian of the $z$-averaged fields. Across a
+coarse face, the coarse cell has one $z$-midline and the two fine layers have two. A hand count with
+$\Pm$ shows that the bilinear edge terms then come with weights $(\frac{10}{16},\frac{6}{16})$ on the fine side
+and $(\frac{8}{16},\frac{8}{16})$ on the coarse side, and they do not cancel. In the toy
+3D check, $\max|\Gamma_P^T\Wb\Cm|=0.125$, nonzero at exactly the coarse interface nodes
+(26 of 26) and zero elsewhere. The left null space of $\Cm$ has dimension 311, against 241
+independent nodal test functions. So conserved linear functionals of $\mathbf{B}$ do exist, but
+whether a \emph{local} composite divergence among them exists is not known.
+\open{Q7 (3D $\nabla\cdot\mathbf{B}$ at the interface).} (a) Accept an interface source
+of $\nabla\cdot\mathbf{B}$ and rely on the existing cleaning (\code{correct\_B}, hyperbolic
+cleaning). These change $W_B$, so they must be off in the energy tests. (b) Look for a
+local functional in the left null space of $\Cm$, i.e.\ a modified weak divergence at the
+interface nodes. (c) Modify $\Cm$ at the interface so that $\Gamma_P^T\Wb\Cm=0$. Any
+modified $\Cm$ keeps the energy proof, as long as Ampère uses its transpose. The present
+scheme does not conserve $\nabla\cdot\mathbf{B}$ at the interface either, so (a) is no
+regression.
+
+\subsection{Gauss's law and charge}
+ECSIM is not charge conserving, which is why FLEKS has the div~$\mathbf{E}$ correction.
+The curl term is clean on one level: \code{div\_node\_to\_center}$\circ\Cm^T=0$ by the same
+symbol argument. So $\nabla\cdot\mathbf{E}$ changes only through $\nabla\cdot\bar{\mathbf J}$.
+On the composite grid the curl term of Ampère's law is $\Gm^{-1}\Cm^T\Wb\BB$, and
+$\Dm_{\rm leaf}\Pm\,\Gm^{-1}\Cm^T\Wb\ne0$ at the interface. In the toy check the maximum
+is $0.45$ (2D) and $0.23$ (3D), with the consistent and the lumped $\Gm$ alike. The
+residual sits in the cell layers on both sides of the interface (3D toy: all 56 fine and all
+56 coarse cells adjacent to it) and is zero elsewhere. So the interface is a source of spurious charge proportional to
+the curl of $\mathbf{B}$, even in vacuum.
+\open{Q8 (Gauss's law).} The div~$\mathbf{E}$ correction (\code{amr\_divE\_correction}) must
+use the composite divergence of $\Pm\mathbf{E}$ on leaf cells and the composite charge
+(leaf-cell deposit with the same CIC weights). The particle position correction breaks
+the energy identity, because it moves particles after $\Mm$ is formed, so it is off in the
+energy tests. Whether a Gauss-compatible $\Gm$ or $\Pm$ exists is open, and it is tied to Q7.
+
+%=====================================================================
+\section{Multiple levels and regridding}
+With proper nesting, each hanging node of level $\ell+1$ lies on a face of level $\ell$
+cells. If that face is itself on the $\ell/\ell-1$ interface, the $\ell$ values used
+are composite values, and $\Pm=\Pm_1\Pm_2\cdots$ composes. Nothing in the proof changes.
+\open{Q9 (nesting).} Does the FLEKS refinement guarantee a buffer of at least one level-$\ell$
+cell between the $\ell+1$ and $\ell-1$ boundaries? If it does not, the composed $\Pm$ at the
+places where they touch needs care.
+
+At a regrid the discrete space changes. $\EE$ must be projected onto the new composite
+space (hanging $=\Pm$, coincident nodes single-valued), which changes $W_E$ once per regrid.
+The energy tests use a static grid.
+
+%=====================================================================
+\section{Test plan}\label{sec:tests}
+All the tests use $\theta=0.5$, \code{ratioDivC2C 0}, \code{\#DIVE F}, no smoothing of
+$\mathbf{E}$ or $\mathbf{J}$, no upwind $\mathbf{E}$, \code{projectDownEmFields} off, a static
+grid, and energy from the log every step (\code{\#SAVELOG 1}). Every batch gets $z=0$ maps,
+not only tables.
+\begin{enumerate}[label=T\arabic*]
+\item \textbf{Algebra} (done): \code{CompositeECSIM\_check.py 2|3}. Energy to $10^{-16}$,
+  2D weak $\nabla\cdot\mathbf{B}$ exact, the 3D interface $\nabla\cdot\mathbf{B}$ and the
+  Gauss residuals as quoted. Rerun it after any change of $\Pm$ or $\Cm$.
+\item \textbf{Operator unit test} in FLEKS, before any physics. On a two-level grid,
+  compare the matrix-free $\Am$ against an assembled $\Am$ column by column on random
+  vectors. Check $\mathbf u^T(\Cm^T\Wb\Cm)\mathbf v=(\Cm\mathbf u)^T\Wb(\Cm\mathbf v)$, check that
+  $\Pm^T$ is the adjoint of $\Pm$, and check that $\EE^T\Gm\EE/8\pi$ equals
+  \code{calc\_E\_field\_energy}. Also check that the matvec on a single level is identical to
+  the present one when $\code{coefDiff}=0$.
+\item \textbf{Rest}: a uniform plasma at rest on the AMR grid with equal particle
+  weights on the two levels (\code{\#CONSTANTPPV}), to $t=1200$.
+  The expected energy error per step is \eqref{eq:tol}. Run \code{EFieldTol} $=10^{-6}$,
+  $10^{-8}$ and $10^{-10}$: the drift must scale linearly with the tolerance and must not
+  depend on the refinement. Compare with the uniform grid (exact) and with the
+  level-by-level solve, split into electrons and ions.
+\item \textbf{2D check}: a fake-2D rest run. The weak $\nabla\cdot\mathbf{B}$ at the
+  interface nodes should be at round-off. In 3D it should not be, and its size should be
+  reported.
+\item \textbf{Waves}: fast waves and drift waves crossing the refined box, AMR
+  against the uniform coarse and fine grids. Compare the phase and amplitude errors in
+  the box and the reflection at the interface with the present solver, and give maps.
+  Report the GMRES iterations per step against the present solver.
+\item \textbf{$\theta>\frac12$}, optional: the energy must decrease by exactly the right side
+  of \eqref{eq:energy}. (Keep in mind the known $P_e$ problems at $\theta=0.51$.)
+\end{enumerate}
+
+%=====================================================================
+\section{Implementation in FLEKS (23 November 2026)}\label{sec:impl}
+The solve is in \code{src/PicComposite.cpp} and is switched on with
+\code{\#FIELDSOLVER implicit1}. It differs from the recommendations above in two points.
+\begin{itemize}
+\item \textbf{Diagonal node volumes instead of $\Gm=\Pm^T\Wt\Pm$} (Q3). Following
+  Lapenta (2017, eqs.~6 and 17), every unknown node has a volume
+  $V_g=(\Pm^T\tilde{\mathbf w})_g$: one eighth of the volumes of the leaf cells around
+  the node, plus the volumes of the hanging nodes that are interpolated from it,
+  with the interpolation weights. The system is
+  \begin{equation}
+  \bigl[\mathsf I+\mathsf V^{-1}\bigl(\delta^2\Cm^T\Wb\Cm+4\pi\delta\,\Pm^T\widetilde\Mm\Pm\bigr)\bigr]\EE_\theta
+  =\EE^n+\delta\,\mathsf V^{-1}\bigl(\Cm^T\Wb\BB^n-4\pi\Pm^T\hat{\tilde\jj}\bigr),
+  \end{equation}
+  and the conserved electric energy is $\sum_gV_g|\mathbf E_g|^2/8\pi$ over the unknown
+  nodes. \code{calc\_E\_field\_energy} returns this sum when the composite solver is on.
+  It differs from the corner average over the leaf cells by
+  $\tilde w_h|\mathbf E_a-\mathbf E_b|^2/32\pi$ per hanging node $h$ on the edge $ab$.
+\item \textbf{The coarser level owns the nodes on the interface} (Q1). The unknowns
+  of level $\ell$ are the nodes that touch at least one leaf cell of level $\ell$ and,
+  for $\ell>0$, are not level edge nodes. All the fine edge nodes, coincident and
+  hanging, are then filled by one interpolation from the coarse level
+  (\code{composite\_prolong}), and \code{composite\_fold} is its transpose. Both use
+  the same weights on a copy of the coarse nodes with the fine box layout, so they are
+  transposes by construction.
+\end{itemize}
+Everything else is as in Sections~\ref{sec:P}--\ref{sec:matvec}: own-level deposits
+(\code{Pic::calc\_mass\_matrix} on every level, without the cross-level sums), the
+curl--curl term as \code{curl\_center\_to\_node} of the masked
+\code{curl\_node\_to\_center}, the right-hand side with the masked $\mathbf{B}$, and
+the unchanged Faraday update. The covered coarse nodes are injected from the fine level
+after the solve and the ghost nodes of the fine level are interpolated from the coarse
+level, both for output only. GMRES uses the unweighted norm over the unknowns (P0 of
+Section~\ref{sec:precond}). The solver needs periodic boundaries and
+\code{ratioDivC2C}~$=0$, and stops with an error message with \code{\#SMOOTHE},
+\code{\#SMOOTHJ}, \code{\#UPWINDE}, \code{\#COMOVING} or \code{\#BODY}. It also
+stops with \code{\#UPWINDB} with \code{typeUpwindB curl}, with a time dependent
+intrinsic magnetic field and with \code{\#EFIELDSOLVER} with \code{solverType amrex}.
+With the developer switch \code{doTestComposite} of the \code{Pic} class (set in the
+source), the symmetry of $\Pm^T\Cm_{\rm leaf}^T\Wb\Cm_{\rm leaf}\Pm$ is
+checked with random vectors, and the energy budget of the first steps is printed.
+The variant \code{implicit1} of the test \code{tests/amr\_equilibrium} checks that the
+total energy is conserved to a relative $10^{-6}$.
+
+%=====================================================================
+\section{Open questions (summary)}\label{sec:open}
+\begin{description}
+\item[Q1] Coincident interface nodes owned by the fine (recommended) or the coarse level.
+\item[Q2] Restriction $\Rm$ of the covered coarse $\mathbf{E}$: injection or full weighting (diagnostic only).
+\item[Q3] Consistent $\Gm=\Pm^T\Wt\Pm$ (recommended; it is what the diagnostic reports) or lumped.
+\item[Q4] Field BCs on refined levels that touch non-periodic boundaries.
+\item[Q5] Preconditioner (P0$\to$P1/P2), GMRES norm (volume weighted) and tolerance.
+\item[Q6] Nodal $\mathbf{B}$ at the interface for the pusher: composite average or ghost interpolation.
+\item[Q7] 3D $\nabla\cdot\mathbf{B}$ at the interface: accept and clean, or a local
+  composite divergence, or a modified $\Cm$.
+\item[Q8] Gauss's law at the interface and a composite div~$\mathbf{E}$ correction.
+\item[Q9] Proper nesting between levels $\ell+1$ and $\ell-1$.
+\item[Q10] Features outside the identity even on one level (\code{coefDiff}, upwind
+  $\mathbf{E}$, smoothing, co-moving frame, div~$\mathbf{E}$ correction): keep them excluded,
+  or make each energy consistent (e.g.\ smoothing as $\Sm\to\Sm\mathsf F$ in gather,
+  deposit and $\Mm$ together).
+\end{description}
+
+\end{document}

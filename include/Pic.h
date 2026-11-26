@@ -384,6 +384,23 @@ private:
   amrex::Vector<std::unique_ptr<amrex::AmrexLinearSolver> > amrexESolver;
   amrex::Vector<std::unique_ptr<amrex::AmrexDivESolver> > amrexDivESolver;
 
+  // Composite-grid ECSIM field solve for AMR (#FIELDSOLVER implicit1), see
+  // src/PicComposite.cpp.
+  bool useCompositeSolver = false;
+  // For development: check the symmetry of the composite operator in the
+  // first step and print the energy budget of the first steps.
+  bool doTestComposite = false;
+  bool isCompositeTested = false;
+  // Level index passed to the GMRES solver and update_E_matvec to select
+  // the composite matvec over all levels. Not an AMR level.
+  static constexpr int iLevComposite_ = -1;
+  int nLevComposite_ = 0;
+  int nCompUnknown = 0;                    // unknown nodes on this processor
+  amrex::Vector<amrex::MultiFab> compLeaf; // 1 in leaf cells, else 0
+  amrex::Vector<amrex::iMultiFab> compUnknown; // 1 on unknown nodes, else 0
+  amrex::Vector<amrex::MultiFab> compVol;      // node volume V_g
+  amrex::Vector<amrex::MultiFab> compX, compT, compM, compCurl; // scratch
+
   // Persistent scratch MultiFabs for implicit field solver (full-PIC)
   amrex::Vector<amrex::MultiFab> solverVecMF;
   amrex::Vector<amrex::MultiFab> solverMatvecMF;
@@ -493,8 +510,9 @@ private:
   amrex::Real reSamplingHighLimit = 1.5;
   amrex::Real maxWeightRatio = 1.0;
 
-  char doOverRideSplitting = 'F';
-  // F: no override, S: split in space, V: split in velocity
+  // #SPLITTING: F: default (neutrals in velocity, charged in space),
+  // S: split in space, V: split in velocity
+  char splitType = 'F';
 
   bool solveFieldInCoMov = false;
   int nSmoothBackGroundU = 0;
@@ -979,6 +997,7 @@ public:
     doCompact = doCompactIn;
   }
   void set_standalone(bool isStandaloneIn) { isStandalone = isStandaloneIn; }
+  void set_composite_solver(bool useIn) { useCompositeSolver = useIn; }
   bool is_implicit_pic() const {
     return fieldSolverMode == PicSolverMode::Implicit;
   }
@@ -1161,6 +1180,25 @@ public:
   //-------------Electric field solver begin-------------
   void update_E();
   void update_E_impl();
+  void update_E_composite();
+  void composite_setup();
+  void composite_prolong(amrex::Vector<amrex::MultiFab> &mf, int nComp);
+  void composite_fold(amrex::Vector<amrex::MultiFab> &mf, int nComp);
+  void composite_scatter(const double *const p,
+                         amrex::Vector<amrex::MultiFab> &mf);
+  void composite_gather(const amrex::Vector<amrex::MultiFab> &mf,
+                        double *const p);
+  void composite_curl_transpose(amrex::MultiFab &center, amrex::MultiFab &out,
+                                int iLev);
+  void composite_matvec(const double *vecIn, double *vecOut);
+  void composite_rhs(double *rhs);
+  void composite_fill_E(const double *const p,
+                        amrex::Vector<amrex::MultiFab> &mf);
+  void composite_self_test();
+  amrex::Real calc_E_field_energy_composite();
+  bool use_composite_solver() const {
+    return useCompositeSolver && finestLevel() > 0;
+  }
   void update_E_expl();
   void solve_E_gmres(int iLev);
   void solve_E_gmres_amrex(int iLev);

@@ -105,6 +105,11 @@ void Pic::update_E_impl() {
   if (hasAbsorbBC_ && !isAbsorbCflWarned_)
     warn_absorb_cfl();
 
+  if (use_composite_solver()) {
+    update_E_composite();
+    return;
+  }
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (fsolver.solverBackend == ESolverBackend::AmrexGMRES) {
       solve_E_gmres_amrex(iLev);
@@ -366,6 +371,14 @@ void Pic::solve_E_newton_krylov(int iLev) {
 //==========================================================
 void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
                           const bool useZeroBC) {
+  // iLevComposite_ (-1) is not an AMR level: it is passed by
+  // update_E_composite to get the matvec of the single solve over all levels
+  // (#FIELDSOLVER implicit1).
+  if (iLev == iLevComposite_) {
+    composite_matvec(vecIn, vecOut);
+    return;
+  }
+
   if (solverVecMF[iLev].empty()) {
     distribute_FabArray(solverVecMF[iLev], node_box_array(iLev),
                         DistributionMap(iLev), 3, get_n_ghost());
@@ -2043,6 +2056,9 @@ void Pic::project_down_E() {
 
 //==========================================================
 Real Pic::calc_E_field_energy() {
+  if (use_composite_solver())
+    return calc_E_field_energy_composite();
+
   const bool hasActiveE0 = !useHybridPIC && has_active_inductive_E0();
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {

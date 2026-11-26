@@ -1601,11 +1601,11 @@ void Pic::re_sampling() {
         pInfo.doPreSplitting || (pInfo.isPPVconstant && !is_fake_2d());
     bool splitInVelocity = false;
     for (int i = 0; i < nSpecies; ++i) {
-      if (doOverRideSplitting == 'F') {
+      if (splitType == 'F') {
         splitInVelocity = parts[i]->is_neutral();
-      } else if (doOverRideSplitting == 'V') {
+      } else if (splitType == 'V') {
         splitInVelocity = true;
-      } else if (doOverRideSplitting == 'S') {
+      } else if (splitType == 'S') {
         splitInVelocity = false;
       }
       if (maxWeightRatio > 1) {
@@ -1965,6 +1965,10 @@ void Pic::calc_mass_matrix() {
                                    nDim);
     }
   }
+
+  // The composite solver folds the level edge nodes itself.
+  if (use_composite_solver())
+    return;
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
     sum_two_lev_interface_node(jHat[iLev], jHat[iLev + 1], 0,
@@ -2522,7 +2526,8 @@ void Pic::update(bool doReportIn) {
       }
     }
 #endif
-    if (finestLevel() == 0) {
+    if (finestLevel() == 0 || use_composite_solver()) {
+      // Composite solver: every particle deposits on its own level only.
       calc_mass_matrix();
     } else {
       calc_mass_matrix_amr();
@@ -2543,7 +2548,7 @@ void Pic::update(bool doReportIn) {
     advance_explicit_full_pic();
   } else if (solveEM) {
     advance_particles_and_sources(0);
-    if (!useCurlUpwindB && projectDownEmFields) {
+    if (!useCurlUpwindB && projectDownEmFields && !use_composite_solver()) {
       project_down_E();
     }
     update_B();
