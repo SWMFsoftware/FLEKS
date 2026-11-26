@@ -518,12 +518,12 @@ void Pic::update_E_composite() {
               for (int jj = 0; jj <= 1; jj++)
                 for (int ii = 0; ii <= 1; ii++)
                   for (int iVar = 0; iVar < 3; iVar++) {
-                    ep[iVar] += coef[ii][jj][kk] * eArr(loIdx[ix_] + ii,
-                                                        loIdx[iy_] + jj,
-                                                        kLo + kk, iVar);
-                    bp[iVar] += coef[ii][jj][kk] * bArr(loIdx[ix_] + ii,
-                                                        loIdx[iy_] + jj,
-                                                        kLo + kk, iVar);
+                    ep[iVar] +=
+                        coef[ii][jj][kk] *
+                        eArr(loIdx[ix_] + ii, loIdx[iy_] + jj, kLo + kk, iVar);
+                    bp[iVar] +=
+                        coef[ii][jj][kk] *
+                        bArr(loIdx[ix_] + ii, loIdx[iy_] + jj, kLo + kk, iVar);
                   }
             const Real v[3] = { p.rdata(PicParticles::iup_),
                                 p.rdata(PicParticles::iup_ + 1),
