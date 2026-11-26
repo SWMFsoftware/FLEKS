@@ -40,6 +40,11 @@ AMREX_FORCE_INLINE void coarse_parent(int i, int r, int& ic, Real& w1) {
   ic = amrex::coarsen(i, r);
   w1 = static_cast<Real>(i - ic * r) / r;
 }
+
+// The cells around the node (i, j, k) are (i-1..i, j-1..j, k+kLoCell..k):
+// 8 cells in 3D, and 4 cells with a 2D AMReX library, where k is always 0.
+constexpr int kLoCell = nDim > 2 ? -1 : 0;
+constexpr int nCellPerNode = nDim > 2 ? 8 : 4;
 } // namespace
 
 //==========================================================
@@ -67,7 +72,7 @@ void Pic::composite_prolong(Vector<MultiFab>& mf, int nComp) {
         Real wx, wy, wz;
         coarse_parent(i, ratio[ix_], ic, wx);
         coarse_parent(j, ratio[iy_], jc, wy);
-        coarse_parent(k, ratio[iz_], kc, wz);
+        coarse_parent(k, nDim > 2 ? ratio[iz_] : 1, kc, wz);
         for (int iVar = 0; iVar < nComp; iVar++) {
           Real val = 0;
           for (int dk = 0; dk <= 1; dk++) {
@@ -119,7 +124,7 @@ void Pic::composite_fold(Vector<MultiFab>& mf, int nComp) {
         Real wx, wy, wz;
         coarse_parent(i, ratio[ix_], ic, wx);
         coarse_parent(j, ratio[iy_], jc, wy);
-        coarse_parent(k, ratio[iz_], kc, wz);
+        coarse_parent(k, nDim > 2 ? ratio[iz_] : 1, kc, wz);
         for (int iVar = 0; iVar < nComp; iVar++) {
           const Real val = fine(i, j, k, iVar);
           for (int dk = 0; dk <= 1; dk++) {
@@ -229,11 +234,11 @@ void Pic::composite_setup() {
       const auto& status = node_status(iLev)[mfi].array();
       amrex::Loop(box, [&](int i, int j, int k) {
         Real sum = 0;
-        for (int dk = -1; dk <= 0; dk++)
+        for (int dk = kLoCell; dk <= 0; dk++)
           for (int dj = -1; dj <= 0; dj++)
             for (int di = -1; di <= 0; di++)
               sum += leaf(i + di, j + dj, k + dk);
-        volArr(i, j, k) = 0.125 * sum * vol;
+        volArr(i, j, k) = sum * vol / nCellPerNode;
         const bool isEdge = iLev > 0 && bit::is_lev_edge(status(i, j, k));
         unk(i, j, k) =
             (bit::is_owner(status(i, j, k)) && sum > 0 && !isEdge) ? 1 : 0;
@@ -508,16 +513,17 @@ void Pic::update_E_composite() {
                                     Geom(iLev).InvCellSize(), loIdx, dShift,
                                     coef);
             Real ep[3] = { 0, 0, 0 }, bp[3] = { 0, 0, 0 };
-            for (int kk = 0; kk <= 1; kk++)
+            const int kLo = nDim > 2 ? loIdx[nDim - 1] : 0;
+            for (int kk = 0; kk <= (nDim > 2 ? 1 : 0); kk++)
               for (int jj = 0; jj <= 1; jj++)
                 for (int ii = 0; ii <= 1; ii++)
                   for (int iVar = 0; iVar < 3; iVar++) {
                     ep[iVar] += coef[ii][jj][kk] * eArr(loIdx[ix_] + ii,
                                                         loIdx[iy_] + jj,
-                                                        loIdx[iz_] + kk, iVar);
+                                                        kLo + kk, iVar);
                     bp[iVar] += coef[ii][jj][kk] * bArr(loIdx[ix_] + ii,
                                                         loIdx[iy_] + jj,
-                                                        loIdx[iz_] + kk, iVar);
+                                                        kLo + kk, iVar);
                   }
             const Real v[3] = { p.rdata(PicParticles::iup_),
                                 p.rdata(PicParticles::iup_ + 1),
@@ -560,7 +566,7 @@ void Pic::update_E_composite() {
         const Array4<Real const>& leaf = compLeaf[iLev][mfi].array();
         amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
           Real sum = 0;
-          for (int dk = -1; dk <= 0; dk++)
+          for (int dk = kLoCell; dk <= 0; dk++)
             for (int dj = -1; dj <= 0; dj++)
               for (int di = -1; di <= 0; di++)
                 sum += leaf(i + di, j + dj, k + dk);
