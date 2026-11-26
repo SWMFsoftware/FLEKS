@@ -524,8 +524,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("reSamplingHighLimit", reSamplingHighLimit);
       param.read_var("maxWeightRatio", maxWeightRatio);
     }
-  } else if (command == "#OVERRIDESPLITTING") {
-    param.read_var("doOverRideSplitting", doOverRideSplitting);
+  } else if (command == "#SPLITTING" || command == "#OVERRIDESPLITTING") {
+    // #OVERRIDESPLITTING is the old name of #SPLITTING
+    param.read_var("splitType", splitType);
   } else if (command == "#FASTMERGE") {
     param.read_var("fastMerge", pInfo.fastMerge);
     if (pInfo.fastMerge) {

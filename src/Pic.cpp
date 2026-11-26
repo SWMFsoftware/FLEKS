@@ -1588,11 +1588,11 @@ void Pic::re_sampling() {
         pInfo.doPreSplitting || (pInfo.isPPVconstant && !is_fake_2d());
     bool splitInVelocity = false;
     for (int i = 0; i < nSpecies; ++i) {
-      if (doOverRideSplitting == 'F') {
+      if (splitType == 'F') {
         splitInVelocity = parts[i]->is_neutral();
-      } else if (doOverRideSplitting == 'V') {
+      } else if (splitType == 'V') {
         splitInVelocity = true;
-      } else if (doOverRideSplitting == 'S') {
+      } else if (splitType == 'S') {
         splitInVelocity = false;
       }
       if (maxWeightRatio > 1) {

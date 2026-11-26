@@ -1000,15 +1000,15 @@ recommended to set maxWeightRatio to 4-8 for OH-PT simulations.
 
 </command>
 
-<command name="OVERRIDESPLITTING" alias="OVERRIDESPLITTING_FLEKS0,OVERRIDESPLITTING_FLEKS1,OVERRIDESPLITTING_FLEKS2" multiple="T">
-  <parameter name="doOverRideSplitting" type="string" input="select">
-    <option value="F" default="T" name="No override"/>
+<command name="SPLITTING" alias="SPLITTING_FLEKS0,SPLITTING_FLEKS1,SPLITTING_FLEKS2,OVERRIDESPLITTING,OVERRIDESPLITTING_FLEKS0,OVERRIDESPLITTING_FLEKS1,OVERRIDESPLITTING_FLEKS2" multiple="T">
+  <parameter name="splitType" type="string" input="select">
+    <option value="F" default="T" name="Default"/>
     <option value="V" name="Split in velocity"/>
     <option value="S" name="Split in space"/>
   </parameter>
 
-#OVERRIDESPLITTING
-F                   doOverRideSplitting
+#SPLITTING
+F                   splitType
 
 Controls whether particle splitting is performed in velocity or space.
 The default F applies the standard behavior: neutral particles are split in
