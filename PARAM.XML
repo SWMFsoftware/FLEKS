@@ -2401,7 +2401,7 @@ because it is shielded by the surface layer:
               explicit full-PIC, and semi-implicit full-PIC):
               extracts field-aligned currents from curl(B1) on a spherical
               shell rFac, maps them along dipole field lines to the ionosphere
-              rIono, solves div_h(Sigma . grad_h Phi) = J_r^{outward}, and
+              rIono, solves div_h(Sigma . grad_h Phi) = Jr (outward), and
               maps E = -grad(Phi) back onto the body surface layer via the
               exact dipole Jacobian while keeping E = 0 in the body interior.
               Configure with #IONOSPHERE.
