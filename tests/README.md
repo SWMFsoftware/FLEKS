@@ -32,6 +32,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Oblique shock         | `shock/`              | Oblique magnetized shock: 1D full PIC and hybrid; 2D hybrid with hyper-resistivity or upwind dissipation | [README](shock/README.md) |
 | Inner body            | `body/`               | Absorbing spherical inner boundary (`#BODY`): particle absorption, empty interior, wake | [README](body/README.md) |
 | Intrinsic field       | `intrinsic_field/`    | Static planetary magnetic field (`#DIPOLE`, `#CRUSTALFIELD`): analytic dipole, spherical harmonic crustal field | [README](intrinsic_field/README.md) |
+| MI coupling           | `mi/`                 | 3D Hybrid-PIC self-contained magnetosphere-ionosphere coupling (`-mi`): FAC extraction, spherical potential solve, surface E mapping | [README](mi/README.md) |
 | Coil fields           | `coil_field/`         | External coil & toroidal guide fields (`#COIL`, `#TOROIDALFIELD`, `#COILWAVEFORM`), inductive `E0 = -dA0/dt`, and `tools/extract_probes.py` | [README](coil_field/README.md) |
 | Restart               | `restart/`            | Standalone checkpoint/restart continuity across semi-implicit, explicit, and hybrid PIC solvers | [README](restart/README.md) |
 | Particle tracker      | `particle_tracker/`   | Pure test-particle tracing (`PIC F`): relativistic Boris vs Vay vs Higuera-Cary crossed E x B drift, runtime `TPOUTPUT`, 2-level AMR leaf seeding, reflecting walls, and dipole energy conservation | [README](particle_tracker/README.md) |
@@ -222,12 +223,14 @@ python3 tests/validate_performance.py --exe bin/FLEKS.exe \
 
 The script benchmarks the full-PIC beam test (`performance/PARAM.in`), the
 hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), the particle tracker
-test (`performance/PARAM.in.pt`) and the 2D reconnection test
-(`performance/PARAM.in.reconnection2d`) on 1 and 2 processes, and writes the
-results to `tests/performance_summary.md`. When the candidate binary is built
-with `./Config.pl -openmp`, it also benchmarks `1 MPI x 2 OpenMP` threads
-(`--omp-threads 2`, disabled with `--omp-threads 1` or automatically skipped
-for non-OpenMP builds).
+test (`performance/PARAM.in.pt`), the 2D reconnection test
+(`performance/PARAM.in.reconnection2d`), and—when built with `./Config.pl -mi`—the
+3D hybrid MI coupling test (`performance/PARAM.in.mi`) on 1 and 2 processes,
+and writes the results to `tests/performance_summary.md`. When the candidate
+binary is built with `./Config.pl -openmp`, it also benchmarks `1 MPI x 2 OpenMP`
+threads (`--omp-threads 2`, disabled with `--omp-threads 1` or automatically
+skipped for non-OpenMP builds). Non-`-mi` binaries automatically skip `--suite mi`
+when running `--suite all`.
 
 Absolute timings are not comparable across GitHub runners, whose hardware
 differs by up to a factor of two between jobs. The CI therefore builds the

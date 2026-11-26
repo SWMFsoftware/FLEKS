@@ -2418,7 +2418,12 @@ because it is shielded by the surface layer:
   <parameter name="sigmaHall" type="real" default="0.0"/>
   <parameter name="sigmaParallel" type="real" default="1000.0"/>
   <parameter name="f107" type="real" default="150.0"/>
+  <parameter name="auroralFacScale" type="real" default="1.0e-6"/>
+  <parameter name="auroralSigmaPMax" type="real" default="15.0"/>
+  <parameter name="auroralHallRatio" type="real" default="1.5"/>
   <parameter name="lowLatBC" type="string" default="dirichlet"/>
+  <parameter name="solverTol" type="real" default="1.0e-7"/>
+  <parameter name="solverMaxIter" type="integer" default="500"/>
   <parameter name="dnCouple" type="integer" default="1"/>
   <parameter name="dtCoupleSI" type="real" default="0.0"/>
   <parameter name="nSmoothFac" type="integer" default="2"/>

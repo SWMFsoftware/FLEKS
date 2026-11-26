@@ -49,7 +49,8 @@ jobs:
         uses: ./.github/actions/build-test-standalone
         with:
           amrex-dim: 3d
-          cache-key: fleks-standalone-v4
+          cache-key: fleks-standalone-v5
+          enable-mi: 'true'
           jobs: '2'
           parallel-summary: summary_parallel.md
           summary-title: Standalone FLEKS Test Results
@@ -156,7 +157,7 @@ jobs:
         working-directory: SWMF/PC/FLEKS
         shell: bash
         run: |
-          ./Config.pl -amrex3d -openmp -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
+          ./Config.pl -amrex3d -openmp -mi -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
 
           AMREX_CONFIG="../../util/AMREX/InstallDir/include/AMReX_Config.H"
           if [ ! -f "$AMREX_CONFIG" ] || ! grep -qE "^#define\s+AMREX_USE_OMP\s+1" "$AMREX_CONFIG"; then
@@ -179,9 +180,9 @@ jobs:
           path: |
             SWMF/PC/FLEKS/bin/FLEKS.exe
             SWMF/bin/PostIDL.exe
-          key: ${{ runner.os }}-fleks-standalone-omp-v2-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
+          key: ${{ runner.os }}-fleks-standalone-omp-v3-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
           restore-keys: |
-            ${{ runner.os }}-fleks-standalone-omp-v2-
+            ${{ runner.os }}-fleks-standalone-omp-v3-
 
       - name: Build Standalone FLEKS (OpenMP)
         if: steps.cache-standalone-omp.outputs.cache-hit != 'true'
@@ -209,11 +210,11 @@ jobs:
           # buckets, AMR particle split/merge, dynamic regridding, Full-PIC GMRES
           # + div(E) + inflow, div(B) projection, 3D Hybrid Ohm's law, exosphere
           # source RNG, TestParticles, and explicit wall tallies using all 4 cores.
-          OMP_1X4_TESTS="constantppv,wave_amr_3d.hybrid,amr_dive_inflow.full,amr_divb.full,reconnection_amr.implicit,reconnection_amr.forcefree_hybrid,dynamic_amr,exosphere.sourceppc,exosphere.shadow,langmuir.explicit_wall,coil_field.waveform_hybrid"
+          OMP_1X4_TESTS="constantppv,wave_amr_3d.hybrid,amr_dive_inflow.full,amr_divb.full,reconnection_amr.implicit,reconnection_amr.forcefree_hybrid,dynamic_amr,exosphere.sourceppc,exosphere.shadow,langmuir.explicit_wall,coil_field.waveform_hybrid,mi"
 
           # Mixed MPI + OpenMP smoke check on multi-box AMR decks to verify
           # mpirun --bind-to none, FabArray ghost exchange, and MPI+OMP reductions.
-          OMP_2X2_TESTS="reconnection_amr.implicit,wave_amr_3d.hybrid,dynamic_amr"
+          OMP_2X2_TESTS="reconnection_amr.implicit,wave_amr_3d.hybrid,dynamic_amr,mi"
 
           STATUS=0
           OMP_PROC_BIND=close OMP_PLACES=cores \

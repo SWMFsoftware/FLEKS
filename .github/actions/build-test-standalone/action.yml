@@ -38,6 +38,10 @@ inputs:
     description: "Whether to post the results as a PR comment ('true'/'false')."
     required: true
     default: 'false'
+  enable-mi:
+    description: "Whether to enable MI coupling (-mi) in Config.pl ('true'/'false')."
+    required: false
+    default: 'false'
 runs:
   using: 'composite'
   steps:
@@ -47,7 +51,11 @@ runs:
       run: |
         # Link the AMReX library, enable AMR (nLevMax>=2), and build a fully
         # optimized release executable (-O4 -nodebug) for running the tests.
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
+        MI_FLAG=""
+        if [ "${{ inputs.enable-mi }}" = "true" ]; then
+          MI_FLAG="-mi"
+        fi
+        ./Config.pl -amrex${{ inputs.amrex-dim }} $MI_FLAG -lev=2 -u=Exo -O4 -nodebug -simd=x86-64-v3
 
         # Verify that the AMReX library linked against is indeed an optimized
         # release build (AMREX_DEBUG must not be defined).
