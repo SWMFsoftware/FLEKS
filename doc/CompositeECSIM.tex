@@ -680,8 +680,8 @@ With the developer switch \code{doTestComposite} of the \code{Pic} class (set in
 source), the symmetry of $\Pm^T\Cm_{\rm leaf}^T\Wb\Cm_{\rm leaf}\Pm$ is
 checked with random vectors, and the energy budget of the first steps is printed.
 
-\paragraph{Non-periodic boundaries (26 November 2026).} They are treated on the base
-level exactly as in the level-by-level solver, by reusing its boundary routines
+\paragraph{Non-periodic boundaries (26 November 2026).} They are treated
+exactly as in the level-by-level solver, by reusing its boundary routines
 (this answers Q4 with the first option: a refined level may not touch a non-periodic
 boundary, and the code stops if it does).
 \begin{itemize}
@@ -706,6 +706,61 @@ testing, it reproduces the level solver to round-off for \code{outflow},
 the ghost nodes after \code{apply\_field\_bc}; as it is, the level solver uses the
 old value of a boundary node in the ghost layer of the neighbouring box, a relative
 difference of $10^{-6}$ in the test \code{bc\_wave}.
+
+\paragraph{The other options of the level solver (26 November 2026).}
+\code{\#FIELDSOLVER implicit1} now always uses the single solve, also on a uniform
+grid, where it reproduces the level solver to round-off (to $10^{-9}$ with the
+Newton--Krylov step of the nonlinear limiter of \code{\#UPWINDE}, the noise of its
+finite difference). The options are added as follows.
+\begin{itemize}
+\item \code{ratioDivC2C} $=c>0$: the level solver uses
+  $-\nabla^2+\nabla[(1-c)D_{\rm n2c}+c\,D_{\rm c2c}]$ for the curl curl. Here the
+  curl curl is $\Cm^T\Wb\Cm$, so $c\,\nabla(D_{\rm c2c}-D_{\rm n2c})\EE$ of the leaf
+  cells is added, weighted with the cell volume and folded like the other terms.
+  The wider stencil uses the covered coarse nodes (injected from the fine level)
+  and the ghost nodes of the fine levels (interpolated from the coarse level).
+\item \code{\#UPWINDE}: the dissipation is added on every unknown node with the
+  stencil of its own level, after the division by $V_g$.
+\item \code{\#COMOVING} and the inductive field of a time dependent intrinsic
+  magnetic field: $\pm V\,\Mm\EE_{\rm bg}$ is added to the right-hand side before
+  the fold, like $\Mm\EE$ in the operator.
+\item \code{\#SMOOTHJ}: the current is folded and divided by $V_g$ first, completed
+  on the edge, covered and ghost nodes, and then smoothed level by level. The
+  nodes inside a body keep the deposited values.
+\item \code{\#SMOOTHE}: as in \code{update\_E\_impl}, the change of $\EE$ is
+  smoothed, then $\EE_\theta$ and $\EE^{n+1}$ after the boundary conditions; the
+  fine edge nodes are interpolated from the coarse nodes again afterwards.
+\item \code{\#BODY}: the nodes of a line-tied body and the interior nodes of a
+  conducting body are not unknowns; for a conducting body the rows and the
+  right-hand side are projected on the radial direction on the surface.
+\item \code{\#UPWINDB} with \code{typeUpwindB curl}: only the boundary filling of
+  $\BB$ in the right-hand side differs; the update of $\BB$ is common.
+\end{itemize}
+None of the dissipative options conserves the energy, with either solver. Verified on
+uniform grids against the level solver (20 steps, tolerance $10^{-11}$): all options
+together on a periodic grid $10^{-15}$; outflow, conducting and fixed boundaries with
+\code{ratioDivC2C} $=0.1$, \code{\#SMOOTHJ} and \code{\#UPWINDE} $10^{-15}$; line-tied,
+conducting, insulating and reflecting bodies in 2D $10^{-14}$ with the linear limiter.
+Two differences are not errors of the single solve: (i) \code{\#SMOOTHE} with
+conducting walls and time dependent \code{wave} faces differ by $10^{-3}$ and
+$10^{-7}$ unless the level solver refreshes the ghost nodes after
+\code{apply\_field\_bc} in \code{update\_E\_matvec}; with that one line added to the
+level solver the agreement is $10^{-15}$. (ii) For an intrinsic field that is not
+periodic in a periodic domain the electric energy differs by $10^{-5}$, because the
+node based sum takes the inductive field on one of the two periodic images of a face
+node and the cell based sum on both; the solves are identical.
+
+A refined level that touches a non-periodic boundary is still not allowed: the
+boundary conditions are applied on all levels in the code, but the case could not be
+tested, because the initial magnetic field is not a number there with any field
+solver (also in the code before these changes, true 2D library, conducting or outflow
+boundary). \code{\#EFIELDSOLVER} with \code{solverType amrex} and GPUs are not
+supported either.
+
+Cost on a uniform grid ($48^3$ cells, 8 particles per cell, 4 processes, 20 steps,
+tolerance $10^{-11}$): the number of matrix-vector products is the same as with
+\code{implicit}; the electric field solve takes 2\% more time without and 5\% more
+with all the options above (1\% and 3\% of the run time).
 
 The variant \code{implicit1} of the test \code{tests/amr\_equilibrium} checks that the
 total energy is conserved to a relative $10^{-6}$.

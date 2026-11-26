@@ -392,14 +392,18 @@ private:
   // the composite matvec over all levels. Not an AMR level.
   static constexpr int iLevComposite_ = -1;
   int nLevComposite_ = 0;
-  int nCompUnknown = 0;                    // unknown nodes on this processor
+  int nCompUnknown = 0; // unknown nodes on this processor
   // Non-periodic boundaries: rows of the base level fixed by the boundary
   // conditions (see composite_setup) and a copy of the input of the matvec.
   bool isCompositeBounded = false;
-  amrex::iMultiFab compFixed;
+  amrex::Vector<amrex::iMultiFab> compFixed;
   amrex::Vector<amrex::MultiFab> compVolE; // node volumes inside the domain
-  amrex::MultiFab compIn;
-  amrex::Vector<amrex::MultiFab> compLeaf; // 1 in leaf cells, else 0
+  amrex::Vector<amrex::MultiFab> compJ;    // smoothed current of #SMOOTHJ
+  amrex::Vector<amrex::MultiFab> compIn;
+  // Boundary condition modes of composite_fill_ghost.
+  static constexpr int bcNone_ = 0, bcFinal_ = 1, bcMatvec_ = 2,
+                       bcHomogeneous_ = 3;
+  amrex::Vector<amrex::MultiFab> compLeaf;     // 1 in leaf cells, else 0
   amrex::Vector<amrex::iMultiFab> compUnknown; // 1 on unknown nodes, else 0
   amrex::Vector<amrex::MultiFab> compVol;      // node volume V_g
   amrex::Vector<amrex::MultiFab> compX, compT, compM, compCurl; // scratch
@@ -1113,19 +1117,23 @@ public:
                         const bool useZeroBC = true);
   void composite_set_fixed_rows(amrex::MultiFab &out,
                                 const amrex::MultiFab &dirichlet,
-                                const amrex::MultiFab &wall);
+                                const amrex::MultiFab &wall, const int iLev);
   void composite_rhs(double *rhs);
   void composite_fill_E(const double *const p,
                         amrex::Vector<amrex::MultiFab> &mf);
+  void composite_fill_ghost(amrex::Vector<amrex::MultiFab> &mf,
+                            const int bcMode);
+  void composite_smooth_J();
   void composite_self_test();
   amrex::Real calc_E_field_energy_composite();
-  bool use_composite_solver() const {
-    return useCompositeSolver && finestLevel() > 0;
-  }
+  bool use_composite_solver() const { return useCompositeSolver; }
   void update_E_expl();
   void solve_E_gmres(int iLev);
   void solve_E_gmres_amrex(int iLev);
   void solve_E_newton_krylov(int iLev);
+  void add_upwind_E_matvec(const amrex::MultiFab &vecMF,
+                           amrex::MultiFab &matvecMF, int iLev);
+  void blend_div_E_c2c(const amrex::MultiFab &vecMF, int iLev);
   void update_E_rhs(amrex::Real *rhos, int iLev);
   void update_E_rhs(amrex::MultiFab &rhsMF, int iLev);
   void update_E_matvec(const amrex::Real *vecIn, amrex::Real *vecOut, int iLev,
