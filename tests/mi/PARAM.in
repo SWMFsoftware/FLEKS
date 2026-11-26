@@ -1,0 +1,178 @@
+#DESCRIPTION
+Fast 3D Hybrid-PIC Magnetosphere-Ionosphere (MI) coupling test.
+
+Verifies finite ionosphere diagnostics, north/south CPCP symmetry under a
+symmetric solar-wind / southward-IMF dipole configuration, non-zero FACs, and
+auroral conductance enhancement.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#PLANETRADIUS
+6.371e6                 radius [m]
+
+#NORMALIZATION
+6.371e6                 lNormSI [m]
+1.0e6                   uNormSI [m/s]
+
+#GEOMETRY
+-18.0                   xMin [R_E]
+ 14.0                   xMax [R_E]
+-14.0                   yMin [R_E]
+ 14.0                   yMax [R_E]
+-14.0                   zMin [R_E]
+ 14.0                   zMax [R_E]
+
+#NCELL
+16                      nCellX
+16                      nCellY
+16                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+F                       isPeriodicY
+F                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+outflow                 xLo
+inflow                  xHi
+outflow                 yLo
+outflow                 yHi
+outflow                 zLo
+outflow                 zHi
+
+#PARTICLEBOXBOUNDARY
+outflow                 xLo
+inflow                  xHi
+outflow                 yLo
+outflow                 yHi
+outflow                 zLo
+outflow                 zHi
+
+#FIELDSOLVER
+hybrid                  fieldSolver
+
+#FIELDINTEGRATOR
+ssprk3                  fieldIntegrator
+
+#HALLTERM
+F                       useHallTerm
+
+#AUTOSUBCYCLE
+T                       isAutoSubcycle
+20                      nBSubcycleMax
+
+#MINIMUMDENSITY
+0.2                     rhoMinOhm
+
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+2                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+#HYPERRESISTIVITY
+0.0                     etaHyperSI
+grid                    etaHyperMode
+0.02                    etaHyperCh
+
+#PLASMA
+1                       nS
+1.0                     mass
+1.0                     charge
+
+#ELECTRONTEMPERATURE
+10.0                    electronTemperature [eV]
+1.6667                  electronGamma
+5.0                     electronDensity0 [/cc]
+
+#INFLOW
+5.0                     rho [/cc]
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.5e5                   T [K]
+
+#UNIFORMSTATE
+5.0                     rho [/cc]
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1.5e5                   T [K]
+0.0                     bx [T]
+0.0                     by [T]
+-5.0e-9                 bz [T]
+0.0                     ex [V/m]
+2.0e-3                  ey [V/m]
+0.0                     ez [V/m]
+
+#DIPOLE
+-2700.0                 strength [nT] at rRef
+0.0                     theta [deg]
+0.0                     phi [deg]
+6.371e6                 rRef [m]
+
+#BODY
+sphere                  type
+3.0                     radius [code units]
+0.0                     center x
+0.0                     center y
+0.0                     center z
+
+#BODYBOUNDARY
+absorb                  particleBoundary
+ionosphere              fieldBoundary
+
+#IONOSPHERE
+46                      nThetaHem
+91                      nPhi
+1.017                   rIonoRatio
+4.5                     rFac
+25.0                    latBoundaryDeg
+auroral                 conductanceModel
+3.0                     sigmaPedersen
+3.0                     sigmaHall
+1000.0                  sigmaParallel
+150.0                   f107
+1.0e-7                  auroralFacScale
+12.0                    auroralSigmaPMax
+1.5                     auroralHallRatio
+dirichlet               lowLatBC
+1.0e-6                  solverTol
+500                     solverMaxIter
+1                       dnCouple
+0.0                     dtCoupleSI
+3                       nSmoothFac
+0.5                     relaxAlpha
+F                       useCorotation
+7.2921159e-5            omegaPlanetSI
+10                      dnOutput
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt
+
+#PARTICLES
+2                       npcelx
+2                       npcely
+2                       npcelz
+
+#SAVEPLOT
+0                       nPlot
+
+#STOP
+20                      nIter
+-1.0                    tMax
+
+#MONITOR
+10                      dnReport
+100                     dnReportLB
+T                       doCompact
+
+#SAVELOG
+1                       dnSavePic
+10                      dnSavePT

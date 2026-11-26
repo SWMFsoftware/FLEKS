@@ -43,11 +43,16 @@ HYBRID_SOLVERS = [
 
 PT_SOLVERS = []
 
+MI_SOLVERS = [
+    "Pic::update_ionosphere",
+]
+
 _REQUIRED_MOVER = {
     "fullpic": "Pts::charged_particle_mover",
     "hybrid":  "Pts::charged_particle_mover",
     "pt":      "TestParticles::move_charged_particles",
     "reconnection2d": "Pts::charged_particle_mover",
+    "mi":      "Pts::charged_particle_mover",
 }
 
 # Absolute targets (μs/part-step) and 2-core speedup floor, one set per solver,
@@ -80,6 +85,13 @@ BASELINES = {
         "solver_pps": 0.02,  # isolated implicit field solver rate
         "speedup": 1.85,     # 2-core MPI scaling floor
         "omp_speedup": 1.4,  # 2-thread OpenMP scaling floor
+    },
+    "mi": {
+        "total_pps": 2.0,    # total wall-clock rate (~3.3x headroom over 0.614 us/pt)
+        "mover_pps": 0.15,   # isolated particle mover rate (~3.4x headroom over 0.044 us/pt)
+        "solver_pps": 0.35,  # isolated ionosphere solver + FAC extraction (~3.4x headroom over 0.103 us/pt)
+        "speedup": 1.20,     # 2-core MPI scaling floor (rank-0 spherical solve caps MPI scaling)
+        "omp_speedup": 1.20, # 2-thread OpenMP scaling floor (N/S hemisphere sections + box loops)
     },
 }
 
@@ -133,6 +145,31 @@ def binary_has_openmp(exe):
 
     _OMP_LINK_CACHE[key] = has_omp
     return has_omp
+
+
+_MI_LINK_CACHE = {}
+
+
+def binary_has_mi(exe):
+    """Return True if *exe* was built with the MI coupling module (-mi)."""
+    key = os.path.realpath(exe)
+    if key in _MI_LINK_CACHE:
+        return _MI_LINK_CACHE[key]
+
+    has_mi = False
+    for cmd in (["nm", key], ["nm", "-D", key]):
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True)
+        except OSError:
+            continue
+        if res.returncode == 0:
+            if "10Ionosphere" in res.stdout or "Ionosphere::" in res.stdout:
+                has_mi = True
+                break
+
+    _MI_LINK_CACHE[key] = has_mi
+    return has_mi
 
 def prepare_run_dir(run_dir, exe):
     os.makedirs(run_dir, exist_ok=True)
@@ -271,13 +308,14 @@ def parse_tiny_profiler(stdout):
     return profiler_data
 
 
-SUITES = ("fullpic", "hybrid", "pt", "reconnection2d")
+SUITES = ("fullpic", "hybrid", "pt", "reconnection2d", "mi")
 
 LABELS = {
     "fullpic": "FULL PIC",
     "hybrid": "HYBRID PIC",
     "pt": "PARTICLE TRACKER",
     "reconnection2d": "2D RECONNECTION (FULL PIC)",
+    "mi": "3D HYBRID MI COUPLING",
 }
 
 DECKS = {
@@ -285,6 +323,7 @@ DECKS = {
     "hybrid": "PARAM.in.hybrid",
     "pt": "PARAM.in.pt",
     "reconnection2d": "PARAM.in.reconnection2d",
+    "mi": "PARAM.in.mi",
 }
 
 # (key, report label, unit) of the compared metrics; a rate passes when it is
@@ -307,6 +346,8 @@ def run_once(exe, n_proc, run_dir, param_file, solver_kind, omp_threads=1):
     (seconds). Raises RuntimeError if FLEKS fails."""
     if solver_kind == "hybrid":
         solver_names = HYBRID_SOLVERS
+    elif solver_kind == "mi":
+        solver_names = MI_SOLVERS
     elif solver_kind == "pt":
         solver_names = PT_SOLVERS
     else:
@@ -528,6 +569,14 @@ def _speedup_label(solver_kind, key="speedup", omp_threads=2):
             else "Parallel Speedup (2 MPI)")
 
 
+def _metric_label(solver_kind, key, default_name, omp_threads=2):
+    if key == "solver" and solver_kind == "mi":
+        return "Ionosphere Solver Rate"
+    if key in ("speedup", "omp_speedup"):
+        return _speedup_label(solver_kind, key, omp_threads)
+    return default_name
+
+
 def _fmt(key, value):
     return (f"{value:.2f}x" if key in ("speedup", "omp_speedup")
             else f"{value:.3f} μs/pt")
@@ -572,9 +621,8 @@ def write_report(results, relative, tolerance, path="performance_summary.md"):
                 for key, name, _ in METRICS:
                     if key == "omp_speedup" and not cand.get("omp"):
                         continue
-                    if key in ("speedup", "omp_speedup"):
-                        name = _speedup_label(solver_kind, key,
-                                              cand.get("omp_threads", 2))
+                    name = _metric_label(solver_kind, key, name,
+                                         cand.get("omp_threads", 2))
                     r = res["ratio"][key]
                     base_cell = (
                         f">= {BASELINES[solver_kind]['omp_speedup']:.2f}x"
@@ -599,9 +647,9 @@ def write_report(results, relative, tolerance, path="performance_summary.md"):
                 for key, name, _ in METRICS:
                     if key == "omp_speedup" and not cand.get("omp"):
                         continue
+                    name = _metric_label(solver_kind, key, name,
+                                         cand.get("omp_threads", 2))
                     if key in ("speedup", "omp_speedup"):
-                        name = _speedup_label(solver_kind, key,
-                                              cand.get("omp_threads", 2))
                         target = f">= {targets[key]:.2f}x"
                     else:
                         target = f"<= {targets[key]:.3f} μs/pt"
@@ -640,9 +688,8 @@ def print_profile(solver_kind, res, tolerance):
         for key, name, _ in METRICS:
             if key == "omp_speedup" and not cand.get("omp"):
                 continue
-            if key in ("speedup", "omp_speedup"):
-                name = _speedup_label(solver_kind, key,
-                                      cand.get("omp_threads", 2))
+            name = _metric_label(solver_kind, key, name,
+                                 cand.get("omp_threads", 2))
             r = res["ratio"][key]
             base_cell = (
                 f">= {BASELINES[solver_kind]['omp_speedup']:.2f}x"
@@ -665,9 +712,9 @@ def print_profile(solver_kind, res, tolerance):
         for key, name, _ in METRICS:
             if key == "omp_speedup" and not cand.get("omp"):
                 continue
+            name = _metric_label(solver_kind, key, name,
+                                 cand.get("omp_threads", 2))
             if key in ("speedup", "omp_speedup"):
-                name = _speedup_label(solver_kind, key,
-                                      cand.get("omp_threads", 2))
                 target = f">= {targets[key]:.2f}x"
             else:
                 target = f"<= {targets[key]:.3f} μs/pt"
@@ -738,6 +785,13 @@ def main():
     results = {}
     all_passed = True
     for solver_kind in suites:
+        if solver_kind == "mi" and not binary_has_mi(exe):
+            if args.suite == "mi":
+                print("Error: candidate executable was built without -mi.\n"
+                      "  Rebuild with: ./Config.pl -amrex3d -mi && make EXE")
+                sys.exit(1)
+            print("Skipping MI suite: candidate executable was built without -mi.")
+            continue
         deck = os.path.join("performance", DECKS[solver_kind])
         if not os.path.exists(deck):
             print(f"Error: benchmark deck {deck} not found.")

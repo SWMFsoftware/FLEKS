@@ -240,6 +240,13 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
     bodyFieldBC = BodyFieldBC::parse(field);
     bodyBoundarySet_ = true;
+#ifndef _MI_COUPLING_
+    if (bodyFieldBC == BodyFieldBC::ionosphere) {
+      Abort("Error: " + command +
+            " fieldBoundary 'ionosphere' requires MI coupling. Reconfigure "
+            "with ./Config.pl -mi and rebuild.");
+    }
+#endif
 
     // Optional photochemical boundary keyword at the end
     std::string photochemStr;
@@ -274,6 +281,42 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       Print() << ", photochemical = " << photochemRadiusSI_ << " [m]";
     }
     Print() << "\n";
+  } else if (command == "#IONOSPHERE") {
+#ifdef _MI_COUPLING_
+    ionoConfigured_ = true;
+    param.read_optional("nThetaHem", ionoParams_.nThetaHem);
+    param.read_optional("nPhi", ionoParams_.nPhi);
+    param.read_optional("rIonoRatio", ionoParams_.rIonoRatio);
+    param.read_optional("rFac", ionoParams_.rFacCode);
+    param.read_optional("latBoundaryDeg", ionoParams_.latBoundaryDeg);
+    param.read_optional("conductanceModel", ionoParams_.conductanceModel);
+    param.read_optional("sigmaPedersen", ionoParams_.sigmaPedersen);
+    param.read_optional("sigmaHall", ionoParams_.sigmaHall);
+    param.read_optional("sigmaParallel", ionoParams_.sigmaParallel);
+    param.read_optional("f107", ionoParams_.f107);
+    param.read_optional("auroralFacScale", ionoParams_.auroralFacScale);
+    param.read_optional("auroralSigmaPMax", ionoParams_.auroralSigmaPMax);
+    param.read_optional("auroralHallRatio", ionoParams_.auroralHallRatio);
+    param.read_optional("lowLatBC", ionoParams_.lowLatBC);
+    param.read_optional("solverTol", ionoParams_.solverTol);
+    param.read_optional("solverMaxIter", ionoParams_.solverMaxIter);
+    param.read_optional("dnCouple", ionoParams_.dnCouple);
+    param.read_optional("dtCoupleSI", ionoParams_.dtCoupleSI);
+    param.read_optional("nSmoothFac", ionoParams_.nSmoothFac);
+    param.read_optional("relaxAlpha", ionoParams_.relaxAlpha);
+    param.read_optional("useCorotation", ionoParams_.useCorotation);
+    param.read_optional("omegaPlanetSI", ionoParams_.omegaPlanetSI);
+    param.read_optional("dnOutput", ionoParams_.dnOutput);
+    Print() << "  #IONOSPHERE: model=" << ionoParams_.conductanceModel
+            << ", SigmaP=" << ionoParams_.sigmaPedersen
+            << " S, SigmaH=" << ionoParams_.sigmaHall
+            << " S, nThetaHem=" << ionoParams_.nThetaHem
+            << ", nPhi=" << ionoParams_.nPhi
+            << ", lowLatBC=" << ionoParams_.lowLatBC << "\n";
+#else
+    Abort("Error: #IONOSPHERE requires MI coupling. Reconfigure with "
+          "./Config.pl -mi and rebuild.");
+#endif
   } else if (command == "#REGIONRESISTIVITY") {
     RegionalResistivityConfig cfg;
     param.read_var("region", cfg.regionStr);
@@ -1169,6 +1212,13 @@ void Pic::post_process_param() {
   // A conducting inner body makes the *total* field tangential (see
   // project_body_B), so an intrinsic field is allowed and the combination is no
   // longer rejected here.
+  if (is_body_ionosphere()) {
+    if (nDim < 3)
+      Abort("Invalid configuration: BodyFieldBC::ionosphere requires a 3D "
+            "simulation.");
+    if (!intrinsicB_ || !intrinsicB_->use_dipole())
+      Abort("Invalid configuration: BodyFieldBC::ionosphere requires #DIPOLE.");
+  }
 
   hasRegionalResistivity_ = !regionalResistivityConfigs.empty();
   hasRegionalHyper_ = !regionalHyperResistivityConfigs.empty();
@@ -1467,6 +1517,12 @@ void Pic::convert_intrinsic_B() {
       fi->get_rPlanet_SI(), bodyCenterTmp, get_body_radius(), use_body(), nDim);
 
   Print() << intrinsicB_->describe() << "\n";
+
+#ifdef _MI_COUPLING_
+  if (is_body_ionosphere()) {
+    init_ionosphere();
+  }
+#endif
 }
 
 //==========================================================

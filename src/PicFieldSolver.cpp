@@ -209,7 +209,7 @@ void Pic::solve_E_gmres(int iLev) {
 
 //==========================================================
 void Pic::sync_nodal_solver_vec(MultiFab& vecMF, int iLev) {
-  const bool skipAllBody = is_body_linetied();
+  const bool skipAllBody = is_body_linetied() || is_body_ionosphere();
   const bool skipInterior = is_body_conducting();
   const auto& statusMF = node_status(iLev);
 
@@ -434,6 +434,9 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
     } else {
       sync_nodal_solver_vec(vecMF, iLev);
     }
+  }
+  if (!useZeroBC && is_body_ionosphere()) {
+    apply_body_E_bc(vecMF, iLev);
   }
 
   MultiFab& tempNode3 = solverTempNode3[iLev];
@@ -950,7 +953,7 @@ void Pic::build_E_preconditioner(MultiFab& invDiagMF, int iLev,
   const Real cMaxVal = cMaxE;
   const bool doUpwindE = useUpwindE;
 
-  const bool skipAllBody = is_body_linetied();
+  const bool skipAllBody = is_body_linetied() || is_body_ionosphere();
   const bool skipInterior = is_body_conducting();
   const bool hasWallEt = hasConductingBC_;
   const BoundaryBounds bnd(Geom(iLev), ba.ixType(), &bcField);
@@ -1089,10 +1092,11 @@ const Pic::NodeSystemLayout& Pic::node_system_layout(const MultiFab& MF,
   if (static_cast<int>(nodeLayout.size()) < n_lev_max())
     nodeLayout.resize(n_lev_max());
 
-  // A 'linetied' body drops all its nodes from the linear system (E = 0),
+  // A 'linetied' or 'ionosphere' body drops all its nodes from the linear
+  // system (Dirichlet E = 0 or E = E_iono on the surface, 0 in the interior),
   // a 'conducting' body only drops the interior ones (E = 0 inside, E_t = 0
   // on the surface), and an 'insulating' body keeps all of them.
-  const bool skipAllBody = is_body_linetied();
+  const bool skipAllBody = is_body_linetied() || is_body_ionosphere();
   const bool skipInterior = is_body_conducting();
 
   // The selection depends only on the grid (node ownership) and on the body,

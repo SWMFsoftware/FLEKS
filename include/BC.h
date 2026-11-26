@@ -214,7 +214,11 @@ enum Type {
   // Perfect conductor: E_t = 0 and B_r = 0.
   conducting = 1,
   // Perfect insulator: B passes through undistorted; no field constraint.
-  insulating = 2
+  insulating = 2,
+  // Conducting ionosphere (MI coupling, requires ./Config.pl -mi):
+  // E = -grad(Phi_iono) mapped along dipole lines onto the surface layer,
+  // E = 0 in the interior cavity.
+  ionosphere = 3
 };
 
 const std::vector<bc_detail::Entry> &table();

@@ -1853,4 +1853,25 @@ void host_fill(amrex::FabArray<FAB>& fa, bool withGhost, F&& f) {
   }
 }
 
+// Run two independent host tasks concurrently when OpenMP is enabled (e.g.
+// north/south hemisphere solves in the 2D ionosphere solver).
+template <class F1, class F2> inline void parallel_sections(F1&& f1, F2&& f2) {
+#ifdef _OPENMP
+#pragma omp parallel sections
+  {
+#pragma omp section
+    {
+      f1();
+    }
+#pragma omp section
+    {
+      f2();
+    }
+  }
+#else
+  f1();
+  f2();
+#endif
+}
+
 #endif

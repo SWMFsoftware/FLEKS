@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 #include <AMReX_BCRec.H>
@@ -1581,8 +1582,681 @@ void Pic::apply_body_E_bc(amrex::MultiFab& mf, const int iLev) {
     if (useHybridPIC) {
       fill_body_E_insulating(mf, iLev);
     }
+  } else if (bodyFieldBC == BodyFieldBC::ionosphere) {
+#ifdef _MI_COUPLING_
+    apply_body_E_ionosphere(mf, iLev);
+#else
+    Abort("BodyFieldBC::ionosphere requires ./Config.pl -mi.");
+#endif
   }
 }
+
+#ifdef _MI_COUPLING_
+namespace {
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void eval_curl_at_node(
+    const Array4<const Real>& c, int i, int j, int k, int nDimVal,
+    const GpuArray<Real, AMREX_SPACEDIM>& invDx, Real out[3]) noexcept {
+  constexpr int ix = 0, iy = 1, iz = 2;
+  const int km1 = (nDimVal > 2) ? (k - 1) : k;
+  const Real invDxX = invDx[0];
+  const Real invDxY = (AMREX_SPACEDIM > 1) ? invDx[1] : Real(0.0);
+#if AMREX_SPACEDIM > 2
+  const Real invDxZ = invDx[2];
+#else
+  const Real invDxZ = Real(0.0);
+#endif
+
+  const Real cZDY =
+      Real(0.25) * invDxY *
+      (c(i, j, k, iz) - c(i, j - 1, k, iz) + c(i, j, km1, iz) -
+       c(i, j - 1, km1, iz) + c(i - 1, j, k, iz) - c(i - 1, j - 1, k, iz) +
+       c(i - 1, j, km1, iz) - c(i - 1, j - 1, km1, iz));
+
+  const Real cYDZ =
+      (nDimVal > 2) ? Real(0.25) * invDxZ *
+                          (c(i, j, k, iy) - c(i, j, km1, iy) +
+                           c(i - 1, j, k, iy) - c(i - 1, j, km1, iy) +
+                           c(i, j - 1, k, iy) - c(i, j - 1, km1, iy) +
+                           c(i - 1, j - 1, k, iy) - c(i - 1, j - 1, km1, iy))
+                    : Real(0.0);
+
+  const Real cXDZ =
+      (nDimVal > 2) ? Real(0.25) * invDxZ *
+                          (c(i, j, k, ix) - c(i, j, km1, ix) +
+                           c(i - 1, j, k, ix) - c(i - 1, j, km1, ix) +
+                           c(i, j - 1, k, ix) - c(i, j - 1, km1, ix) +
+                           c(i - 1, j - 1, k, ix) - c(i - 1, j - 1, km1, ix))
+                    : Real(0.0);
+
+  const Real cZDX =
+      Real(0.25) * invDxX *
+      (c(i, j, k, iz) - c(i - 1, j, k, iz) + c(i, j, km1, iz) -
+       c(i - 1, j, km1, iz) + c(i, j - 1, k, iz) - c(i - 1, j - 1, k, iz) +
+       c(i, j - 1, km1, iz) - c(i - 1, j - 1, km1, iz));
+
+  const Real cYDX =
+      Real(0.25) * invDxX *
+      (c(i, j, k, iy) - c(i - 1, j, k, iy) + c(i, j, km1, iy) -
+       c(i - 1, j, km1, iy) + c(i, j - 1, k, iy) - c(i - 1, j - 1, k, iy) +
+       c(i, j - 1, km1, iy) - c(i - 1, j - 1, km1, iy));
+
+  const Real cXDY =
+      Real(0.25) * invDxY *
+      (c(i, j, k, ix) - c(i, j - 1, k, ix) + c(i, j, km1, ix) -
+       c(i, j - 1, km1, ix) + c(i - 1, j, k, ix) - c(i - 1, j - 1, k, ix) +
+       c(i - 1, j, km1, ix) - c(i - 1, j - 1, km1, ix));
+
+  out[0] = cZDY - cYDZ;
+  out[1] = cXDZ - cZDX;
+  out[2] = cYDX - cXDY;
+}
+
+} // namespace
+
+//==========================================================
+void Pic::init_ionosphere() {
+  if (!is_body_ionosphere() || !intrinsicB_ || !intrinsicB_->use_dipole())
+    return;
+
+  if (!ionosphere_)
+    ionosphere_ = std::make_unique<Ionosphere>(ionoParams_);
+  else
+    ionosphere_->set_params(ionoParams_);
+
+  const auto& b0p = intrinsicB_->get_params();
+  const Real rPlanetSI = (fi->get_rPlanet_SI() > 0.0)
+                             ? fi->get_rPlanet_SI()
+                             : (get_body_radius() * fi->get_No2SiL());
+  const Real si2NoL = fi->get_Si2NoL();
+  const Real si2NoB = fi->get_Si2NoB();
+  const Real si2NoE =
+      (fi->get_No2SiE() > 0.0) ? (Real(1.0) / fi->get_No2SiE()) : Real(1.0);
+  const Real bEqSI = intrinsicB_->get_dipole_strength_code() * fi->get_No2SiB();
+
+  // Default FAC extraction shell: rBody + 4*dx0 if not explicitly specified.
+  if (ionosphere_->params().rFacCode <= 0.0) {
+    const Real dx0 = Geom(0).CellSize(ix_);
+    ionosphere_->params().rFacCode = get_body_radius() + Real(4.0) * dx0;
+  }
+
+  ionosphere_->init(b0p.moment, b0p.center, rPlanetSI, si2NoL, si2NoE, si2NoB,
+                    bEqSI);
+  lastIonoSolveTimeSI_ = -1.0;
+  lastIonoSolveCycle_ = -1;
+  facShellCache_.clear();
+  bodyIonoCache_.clear();
+
+  Print() << "  Ionosphere initialized: rIono=" << ionosphere_->frame().rIonoSI
+          << " m (" << ionosphere_->frame().rIonoCode
+          << " code), rFac=" << ionosphere_->get_params().rFacCode
+          << " code, grid=" << ionosphere_->n_theta() << "x"
+          << ionosphere_->n_phi() << "\n";
+}
+
+//==========================================================
+void Pic::ensure_fac_shell_cache() {
+  const int nLev = n_lev();
+  const int nTh = ionosphere_->n_theta();
+  const int nPh = ionosphere_->n_phi();
+  const int nTot = nTh * nPh;
+  const Real rFacCode = ionosphere_->get_params().rFacCode;
+
+  bool needRebuild = !facShellCache_.initialized ||
+                     facShellCache_.nTotal != nTot ||
+                     facShellCache_.lastFacRadius != rFacCode ||
+                     static_cast<int>(facShellCache_.levels.size()) != nLev;
+
+  if (!needRebuild) {
+    for (int iLev = 0; iLev < nLev; ++iLev) {
+      const auto& lv = facShellCache_.levels[iLev];
+      if (!lv.valid || lv.ba != centerB[iLev].boxArray() ||
+          lv.dm != centerB[iLev].DistributionMap()) {
+        needRebuild = true;
+        break;
+      }
+    }
+  }
+
+  if (!needRebuild)
+    return;
+
+  facShellCache_.clear();
+  facShellCache_.nTotal = nTot;
+  facShellCache_.lastFacRadius = rFacCode;
+  facShellCache_.jrFullHost.assign(static_cast<size_t>(nTot), Real(0.0));
+  facShellCache_.levels.resize(nLev);
+
+  const auto& frame = ionosphere_->frame();
+  const Real latBndRad =
+      ionosphere_->get_params().latBoundaryDeg * (dPI / Real(180.0));
+  const auto& b0p = intrinsicB_->get_params();
+  const auto& thArr = ionosphere_->theta();
+  const auto& phArr = ionosphere_->phi();
+  const int finest = finestLevel();
+
+  // Pre-build per-level, per-box host vectors of static FacSample descriptors.
+  std::vector<std::vector<std::vector<FacSample> > > hostSamples(nLev);
+  std::vector<HostFabCache> statusCaches(nLev);
+  for (int iLev = 0; iLev < nLev; ++iLev) {
+    auto& lv = facShellCache_.levels[iLev];
+    lv.ba = centerB[iLev].boxArray();
+    lv.dm = centerB[iLev].DistributionMap();
+    lv.valid = true;
+    const int nLocal = centerB[iLev].local_size();
+    lv.boxSamples.resize(nLocal);
+    hostSamples[iLev].resize(nLocal);
+  }
+
+  int localSampleIdx = 0;
+  std::vector<int> localIonoIdx;
+
+  // Map each ionospheric (iTheta, iPhi) point once per grid/regrid and assign
+  // it to its unique finest uncovered local valid box.
+  for (int i = 0; i < nTh; ++i) {
+    const Real th = thArr[i];
+    if (std::abs(Real(0.5) * dPI - th) <= latBndRad)
+      continue;
+    const Real sn = std::sin(th);
+    const Real cs = std::cos(th);
+
+    for (int j = 0; j < nPh - 1; ++j) {
+      const Real ph = phArr[j];
+      const Real xIonoSmg[3] = {
+        frame.rIonoCode * sn * std::cos(ph),
+        frame.rIonoCode * sn * std::sin(ph),
+        frame.rIonoCode * cs,
+      };
+      Real xFacSmg[3], thFac = 0.0, phFac = 0.0, jDum[2][3];
+      const int iHem = map_dipole_smg(xIonoSmg, rFacCode, xFacSmg, thFac, phFac,
+                                      false, jDum);
+      if (iHem == 0)
+        continue;
+
+      Real xFacSim[3], xIonoSim[3];
+      for (int b = 0; b < 3; ++b) {
+        xFacSim[b] = frame.center[b] + frame.rot[0][b] * xFacSmg[0] +
+                     frame.rot[1][b] * xFacSmg[1] +
+                     frame.rot[2][b] * xFacSmg[2];
+        xIonoSim[b] = frame.center[b] + frame.rot[0][b] * xIonoSmg[0] +
+                      frame.rot[1][b] * xIonoSmg[1] +
+                      frame.rot[2][b] * xIonoSmg[2];
+      }
+
+      Real bIono[3] = { 0.0, 0.0, 0.0 };
+      eval_dipole_b(b0p, xIonoSim[0], xIonoSim[1], xIonoSim[2], bIono);
+      const Real bIonoMag = std::sqrt(
+          bIono[0] * bIono[0] + bIono[1] * bIono[1] + bIono[2] * bIono[2]);
+      if (bIonoMag <= Real(1.0e-30))
+        continue;
+
+      const Real rHat[3] = {
+        (xIonoSim[0] - frame.center[0]) / frame.rIonoCode,
+        (xIonoSim[1] - frame.center[1]) / frame.rIonoCode,
+        (xIonoSim[2] - frame.center[2]) / frame.rIonoCode,
+      };
+      const Real bIonoR =
+          bIono[0] * rHat[0] + bIono[1] * rHat[1] + bIono[2] * rHat[2];
+
+      Real b0Fac[3] = { 0.0, 0.0, 0.0 };
+      eval_dipole_b(b0p, xFacSim[0], xFacSim[1], xFacSim[2], b0Fac);
+
+      bool claimed = false;
+      for (int iLev = finest; iLev >= 0 && !claimed; --iLev) {
+        const auto plo = Geom(iLev).ProbLo();
+        const auto invDx = Geom(iLev).InvCellSize();
+        const Real gx = (xFacSim[0] - plo[0]) * invDx[0];
+        const Real gy = (xFacSim[1] - plo[1]) * invDx[1];
+        const Real gz = (xFacSim[2] - plo[2]) * invDx[2];
+        const int ix = static_cast<int>(std::floor(gx));
+        const int iy = static_cast<int>(std::floor(gy));
+        const int iz = static_cast<int>(std::floor(gz));
+        const IntVect iv(AMREX_D_DECL(ix, iy, iz));
+        const Box curlNeed(IntVect(AMREX_D_DECL(ix - 1, iy - 1, iz - 1)),
+                           IntVect(AMREX_D_DECL(ix + 1, iy + 1, iz + 1)));
+
+        const bool checkRefined = (iLev < finest);
+        const auto& statusMF = cell_status(iLev);
+
+        for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+          if (!mfi.validbox().contains(iv) || !mfi.fabbox().contains(curlNeed))
+            continue;
+          if (checkRefined) {
+            const auto stArr = statusCaches[iLev].array(statusMF, mfi);
+            if (bit::is_refined(stArr(iv)))
+              continue;
+          }
+
+          FacSample s;
+          s.ix = ix;
+          s.iy = iy;
+          s.iz = iz;
+          s.wx = gx - ix;
+          s.wy = gy - iy;
+          s.wz = gz - iz;
+          s.ionoIdx = localSampleIdx++;
+          s.b0x = b0Fac[0];
+          s.b0y = b0Fac[1];
+          s.b0z = b0Fac[2];
+          s.bIonoR = bIonoR;
+
+          hostSamples[iLev][mfi.LocalIndex()].push_back(s);
+          localIonoIdx.push_back(i * nPh + j);
+          claimed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  for (int iLev = 0; iLev < nLev; ++iLev) {
+    auto& lv = facShellCache_.levels[iLev];
+    for (int li = 0; li < static_cast<int>(hostSamples[iLev].size()); ++li) {
+      const auto& src = hostSamples[iLev][li];
+      if (src.empty())
+        continue;
+      lv.boxSamples[li].resize(src.size());
+      Gpu::copyAsync(Gpu::hostToDevice, src.begin(), src.end(),
+                     lv.boxSamples[li].begin());
+    }
+  }
+  Gpu::streamSynchronize();
+
+  facShellCache_.nLocalActive = localSampleIdx;
+  facShellCache_.localIonoIdx = std::move(localIonoIdx);
+  facShellCache_.jrDevBuf.resize(static_cast<size_t>(localSampleIdx));
+  facShellCache_.jrCompactHost.resize(static_cast<size_t>(localSampleIdx));
+  facShellCache_.initialized = true;
+}
+
+//==========================================================
+void Pic::extract_ionosphere_fac(std::vector<Real>& jrOutwardSI) {
+  ensure_fac_shell_cache();
+
+  const int nTh = ionosphere_->n_theta();
+  const int nPh = ionosphere_->n_phi();
+  const int nTot = facShellCache_.nTotal;
+  const int nLocal = facShellCache_.nLocalActive;
+
+  constexpr Real mu0 = Real(4.0) * dPI * Real(1.0e-7);
+  const Real curlBToJSI = fi->get_No2SiB() / (mu0 * fi->get_No2SiL());
+  const int nDimVal = get_dim();
+
+  if (nLocal > 0) {
+    Real* jrDevPtr = facShellCache_.jrDevBuf.data();
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const auto& lv = facShellCache_.levels[iLev];
+      const auto invDx = Geom(iLev).InvCellSizeArray();
+
+      for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+        const auto& devSamples = lv.boxSamples[mfi.LocalIndex()];
+        const int nS = static_cast<int>(devSamples.size());
+        if (nS == 0)
+          continue;
+
+        const FacSample* sPtr = devSamples.data();
+        const auto b1Arr = centerB[iLev][mfi].const_array();
+
+        ParallelFor(nS, [=] AMREX_GPU_DEVICE(int idx) noexcept {
+          const FacSample s = sPtr[idx];
+
+          // Inline curl(B1) on the 8 corners of the containing cell.
+          Real c000[3], c100[3], c010[3], c110[3];
+          Real c001[3], c101[3], c011[3], c111[3];
+          eval_curl_at_node(b1Arr, s.ix, s.iy, s.iz, nDimVal, invDx, c000);
+          eval_curl_at_node(b1Arr, s.ix + 1, s.iy, s.iz, nDimVal, invDx, c100);
+          eval_curl_at_node(b1Arr, s.ix, s.iy + 1, s.iz, nDimVal, invDx, c010);
+          eval_curl_at_node(b1Arr, s.ix + 1, s.iy + 1, s.iz, nDimVal, invDx,
+                            c110);
+          eval_curl_at_node(b1Arr, s.ix, s.iy, s.iz + 1, nDimVal, invDx, c001);
+          eval_curl_at_node(b1Arr, s.ix + 1, s.iy, s.iz + 1, nDimVal, invDx,
+                            c101);
+          eval_curl_at_node(b1Arr, s.ix, s.iy + 1, s.iz + 1, nDimVal, invDx,
+                            c011);
+          eval_curl_at_node(b1Arr, s.ix + 1, s.iy + 1, s.iz + 1, nDimVal, invDx,
+                            c111);
+
+          Real jSI[3];
+          const Real omx = Real(1.0) - s.wx;
+          const Real omy = Real(1.0) - s.wy;
+          const Real omz = Real(1.0) - s.wz;
+          for (int c = 0; c < 3; ++c) {
+            const Real v00 = omx * c000[c] + s.wx * c100[c];
+            const Real v10 = omx * c010[c] + s.wx * c110[c];
+            const Real v01 = omx * c001[c] + s.wx * c101[c];
+            const Real v11 = omx * c011[c] + s.wx * c111[c];
+            const Real v0 = omy * v00 + s.wy * v10;
+            const Real v1 = omy * v01 + s.wy * v11;
+            jSI[c] = (omz * v0 + s.wz * v1) * curlBToJSI;
+          }
+
+          const Real bFac0 = b1Arr(s.ix, s.iy, s.iz, 0) + s.b0x;
+          const Real bFac1 = b1Arr(s.ix, s.iy, s.iz, 1) + s.b0y;
+          const Real bFac2 = b1Arr(s.ix, s.iy, s.iz, 2) + s.b0z;
+          const Real bFacMag2 = bFac0 * bFac0 + bFac1 * bFac1 + bFac2 * bFac2;
+
+          Real jrVal = Real(0.0);
+          if (bFacMag2 > Real(1.0e-60)) {
+            const Real jDotB = jSI[0] * bFac0 + jSI[1] * bFac1 + jSI[2] * bFac2;
+            jrVal = (jDotB / bFacMag2) * s.bIonoR;
+          }
+          jrDevPtr[s.ionoIdx] = jrVal;
+        });
+      }
+    }
+
+    Gpu::copy(Gpu::deviceToHost, facShellCache_.jrDevBuf.begin(),
+              facShellCache_.jrDevBuf.end(),
+              facShellCache_.jrCompactHost.begin());
+  }
+
+  jrOutwardSI.assign(static_cast<size_t>(nTot), Real(0.0));
+  for (int idx = 0; idx < nLocal; ++idx) {
+    jrOutwardSI[static_cast<size_t>(facShellCache_.localIonoIdx[idx])] =
+        facShellCache_.jrCompactHost[idx];
+  }
+
+  ParallelDescriptor::ReduceRealSum(jrOutwardSI.data(), nTot,
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if (ParallelDescriptor::IOProcessor()) {
+    for (int i = 0; i < nTh; ++i) {
+      jrOutwardSI[static_cast<size_t>(i * nPh + (nPh - 1))] =
+          jrOutwardSI[static_cast<size_t>(i * nPh)];
+    }
+  }
+}
+
+//==========================================================
+void Pic::update_ionosphere(bool force) {
+  if (!is_body_ionosphere() || !ionosphere_ || !ionosphere_->is_initialized())
+    return;
+
+  const int cycle = tc ? tc->get_cycle() : 0;
+  const Real timeSI = tc ? (tc->get_time() * fi->get_No2SiT()) : Real(0.0);
+  const auto& p = ionosphere_->get_params();
+
+  if (!force) {
+    if (p.dtCoupleSI > Real(0.0)) {
+      if (lastIonoSolveTimeSI_ >= Real(0.0) &&
+          (timeSI - lastIonoSolveTimeSI_) < p.dtCoupleSI)
+        return;
+    } else if (p.dnCouple > 1) {
+      if (lastIonoSolveCycle_ >= 0 &&
+          (cycle - lastIonoSolveCycle_) < p.dnCouple)
+        return;
+    }
+  }
+
+  std::string nameFunc = "Pic::update_ionosphere";
+  timing_func(nameFunc);
+
+  extract_ionosphere_fac(facShellCache_.jrFullHost);
+  const bool ok = ionosphere_->solve(facShellCache_.jrFullHost, true);
+
+  lastIonoSolveTimeSI_ = timeSI;
+  lastIonoSolveCycle_ = cycle;
+
+  if (!ok) {
+    Print() << "  [MI WARNING] Ionosphere solver did not reach tolerance "
+            << "(iterN=" << ionosphere_->last_iter_north()
+            << ", residN=" << ionosphere_->last_resid_north()
+            << ", iterS=" << ionosphere_->last_iter_south()
+            << ", residS=" << ionosphere_->last_resid_south() << ")\n";
+  }
+
+  if (p.dnOutput > 0 && (force || (cycle % p.dnOutput == 0))) {
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), "%s/plots/ionosphere_n%07d.dat",
+                  component.c_str(), cycle);
+    ionosphere_->write_diagnostics(buf, timeSI, cycle);
+  }
+}
+
+//==========================================================
+void Pic::ensure_body_iono_cache(const int iLev) {
+  const int nLev = n_lev();
+  if (static_cast<int>(bodyIonoCache_.size()) != nLev)
+    bodyIonoCache_.resize(nLev);
+
+  const auto& status = node_status(iLev);
+  auto& cache = bodyIonoCache_[iLev];
+  if (cache.valid && cache.ba == status.boxArray() &&
+      cache.dm == status.DistributionMap())
+    return;
+
+  cache.clear();
+  cache.ba = status.boxArray();
+  cache.dm = status.DistributionMap();
+  cache.localToBodyIdx.assign(status.local_size(), -1);
+
+  const auto plo = Geom(iLev).ProbLo();
+  const auto dx = Geom(iLev).CellSize();
+  const int activeDim = get_dim();
+  const IonosphereDeviceView view = ionosphere_->device_view();
+
+  HostFabCache statusCache;
+  for (MFIter mfi(status); mfi.isValid(); ++mfi) {
+    const Box& fbx = mfi.fabbox();
+    const auto stArr = statusCache.array(status, mfi);
+
+    IntVect intLo(AMREX_D_DECL(0, 0, 0)), intHi(AMREX_D_DECL(-1, -1, -1));
+    bool hasInt = false;
+    std::vector<BodySurfaceNode> surfNodes;
+
+    const auto lo = lbound(fbx);
+    const auto hi = ubound(fbx);
+    for (int k = lo.z; k <= hi.z; ++k) {
+      const Real z = (activeDim > 2) ? plo[iz_] + k * dx[iz_] : Real(0.0);
+      for (int j = lo.y; j <= hi.y; ++j) {
+        const Real y = (activeDim > 1) ? plo[iy_] + j * dx[iy_] : Real(0.0);
+        for (int i = lo.x; i <= hi.x; ++i) {
+          const int st = stArr(i, j, k);
+          if (bit::is_body_interior(st)) {
+            const IntVect iv(AMREX_D_DECL(i, j, k));
+            if (!hasInt) {
+              intLo = iv;
+              intHi = iv;
+              hasInt = true;
+            } else {
+              intLo.min(iv);
+              intHi.max(iv);
+            }
+            continue;
+          }
+          if (!bit::is_body(st))
+            continue;
+
+          BodySurfaceNode node{};
+          node.i = i;
+          node.j = j;
+          node.k = k;
+          node.idx00 = -1;
+
+          const Real xSim = plo[ix_] + i * dx[ix_];
+          const Real dVec[3] = {
+            xSim - view.frame.center[0],
+            y - view.frame.center[1],
+            z - view.frame.center[2],
+          };
+          Real xSmg[3] = { 0.0, 0.0, 0.0 };
+          for (int a = 0; a < 3; ++a) {
+            xSmg[a] = view.frame.rot[a][0] * dVec[0] +
+                      view.frame.rot[a][1] * dVec[1] +
+                      view.frame.rot[a][2] * dVec[2];
+          }
+
+          Real xMap[3] = { 0.0, 0.0, 0.0 };
+          Real theta = 0.0, phi = 0.0;
+          Real jacSmg[2][3];
+          const int iHem = map_dipole_smg(xSmg, view.frame.rIonoCode, xMap,
+                                          theta, phi, true, jacSmg);
+          const Real magLat = std::abs(Real(0.5) * dPI - theta);
+          if (iHem != 0 && magLat > view.latBoundaryRad && view.nTheta >= 3 &&
+              view.nPhi >= 3) {
+            const Real tNorm = theta * view.invDTheta;
+            const Real pNorm = phi * view.invDPhi;
+            int i0 = static_cast<int>(std::floor(tNorm));
+            int j0 = static_cast<int>(std::floor(pNorm));
+            if (i0 < 0)
+              i0 = 0;
+            if (i0 >= view.nTheta - 1)
+              i0 = view.nTheta - 2;
+            if (j0 < 0)
+              j0 = 0;
+            if (j0 >= view.nPhi - 1)
+              j0 = view.nPhi - 2;
+
+            const Real wt = tNorm - i0;
+            const Real wp = pNorm - j0;
+
+            node.idx00 = i0 * view.nPhi + j0;
+            node.idx01 = i0 * view.nPhi + (j0 + 1);
+            node.idx10 = (i0 + 1) * view.nPhi + j0;
+            node.idx11 = (i0 + 1) * view.nPhi + (j0 + 1);
+
+            node.w00 = (Real(1.0) - wt) * (Real(1.0) - wp);
+            node.w01 = (Real(1.0) - wt) * wp;
+            node.w10 = wt * (Real(1.0) - wp);
+            node.w11 = wt * wp;
+
+            // Pre-rotate and scale SMG dipole Jacobian to simulation E units:
+            // jTh = eScale * R^T * jacSmg[0], jPh = eScale * R^T * jacSmg[1].
+            node.jTh0 = view.eScale * (view.frame.rot[0][0] * jacSmg[0][0] +
+                                       view.frame.rot[1][0] * jacSmg[0][1] +
+                                       view.frame.rot[2][0] * jacSmg[0][2]);
+            node.jTh1 = view.eScale * (view.frame.rot[0][1] * jacSmg[0][0] +
+                                       view.frame.rot[1][1] * jacSmg[0][1] +
+                                       view.frame.rot[2][1] * jacSmg[0][2]);
+            node.jTh2 = view.eScale * (view.frame.rot[0][2] * jacSmg[0][0] +
+                                       view.frame.rot[1][2] * jacSmg[0][1] +
+                                       view.frame.rot[2][2] * jacSmg[0][2]);
+
+            node.jPh0 = view.eScale * (view.frame.rot[0][0] * jacSmg[1][0] +
+                                       view.frame.rot[1][0] * jacSmg[1][1] +
+                                       view.frame.rot[2][0] * jacSmg[1][2]);
+            node.jPh1 = view.eScale * (view.frame.rot[0][1] * jacSmg[1][0] +
+                                       view.frame.rot[1][1] * jacSmg[1][1] +
+                                       view.frame.rot[2][1] * jacSmg[1][2]);
+            node.jPh2 = view.eScale * (view.frame.rot[0][2] * jacSmg[1][0] +
+                                       view.frame.rot[1][2] * jacSmg[1][1] +
+                                       view.frame.rot[2][2] * jacSmg[1][2]);
+          }
+
+          surfNodes.push_back(node);
+        }
+      }
+    }
+
+    const Box intSubBox = hasInt ? Box(intLo, intHi, fbx.ixType()) : Box();
+    if (!intSubBox.isEmpty() || !surfNodes.empty()) {
+      const int bi = static_cast<int>(cache.bodyBoxes.size());
+      cache.localToBodyIdx[mfi.LocalIndex()] = bi;
+      BodyBoxCache bCache;
+      bCache.localIndex = mfi.LocalIndex();
+      bCache.interiorSubBox = intSubBox;
+      if (!surfNodes.empty()) {
+        bCache.surfaceNodes.resize(surfNodes.size());
+        Gpu::copyAsync(Gpu::hostToDevice, surfNodes.begin(), surfNodes.end(),
+                       bCache.surfaceNodes.begin());
+      }
+      cache.bodyBoxes.push_back(std::move(bCache));
+    }
+  }
+
+  Gpu::streamSynchronize();
+  cache.cachedGeneration = 0;
+  cache.valid = true;
+}
+
+//==========================================================
+void Pic::refresh_body_iono_E(const int iLev) {
+  auto& cache = bodyIonoCache_[iLev];
+  const IonosphereDeviceView view = ionosphere_->device_view();
+  if (!view.dPhiDTheta || !view.dPhiDPhi)
+    return;
+
+  for (auto& bCache : cache.bodyBoxes) {
+    const int nSurf = static_cast<int>(bCache.surfaceNodes.size());
+    if (nSurf == 0)
+      continue;
+
+    BodySurfaceNode* nodes = bCache.surfaceNodes.data();
+    ParallelFor(nSurf, [=] AMREX_GPU_DEVICE(int idx) noexcept {
+      BodySurfaceNode n = nodes[idx];
+      if (n.idx00 < 0)
+        return;
+
+      const Real dPdT =
+          n.w00 * view.dPhiDTheta[n.idx00] + n.w01 * view.dPhiDTheta[n.idx01] +
+          n.w10 * view.dPhiDTheta[n.idx10] + n.w11 * view.dPhiDTheta[n.idx11];
+      const Real dPdP =
+          n.w00 * view.dPhiDPhi[n.idx00] + n.w01 * view.dPhiDPhi[n.idx01] +
+          n.w10 * view.dPhiDPhi[n.idx10] + n.w11 * view.dPhiDPhi[n.idx11];
+
+      n.ex = dPdT * n.jTh0 + dPdP * n.jPh0;
+      n.ey = dPdT * n.jTh1 + dPdP * n.jPh1;
+      n.ez = dPdT * n.jTh2 + dPdP * n.jPh2;
+      nodes[idx] = n;
+    });
+  }
+  Gpu::streamSynchronize();
+  cache.cachedGeneration = ionosphere_->generation();
+}
+
+//==========================================================
+void Pic::apply_body_E_ionosphere(amrex::MultiFab& mf, const int iLev) {
+  if (!ionosphere_ || !ionosphere_->is_initialized() || mf.nComp() < 3)
+    return;
+
+  ensure_body_iono_cache(iLev);
+  auto& cache = bodyIonoCache_[iLev];
+  if (cache.bodyBoxes.empty())
+    return;
+
+  if (cache.cachedGeneration != ionosphere_->generation())
+    refresh_body_iono_E(iLev);
+
+  const auto& status = node_status(iLev);
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const int bi = cache.localToBodyIdx[mfi.LocalIndex()];
+    if (bi < 0)
+      continue;
+
+    const auto& bCache = cache.bodyBoxes[bi];
+    const Box& fbx = mfi.fabbox();
+    auto arr = mf[mfi].array();
+
+    if (!bCache.interiorSubBox.isEmpty()) {
+      const Box zbox = fbx & bCache.interiorSubBox;
+      if (!zbox.isEmpty()) {
+        const auto stArr = status[mfi].const_array();
+        parallel_for_omp(zbox,
+                         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           if (bit::is_body_interior(stArr(i, j, k))) {
+                             arr(i, j, k, ix_) = Real(0.0);
+                             arr(i, j, k, iy_) = Real(0.0);
+                             arr(i, j, k, iz_) = Real(0.0);
+                           }
+                         });
+      }
+    }
+
+    const int nSurf = static_cast<int>(bCache.surfaceNodes.size());
+    if (nSurf > 0) {
+      const BodySurfaceNode* nodes = bCache.surfaceNodes.data();
+      ParallelFor(nSurf, [=] AMREX_GPU_DEVICE(int idx) noexcept {
+        const BodySurfaceNode n = nodes[idx];
+        if (!fbx.contains(IntVect(AMREX_D_DECL(n.i, n.j, n.k))))
+          return;
+        arr(n.i, n.j, n.k, ix_) = n.ex;
+        arr(n.i, n.j, n.k, iy_) = n.ey;
+        arr(n.i, n.j, n.k, iz_) = n.ez;
+      });
+    }
+  }
+}
+#endif
 
 //==========================================================
 void Pic::warn_absorb_cfl() {

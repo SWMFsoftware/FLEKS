@@ -16,6 +16,9 @@
 #include "GridAccess.h"
 #include "InitialCondition.h"
 #include "IntrinsicBField.h"
+#ifdef _MI_COUPLING_
+#include "Ionosphere.h"
+#endif
 #include "LinearSolver.h"
 #include "MeshChange.h"
 #include "OHInterface.h"
@@ -621,6 +624,90 @@ private:
   bool is_body_insulating() const {
     return use_body() && bodyFieldBC == BodyFieldBC::insulating;
   }
+  bool is_body_ionosphere() const {
+    return use_body() && bodyFieldBC == BodyFieldBC::ionosphere;
+  }
+#ifdef _MI_COUPLING_
+  struct FacSample {
+    int ix, iy, iz;
+    amrex::Real wx, wy, wz;
+    int ionoIdx;
+    amrex::Real b0x, b0y, b0z;
+    amrex::Real bIonoR;
+  };
+
+  struct FacLevelCache {
+    amrex::BoxArray ba;
+    amrex::DistributionMapping dm;
+    bool valid = false;
+    amrex::Vector<amrex::Gpu::DeviceVector<FacSample> > boxSamples;
+  };
+
+  struct FacShellCache {
+    int nTotal = 0;
+    int nLocalActive = 0;
+    amrex::Real lastFacRadius = -1.0;
+    amrex::Gpu::DeviceVector<amrex::Real> jrDevBuf;
+    std::vector<int> localIonoIdx;
+    std::vector<amrex::Real> jrCompactHost;
+    std::vector<amrex::Real> jrFullHost;
+    std::vector<FacLevelCache> levels;
+    bool initialized = false;
+
+    void clear() {
+      nTotal = 0;
+      nLocalActive = 0;
+      lastFacRadius = -1.0;
+      jrDevBuf.clear();
+      localIonoIdx.clear();
+      jrCompactHost.clear();
+      jrFullHost.clear();
+      levels.clear();
+      initialized = false;
+    }
+  };
+
+  struct BodySurfaceNode {
+    int i, j, k;
+    int idx00, idx10, idx01, idx11;
+    amrex::Real w00, w10, w01, w11;
+    amrex::Real jTh0, jTh1, jTh2;
+    amrex::Real jPh0, jPh1, jPh2;
+    amrex::Real ex, ey, ez;
+  };
+
+  struct BodyBoxCache {
+    int localIndex = -1;
+    amrex::Box interiorSubBox;
+    amrex::Gpu::DeviceVector<BodySurfaceNode> surfaceNodes;
+  };
+
+  struct BodyLevelCache {
+    amrex::BoxArray ba;
+    amrex::DistributionMapping dm;
+    std::uint64_t cachedGeneration = 0;
+    bool valid = false;
+    std::vector<int> localToBodyIdx;
+    amrex::Vector<BodyBoxCache> bodyBoxes;
+
+    void clear() {
+      ba = amrex::BoxArray();
+      dm = amrex::DistributionMapping();
+      cachedGeneration = 0;
+      valid = false;
+      localToBodyIdx.clear();
+      bodyBoxes.clear();
+    }
+  };
+
+  std::unique_ptr<Ionosphere> ionosphere_;
+  IonosphereParams ionoParams_;
+  bool ionoConfigured_ = false;
+  amrex::Real lastIonoSolveTimeSI_ = -1.0;
+  int lastIonoSolveCycle_ = -1;
+  FacShellCache facShellCache_;
+  std::vector<BodyLevelCache> bodyIonoCache_;
+#endif
   // Static intrinsic field of the planet (#DIPOLE / #CRUSTALFIELD), on the
   // same grids as the evolved field. Filled at init and after every regrid,
   // never advanced by Faraday's law.
@@ -1450,6 +1537,15 @@ public:
   void project_body_E(amrex::MultiFab &mf, const int iLev);
   void project_body_B(amrex::MultiFab &mf, const int iLev);
   void fill_body_E_insulating(amrex::MultiFab &mf, const int iLev);
+#ifdef _MI_COUPLING_
+  void init_ionosphere();
+  void ensure_fac_shell_cache();
+  void ensure_body_iono_cache(const int iLev);
+  void refresh_body_iono_E(const int iLev);
+  void update_ionosphere(bool force = false);
+  void extract_ionosphere_fac(std::vector<amrex::Real> &jrOutwardSI);
+  void apply_body_E_ionosphere(amrex::MultiFab &mf, const int iLev);
+#endif
 
   // Dispatch the electric-field condition selected by #BODYBOUNDARY.
   void apply_body_E_bc(amrex::MultiFab &mf, const int iLev);

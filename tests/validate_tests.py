@@ -410,8 +410,11 @@ AMR_TESTS = {
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
 AMREX3D_TESTS = {
     "amr_divb", "amr_dive_inflow", "lightwave", "particle_tracker",
-    "wave_amr_3d", "exosphere", "ionosphereemission", "constantppv",
+    "wave_amr_3d", "exosphere", "ionosphereemission", "constantppv", "mi",
 }
+
+# Tests requiring the self-contained MI coupling module (-mi).
+MI_COUPLING_TESTS = {"mi"}
 
 # Tests needing a true-2D AMReX library (built with -amrex2d).
 AMREX2D_TESTS = {"body", "body_rarefaction", "openboundary"}
@@ -497,12 +500,26 @@ def configured_nlevmax():
     return int(m.group(1)) if m else None
 
 
+def configured_mi_coupling():
+    """Return True if MI coupling (-mi) is enabled in src/Makefile."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        with open(os.path.join(root, "src", "Makefile"), "r") as f:
+            content = f.read()
+    except (OSError, IOError):
+        return False
+    import re
+    return bool(re.search(r"^\s*USE_MI_COUPLING\s*=\s*yes\b", content, re.M))
+
+
 def preflight_check(test_name):
     """Fail fast if the configured binary cannot run `test_name`.
 
     Returns (ok, reason, skip).  ok=False means do not run: skip=True -> record
     as SKIPPED (needs a different AMReX dimension); skip=False -> FAILED.
     """
+    if test_name in MI_COUPLING_TESTS and not configured_mi_coupling():
+        return False, "requires -mi build (./Config.pl -amrex3d -mi)", True
     if test_name in EXO_SOURCE_TESTS and not configured_user_source_is_exo():
         return False, (
             f"Test '{test_name}' needs the Exosphere user source, but "

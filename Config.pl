@@ -180,6 +180,7 @@ my $NewUserSource;
 my $ListUserSources;
 my $VerboseGmres;
 my $SimdFlags;
+my $UseMiCoupling;
 
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
@@ -192,6 +193,8 @@ foreach (@Arguments){
      if(/^-nodebug$/i)          {$VerboseGmres="no";  next};
      if(/^-simd(?:=(\S+))?$/i)  {$SimdFlags = defined($1) ? $1 : "yes"; next};
      if(/^-nosimd$/i)           {$SimdFlags="no";  next};
+     if(/^-mi$/i)               {$UseMiCoupling="yes"; next};
+     if(/^-nomi$/i)             {$UseMiCoupling="no";  next};
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
 
@@ -224,6 +227,8 @@ if (!defined $NewUserSource && !-f $UserSourceFile &&
 &set_verbose_gmres if defined $VerboseGmres;
 
 &set_simd_flags if defined $SimdFlags;
+
+&set_mi_coupling if defined $UseMiCoupling;
 
 &print_help if $Help;
 
@@ -308,6 +313,31 @@ sub set_simd_flags{
     }
 }
 ################################################################################
+sub set_mi_coupling{
+    # Toggle the self-contained MI coupling module in src/Makefile:
+    #   -mi   -> USE_MI_COUPLING = yes (-D_MI_COUPLING_, compiles src/mi/*.cpp)
+    #   -nomi -> USE_MI_COUPLING = no  (default)
+    print "Setting MI coupling to '$UseMiCoupling' in src/Makefile\n";
+
+    @ARGV = ("src/Makefile");
+    while(<>){
+        s/^(\s*USE_MI_COUPLING\s*=).*/$1 $UseMiCoupling/;
+        print;
+    }
+}
+################################################################################
+sub get_mi_coupling_info{
+    open(my $file, "<", "src/Makefile") or return "no";
+    while (<$file>) {
+        if (/^\s*USE_MI_COUPLING\s*=\s*(\S+)/) {
+            close $file;
+            return $1;
+        }
+    }
+    close $file;
+    return "no";
+}
+################################################################################
 sub set_user_source{
     my $sourceFile = "$UserSourceDir/${NewUserSource}Source.h";
 
@@ -353,6 +383,7 @@ sub show_settings{
     print "AMReX: GPU          = " .
         (&amrex_uses_cuda("$AmrexDir/InstallDir") ? "CUDA" : "none") . " \n";
     print "User Source         = " . &get_user_source_info . " \n";
+    print "MI Coupling         = " . &get_mi_coupling_info . " \n";
 }
 ################################################################################
 sub get_user_source_info{
@@ -514,6 +545,10 @@ sub print_help{
               or -march=ARCH -fopenmp-simd if ARCH is given, e.g. x86-64-v3) in
               src/Makefile for C++ compilation. Enabled by default.
 -nosimd       Disable extra SIMD compiler flags in src/Makefile.
+
+-mi           Enable the self-contained magnetosphere-ionosphere (MI) coupling
+              module (USE_MI_COUPLING = yes in src/Makefile, -D_MI_COUPLING_).
+-nomi         Disable the MI coupling module (default).
 
 -lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.
 
