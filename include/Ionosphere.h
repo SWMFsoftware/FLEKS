@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -180,8 +181,9 @@ struct IonosphereDeviceView {
   DipoleFrame frame;
   int nTheta = 0; // Full pole-to-pole grid size (odd, 0..pi)
   int nPhi = 0;   // Periodic longitude grid size (0..2pi, last == first)
-  amrex::Real dTheta = 1.0;
-  amrex::Real dPhi = 1.0;
+  amrex::Real invDTheta = 1.0;
+  amrex::Real invDPhi = 1.0;
+  amrex::Real eScale = -1.0;               // -frame.si2NoE / frame.no2SiL
   amrex::Real latBoundaryRad = 0.0;        // Low-latitude cutoff [rad]
   const amrex::Real *dPhiDTheta = nullptr; // SI [V/rad], size nTheta * nPhi
   const amrex::Real *dPhiDPhi = nullptr;   // SI [V/rad], size nTheta * nPhi
@@ -225,8 +227,8 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void eval_ionosphere_E_dev(
 
   // Bilinear interpolation of (dPhi/dTheta, dPhi/dPhi) on the (nTheta x nPhi)
   // uniform spherical grid.
-  const amrex::Real tNorm = theta / v.dTheta;
-  const amrex::Real pNorm = phi / v.dPhi;
+  const amrex::Real tNorm = theta * v.invDTheta;
+  const amrex::Real pNorm = phi * v.invDPhi;
 
   int i0 = static_cast<int>(std::floor(tNorm));
   int j0 = static_cast<int>(std::floor(pNorm));
@@ -255,13 +257,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void eval_ionosphere_E_dev(
       (1.0 - wt) * ((1.0 - wp) * v.dPhiDPhi[idx00] + wp * v.dPhiDPhi[idx01]) +
       wt * ((1.0 - wp) * v.dPhiDPhi[idx10] + wp * v.dPhiDPhi[idx11]);
 
-  // E_smg [V/m] = -(dPhi/dTheta * grad_SI(theta) + dPhi/dPhi * grad_SI(phi))
-  // Since jacSmg is in [1 / code_length], divide by no2SiL to get [1 / m],
-  // then multiply by si2NoE to convert [V/m] -> FLEKS code units.
-  const amrex::Real scale = -v.frame.si2NoE / v.frame.no2SiL;
   amrex::Real eSmg[3];
   for (int b = 0; b < 3; ++b) {
-    eSmg[b] = scale * (dPdT * jacSmg[0][b] + dPdP * jacSmg[1][b]);
+    eSmg[b] = v.eScale * (dPdT * jacSmg[0][b] + dPdP * jacSmg[1][b]);
   }
 
   // Rotate back from SMG to simulation frame: eSim = R^T * eSmg.
@@ -321,6 +319,34 @@ struct IonosphereParams {
   int dnOutput = 0;
 };
 
+// Persistent per-hemisphere sparse operator, ILU(0) preconditioner, and
+// BiCGSTAB scratch workspace (allocated once in Ionosphere::init).
+struct HemisphereWorkspace {
+  int iMin = 1;
+  int iMax = 0;
+  int nTh = 0;
+  int nPh = 0;
+  bool isNorth = true;
+  bool isNeumann = false;
+
+  // 5-point stencil: k = j * nTh + iLoc
+  std::vector<amrex::Real> cA, cB, cC, cD, cE;
+  // ILU(0) factors with pre-scaled upper factors fU_s = fU * dInv, f1U_s = f1U
+  // * dInv
+  std::vector<amrex::Real> dInv, eL, fU, fUs, e1L, f1U, f1Us;
+
+  // BiCGSTAB vectors
+  std::vector<amrex::Real> rhs, x, r, rHat, p, v, s, t, y, z;
+
+  void allocate(int iMinIn, int iMaxIn, int nPhiUsed, bool northIn,
+                bool neumannIn);
+  void build_ilu0();
+  void apply_precond(const std::vector<amrex::Real> &in,
+                     std::vector<amrex::Real> &out) const;
+  void matvec(const std::vector<amrex::Real> &in,
+              std::vector<amrex::Real> &out) const;
+};
+
 class Ionosphere {
 public:
   Ionosphere() = default;
@@ -330,11 +356,8 @@ public:
   const IonosphereParams &get_params() const { return params_; }
   IonosphereParams &params() { return params_; }
 
-  // Initialize grid geometry, dipole frame, and conductances.
-  // dipoleMomentCode: 3-component dipole moment in code units.
-  // bodyCenterCode:   3-component body center in code units.
-  // rPlanetSI:        planetary radius [m].
-  // si2NoL, si2NoE, si2NoB: unit conversion factors (SI -> code).
+  // Initialize grid geometry, dipole frame, static conductances, and
+  // persistent hemisphere workspaces.
   void init(const amrex::Real dipoleMomentCode[3],
             const amrex::Real bodyCenterCode[3], amrex::Real rPlanetSI,
             amrex::Real si2NoL, amrex::Real si2NoE, amrex::Real si2NoB,
@@ -351,10 +374,13 @@ public:
   const std::vector<amrex::Real> &phi() const { return phi_; }
   const DipoleFrame &frame() const { return frame_; }
 
+  // Monotonically incremented whenever gradients change (solve /
+  // set_potential).
+  std::uint64_t generation() const { return generation_; }
+
   // Set outward radial FAC J_r [A/m^2] on the full (nTheta x nPhi) grid,
   // optionally smooth it, update conductances, solve both hemispheres,
   // compute gradients, and sync to GPU device memory.
-  // Returns true if both hemispheres converged.
   bool solve(const std::vector<amrex::Real> &jrOutwardSI,
              bool doBroadcast = true);
 
@@ -392,10 +418,13 @@ public:
                                  amrex::Real &dipoleSign);
 
 private:
+  void compute_base_conductances();
   void compute_conductances();
   void compute_conductance_tensor();
+  void build_hemisphere_matrix(HemisphereWorkspace &hw);
   void smooth_jr();
-  bool solve_hemisphere(bool isNorth, int &nIterOut, amrex::Real &residOut);
+  bool solve_hemisphere(HemisphereWorkspace &hw, int &nIterOut,
+                        amrex::Real &residOut);
   void add_corotation_potential();
   void compute_gradients();
   void sync_device_gradients();
@@ -403,22 +432,33 @@ private:
   IonosphereParams params_;
   DipoleFrame frame_;
   bool initialized_ = false;
+  bool isStaticConductance_ = true;
+  bool matrixBuilt_ = false;
   amrex::Real rPlanetSI_ = 6.371e6;
   amrex::Real bEqSI_ = -3.0e-5;
+  std::uint64_t generation_ = 0;
 
   int nTheta_ = 0;
   int nPhi_ = 0;
   amrex::Real dTheta_ = 0.0;
   amrex::Real dPhi_ = 0.0;
+  amrex::Real invDTheta_ = 0.0;
+  amrex::Real invDPhi_ = 0.0;
   amrex::Real latBoundaryRad_ = 0.0;
 
   std::vector<amrex::Real> theta_;
   std::vector<amrex::Real> phi_;
   std::vector<amrex::Real> sinTheta_;
   std::vector<amrex::Real> cosTheta_;
+  std::vector<amrex::Real> sinPhi_;
+  std::vector<amrex::Real> cosPhi_;
+  std::vector<amrex::Real> dPhiCorot_;
 
   // Full-grid 2D arrays (size nTheta_ * nPhi_, index = i * nPhi_ + j)
   std::vector<amrex::Real> jr_;
+  std::vector<amrex::Real> jrTmp_;
+  std::vector<amrex::Real> sigmaPBase_;
+  std::vector<amrex::Real> sigmaHBase_;
   std::vector<amrex::Real> sigmaP_;
   std::vector<amrex::Real> sigmaH_;
   std::vector<amrex::Real> sigmaThTh_;
@@ -433,7 +473,10 @@ private:
   std::vector<amrex::Real> phiSolved_;  // Raw solved potential [V]
   std::vector<amrex::Real> dPhiDTheta_; // [V/rad]
   std::vector<amrex::Real> dPhiDPhi_;   // [V/rad]
+  std::vector<amrex::Real> bcastBuf_;   // Packed MPI broadcast buffer
   bool hasPrevSolution_ = false;
+
+  HemisphereWorkspace hemWork_[2];
 
   // Device copies of gradients for GPU/OpenMP body-BC kernels.
   amrex::Gpu::DeviceVector<amrex::Real> dPhiDThetaDev_;
