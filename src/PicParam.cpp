@@ -1375,8 +1375,7 @@ void Pic::post_process_param() {
   } else if (fieldSolverMode == PicSolverMode::Implicit) {
     Print() << "  fieldSolverMode: "
             << (useCompositeSolver ? "implicit1" : "implicit")
-            << " (theta = " << fsolver.theta
-            << ")\n";
+            << " (theta = " << fsolver.theta << ")\n";
   } else {
     Print() << "  fieldSolverMode: none (particle tracer / static field)\n";
   }

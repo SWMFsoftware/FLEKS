@@ -166,8 +166,8 @@ void Pic::composite_setup() {
   const int nLev = n_lev();
 
   // Nothing to do if the grid has not changed.
-  bool isCurrent = static_cast<int>(compVol.size()) == n_lev_max() &&
-                   nLevComposite_ == nLev;
+  bool isCurrent =
+      static_cast<int>(compVol.size()) == n_lev_max() && nLevComposite_ == nLev;
   for (int iLev = 0; isCurrent && iLev < nLev; iLev++) {
     isCurrent = !compVol[iLev].empty() &&
                 compVol[iLev].boxArray() == node_box_array(iLev) &&
@@ -365,10 +365,9 @@ void Pic::composite_fill_E(const double* const p, Vector<MultiFab>& mf) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     mf[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev > 0) {
-      fill_fine_lev_bny_from_coarse(mf[iLev - 1], mf[iLev], 0, 3,
-                                    refRatio(iLev - 1), Geom(iLev - 1),
-                                    Geom(iLev), node_status(iLev),
-                                    node_bilinear_interp);
+      fill_fine_lev_bny_from_coarse(
+          mf[iLev - 1], mf[iLev], 0, 3, refRatio(iLev - 1), Geom(iLev - 1),
+          Geom(iLev), node_status(iLev), node_bilinear_interp);
     }
   }
 }
@@ -470,8 +469,9 @@ void Pic::update_E_composite() {
     }
     ParallelDescriptor::ReduceRealSum(wE0);
     ParallelDescriptor::ReduceRealSum(wE1);
-    Print() << printPrefix << "Composite budget: dt E.J = " << std::setprecision(12)
-            << jDotE << " dW_E = " << (wE1 - wE0) * 0.5 / fourPI << std::endl;
+    Print() << printPrefix
+            << "Composite budget: dt E.J = " << std::setprecision(12) << jDotE
+            << " dW_E = " << (wE1 - wE0) * 0.5 / fourPI << std::endl;
   }
 
   composite_fill_E(eOld.data(), nodeEth);
@@ -675,14 +675,16 @@ void Pic::composite_self_test() {
   Long nUnknownAll = nCompUnknown;
   ParallelDescriptor::ReduceLongSum(nUnknownAll);
 
-  Print() << printPrefix << "Composite solver test: unknown nodes = "
-          << nUnknownAll << "\n"
-          << printPrefix << "  sum(V_g)/V_domain - 1    = "
-          << volSum / volDomain - 1 << "\n"
+  Print() << printPrefix
+          << "Composite solver test: unknown nodes = " << nUnknownAll << "\n"
+          << printPrefix
+          << "  sum(V_g)/V_domain - 1    = " << volSum / volDomain - 1 << "\n"
           << printPrefix << "  u.S v = " << uSv << ", v.S u = " << vSu
           << ", sum_leaf V (Cu).(Cv) = " << cuDotCv << "\n"
-          << printPrefix << "  (u.Sv - v.Su)/|u.Sv|     = "
-          << (uSv - vSu) / std::abs(uSv) << "\n"
-          << printPrefix << "  (u.Sv - (Cu).(Cv))/|u.Sv| = "
-          << (uSv - cuDotCv) / std::abs(uSv) << std::endl;
+          << printPrefix
+          << "  (u.Sv - v.Su)/|u.Sv|     = " << (uSv - vSu) / std::abs(uSv)
+          << "\n"
+          << printPrefix
+          << "  (u.Sv - (Cu).(Cv))/|u.Sv| = " << (uSv - cuDotCv) / std::abs(uSv)
+          << std::endl;
 }

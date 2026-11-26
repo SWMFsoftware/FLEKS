@@ -392,8 +392,8 @@ private:
   // the composite matvec over all levels. Not an AMR level.
   static constexpr int iLevComposite_ = -1;
   int nLevComposite_ = 0;
-  int nCompUnknown = 0; // unknown nodes on this processor
-  amrex::Vector<amrex::MultiFab> compLeaf;     // 1 in leaf cells, else 0
+  int nCompUnknown = 0;                    // unknown nodes on this processor
+  amrex::Vector<amrex::MultiFab> compLeaf; // 1 in leaf cells, else 0
   amrex::Vector<amrex::iMultiFab> compUnknown; // 1 on unknown nodes, else 0
   amrex::Vector<amrex::MultiFab> compVol;      // node volume V_g
   amrex::Vector<amrex::MultiFab> compX, compT, compM, compCurl; // scratch
