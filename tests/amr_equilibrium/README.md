@@ -1,6 +1,6 @@
 # AMR Plasma Thermal Equilibrium Test
 
-This test verifies the stability and accuracy of a uniform plasma thermal equilibrium across a stationary coarse-fine AMR interface using both the Full PIC solver (`PARAM.in.implicit`) and the Hybrid PIC solver (`PARAM.in.hybrid`).
+This test verifies the stability and accuracy of a uniform plasma thermal equilibrium across a stationary coarse-fine AMR interface using the Full PIC solver (`PARAM.in.implicit`, `PARAM.in.implicit1`) and the Hybrid PIC solver (`PARAM.in.hybrid`).
 
 ## Physical Setup
 
@@ -12,6 +12,9 @@ This test verifies the stability and accuracy of a uniform plasma thermal equili
   - Kinetic ions ($m_i = 1.0, q_i = 1$) and kinetic electrons ($m_e = 0.04, q_e = -1$, $m_i/m_e = 25$).
   - Charge neutral ($n_e = n_i = 1.0$) and equal initial temperature ($T_i = T_e = 10\ \text{eV}$).
   - Semi-implicit field solver with GMRES (`#FIELDSOLVER implicit`).
+- **Full PIC, single solve (`PARAM.in.implicit1`)**:
+  - Same plasma, with `#FIELDSOLVER implicit1`: one implicit solve for the electric field over both grid levels instead of one solve per level.
+  - $\theta = 0.5$ and no div(E) correction, so that the total energy is conserved to the tolerance of the linear solver.
 
 ## Mesh Refinement Geometry
 
@@ -26,7 +29,7 @@ This test verifies the stability and accuracy of a uniform plasma thermal equili
 
 The test validator (`validate.py`) enforces:
 1. **Energy Conservation & Stability**:
-   - Total energy drift $|\Delta E_{\text{tot}}| / E_0 < 0.1\%$ across the run.
+   - Total energy drift $|\Delta E_{\text{tot}}| / E_0 < 0.1\%$ across the run ($< 10^{-6}$ for `PARAM.in.implicit1`).
    - Magnetic energy $E_b$ remains bounded without unphysical growth.
 2. **AMR Hierarchy Detection**:
    - Both coarse ($\Delta x \approx 1.0$) and fine ($\Delta x \approx 0.5$) spacings are identified.
@@ -43,6 +46,9 @@ python3 tests/validate_tests.py --test=amr_equilibrium -v
 
 # Run only Full PIC:
 python3 tests/validate_tests.py --test=amr_equilibrium.full -v
+
+# Run only Full PIC with the single solve over both levels:
+python3 tests/validate_tests.py --test=amr_equilibrium.implicit1 -v
 
 # Run only Hybrid PIC:
 python3 tests/validate_tests.py --test=amr_equilibrium.hybrid -v

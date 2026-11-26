@@ -1372,7 +1372,9 @@ void Pic::post_process_param() {
     if (rhoMinOhm <= 0)
       rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
   } else if (fieldSolverMode == PicSolverMode::Implicit) {
-    Print() << "  fieldSolverMode: implicit (theta = " << fsolver.theta
+    Print() << "  fieldSolverMode: "
+            << (useCompositeSolver ? "implicit1" : "implicit")
+            << " (theta = " << fsolver.theta
             << ")\n";
   } else {
     Print() << "  fieldSolverMode: none (particle tracer / static field)\n";

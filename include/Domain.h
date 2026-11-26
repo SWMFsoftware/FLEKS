@@ -64,6 +64,8 @@ private:
   bool receiveICOnly = false;
   bool useHybridPIC = false;
   PicSolverMode fieldSolverMode = PicSolverMode::Implicit;
+  // #FIELDSOLVER implicit1: one implicit solve over all AMR levels.
+  bool useCompositeSolver = false;
   bool usePT = false;
 
   // Read by read_param() together with the other commands.

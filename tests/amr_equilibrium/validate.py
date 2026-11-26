@@ -94,6 +94,10 @@ def validate_log(pic_diags=None, test_name=None):
     e0 = pic_diags[0].get("Etot", 0.0)
     eb0 = pic_diags[0].get("Eb", 0.0)
     max_energy_drift = 0.001  # 0.1% max drift
+    if test_name is not None and test_name.endswith("implicit1"):
+        # Single solve over both levels with theta = 0.5 and no div(E)
+        # correction: the energy is conserved to the linear solver tolerance.
+        max_energy_drift = 1.0e-6
 
     for r in pic_diags:
         cyc = r["cycle"]
@@ -110,7 +114,7 @@ def validate_log(pic_diags=None, test_name=None):
 
         drift = abs(etot - e0) / e0
         if drift > max_energy_drift:
-            return False, f"Energy drift too large at cycle {cyc}: {drift * 100:.3f}% (limit {max_energy_drift * 100:.2f}%)"
+            return False, f"Energy drift too large at cycle {cyc}: {drift * 100:.3g}% (limit {max_energy_drift * 100:.2g}%)"
 
         if eb0 > 0 and eb > eb0 * 1.5:
             return False, f"Magnetic energy grew excessively at cycle {cyc} (Eb={eb:.3e}, initial={eb0:.3e})"
@@ -124,7 +128,7 @@ def validate_log(pic_diags=None, test_name=None):
         last_etot,
         final_drift * 100,
     )
-    return True, f"Passed (Etot drift {final_drift * 100:.4f}%)"
+    return True, f"Passed (Etot drift {final_drift * 100:.3g}%)"
 
 
 def validate_plot(test_name=None):

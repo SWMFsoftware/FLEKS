@@ -382,13 +382,33 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
           activeRegion.intersections(amrex::coarsen(box, ratioToLev0));
       ParallelFor(box, [&](int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(cellArr(i, j, k))) {
-          const IntVect iv0 =
+          IntVect iv0 =
               amrex::coarsen(IntVect(AMREX_D_DECL(i, j, k)), ratioToLev0);
+          // A ghost cell beyond a periodic face is the image of a cell on the
+          // other side of the domain. Without the wrap, the ghost cells of a
+          // refined level that are outside the level and beyond a periodic
+          // face were marked as domain boundary, and the particles moving
+          // into them were deleted.
+          bool isWrapped = false;
+          for (int iDim = 0; iDim < nDim; ++iDim) {
+            if (!Geom(0).isPeriodic(iDim))
+              continue;
+            const int lo0 = Geom(0).Domain().smallEnd(iDim);
+            const int n0 = Geom(0).Domain().length(iDim);
+            if (iv0[iDim] < lo0 || iv0[iDim] >= lo0 + n0) {
+              iv0[iDim] = lo0 + (((iv0[iDim] - lo0) % n0) + n0) % n0;
+              isWrapped = true;
+            }
+          }
           bool isInside = false;
-          for (const auto& isect : isects) {
-            if (isect.second.contains(iv0)) {
-              isInside = true;
-              break;
+          if (isWrapped) {
+            isInside = activeRegion.contains(iv0);
+          } else {
+            for (const auto& isect : isects) {
+              if (isect.second.contains(iv0)) {
+                isInside = true;
+                break;
+              }
             }
           }
           if (!isInside) {

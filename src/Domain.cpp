@@ -145,6 +145,7 @@ void Domain::init(Real time, const int iDomain, const std::string &paramString,
   ptInfo.set_fluid_interface(fi.get());
   pic =
       std::make_unique<Pic>(*grid, fi.get(), tc.get(), gridID, fieldSolverMode);
+  pic->set_composite_solver(useCompositeSolver);
 
   if (usePT)
     pt = std::make_unique<ParticleTracker>(*grid, fi.get(), tc.get(), gridID,
@@ -1427,9 +1428,15 @@ void Domain::set_field_solver_mode(const std::string &modeStr) {
   std::string s = modeStr;
   for (char &c : s)
     c = std::tolower(c);
+  useCompositeSolver = false;
   if (s == "implicit" || s == "semi-implicit") {
     fieldSolverMode = PicSolverMode::Implicit;
     useHybridPIC = false;
+  } else if (s == "implicit1") {
+    // Implicit solver with a single solve over all AMR levels.
+    fieldSolverMode = PicSolverMode::Implicit;
+    useHybridPIC = false;
+    useCompositeSolver = true;
   } else if (s == "explicit" || s == "explicit-pic") {
     fieldSolverMode = PicSolverMode::Explicit;
     useHybridPIC = false;
@@ -1441,7 +1448,8 @@ void Domain::set_field_solver_mode(const std::string &modeStr) {
     useHybridPIC = false;
   } else {
     Abort("Invalid #FIELDSOLVER mode '" + modeStr +
-          "'. Expected 'implicit', 'explicit', 'hybrid', or 'none'.");
+          "'. Expected 'implicit', 'implicit1', 'explicit', 'hybrid', or "
+          "'none'.");
   }
 }
 
