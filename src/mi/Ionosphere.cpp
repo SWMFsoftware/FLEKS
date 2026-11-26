@@ -8,6 +8,7 @@
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_Print.H>
 
+#include "GpuBackend.h"
 #include "Ionosphere.h"
 
 using namespace amrex;
@@ -1211,22 +1212,15 @@ bool Ionosphere::solve(const std::vector<Real> &jrOutwardSI, bool doBroadcast) {
 
     bool convN = true;
     bool convS = true;
-#ifdef _OPENMP
-#pragma omp parallel sections
-    {
-#pragma omp section
-      {
-        convN = solve_hemisphere(hemWork_[0], lastIterNorth_, lastResidNorth_);
-      }
-#pragma omp section
-      {
-        convS = solve_hemisphere(hemWork_[1], lastIterSouth_, lastResidSouth_);
-      }
-    }
-#else
-    convN = solve_hemisphere(hemWork_[0], lastIterNorth_, lastResidNorth_);
-    convS = solve_hemisphere(hemWork_[1], lastIterSouth_, lastResidSouth_);
-#endif
+    parallel_sections(
+        [&]() {
+          convN =
+              solve_hemisphere(hemWork_[0], lastIterNorth_, lastResidNorth_);
+        },
+        [&]() {
+          convS =
+              solve_hemisphere(hemWork_[1], lastIterSouth_, lastResidSouth_);
+        });
     convFlag = (convN && convS) ? 1 : 0;
 
     // Temporal blending with previous solution.
