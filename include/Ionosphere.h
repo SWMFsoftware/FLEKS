@@ -319,24 +319,43 @@ struct IonosphereParams {
   int dnOutput = 0;
 };
 
-// Persistent per-hemisphere sparse operator, ILU(0) preconditioner, and
-// BiCGSTAB scratch workspace (allocated once in Ionosphere::init).
+// Persistent per-hemisphere sparse operator, wavefront MILU(0) preconditioner,
+// and BiCGSTAB scratch workspace (allocated once in Ionosphere::init).
 struct HemisphereWorkspace {
+  struct WavefrontDiag {
+    int off = 0;      // Start index in wavefront arrays for diagonal d = i + j
+    int len = 0;      // Number of unknowns on diagonal d
+    int iStart = 0;   // Starting local theta index iLoc on diagonal d
+    int prevBase = 0; // off[d-1] + (iStart(d) - iStart(d-1)); valid for d > 0
+    int nextBase =
+        0; // off[d+1] + (iStart(d) - iStart(d+1)); valid for d < nDiag-1
+  };
+
   int iMin = 1;
   int iMax = 0;
   int nTh = 0;
   int nPh = 0;
   bool isNorth = true;
   bool isNeumann = false;
+  int kPin = 0;
 
-  // 5-point stencil: k = j * nTh + iLoc
+  std::vector<WavefrontDiag> diags;
+  std::vector<int> poleWfIdx; // Size nPh: wavefront index of pole-adjacent row
+
+  // 5-point stencil in anti-diagonal wavefront order:
+  // d = iLoc + j, k = diags[d].off + (iLoc - diags[d].iStart)
   std::vector<amrex::Real> cA, cB, cC, cD, cE;
-  // ILU(0) factors with pre-scaled upper factors fU_s = fU * dInv, f1U_s = f1U
-  // * dInv
+  // MILU(0) factors with pre-scaled upper factors fUs = fU * dInv, f1Us = f1U *
+  // dInv
   std::vector<amrex::Real> dInv, eL, fU, fUs, e1L, f1U, f1Us;
 
-  // BiCGSTAB vectors
+  // BiCGSTAB vectors (same wavefront ordering)
   std::vector<amrex::Real> rhs, x, r, rHat, p, v, s, t, y, z;
+
+  inline int wf_index(int iLoc, int j) const {
+    const int d = iLoc + j;
+    return diags[d].off + (iLoc - diags[d].iStart);
+  }
 
   void allocate(int iMinIn, int iMaxIn, int nPhiUsed, bool northIn,
                 bool neumannIn);

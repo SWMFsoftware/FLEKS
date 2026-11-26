@@ -185,6 +185,43 @@ void HemisphereWorkspace::allocate(int iMinIn, int iMaxIn, int nPhiUsed,
   isNeumann = neumannIn;
 
   const size_t nX = static_cast<size_t>(nTh) * nPh;
+  const int nDiag = (nTh > 0 && nPh > 0) ? (nTh + nPh - 1) : 0;
+  diags.resize(static_cast<size_t>(nDiag));
+
+  int curOff = 0;
+  for (int d = 0; d < nDiag; ++d) {
+    const int iStart = std::max(0, d - (nPh - 1));
+    const int iEnd = std::min(nTh - 1, d);
+    const int len = iEnd - iStart + 1;
+    diags[d].off = curOff;
+    diags[d].len = len;
+    diags[d].iStart = iStart;
+    diags[d].prevBase = 0;
+    diags[d].nextBase = 0;
+    curOff += len;
+  }
+  for (int d = 0; d < nDiag; ++d) {
+    if (d > 0) {
+      diags[d].prevBase =
+          diags[d - 1].off + (diags[d].iStart - diags[d - 1].iStart);
+    }
+    if (d + 1 < nDiag) {
+      diags[d].nextBase =
+          diags[d + 1].off + (diags[d].iStart - diags[d + 1].iStart);
+    }
+  }
+
+  poleWfIdx.resize(static_cast<size_t>(std::max(0, nPh)));
+  if (nTh > 0 && nPh > 0) {
+    const int iPole = isNorth ? 0 : (nTh - 1);
+    for (int j = 0; j < nPh; ++j) {
+      poleWfIdx[j] = wf_index(iPole, j);
+    }
+    kPin = wf_index(isNorth ? (nTh - 1) : 0, 0);
+  } else {
+    kPin = 0;
+  }
+
   cA.assign(nX, 0.0);
   cB.assign(nX, 0.0);
   cC.assign(nX, 0.0);
@@ -217,35 +254,125 @@ void HemisphereWorkspace::build_ilu0() {
   if (n <= 0)
     return;
 
-  for (int j = 0; j < nPh; ++j) {
-    const int colOff = j * nTh;
-    for (int i = 0; i < nTh; ++i) {
-      const int k = colOff + i;
-      dInv[k] = cA[k];
-      eL[k] = (i > 0) ? cB[k] : Real(0.0);
-      fU[k] = (i < nTh - 1) ? cC[k] : Real(0.0);
-      e1L[k] = (j > 0) ? cD[k] : Real(0.0);
-      f1U[k] = (j < nPh - 1) ? cE[k] : Real(0.0);
+  const int nDiag = static_cast<int>(diags.size());
+
+  const Real *AMREX_RESTRICT a = cA.data();
+  const Real *AMREX_RESTRICT b = cB.data();
+  const Real *AMREX_RESTRICT c = cC.data();
+  const Real *AMREX_RESTRICT dC = cD.data();
+  const Real *AMREX_RESTRICT eC = cE.data();
+
+  Real *AMREX_RESTRICT dI = dInv.data();
+  Real *AMREX_RESTRICT e0 = eL.data();
+  Real *AMREX_RESTRICT f0 = fU.data();
+  Real *AMREX_RESTRICT f0s = fUs.data();
+  Real *AMREX_RESTRICT e1 = e1L.data();
+  Real *AMREX_RESTRICT f1 = f1U.data();
+  Real *AMREX_RESTRICT f1s = f1Us.data();
+
+  // Initialize triangular stencil weights in wavefront order with endpoint
+  // peeling so interior diagonal loops are branchless SIMD.
+  for (int d = 0; d < nDiag; ++d) {
+    const WavefrontDiag &dg = diags[d];
+    const int len = dg.len;
+    const int off = dg.off;
+
+    auto init_endpoint = [&](int m) noexcept {
+      const int i = dg.iStart + m;
+      const int j = d - i;
+      const int k = off + m;
+      e0[k] = (i > 0) ? b[k] : Real(0.0);
+      f0[k] = (i < nTh - 1) ? c[k] : Real(0.0);
+      e1[k] = (j > 0) ? dC[k] : Real(0.0);
+      f1[k] = (j < nPh - 1) ? eC[k] : Real(0.0);
+    };
+
+    init_endpoint(0);
+    if (len >= 3) {
+      const Real *AMREX_RESTRICT bCur = b + off;
+      const Real *AMREX_RESTRICT cCur = c + off;
+      const Real *AMREX_RESTRICT dCur = dC + off;
+      const Real *AMREX_RESTRICT eCur = eC + off;
+      Real *AMREX_RESTRICT e0Cur = e0 + off;
+      Real *AMREX_RESTRICT f0Cur = f0 + off;
+      Real *AMREX_RESTRICT e1Cur = e1 + off;
+      Real *AMREX_RESTRICT f1Cur = f1 + off;
+#pragma omp simd
+      for (int m = 1; m < len - 1; ++m) {
+        e0Cur[m] = bCur[m];
+        f0Cur[m] = cCur[m];
+        e1Cur[m] = dCur[m];
+        f1Cur[m] = eCur[m];
+      }
+    }
+    if (len > 1) {
+      init_endpoint(len - 1);
     }
   }
 
-  for (int k = 0; k < n; ++k) {
-    Real pivot = dInv[k];
-    if (k >= 1) {
-      const Real dPrev = dInv[k - 1];
-      pivot -= eL[k] * (fU[k - 1] + Real(0.5) * f1U[k - 1]) * dPrev;
-    }
-    if (k >= nTh) {
-      const Real dPrevN = dInv[k - nTh];
-      pivot -= e1L[k] * (f1U[k - nTh] + Real(0.5) * fU[k - nTh]) * dPrevN;
-    }
+  // Wavefront MILU(0.5) factorization: all entries along diagonal d depend only
+  // on diagonal d - 1, so interior entries along d vectorize cleanly.
+  for (int d = 0; d < nDiag; ++d) {
+    const WavefrontDiag &dg = diags[d];
+    const int len = dg.len;
+    const int off = dg.off;
 
-    if (std::abs(pivot) < Real(1.0e-30))
-      pivot = (pivot >= 0.0 ? Real(1.0e-30) : Real(-1.0e-30));
-    const Real invP = Real(1.0) / pivot;
-    dInv[k] = invP;
-    fUs[k] = fU[k] * invP;
-    f1Us[k] = f1U[k] * invP;
+    auto factor_endpoint = [&](int m) noexcept {
+      const int i = dg.iStart + m;
+      const int j = d - i;
+      const int k = off + m;
+      Real pivot = a[k];
+      if (i > 0) {
+        const int km = dg.prevBase - 1 + m;
+        pivot -= e0[k] * (f0[km] + Real(0.5) * f1[km]) * dI[km];
+      }
+      if (j > 0) {
+        const int km = dg.prevBase + m;
+        pivot -= e1[k] * (f1[km] + Real(0.5) * f0[km]) * dI[km];
+      }
+      if (std::abs(pivot) < Real(1.0e-30))
+        pivot = (pivot >= Real(0.0) ? Real(1.0e-30) : Real(-1.0e-30));
+      const Real invP = Real(1.0) / pivot;
+      dI[k] = invP;
+      f0s[k] = f0[k] * invP;
+      f1s[k] = f1[k] * invP;
+    };
+
+    factor_endpoint(0);
+    if (len >= 3) {
+      const Real *aCur = a + off;
+      const Real *e0Cur = e0 + off;
+      const Real *e1Cur = e1 + off;
+      const Real *f0Cur = f0 + off;
+      const Real *f1Cur = f1 + off;
+      const Real *dPrevI = dI + (dg.prevBase - 1);
+      const Real *f0PrevI = f0 + (dg.prevBase - 1);
+      const Real *f1PrevI = f1 + (dg.prevBase - 1);
+      const Real *dPrevJ = dI + dg.prevBase;
+      const Real *f0PrevJ = f0 + dg.prevBase;
+      const Real *f1PrevJ = f1 + dg.prevBase;
+      Real *dICur = dI + off;
+      Real *f0sCur = f0s + off;
+      Real *f1sCur = f1s + off;
+
+#pragma omp simd
+      for (int m = 1; m < len - 1; ++m) {
+        Real pivot =
+            aCur[m] -
+            e0Cur[m] * (f0PrevI[m] + Real(0.5) * f1PrevI[m]) * dPrevI[m] -
+            e1Cur[m] * (f1PrevJ[m] + Real(0.5) * f0PrevJ[m]) * dPrevJ[m];
+        pivot = (std::abs(pivot) < Real(1.0e-30))
+                    ? (pivot >= Real(0.0) ? Real(1.0e-30) : Real(-1.0e-30))
+                    : pivot;
+        const Real invP = Real(1.0) / pivot;
+        dICur[m] = invP;
+        f0sCur[m] = f0Cur[m] * invP;
+        f1sCur[m] = f1Cur[m] * invP;
+      }
+    }
+    if (len > 1) {
+      factor_endpoint(len - 1);
+    }
   }
 }
 
@@ -256,32 +383,111 @@ void HemisphereWorkspace::apply_precond(const std::vector<Real> &in,
   if (n <= 0)
     return;
 
+  const int nDiag = static_cast<int>(diags.size());
   const Real *AMREX_RESTRICT rIn = in.data();
-  Real *AMREX_RESTRICT zOut = out.data();
+  Real *zOut = out.data();
   const Real *AMREX_RESTRICT dI = dInv.data();
   const Real *AMREX_RESTRICT e0 = eL.data();
   const Real *AMREX_RESTRICT e1 = e1L.data();
   const Real *AMREX_RESTRICT fu = fUs.data();
   const Real *AMREX_RESTRICT f1u = f1Us.data();
 
-  // Forward solve: L y = r, peeling k < nTh so the main loop has no bounds
-  // checks.
-  zOut[0] = rIn[0] * dI[0];
-  const int kHead = std::min(nTh, n);
-  for (int k = 1; k < kHead; ++k) {
-    zOut[k] = (rIn[k] - e0[k] * zOut[k - 1]) * dI[k];
-  }
-  for (int k = nTh; k < n; ++k) {
-    zOut[k] = (rIn[k] - e0[k] * zOut[k - 1] - e1[k] * zOut[k - nTh]) * dI[k];
+  // Forward wavefront solve: L y = r (d = 0 .. nDiag - 1).
+  for (int d = 0; d < nDiag; ++d) {
+    const WavefrontDiag &dg = diags[d];
+    const int len = dg.len;
+    const int off = dg.off;
+
+    // Endpoint m = 0
+    {
+      const int i = dg.iStart;
+      const int j = d - i;
+      Real val = rIn[off];
+      if (i > 0)
+        val -= e0[off] * zOut[dg.prevBase - 1];
+      if (j > 0)
+        val -= e1[off] * zOut[dg.prevBase];
+      zOut[off] = val * dI[off];
+    }
+
+    // Interior m = 1 .. len - 2: both (i-1, j) and (i, j-1) live contiguously
+    // on diagonal d - 1, so this loop is data-parallel and branchless.
+    if (len >= 3) {
+      const Real *AMREX_RESTRICT rCur = rIn + off;
+      const Real *AMREX_RESTRICT e0Cur = e0 + off;
+      const Real *AMREX_RESTRICT e1Cur = e1 + off;
+      const Real *AMREX_RESTRICT dICur = dI + off;
+      const Real *zPrevI = zOut + (dg.prevBase - 1);
+      const Real *zPrevJ = zOut + dg.prevBase;
+      Real *zCur = zOut + off;
+#pragma omp simd
+      for (int m = 1; m < len - 1; ++m) {
+        zCur[m] =
+            (rCur[m] - e0Cur[m] * zPrevI[m] - e1Cur[m] * zPrevJ[m]) * dICur[m];
+      }
+    }
+
+    // Endpoint m = len - 1
+    if (len > 1) {
+      const int m = len - 1;
+      const int i = dg.iStart + m;
+      const int j = d - i;
+      const int k = off + m;
+      Real val = rIn[k];
+      if (i > 0)
+        val -= e0[k] * zOut[dg.prevBase - 1 + m];
+      if (j > 0)
+        val -= e1[k] * zOut[dg.prevBase + m];
+      zOut[k] = val * dI[k];
+    }
   }
 
-  // Backward solve: U z = y using pre-scaled fUs, f1Us, peeling k >= n - nTh.
-  const int kTailStart = std::max(0, n - nTh);
-  for (int k = n - 2; k >= kTailStart; --k) {
-    zOut[k] -= fu[k] * zOut[k + 1];
-  }
-  for (int k = kTailStart - 1; k >= 0; --k) {
-    zOut[k] -= fu[k] * zOut[k + 1] + f1u[k] * zOut[k + nTh];
+  // Backward wavefront solve: U z = y using pre-scaled fUs, f1Us (d = nDiag - 2
+  // down to 0).
+  for (int d = nDiag - 2; d >= 0; --d) {
+    const WavefrontDiag &dg = diags[d];
+    const int len = dg.len;
+    const int off = dg.off;
+
+    // Endpoint m = 0
+    {
+      const int i = dg.iStart;
+      const int j = d - i;
+      Real sub = 0.0;
+      if (i < nTh - 1)
+        sub += fu[off] * zOut[dg.nextBase + 1];
+      if (j < nPh - 1)
+        sub += f1u[off] * zOut[dg.nextBase];
+      zOut[off] -= sub;
+    }
+
+    // Interior m = 1 .. len - 2: both (i+1, j) and (i, j+1) live contiguously
+    // on diagonal d + 1.
+    if (len >= 3) {
+      const Real *AMREX_RESTRICT fuCur = fu + off;
+      const Real *AMREX_RESTRICT f1uCur = f1u + off;
+      const Real *zNextI = zOut + (dg.nextBase + 1);
+      const Real *zNextJ = zOut + dg.nextBase;
+      Real *zCur = zOut + off;
+#pragma omp simd
+      for (int m = 1; m < len - 1; ++m) {
+        zCur[m] -= fuCur[m] * zNextI[m] + f1uCur[m] * zNextJ[m];
+      }
+    }
+
+    // Endpoint m = len - 1
+    if (len > 1) {
+      const int m = len - 1;
+      const int i = dg.iStart + m;
+      const int j = d - i;
+      const int k = off + m;
+      Real sub = 0.0;
+      if (i < nTh - 1)
+        sub += fu[k] * zOut[dg.nextBase + 1 + m];
+      if (j < nPh - 1)
+        sub += f1u[k] * zOut[dg.nextBase + m];
+      zOut[k] -= sub;
+    }
   }
 }
 
@@ -291,71 +497,76 @@ void HemisphereWorkspace::matvec(const std::vector<Real> &in,
   if (nTh <= 0 || nPh <= 0)
     return;
 
+  const int nDiag = static_cast<int>(diags.size());
   const Real *AMREX_RESTRICT xIn = in.data();
   Real *AMREX_RESTRICT yOut = out.data();
   const Real *AMREX_RESTRICT a = cA.data();
   const Real *AMREX_RESTRICT b = cB.data();
   const Real *AMREX_RESTRICT c = cC.data();
-  const Real *AMREX_RESTRICT d = cD.data();
-  const Real *AMREX_RESTRICT e = cE.data();
+  const Real *AMREX_RESTRICT dC = cD.data();
+  const Real *AMREX_RESTRICT eC = cE.data();
 
   // Compute pole average from the row adjacent to the pole.
   Real poleAvg = 0.0;
-  const int iPoleNeighbor = isNorth ? 0 : (nTh - 1);
   for (int j = 0; j < nPh; ++j) {
-    poleAvg += xIn[j * nTh + iPoleNeighbor];
+    poleAvg += xIn[poleWfIdx[j]];
   }
   poleAvg /= static_cast<Real>(nPh);
 
   const Real neuFactor = isNeumann ? Real(1.0) : Real(0.0);
 
-  for (int j = 0; j < nPh; ++j) {
-    const int jPrev = (j == 0) ? (nPh - 1) : (j - 1);
-    const int jNext = (j == nPh - 1) ? 0 : (j + 1);
-    const int colOff = j * nTh;
-    const int prevOff = jPrev * nTh;
-    const int nextOff = jNext * nTh;
+  for (int d = 0; d < nDiag; ++d) {
+    const WavefrontDiag &dg = diags[d];
+    const int len = dg.len;
+    const int off = dg.off;
 
-    // Peel i = 0
-    {
-      const int k = colOff;
-      const Real xIm1 = isNorth ? poleAvg : (neuFactor * xIn[k]);
-      const Real xIp1 =
-          (nTh > 1) ? xIn[k + 1] : (isNorth ? (neuFactor * xIn[k]) : poleAvg);
-      yOut[k] = a[k] * xIn[k] + b[k] * xIm1 + c[k] * xIp1 +
-                d[k] * xIn[prevOff] + e[k] * xIn[nextOff];
-    }
+    auto eval_endpoint = [&](int m) noexcept {
+      const int i = dg.iStart + m;
+      const int j = d - i;
+      const int k = off + m;
+      const Real xIm1 = (i > 0) ? xIn[dg.prevBase - 1 + m]
+                                : (isNorth ? poleAvg : neuFactor * xIn[k]);
+      const Real xIp1 = (i < nTh - 1)
+                            ? xIn[dg.nextBase + 1 + m]
+                            : (isNorth ? neuFactor * xIn[k] : poleAvg);
+      const Real xJm1 = xIn[wf_index(i, (j == 0) ? (nPh - 1) : (j - 1))];
+      const Real xJp1 = xIn[wf_index(i, (j == nPh - 1) ? 0 : (j + 1))];
+      yOut[k] = a[k] * xIn[k] + b[k] * xIm1 + c[k] * xIp1 + dC[k] * xJm1 +
+                eC[k] * xJp1;
+    };
 
-    // Interior i = 1 .. nTh - 2: branchless SIMD loop.
-    const Real *AMREX_RESTRICT xCol = xIn + colOff;
-    const Real *AMREX_RESTRICT xPrev = xIn + prevOff;
-    const Real *AMREX_RESTRICT xNext = xIn + nextOff;
-    const Real *AMREX_RESTRICT aCol = a + colOff;
-    const Real *AMREX_RESTRICT bCol = b + colOff;
-    const Real *AMREX_RESTRICT cCol = c + colOff;
-    const Real *AMREX_RESTRICT dCol = d + colOff;
-    const Real *AMREX_RESTRICT eCol = e + colOff;
-    Real *AMREX_RESTRICT yCol = yOut + colOff;
+    eval_endpoint(0);
+
+    // Interior m = 1 .. len - 2: all 4 neighbors are strictly in-bounds and
+    // unit-stride contiguous on diagonals d - 1 and d + 1.
+    if (len >= 3) {
+      const Real *xCur = xIn + off;
+      const Real *xPrevI = xIn + (dg.prevBase - 1);
+      const Real *xNextI = xIn + (dg.nextBase + 1);
+      const Real *xPrevJ = xIn + dg.prevBase;
+      const Real *xNextJ = xIn + dg.nextBase;
+      const Real *AMREX_RESTRICT aCur = a + off;
+      const Real *AMREX_RESTRICT bCur = b + off;
+      const Real *AMREX_RESTRICT cCur = c + off;
+      const Real *AMREX_RESTRICT dCur = dC + off;
+      const Real *AMREX_RESTRICT eCur = eC + off;
+      Real *AMREX_RESTRICT yCur = yOut + off;
 
 #pragma omp simd
-    for (int i = 1; i < nTh - 1; ++i) {
-      yCol[i] = aCol[i] * xCol[i] + bCol[i] * xCol[i - 1] +
-                cCol[i] * xCol[i + 1] + dCol[i] * xPrev[i] + eCol[i] * xNext[i];
+      for (int m = 1; m < len - 1; ++m) {
+        yCur[m] = aCur[m] * xCur[m] + bCur[m] * xPrevI[m] +
+                  cCur[m] * xNextI[m] + dCur[m] * xPrevJ[m] +
+                  eCur[m] * xNextJ[m];
+      }
     }
 
-    // Peel i = nTh - 1
-    if (nTh > 1) {
-      const int i = nTh - 1;
-      const int k = colOff + i;
-      const Real xIp1 = isNorth ? (neuFactor * xIn[k]) : poleAvg;
-      yOut[k] = a[k] * xIn[k] + b[k] * xIn[k - 1] + c[k] * xIp1 +
-                d[k] * xIn[prevOff + i] + e[k] * xIn[nextOff + i];
+    if (len > 1) {
+      eval_endpoint(len - 1);
     }
   }
 
   // For pure Neumann low-lat BC, pin one gauge point to remove the nullspace.
   if (isNeumann) {
-    const int kPin = isNorth ? (nTh - 1) : 0;
     yOut[kPin] = xIn[kPin];
   }
 }
@@ -625,27 +836,61 @@ void Ionosphere::compute_conductance_tensor() {
   const Real inv2dPh = Real(0.5) * invDPhi_;
   const int nPhiUsed = nPhi_ - 1;
 
-  for (int i = 0; i < nTheta_; ++i) {
-    for (int j = 0; j < nPhi_; ++j) {
-      const int k = idx2d(i, j, nPhi_);
-      if (i > 0 && i < nTheta_ - 1) {
-        const int km = idx2d(i - 1, j, nPhi_);
-        const int kp = idx2d(i + 1, j, nPhi_);
-        dSigmaThTh_dTh_[k] = (sigmaThTh_[kp] - sigmaThTh_[km]) * inv2dTh;
-        dSigmaThPh_dTh_[k] = (sigmaThPh_[kp] - sigmaThPh_[km]) * inv2dTh;
-      } else {
-        dSigmaThTh_dTh_[k] = 0.0;
-        dSigmaThPh_dTh_[k] = 0.0;
-      }
+  const Real *AMREX_RESTRICT sTT = sigmaThTh_.data();
+  const Real *AMREX_RESTRICT sTP = sigmaThPh_.data();
+  const Real *AMREX_RESTRICT sPP = sigmaPhPh_.data();
+  Real *AMREX_RESTRICT dTTdTh = dSigmaThTh_dTh_.data();
+  Real *AMREX_RESTRICT dTPdTh = dSigmaThPh_dTh_.data();
+  Real *AMREX_RESTRICT dTPdPh = dSigmaThPh_dPh_.data();
+  Real *AMREX_RESTRICT dPPdPh = dSigmaPhPh_dPh_.data();
 
-      const int jUsed = j % nPhiUsed;
-      const int jPrev = (jUsed == 0) ? (nPhiUsed - 1) : (jUsed - 1);
-      const int jNext = (jUsed == nPhiUsed - 1) ? 0 : (jUsed + 1);
-      const int kPrev = idx2d(i, jPrev, nPhi_);
-      const int kNext = idx2d(i, jNext, nPhi_);
-      dSigmaThPh_dPh_[k] = (sigmaThPh_[kNext] - sigmaThPh_[kPrev]) * inv2dPh;
-      dSigmaPhPh_dPh_[k] = (sigmaPhPh_[kNext] - sigmaPhPh_[kPrev]) * inv2dPh;
+  // Theta derivatives: peel poles (i = 0, i = nTheta_ - 1) so interior rows
+  // vectorize with unit-stride access.
+  std::fill(dTTdTh, dTTdTh + nPhi_, Real(0.0));
+  std::fill(dTPdTh, dTPdTh + nPhi_, Real(0.0));
+  if (nTheta_ > 1) {
+    const int lastOff = (nTheta_ - 1) * nPhi_;
+    std::fill(dTTdTh + lastOff, dTTdTh + lastOff + nPhi_, Real(0.0));
+    std::fill(dTPdTh + lastOff, dTPdTh + lastOff + nPhi_, Real(0.0));
+  }
+  for (int i = 1; i < nTheta_ - 1; ++i) {
+    const Real *AMREX_RESTRICT ttM = sTT + (i - 1) * nPhi_;
+    const Real *AMREX_RESTRICT ttP = sTT + (i + 1) * nPhi_;
+    const Real *AMREX_RESTRICT tpM = sTP + (i - 1) * nPhi_;
+    const Real *AMREX_RESTRICT tpP = sTP + (i + 1) * nPhi_;
+    Real *AMREX_RESTRICT dstTT = dTTdTh + i * nPhi_;
+    Real *AMREX_RESTRICT dstTP = dTPdTh + i * nPhi_;
+#pragma omp simd
+    for (int j = 0; j < nPhi_; ++j) {
+      dstTT[j] = (ttP[j] - ttM[j]) * inv2dTh;
+      dstTP[j] = (tpP[j] - tpM[j]) * inv2dTh;
     }
+  }
+
+  // Periodic phi derivatives: peel j = 0 and j = nPhiUsed - 1 (plus wrap).
+  for (int i = 0; i < nTheta_; ++i) {
+    const int rowOff = i * nPhi_;
+    const Real *AMREX_RESTRICT tpRow = sTP + rowOff;
+    const Real *AMREX_RESTRICT ppRow = sPP + rowOff;
+    Real *AMREX_RESTRICT dstTP = dTPdPh + rowOff;
+    Real *AMREX_RESTRICT dstPP = dPPdPh + rowOff;
+
+    dstTP[0] = (tpRow[1] - tpRow[nPhiUsed - 1]) * inv2dPh;
+    dstPP[0] = (ppRow[1] - ppRow[nPhiUsed - 1]) * inv2dPh;
+
+#pragma omp simd
+    for (int j = 1; j < nPhiUsed - 1; ++j) {
+      dstTP[j] = (tpRow[j + 1] - tpRow[j - 1]) * inv2dPh;
+      dstPP[j] = (ppRow[j + 1] - ppRow[j - 1]) * inv2dPh;
+    }
+
+    if (nPhiUsed > 1) {
+      const int jLast = nPhiUsed - 1;
+      dstTP[jLast] = (tpRow[0] - tpRow[jLast - 1]) * inv2dPh;
+      dstPP[jLast] = (ppRow[0] - ppRow[jLast - 1]) * inv2dPh;
+    }
+    dstTP[nPhi_ - 1] = dstTP[0];
+    dstPP[nPhi_ - 1] = dstPP[0];
   }
 }
 
@@ -663,7 +908,7 @@ void Ionosphere::build_hemisphere_matrix(HemisphereWorkspace &hw) {
     for (int iLoc = 0; iLoc < hw.nTh; ++iLoc) {
       const int i = hw.iMin + iLoc;
       const int kGrid = idx2d(i, j, nPhi_);
-      const int k = j * hw.nTh + iLoc;
+      const int k = hw.wf_index(iLoc, j);
 
       const Real sn = sinTheta_[i];
       const Real cs = cosTheta_[i];
@@ -687,7 +932,7 @@ void Ionosphere::build_hemisphere_matrix(HemisphereWorkspace &hw) {
   }
 
   if (hw.isNeumann) {
-    const int kPin = hw.isNorth ? (hw.nTh - 1) : 0;
+    const int kPin = hw.kPin;
     hw.cA[kPin] = 1.0;
     hw.cB[kPin] = hw.cC[kPin] = hw.cD[kPin] = hw.cE[kPin] = 0.0;
   }
@@ -774,12 +1019,17 @@ bool Ionosphere::solve_hemisphere(HemisphereWorkspace &hw, int &nIterOut,
   Real jrShift = 0.0;
   if (hw.isNeumann) {
     Real num = 0.0, den = 0.0;
-    for (int j = 0; j < nPhiUsed; ++j) {
-      for (int i = hw.iMin; i <= hw.iMax; ++i) {
-        const Real w = sinTheta_[i];
-        num += jr_[idx2d(i, j, nPhi_)] * w;
-        den += w;
+    const Real *AMREX_RESTRICT jrPtr = jr_.data();
+    for (int i = hw.iMin; i <= hw.iMax; ++i) {
+      const Real *AMREX_RESTRICT row = jrPtr + i * nPhi_;
+      Real rowSum = 0.0;
+#pragma omp simd reduction(+ : rowSum)
+      for (int j = 0; j < nPhiUsed; ++j) {
+        rowSum += row[j];
       }
+      const Real w = sinTheta_[i];
+      num += rowSum * w;
+      den += w * static_cast<Real>(nPhiUsed);
     }
     if (den > Real(0.0))
       jrShift = num / den;
@@ -789,7 +1039,7 @@ bool Ionosphere::solve_hemisphere(HemisphereWorkspace &hw, int &nIterOut,
     for (int iLoc = 0; iLoc < hw.nTh; ++iLoc) {
       const int i = hw.iMin + iLoc;
       const int kGrid = idx2d(i, j, nPhi_);
-      const int k = j * hw.nTh + iLoc;
+      const int k = hw.wf_index(iLoc, j);
       const Real sn = sinTheta_[i];
       hw.rhs[k] = (jr_[kGrid] - jrShift) * rIono2 * sn * sn;
       hw.x[k] = hasPrevSolution_ ? phiSolved_[kGrid] : Real(0.0);
@@ -797,8 +1047,7 @@ bool Ionosphere::solve_hemisphere(HemisphereWorkspace &hw, int &nIterOut,
   }
 
   if (hw.isNeumann) {
-    const int kPin = hw.isNorth ? (hw.nTh - 1) : 0;
-    hw.rhs[kPin] = 0.0;
+    hw.rhs[hw.kPin] = 0.0;
   }
 
   const bool converged = solve_bicgstab(
@@ -812,16 +1061,21 @@ bool Ionosphere::solve_hemisphere(HemisphereWorkspace &hw, int &nIterOut,
               phiSolved_.begin() + (i + 1) * nPhi_, Real(0.0));
   }
 
+  const int nSol = static_cast<int>(hw.x.size());
   Real phiMin = hw.x[0], phiMax = hw.x[0];
-  for (int j = 0; j < hw.nPh; ++j) {
-    for (int iLoc = 0; iLoc < hw.nTh; ++iLoc) {
-      const int i = hw.iMin + iLoc;
-      const Real val = hw.x[j * hw.nTh + iLoc];
-      phiSolved_[idx2d(i, j, nPhi_)] = val;
-      if (val < phiMin)
-        phiMin = val;
-      if (val > phiMax)
-        phiMax = val;
+  const Real *AMREX_RESTRICT xSol = hw.x.data();
+#pragma omp simd reduction(min : phiMin) reduction(max : phiMax)
+  for (int k = 0; k < nSol; ++k) {
+    const Real val = xSol[k];
+    phiMin = std::min(phiMin, val);
+    phiMax = std::max(phiMax, val);
+  }
+
+  for (int iLoc = 0; iLoc < hw.nTh; ++iLoc) {
+    const int i = hw.iMin + iLoc;
+    Real *AMREX_RESTRICT dstRow = phiSolved_.data() + i * nPhi_;
+    for (int j = 0; j < hw.nPh; ++j) {
+      dstRow[j] = hw.x[hw.wf_index(iLoc, j)];
     }
   }
 
