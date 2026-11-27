@@ -83,6 +83,22 @@ struct ActiveComp {
   const WaveComponent* orig;
 };
 
+// The part of the fab (with ghost layers) that is inside the node range of
+// the domain in the non-periodic directions. A wall node of a neighboring
+// box that is a ghost node here lies inside this box, a node beyond another
+// boundary of the domain does not.
+Box wall_node_box(const Box& bxFab, const Geometry& geom,
+                  const BoundaryBounds& bnd) {
+  Box bx = bxFab;
+  for (int d = 0; d < nDim; ++d) {
+    if (geom.isPeriodic(d))
+      continue;
+    bx.setSmall(d, std::max(bx.smallEnd(d), bnd.loBnd[d]));
+    bx.setBig(d, std::min(bx.bigEnd(d), bnd.hiBnd[d]));
+  }
+  return bx;
+}
+
 } // namespace
 
 //==========================================================
@@ -483,9 +499,11 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
 
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
-    const Box& bxValid = mfi.validbox();
-    const Dim3 vLo = bxValid.smallEnd().dim3();
-    const Dim3 vHi = bxValid.bigEnd().dim3();
+    // Wall nodes are also set in the ghost layers along the wall, so no
+    // message passing is needed afterwards to make the copies consistent.
+    const Box bxWall = wall_node_box(bxFab, Geom(iLev), bnd);
+    const Dim3 vLo = bxWall.smallEnd().dim3();
+    const Dim3 vHi = bxWall.bigEnd().dim3();
 
     parallel_for_omp(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       const int ijk[3] = { i, j, k };
@@ -818,9 +836,11 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
     if (ba.contains(bxFab))
       continue;
 
-    const Box& bxValid = mfi.validbox();
-    const Dim3 vLo = bxValid.smallEnd().dim3();
-    const Dim3 vHi = bxValid.bigEnd().dim3();
+    // Wall nodes are also set in the ghost layers along the wall, so no
+    // message passing is needed afterwards to make the copies consistent.
+    const Box bxWall = wall_node_box(bxFab, Geom(iLev), bnd);
+    const Dim3 vLo = bxWall.smallEnd().dim3();
+    const Dim3 vHi = bxWall.bigEnd().dim3();
     const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
     const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
@@ -1082,7 +1102,6 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
   HostFabCache statusCache;
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
-    const Box& bxValid = mfi.validbox();
     if (ba.contains(bxFab))
       continue;
 
@@ -1126,8 +1145,11 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       continue;
 
     const Array4<const int> statusArr = statusCache.array(status, mfi);
-    const Dim3 vLo = bxValid.smallEnd().dim3();
-    const Dim3 vHi = bxValid.bigEnd().dim3();
+    // Wall nodes are also set in the ghost layers along the wall, so no
+    // message passing is needed afterwards to make the copies consistent.
+    const Box bxWall = wall_node_box(bxFab, Geom(iLev), bnd);
+    const Dim3 vLo = bxWall.smallEnd().dim3();
+    const Dim3 vHi = bxWall.bigEnd().dim3();
     const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
     const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
