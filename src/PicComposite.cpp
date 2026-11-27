@@ -162,19 +162,9 @@ void Pic::composite_setup() {
   if (Gpu::inLaunchRegion())
     Abort("Error: #FIELDSOLVER implicit1 is not available on GPUs yet.");
 
-  for (int iDim = 0; iDim < nDim; iDim++) {
-    if (!Geom(0).isPeriodic(iDim))
-      Abort("Error: #FIELDSOLVER implicit1 needs periodic field boundaries.");
-  }
-  if (doSmoothE || doSmoothJ || useUpwindE || solveFieldInCoMov ||
-      fsolver.coefDiff != 0 || use_body())
-    Abort("Error: #FIELDSOLVER implicit1 does not support #SMOOTHE, #SMOOTHJ, "
-          "#UPWINDE, #COMOVING, #BODY or ratioDivC2C != 0.");
-  if (useCurlUpwindB || has_inductive_E0() ||
-      fsolver.solverBackend != ESolverBackend::LegacyGMRES)
-    Abort("Error: #FIELDSOLVER implicit1 does not support #UPWINDB with "
-          "typeUpwindB curl, a time dependent intrinsic magnetic field or "
-          "#EFIELDSOLVER with solverType amrex.");
+  if (fsolver.solverBackend != ESolverBackend::LegacyGMRES)
+    Abort("Error: #FIELDSOLVER implicit1 does not support #EFIELDSOLVER with "
+          "solverType amrex.");
 
   const int nLev = n_lev();
 
@@ -197,6 +187,16 @@ void Pic::composite_setup() {
   compT.resize(n_lev_max());
   compM.resize(n_lev_max());
   compCurl.resize(n_lev_max());
+
+  // Non-periodic boundaries are treated as in the level-by-level solver: the
+  // cells and nodes outside the domain are filled from the boundary conditions
+  // and take part in the curl operators.
+  isCompositeBounded = !Geom(0).isAllPeriodic();
+
+  // A 'linetied' body drops all its nodes from the linear system and a
+  // 'conducting' body the interior ones, as in node_system_layout.
+  const bool skipAllBody = is_body_linetied();
+  const bool skipInterior = is_body_conducting();
 
   nCompUnknown = 0;
   for (int iLev = 0; iLev < nLev; iLev++) {
@@ -224,6 +224,37 @@ void Pic::composite_setup() {
     }
     compLeaf[iLev].FillBoundary(Geom(iLev).periodicity());
 
+    if (isCompositeBounded) {
+      // A cell outside the domain is a leaf cell if the cell of the domain
+      // next to it is, so that the boundary nodes get the full stencil and
+      // volume.
+      const Box& domain = Geom(iLev).Domain();
+      int nTouch = 0;
+      for (MFIter mfi(compLeaf[iLev]); mfi.isValid(); ++mfi) {
+        const Box box = amrex::grow(mfi.validbox(), 1);
+        const Array4<Real>& leaf = compLeaf[iLev][mfi].array();
+        const auto& status = cell_status(iLev)[mfi].array();
+        amrex::Loop(box, [&](int i, int j, int k) {
+          if (bit::is_domain_boundary(status(i, j, k))) {
+            IntVect iv(AMREX_D_DECL(i, j, k));
+            for (int iDim = 0; iDim < nDim; iDim++)
+              iv[iDim] = std::min(std::max(iv[iDim], domain.smallEnd(iDim)),
+                                  domain.bigEnd(iDim));
+            leaf(i, j, k) = leaf(iv);
+            if (iLev > 0)
+              nTouch++;
+          }
+        });
+      }
+      // The boundary conditions are applied on all levels below, but a
+      // refined level at a non-periodic boundary could not be tested: the
+      // initial magnetic field is not a number there with any field solver.
+      ParallelDescriptor::ReduceIntSum(nTouch);
+      if (nTouch > 0)
+        Abort("Error: #FIELDSOLVER implicit1 does not support refined levels "
+              "that touch a non-periodic boundary.");
+    }
+
     // Volume of the leaf cells of this level around the node.
     const Real vol = get_cell_volume(iLev);
     for (MFIter mfi(compVol[iLev]); mfi.isValid(); ++mfi) {
@@ -240,14 +271,97 @@ void Pic::composite_setup() {
               sum += leaf(i + di, j + dj, k + dk);
         volArr(i, j, k) = sum * vol / nCellPerNode;
         const bool isEdge = iLev > 0 && bit::is_lev_edge(status(i, j, k));
+        const int st = status(i, j, k);
+        const bool isBody = (skipAllBody && bit::is_body(st)) ||
+                            (skipInterior && bit::is_body_interior(st));
         unk(i, j, k) =
-            (bit::is_owner(status(i, j, k)) && sum > 0 && !isEdge) ? 1 : 0;
+            (bit::is_owner(st) && sum > 0 && !isEdge && !isBody) ? 1 : 0;
         if (unk(i, j, k) == 1)
           nCompUnknown++;
       });
     }
   }
   composite_fold(compVol, 1);
+
+  if (isCompositeBounded) {
+    // Node volumes without the cells outside the domain, for the electric
+    // energy. They agree with the cell based sum of calc_E_field_energy.
+    compVolE.resize(n_lev_max());
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      compVolE[iLev].define(node_box_array(iLev), DistributionMap(iLev), 1, 0);
+      const Real vol = get_cell_volume(iLev);
+      for (MFIter mfi(compVolE[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real const>& leaf = compLeaf[iLev][mfi].array();
+        const Array4<Real>& volArr = compVolE[iLev][mfi].array();
+        const auto& status = cell_status(iLev)[mfi].array();
+        amrex::Loop(box, [&](int i, int j, int k) {
+          Real sum = 0;
+          for (int dk = kLoCell; dk <= 0; dk++)
+            for (int dj = -1; dj <= 0; dj++)
+              for (int di = -1; di <= 0; di++)
+                if (!bit::is_domain_boundary(status(i + di, j + dj, k + dk)))
+                  sum += leaf(i + di, j + dj, k + dk);
+          volArr(i, j, k) = sum * vol / nCellPerNode;
+        });
+      }
+    }
+    composite_fold(compVolE, 1);
+  }
+
+  if (isCompositeBounded) {
+    // Rows that are replaced by the identity, as in update_E_matvec: 1 for
+    // all components on the faces with a prescribed electric field (inflow,
+    // fixed, wave), 2 for the tangential components on conducting walls.
+    compFixed.resize(n_lev_max());
+    compIn.resize(n_lev_max());
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      compFixed[iLev].define(node_box_array(iLev), DistributionMap(iLev), 3, 0);
+      compIn[iLev].define(node_box_array(iLev), DistributionMap(iLev), 3, 0);
+      const BoundaryBounds bnd(Geom(iLev), node_box_array(iLev).ixType(),
+                               &bcField);
+      for (MFIter mfi(compFixed[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<int>& fixed = compFixed[iLev][mfi].array();
+        amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
+          const int ijk[3] = { i, j, k };
+          fixed(i, j, k, iVar) = 0;
+          if (hasConductingBC_ && is_conducting_wall_Et(bnd, ijk, iVar))
+            fixed(i, j, k, iVar) = 2;
+          for (int d = 0; d < nDim; ++d) {
+            if (!bnd.isNode[d])
+              continue;
+            if ((FieldBC::is_dirichlet(bnd.bcLo[d]) &&
+                 ijk[d] == bnd.loBnd[d]) ||
+                (FieldBC::is_dirichlet(bnd.bcHi[d]) && ijk[d] == bnd.hiBnd[d]))
+              fixed(i, j, k, iVar) = 1;
+          }
+        });
+      }
+    }
+  }
+}
+
+//==========================================================
+// Replace the rows of a level that are fixed by the boundary conditions:
+// 'dirichlet' on the faces with a prescribed electric field and 'wall' for
+// the tangential components on conducting walls.
+void Pic::composite_set_fixed_rows(MultiFab& out, const MultiFab& dirichlet,
+                                   const MultiFab& wall, const int iLev) {
+  for (MFIter mfi(out); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arr = out[mfi].array();
+    const Array4<Real const>& dir = dirichlet[mfi].array();
+    const Array4<Real const>& wal = wall[mfi].array();
+    const Array4<int const>& fixed = compFixed[iLev][mfi].array();
+    amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
+      if (fixed(i, j, k, iVar) == 1) {
+        arr(i, j, k, iVar) = dir(i, j, k, iVar);
+      } else if (fixed(i, j, k, iVar) == 2) {
+        arr(i, j, k, iVar) = wal(i, j, k, iVar);
+      }
+    });
+  }
 }
 
 //==========================================================
@@ -316,16 +430,62 @@ void Pic::composite_curl_transpose(MultiFab& center, MultiFab& out, int iLev) {
 // vecOut = A vecIn for the composite system
 // A = I + V^-1 [(theta dt)^2 C^T W_B C + 4 pi theta dt P^T M P],
 // where W_B holds the leaf cell volumes and M is the unnormalised mass matrix.
-void Pic::composite_matvec(const double* vecIn, double* vecOut) {
+// With non-periodic boundaries the nodes outside the domain are filled as in
+// update_E_matvec: with the homogeneous part of the boundary conditions for
+// a correction of E (useZeroBC), or with the boundary values for E itself.
+void Pic::composite_matvec(const double* vecIn, double* vecOut,
+                           const bool useZeroBC) {
   std::string nameFunc = "Pic::composite_matvec";
   timing_func(nameFunc);
 
   composite_scatter(vecIn, compX);
 
+  // The wider stencils of ratioDivC2C and #UPWINDE also use the coarse nodes
+  // covered by a finer level and the ghost nodes of the finer levels.
+  const bool doDivC2C = fsolver.coefDiff > 0;
+  if (isCompositeBounded) {
+    for (int iLev = 0; iLev < n_lev(); iLev++)
+      MultiFab::Copy(compIn[iLev], compX[iLev], 0, 0, 3, 0);
+    if (useZeroBC) {
+      // The correction is zero where the electric field is prescribed.
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        for (MFIter mfi(compX[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<Real>& arr = compX[iLev][mfi].array();
+          const Array4<int const>& fixed = compFixed[iLev][mfi].array();
+          amrex::Loop(box, 3, [&](int i, int j, int k, int iVar) {
+            if (fixed(i, j, k, iVar) == 1)
+              arr(i, j, k, iVar) = 0.0;
+          });
+        }
+      }
+    }
+    composite_fill_ghost(compX, useZeroBC ? bcHomogeneous_ : bcMatvec_);
+  } else if (doDivC2C || useUpwindE) {
+    composite_fill_ghost(compX, bcNone_);
+  }
+
   const Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     curl_node_to_center(compX[iLev], compCurl[iLev], Geom(iLev).InvCellSize());
     composite_curl_transpose(compCurl[iLev], compT[iLev], iLev);
+
+    if (doDivC2C) {
+      // The level solver uses -lap + grad(div) for curl curl, with div =
+      // (1 - coefDiff) * divN2C + coefDiff * divC2C. Here curl curl is
+      // C^T W_B C, so the difference coefDiff * grad(divC2C - divN2C) of the
+      // leaf cells is added.
+      MultiFab& divE = centerDivE[iLev];
+      MultiFab& divN2C = compCurl[iLev];
+      div_node_to_center(compX[iLev], divE, Geom(iLev).InvCellSize());
+      MultiFab::Copy(divN2C, divE, 0, 0, 1, 1);
+      blend_div_E_c2c(compX[iLev], iLev);
+      MultiFab::Subtract(divE, divN2C, 0, 0, 1, 1);
+      MultiFab::Multiply(divE, compLeaf[iLev], 0, 0, 1, 1);
+      grad_center_to_node(divE, compM[iLev], Geom(iLev).InvCellSize());
+      MultiFab::Saxpy(compT[iLev], get_cell_volume(iLev), compM[iLev], 0, 0, 3,
+                      0);
+    }
     compT[iLev].mult(delt2, 0, 3, 0);
 
     // nodeMM is divided by the cell volume, and update_E_M_dot_E multiplies
@@ -340,7 +500,16 @@ void Pic::composite_matvec(const double* vecIn, double* vecOut) {
     for (int iVar = 0; iVar < 3; iVar++)
       MultiFab::Divide(compT[iLev], compVol[iLev], 0, iVar, 1, 0);
     MultiFab::Add(compT[iLev], compX[iLev], 0, 0, 3, 0);
+    if (useUpwindE)
+      add_upwind_E_matvec(compX[iLev], compT[iLev], iLev);
   }
+  if (isCompositeBounded)
+    for (int iLev = 0; iLev < n_lev(); iLev++)
+      composite_set_fixed_rows(compT[iLev], compX[iLev], compIn[iLev], iLev);
+  // 'conducting' body: keep the Krylov vectors in the constrained space.
+  if (is_body_conducting())
+    for (int iLev = 0; iLev < n_lev(); iLev++)
+      project_body_E(compT[iLev], iLev);
   composite_gather(compT, vecOut);
 }
 
@@ -348,13 +517,60 @@ void Pic::composite_matvec(const double* vecIn, double* vecOut) {
 // rhs = E^n + V^-1 theta dt (C^T W_B B^n - 4 pi P^T jHat)
 void Pic::composite_rhs(double* rhs) {
   const Real delt = fsolver.theta * tc->get_dt();
+  if (doSmoothJ)
+    composite_smooth_J();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(compCurl[iLev], centerB[iLev], 0, 0, 3, 0);
+    if (isCompositeBounded || useCurlUpwindB) {
+      // The magnetic field in the cells and on the nodes outside the domain,
+      // as in update_E_rhs.
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (useCurlUpwindB) {
+        apply_centerB_BC(iLev);
+      } else {
+        centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+        if (iLev == 0) {
+          apply_field_bc(cell_status(0), centerB[0], 0, centerB[0].nComp(),
+                         &Pic::get_center_B, 0, true, -2.0);
+        } else {
+          fill_fine_lev_bny_from_coarse(
+              centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+              refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+              *get_cell_interp());
+        }
+      }
+      if (iLev == 0) {
+        apply_field_bc(node_status(0), nodeB[0], 0, nodeB[0].nComp(),
+                       &Pic::get_node_B, 0, true, 0.0);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+            refRatio(iLev - 1), Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+      }
+      MultiFab::Copy(compCurl[iLev], centerB[iLev], 0, 0, 3, 1);
+    } else {
+      MultiFab::Copy(compCurl[iLev], centerB[iLev], 0, 0, 3, 0);
+    }
     composite_curl_transpose(compCurl[iLev], compT[iLev], iLev);
-    // jHat is divided by the cell volume.
-    MultiFab::Saxpy(compT[iLev], -fourPI * get_cell_volume(iLev), jHat[iLev], 0,
-                    0, 3, 0);
+    // jHat is divided by the cell volume. With #SMOOTHJ the smoothed current
+    // is added below.
+    if (!doSmoothJ)
+      MultiFab::Saxpy(compT[iLev], -fourPI * get_cell_volume(iLev), jHat[iLev],
+                      0, 0, 3, 0);
     compT[iLev].mult(delt, 0, 3, 0);
+
+    // The currents of the background and of the inductive electric fields,
+    // as in update_E_rhs. update_E_M_dot_E multiplies with 4 pi theta dt.
+    if (solveFieldInCoMov) {
+      update_E_M_dot_E(eBg[iLev], compM[iLev], iLev);
+      MultiFab::Saxpy(compT[iLev], get_cell_volume(iLev), compM[iLev], 0, 0, 3,
+                      0);
+    }
+    if (has_active_inductive_E0() && !nodeE0[iLev].empty()) {
+      update_E_M_dot_E(nodeE0[iLev], compM[iLev], iLev);
+      MultiFab::Saxpy(compT[iLev], -get_cell_volume(iLev), compM[iLev], 0, 0, 3,
+                      0);
+    }
   }
   composite_fold(compT, 3);
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -362,6 +578,29 @@ void Pic::composite_rhs(double* rhs) {
       MultiFab::Divide(compT[iLev], compVol[iLev], 0, iVar, 1, 0);
     MultiFab::Add(compT[iLev], nodeE[iLev], 0, 0, 3, 0);
   }
+  if (doSmoothJ) {
+    for (int iLev = 0; iLev < n_lev(); iLev++)
+      MultiFab::Saxpy(compT[iLev], -fourPI * delt, compJ[iLev], 0, 0, 3, 0);
+  }
+  if (isCompositeBounded) {
+    // The right-hand side of the fixed rows is the electric field itself, so
+    // that the residual rhs - A E^n is zero there: the prescribed field at
+    // the time of the solve on the inflow faces, E^n otherwise.
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const MultiFab* dirichletE = &nodeE[iLev];
+      if (hasInflowBC_) {
+        MultiFab::Copy(compX[iLev], nodeE[iLev], 0, 0, 3,
+                       std::min(compX[iLev].nGrow(), nodeE[iLev].nGrow()));
+        apply_field_bc(node_status(iLev), compX[iLev], 0, nDim3,
+                       &Pic::get_node_E, iLev, false, 0.0);
+        dirichletE = &compX[iLev];
+      }
+      composite_set_fixed_rows(compT[iLev], *dirichletE, nodeE[iLev], iLev);
+    }
+  }
+  if (is_body_conducting())
+    for (int iLev = 0; iLev < n_lev(); iLev++)
+      project_body_E(compT[iLev], iLev);
   composite_gather(compT, rhs);
 }
 
@@ -372,15 +611,107 @@ void Pic::composite_rhs(double* rhs) {
 // interpolated from the coarser one, both for output only.
 void Pic::composite_fill_E(const double* const p, Vector<MultiFab>& mf) {
   composite_scatter(p, mf);
+  composite_fill_ghost(mf, bcFinal_);
+}
+
+//==========================================================
+// The nodes that are not unknowns and are not set by composite_scatter: the
+// covered coarse nodes are injected from the finer level and the ghost nodes
+// outside a fine level are interpolated from the coarser one. The boundary
+// conditions of E are applied on every level as in the level-by-level solver:
+// bcFinal_ for E after the solve (update_E_impl), bcMatvec_ for E in the
+// matvec, bcHomogeneous_ for a correction of E (update_E_matvec), bcNone_
+// for other fields.
+void Pic::composite_fill_ghost(Vector<MultiFab>& mf, const int bcMode) {
+  const bool doBC = isCompositeBounded && bcMode != bcNone_;
   for (int iLev = finestLevel(); iLev > 0; iLev--) {
     average_down_nodal(mf[iLev], mf[iLev - 1], refRatio(iLev - 1));
   }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (iLev > 0 && doBC) {
+      // The values set on the boundary faces of the coarser level are
+      // interpolated to the fine edge nodes.
+      composite_prolong(mf, 3);
+    }
     mf[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev > 0) {
       fill_fine_lev_bny_from_coarse(
           mf[iLev - 1], mf[iLev], 0, 3, refRatio(iLev - 1), Geom(iLev - 1),
           Geom(iLev), node_status(iLev), node_bilinear_interp);
+      mf[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+    if (!doBC)
+      continue;
+    if (bcMode == bcHomogeneous_) {
+      apply_field_bc_homogeneous(node_status(iLev), mf[iLev], iLev);
+    } else if (bcMode == bcMatvec_) {
+      apply_field_bc(node_status(iLev), mf[iLev], 0, nDim3, &Pic::get_node_E,
+                     iLev, false, 0.0);
+      // The boundary values written on the faces are copied to the ghost
+      // nodes of the neighbouring boxes.
+      mf[iLev].FillBoundary(Geom(iLev).periodicity());
+    } else {
+      // The wave source is applied inside apply_field_bc().
+      apply_field_bc(node_status(iLev), mf[iLev], 0, nDim3, &Pic::get_node_E,
+                     iLev, false);
+    }
+  }
+}
+
+//==========================================================
+// compJ := the current of #SMOOTHJ: jHat with the fine edge nodes folded
+// onto the coarse nodes, as a field on all nodes, smoothed level by level.
+void Pic::composite_smooth_J() {
+  const int nLev = n_lev();
+  compJ.resize(n_lev_max());
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    if (compJ[iLev].empty() || compJ[iLev].boxArray() != node_box_array(iLev) ||
+        compJ[iLev].DistributionMap() != DistributionMap(iLev))
+      compJ[iLev].define(node_box_array(iLev), DistributionMap(iLev), 3,
+                         jHat[iLev].nGrow());
+    MultiFab::Copy(compT[iLev], jHat[iLev], 0, 0, 3, 0);
+    compT[iLev].mult(get_cell_volume(iLev), 0, 3, 0);
+  }
+  composite_fold(compT, 3);
+  for (int iLev = 0; iLev < nLev; iLev++)
+    for (int iVar = 0; iVar < 3; iVar++)
+      MultiFab::Divide(compT[iLev], compVol[iLev], 0, iVar, 1, 0);
+
+  // The folded current on the unknown nodes and the fine edge nodes. The
+  // other nodes (inside a body, outside the domain) keep the deposited
+  // values; compM marks the nodes set by composite_scatter.
+  std::vector<double> jVec(3 * static_cast<size_t>(nCompUnknown));
+  std::vector<double> ones(jVec.size(), 1.0);
+  composite_scatter(ones.data(), compX);
+  for (int iLev = 0; iLev < nLev; iLev++)
+    MultiFab::Copy(compM[iLev], compX[iLev], 0, 0, 3, 0);
+  composite_gather(compT, jVec.data());
+  composite_scatter(jVec.data(), compX);
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    MultiFab::Copy(compJ[iLev], jHat[iLev], 0, 0, 3, compJ[iLev].nGrow());
+    for (MFIter mfi(compJ[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& j = compJ[iLev][mfi].array();
+      const Array4<Real const>& x = compX[iLev][mfi].array();
+      const Array4<Real const>& mark = compM[iLev][mfi].array();
+      amrex::Loop(box, 3, [&](int i, int jj, int k, int iVar) {
+        if (mark(i, jj, k, iVar) > 0.5)
+          j(i, jj, k, iVar) = x(i, jj, k, iVar);
+      });
+    }
+  }
+  composite_fill_ghost(compJ, bcNone_);
+
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    for (int icount = 0; icount < nSmoothJ; icount++) {
+      if (iLev > 0) {
+        fill_fine_lev_bny_from_coarse(compJ[iLev - 1], compJ[iLev], 0, 3,
+                                      refRatio(iLev - 1), Geom(iLev - 1),
+                                      Geom(iLev), node_status(iLev),
+                                      node_bilinear_interp);
+        compJ[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+      smooth_multifab(compJ[iLev], iLev, icount % 2 + 1, coefSmoothJ);
     }
   }
 }
@@ -411,22 +742,28 @@ void Pic::update_E_composite() {
   composite_gather(nodeE, eOld.data());
 
   // Solve A dE = rhs - A E^n for the change dE = E^{n+theta} - E^n.
-  composite_matvec(eOld.data(), eSolver.matvec);
-  for (int i = 0; i < nSolve; ++i) {
-    eSolver.rhs[i] -= eSolver.matvec[i];
-    eSolver.xLeft[i] = 0;
-  }
-
-  if (doReport)
-    Print() << "\n-------" << printPrefix
-            << " GMRES composite E solver ------------------" << std::endl;
-
-  BL_PROFILE_VAR("Pic::E_iterate", eSolverComp);
-  // The GMRES solver passes its level index to update_E_matvec. The value
+  // E^n is used with its boundary values, the change dE with the homogeneous
+  // boundary conditions.
+  // The solvers pass their level index to update_E_matvec. The value
   // iLevComposite_ (-1) is not an AMR level: it selects composite_matvec,
   // which acts on the unknowns of all levels.
-  eSolver.solve(iLevComposite_, doReport);
-  BL_PROFILE_VAR_STOP(eSolverComp);
+  if (fsolver.mode == FieldSolverMode::NewtonKrylov) {
+    solve_E_newton_krylov(iLevComposite_);
+  } else {
+    composite_matvec(eOld.data(), eSolver.matvec, false);
+    for (int i = 0; i < nSolve; ++i) {
+      eSolver.rhs[i] -= eSolver.matvec[i];
+      eSolver.xLeft[i] = 0;
+    }
+
+    if (doReport)
+      Print() << "\n-------" << printPrefix
+              << " GMRES composite E solver ------------------" << std::endl;
+
+    BL_PROFILE_VAR("Pic::E_iterate", eSolverComp);
+    eSolver.solve(iLevComposite_, doReport);
+    BL_PROFILE_VAR_STOP(eSolverComp);
+  }
 
   // E^{n+theta} and E^{n+1} = (E^{n+theta} - (1 - theta) E^n) / theta
   std::vector<double> eNew(nSolve);
@@ -487,8 +824,48 @@ void Pic::update_E_composite() {
             << " dW_E = " << (wE1 - wE0) * 0.5 / fourPI << std::endl;
   }
 
-  composite_fill_E(eOld.data(), nodeEth);
-  composite_fill_E(eNew.data(), nodeE);
+  if (doSmoothE) {
+    // As in update_E_impl: the change of E is smoothed first, then E at the
+    // two time levels after the boundary conditions.
+    composite_scatter(eSolver.xLeft, compX);
+    composite_fill_ghost(compX, bcNone_);
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      smooth_E(compX[iLev], iLev);
+      MultiFab::Copy(nodeEth[iLev], compX[iLev], 0, 0, 3, get_n_ghost());
+      MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, 3, get_n_ghost());
+      MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
+                        nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
+                        3, get_n_ghost());
+    }
+    for (int iStage = 0; iStage < 2; iStage++) {
+      // The fine edge nodes follow the coarse nodes again.
+      composite_prolong(nodeE, 3);
+      composite_prolong(nodeEth, 3);
+      composite_fill_ghost(nodeE, bcFinal_);
+      composite_fill_ghost(nodeEth, bcFinal_);
+      if (iStage == 0) {
+        for (int iLev = 0; iLev < n_lev(); iLev++) {
+          smooth_E(nodeEth[iLev], iLev);
+          smooth_E(nodeE[iLev], iLev);
+        }
+      }
+      if (n_lev() == 1)
+        break;
+    }
+  } else {
+    // Same order as in update_E_impl: the boundary conditions may depend on
+    // it.
+    composite_fill_E(eNew.data(), nodeE);
+    composite_fill_E(eOld.data(), nodeEth);
+  }
+
+  // Electric field boundary on the inner body (see #BODYBOUNDARY).
+  if (use_body()) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      apply_body_E_bc(nodeE[iLev], iLev);
+      apply_body_E_bc(nodeEth[iLev], iLev);
+    }
+  }
 
   if (doBudget) {
     // Change of the kinetic energy that the mover will produce with nodeEth
@@ -591,18 +968,30 @@ void Pic::update_E_composite() {
 Real Pic::calc_E_field_energy_composite() {
   composite_setup();
 
+  // The inductive electric field of a time dependent intrinsic magnetic
+  // field is part of the total field, as in calc_E_field_energy.
+  const bool hasActiveE0 = has_active_inductive_E0();
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const bool addE0 = hasActiveE0 && !nodeE0[iLev].empty();
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
-      const Array4<Real const>& vol = compVol[iLev][mfi].array();
+      const Array4<Real const> arrE0 =
+          addE0 ? nodeE0[iLev][mfi].const_array() : Array4<Real const>();
+      const Array4<Real const>& vol = isCompositeBounded
+                                          ? compVolE[iLev][mfi].array()
+                                          : compVol[iLev][mfi].array();
       const Array4<int const>& unk = compUnknown[iLev][mfi].array();
       amrex::Loop(box, [&](int i, int j, int k) {
         if (unk(i, j, k) == 1) {
-          sum += vol(i, j, k) * (arr(i, j, k, ix_) * arr(i, j, k, ix_) +
-                                 arr(i, j, k, iy_) * arr(i, j, k, iy_) +
-                                 arr(i, j, k, iz_) * arr(i, j, k, iz_));
+          Real e2 = 0;
+          for (int iVar = 0; iVar < 3; iVar++) {
+            const Real e =
+                arr(i, j, k, iVar) + (addE0 ? arrE0(i, j, k, iVar) : 0.0);
+            e2 += e * e;
+          }
+          sum += vol(i, j, k) * e2;
         }
       });
     }

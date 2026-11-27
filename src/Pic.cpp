@@ -1948,7 +1948,9 @@ void Pic::calc_mass_matrix() {
       rescale_body_surface_nodes(jHat[iLev], cell_status(iLev),
                                  node_status(iLev), Geom(iLev).Domain(), nDim);
 
-    if (doSmoothJ) {
+    // The composite solver smooths the current after folding the level
+    // edge nodes (composite_smooth_J).
+    if (doSmoothJ && !use_composite_solver()) {
       for (int icount = 0; icount < nSmoothJ; icount++) {
         smooth_multifab(jHat[iLev], iLev, icount % 2 + 1, coefSmoothJ);
       }

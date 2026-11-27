@@ -278,4 +278,19 @@ struct BoundaryBounds {
   }
 };
 
+// The tangential electric field on a conducting wall node is a Dirichlet
+// unknown of the implicit E solve (E_t = 0): its matrix row is the identity
+// and its right-hand side is E^n, so the GMRES correction there is zero.
+AMREX_GPU_HOST_DEVICE inline bool is_conducting_wall_Et(
+    const BoundaryBounds &bnd, const int ijk[3], int c) {
+  for (int d = 0; d < amrex::SpaceDim; ++d) {
+    if (!bnd.isNode[d] || c == d)
+      continue;
+    if ((bnd.bcLo[d] == FieldBC::conducting && ijk[d] == bnd.loBnd[d]) ||
+        (bnd.bcHi[d] == FieldBC::conducting && ijk[d] == bnd.hiBnd[d]))
+      return true;
+  }
+  return false;
+}
+
 #endif

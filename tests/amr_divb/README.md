@@ -24,6 +24,8 @@ refined cube:
 | `PARAM.in.inflow` | Curl upwind (`typeUpwindB = curl`) | None | $< 10^{-10}$ (interior/interface) | Non-periodic inflow/outflow AMR regression test with `#PRESPLITTING` and `#RESAMPLING` verifying suppression of refinement-boundary $E$-field artifacts |
 | `PARAM.in.scalar` | Legacy scalar diffusion (`typeUpwindB = scalar`) | Hyperbolic (`hypDecay = 0.1`) | $\sim 4 \times 10^{-2}$ | Negative control demonstrating coarse-fine interface artifact |
 | `PARAM.in.uniform` | Curl upwind (`typeUpwindB = curl`) | None | $< 10^{-10}$ ($\sim 10^{-15}$) | Verifies divergence-free evolution on uniform mesh |
+| `PARAM.in.implicit1` | Curl upwind, `#FIELDSOLVER implicit1` | None | $< 10^{-10}$ | Single implicit solve over both levels with #COMOVING, #UPWINDE, #UPWINDB and #SMOOTHJ |
+| `PARAM.in.uniform_implicit1` | Curl upwind, `#FIELDSOLVER implicit1` | None | $< 10^{-10}$ | Single solve code path on a uniform mesh; agrees with `PARAM.in.uniform` to the solver tolerance |
 
 ## Numerical Background
 

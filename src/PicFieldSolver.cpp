@@ -81,22 +81,6 @@ void Pic::update_E_expl() {
 }
 
 //==========================================================
-// The tangential electric field on a conducting wall node is a Dirichlet
-// unknown of the implicit E solve (E_t = 0): its matrix row is the identity
-// and its right-hand side is E^n, so the GMRES correction there is zero.
-AMREX_GPU_HOST_DEVICE inline bool is_conducting_wall_Et(
-    const BoundaryBounds& bnd, const int ijk[3], int c) {
-  for (int d = 0; d < nDim; ++d) {
-    if (!bnd.isNode[d] || c == d)
-      continue;
-    if ((bnd.bcLo[d] == FieldBC::conducting && ijk[d] == bnd.loBnd[d]) ||
-        (bnd.bcHi[d] == FieldBC::conducting && ijk[d] == bnd.hiBnd[d]))
-      return true;
-  }
-  return false;
-}
-
-//==========================================================
 void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
@@ -323,7 +307,12 @@ void Pic::solve_E_newton_krylov(int iLev) {
   std::vector<Real> baseMatvec(nSolve);
   std::vector<Real> work(nSolve);
 
-  convert_3d_to_1d(nodeE[iLev], base.data(), iLev);
+  if (iLev == iLevComposite_) {
+    // All levels together, see update_E_composite.
+    composite_gather(nodeE, base.data());
+  } else {
+    convert_3d_to_1d(nodeE[iLev], base.data(), iLev);
+  }
 
   update_E_matvec(base.data(), baseMatvec.data(), iLev, false);
 
@@ -375,7 +364,7 @@ void Pic::update_E_matvec(const Real* vecIn, Real* vecOut, int iLev,
   // update_E_composite to get the matvec of the single solve over all levels
   // (#FIELDSOLVER implicit1).
   if (iLev == iLevComposite_) {
-    composite_matvec(vecIn, vecOut);
+    composite_matvec(vecIn, vecOut, useZeroBC);
     return;
   }
 
@@ -516,114 +505,14 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   mf_mult(matvecMF, -delt2, 0, matvecMF.nComp(), 0);
 
-  if (useUpwindE) {
-    // Explicit scheme: add the LF artificial viscosity term to the rhs
-    // vis_{i+0.5} = c_max/2*(E_i+1 - E_i)
-    // E_i += dt/dx*(vis_{i+0.5} - vis_{i-0.5}) = 0.5*c_max*dt*dx*lap(E_i)
-    // For implicit scheme, we add it to the lhs, so the sign changes.
-
-    const Real dx = Geom(iLev).CellSize()[0];
-    const Real coe1 = -0.5 * fsolver.theta * tc->get_dt() / dx;
-    const Real limThetaE = limiterThetaE;
-    const Real cMaxVal = cMaxE;
-
-    for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<Real const> arrE = vecMF[mfi].const_array();
-      const Array4<Real const> arrE0 = nodeE[iLev][mfi].const_array();
-      const Array4<Real const> limitE = fsolver.useLaggedLimiter ? arrE0 : arrE;
-      const Array4<Real> res = matvecMF[mfi].array();
-      const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
-
-      parallel_for_omp(
-          box, vecMF.nComp(),
-          [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-            for (int iDir = 0; iDir < nDim; iDir++) {
-              int dii[nDim3] = { 0, 0, 0 };
-              dii[iDir] = 1;
-
-              Real cR = limiter_theta(
-                  limThetaE,
-                  limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-                  limitE(i, j, k, iVar),
-                  limitE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
-
-              Real cL = limiter_theta(
-                  limThetaE,
-                  limitE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_],
-                         iVar),
-                  limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-                  limitE(i, j, k, iVar));
-
-              Real ur = cMaxVal, ul = cMaxVal;
-
-              if (cMaxVal <= 0) {
-                ul = fabs(0.5 * (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_],
-                                      iDir) +
-                                 arrU(i, j, k, iDir)));
-                ur = fabs(0.5 * (arrU(i, j, k, iDir) +
-                                 arrU(i + dii[ix_], j + dii[iy_], k + dii[iz_],
-                                      iDir)));
-              }
-
-              Real dE =
-                  cR * ur *
-                      (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
-                       arrE(i, j, k, iVar)) -
-                  cL * ul *
-                      (arrE(i, j, k, iVar) -
-                       arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
-
-              res(i, j, k, iVar) += coe1 * dE;
-            }
-          });
-    }
-  }
+  if (useUpwindE)
+    add_upwind_E_matvec(vecMF, matvecMF, iLev);
 
   { // grad(divE)
     div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
 
-    if (fsolver.coefDiff > 0) {
-      if (solverTempCenter3[iLev].empty()) {
-        distribute_FabArray(solverTempCenter3[iLev], boxArray(iLev),
-                            DistributionMap(iLev), 3, get_n_ghost());
-        distribute_FabArray(solverTempCenter1[iLev], boxArray(iLev),
-                            DistributionMap(iLev), 1, get_n_ghost());
-      }
-      MultiFab& tempCenter3 = solverTempCenter3[iLev];
-      MultiFab& tempCenter1 = solverTempCenter1[iLev];
-      tempCenter3.setVal(0.0);
-      tempCenter1.setVal(0.0);
-
-      // Calculate cell center E for center-to-center divE.
-      // The outmost boundary layer of tempCenter3 is not accurate.
-      average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
-                                 tempCenter3.nGrow());
-
-      //----The following comments are left here for reference------
-      // Q: Why apply float BC for all boundary ghost nodes, instead of just
-      // the outmost layer? A: For the example described in
-      // FluidInterface::calc_current, cell (c+4, c-1) of tempCenter3-block1
-      // is not accurate, so the values at (c+4, c-2) will be wrong if we only
-      // apply float BC for the outmost layer.
-      // apply_float_boundary(cellStatus, tempCenter3, Geom(0), 0,
-      //                           tempCenter3.nComp());
-      //------------------------------------------------------------
-
-      div_center_to_center(tempCenter3, tempCenter1, Geom(iLev).InvCellSize());
-
-      tempCenter1.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
-
-      // 1) The outmost boundary layer of tempCenter3 is not accurate.
-      // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
-      // cells) of tempCenter1 are not accurate
-      apply_BC(cell_status(iLev), tempCenter1, 0, tempCenter1.nComp(),
-               &Pic::get_zero, iLev);
-
-      MultiFab::LinComb(centerDivE[iLev], 1 - fsolver.coefDiff,
-                        centerDivE[iLev], 0, fsolver.coefDiff, tempCenter1, 0,
-                        0, 1, 1);
-    }
+    if (fsolver.coefDiff > 0)
+      blend_div_E_c2c(vecMF, iLev);
 
     grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
 
@@ -684,6 +573,116 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
   // E_t = 0 an exact constraint of the linear system.
   if (is_body_conducting())
     project_body_E(matvecMF, iLev);
+}
+
+//==========================================================
+// matvecMF += the Lax-Friedrichs dissipation of #UPWINDE acting on vecMF.
+void Pic::add_upwind_E_matvec(const MultiFab& vecMF, MultiFab& matvecMF,
+                              int iLev) {
+  // Explicit scheme: add the LF artificial viscosity term to the rhs
+  // vis_{i+0.5} = c_max/2*(E_i+1 - E_i)
+  // E_i += dt/dx*(vis_{i+0.5} - vis_{i-0.5}) = 0.5*c_max*dt*dx*lap(E_i)
+  // For implicit scheme, we add it to the lhs, so the sign changes.
+
+  const Real dx = Geom(iLev).CellSize()[0];
+  const Real coe1 = -0.5 * fsolver.theta * tc->get_dt() / dx;
+  const Real limThetaE = limiterThetaE;
+  const Real cMaxVal = cMaxE;
+
+  for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real const> arrE = vecMF[mfi].const_array();
+    const Array4<Real const> arrE0 = nodeE[iLev][mfi].const_array();
+    const Array4<Real const> limitE = fsolver.useLaggedLimiter ? arrE0 : arrE;
+    const Array4<Real> res = matvecMF[mfi].array();
+    const Array4<Real const> arrU = uBg[iLev][mfi].const_array();
+
+    parallel_for_omp(
+        box, vecMF.nComp(),
+        [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+          for (int iDir = 0; iDir < nDim; iDir++) {
+            int dii[nDim3] = { 0, 0, 0 };
+            dii[iDir] = 1;
+
+            Real cR = limiter_theta(
+                limThetaE,
+                limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+                limitE(i, j, k, iVar),
+                limitE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
+
+            Real cL = limiter_theta(
+                limThetaE,
+                limitE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_],
+                       iVar),
+                limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+                limitE(i, j, k, iVar));
+
+            Real ur = cMaxVal, ul = cMaxVal;
+
+            if (cMaxVal <= 0) {
+              ul = fabs(0.5 *
+                        (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_], iDir) +
+                         arrU(i, j, k, iDir)));
+              ur = fabs(0.5 *
+                        (arrU(i, j, k, iDir) +
+                         arrU(i + dii[ix_], j + dii[iy_], k + dii[iz_], iDir)));
+            }
+
+            Real dE =
+                cR * ur *
+                    (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
+                     arrE(i, j, k, iVar)) -
+                cL * ul *
+                    (arrE(i, j, k, iVar) -
+                     arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
+
+            res(i, j, k, iVar) += coe1 * dE;
+          }
+        });
+  }
+}
+
+//==========================================================
+// centerDivE := (1 - coefDiff) * centerDivE + coefDiff * div of the cell
+// centered average of the nodal field vecMF (see ratioDivC2C).
+void Pic::blend_div_E_c2c(const MultiFab& vecMF, int iLev) {
+  if (solverTempCenter3[iLev].empty()) {
+    distribute_FabArray(solverTempCenter3[iLev], boxArray(iLev),
+                        DistributionMap(iLev), 3, get_n_ghost());
+    distribute_FabArray(solverTempCenter1[iLev], boxArray(iLev),
+                        DistributionMap(iLev), 1, get_n_ghost());
+  }
+  MultiFab& tempCenter3 = solverTempCenter3[iLev];
+  MultiFab& tempCenter1 = solverTempCenter1[iLev];
+  tempCenter3.setVal(0.0);
+  tempCenter1.setVal(0.0);
+
+  // Calculate cell center E for center-to-center divE.
+  // The outmost boundary layer of tempCenter3 is not accurate.
+  average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3, tempCenter3.nGrow());
+
+  //----The following comments are left here for reference------
+  // Q: Why apply float BC for all boundary ghost nodes, instead of just
+  // the outmost layer? A: For the example described in
+  // FluidInterface::calc_current, cell (c+4, c-1) of tempCenter3-block1
+  // is not accurate, so the values at (c+4, c-2) will be wrong if we only
+  // apply float BC for the outmost layer.
+  // apply_float_boundary(cellStatus, tempCenter3, Geom(0), 0,
+  //                           tempCenter3.nComp());
+  //------------------------------------------------------------
+
+  div_center_to_center(tempCenter3, tempCenter1, Geom(iLev).InvCellSize());
+
+  tempCenter1.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
+
+  // 1) The outmost boundary layer of tempCenter3 is not accurate.
+  // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
+  // cells) of tempCenter1 are not accurate
+  apply_BC(cell_status(iLev), tempCenter1, 0, tempCenter1.nComp(),
+           &Pic::get_zero, iLev);
+
+  MultiFab::LinComb(centerDivE[iLev], 1 - fsolver.coefDiff, centerDivE[iLev], 0,
+                    fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
 }
 
 //==========================================================

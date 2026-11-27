@@ -351,21 +351,24 @@ Select the electromagnetic field solver mode for FLEKS:
 - implicit (default): Semi-implicit full PIC solver. Solves Maxwell's equations
   with the theta-scheme linear/nonlinear solver. With AMR the electric field
   is solved level by level.
-- implicit1: Same as implicit on a uniform grid. With AMR the implicit electric
-  field equation is solved on all grid levels together in a single solve. The
+- implicit1: The implicit electric field equation is solved on all grid levels
+  together in a single solve. On a uniform grid the result agrees with
+  implicit to the tolerance of the linear solver. The
   unknowns are the corner nodes of the cells that are not covered by a finer
   level. The fine nodes on a resolution change are interpolated from the
   coarse nodes. Every particle deposits the current and the mass matrix on the
   nodes of its own cell only, and the curl of B in Ampere's law is the
   transpose of the curl of E in Faraday's law. The total energy is then
   conserved across the resolution change for theta = 0.5 and ratioDivC2C = 0,
-  to the tolerance of the linear solver. The electric energy in the log file
+  to the tolerance of the linear solver, if no smoothing or upwinding is used.
+  The electric energy in the log file
   is the sum of V times E squared / (8 pi) over the unknown nodes, where V is
-  the volume of the node. At present implicit1 with AMR requires periodic
-  boundaries and ratioDivC2C = 0, and does not work with #SMOOTHE, #SMOOTHJ,
-  #UPWINDE, #COMOVING, #BODY, #UPWINDB with typeUpwindB curl, a time dependent
-  intrinsic magnetic field and #EFIELDSOLVER with solverType amrex. It is not
-  available on GPUs yet.
+  the volume of the node. Non-periodic field boundaries are treated on the
+  base level as in the level by level solver; the energy then changes by the
+  flux through the boundaries. At present implicit1 requires
+  refined levels that do not touch a non-periodic boundary,
+  and does not work with #EFIELDSOLVER with solverType amrex.
+  It is not available on GPUs yet.
 - explicit: Explicit full PIC solver. Advances E and B explicitly with speed-of-light
   wave propagation and discrete dual staggering. Requires setting #FIELDINTEGRATOR
   (leapfrog or pc) and #FIELDSUBCYCLE.
